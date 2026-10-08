@@ -402,6 +402,16 @@ Tests:
 - `tools/hdr-master.browser.mjs` checks the old effect/blend graph as a typed refusal,
   then renders admitted HDR raster cuts, SDR graphics and opacity keyframes. It
   encodes PQ/HLG Main10 diagnostic masters and decodes them within two 10-bit codes.
+  `HDR_MASTER_4K=1` runs the same four edited frames at 3840×2160 with proportional
+  graph geometry, exact 24 fps presentation timestamps and the same decoded RGB
+  and native Y/Cb/Cr tolerances. Frames cross the browser boundary one at a time
+  as binary float RGBA; reports retain their individual digests and `.rgba-f32le`
+  files alongside output masters, exact commands and encoder/probe binary digests.
+  Failed RGB QC retains only an explicitly named `.failed-candidate.mp4` diagnostic
+  with raw RGB/plane measurements and its digest; it still throws and the helper
+  removes the unpublished partial file without promoting it to a master.
+  This short graph check does not qualify 4K throughput, device loss, every effect
+  family, masks/transitions/titles, physical monitor review or admitted deployments.
 - `tools/hdr-master.test.mjs` covers the metadata maths, refusals and a lossless round
   trip.
 

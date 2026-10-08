@@ -11,19 +11,36 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
-import { decodeMaster, encodeHdrMaster, validateHdrPlaneSamples } from './hdr-master.mjs';
+import { decodeMaster, encodeHdrMaster, encoderArgs, validateHdrPlaneSamples } from './hdr-master.mjs';
 
 const source = await testedSource(new URL(import.meta.url));
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
-const W = 32;
-const H = 16;
+const W = process.env.HDR_MASTER_4K === '1' ? 3840 : 32;
+const H = process.env.HDR_MASTER_4K === '1' ? 2160 : 16;
 const FRAMES = 4;
+const dir = mkdtempSync(process.env.HDR_MASTER_REPORT
+  ? `${path.resolve(process.env.HDR_MASTER_REPORT)}.artifacts-` : path.join(tmpdir(), 'fl-hdr-master-e2e-'));
+const renderedFrames = { pq: [], hlg: [] };
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
 let rendered;
 try {
   const page = await browser.newPage();
+  await page.exposeFunction('hdrMasterFrame', async ({ target, frame, width, height, base64 }) => {
+    assert.ok(target === 'pq' || target === 'hlg', 'Unknown frame transfer');
+    assert.equal(frame, renderedFrames[target].length, 'Rendered frame order mismatch');
+    assert.ok(frame < FRAMES, 'Unexpected rendered frame');
+    assert.deepEqual([width, height], [W, H], 'Rendered size mismatch');
+    const bytes = Buffer.from(base64, 'base64');
+    assert.equal(bytes.length, W * H * 16, 'Incomplete float frame');
+    const rgba = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    renderedFrames[target].push({ width, height, rgba });
+    const file = path.join(dir, `${target}-${frame}.rgba-f32le`);
+    await writeFile(file, bytes);
+    return { frame, width, height, format: 'rgba-f32le', sha256: createHash('sha256').update(bytes).digest('hex'),
+      path: process.env.HDR_MASTER_REPORT ? path.relative(path.dirname(path.resolve(process.env.HDR_MASTER_REPORT)), file) : null };
+  });
   page.on('pageerror', (error) => console.error('page error:', error.message));
   await page.route(origin + '/hdr-master', (route) =>
     route.fulfill({ contentType: 'text/html', body: `<title>HDR master</title>
@@ -44,7 +61,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     const rect = (id, trackId, x, width, fillColor, extra = {}) => ({
       id, type: 'shape', trackId, from: 0, durationInFrames: FRAMES, label: id,
       shapeType: 'rectangle', fillColor, strokeEnabled: false, strokeWidth: 0,
-      transform: { x, y: 0, width, height: H, rotation: 0, opacity: 1 }, ...extra,
+      transform: { x: x * W / 32, y: 0, width: width * W / 32, height: H, rotation: 0, opacity: 1 }, ...extra,
     });
     const track = (order, items) => ({ id: `track-${order}`, name: `T${order}`, height: 60, locked: false,
       visible: true, muted: false, solo: false, order, items });
@@ -55,7 +72,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     const exposed = rect('exposed', 'track-1', 8, 16, 'rgb(50%, 50%, 50%)', { effects: [{ id: 'fx', enabled: true,
       effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 0, offset: 0, gamma: 1 } } }] });
     const strip = { ...rect('strip', 'track-0', 12, 8, 'rgb(40%, 40%, 40%)', { blendMode: 'linear-dodge' }),
-      transform: { x: 12, y: 0, width: 8, height: H, rotation: 0, opacity: 1 } };
+      transform: { x: 12 * W / 32, y: 0, width: 8 * W / 32, height: H, rotation: 0, opacity: 1 } };
     const composition = {
       fps: 24, width: W, height: H, durationInFrames: FRAMES, backgroundColor: '#000000',
       colorManagement: { workingRange: 'hdr' },
@@ -75,8 +92,11 @@ window.__vite_plugin_react_preamble_installed__ = true
     } finally { historicalRenderer.dispose(); }
     const codes = { pq: [0.75, 0.75, 0.75].map(value => Math.round(value * 65535)),
       hlg: [0.7, 0.65, 0.6].map(value => Math.round(value * 65535)) };
-    const raster = (transfer) => ({ width: W, height: H, transfer,
-      rgb: new Uint16Array(Array.from({ length: W * H }, () => codes[transfer]).flat()) });
+    const raster = (transfer) => {
+      const rgb = new Uint16Array(W * H * 3);
+      for (let i = 0; i < rgb.length; i++) rgb[i] = codes[transfer][i % 3];
+      return { width: W, height: H, transfer, rgb };
+    };
     const hdrRasters = { 'master-pq': raster('pq'), 'master-hlg': raster('hlg') };
     const temperatureEffects = [{ id: 'temperature', enabled: true,
       effect: { type: 'gpu-effect', gpuEffectType: 'gpu-temperature', params: { temperature: 1, tint: -1 } } }, ...['grayscale','sepia','invert'].map(id=>({id,enabled:true,effect:{type:'gpu-effect',gpuEffectType:`gpu-${id}`,params:id==='invert'?{}:{amount:.375}}})), {id:'lift',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-brightness',params:{amount:.5}}}];
@@ -96,10 +116,15 @@ window.__vite_plugin_react_preamble_installed__ = true
       for (const target of ['pq', 'hlg']) {
         for (let frame = 0; frame < FRAMES; frame++) {
           const { width, height, rgba } = await renderer.renderFrameSignal(frame, target);
-          out[target].push({ width, height, rgba: Array.from(rgba) });
+          // One fixed-size frame per handoff; a 4K float sequence cannot fit the browser JSON array route.
+          const bytes = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i += 32768)
+            binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+          out[target].push(await window.hdrMasterFrame({ target, frame, width, height, base64: btoa(binary) }));
         }
       }
-    } finally {
+  } finally {
       renderer.dispose?.();
     }
     // CPU/GPU helper parity for the admitted linear graph, not an independent physical oracle.
@@ -124,6 +149,7 @@ window.__vite_plugin_react_preamble_installed__ = true
   }, { W, H, FRAMES });
 } finally {
   await browser.close();
+  if (!rendered && !process.env.HDR_MASTER_REPORT) rmSync(dir, { recursive: true, force: true });
 }
 
 // Raw measurements for conformance evidence: the rendered frames before any assertion, then
@@ -131,20 +157,25 @@ window.__vite_plugin_react_preamble_installed__ = true
 const writeReport = (masters) =>
   process.env.HDR_MASTER_REPORT && writeFile(process.env.HDR_MASTER_REPORT, JSON.stringify({
     qualification: 'diagnostic helper only; physical monitor and admitted deployments unqualified',
-    tools: Object.fromEntries(['ffmpeg', 'ffprobe'].map((tool) => [tool, execFileSync(tool, ['-version']).toString().split('\n')[0]])),
-    rendered, masters,
+    schemaVersion: 1,
+    tools: Object.fromEntries(['ffmpeg', 'ffprobe'].map((tool) => {
+      const file = execFileSync('which', [tool], { encoding: 'utf8' }).trim();
+      return [tool, { version: execFileSync(tool, ['-version']).toString().split('\n')[0],
+        sha256: createHash('sha256').update(readFileSync(file)).digest('hex') }];
+    })),
+    browser: { version: browser.version(), launchArgs: chromeLaunchArgs() },
+    source, rendered, masters,
   }));
 await writeReport(null);
 assert.equal(rendered.historicalHdrRefusal.errorType, 'HdrRenderUnavailableError');
 assert.equal(rendered.historicalHdrRefusal.emitted, 0);
 
-const points = { clip: [8, 8], opacity: [20, 8], normal: [28, 8] };
-const dir = mkdtempSync(process.env.HDR_MASTER_REPORT
-  ? `${path.resolve(process.env.HDR_MASTER_REPORT)}.artifacts-` : path.join(tmpdir(), 'fl-hdr-master-e2e-'));
+const points = { clip: [W / 4, H / 2], opacity: [W * 5 / 8, H / 2], normal: [W * 7 / 8, H / 2] };
 try {
   const summary = {};
   for (const transfer of ['pq', 'hlg']) {
-    const frames = rendered.out[transfer].map((f) => ({ ...f, rgba: Float32Array.from(f.rgba) }));
+    const frames = renderedFrames[transfer];
+    assert.equal(frames.length, FRAMES, 'Rendered frame count mismatch');
     // The renderer's explicit output equals the managed-colour reference.
     frames.forEach((frame, n) => {
       for (const [key, [x, y]] of Object.entries(points)) {
@@ -154,8 +185,24 @@ try {
       }
     });
     const output = path.join(dir, `edited-${transfer}.mp4`);
+    const inputDigest = createHash('sha256').update(JSON.stringify({ width: W, height: H, fps: 24, transfer }));
+    for (const { rgba } of frames) inputDigest.update(Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+    const inputSha256 = inputDigest.digest('hex');
     const encoded = await encodeHdrMaster({ frames, fps: 24, transfer, output, lossless: true,
-      mastering: { maxNits: 4000, minNits: 0.005 }, validate: ({ light, probe, decoded, output: candidate }) => {
+      mastering: { maxNits: 4000, minNits: 0.005 }, validate: async ({ light, probe, decoded, output: candidate }) => {
+        const timestamps = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0',
+          '-show_frames', '-show_entries', 'frame=pts_time', '-of', 'json', candidate], { encoding: 'utf8' }));
+        const planes = decodeMaster('ffmpeg', candidate, W, H, 'yuv420p10le');
+        assert.equal(planes.length, FRAMES);
+        const planeSamples = validateHdrPlaneSamples(planes, W, H, frames.flatMap(({ rgba }, frame) =>
+          Object.values(points).map(([x, y]) => ({ frame, x, y, rgb: rgba.slice((y * W + x) * 4, (y * W + x) * 4 + 3) }))));
+        const rgbSamples = frames.flatMap(({ rgba }, frame) => Object.entries(points).map(([region, [x, y]]) => {
+          const expected = Array.from(rgba.slice((y * W + x) * 4, (y * W + x) * 4 + 3));
+          const actual = Array.from(decoded[frame].slice((y * W + x) * 3, (y * W + x) * 3 + 3));
+          return { frame, region, x, y, expected, actual, errorCodes: actual.map((value, c) => Math.abs(value - expected[c]) * 1023) };
+        }));
+        summary[transfer] = { result: 'measured', light, planeSamples, rgbSamples, timestamps, probe, inputSha256 };
+        try {
         assert.equal(probe.codec, 'hevc');
         assert.equal(probe.profile, 'Main 10');
         assert.equal(probe.pixFmt, 'yuv420p10le');
@@ -163,6 +210,7 @@ try {
         assert.equal(probe.transfer, transfer === 'pq' ? 'smpte2084' : 'arib-std-b67');
         assert.equal(probe.frames, FRAMES);
         assert.equal(probe.rFrameRate, '24/1');
+        assert.deepEqual(timestamps.frames.map(({ pts_time }) => pts_time), ['0.000000', '0.041667', '0.083333', '0.125000']);
         if (transfer === 'pq') {
           assert.equal(Number(probe.contentLight?.max_content), light.maxCll);
           assert.equal(Number(probe.contentLight?.max_average), light.maxFall);
@@ -178,13 +226,23 @@ try {
             }
           }
         });
-        const planes = decodeMaster('ffmpeg', candidate, W, H, 'yuv420p10le');
-        assert.equal(planes.length, FRAMES);
-        const planeSamples = validateHdrPlaneSamples(planes, W, H, frames.flatMap(({ rgba }, frame) =>
-          Object.values(points).map(([x, y]) => ({ frame, x, y, rgb: rgba.slice((y * W + x) * 4, (y * W + x) * 4 + 3) }))));
-        summary[transfer] = { light, planeSamples, probe: { profile: probe.profile, transfer: probe.transfer, frames: probe.frames } };
+        summary[transfer].result = 'passed';
+        } catch (error) {
+          const failed = path.join(dir, `${transfer}.failed-candidate.mp4`);
+          const bytes = readFileSync(candidate);
+          await writeFile(failed, bytes);
+          Object.assign(summary[transfer], { result: 'failed', error: error.message,
+            failedCandidateSha256: createHash('sha256').update(bytes).digest('hex'),
+            failedCandidatePath: process.env.HDR_MASTER_REPORT
+              ? path.relative(path.dirname(path.resolve(process.env.HDR_MASTER_REPORT)), failed) : null,
+            encoderArgs: encoderArgs({ width: W, height: H, fps: 24, transfer, light,
+              mastering: { maxNits: 4000, minNits: 0.005 }, lossless: true, output: '<unpublished-output>' }),
+            planeDecodeArgs: ['-v', 'error', '-xerror', '-i', '<failed-candidate>', '-pix_fmt', 'yuv420p10le', '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'] });
+          assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
+          await writeReport({ ...summary, result: 'failed' });
+          throw error;
+        }
     } });
-    summary[transfer].inputSha256 = createHash('sha256').update(JSON.stringify(rendered.out[transfer])).digest('hex');
     summary[transfer].outputSha256 = createHash('sha256').update(readFileSync(output)).digest('hex');
     summary[transfer].outputPath = process.env.HDR_MASTER_REPORT
       ? path.relative(path.dirname(path.resolve(process.env.HDR_MASTER_REPORT)), output) : null;
