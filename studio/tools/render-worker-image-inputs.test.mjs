@@ -130,7 +130,7 @@ test('unsupported resource adapters and expired leases fail before opening sourc
     claim.snapshot.studio.graph.timeline.items[0].type = type;
     await assert.rejects(
       createClaimImageInputs(claim, () => true),
-      /IMAGE_SOURCE_ADAPTER_ONLY/,
+      type === 'video' ? /VIDEO_CONTAINER_ADAPTER_UNAVAILABLE/ : /IMAGE_SOURCE_ADAPTER_ONLY/,
     );
   }
   const linked = prepared();

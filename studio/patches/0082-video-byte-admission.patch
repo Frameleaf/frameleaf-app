@@ -1,0 +1,159 @@
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -31,7 +31,11 @@
+ } from '@/features/export/deps/timeline-compositions'
+ import { getPropertyKeyframes, interpolatePropertyValue } from '@/features/export/deps/keyframes'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+-import { getMediaAudioCodecById, resolveMediaUrl } from '@/features/export/deps/media-library'
++import {
++  getMediaAudioCodecById,
++  getMediaMetadataById,
++  resolveMediaUrl,
++} from '@/features/export/deps/media-library'
+ import { ensureAc3DecoderRegistered, isAc3AudioCodec } from '@/shared/utils/ac3-decoder'
+ import {
+   getLinkedAudioCompanion,
+@@ -818,6 +822,14 @@
+
+     if (subItem.type !== 'video' && subItem.type !== 'audio') continue
+     if (subItem.type === 'video' && subItem.embeddedAudioMuted) continue
++    const subMetadata = subItem.mediaId ? getMediaMetadataById(subItem.mediaId) : undefined
++    if (
++      subItem.type === 'video' &&
++      subMetadata?.mimeType.startsWith('video/') &&
++      subMetadata.embeddedAudioTrackAbsent === true &&
++      !subMetadata.audioCodec
++    )
++      continue
+     if (subItem.type === 'video' && linkedSubCompVideoIds.has(subItem.id)) continue
+     const src =
+       (subItem.mediaId ? blobUrlManager.get(subItem.mediaId) : null) ??
+@@ -964,6 +976,13 @@
+         const videoItem = item as VideoItem
+         if (linkedRootVideoIds.has(videoItem.id)) continue
+         if (videoItem.embeddedAudioMuted) continue
++        const metadata = getMediaMetadataById(videoItem.mediaId)
++        if (
++          metadata?.mimeType.startsWith('video/') &&
++          metadata.embeddedAudioTrackAbsent === true &&
++          !metadata.audioCodec
++        )
++          continue
+         if (!videoItem.src) continue
+         videoById.set(item.id, {
+           item: videoItem,
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -3,6 +3,7 @@
+ import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import { useCompositionsStore } from '@/features/export/deps/timeline-compositions'
++import * as mediaLibrary from '@/features/export/deps/media-library'
+ import { usePlaybackStore } from '@/shared/state/playback'
+
+ const { inputConstructor } = vi.hoisted(() => ({ inputConstructor: vi.fn() }))
+@@ -252,6 +253,87 @@
+ }
+
+ describe('extractAudioSegments', () => {
++  it.each(['root', 'nested'] as const)(
++    'skips %s verified track absence but preserves partial metadata and silent audio tracks',
++    (scope) => {
++      const video = makeVideoItem({ mediaId: 'verified-video' })
++      const composition: CompositionInputProps = {
++        fps: 30,
++        durationInFrames: 90,
++        width: 1920,
++        height: 1080,
++        tracks: [makeTrack({ id: 'track-v1', order: 0, kind: 'video', items: [video] })],
++        transitions: [],
++        keyframes: [],
++      }
++      if (scope === 'nested') {
++        const subComp = {
++          id: 'trackless-sub',
++          name: 'Trackless',
++          items: [video],
++          tracks: [makeTrack({ id: video.trackId, order: 0, kind: 'video' })],
++          transitions: [],
++          keyframes: [],
++          fps: 30,
++          width: 1920,
++          height: 1080,
++          durationInFrames: 90,
++        }
++        useCompositionsStore.setState({
++          compositions: [subComp],
++          compositionById: { [subComp.id]: subComp },
++          mediaDependencyIds: [],
++          mediaDependencyVersion: 0,
++        })
++        composition.tracks[0]!.items = [
++          {
++            id: 'nested',
++            type: 'composition',
++            compositionId: subComp.id,
++            trackId: 'track-v1',
++            from: 0,
++            durationInFrames: 90,
++            label: 'Trackless',
++            compositionWidth: 1920,
++            compositionHeight: 1080,
++            transform: { x: 0, y: 0, rotation: 0, opacity: 1 },
++          },
++        ]
++      }
++      const lookup = vi.spyOn(mediaLibrary, 'getMediaMetadataById')
++      const metadata = {
++        id: 'verified-video',
++        storageType: 'workspace' as const,
++        fileName: 'owned.mp4',
++        fileSize: 100,
++        mimeType: 'video/mp4',
++        duration: 3,
++        width: 1920,
++        height: 1080,
++        fps: 30,
++        codec: 'h264',
++        bitrate: 100,
++        tags: [],
++        createdAt: 0,
++        updatedAt: 0,
++      }
++      try {
++        lookup.mockReturnValue(undefined)
++        expect(extractAudioSegments(composition, 30)).toHaveLength(1)
++        lookup.mockReturnValue(metadata)
++        expect(extractAudioSegments(composition, 30)).toHaveLength(1)
++        lookup.mockReturnValue({ ...metadata, embeddedAudioTrackAbsent: false })
++        expect(extractAudioSegments(composition, 30)).toHaveLength(1)
++        lookup.mockReturnValue({ ...metadata, embeddedAudioTrackAbsent: true })
++        expect(extractAudioSegments(composition, 30)).toHaveLength(0)
++        lookup.mockReturnValue({ ...metadata, embeddedAudioTrackAbsent: true, audioCodec: 'aac' })
++        expect(extractAudioSegments(composition, 30)).toHaveLength(1)
++      } finally {
++        lookup.mockRestore()
++      }
++    },
++  )
++
+   beforeEach(() => {
+     useCompositionsStore.setState({
+       compositions: [],
+diff --git a/src/types/storage.ts b/src/types/storage.ts
+--- a/src/types/storage.ts
++++ b/src/types/storage.ts
+@@ -82,6 +82,11 @@
+    */
+   audioCodec?: string
+   /**
++   * Positive absence observation on the same checksum-verified source bytes.
++   * Missing/partial legacy metadata is unknown; only a fresh byte-bound probe may set true.
++   */
++  embeddedAudioTrackAbsent?: boolean
++  /**
+    * Whether the audio codec is supported for waveform generation
+    * false for codecs like EC-3 (Dolby Digital Plus), AC-3, DTS that can't be decoded in browser
+    */
