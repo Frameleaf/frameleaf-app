@@ -207,9 +207,14 @@
     background-color: color-mix(in oklab, var(--immich-ui-primary-500) 70%, transparent);
   }
 
+  /*
+   * The page is the canvas in both themes (BRAND.md decision 1): rails, bars and cards are the
+   * panel on it. The viewer keeps its black.
+   */
   body {
     margin: 0;
     color: var(--immich-ui-dark);
+    background-color: var(--fl-canvas);
     /* One text rendering for the kit pages and the Frameleaf scope (tokens.css). */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -301,16 +306,6 @@
   --immich-ui-muted: var(--fl-muted);
   --immich-ui-gray: var(--fl-panel);
   --immich-ui-default-border: var(--fl-border);
-}
-
-/*
- * The page is the canvas in both themes (BRAND.md decision 1). `<body class="bg-light">` paints
- * the kit's `light`, which in the light theme is the panel white that filled buttons need for
- * their text, so signed-in pages were white with grey canvas blocks wherever a Frameleaf screen
- * painted its own background. Unlayered, so it outranks the utility; the viewer keeps its black.
- */
-body:not(.asset-viewer-open) {
-  background-color: var(--fl-canvas);
 }
 
 /*

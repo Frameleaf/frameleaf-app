@@ -557,16 +557,20 @@
     background: var(--fl-teal);
     transition: width var(--fl-motion) linear;
   }
-  :global(.fl-success) {
+  /*
+   * The status marks of a row. Scoped to the row's state cell: unscoped, these names painted
+   * every `fl-danger` button label and `fl-success` mark in the app once the panel had loaded.
+   */
+  .fl-state :global(.fl-success) {
     color: var(--fl-teal);
   }
-  :global(.fl-warning) {
+  .fl-state :global(.fl-warning) {
     color: var(--fl-warning);
   }
-  :global(.fl-danger) {
+  .fl-state :global(.fl-danger) {
     color: var(--fl-danger);
   }
-  :global(.fl-muted-icon) {
+  .fl-state :global(.fl-muted-icon) {
     color: var(--fl-muted);
   }
   .fl-sr-only {

@@ -5,6 +5,7 @@
    * nested SettingAccordion with the same props, and keeps its open state in the `isOpen` query
    * parameter through the accordion manager so existing deep links still open the right group.
    */
+  import Badge from '$lib/components/frameleaf/Badge.svelte';
   import { accordionManager } from '$lib/managers/accordion-manager.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown } from '@mdi/js';
@@ -17,6 +18,8 @@
     isOpen?: boolean;
     autoScrollTo?: boolean;
     icon?: string;
+    /** A short translated status beside the title, for example "Experimental". */
+    badge?: string;
     subtitleSnippet?: Snippet;
     children?: Snippet;
   }
@@ -28,6 +31,7 @@
     isOpen = $bindable(false),
     autoScrollTo = false,
     icon = '',
+    badge = '',
     subtitleSnippet,
     children,
   }: Props = $props();
@@ -62,6 +66,7 @@
           <Icon {icon} size="1.25rem" aria-hidden={true} />
         {/if}
         <span class="title">{title}</span>
+        {#if badge}<Badge value={badge} label={badge} tone="neutral" />{/if}
       </span>
       {#if subtitleSnippet}
         <span class="subtitle">{@render subtitleSnippet()}</span>

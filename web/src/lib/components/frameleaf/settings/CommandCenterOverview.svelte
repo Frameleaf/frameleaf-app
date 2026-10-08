@@ -53,7 +53,9 @@
     mdiRefresh,
     mdiServerOutline,
   } from '@mdi/js';
+  import { backupMoment } from '$lib/components/frameleaf/settings/backup-time';
   import { locale } from '$lib/stores/preferences.store';
+  import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   let report = $state<AnalyticsReportResponseDto>();
@@ -102,31 +104,31 @@
       ?.filter((queue) => queue.statistics.active + queue.statistics.waiting + queue.statistics.failed > 0)
       .slice(0, 4) ?? [],
   );
+  /** The newest backup by the moment it was made, whatever its file name starts with. */
   const latestBackup = $derived(
     backups
-      ?.filter((backup) => /\d{8}T\d{6}/.test(backup.filename))
-      .sort((a, b) => a.filename.match(/\d{8}T\d{6}/)![0].localeCompare(b.filename.match(/\d{8}T\d{6}/)![0]))
-      .at(-1)?.filename,
+      ?.map((backup) => ({ filename: backup.filename, at: backupMoment(backup.filename, backup.timezone) }))
+      .filter((backup) => backup.at)
+      .sort((a, b) => a.at!.toMillis() - b.at!.toMillis())
+      .at(-1),
   );
   /**
-   * When the latest backup was made, as its file name records it (the server's own clock), shown
-   * as a time and a date like the reference ("02:00 · 19 Sep"). The file name stays in the tooltip.
+   * When the latest backup was made, in this device's time zone like Backups & restore shows it,
+   * as a time and a date ("8:00 PM · Oct 6"). The file name stays in the tooltip.
    */
   const latestBackupTime = $derived.by(() => {
-    const stamp = latestBackup?.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
-    if (!stamp) {
+    const at = latestBackup?.at;
+    if (!at) {
       return;
     }
-    const [year, month, day, hour, minute] = stamp.slice(1).map(Number);
-    const at = new Date(Date.UTC(year, month - 1, day, hour, minute));
     const part = (options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat($locale, { ...options, timeZone: 'UTC' }).format(at);
+      new Intl.DateTimeFormat($locale, options).format(at.toJSDate());
     return {
-      time: part({ hour: '2-digit', minute: '2-digit' }),
+      time: part({ hour: 'numeric', minute: '2-digit' }),
       date: part({
         day: 'numeric',
         month: 'short',
-        year: at.getUTCFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+        year: at.year === DateTime.now().year ? undefined : 'numeric',
       }),
     };
   });
@@ -302,7 +304,7 @@
       >
       <!-- Both backup entry points on this page open Backup → Backups & restore (finding 66). -->
       <a href={href('maintenance', 'backups')} style:--i={2}
-        ><span>{$t('frameleaf_cc_latest_backup')}</span>{#if latestBackupTime}<strong title={latestBackup}
+        ><span>{$t('frameleaf_cc_latest_backup')}</span>{#if latestBackupTime}<strong title={latestBackup?.filename}
             >{latestBackupTime.time}<span class="date">{latestBackupTime.date}</span></strong
           >{:else}<strong class="note"
             >{backups

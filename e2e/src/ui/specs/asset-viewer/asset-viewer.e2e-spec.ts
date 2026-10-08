@@ -77,7 +77,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${asset.id}`);
 
-      await page.getByLabel('View next asset').click();
+      await page.getByLabel('View next item').click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${assets[index + 1].id}`);
     });
@@ -89,7 +89,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${asset.id}`);
 
-      await page.getByLabel('View previous asset').click();
+      await page.getByLabel('View previous item').click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index - 1]);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${assets[index - 1].id}`);
     });
@@ -125,7 +125,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, asset);
 
       for (let i = 1; i <= 5; i++) {
-        await page.getByLabel('View next asset').click();
+        await page.getByLabel('View next item').click();
         await assetViewerUtils.waitForViewerLoad(page, assets[index + i]);
         await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${assets[index + i].id}`);
       }
@@ -138,7 +138,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, asset);
 
       for (let i = 1; i <= 5; i++) {
-        await page.getByLabel('View previous asset').click();
+        await page.getByLabel('View previous item').click();
         await assetViewerUtils.waitForViewerLoad(page, assets[index - i]);
         await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${assets[index - i].id}`);
       }
@@ -172,7 +172,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, lastAsset);
 
       // Verify next button doesn't exist
-      await expect(page.getByLabel('View next asset')).toHaveCount(0);
+      await expect(page.getByLabel('View next item')).toHaveCount(0);
     });
 
     test('Verify no previous button on first asset', async ({ page }) => {
@@ -181,7 +181,7 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, firstAsset);
 
       // Verify previous button doesn't exist
-      await expect(page.getByLabel('View previous asset')).toHaveCount(0);
+      await expect(page.getByLabel('View previous item')).toHaveCount(0);
     });
 
     test('Delete photo advances to next', async ({ page }) => {

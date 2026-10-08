@@ -32,6 +32,7 @@
         <SettingGroup
           key="library-watching"
           title={$t('admin.library_watching_settings')}
+          badge={$t('frameleaf_experimental')}
           subtitle={$t('admin.library_watching_settings_description')}
         >
           <div class="flex flex-col gap-4">

@@ -103,9 +103,9 @@ test.describe('search gallery-viewer', () => {
       const asset = assets[1];
       await page.goto(buildSearchUrl(asset.id));
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('View previous asset').click();
+      await page.getByLabel('View previous item').click();
       await assetViewerUtils.waitForViewerLoad(page, assets[0]);
-      await page.getByLabel('View next asset').click();
+      await page.getByLabel('View next item').click();
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await page.getByLabel('Move to trash', { exact: true }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[2]);
@@ -115,10 +115,10 @@ test.describe('search gallery-viewer', () => {
       const lastAsset = assets[4];
       await page.goto(buildSearchUrl(lastAsset.id));
       await assetViewerUtils.waitForViewerLoad(page, lastAsset);
-      await expect(page.getByLabel('View next asset')).toHaveCount(0);
+      await expect(page.getByLabel('View next item')).toHaveCount(0);
       await page.getByLabel('Move to trash', { exact: true }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[3]);
-      await expect(page.getByLabel('View previous asset')).toBeVisible();
+      await expect(page.getByLabel('View previous item')).toBeVisible();
     });
   });
 });

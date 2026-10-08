@@ -98,7 +98,7 @@ test.describe('Integrity', () => {
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
   });
 
-  test('a report longer than a page loads the rest with "Load More"', async ({ context, page }) => {
+  test('a report longer than a page loads the rest with "Load more"', async ({ context, page }) => {
     await dockerExec([`for i in $(seq 1 501); do echo untracked > ${folder}/page$i.png; done`]).promise;
     await runUntrackedCheck();
     expect(await untrackedCount()).toBeGreaterThan(500);
@@ -111,7 +111,7 @@ test.describe('Integrity', () => {
     await expect(rows).toHaveCount(500);
     await expect(page.getByText('500 findings loaded · more available')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Load More' }).click();
+    await page.getByRole('button', { name: 'Load more' }).click();
     await expect.poll(() => rows.count()).toBeGreaterThan(500);
   });
 

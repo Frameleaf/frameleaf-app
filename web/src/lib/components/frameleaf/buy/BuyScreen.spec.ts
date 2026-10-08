@@ -223,6 +223,22 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     expect(sdkMock.activateLicense).not.toHaveBeenCalled();
   });
 
+  it('closes the gap when the store lists no AI credit amounts, and says where to add credit', async () => {
+    authManager.setUser(user({ isAdmin: true }));
+    sdkMock.getMyUser.mockResolvedValue(user({ isAdmin: true }));
+    const list = products();
+    sdkMock.getLicenseProducts.mockResolvedValue({
+      ...list,
+      products: list.products.filter((product) => product.kind !== 'credit'),
+    });
+    const { container } = render(BuyScreen);
+    expect(await screen.findByRole('heading', { name: 'AI credit' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Add AI credit' })).toBeNull();
+    expect(container.querySelector('.buy-packs')).toBeNull();
+    expect(screen.getByText(/Add from \$20 to \$500 of AI credit in the Frameleaf store\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Other amounts/)).toBeNull();
+  });
+
   it('lets an administrator activate a server key and remove it in place', async () => {
     authManager.setUser(user({ isAdmin: true }));
     sdkMock.getMyUser.mockResolvedValue(user({ isAdmin: true }));

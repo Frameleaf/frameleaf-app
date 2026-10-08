@@ -23,14 +23,15 @@ and `python3 scripts/frameleaf-brand-assets.py --check`.
 
 ## 1. The brand idea
 
-**The frame keeps it. The leaf keeps it alive.**
+**The frame is home. The leaf is your library, growing.**
 
-The logo is a rounded frame with a leaf growing out of its lower corner toward a small sun. That is
-the product: a safe, permanent place for a family's photographs (the frame) that is alive with
-them, finding people, places and moments and bringing them back (the leaf). Everything in the
-system follows from those two halves.
+This is the owner's concept for the mark (recorded 2026-10-08) and it is the authority for
+everything below. The frame and the dot are the home server: your own box, in your own home, with
+its light on. The leaf is the library being looked after as it grows: organised, protected and
+kept healthy over years. Frameleaf is both at once, a place you own and the care of what lives in
+it. Everything in the system follows from those two halves.
 
-| The frame | The leaf |
+| The frame and the dot (the home server) | The leaf (the library, growing) |
 | --- | --- |
 | Ink surfaces, hairlines, quiet chrome | One green, used for the one thing to do next |
 | Neutral behind every photograph | Leaf Light, the gradient, when Frameleaf itself speaks |
@@ -601,7 +602,7 @@ Each line can be overruled on its own. "Was" is the round 1 value.
 | 9a | Logo arrival | none | `arrive` prop on `Logo` and `Brand` (Unfurl), for sign-in and first run. Not used on the error page: an error is not an arrival | Dropping the prop from callers |
 | 10 | Voice rules and rewrites | "write for customers" | The five rules and the pattern above; no string values changed | Editing section 2, decision 10 |
 | 11 | One token document | `design/frameleaf/tokens.json` v2 beside `brand-tokens.json` v3 | The same v3 document in both, inventory regenerated | Restoring the v2 file and the old inventory entry |
-| 12 | Page background (seen in the browser) | `body` painted the kit's `light`: panel white in the light theme, so pages were white with grey canvas blocks | `body` is `--fl-canvas` in both themes; rails, bars and cards are the white panel on it | The `body:not(.asset-viewer-open)` rule in `app.css` |
+| 12 | Page background (seen in the browser) | `body` painted the kit's `light`: panel white in the light theme, so pages were white with grey canvas blocks | `body` is `--fl-canvas` in both themes; rails, bars and cards are the white panel on it | The `body` rule in `app.css` |
 | 13 | Continuous corners on controls | `.button`, fields and `.chip` were squircles at 12px, which read as about 7px and did not match `Button` | Squircle for cards and sheets only; controls are plain 12px, chips are pills | The selector list under `@supports (corner-shape: squircle)` in `base.css` |
 | 14 | Filled danger label | An unlayered global `.fl-danger` text-colour class painted the label in the fill colour | The label colour of `.button.fl-danger` is `!important` inside the layer, so it cannot be lost | Removing `!important` once no global `.fl-danger` rule remains |
 | 15 | Control text in page content | Controls in `.fl-scope` inherited the document's 16px | `.button` and `.fl-control` in `.fl-scope` are the 14px body step, as in dialogs and the shell | The `.fl-scope` font-size rule in `base.css` |

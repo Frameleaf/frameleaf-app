@@ -259,7 +259,7 @@
   --fl-safe-left: env(safe-area-inset-left, 0px);
   /* SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery. */
   --fl-family-ui: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
-  --fl-family-mono: ui-monospace, SFMono-Regular, monospace;
+  --fl-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   /*
    * Type scale. Each step is a `font` shorthand (weight size/line-height family) with a matching
    * tracking token: `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or

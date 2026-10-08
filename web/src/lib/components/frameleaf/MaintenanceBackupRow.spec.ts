@@ -155,7 +155,7 @@ describe('MaintenanceBackupRow', () => {
     });
 
     // A backup from another version keeps its warning, now as the row's status pill.
-    expect(screen.getByText('This backup was created with a different version of Frameleaf!')).toBeInTheDocument();
+    expect(screen.getByText('This backup was created with a different version of Frameleaf.')).toBeInTheDocument();
     expect(screen.getByText('2 KiB')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: /^Download backup from / }));

@@ -631,9 +631,12 @@
       <span><i class="dot small"></i> 1</span>
       <span><i class="dot"></i> 2–9</span>
       <span><i class="dot large"></i> 10+</span>
-      <span class="legend-counts">
-        {$t('frameleaf_map_legend_counts', { values: { photos: counts.photos, videos: counts.videos } })}
-      </span>
+      <!-- Counts only once there is an answer: "0 photos · 0 videos" after a failed load would read as an empty map. -->
+      {#if loaded && !loadFailed}
+        <span class="legend-counts">
+          {$t('frameleaf_map_legend_counts', { values: { photos: counts.photos, videos: counts.videos } })}
+        </span>
+      {/if}
     </div>
 
     {#if tilesFailed || offline}
@@ -736,22 +739,26 @@
             </button>
           {/each}
         </fieldset>
-        <dl class="counts">
-          <div>
-            <dt>{$t('frameleaf_map_count_located')}</dt>
-            <dd>{markers.length}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_map_count_in_view')}</dt>
-            <dd>{inView.length}</dd>
-          </div>
-          {#if statistics}
-            <div>
-              <dt>{$t('frameleaf_map_count_unlocated')}</dt>
-              <dd>{statistics.unlocated}</dd>
-            </div>
-          {/if}
-        </dl>
+        {#if (loaded && !loadFailed) || statistics}
+          <dl class="counts">
+            {#if loaded && !loadFailed}
+              <div>
+                <dt>{$t('frameleaf_map_count_located')}</dt>
+                <dd>{markers.length}</dd>
+              </div>
+              <div>
+                <dt>{$t('frameleaf_map_count_in_view')}</dt>
+                <dd>{inView.length}</dd>
+              </div>
+            {/if}
+            {#if statistics}
+              <div>
+                <dt>{$t('frameleaf_map_count_unlocated')}</dt>
+                <dd>{statistics.unlocated}</dd>
+              </div>
+            {/if}
+          </dl>
+        {/if}
       </div>
     {/if}
 

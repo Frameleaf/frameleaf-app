@@ -10,7 +10,9 @@
   import { page } from '$app/state';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LibrariesManager from '$lib/components/frameleaf/LibrariesManager.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import '$lib/frameleaf/libraries.css';
   import { buildLibraryRows, loadLibrariesArea, type LibrariesAreaData } from '$lib/frameleaf/libraries';
   import { Route } from '$lib/route';
   import {
@@ -85,14 +87,26 @@
       onAnalytics={() => goto(Route.libraryAnalytics())}
       {refresh}
     />
-  {:else if failed}
-    <InlineError message={$t('frameleaf_libraries_load_error')} onRetry={refresh} />
   {:else}
-    <div class="loading" role="status" aria-busy="true">
-      <span class="sr-only">{$t('loading')}</span>
-      <Skeleton variant="block" height="2.75rem" />
-      <Skeleton variant="block" height="14rem" />
-    </div>
+    <!-- The page keeps its name while the list loads or when it could not be read. -->
+    <section class="fl-libraries" aria-label={$t('frameleaf_libraries_title')}>
+      <header class="resource-heading">
+        <div>
+          <SettingsOverline>{$t('frameleaf_libraries_eyebrow')}</SettingsOverline>
+          <h1>{$t('frameleaf_libraries_title')}</h1>
+          <p>{$t('frameleaf_libraries_subtitle')}</p>
+        </div>
+      </header>
+    </section>
+    {#if failed}
+      <InlineError message={$t('frameleaf_libraries_load_error')} onRetry={refresh} />
+    {:else}
+      <div class="loading" role="status" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        <Skeleton variant="block" height="2.75rem" />
+        <Skeleton variant="block" height="14rem" />
+      </div>
+    {/if}
   {/if}
 </div>
 

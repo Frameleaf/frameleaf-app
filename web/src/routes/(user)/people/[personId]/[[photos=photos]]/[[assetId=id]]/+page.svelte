@@ -5,6 +5,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import PersonHero from '$lib/components/frameleaf/people/PersonHero.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
@@ -114,10 +115,9 @@
   onAssetsUnarchive={updateAssetCount}
 />
 
-<main
-  class="relative z-0 h-dvh overflow-hidden px-2 pt-(--navbar-height) md:px-6 md:pt-(--navbar-height-md)"
-  use:scrollMemoryClearer={{ routeStartsWith: Route.people() }}
->
+<!-- In the app shell like every other library page: top bar, rail, and the hero at the top of the content. -->
+<UserPageLayout scrollbar={false}>
+  <div class="flex h-full flex-col overflow-hidden" use:scrollMemoryClearer={{ routeStartsWith: Route.people() }}>
   {#key `${person.id}:${refresh}`}
     <LibraryView
       enableRouting
@@ -158,4 +158,5 @@
       {/snippet}
     </LibraryView>
   {/key}
-</main>
+  </div>
+</UserPageLayout>

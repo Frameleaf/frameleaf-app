@@ -1707,9 +1707,8 @@
     text-align: start;
   }
   .jobs-manager thead th {
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: 0.4px;
+    font-size: var(--fl-font-small);
+    font-weight: 600;
     color: var(--fl-muted);
     background: var(--fl-panel);
     white-space: nowrap;

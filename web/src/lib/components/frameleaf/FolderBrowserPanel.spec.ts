@@ -156,7 +156,7 @@ describe('FolderBrowserPanel', () => {
     // name order, numeric
     expect(captions).toEqual(['IMG_9.jpg 1.0 KB · 2026-09-03', 'IMG_10.jpg 2.0 MB · 2026-09-01']);
     // the offline original is marked
-    expect(grid.querySelector('.fl-grid-cell')!.querySelector('[title="Asset Offline"]')).not.toBeNull();
+    expect(grid.querySelector('.fl-grid-cell')!.querySelector('[title="File offline"]')).not.toBeNull();
     await fireEvent.click(grid.querySelectorAll<HTMLElement>('.fl-tile-open')[1]);
     expect(assetUtils.navigateToAsset).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
   });

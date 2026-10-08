@@ -130,7 +130,7 @@ describe('CloudDescriptionBackfill (FL-163)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Estimate' }));
 
     await vi.waitFor(() =>
-      expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'Could not estimate the descriptions'),
+      expect(handleError).toHaveBeenCalledWith(expect.any(Error), 'The descriptions were not estimated. Try again.'),
     );
   });
 });

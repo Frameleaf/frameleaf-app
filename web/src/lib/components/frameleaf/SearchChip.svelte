@@ -50,7 +50,7 @@
   {#if onOpen}
     <button type="button" class="open" onclick={onOpen}>{label}</button>
   {:else if children}{@render children()}{:else}{label}{/if}
-  <button type="button" aria-label={removeLabel} onclick={onRemove}>
+  <button type="button" class="remove" aria-label={removeLabel} onclick={onRemove}>
     <Icon icon={mdiClose} size="12" aria-hidden={true} />
   </button>
 </span>
@@ -62,7 +62,7 @@
     align-items: center;
     gap: 6px;
     padding: 3px 4px 3px 8px;
-    border-radius: 8px;
+    border-radius: var(--fl-radius-control-compact);
     background: color-mix(in srgb, var(--fl-accent) 22%, transparent);
     color: var(--fl-text);
     font-size: 13px;
@@ -71,7 +71,7 @@
   }
   @supports (corner-shape: squircle) {
     .search-chip {
-      border-radius: 14px;
+      border-radius: calc(var(--fl-radius-control-compact) * 1.8);
     }
   }
   .exclude {
@@ -87,7 +87,7 @@
     min-height: 20px;
     padding: 2px;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--fl-radius-xs);
     background: transparent;
     color: inherit;
     cursor: pointer;
@@ -95,7 +95,24 @@
   button:hover {
     background: color-mix(in srgb, var(--fl-text) 10%, transparent);
   }
+  /*
+   * The remove mark stays 20px so the chip keeps its height; the pseudo-element gives it the full
+   * control-height target. A label that opens the filters sits above that target, so reaching for
+   * the mark never takes a press meant for a label.
+   */
+  .remove {
+    position: relative;
+    width: 20px;
+    height: 20px;
+  }
+  .remove::after {
+    position: absolute;
+    inset: calc((20px - var(--fl-control-height)) / 2);
+    content: '';
+  }
   .open {
+    position: relative;
+    z-index: 1;
     display: inline;
     min-width: 0;
     padding: 0 2px;

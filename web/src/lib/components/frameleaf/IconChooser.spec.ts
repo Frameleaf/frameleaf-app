@@ -86,7 +86,7 @@ describe('IconChooser', () => {
     sdkMock.getAlbumIconCatalogue.mockRejectedValueOnce(new Error('offline'));
     render(IconChooser, { value: null, onChange: vi.fn(), inline: true });
     await waitFor(() =>
-      expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Unable to load the icon catalogue'),
+      expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('The icon list did not load. Try again.'),
     );
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });

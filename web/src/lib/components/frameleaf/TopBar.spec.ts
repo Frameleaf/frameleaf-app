@@ -158,7 +158,7 @@ describe('TopBar session privacy', () => {
       size: 1,
       suppressible: false,
     });
-    await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete asset'));
+    await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete item'));
 
     void sessionAccess.retryLock?.();
     expect(sessionAccess.lockPending).toBe(true);
@@ -166,11 +166,11 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(sdkMock.lockAuthSession).toHaveBeenCalledOnce());
     await waitFor(() => expect(sessionAccess.retryLock).toBeDefined());
     expect(sessionAccess.lockPending).toBe(true);
-    expect(document.body).toHaveTextContent('Permanently delete asset');
+    expect(document.body).toHaveTextContent('Permanently delete item');
 
     await sessionAccess.retryLock?.();
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
-    expect(document.body).not.toHaveTextContent('Permanently delete asset');
+    expect(document.body).not.toHaveTextContent('Permanently delete item');
     expect(await deletion.onClose).toBeUndefined();
     expect(sdkMock.lockAuthSession).toHaveBeenCalledTimes(2);
     expect(sdkMock.getAuthStatus).toHaveBeenCalledOnce();
@@ -220,12 +220,12 @@ describe('TopBar session privacy', () => {
       size: 1,
       suppressible: false,
     });
-    await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete asset'));
+    await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete item'));
 
     void sessionAccess.retryLock?.();
     await waitFor(() => expect(app.invalidateAll).toHaveBeenCalledOnce());
     expect(sessionAccess.lockPending).toBe(true);
-    expect(document.body).not.toHaveTextContent('Permanently delete asset');
+    expect(document.body).not.toHaveTextContent('Permanently delete item');
     const late = modalManager.open(EmailTemplatePreviewModal, { html: '<p>late private preview</p>' });
     await late.onClose;
     expect(document.querySelector('iframe[srcdoc*="private preview"]')).not.toBeInTheDocument();

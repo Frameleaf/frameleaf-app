@@ -8,6 +8,7 @@
    */
   import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import { backupMoment } from '$lib/components/frameleaf/settings/backup-time';
   import { BackupFileStatus } from '$lib/constants';
   import { backupFileVersion } from '$lib/frameleaf/maintenance-page';
   import { handleDeleteDatabaseBackup, handleDownloadDatabaseBackup } from '$lib/services/database-backups.service';
@@ -30,13 +31,7 @@
   const filesizeText = $derived(getBytesWithUnit(filesize, 1));
   const size = $derived(`${filesizeText[0]} ${filesizeText[1]}`);
 
-  const backupDateTime = $derived.by(() => {
-    const dateMatch = filename.match(/\d+T\d+/);
-    if (dateMatch) {
-      return DateTime.fromFormat(dateMatch[0], "yyyyMMdd'T'HHmmss", { zone: timezone }).toLocal();
-    }
-    return null;
-  });
+  const backupDateTime = $derived(backupMoment(filename, timezone) ?? null);
 
   const when = $derived(backupDateTime?.toLocaleString(DateTime.DATETIME_MED) ?? $t('unknown_date'));
   const relativeTime = $derived(backupDateTime?.toRelative({ locale: $locale }));

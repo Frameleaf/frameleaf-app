@@ -57,7 +57,7 @@ describe('AboutDialog (S-4)', () => {
       'href',
       'https://github.com/immich-app/immich',
     );
-    expect(screen.getByRole('heading', { name: 'Version History' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Version history' })).toBeInTheDocument();
     // The upstream grid's "Immich" version row is gone.
     expect(screen.queryByText('Immich', { selector: 'dt' })).not.toBeInTheDocument();
 

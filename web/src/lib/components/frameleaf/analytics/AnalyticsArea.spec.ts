@@ -48,7 +48,10 @@ describe('AnalyticsArea', () => {
   it('reads the scope and range in the address', async () => {
     state.url = new URL(`http://localhost/admin/system-settings?area=analytics&scope=${library}&range=90days`);
     render(AnalyticsArea);
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument());
+    // The page heading is there from the start; the report's own Export action marks it loaded.
+    expect(screen.getByRole('heading', { level: 1, name: en.frameleaf_analytics_heading })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument());
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(sdk.getAnalyticsReport).toHaveBeenCalledWith({ scope: library, range: AnalyticsRange.$90Days });
   });
 
@@ -82,7 +85,7 @@ describe('AnalyticsArea', () => {
     expect(report).toHaveAttribute('inert');
     expect(screen.getByText(en.frameleaf_analytics_loading)).toHaveAttribute('role', 'status');
     rejectNext(new Error('scope unavailable'));
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load analytics'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Analytics did not load. Try again.'));
     expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();
   });
 
@@ -90,6 +93,8 @@ describe('AnalyticsArea', () => {
     sdk.getAnalyticsReport.mockRejectedValue(new Error('boom'));
     state.url = new URL('http://localhost/admin/system-settings?area=analytics');
     render(AnalyticsArea);
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load analytics'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Analytics did not load. Try again.'));
+    // The page keeps its heading above the error.
+    expect(screen.getByRole('heading', { level: 1, name: en.frameleaf_analytics_heading })).toBeInTheDocument();
   });
 });

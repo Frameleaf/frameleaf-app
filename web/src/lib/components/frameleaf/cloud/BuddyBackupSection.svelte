@@ -3,6 +3,8 @@
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
@@ -50,7 +52,11 @@
   const linked = $derived(cloudManager.status?.state === 'linked');
   const entitled = $derived(linked && !!cloudManager.license?.entitlements.cloudBackup);
   const presentation = $derived(buddyBackupPresentation(status, linked, entitled));
+  /** A reason written in this file, safe to show as it is. */
+  class BuddyFailure extends Error {}
   let failure = $state('');
+  let loading = $state(false);
+  let loadFailed = $state(false);
   let notice = $state('');
   let busy = $state(false);
   let setup = $state(false);
@@ -87,15 +93,30 @@
     try {
       await run();
     } catch (error) {
+      // A sentence written here, or the server's own reason. Never the transport's wording.
       failure =
-        getServerErrorMessage(error) ??
-        (error instanceof Error ? error.message : $t('frameleaf_buddy_buddy_backup_is_unavailable_try_again'));
+        error instanceof BuddyFailure
+          ? error.message
+          : (getServerErrorMessage(error) ?? $t('frameleaf_buddy_buddy_backup_is_unavailable_try_again'));
     } finally {
       busy = false;
     }
   };
   const load = async () => {
     status = await getBuddyBackupStatus();
+    loadFailed = false;
+  };
+  /** The first read of the page: a failure is shown in place with a way to try again. */
+  const loadStatus = async () => {
+    loading = true;
+    loadFailed = false;
+    try {
+      await load();
+    } catch {
+      loadFailed = true;
+    } finally {
+      loading = false;
+    }
   };
   const editSettings = () => {
     const s = status?.settings;
@@ -142,7 +163,7 @@
         checked.mounts.some((mount) => !mount.available) ||
         checked.configurationFiles.some((file) => !file.available)
       ) {
-        throw new Error($t('frameleaf_buddy_coverage_unavailable'));
+        throw new BuddyFailure($t('frameleaf_buddy_coverage_unavailable'));
       }
       const buddySettingsDto: BuddySettingsDto = {
         directory,
@@ -204,7 +225,7 @@
   const wrapKit = () =>
     action(async () => {
       if (passphrase !== repeatPassphrase) {
-        throw new Error($t('frameleaf_buddy_the_passphrases_do_not_match'));
+        throw new BuddyFailure($t('frameleaf_buddy_the_passphrases_do_not_match'));
       }
       try {
         const encrypted = await wrapBuddyRecoveryKit({ buddyEscrowWrapDto: { passphrase } });
@@ -223,7 +244,7 @@
         return;
       }
       if (file.size > 40 * 1024) {
-        throw new Error($t('frameleaf_buddy_choose_an_encrypted_recovery_package_under_40_kib'));
+        throw new BuddyFailure($t('frameleaf_buddy_choose_an_encrypted_recovery_package_under_40_kib'));
       }
       try {
         const escrow = JSON.parse(await file.text()) as BuddyEscrowDto;
@@ -247,7 +268,7 @@
         return;
       }
       if (file.size > 64 * 1024) {
-        throw new Error($t('frameleaf_buddy_choose_a_frameleaf_buddy_recovery_kit_under_64_kib'));
+        throw new BuddyFailure($t('frameleaf_buddy_choose_a_frameleaf_buddy_recovery_kit_under_64_kib'));
       }
       const buddyKitDto = JSON.parse(await file.text()) as BuddyKitDto;
       status = recovering
@@ -284,7 +305,7 @@
     });
   onMount(() => {
     const stopCloud = cloudManager.listen();
-    void action(load);
+    void loadStatus();
     const timer = setInterval(() => {
       if (!document.hidden && !busy) {
         void load().catch(() => {});
@@ -303,7 +324,16 @@
 <div class="frameleaf-cloud buddy" class:status-grid={view === 'status'} data-section="buddy-backup">
   {#if failure}<p class="fc-notice is-error" role="alert">{failure}</p>{/if}
   {#if notice}<p class="fc-notice" role="status">{notice}</p>{/if}
-  {#if !status}<p role="status">{$t('frameleaf_buddy_loading_buddy_backup')}</p>
+  {#if !status}
+    {#if loadFailed}
+      <InlineError message={$t('frameleaf_buddy_status_not_loaded')} onRetry={loadStatus} retrying={loading} />
+    {:else}
+      <div class="buddy-loading" role="status" aria-busy="true" aria-label={$t('frameleaf_buddy_loading_buddy_backup')}>
+        <Skeleton variant="text" width="40%" />
+        <Skeleton variant="text" lines={3} />
+        <Skeleton variant="block" height="var(--fl-space-10)" />
+      </div>
+    {/if}
   {:else}
     {#if !status.enabled}<p class="fc-notice">
         {$t('frameleaf_buddy_new_buddy_backups_are_not_enabled_on_this_server_existing_restore_points_remain_av')}
@@ -878,8 +908,15 @@
     align-items: start;
     gap: 1rem;
   }
-  .status-grid > p {
+  .status-grid > p,
+  .status-grid > .buddy-loading,
+  .status-grid > :global(.fl-inline-error) {
     grid-column: 1 / -1;
+  }
+  .buddy-loading {
+    display: grid;
+    gap: var(--fl-space-3);
+    max-width: 68ch;
   }
   .buddy :global(.fc-card) {
     margin-bottom: 1rem;

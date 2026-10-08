@@ -16,6 +16,7 @@
   import AuthPasswordQuality from '$lib/components/frameleaf/AuthPasswordQuality.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import CountUp from '$lib/components/frameleaf/CountUp.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Logo from '$lib/components/frameleaf/Logo.svelte';
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
@@ -152,6 +153,8 @@
   let secrets = $state({ email: '', password: '', confirm: '', setupCode: '' });
   let errors = $state<Record<string, string>>({});
   let formError = $state('');
+  /** Open Frameleaf stopped because the choices could not be saved. */
+  let saveFailed = $state(false);
   let direction = $state(1);
   let introReady = $state(false);
   /** The welcome figures start counting as the logo lands, one after another. */
@@ -184,6 +187,12 @@
   const linked = $derived(choices.linked);
   const context = $derived({ secrets, storageWritable: storage ? storage.writable : null, frameleafSignIn });
   const chapterAt = $derived(chapterIndex(current.chapter));
+  /**
+   * The rail's line. Linking completes the account chapter, so the moment the link lands the line
+   * draws on to the next chapter instead of waiting for Continue.
+   */
+  const linkDrawn = $derived(current.id === 'account' && choices.linked);
+  const railAt = $derived(Math.min(setupChapters.length - 1, chapterAt + (linkDrawn ? 1 : 0)));
   const last = $derived(setup.step === steps.length - 1);
   const blocked = $derived(!validateStep(setup, current.id, context).ok);
 
@@ -278,6 +287,7 @@
     void accountPart;
     errors = {};
     formError = '';
+    saveFailed = false;
     if (firstStep) {
       firstStep = false;
       return;
@@ -448,11 +458,19 @@
     }
     busy = true;
     formError = '';
+    saveFailed = false;
     choicesSaved = false;
     finishPhase = 'saving';
     try {
       const current = await getConfig();
-      await handleSystemConfigSave(applySetupChoices(current, setup));
+      // Setup says what it is doing on the button, so no "Settings saved" toast. A refused save
+      // stops here: nothing after it runs, and the page says so with a way to try again.
+      const saved = await handleSystemConfigSave(applySetupChoices(current, setup), { notifySaved: false });
+      if (!saved) {
+        saveFailed = true;
+        finishPhase = '';
+        return;
+      }
       choicesSaved = true;
       finishPhase = 'starting';
       if (needsReindex(current, setup)) {
@@ -858,7 +876,7 @@
       <aside class="frs-rail">
         <Logo variant="lockup" surface="dark" size="tiny" class="frs-rail-logo" />
         <nav aria-label={$t('frameleaf_setup_chapters')}>
-          <ol style:--frs-progress={chapterAt / (setupChapters.length - 1)}>
+          <ol style:--frs-progress={railAt / (setupChapters.length - 1)} data-drawn={linkDrawn || undefined}>
             {#each setupChapters as chapter, position (chapter.id)}
               {@const first = steps.findIndex((entry) => entry.chapter === chapter.id)}
               {@const reachable = first >= 0 && first <= setup.reached}
@@ -911,7 +929,14 @@
               {/if}
             </header>
             <div class="frs-body">
-              {#if formError}
+              {#if saveFailed}
+                <InlineError
+                  compact
+                  message={$t('frameleaf_setup_finish_save_failed')}
+                  onRetry={finish}
+                  retrying={busy}
+                />
+              {:else if formError}
                 <p class="auth-error" role="alert">
                   <Icon icon={mdiAlertCircleOutline} size="16" /><span>{formError}</span>
                 </p>

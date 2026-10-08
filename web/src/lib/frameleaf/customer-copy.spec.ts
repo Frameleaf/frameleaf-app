@@ -13,6 +13,42 @@ import { join } from 'node:path';
 
 const BANNED = /\bImmich\b|\b[Ff]ork(?:s|ed)?\b|\bDTOs?\b|worker-admission proof|\b[Rr]un[Pp]od\b/;
 
+/**
+ * The voice rule (BRAND.md, decision 10): short, plain, reassuring. Copy never congratulates itself
+ * ("successfully"), never shouts, never apologises or pleads, and never describes the software
+ * ("Unable to", "Failed to", "An error occurred") when it can say what is still true and what to do.
+ */
+const SHOUTING = /successfully|!|\b(?:oops|whoops|sorry)\b/i;
+const VOICE_BANNED = new RegExp(
+  `${SHOUTING.source}|\\bplease\\b|\\bassets?\\b|\\bunable to\\b|\\bfailed to\\b|\\berror occurred\\b`,
+  'i',
+);
+
+/** Keys written for Frameleaf: `frameleaf_*` at the top level and inside `admin`, `errors` and the groups. */
+const isFrameleafKey = (key: string) => /(?:^|\.)frameleaf_/.test(key);
+
+/** Frameleaf keys allowed to break the voice rule, each with its reason. */
+const VOICE_EXCEPTIONS: Record<string, string> = {
+  frameleaf_ack_group_studio_assets: 'the acknowledgements heading for the fonts and tools Studio bundles, not photos',
+};
+
+/**
+ * Inherited keys that still shout or say "successfully". None is read by the web app (no reference
+ * under `web/src`), so their wording is left as it was; a key that the web app starts to use comes
+ * off this list and gets rewritten.
+ */
+const SHOUTING_EXCEPTIONS = new Set([
+  'admin.note_cannot_be_changed_later',
+  'admin.paths_validated_successfully',
+  'advanced_settings_clear_image_cache_success',
+  'assets_restore_confirmation',
+  'bulk_delete_duplicates_confirmation',
+  'empty_trash_confirmation',
+  'pin_code_changed_successfully',
+  'reset_sqlite_success',
+  'setting_image_viewer_original_subtitle',
+]);
+
 const root = join(import.meta.dirname, '../../../..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
@@ -70,6 +106,36 @@ describe('customer-facing copy (FL-168 naming rule)', () => {
     expect(bad).toEqual([]);
   });
 
+  it('keeps Frameleaf copy in the brand voice', () => {
+    const messages = flat(JSON.parse(read('i18n/en.json')) as Record<string, unknown>);
+    const frameleaf = messages.filter(([key]) => isFrameleafKey(key));
+    expect(frameleaf.length).toBeGreaterThan(1000);
+    const bad = frameleaf
+      .filter(([key, text]) => !(key in VOICE_EXCEPTIONS) && VOICE_BANNED.test(text))
+      .map(([key, text]) => `${key}: ${text}`);
+    expect(bad).toEqual([]);
+    // An exception that no longer needs to be one is removed, so the list cannot grow stale.
+    const texts = new Map(messages);
+    expect(Object.keys(VOICE_EXCEPTIONS).filter((key) => !VOICE_BANNED.test(texts.get(key) ?? ''))).toEqual([]);
+  });
+
+  it('never says "successfully" or shouts, in any key the web app reads', () => {
+    const messages = flat(JSON.parse(read('i18n/en.json')) as Record<string, unknown>);
+    const bad = messages
+      .filter(([key, text]) => !SHOUTING_EXCEPTIONS.has(key) && SHOUTING.test(text))
+      .map(([key, text]) => `${key}: ${text}`);
+    expect(bad).toEqual([]);
+    const texts = new Map(messages);
+    expect([...SHOUTING_EXCEPTIONS].filter((key) => !SHOUTING.test(texts.get(key) ?? ''))).toEqual([]);
+    // The exceptions are only for keys the web app does not read.
+    const source = files('web/src')
+      .filter((path) => /\.(?:svelte|ts)$/.test(path) && !path.endsWith('.spec.ts'))
+      .map((path) => read(path))
+      .join('\n');
+    const leaf = (key: string) => key.split('.').at(-1)!;
+    expect([...SHOUTING_EXCEPTIONS].filter((key) => new RegExp(`\\b${leaf(key)}\\b`).test(source))).toEqual([]);
+  });
+
   it('keeps i18n/en.json sorted', () => {
     const check = (value: Record<string, unknown>, path: string) => {
       const keys = Object.keys(value);
@@ -105,6 +171,21 @@ describe('customer-facing copy (FL-168 naming rule)', () => {
     }
     for (const text of ['@frameleaf/ui', 'frameleaf-server', 'IMMICH_HOST', 'Frameleaf Cloud', 'forklift']) {
       expect(BANNED.test(text), text).toBe(false);
+    }
+    for (const text of [
+      'Edits applied successfully',
+      'Copied to clipboard!',
+      'Oops, try that again',
+      'Please check your inbox',
+      'Removed 3 assets',
+      'Unable to load albums',
+      'Failed to delete backup.',
+      'An error occurred',
+    ]) {
+      expect(VOICE_BANNED.test(text), text).toBe(true);
+    }
+    for (const text of ['Edits saved', 'Your albums did not load. Try again.', 'Removed 3 items', 'A pleased owner']) {
+      expect(VOICE_BANNED.test(text), text).toBe(false);
     }
   });
 });

@@ -2,7 +2,6 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -12,8 +11,8 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
-  import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import SearchAsk from '$lib/components/frameleaf/SearchAsk.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import {
     DISCOVERY_QUERY_PARAMETER,
     discoverySearchRequest,
@@ -64,10 +63,8 @@
     type MetadataSearchDto,
     type SmartSearchDto,
   } from '@frameleaf/sdk';
-  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
-    mdiArrowLeft,
     mdiContentSaveOutline,
     mdiImageSearchOutline,
     mdiMagnify,
@@ -93,8 +90,31 @@
   const isLoading = $derived(searchSession.loading);
   let askQuery = $state('');
   const askResponse = $derived(searchSession.askResponse);
-  let scrollY = $state(0);
+  /**
+   * The results scroll inside the shell's content area (UserPageLayout), not the window. The page is
+   * hidden while the viewer is open, which drops that area's offset, so the last one is kept here and
+   * put back when the viewer closes.
+   */
+  let scroller: HTMLElement | undefined;
   let scrollYHistory = 0;
+  const trackScroller = (node: HTMLElement) => {
+    scroller = node;
+    const onScroll = () => {
+      // A hidden page reads 0; that is not somewhere the person scrolled to.
+      if (node.scrollTop) {
+        scrollYHistory = node.scrollTop;
+      }
+    };
+    node.addEventListener('scroll', onScroll, { passive: true });
+    return {
+      destroy() {
+        node.removeEventListener('scroll', onScroll);
+        if (scroller === node) {
+          scroller = undefined;
+        }
+      },
+    };
+  };
 
   type SearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
   let searchQuery = $derived(page.url.searchParams.get(QueryParameter.QUERY));
@@ -172,6 +192,9 @@
     untrack(() => {
       const query = JSON.parse(key) as LibrarySearchQuery | null;
       searchSession.reset(query);
+      // A different search starts at its top.
+      scrollYHistory = 0;
+      scroller?.scrollTo({ top: 0, behavior: 'instant' });
       askFailed = false;
       loadFailed = false;
       if (query?.kind === 'ask') {
@@ -179,12 +202,6 @@
       }
       handlePromiseError(loadNextPage());
     });
-  });
-
-  $effect(() => {
-    if (scrollY) {
-      scrollYHistory = scrollY;
-    }
   });
 
   afterNavigate(({ from }) => {
@@ -202,13 +219,9 @@
       previousRoute = Route.explore();
     }
 
-    tick()
-      .then(() => {
-        window.scrollTo(0, scrollYHistory);
-      })
-      .catch(() => {
-        // do nothing
-      });
+    // After the page is shown again and the grid has its height back.
+    const top = scrollYHistory;
+    void tick().then(() => requestAnimationFrame(() => scroller?.scrollTo({ top, behavior: 'instant' })));
   });
 
   const onAssetDelete = (assetIds: string[]) => {
@@ -656,214 +669,202 @@
   }
 </script>
 
-<svelte:window bind:scrollY />
-
 <OnEvents {onAlbumAddAssets} {onPersonUpdate} {onPersonFacesChange} />
 
-{#if hasSearchQuery}
-  <!--
-    The results toolbar, in the Library's order: how many, what narrows them (each chip opens the
-    filters at its own section, Clear all removes them), then Filter and Save search.
-  -->
-  <div class="frameleaf search-toolbar" data-theme={appTheme}>
-    <p class="search-count" role="status">
-      {#if searchResultAssets.length > 0}
-        {$t('frameleaf_search_results_count', {
-          values: { count: searchResultAssets.length, more: hasMore ? 'yes' : 'no' },
-        })}
-      {/if}
-    </p>
-    <!-- SD-12: the results page's chips use the search palette's chip (SearchChip, search-palette.css .sp-token) -->
-    <section
-      id="search-chips"
-      class="frameleaf search-chips"
-      data-theme={appTheme}
-      aria-label={$t('frameleaf_search_active_filters')}
-    >
-      {#each filterChips as chip (chip.field)}
-        <SearchChip
-          label={chip.label}
-          removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
-          onRemove={() => removeFilterCondition(chip.field)}
-          onOpen={discoveryQuery ? () => requestFilterPanel(filterSectionForField(chip.field)) : undefined}
-        />
-      {/each}
-      {#if discoveryQuery}
-        <!-- FL-48: the text, the similar-photo reference and the space are chips of their own. -->
-        {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
-          {@const label = chip.value ? `${$t(chip.labelKey)}: ${chip.value}` : $t(chip.labelKey)}
-          <SearchChip
-            {label}
-            removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
-            onRemove={() => removeContext(chip.key)}
-          />
-        {/each}
-      {:else}
-        {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
-          {@const value = terms[searchKey]}
-          {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
-          <SearchChip
-            removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: name } })}
-            onRemove={() => removeFilter(searchKey as keyof SearchTerms)}
-          >
-            {name}{#if value !== true && searchKey !== 'queryAssetId'}:
-              {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
-                {getHumanReadableDate(value)}
-              {:else if searchKey === 'personIds' && Array.isArray(value)}
-                {#key personNamesVersion}
-                  {#await getPersonName(value) then personName}
-                    {personName}
-                  {/await}
-                {/key}
-              {:else if searchKey === 'petIds' && Array.isArray(value)}
-                {#await getPetNames(value) then petNames}
-                  {petNames}
-                {/await}
-              {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
-                {#await getTagNames(value) then tagNames}
-                  {tagNames}
-                {/await}
-              {:else if searchKey === 'rating'}
-                {$t('rating_count', { values: { count: value ?? 0 } })}
-              {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
-                {getHumanReadableImageEnrichmentFilter(value)}
-              {:else if value === null || value === ''}
-                {$t('unknown')}
-              {:else}
-                {value}
-              {/if}
-            {/if}
-          </SearchChip>
-        {/each}
-      {/if}
-      <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
-    </section>
-    <div class="search-actions">
-      <button type="button" class="button" onclick={() => requestFilterPanel('all')}>
-        <Icon icon={mdiTuneVariant} size="16" aria-hidden />
-        {$t('frameleaf_search_results_filter')}
-      </button>
-      {#if discoveryQuery}
-        <button type="button" class="button" onclick={() => (saving = true)}>
-          <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
-          {$t('frameleaf_search_save_search')}
-        </button>
-      {/if}
-    </div>
-  </div>
-{/if}
-
-<section class="m-4 mb-12 max-h-screen bg-(--fl-canvas)">
-  <section id="search-content">
-    {#if searchLocation.kind === 'rejected'}
-      <!-- FL-48: a damaged or newer search link fails safely and says why, instead of erroring. -->
-      <p class="mx-auto mt-24 max-w-3xl px-6 text-center text-sm text-(--fl-muted)" role="status">
-        {$t(
-          searchLocation.problem === 'unsupported-version'
-            ? 'frameleaf_search_bridge_link_newer'
-            : 'frameleaf_search_bridge_link_damaged',
-        )}
+<!-- Inside the app shell like every other page: the rail, and the top bar with the one search entry. -->
+<UserPageLayout scrollbar={false} use={[trackScroller]}>
+  {#if hasSearchQuery}
+    <!--
+      The results toolbar, in the Library's order: how many, what narrows them (each chip opens the
+      filters at its own section, Clear all removes them), then Filter and Save search.
+    -->
+    <div class="frameleaf search-toolbar" data-theme={appTheme}>
+      <p class="search-count" role="status">
+        {#if searchResultAssets.length > 0}
+          {$t('frameleaf_search_results_count', {
+            values: { count: searchResultAssets.length, more: hasMore ? 'yes' : 'no' },
+          })}
+        {/if}
       </p>
-    {/if}
-    {#if typeof terms.query === 'string' && terms.query.trim()}
-      <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
-      <VideoMomentResults query={terms.query} />
-    {/if}
-    {#if !hasSearchQuery && showAskSearch}
-      <!-- FL-31: Ask about your photos, in the search palette's language (SearchAsk.svelte). -->
-      <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-2 sm:px-6">
-        <SearchAsk
-          bind:query={askQuery}
-          response={askResponse}
-          loading={isAskLoading}
-          problem={askProblem}
-          matches={searchResultAssets.length}
-          onAsk={(query) => handlePromiseError(updateAskSearchUrl(query))}
-          onRetry={retryAsk}
-        />
-
-        {#if askResponse && searchResultAssets.length > 0}
-          <ResultsView
-            assets={timelineAssets}
-            downloadFileName={searchDownloadFileName}
-            onEndReached={() => void loadNextAskPage()}
-            onRemoved={onAssetDelete}
-            onSelectAll={handleSelectAll}
-            onOpen={(asset) => void navigateToAsset(asset)}
+      <!-- SD-12: the results page's chips use the search palette's chip (SearchChip, search-palette.css .sp-token) -->
+      <section
+        id="search-chips"
+        class="frameleaf search-chips"
+        data-theme={appTheme}
+        aria-label={$t('frameleaf_search_active_filters')}
+      >
+        {#each filterChips as chip (chip.field)}
+          <SearchChip
+            label={chip.label}
+            removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
+            onRemove={() => removeFilterCondition(chip.field)}
+            onOpen={discoveryQuery ? () => requestFilterPanel(filterSectionForField(chip.field)) : undefined}
           />
+        {/each}
+        {#if discoveryQuery}
+          <!-- FL-48: the text, the similar-photo reference and the space are chips of their own. -->
+          {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
+            {@const label = chip.value ? `${$t(chip.labelKey)}: ${chip.value}` : $t(chip.labelKey)}
+            <SearchChip
+              {label}
+              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
+              onRemove={() => removeContext(chip.key)}
+            />
+          {/each}
+        {:else}
+          {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
+            {@const value = terms[searchKey]}
+            {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
+            <SearchChip
+              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: name } })}
+              onRemove={() => removeFilter(searchKey as keyof SearchTerms)}
+            >
+              {name}{#if value !== true && searchKey !== 'queryAssetId'}:
+                {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
+                  {getHumanReadableDate(value)}
+                {:else if searchKey === 'personIds' && Array.isArray(value)}
+                  {#key personNamesVersion}
+                    {#await getPersonName(value) then personName}
+                      {personName}
+                    {/await}
+                  {/key}
+                {:else if searchKey === 'petIds' && Array.isArray(value)}
+                  {#await getPetNames(value) then petNames}
+                    {petNames}
+                  {/await}
+                {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
+                  {#await getTagNames(value) then tagNames}
+                    {tagNames}
+                  {/await}
+                {:else if searchKey === 'rating'}
+                  {$t('rating_count', { values: { count: value ?? 0 } })}
+                {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
+                  {getHumanReadableImageEnrichmentFilter(value)}
+                {:else if value === null || value === ''}
+                  {$t('unknown')}
+                {:else}
+                  {value}
+                {/if}
+              {/if}
+            </SearchChip>
+          {/each}
+        {/if}
+        <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
+      </section>
+      <div class="search-actions">
+        <button type="button" class="button" onclick={() => requestFilterPanel('all')}>
+          <Icon icon={mdiTuneVariant} size="16" aria-hidden />
+          {$t('frameleaf_search_results_filter')}
+        </button>
+        {#if discoveryQuery}
+          <button type="button" class="button" onclick={() => (saving = true)}>
+            <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
+            {$t('frameleaf_search_save_search')}
+          </button>
         {/if}
       </div>
-    {:else if hasSearchQuery && searchResultAssets.length > 0}
-      <ResultsView
-        assets={timelineAssets}
-        downloadFileName={searchDownloadFileName}
-        onEndReached={() => void loadNextPage()}
-        onRemoved={onAssetDelete}
-        onSelectAll={handleSelectAll}
-        onOpen={(asset) => void navigateToAsset(asset)}
-      />
-    {:else if hasSearchQuery && loadFailed}
-      <div class="frameleaf search-state" data-theme={appTheme}>
-        <InlineError
-          title={$t('frameleaf_search_results_failed_title')}
-          message={$t('frameleaf_search_failed_hint')}
-          onRetry={retrySearch}
-        />
-      </div>
-    {:else if hasSearchQuery && !isLoading}
-      <div class="frameleaf search-state" data-theme={appTheme}>
-        <EmptyState
-          icon={mdiImageSearchOutline}
-          title={$t('frameleaf_search_results_empty_title')}
-          message={$t('frameleaf_search_results_empty_body')}
-          action={{ label: $t('frameleaf_search_results_edit'), icon: mdiPencilOutline, onClick: openSearchPalette }}
-          secondaryAction={emptySecondary}
-        />
-      </div>
-    {:else if !hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected'}
-      <!-- Never a blank page: without Ask, the way in is the search palette itself. -->
-      <div class="frameleaf search-state" data-theme={appTheme}>
-        <EmptyState
-          icon={mdiMagnify}
-          title={$t('frameleaf_search_title')}
-          message={$t('frameleaf_search_results_start_body')}
-          action={{ label: $t('search'), icon: mdiMagnify, onClick: openSearchPalette }}
-        />
-      </div>
-    {/if}
+    </div>
+  {/if}
 
-    {#if isLoading && hasSearchQuery && searchResultAssets.length === 0}
-      <!-- The first page is on its way: the grid's shape rather than a spinner. -->
-      <div class="frameleaf search-skeleton" data-theme={appTheme} aria-busy="true">
-        <span class="sr-only">{$t('loading')}</span>
-        {#each SKELETON_TILES as tile (tile)}
-          <Skeleton variant="tile" />
-        {/each}
-      </div>
-    {:else if isLoading && searchResultAssets.length > 0}
-      <div class="frameleaf search-more" data-theme={appTheme}>
-        <Spinner size="xl" />
-      </div>
-    {/if}
-  </section>
+  <section class="m-4 mb-12 bg-(--fl-canvas)">
+    <section id="search-content">
+      {#if searchLocation.kind === 'rejected'}
+        <!-- FL-48: a damaged or newer search link fails safely and says why, instead of erroring. -->
+        <p class="mx-auto mt-8 max-w-3xl px-6 text-center text-sm text-(--fl-muted)" role="status">
+          {$t(
+            searchLocation.problem === 'unsupported-version'
+              ? 'frameleaf_search_bridge_link_newer'
+              : 'frameleaf_search_bridge_link_damaged',
+          )}
+        </p>
+      {/if}
+      {#if typeof terms.query === 'string' && terms.query.trim()}
+        <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
+        <VideoMomentResults query={terms.query} />
+      {/if}
+      {#if !hasSearchQuery && showAskSearch}
+        <!-- FL-31: Ask about your photos, in the search palette's language (SearchAsk.svelte). -->
+        <div class="mx-auto mt-8 flex w-full max-w-5xl flex-col gap-8 px-2 sm:px-6">
+          <SearchAsk
+            bind:query={askQuery}
+            response={askResponse}
+            loading={isAskLoading}
+            problem={askProblem}
+            matches={searchResultAssets.length}
+            onAsk={(query) => handlePromiseError(updateAskSearchUrl(query))}
+            onRetry={retryAsk}
+          />
 
-  <section>
+          {#if askResponse && searchResultAssets.length > 0}
+            <ResultsView
+              assets={timelineAssets}
+              downloadFileName={searchDownloadFileName}
+              onEndReached={() => void loadNextAskPage()}
+              onRemoved={onAssetDelete}
+              onSelectAll={handleSelectAll}
+              onOpen={(asset) => void navigateToAsset(asset)}
+            />
+          {/if}
+        </div>
+      {:else if hasSearchQuery && searchResultAssets.length > 0}
+        <ResultsView
+          assets={timelineAssets}
+          downloadFileName={searchDownloadFileName}
+          onEndReached={() => void loadNextPage()}
+          onRemoved={onAssetDelete}
+          onSelectAll={handleSelectAll}
+          onOpen={(asset) => void navigateToAsset(asset)}
+        />
+      {:else if hasSearchQuery && loadFailed}
+        <div class="frameleaf search-state" data-theme={appTheme}>
+          <InlineError
+            title={$t('frameleaf_search_results_failed_title')}
+            message={$t('frameleaf_search_failed_hint')}
+            onRetry={retrySearch}
+          />
+        </div>
+      {:else if hasSearchQuery && !isLoading}
+        <div class="frameleaf search-state" data-theme={appTheme}>
+          <EmptyState
+            icon={mdiImageSearchOutline}
+            title={$t('frameleaf_search_results_empty_title')}
+            message={$t('frameleaf_search_results_empty_body')}
+            action={{ label: $t('frameleaf_search_results_edit'), icon: mdiPencilOutline, onClick: openSearchPalette }}
+            secondaryAction={emptySecondary}
+          />
+        </div>
+      {:else if !hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected'}
+        <!-- Never a blank page: without Ask, the way in is the search palette itself. -->
+        <div class="frameleaf search-state" data-theme={appTheme}>
+          <EmptyState
+            icon={mdiMagnify}
+            title={$t('frameleaf_search_title')}
+            message={$t('frameleaf_search_results_start_body')}
+            action={{ label: $t('search'), icon: mdiMagnify, onClick: openSearchPalette }}
+          />
+        </div>
+      {/if}
+
+      {#if isLoading && hasSearchQuery && searchResultAssets.length === 0}
+        <!-- The first page is on its way: the grid's shape rather than a spinner. -->
+        <div class="frameleaf search-skeleton" data-theme={appTheme} aria-busy="true">
+          <span class="sr-only">{$t('loading')}</span>
+          {#each SKELETON_TILES as tile (tile)}
+            <Skeleton variant="tile" />
+          {/each}
+        </div>
+      {:else if isLoading && searchResultAssets.length > 0}
+        <div class="frameleaf search-more" data-theme={appTheme}>
+          <Spinner size="xl" />
+        </div>
+      {/if}
+    </section>
+
     <!-- FL-33 cleanup: the legacy select bar is gone; the Frameleaf selection bar floats over the
-         results, so the search entry stays available while a selection is being made. -->
-    <!-- The shell's top bar in miniature: the same material, height and hairline, with the way back
-         in the leading track and the search entry in the centre one. -->
-    <header class="frameleaf fl-material search-bar" data-theme={appTheme}>
-      <div class="search-bar-lead">
-        <IconButton label={$t('back')} onclick={() => goto(previousRoute)}>
-          <Icon icon={mdiArrowLeft} size={ICON_SIZE.xl} aria-hidden />
-        </IconButton>
-      </div>
-      <!-- FL-49: the same single search entry as the top bar; it reads the current
-           search from the URL, so reopening it resumes this query. -->
-      <SearchEntry />
-    </header>
+         results. The search entry is the shell's own, in the top bar; it reads the current search from
+         the URL, so reopening it resumes this query (FL-49). -->
   </section>
-</section>
+</UserPageLayout>
 
 {#if discoveryQuery}
   <div class="frameleaf search-dialogs" data-theme={appTheme}>
@@ -879,34 +880,13 @@
 />
 
 <style>
-  /*
-   * The page's own bar, drawn as the shell's top bar (TopBar.svelte .fl-topbar): same material,
-   * height, hairline and three tracks, so the search entry sits where it does everywhere else.
-   */
-  .search-bar {
-    position: fixed;
-    inset: 0 0 auto;
-    z-index: var(--fl-z-sticky);
-    display: grid;
-    grid-template-columns: minmax(max-content, 1fr) minmax(0, 30rem) minmax(max-content, 1fr);
-    align-items: center;
-    column-gap: var(--fl-space-4);
-    height: var(--fl-topbar-height);
-    padding: var(--fl-safe-top, 0px) var(--fl-space-3) 0;
-    background: var(--fl-material);
-    border-bottom: 1px solid var(--fl-material-edge);
-  }
-  .search-bar-lead {
-    display: flex;
-    align-items: center;
-  }
   /* One row, left-aligned like the Library's: count, chips with Clear all, then the actions. */
   .search-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--fl-space-2) var(--fl-space-3);
-    margin-top: 6rem;
+    margin-top: var(--fl-space-2);
     padding-inline: var(--fl-space-4);
     background: transparent;
   }

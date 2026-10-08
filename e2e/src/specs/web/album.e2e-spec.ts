@@ -388,7 +388,7 @@ test.describe('Album', () => {
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toContain('"exposure":0.7');
     await page.goto(albumUrl);
     await page.getByRole('button', { name: `Account menu for ${owner.name}` }).click();
-    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/auth\/login/);
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
     await expect

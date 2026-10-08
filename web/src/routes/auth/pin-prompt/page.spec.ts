@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+import { clearLocksRevealed, isRevealingLocks } from '$lib/components/timeline/lock-reveal';
 import { sessionAccess, setSessionLockPending } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -35,6 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
   setSessionLockPending(false);
+  clearLocksRevealed();
   vi.mocked(unlockAuthSession).mockResolvedValue(undefined as never);
   vi.mocked(lockAuthSession).mockResolvedValue(undefined as never);
   vi.mocked(invalidateAll).mockResolvedValue(undefined as never);
@@ -223,9 +225,13 @@ describe('PIN prompt', () => {
     expect(lockAuthSession).toHaveBeenCalledOnce();
     expect(screen.getByLabelText<HTMLInputElement>('Enter your PIN').value).toBe('');
     expect(goto).not.toHaveBeenCalled();
+    // Nothing was revealed by a PIN that did not unlock.
+    expect(isRevealingLocks()).toBe(false);
 
     await enter('654321');
     await waitFor(() => expect(goto).toHaveBeenCalledWith(data.continueUrl));
+    // The accepted PIN opens the reveal window, so Locked tiles sharpen into view on the next page.
+    expect(isRevealingLocks()).toBe(true);
     expect(unlockAuthSession).toHaveBeenNthCalledWith(
       2,
       { sessionUnlockDto: { pinCode: '654321' } },

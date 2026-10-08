@@ -28,7 +28,7 @@
   } = $props();
 </script>
 
-<span class="chip">
+<span class="chip fl-continuous-corners">
   {#if icon}
     <span class="chip-icon" aria-hidden="true"><Icon {icon} size="15" /></span>
   {:else}
@@ -51,14 +51,19 @@
     max-width: 100%;
     align-items: center;
     gap: 0.375rem;
-    padding-inline-start: 0.5rem;
+    padding: 3px 4px 3px 8px;
     font-size: var(--fl-font-small);
     /* The same accent-tinted chip as the search palette and the search results (SearchChip). */
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--fl-radius-control-compact);
     background: color-mix(in srgb, var(--fl-accent) 22%, transparent);
     color: var(--fl-text);
     font-weight: 500;
+  }
+  @supports (corner-shape: squircle) {
+    .chip {
+      border-radius: calc(var(--fl-radius-control-compact) * 1.8);
+    }
   }
   .chip-icon {
     display: inline-grid;
@@ -71,12 +76,17 @@
   }
   button {
     flex-shrink: 0;
+    min-width: 0;
+    min-height: 0;
     background: transparent;
     color: inherit;
     border: 0;
-    border-radius: var(--fl-radius-pill);
+    border-radius: var(--fl-radius-xs);
   }
+  /* Above the remove target (below), so reaching for the mark never takes a press meant for a label. */
   .chip-label {
+    position: relative;
+    z-index: 1;
     flex-shrink: 1;
     padding: 0;
     font: inherit;
@@ -86,9 +96,25 @@
   .chip-label:hover {
     text-decoration: underline;
   }
+  /*
+   * The remove mark is 20px so the chip keeps its height and width; the pseudo-element keeps the
+   * pointer target at the full control height around it.
+   */
   .chip-remove {
+    position: relative;
     display: inline-grid;
     place-items: center;
-    min-width: 44px;
+    width: 20px;
+    height: 20px;
+    padding: 2px;
+    cursor: pointer;
+  }
+  .chip-remove::after {
+    position: absolute;
+    inset: calc((20px - var(--fl-control-height)) / 2);
+    content: '';
+  }
+  .chip-remove:hover {
+    background: color-mix(in srgb, var(--fl-text) 10%, transparent);
   }
 </style>

@@ -110,3 +110,21 @@ it('submits only selected variable names and allows declaration capture to be re
   await waitFor(() => expect(sdkMock.configureBuddyBackup).toHaveBeenCalledTimes(2));
   expect(sdkMock.configureBuddyBackup.mock.calls[1][0].buddySettingsDto).not.toHaveProperty('bootConfiguration');
 });
+
+it('shows a plain failure with Try again when the status does not load, never the transport error', async () => {
+  sdkMock.getBuddyBackupStatus.mockRejectedValueOnce(
+    new Error('Expected a JSON response (http://127.0.0.1/api/admin/buddy-backup, HTTP 502, content-type: text/plain)'),
+  );
+  const { container } = render(BuddyBackupSection, { view: 'status' });
+  // a placeholder in the shape of the page while the first read is out
+  expect(container.querySelector('.buddy-loading[aria-busy="true"] .fl-skeleton')).not.toBeNull();
+  const failure = await screen.findByRole('alert');
+  expect(failure).toHaveTextContent(en.frameleaf_buddy_status_not_loaded);
+  expect(container).not.toHaveTextContent(/JSON|HTTP 502/);
+  expect(container.querySelector('.buddy-loading')).toBeNull();
+  expect(screen.queryByText(en.frameleaf_buddy_loading_buddy_backup)).toBeNull();
+
+  await fireEvent.click(within(failure).getByRole('button', { name: en.frameleaf_error_retry }));
+  expect(await screen.findByText(en.frameleaf_buddy_my_backup)).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).toBeNull();
+});

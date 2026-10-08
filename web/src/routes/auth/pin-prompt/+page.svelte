@@ -3,6 +3,7 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
+  import { markLocksRevealed } from '$lib/components/timeline/lock-reveal';
   import {
     SESSION_UNLOCK_TIMEOUT_MS,
     sessionAccess,
@@ -239,6 +240,8 @@
       if (!active) {
         return;
       }
+      // What the PIN reveals sharpens into view on the page this opens (AssetTile).
+      markLocksRevealed();
       await goto(data.continueUrl);
     } catch (error) {
       isVerified = false;

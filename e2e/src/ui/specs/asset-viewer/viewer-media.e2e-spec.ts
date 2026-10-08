@@ -88,7 +88,7 @@ test.describe('viewer media sources', () => {
 
     const badge = page.getByTestId('viewer-live-badge');
     await expect(badge).toHaveAccessibleName('Play live clip');
-    await expect(page.getByTestId('asset-viewer-navbar-actions').getByLabel('Play Motion Photo')).toHaveCount(0);
+    await expect(page.getByTestId('asset-viewer-navbar-actions').getByLabel('Play motion photo')).toHaveCount(0);
     // MediaViewer.jsx:1535-1551: a mouse plays the clip while it hovers the badge, and a press toggles it.
     // A mouse click therefore both enters (play) and toggles (stop), so the press is made from the keyboard.
     await badge.hover();

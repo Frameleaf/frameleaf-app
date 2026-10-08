@@ -5,7 +5,9 @@ import type { QueueSnapshot } from '$lib/types';
 
 export class QueueManager {
   #snapshots = $state<QueueSnapshot[]>([]);
-  #queues: QueueResponseDto[] = $derived(this.#snapshots.at(-1)?.snapshot ?? []);
+  // The last list the server gave. A poll that fails, or a tick nobody is listening to, records a
+  // gap in the history but leaves this alone, so the page keeps what it showed instead of emptying.
+  #queues = $state<QueueResponseDto[]>([]);
 
   #interval?: ReturnType<typeof setInterval>;
   #listenerCount = 0;
@@ -36,10 +38,11 @@ export class QueueManager {
   }
 
   async refresh(tick = false) {
-    this.#snapshots.push({
-      timestamp: DateTime.now().toMillis(),
-      snapshot: this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined,
-    });
+    const snapshot = this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined;
+    if (snapshot) {
+      this.#queues = snapshot;
+    }
+    this.#snapshots.push({ timestamp: DateTime.now().toMillis(), snapshot });
     this.#snapshots = this.#snapshots.slice(-30);
   }
 }

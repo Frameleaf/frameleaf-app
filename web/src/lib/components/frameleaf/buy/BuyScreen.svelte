@@ -414,21 +414,23 @@
             </div>
           {/if}
         </div>
-        <div class="buy-packs" role="group" aria-label={$t('frameleaf_buy_credit_add')}>
-          {#each credits as pack (pack.id)}
-            <button
-              type="button"
-              disabled={!pack.storeUrl}
-              onclick={() => (checkout = { product: pack, title: $t('frameleaf_buy_credit_title') })}
-            >
-              <strong>{formatUsd(pack.priceUsd)}</strong>
-              <small>{$t('frameleaf_buy_credit_title')}</small>
-            </button>
-          {/each}
-        </div>
+        {#if credits.length > 0}
+          <div class="buy-packs" role="group" aria-label={$t('frameleaf_buy_credit_add')}>
+            {#each credits as pack (pack.id)}
+              <button
+                type="button"
+                disabled={!pack.storeUrl}
+                onclick={() => (checkout = { product: pack, title: $t('frameleaf_buy_credit_title') })}
+              >
+                <strong>{formatUsd(pack.priceUsd)}</strong>
+                <small>{$t('frameleaf_buy_credit_title')}</small>
+              </button>
+            {/each}
+          </div>
+        {/if}
         <p class="buy-note">
           {#if products.storeUrl}
-            {$t('frameleaf_buy_credit_range', {
+            {$t(credits.length > 0 ? 'frameleaf_buy_credit_range' : 'frameleaf_buy_credit_range_only', {
               values: { min: formatUsd(products.credit.minimumUsd), max: formatUsd(products.credit.maximumUsd) },
             })}
             {$t('frameleaf_buy_credit_fees')}

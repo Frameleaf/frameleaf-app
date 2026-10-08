@@ -267,6 +267,10 @@
   transform: scaleY(var(--frs-progress));
   transition: transform var(--fl-motion-slow) var(--fl-ease);
 }
+/* Link success: the line draws on to the next chapter, a longer and softer move than a step change. */
+.frs-rail ol[data-drawn]::after {
+  transition: transform var(--fl-duration-sheet) var(--fl-snappy);
+}
 .frs-rail li {
   position: relative;
   z-index: 1;
@@ -1570,6 +1574,10 @@
     animation: none;
   }
   /* Movement becomes a short fade. */
+  .frs-rail ol[data-drawn]::after {
+    transition: none;
+    animation: frs-fade-in var(--fl-duration-reduced) var(--fl-ease) both;
+  }
   .frs-ready[data-finishing] li[data-saved] .frs-ready-check {
     animation: frs-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
   }

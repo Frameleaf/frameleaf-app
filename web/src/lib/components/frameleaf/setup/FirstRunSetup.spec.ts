@@ -5,8 +5,10 @@ import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import FirstRunSetup from '$lib/components/frameleaf/setup/FirstRunSetup.svelte';
 import { createSetup, flowSteps } from '$lib/frameleaf/first-run-setup';
+import { handleSystemConfigSave } from '$lib/services/system-config.service';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
+vi.mock('$lib/services/system-config.service', () => ({ handleSystemConfigSave: vi.fn() }));
 
 /** The server config's Frameleaf block, as `GET server/config` answers it before anyone signs in. */
 const serverConfig = (frameleaf: { cloudConfigured: boolean; signInAvailable: boolean }) =>
@@ -185,6 +187,55 @@ describe('FirstRunSetup (FL-176)', () => {
         expect(sdkMock.markCloudTourSeen).toHaveBeenCalledWith({ cloudTourSeenDto: { ending: 'setup' } }),
       );
     });
+  });
+
+  it('stops Open Frameleaf when the choices are not saved, says so in place and tries again', async () => {
+    const config = {
+      storageTemplate: { enabled: false, template: '' },
+      machineLearning: { clip: { modelName: 'model' } },
+      backup: { database: { enabled: true } },
+      newVersionCheck: { enabled: false },
+      map: { enabled: true },
+    };
+    sdkMock.getConfig.mockResolvedValue(config as never);
+    vi.mocked(handleSystemConfigSave).mockResolvedValueOnce(false);
+    const state = createSetup('existing');
+    const last = flowSteps('existing').length - 1;
+    render(FirstRunSetup, {
+      initial: { ...state, step: last, reached: last, choices: { ...state.choices, signedIn: true } },
+      authenticated: true,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Open Frameleaf/ }));
+    const failure = await screen.findByRole('alert');
+    expect(failure).toHaveTextContent(en.frameleaf_setup_finish_save_failed);
+    // setup said it itself: no "Settings saved" toast, and nothing after the save ran
+    expect(handleSystemConfigSave).toHaveBeenCalledWith(expect.anything(), { notifySaved: false });
+    expect(sdkMock.finishFrameleafSetup).not.toHaveBeenCalled();
+    expect(sdkMock.setUserOnboarding).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Open Frameleaf/ })).toBeEnabled();
+
+    vi.mocked(handleSystemConfigSave).mockResolvedValueOnce(true);
+    await fireEvent.click(within(failure).getByRole('button', { name: en.frameleaf_error_retry }));
+    await waitFor(() => expect(sdkMock.finishFrameleafSetup).toHaveBeenCalledOnce());
+    expect(screen.queryByText(en.frameleaf_setup_finish_save_failed)).toBeNull();
+  });
+
+  it('draws the chapter line on to the next chapter once the server is linked', () => {
+    const state = createSetup('existing');
+    const account = flowSteps('existing').findIndex((entry) => entry.id === 'account');
+    const at = (linked: boolean) => {
+      const { container, unmount } = render(FirstRunSetup, {
+        initial: { ...state, step: account, reached: account, choices: { ...state.choices, signedIn: true, linked } },
+        authenticated: true,
+      });
+      const rail = container.querySelector<HTMLElement>('.frs-rail ol')!;
+      const result = { progress: rail.style.getPropertyValue('--frs-progress'), drawn: 'drawn' in rail.dataset };
+      unmount();
+      return result;
+    };
+    // five chapters: Account is the second, and the line reaches the third once linked
+    expect(at(false)).toEqual({ progress: '0.25', drawn: false });
+    expect(at(true)).toEqual({ progress: '0.5', drawn: true });
   });
 
   it('offers a way out to a signed-in admin, but not at the sign-in gate', () => {

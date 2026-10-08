@@ -15,7 +15,7 @@ test.describe('Registration', () => {
   test('admin registration', async ({ page }) => {
     // welcome
     await page.goto('/');
-    await page.getByRole('link', { name: 'Getting Started' }).click();
+    await page.getByRole('link', { name: 'Getting started' }).click();
 
     // FL-176: a new server's first-run setup on the always-dark stage
     await expect(page).toHaveURL('/auth/register');
@@ -273,7 +273,7 @@ test.describe('Sign-in lifecycle', () => {
     });
 
     await page.getByRole('button', { name: `Account menu for ${user.name}` }).click();
-    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/auth\/login/);
 
     const remaining = await page.evaluate(() => ({

@@ -808,7 +808,9 @@ describe('Frameleaf theme contract', () => {
   it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
     const stack = base.get('--fl-family-ui');
     expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));
-    expect(base.get('--fl-family-mono')).toBe(brand.font.mono);
+    // Code and keys are set in the platform's own monospace: SF Mono, Menlo, Consolas, Liberation Mono.
+    expect(base.get('--fl-family-mono')?.replaceAll("'", '')).toBe(brand.font.mono);
+    expect(brand.font.mono).toBe('ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace');
     // The scope sets its own face from the body step of the type scale.
     expect(css).toMatch(/\.fl-media-viewer,\s*\.frameleaf {[^}]*font: var\(--fl-type-body\);/);
     expect(stack?.indexOf('-apple-system')).toBe(0);

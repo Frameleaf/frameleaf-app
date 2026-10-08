@@ -51,7 +51,6 @@
   );
 
   let scrollbarClass = $derived(scrollbar ? 'immich-scrollbar' : 'scrollbar-hidden');
-  let hasTitleClass = $derived(title ? 'top-16 h-[calc(100%-(--spacing(16)))]' : 'top-0 h-full');
   // Everything below the Frameleaf top bar (FL-30), which is 56px, or two rows on phones.
   const heightClass = $derived(
     hideNavbar
@@ -148,52 +147,65 @@
     ></div>
   {/if}
 
-  <main class="relative">
+  <!--
+    Two rows: the title bar takes the height it needs, so a page with several buttons wraps onto a
+    second line instead of spilling out of a fixed row, and the page scrolls in what is left.
+  -->
+  <main class="relative grid grid-rows-[auto_minmax(0,1fr)]">
     <!-- On phones the frosted tab bar floats over the foot of the page (TabBar.svelte). -->
     <!--
       `fl-scope` (tokens.css, base.css): the Frameleaf baseline classes and primitives work in page
       content without a local wrapper, and no element already on these pages is restyled.
     -->
-    <div
-      class="{scrollbarClass} fl-scope absolute {hasTitleClass} w-full overflow-y-auto p-2"
-      style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
-      use:useActions={use}
-    >
-      {@render children?.()}
+    <div class="relative row-start-2 min-h-0">
+      <div
+        class="{scrollbarClass} fl-scope absolute top-0 h-full w-full overflow-y-auto p-2"
+        style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
+        use:useActions={use}
+      >
+        {@render children?.()}
+      </div>
     </div>
 
     {#if title || buttons}
-      <div class="absolute flex h-16 w-full place-items-center justify-between border-b p-2 text-dark">
-        <div class="flex items-center gap-2">
+      <!-- The bar is in the scope too, so a page's own buttons here are Frameleaf controls. -->
+      <div
+        class="fl-scope row-start-1 flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b p-2 text-dark"
+      >
+        <div class="flex min-w-0 items-center gap-2">
           {#if title}
-            <div class="pe-8 outline-none" tabindex="-1" id={headerId}>{title}</div>
+            <div class="truncate pe-6 outline-none" tabindex="-1" id={headerId}>{title}</div>
           {/if}
           {#if description}
-            <p class="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+            <p class="truncate text-sm text-gray-600 dark:text-gray-400">{description}</p>
           {/if}
         </div>
 
-        {@render buttons?.()}
+        {#if buttons || enabledActions.length > 0}
+          <div class="ms-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
+            {@render buttons?.()}
 
-        {#if enabledActions.length > 0}
-          <div class="hidden md:block">
-            <HStack gap={0}>
-              {#each enabledActions as action, i (i)}
-                <Button
-                  variant="ghost"
-                  size="small"
-                  color={action.color ?? 'secondary'}
-                  leadingIcon={action.icon}
-                  onclick={() => action.onAction(action)}
-                  title={action.data?.title}
-                >
-                  {action.title}
-                </Button>
-              {/each}
-            </HStack>
+            {#if enabledActions.length > 0}
+              <div class="hidden md:block">
+                <HStack gap={0}>
+                  {#each enabledActions as action, i (i)}
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      color={action.color ?? 'secondary'}
+                      leadingIcon={action.icon}
+                      onclick={() => action.onAction(action)}
+                      title={action.data?.title}
+                    >
+                      {action.title}
+                    </Button>
+                  {/each}
+                </HStack>
+              </div>
+
+              <ContextMenuButton aria-label={$t('open')} items={actions} class="md:hidden" />
+            {/if}
           </div>
-
-          <ContextMenuButton aria-label={$t('open')} items={actions} class="md:hidden" />
         {/if}
       </div>
     {/if}

@@ -341,7 +341,7 @@ test.describe('Timeline', () => {
       await thumbnailUtils.clickAssetId(page, asset.id);
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${asset.id}`);
-      await page.getByLabel('View next asset').click();
+      await page.getByLabel('View next item').click();
       await assetViewerUtils.waitForViewerLoad(page, nextAsset);
       await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${nextAsset.id}`);
       await page.goBack();
@@ -363,7 +363,7 @@ test.describe('Timeline', () => {
       let index = 0;
       while (index < 15 || onScreen.has(assets[index].id)) {
         index++;
-        await page.getByLabel('View next asset').click();
+        await page.getByLabel('View next item').click();
         await assetViewerUtils.waitForViewerLoad(page, assets[index]);
       }
       await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();
@@ -382,7 +382,7 @@ test.describe('Timeline', () => {
       let back = 0;
       while (back < 15 || onScreen.has(assets.at(-1 - back)!.id)) {
         back++;
-        await page.getByLabel('View previous asset').click();
+        await page.getByLabel('View previous item').click();
         await assetViewerUtils.waitForViewerLoad(page, assets.at(-1 - back)!);
       }
       await page.getByRole('button', { name: /^(Go back|Close viewer)$/ }).click();

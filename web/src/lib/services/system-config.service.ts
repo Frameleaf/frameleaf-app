@@ -59,23 +59,35 @@ export const getSystemConfigActions = (
  * save, which the server reads as "keep the stored credential"; credentials change only through
  * their own dialogs. The read-only `...Configured` flags are left out of both the comparison and
  * the save, so a section whose credential changed meanwhile is not saved again for nothing.
+ *
+ * Resolves `true` when the settings are as asked (saved, or already that way) and `false` when the
+ * save was refused, after the failure toast. A caller that says so itself (first-run setup, a step
+ * of a longer flow) passes `notifySaved: false` to leave out the "Settings saved" toast. Reading
+ * the current settings is not caught: that still rejects, as it always has.
  */
-export const handleSystemConfigSave = async (update: Partial<AdminConfigDto>) => {
+export const handleSystemConfigSave = async (
+  update: Partial<AdminConfigDto>,
+  { notifySaved = true }: { notifySaved?: boolean } = {},
+): Promise<boolean> => {
   const $t = await getFormatter();
   const config = await getConfig();
   const adminConfigDto = forConfigSave({ ...config, ...update });
 
   if (isEqual(forConfigSave(config), adminConfigDto)) {
-    return;
+    return true;
   }
 
   try {
     const newConfig = await updateConfig({ adminConfigDto });
 
     eventManager.emit('SystemConfigUpdate', newConfig);
-    toastManager.primary($t('settings_saved'));
+    if (notifySaved) {
+      toastManager.primary($t('settings_saved'));
+    }
+    return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_save_settings'));
+    return false;
   }
 };
 
