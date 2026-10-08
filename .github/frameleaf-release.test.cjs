@@ -21,6 +21,7 @@ const {
   hash,
   Registry,
   reserveAndStage,
+  releaseFlags,
 } = require("./frameleaf-release.cjs");
 const sha = "a".repeat(40);
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
@@ -1433,5 +1434,98 @@ test("public provenance reads omit missing tokens while authenticated calls reta
   } finally {
     if (previous === undefined) delete process.env.GITHUB_TOKEN;
     else process.env.GITHUB_TOKEN = previous;
+  }
+});
+
+test("rollback binds each image to its qualified release source while preserving reused builds", async (t) => {
+  const qualified = "b".repeat(40);
+  const restoreTag = "frameleaf-v3.2.0-1";
+  const withdrawnTag = "frameleaf-v3.2.0-2";
+  for (const [name, sourceCommit, dryRun] of [
+    ["mismatched source in rehearsal", sha, true],
+    ["mismatched source before publication", sha, false],
+    ["qualified reused build", qualified, true],
+  ]) {
+    await t.test(name, async (t) => {
+      const entries = new Map();
+      const images = VARIANTS.map((spec) => {
+        const f = fixture(spec);
+        entries.set(f.result.digest, f.result);
+        for (const [digest, item] of f.entries) entries.set(digest, item);
+        return {
+          image: `ghcr.io/frameleaf/${spec.image}`,
+          suffix: spec.suffix,
+          digest: f.result.digest,
+          sourceCommit,
+          buildSourceCommit: sha,
+        };
+      });
+      const manifest = {
+        schemaVersion: 3,
+        repository: "Frameleaf/frameleaf-app",
+        tag: restoreTag,
+        sourceCommit: qualified,
+        buildRun: `${SOURCE}/actions/runs/42`,
+        images,
+      };
+      const writes = [];
+      t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+        const prefix = "https://api.github.com/repos/Frameleaf/frameleaf-app/";
+        assert.ok(String(url).startsWith(prefix));
+        const endpoint = String(url).slice(prefix.length);
+        if ((options.method || "GET") !== "GET") {
+          writes.push(endpoint);
+          assert.fail(
+            "Invalid rollback must fail before any publication write",
+          );
+        }
+        let value;
+        if (endpoint === `releases/tags/${withdrawnTag}`)
+          value = { id: 2, draft: false, body: "Notes" };
+        else if (endpoint === `releases/tags/${restoreTag}`)
+          value = {
+            tag_name: restoreTag,
+            target_commitish: qualified,
+            draft: false,
+            prerelease: false,
+            assets: [{ id: 10, name: "release-manifest.json" }],
+          };
+        else if (endpoint === "releases/assets/10") value = manifest;
+        else if (endpoint === "actions/runs/42")
+          value = {
+            head_sha: qualified,
+            head_branch: "fork/main",
+            head_repository: { full_name: "Frameleaf/frameleaf-app" },
+            event: "push",
+            status: "completed",
+            conclusion: "success",
+            path: ".github/workflows/docker.yml",
+          };
+        else assert.fail(`Unexpected rollback fixture endpoint: ${endpoint}`);
+        return new Response(JSON.stringify(value), { status: 200 });
+      });
+      const operation = releaseFlags(
+        {
+          GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+          ACTION: "withdraw",
+          RELEASE_TAG: withdrawnTag,
+          RESTORE_TAG: restoreTag,
+          REASON: "Offline fixture",
+          DRY_RUN: String(dryRun),
+        },
+        {
+          read: async (_image, reference) => {
+            assert.ok(entries.has(reference));
+            return entries.get(reference);
+          },
+        },
+        () =>
+          assert.fail("Rehearsal or invalid rollback must not sign or publish"),
+      );
+      if (sourceCommit !== qualified)
+        await assert.rejects(operation, /Restored image source differs/);
+      else await operation;
+      assert.deepEqual(writes, []);
+    });
   }
 });

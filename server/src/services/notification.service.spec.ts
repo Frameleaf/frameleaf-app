@@ -265,11 +265,29 @@ describe(NotificationService.name, () => {
   });
 
   describe('onConfigUpdate', () => {
-    it('should emit client and server events', () => {
+    it('waits for configuration reconciliation before completing the update', async () => {
+      let finish!: () => void;
+      const reconcile = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+      Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
       const update = { oldConfig: defaults, newConfig: defaults };
-      expect(sut.onConfigUpdate(update)).toBeUndefined();
+      let completed = false;
+      const pending = Promise.resolve(sut.onConfigUpdate(update)).then(() => (completed = true));
+      await Promise.resolve();
+      expect(completed).toBe(false);
       expect(mocks.websocket.clientBroadcast).toHaveBeenCalledWith('on_config_update');
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('ConfigUpdate', update);
+      expect(reconcile).toHaveBeenCalledWith(update);
+      finish();
+      await pending;
+      expect(completed).toBe(true);
+    });
+
+    it('propagates failed remote reconciliation to the configuration caller', async () => {
+      const failure = new Error('Remote configuration reconciliation failed');
+      const reconcile = vi.fn().mockRejectedValue(failure);
+      Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
+      await expect(Promise.try(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
+        failure,
+      );
     });
   });
 

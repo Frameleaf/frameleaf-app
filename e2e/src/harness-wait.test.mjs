@@ -195,7 +195,8 @@ test('reset reads all queues in one request and refuses incomplete or invalid ag
 test('reset skips only empty clean queues and rechecks periodic work without bypassing privacy or failures', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const start = source.indexOf('const headers = asBearerAuth(token);', source.indexOf('drainQueues:'));
-  const end = source.indexOf('                          },\n                        );', start);
+  const tail = 'return operations.length > 0;';
+  const end = source.indexOf(tail, start) + tail.length;
   assert.ok(start >= 0 && end > start);
   const idle = { name: 'idle', hasUnfinishedWork: false, statistics: { failed: 0 } };
   const live = { ...idle, name: 'live', hasUnfinishedWork: true };

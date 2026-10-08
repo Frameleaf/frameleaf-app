@@ -123,9 +123,9 @@ export class NotificationService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigUpdate' })
-  onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
+  async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     this.websocketRepository.clientBroadcast('on_config_update');
-    this.websocketRepository.serverSend('ConfigUpdate', { oldConfig, newConfig });
+    await this.websocketRepository.awaitConfigUpdate({ oldConfig, newConfig });
   }
 
   @OnEvent({ name: 'AppRestart' })

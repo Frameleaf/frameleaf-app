@@ -14,12 +14,27 @@ const DISCOVERY_MS = 5000;
 const transports = new WeakMap<Server, PostgresSocketTransport>();
 
 /** Own the small restart/ACK messages whose Socket.IO emit methods discard publication promises. */
-export const withSocketPublication = async (server: Server, action: () => unknown): Promise<void> => {
+export const withSocketPublication = async (server: Server, action: (workerId: string) => unknown): Promise<void> => {
   const transport = transports.get(server);
   if (!transport) {
     throw new Error('PostgreSQL websocket transport is unavailable');
   }
-  await transport.publish(action);
+  await transport.publish(() => action(transport.workerId));
+};
+
+/** Configuration saves must join remote handlers, not just publish their event. */
+export const withSocketConfigUpdate = async (
+  server: Server,
+  action: (expectedWorkers: readonly string[], publisherWorkerId: string) => Promise<void>,
+): Promise<void> => {
+  const transport = transports.get(server);
+  if (!transport) {
+    throw new Error('PostgreSQL websocket transport is unavailable');
+  }
+  await transport.publish(async () => {
+    const expectedWorkers = await transport.discoverWorkers(server, true);
+    await action(expectedWorkers, transport.workerId);
+  });
 };
 
 /** Adapter 0.5.0 has no readiness promise. Observe successful LISTEN, never a guessed startup sleep. */
@@ -28,7 +43,7 @@ export class PostgresSocketTransport {
   private readonly clients: Set<PoolClient>;
   private readonly listeners = new Map<string, () => void>();
   private readonly listening = new Set<string>();
-  private readonly workerId = randomUUID();
+  readonly workerId = randomUUID();
   private heartbeat?: NodeJS.Timeout;
   private heartbeatWork?: Promise<void>;
   private stopped = false;
@@ -168,11 +183,24 @@ export class PostgresSocketTransport {
   }
 
   /** A restart may not silently succeed with an empty adapter peer cache. No SQL connection is held while waiting. */
-  async discoverWorkers(server: Server): Promise<number> {
-    const { rows } = await this.pool.query<{ count: number }>(`SELECT COUNT(*)::integer AS count
-      FROM public.frameleaf_websocket_worker WHERE expires_at > clock_timestamp()`);
+  async discoverWorkers(server: Server, excludeSelf: true): Promise<string[]>;
+  async discoverWorkers(server: Server, excludeSelf?: false): Promise<number>;
+  async discoverWorkers(server: Server, excludeSelf = false): Promise<number | string[]> {
+    if (excludeSelf) {
+      await this.initialization;
+    }
+    const { rows } = await this.pool.query<{ count: number; selfLive: boolean; workerIds: string[] }>(
+      `SELECT COUNT(*) FILTER (WHERE NOT $1::boolean OR id <> $2)::integer AS count,
+      COALESCE(bool_or(id = $2), false) AS "selfLive",
+      COALESCE(array_agg(id::text ORDER BY id) FILTER (WHERE id <> $2), ARRAY[]::text[]) AS "workerIds"
+      FROM public.frameleaf_websocket_worker WHERE expires_at > clock_timestamp()`,
+      [excludeSelf, this.workerId],
+    );
+    if (excludeSelf && !rows[0].selfLive) {
+      throw new Error('Configuration publisher is not a live registered websocket worker');
+    }
     const expected = rows[0].count;
-    if (expected === 0) {
+    if (expected === 0 && !excludeSelf) {
       throw new Error('No live websocket workers are available to acknowledge a restart');
     }
     await server.sockets.adapter.init();
@@ -183,7 +211,7 @@ export class PostgresSocketTransport {
       }
       await delay(50);
     }
-    return expected;
+    return excludeSelf ? rows[0].workerIds : expected;
   }
 
   async close() {
