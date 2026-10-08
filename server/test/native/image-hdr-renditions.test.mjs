@@ -1,4 +1,5 @@
-import { watch } from 'node:fs';
+import { watch, statSync } from 'node:fs';
+import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
@@ -16,6 +17,135 @@ const codec = createRequire(import.meta.url)(
   process.env.FRAMELEAF_HDR_BINDING ?? '/usr/local/lib/frameleaf/image-hdr.node',
 );
 const limits = [200_000_000, 1024 ** 3];
+
+test('HDR rendering binds the decoded snapshot to its source checksum before producing any output', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-source-change-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  try {
+    const pixels = new Float32Array(16 * 8 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 16, 8, 1, ...limits);
+    const source = join(folder, 'original.jpg');
+    const prior = Buffer.from('previous working rendition');
+    await writeFile(source, original);
+    await writeFile(join(folder, 'prior.jpg'), prior);
+    const develop = { recipe: defaultDevelopRecipe(), seed: 1, masks: {}, fills: {} };
+    for (const recipe of [undefined, develop]) {
+      const output = join(folder, 'attempt.jpg');
+      await assert.rejects(
+        pool.run('generateHdrRenditions', [source, [{ path: output }], recipe, Buffer.alloc(32, 1)]),
+        /IMAGE_SOURCE_CHANGED/,
+      );
+      assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+      await assert.rejects(
+        pool.run('generateHdrRenditions', [source, [{ path: output }], recipe, Buffer.alloc(31)]),
+        /INVALID_HDR_SOURCE_CHECKSUM/,
+      );
+      for (const algorithm of ['sha1', 'sha256']) {
+        const checksum = createHash(algorithm).update(original).digest();
+        await pool.run('generateHdrRenditions', [source, [{ path: output }], recipe, checksum]);
+        assert.equal(codec.inspect(await readFile(output), ...limits).dynamicRange, 'hdr');
+        await rm(output);
+      }
+    }
+    assert.deepEqual(await readFile(source), original);
+    assert.deepEqual(await readFile(join(folder, 'prior.jpg')), prior);
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('a native worker crash removes partial HDR output before queued work and a fresh retry', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-worker-crash-'));
+  let child;
+  const pool = new SharpProcessPool({
+    workers: 1,
+    pending: 1,
+    createChild: () => {
+      child = fork(new URL('../../dist/queue/sharp-worker.js', import.meta.url), [], {
+        serialization: 'advanced',
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        execArgv: [],
+      });
+      return child;
+    },
+  });
+  let watcher;
+  try {
+    const pixels = new Float32Array(1024 * 512 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 1024, 512, 1, ...limits);
+    const source = join(folder, 'original.jpg');
+    await writeFile(source, original);
+    await writeFile(join(folder, 'prior.jpg'), 'previous working rendition');
+    let killed;
+    watcher = watch(folder, { recursive: true }, (_event, name) => {
+      if (!killed && String(name).endsWith('preview.jpg')) {
+        try {
+          if (statSync(join(folder, String(name))).size > 0) {
+            killed = child;
+            child.kill('SIGKILL');
+          }
+        } catch {
+          /* The native writer may have opened the file without writing yet. */
+        }
+      }
+    });
+    const outputs = [{ path: join(folder, 'preview.jpg'), size: 16 }, { path: join(folder, 'master.jpg') }];
+    const failed = assert.rejects(pool.run('generateHdrRenditions', [source, outputs]), /Sharp child closed.*SIGKILL/);
+    const queued = pool.run('inspectImageEncoding', [source]).then(async () => {
+      assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+    });
+    await Promise.all([failed, queued]);
+    assert.ok(killed);
+    assert.throws(() => process.kill(killed.pid, 0), { code: 'ESRCH' });
+    await pool.run('generateHdrRenditions', [source, outputs]);
+    assert.equal(codec.inspect(await readFile(outputs[1].path), ...limits).dynamicRange, 'hdr');
+    assert.deepEqual(await readFile(source), original);
+    assert.equal(await readFile(join(folder, 'prior.jpg'), 'utf8'), 'previous working rendition');
+  } finally {
+    watcher?.close();
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('ENOSPC during HDR publication rolls back the new set and permits a clean retry', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-disk-full-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  const originalLink = fs.link;
+  try {
+    const pixels = new Float32Array(16 * 8 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+    const original = codec.encode(Buffer.from(pixels.buffer), 16, 8, 1, ...limits);
+    const source = join(folder, 'original.jpg');
+    await writeFile(source, original);
+    await writeFile(join(folder, 'prior.jpg'), 'previous working rendition');
+    const outputs = [{ path: join(folder, 'preview.jpg'), size: 16 }, { path: join(folder, 'master.jpg') }];
+    let published = false;
+    fs.link = async (source, destination) => {
+      if (destination === outputs[1].path) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+      await originalLink(source, destination);
+      if (destination === outputs[0].path) published = true;
+    };
+    syncBuiltinESMExports();
+    await assert.rejects(pool.run('generateHdrRenditions', [source, outputs]), { code: 'ENOSPC' });
+    assert.equal(published, true);
+    assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+    fs.link = originalLink;
+    syncBuiltinESMExports();
+    await pool.run('generateHdrRenditions', [source, outputs]);
+    assert.equal(codec.inspect(await readFile(outputs[1].path), ...limits).dynamicRange, 'hdr');
+    assert.deepEqual(await readFile(source), original);
+    assert.equal(await readFile(join(folder, 'prior.jpg'), 'utf8'), 'previous working rendition');
+  } finally {
+    fs.link = originalLink;
+    syncBuiltinESMExports();
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
 
 test('explicit SDR still export embeds sRGB, strips capture metadata and orients exactly once', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'frameleaf-photo-export-'));

@@ -201,7 +201,12 @@ export class SharpOperations {
     }
   }
 
-  async generateHdrRenditions(input: string | Buffer, outputs: HdrRenditionOutput[], develop?: HdrDevelopRender) {
+  async generateHdrRenditions(
+    input: string | Buffer,
+    outputs: HdrRenditionOutput[],
+    develop?: HdrDevelopRender,
+    checksum?: Buffer,
+  ) {
     if (
       outputs.length === 0 ||
       outputs.length > (develop ? 4 : 2) ||
@@ -222,6 +227,18 @@ export class SharpOperations {
         throw new Error('INVALID_HDR_OUTPUT_FORMAT');
     }
     const bytes = await imageHdrInput(input, this.maxBytes);
+    if (checksum !== undefined) {
+      // Bind the exact decoded snapshot, including replacements after the caller's file checks.
+      if (!Buffer.isBuffer(checksum) || ![20, 32].includes(checksum.length))
+        throw new Error('INVALID_HDR_SOURCE_CHECKSUM');
+      if (
+        !createHash(checksum.length === 32 ? 'sha256' : 'sha1')
+          .update(bytes)
+          .digest()
+          .equals(checksum)
+      )
+        throw new Error('IMAGE_SOURCE_CHANGED');
+    }
     const encoding = imageHdrOperation((codec) => codec.inspect(bytes, this.maxPixels, this.maxBytes));
     if (encoding.dynamicRange !== 'hdr' || !encoding.reconstructionAvailable)
       throw new Error('HDR_RECONSTRUCTION_UNAVAILABLE');
