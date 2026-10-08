@@ -1,0 +1,93 @@
+diff --git a/src/features/export/utils/timeline-to-composition.ts b/src/features/export/utils/timeline-to-composition.ts
+index 3d2bff5d13..407f74a4c8 100644
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -111,7 +111,7 @@ export function convertTimelineToComposition(
+
+         // Store keyframe offset for this item (frames trimmed from start)
+         // This is used to adjust keyframe timing when IO markers cut into a clip
+-        if (additionalTrimStart > 0) {
++        if (additionalTrimStart > 0 && item.type !== 'lottie') {
+           itemKeyframeOffsets.set(item.id, additionalTrimStart)
+         }
+
+@@ -122,6 +122,14 @@ export function convertTimelineToComposition(
+           durationInFrames: newDuration,
+         }
+
++        // Lottie sampling and authored effects use the clip-local timeline clock.
++        // Keep its original extent relative to the range origin; the composition
++        // frame bounds clip output without restarting source time or end envelopes.
++        if (item.type === 'lottie') {
++          adjustedItem.from = itemStart - inPoint!
++          adjustedItem.durationInFrames = item.durationInFrames
++        }
++
+         // Update trim properties for video/audio items
+         // additionalTrimStart/End are in timeline frames, but trim/source properties are in source frames.
+         // Use FPS-aware conversion so non-native source FPS maps correctly.
+diff --git a/src/features/export/utils/timeline-to-composition.test.ts b/src/features/export/utils/timeline-to-composition.test.ts
+index 6f7d51e296..cee92c84bc 100644
+--- a/src/features/export/utils/timeline-to-composition.test.ts
++++ b/src/features/export/utils/timeline-to-composition.test.ts
+@@ -227,3 +227,60 @@ describe('convertTimelineToComposition IO marker conversion', () => {
+     ])
+   })
+ })
++
++it('range rebasing preserves every Lottie source and effect clock without modifying the immutable timeline', () => {
++  const track: TimelineTrack = {
++    id: 'v1',
++    name: 'V1',
++    height: 80,
++    locked: false,
++    visible: true,
++    muted: false,
++    solo: false,
++    order: 0,
++    items: [],
++  }
++  const source = {
++    id: 'lottie',
++    type: 'lottie' as const,
++    src: 'owned',
++    label: 'Owned',
++    trackId: 'v1',
++    from: 2,
++    durationInFrames: 48,
++    frameRate: 30,
++    totalFrames: 60,
++    sourceWidth: 64,
++    sourceHeight: 32,
++    speed: 0.75,
++    reversed: true,
++    loop: true,
++    loopMode: 'pingpong' as const,
++    segmentStart: 3,
++    segmentEnd: 50,
++  }
++  const keyframes: import('@/types/keyframe').ItemKeyframes[] = [
++    {
++      itemId: source.id,
++      properties: [
++        {
++          property: 'opacity',
++          keyframes: [
++            { id: 'first', frame: 0, value: 0, easing: 'linear' },
++            { id: 'last', frame: 47, value: 1, easing: 'linear' },
++          ],
++        },
++      ],
++    },
++  ]
++  const original = structuredClone({ source, keyframes })
++  const range = convertTimelineToComposition([track], [source], [], 24, 1280, 720, 8, 36, keyframes)
++  const converted = range.tracks[0]!.items[0]!
++  expect(converted.from).toBe(-6)
++  expect(converted.durationInFrames).toBe(48)
++  for (const outputFrame of [0, 1, 12, 27]) {
++    expect(outputFrame - converted.from).toBe(outputFrame + 8 - source.from)
++  }
++  expect(range.keyframes).toEqual(keyframes)
++  expect({ source, keyframes }).toEqual(original)
++})
