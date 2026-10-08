@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
 import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
@@ -1108,6 +1109,71 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('project imports, captions, LUTs and graphics', () => {
+    it('matches complete Lottie dependencies against authorized parent and child byte snapshots', async () => {
+      const parentId = newUuid();
+      const childId = newUuid();
+      const animation = Buffer.from(
+        JSON.stringify({ v: '5', layers: [], assets: [{ p: 'outside.png', u: 'https://uncontrolled/' }] }),
+      );
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+        'base64',
+      );
+      const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+      const bindings = [
+        {
+          parent: { kind: 'vector-graphic', id: parentId, checksum: hash(animation) },
+          location: { format: 'lottie-json', entry: null, pointer: '/assets/0/p', role: 'image' },
+          child: { kind: 'project-import', id: childId, checksum: hash(png) },
+        },
+      ];
+      const graph = { graphicId: parentId, studioVectorDependencies: { version: 1, bindings } };
+      const declarations = [
+        {
+          id: parentId,
+          contentType: 'application/json',
+          checksum: hash(animation),
+          path: '/parent',
+          sizeBytes: animation.length,
+          externalReferences: 1,
+        },
+        { id: childId, contentType: 'image/png', checksum: hash(png), path: '/child', sizeBytes: png.length },
+      ];
+      const close = vi.fn(async () => {});
+      mocks.storage.openForRandomRead.mockImplementation((path) => {
+        const bytes = path === '/parent' ? animation : png;
+        return Promise.resolve({ size: bytes.length, read: () => Promise.resolve(Buffer.from(bytes)), close });
+      });
+      const result = await sut.resolveProjectResources(auth, context(graph, { imports: declarations }));
+      expect(result.manifest.complete).toBe(true);
+      expect(result.refused).toEqual([]);
+      expect(result.manifest.entries.map((entry) => entry.key)).toEqual([
+        `vector-graphic:${parentId}`,
+        `project-import:${childId}`,
+      ]);
+      expect(close).toHaveBeenCalledTimes(2);
+      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+      // The library namespace is never silently redirected to the identically named import.
+      const wrong = structuredClone(graph);
+      wrong.studioVectorDependencies.bindings[0].child.kind = 'library-asset';
+      const refused = await sut.resolveProjectResources(auth, context(wrong, { imports: declarations }));
+      expect(refused.manifest.complete).toBe(false);
+      expect(refused.refused).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: StudioResourceKind.LibraryAsset })]),
+      );
+      // A newly read byte snapshot must still match after authorization.
+      mocks.storage.openForRandomRead.mockResolvedValue({
+        size: 4,
+        read: () => Promise.resolve(Buffer.from('evil')),
+        close,
+      });
+      const changed = await sut.resolveProjectResources(auth, context(graph, { imports: declarations }));
+      expect(changed.manifest.complete).toBe(false);
+      expect(changed.refused).toEqual(
+        expect.arrayContaining([expect.objectContaining({ reason: StudioRefusalReason.RemoteSubresource })]),
+      );
+    });
+
     const imports = [
       { id: 'voice-1', contentType: 'audio/wav', checksum: 'v1', sizeBytes: 10, path: '/projects/p/voice-1.wav' },
       { id: 'unfinished', contentType: 'audio/wav', checksum: null, sizeBytes: 0, path: '/projects/p/unfinished.wav' },
