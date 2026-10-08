@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -17,6 +24,8 @@ import {
 import {
   AdminConfigRevisionResponseDto,
   AdminConfigRevisionUpdateDto,
+  ConfigFileActivationResponseDto,
+  ConfigFileReloadDto,
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
   SmartAlbumReevaluateEstimateDto,
@@ -33,6 +42,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import {
   MachineLearningHardwareResponse,
   defaultMachineLearningHardware,
@@ -40,7 +50,16 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { ConfigHistoryKind, credentialHistoryTitle, readConfigHistory } from 'src/utils/config-history.js';
-import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
+import {
+  SYSTEM_CONFIG_CHANGED_MESSAGE,
+  activateFileConfig,
+  clearConfigCache,
+  getConfigRevision,
+  initializeEffectiveConfig,
+  prepareFileConfig,
+  publishFileConfig,
+  withEffectiveConfigWrite,
+} from 'src/utils/config.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { remoteAccessUnavailable, verifiedCustomHost } from 'src/utils/frameleaf-remote-access.js';
 import {
@@ -135,8 +154,56 @@ const copyCredentials = (target: AdminConfigDto, source: AdminConfigDto) => {
 export class SystemConfigService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.SystemConfig })
   async onBootstrap() {
+    await initializeEffectiveConfig(this.configRepos);
     const config = await this.getConfig({ withCache: false });
     await this.eventRepository.emit('ConfigInit', { newConfig: config });
+  }
+
+  async getConfigFileActivation(auth: AuthDto): Promise<ConfigFileActivationResponseDto> {
+    if (!auth.session || auth.apiKey || auth.sharedLink || !auth.user.isAdmin)
+      throw new ForbiddenException('effective_config_admin_session_required');
+    await this.getConfig({ withCache: false });
+    const current = await this.systemMetadataRepository.getEffectiveConfigEpoch();
+    if (current?.sourceKind !== 'file') throw new ConflictException('effective_config_file_required');
+    return { epoch: current.epoch, sourceKind: 'file' };
+  }
+
+  async reloadConfigFile(auth: AuthDto, dto: ConfigFileReloadDto): Promise<ConfigFileActivationResponseDto> {
+    if (!auth.session || auth.apiKey || auth.sharedLink || !auth.user.isAdmin)
+      throw new ForbiddenException('effective_config_admin_session_required');
+    const candidate = await prepareFileConfig(this.configRepos);
+    const oldConfig = await this.getConfig({ withCache: false });
+    // Validators may use SMTP/provider I/O. No DB lock is held during preparation.
+    try {
+      await this.eventRepository.emit('ConfigValidate', { newConfig: candidate, oldConfig });
+    } catch {
+      throw new ConflictException('effective_config_candidate_invalid');
+    }
+    const epoch = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, () =>
+      withEffectiveConfigWrite(this.configRepos, async (repos, tx) => {
+        const user = await tx
+          .selectFrom('user')
+          .select('isAdmin')
+          .where('id', '=', auth.user.id)
+          .where('deletedAt', 'is', null)
+          .forShare()
+          .executeTakeFirst();
+        const live = await currentAuth(tx, auth.user.id, auth.session!.id, true);
+        if (!live || !user?.isAdmin) throw new ForbiddenException('effective_config_admin_session_required');
+        const result = await activateFileConfig(repos, candidate, dto.expectedEpoch);
+        if (!(await currentAuth(tx, auth.user.id, auth.session!.id, true)))
+          throw new ForbiddenException('effective_config_admin_session_required');
+        return result;
+      }),
+    );
+    publishFileConfig(this.configRepos, candidate, epoch);
+    try {
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig: candidate });
+    } catch {
+      // Activation committed. A failed wakeup must not be reported as a rolled-back file change.
+      throw new ServiceUnavailableException('effective_config_activated_notification_pending');
+    }
+    return { epoch: epoch.epoch, sourceKind: 'file' };
   }
 
   async getAdminConfig(): Promise<AdminConfigDto> {
@@ -372,34 +439,45 @@ export class SystemConfigService extends BaseService {
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
       DatabaseLock.SystemConfigUpdate,
       async () => {
-        const current = await this.readConfigForUpdate();
-        if (getConfigRevision(current) !== prepared.revision) {
-          if (expectedRevision !== undefined) {
-            throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const result = await withEffectiveConfigWrite(this.configRepos, async (repos) => {
+            const current = await this.readConfigForUpdate(repos);
+            if (getConfigRevision(current) !== prepared.revision) {
+              if (expectedRevision !== undefined) {
+                throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
+              }
+              return { retry: current };
+            }
+
+            // Credentials are not part of the revision, so one may have been replaced or cleared since
+            // step 1 without the draft becoming stale. Resolve the draft's credentials again against
+            // the settings read under the lock, so a "keep" keeps what is stored now.
+            const credentials = cloneDeep(incoming);
+            resolveCredentials(credentials, current);
+            copyCredentials(prepared.config, credentials);
+
+            // The re-queue reminder is not part of the revision and may have moved since step 1.
+            const description = prepared.config.machineLearning?.imageDescription;
+            if (description) {
+              const saved = current.machineLearning.imageDescription;
+              description.pendingRequeueAt = saved.pendingRequeueAt;
+              if (!prepared.descriptionChanged) {
+                description.lastConfigChangeAt = saved.lastConfigChangeAt;
+              }
+            }
+
+            const saved = await this.updateConfig(prepared.config, repos);
+            return { oldConfig: current, newConfig: saved };
+          });
+          if (result.retry) {
+            // Revalidation may perform provider I/O; never retain the write transaction during it.
+            prepared = await this.prepareAdminConfig(cloneDeep(incoming), undefined, result.retry);
+            continue;
           }
-          prepared = await this.prepareAdminConfig(cloneDeep(incoming), undefined, current);
+          await this.recordConfigHistory(result.oldConfig, result.newConfig, auth, { kind: 'settings' });
+          return result;
         }
-
-        // Credentials are not part of the revision, so one may have been replaced or cleared since
-        // step 1 without the draft becoming stale. Resolve the draft's credentials again against
-        // the settings read under the lock, so a "keep" keeps what is stored now.
-        const credentials = cloneDeep(incoming);
-        resolveCredentials(credentials, current);
-        copyCredentials(prepared.config, credentials);
-
-        // The re-queue reminder is not part of the revision and may have moved since step 1.
-        const description = prepared.config.machineLearning?.imageDescription;
-        if (description) {
-          const saved = current.machineLearning.imageDescription;
-          description.pendingRequeueAt = saved.pendingRequeueAt;
-          if (!prepared.descriptionChanged) {
-            description.lastConfigChangeAt = saved.lastConfigChangeAt;
-          }
-        }
-
-        const saved = await this.updateConfig(prepared.config);
-        await this.recordConfigHistory(current, saved, auth, { kind: 'settings' });
-        return { oldConfig: current, newConfig: saved };
+        throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
       },
     );
 
@@ -523,29 +601,39 @@ export class SystemConfigService extends BaseService {
     // Validators may reach the network (the SMTP check), so the change is validated before the
     // settings lock and written under it (FL-66), starting from the settings read there. When
     // another save landed in between it is checked and validated again against those settings.
-    const checked = await this.prepareCredential(name, value, await this.readConfigForUpdate());
+    let checked = await this.prepareCredential(name, value, await this.readConfigForUpdate());
     if (!checked) {
       return { name, configured: value !== '' };
     }
 
     const result = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
-      const current = await this.readConfigForUpdate();
-      if (getConfigRevision(current) !== checked.revision && !(await this.prepareCredential(name, value, current))) {
-        return;
-      }
-      if (readCredential(current, name) === value) {
-        return;
-      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const changed = await withEffectiveConfigWrite(this.configRepos, async (repos) => {
+          const current = await this.readConfigForUpdate(repos);
+          if (getConfigRevision(current) !== checked!.revision) return { retry: current };
+          if (readCredential(current, name) === value) {
+            return;
+          }
 
-      const newConfig = cloneDeep(current);
-      set(newConfig, CREDENTIAL_PATHS[name], value);
-      const saved = await this.updateConfig(newConfig);
-      // FL-71 (CC-10): the credential's own entry, such as "Updated SMTP password" (CommandCenter.jsx:1447).
-      await this.recordConfigHistory(current, saved, auth, {
-        kind: 'credential',
-        title: credentialHistoryTitle(name, value ? 'replaced' : 'cleared'),
-      });
-      return { oldConfig: current, newConfig: saved };
+          const newConfig = cloneDeep(current);
+          set(newConfig, CREDENTIAL_PATHS[name], value);
+          const saved = await this.updateConfig(newConfig, repos);
+          return { oldConfig: current, newConfig: saved };
+        });
+        if (!changed) return;
+        if (changed.retry) {
+          checked = await this.prepareCredential(name, value, changed.retry);
+          if (!checked) return;
+          continue;
+        }
+        // FL-71 (CC-10): the credential's own entry, such as "Updated SMTP password" (CommandCenter.jsx:1447).
+        await this.recordConfigHistory(changed.oldConfig, changed.newConfig, auth, {
+          kind: 'credential',
+          title: credentialHistoryTitle(name, value ? 'replaced' : 'cleared'),
+        });
+        return changed;
+      }
+      throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
     });
 
     if (!result) {

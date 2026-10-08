@@ -34,9 +34,12 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
       .header({
         [ImmichHeader.CorrelationId]: this.cls.getId(),
         'Content-Type': 'application/json',
-        'Cache-Control': /^\/(?:api\/)?icloud-sync\/edits\/evidence\/?$/i.test(req.path ?? '')
-          ? 'private, no-store'
-          : 'no-store',
+        'Cache-Control':
+          /^\/(?:api\/)?(?:icloud-sync\/edits\/evidence|system-config\/config-file\/(?:activation|reload))\/?$/i.test(
+            req.path ?? '',
+          )
+            ? 'private, no-store'
+            : 'no-store',
       })
       .status(status)
       .json(body);

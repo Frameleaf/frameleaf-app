@@ -10,6 +10,16 @@ A config file can be provided as an alternative to the UI configuration.
 While the config file does not need to include all keys from the below example, specifying `FRAMELEAF_CONFIG_FILE` will disable the ability to edit other properties from the Frameleaf web UI.
 :::
 
+### Activating file changes
+
+The server records the first validated file configuration as an activated epoch. Editing the mounted file does not activate new settings in an already running process. Each worker must have the same configuration file and environment overlay as the server; a worker that cannot reproduce the activated configuration refuses to use different file contents.
+
+An administrator session can read `GET /api/system-config/config-file/activation`, then request `POST /api/system-config/config-file/reload` with only `{ "expectedEpoch": <the returned epoch> }`. The server reads its existing configured path, validates the complete candidate, and commits a new epoch only if the expected epoch still matches. Neither endpoint accepts a filename, configuration contents, credentials, or an environment override. API keys and shared links cannot activate configuration files.
+
+A stale epoch returns `409`; read the current epoch before deciding whether to submit another activation. Invalid or unavailable files leave the activated epoch unchanged. If activation commits but its notification fails, the response is `503` with `effective_config_activated_notification_pending`: the committed epoch remains authoritative. Read the activation endpoint to reconcile before retrying. Responses are private and must not be cached.
+
+Keep the activated file contents available to every worker. A process that has already captured that epoch continues using its immutable validated snapshot; a new process with different or missing contents fails closed. Changing between database and file configuration requires a controlled deployment decision, rather than implicitly replacing the existing source authority.
+
 ### Step 1 - Create a new config file
 
 In JSON format, create a new config file (e.g. `frameleaf-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.

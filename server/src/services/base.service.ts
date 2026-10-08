@@ -90,7 +90,7 @@ import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
-import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
+import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
@@ -378,7 +378,7 @@ export class BaseService {
     return this.configRepository.getWorker();
   }
 
-  private get configRepos() {
+  protected get configRepos() {
     return {
       configRepo: this.configRepository,
       metadataRepo: this.systemMetadataRepository,
@@ -390,13 +390,13 @@ export class BaseService {
     return getConfig(this.configRepos, options);
   }
 
-  updateConfig(newConfig: SystemConfig) {
-    return updateConfig(this.configRepos, newConfig);
+  updateConfig(newConfig: SystemConfig, repos = this.configRepos) {
+    return updateConfig(repos, newConfig);
   }
 
   /** FL-66: the saved configuration straight from storage, for revision checks and updates. */
-  readConfigForUpdate() {
-    return readConfig(this.configRepos);
+  readConfigForUpdate(repos = this.configRepos) {
+    return readConfig(repos);
   }
 
   /**
@@ -409,19 +409,21 @@ export class BaseService {
     history?: { source: ConfigHistorySource; auth?: AuthDto; title?: string },
   ) {
     return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
-      const oldConfig = await this.readConfigForUpdate();
-      const next = cloneDeep(oldConfig);
-      change(next);
-      const newConfig = await this.updateConfig(next);
-      // FL-146 (FL-66): listed in the settings history with its source, under the same lock
-      if (history) {
-        await this.recordConfigChange(oldConfig, newConfig, history.auth, {
+      const result = await withEffectiveConfigWrite(this.configRepos, async (repos) => {
+        const oldConfig = await this.readConfigForUpdate(repos);
+        const next = cloneDeep(oldConfig);
+        change(next);
+        const newConfig = await this.updateConfig(next, repos);
+        return { oldConfig, newConfig };
+      });
+      // Best-effort history remains outside the config transaction, under existing outer serialization.
+      if (history)
+        await this.recordConfigChange(result.oldConfig, result.newConfig, history.auth, {
           kind: 'settings',
           source: history.source,
           title: history.title,
         });
-      }
-      return { oldConfig, newConfig };
+      return result;
     });
   }
 

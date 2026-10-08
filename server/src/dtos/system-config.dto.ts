@@ -223,3 +223,23 @@ const SystemConfigHistoryResponseSchema = z
   .meta({ id: 'SystemConfigHistoryResponseDto' });
 
 export class SystemConfigHistoryResponseDto extends createZodDto(SystemConfigHistoryResponseSchema) {}
+
+/** Reload only the configured server file; no path, configuration or credential is accepted. */
+export class ConfigFileReloadDto extends createZodDto(
+  z
+    .object({
+      expectedEpoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict()
+    .meta({ id: 'ConfigFileReloadDto' }),
+) {}
+
+export class ConfigFileActivationResponseDto extends createZodDto(
+  z
+    .object({
+      epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+      sourceKind: z.literal('file'),
+    })
+    .strict()
+    .meta({ id: 'ConfigFileActivationResponseDto' }),
+) {}

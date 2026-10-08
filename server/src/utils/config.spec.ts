@@ -2,7 +2,14 @@ import { cloneDeep } from 'lodash-es';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
 import { SystemMetadataKey } from 'src/enum.js';
-import { clearConfigCache, getConfig, getConfigRevision, readConfig, updateConfig } from 'src/utils/config.js';
+import {
+  clearConfigCache,
+  getConfig,
+  getConfigRevision,
+  readConfig,
+  updateConfig,
+  withEffectiveConfigWrite,
+} from 'src/utils/config.js';
 import { getMocks } from 'test/utils.js';
 
 describe('getConfigRevision (FL-66 settings revision)', () => {
@@ -103,7 +110,7 @@ describe('canonical system configuration storage', () => {
     draft.frameleafCloud.signIn.buttonText = 'Sign in to the family library';
     draft.oauth.clientSecret = 'saved-oauth-secret';
 
-    const saved = await updateConfig(repos(), draft);
+    const saved = await withEffectiveConfigWrite(repos(), (bound) => updateConfig(bound, draft));
 
     expect(saved).toEqual(draft);
     expect(metadata.get(SystemMetadataKey.SystemConfig)).toEqual({
@@ -112,7 +119,12 @@ describe('canonical system configuration storage', () => {
       oauth: { clientSecret: 'saved-oauth-secret' },
     });
     expect(metadata.get(SystemMetadataKey.SystemConfigHistory)).toEqual(history);
-    expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(1);
+    expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(2);
+    expect(metadata.get(SystemMetadataKey.EffectiveConfigEpoch)).toMatchObject({
+      format: 1,
+      sourceKind: 'database',
+      trashEnabled: draft.trash.enabled,
+    });
     expect(getConfigRevision(saved)).toBe(getConfigRevision(draft));
   });
 
@@ -120,7 +132,7 @@ describe('canonical system configuration storage', () => {
     metadata.set(SystemMetadataKey.SystemConfig, { smartAlbums: { enabled: true } });
     expect((await getConfig(repos(), { withCache: true })).smartAlbums.enabled).toBe(true);
 
-    await updateConfig(repos(), cloneDeep(defaults));
+    await withEffectiveConfigWrite(repos(), (bound) => updateConfig(bound, cloneDeep(defaults)));
 
     expect(metadata.get(SystemMetadataKey.SystemConfig)).toEqual({});
     expect(await getConfig(repos(), { withCache: true })).toEqual(defaults);

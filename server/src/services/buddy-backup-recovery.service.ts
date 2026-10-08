@@ -14,6 +14,8 @@ import { resetQueueAfterRestore } from 'src/queue/store.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
   BuddyRecoveryFiles,
@@ -26,14 +28,16 @@ import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { finalizeBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
+import { publishFileConfig, recoverEffectiveConfig } from 'src/utils/config.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 /** Available in maintenance without booting application jobs, accounts or the Cloud client. */
 @Injectable()
 export class BuddyBackupRecoveryService {
   constructor(
     private repository: BuddyBackupRepository,
-    _config: ConfigRepository,
+    private config: ConfigRepository,
     private backups: DatabaseBackupService,
     private keys: CloudBackupKeyRepository,
   ) {}
@@ -228,23 +232,42 @@ export class BuddyBackupRecoveryService {
       metadata: Array<{ key: SystemMetadataKey; value: unknown }>;
     };
     await assert();
-    await this.repository.db.transaction().execute(async (trx) => {
-      await assert();
-      await trx.deleteFrom('session').execute();
-      // Stopped-worker restore: fence active claims and retain only the queue's safe durable work.
-      await resetQueueAfterRestore(trx);
-      await sql`TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease,
+    const recovered = await new SystemMetadataRepository(this.repository.db).withConfigTransaction(
+      async (metadataRepo, trx) => {
+        await assert();
+        await trx.deleteFrom('session').execute();
+        // Stopped-worker restore: fence active claims and retain only the queue's safe durable work.
+        await resetQueueAfterRestore(trx);
+        await sql`TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease,
         public.frameleaf_websocket_worker, public.socket_io_attachments`.execute(trx);
-      // Restored unfinished jobs describe work from the old server and cannot safely be resumed.
-      await sql`DELETE FROM public.media_operation`.execute(trx);
-      await sql`DELETE FROM public.buddy_backup_reference`.execute(trx);
-      await trx.deleteFrom('system_metadata').where('key', 'in', replacement.keys).execute();
-      for (const row of replacement.metadata)
-        await sql`INSERT INTO system_metadata (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
+        // Restored unfinished jobs describe work from the old server and cannot safely be resumed.
+        await sql`DELETE FROM public.media_operation`.execute(trx);
+        await sql`DELETE FROM public.buddy_backup_reference`.execute(trx);
+        await trx.deleteFrom('system_metadata').where('key', 'in', replacement.keys).execute();
+        for (const row of replacement.metadata)
+          await sql`INSERT INTO system_metadata (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-      await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::text::jsonb)
+        await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::text::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-    });
+        const result = await recoverEffectiveConfig({
+          metadataRepo,
+          configRepo: this.config,
+          logger: LoggingRepository.create(),
+        });
+        await assert();
+        return result;
+      },
+    );
+    await assert();
+    publishFileConfig(
+      {
+        metadataRepo: new SystemMetadataRepository(this.repository.db),
+        configRepo: this.config,
+        logger: LoggingRepository.create(),
+      },
+      recovered.config,
+      recovered.epoch,
+    );
     await files.verify(plan, roots, settings.configurationFiles);
     await this.restoreKeys(plan.manifest, assert);
     await this.restoreBuddySettings(buddy, plan.mode, assert);
@@ -295,27 +318,86 @@ export class BuddyBackupRecoveryService {
     }
     if (previous.id !== id || previous.digest !== digest)
       throw new Error('Settings rollback does not match this recovery');
-    await files.publish(plan, [], settings.configurationFiles);
+    let recovered: Awaited<ReturnType<typeof recoverEffectiveConfig>>;
+    let published = false;
+    let callbackCompleted = false;
+    let priorSystem: unknown;
+    let priorEpoch: Awaited<ReturnType<SystemMetadataRepository['getEffectiveConfigEpoch']>>;
     try {
       await assert();
-      await this.repository.db.transaction().execute(async (trx) => {
-        const old = (previous.system ?? {}) as Record<string, unknown>;
-        const restored = plan.manifest.settings.system as Record<string, unknown>;
-        const merged = plan.mode === 'replace' ? restored : { ...restored, ...old };
-        await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(merged)}::text::jsonb)
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-        for (const row of plan.manifest.settings.users) {
-          if (!(await trx.selectFrom('user').select('id').where('id', '=', row.userId).executeTakeFirst())) continue;
-          await sql`INSERT INTO user_metadata ("userId", key, value) VALUES (${row.userId}::uuid, ${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
+      recovered = await new SystemMetadataRepository(this.repository.db).withConfigTransaction(
+        async (metadataRepo, trx) => {
+          const old = (previous.system ?? {}) as Record<string, unknown>;
+          const restored = plan.manifest.settings.system as Record<string, unknown>;
+          const merged = plan.mode === 'replace' ? restored : { ...restored, ...old };
+          const current = await metadataRepo.get(SystemMetadataKey.SystemConfig);
+          priorSystem = current;
+          priorEpoch = await metadataRepo.getEffectiveConfigEpoch();
+          // A crash after commit may replay the same result; unrelated concurrent settings never get overwritten.
+          if (
+            canonicalJson(current ?? {}) !== canonicalJson(old) &&
+            canonicalJson(current ?? {}) !== canonicalJson(merged)
+          )
+            throw new Error('Settings changed after this recovery was prepared');
+          await assert();
+          published = true;
+          await files.publish(plan, [], settings.configurationFiles);
+          await assert();
+          await metadataRepo.set(SystemMetadataKey.SystemConfig, merged);
+
+          for (const row of plan.manifest.settings.users) {
+            if (!(await trx.selectFrom('user').select('id').where('id', '=', row.userId).executeTakeFirst())) continue;
+            await sql`INSERT INTO user_metadata ("userId", key, value) VALUES (${row.userId}::uuid, ${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
             ON CONFLICT ("userId", key) DO UPDATE SET value = CASE WHEN ${plan.mode === 'replace'} THEN EXCLUDED.value ELSE user_metadata.value END`.execute(
-            trx,
-          );
-        }
-      });
+              trx,
+            );
+          }
+          const result = await recoverEffectiveConfig({
+            metadataRepo,
+            configRepo: this.config,
+            logger: LoggingRepository.create(),
+          });
+          await assert();
+          callbackCompleted = true;
+          return result;
+        },
+      );
     } catch (error) {
-      await files.rollback([], settings.configurationFiles);
+      if (published) {
+        // Once the callback finished, COMMIT may have succeeded even if its response was lost.
+        // An idempotent replay can commit the same epoch, so equality cannot prove rollback.
+        // Transport errors may contain private settings or paths; expose only the settlement disposition.
+        // eslint-disable-next-line preserve-caught-error
+        if (callbackCompleted) throw new Error('Settings recovery commit outcome requires review');
+        try {
+          // A known pre-commit callback failure rolled back its DB transaction. Reacquire
+          // authority and retain it through file rollback so another writer cannot race it.
+          await new SystemMetadataRepository(this.repository.db).withConfigTransaction(async (metadata) => {
+            const currentEpoch = await metadata.getEffectiveConfigEpoch();
+            const currentSystem = await metadata.get(SystemMetadataKey.SystemConfig);
+            if (
+              canonicalJson(currentEpoch) !== canonicalJson(priorEpoch!) ||
+              canonicalJson(currentSystem) !== canonicalJson(priorSystem)
+            )
+              throw new Error('Settings recovery commit outcome requires review');
+            await files.rollback([], settings.configurationFiles);
+          });
+        } catch {
+          throw new Error('Settings recovery commit outcome requires review');
+        }
+      }
       throw error;
     }
+    await assert();
+    publishFileConfig(
+      {
+        metadataRepo: new SystemMetadataRepository(this.repository.db),
+        configRepo: this.config,
+        logger: LoggingRepository.create(),
+      },
+      recovered.config,
+      recovered.epoch,
+    );
     await files.state('database-ready');
     await files.verify(plan, [], settings.configurationFiles);
     await this.restoreKeys(plan.manifest, assert);

@@ -13640,6 +13640,13 @@ export type SyncStreamDto = {
     /** Sync request types */
     types: SyncRequestType[];
 };
+export type ConfigFileActivationResponseDto = {
+    epoch: number;
+    sourceKind: SourceKind;
+};
+export type ConfigFileReloadDto = {
+    expectedEpoch: number;
+};
 export type ImageDescriptionRequeueResponseDto = {
     /** Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here */
     cloudBatches: boolean;
@@ -26254,6 +26261,32 @@ export function updateConfig({ adminConfigDto }: {
     })));
 }
 /**
+ * Get activated file configuration epoch
+ */
+export function getConfigFileActivation(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigFileActivationResponseDto;
+    }>("/system-config/config-file/activation", {
+        ...opts
+    }));
+}
+/**
+ * Activate the configured server file
+ */
+export function reloadConfigFile({ configFileReloadDto }: {
+    configFileReloadDto: ConfigFileReloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ConfigFileActivationResponseDto;
+    }>("/system-config/config-file/reload", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: configFileReloadDto
+    })));
+}
+/**
  * Get system configuration defaults
  */
 export function getConfigDefaults(opts?: Oazapfts.RequestOpts) {
@@ -31117,6 +31150,9 @@ export enum SyncRequestType {
     UserMetadataV1 = "UserMetadataV1",
     PinnedCollectionsV1 = "PinnedCollectionsV1",
     AlbumSourceLinksV1 = "AlbumSourceLinksV1"
+}
+export enum SourceKind {
+    File = "file"
 }
 export enum FrameleafSetupFlow {
     New = "new",

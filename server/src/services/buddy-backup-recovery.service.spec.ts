@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BuddySettings, BuddyState } from 'src/repositories/buddy-backup.repository.js';
+import { SystemMetadataKey } from 'src/enum.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
@@ -62,16 +63,35 @@ describe('Buddy recovery crash barriers', () => {
         settings: { system: { version: 'restored' }, users: [], fork: [] },
       },
     };
-    const query: any = {
-      select: () => query,
-      selectAll: () => query,
-      where: () => query,
-      execute: vi.fn().mockResolvedValue([]),
-      executeTakeFirst: vi.fn().mockResolvedValue({ value: { version: 'original' } }),
+    // Real filesystem crash barriers here; canonical PG authority is covered separately.
+    const metadata = new Map<string, unknown>([[SystemMetadataKey.SystemConfig, { version: 'original' }]]);
+    const queryFor = () => {
+      let key: string;
+      let inserted: { key: string; value: unknown };
+      const query: any = {
+        select: () => query,
+        selectAll: () => query,
+        where: (_column: string, _op: string, value: string) => {
+          key = value;
+          return query;
+        },
+        values: (value: typeof inserted) => {
+          inserted = value;
+          return query;
+        },
+        onConflict: () => query,
+        execute: vi.fn(() => {
+          if (inserted) metadata.set(inserted.key, inserted.value);
+          return Promise.resolve([]);
+        }),
+        executeTakeFirst: vi.fn(() => Promise.resolve(metadata.has(key) ? { value: metadata.get(key) } : undefined)),
+      };
+      return query;
     };
     database = {
-      selectFrom: vi.fn(() => query),
-      transaction: () => ({ execute: async (run: (trx: any) => Promise<void>) => run(database) }),
+      selectFrom: vi.fn(() => queryFor()),
+      insertInto: vi.fn(() => queryFor()),
+      transaction: () => ({ execute: async (run: (trx: any) => Promise<unknown>) => run(database) }),
     };
     const settings: BuddySettings = {
       directory: join(root, 'vault'),
@@ -114,7 +134,7 @@ describe('Buddy recovery crash barriers', () => {
     };
     service = new BuddyBackupRecoveryService(
       repository as never,
-      {} as never,
+      { getEnv: () => ({}) } as never,
       {} as never,
       new CloudBackupKeyRepository(LoggingRepository.create()),
     );
@@ -224,8 +244,9 @@ describe('Buddy recovery crash barriers', () => {
     let committed = false;
     database.transaction = () => ({
       execute: async (run: (trx: any) => Promise<void>) => {
-        await run(database);
+        const result = await run(database);
         committed = true;
+        return result;
       },
     });
     await expect(
@@ -236,12 +257,11 @@ describe('Buddy recovery crash barriers', () => {
     ).rejects.toThrow('power loss');
     const original = await readFile(join(directory, 'settings-rollback.json'));
     expect(JSON.parse(original.toString()).system.version).toBe('original');
-    database.selectFrom.mockImplementation(() => {
-      throw new Error('must reuse durable preimage');
-    });
+    const readsBeforeResume = database.selectFrom.mock.calls.length;
     await service.settings(id, assert);
     await service.settings(id, assert);
     expect(await readFile(join(directory, 'settings-rollback.json'))).toEqual(original);
+    expect(database.selectFrom.mock.calls.length).toBeGreaterThan(readsBeforeResume);
     await writeFile(target, 'corrupted');
     await expect(service.settings(id, assert)).rejects.toThrow('integrity');
   });
