@@ -75,6 +75,9 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
   Licence texts: licenses/texts/multilingual-clip-mit.txt.
 - **PP-OCRv5 text recognition (server and mobile, all language packs)** — PaddlePaddle Authors. Licence: Apache-2.0. https://github.com/PaddlePaddle/PaddleOCR
   Licence texts: licenses/texts/paddleocr-apache.txt.
+- **LaMa big-lama inpainting (ONNX conversion)** — Samsung AI Center Moscow (Suvorov et al., advimman/lama); ONNX conversion by Carve. Licence: Apache-2.0. https://github.com/advimman/lama
+  Clean Up Remove fills (owner decision 2026-10-08): the big-lama weights as the fp32 ONNX export lama_fp32.onnx by Carve (huggingface.co/Carve/LaMa-ONNX, revision c3c0c9e468934d62e79c329e35d82dd09ff8c444, SHA-256 1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6), served unchanged by the Frameleaf model mirror. Runs on the instance-local ML worker only.
+  Licence texts: licenses/texts/apache-2.0.txt.
 - **Qwen2.5-VL Instruct 3B and 7B (photo descriptions)** — Qwen team, Alibaba Cloud; OpenVINO conversions by llmware. Licence: Qwen Research License (3B, the default); Apache-2.0 (7B) (to confirm). https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
   The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
   Licence texts: licenses/texts/qwen-research-license.txt, licenses/texts/apache-2.0.txt.

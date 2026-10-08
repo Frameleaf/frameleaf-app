@@ -1024,8 +1024,8 @@ export class AssetDevelopService {
    * Clean Up Remove (native API): generate the fill for an area on the server. The area and some context
    * around it go to the instance-local ML worker with a mask of the area; the filled pixels of the area's
    * bounding box come back and are stored as a fill artifact, which the recipe's Remove operation names
-   * as its `fill`. Nothing leaves this server. No inpainting model ships today: the model is the owner's
-   * decision, and until a worker has one this answers 503 `develop_inpaint_unavailable`.
+   * as its `fill`. Nothing leaves this server. The worker fills with LaMa (big-lama); while no local worker
+   * can (ML off, remote-only, or the model is not available to it) this answers 503 `develop_inpaint_unavailable`.
    */
   async generateFill(
     auth: AuthDto,
