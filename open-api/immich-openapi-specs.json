@@ -103683,7 +103683,7 @@
             "type": "string"
           },
           "formats": {
-            "description": "Containers the check verified writing, such as `mp4`, `webm` or `mov`",
+            "description": "Containers and versioned paired-output profiles the check verified writing",
             "items": {
               "maxLength": 30,
               "type": "string"
@@ -113269,6 +113269,14 @@
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
+            "type": "array"
+          },
+          "sidecarOutputFormats": {
+            "description": "Output formats whose versioned paired SRT profile this same session verified",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFormat"
+            },
+            "maxItems": 1,
             "type": "array"
           }
         },

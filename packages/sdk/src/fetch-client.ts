@@ -7843,6 +7843,8 @@ export type StudioRenderCandidateDto = {
     maxBitDepth: number;
     /** Output formats whose exact writer and container this session verified */
     outputFormats: StudioExportFormat[];
+    /** Output formats whose versioned paired SRT profile this same session verified */
+    sidecarOutputFormats?: StudioExportFormat[];
 };
 export type StudioRenderEvidenceDto = {
     /** Per-session StudioExport proof; aggregate fields must not authorize an export */
@@ -11374,7 +11376,7 @@ export type RenderWorkerAdmissionDto = {
     /** Digest of the engine and patches actually loaded */
     engineDigest: string;
     enrolmentSecret: string;
-    /** Containers the check verified writing, such as `mp4`, `webm` or `mov` */
+    /** Containers and versioned paired-output profiles the check verified writing */
     formats?: string[];
     /** GPU memory measured by the conformance check */
     gpuMemoryBytes: string | null;
