@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "45bef091fb7863749beaac7c9ef3f59499085738",
+  "sourceCommit": "21da63a443fad2724b065ce38c152e703c32481c",
   "sourceHashes": {
     "src/enum.ts": "0b6a31366aab5d2a6c674532ebd84330d3ea082595c13cb67494846a53dfaf05",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -54,7 +54,7 @@
     "src/schema/tables/icloud-edit-authority.table.ts": "ba14f25a37c620555ca64a52d2568b08cd23353d8c88ff8c033b028749b312e5",
     "src/schema/tables/integrity-report.table.ts": "8dbdb2fb24d919983fade4571fe85e6d20d632e315f0a769cc13f32c46bf56a5",
     "src/schema/tables/library.table.ts": "256a198db452500e8f96ccbbedd68ac4a4565a34ac0bec98a0525290c9d70d05",
-    "src/schema/tables/media-operation.table.ts": "5025f755d74e6c0fdab9554748cc2c6f00775a01d6b6b4344282974314b69bf2",
+    "src/schema/tables/media-operation.table.ts": "9934aeb4c2ab6c303c88bf66ea465d56c49efb9b00c17635a2ad9de0aef7e66c",
     "src/schema/tables/memory-asset-audit.table.ts": "5f4914dd96def13ddaaf55a3dd89ace3354e7381482f1ee8e1244a86b403e9ec",
     "src/schema/tables/memory-asset.table.ts": "d290cffde479e426de022f987418fa9b9b209739a7b4ac419c65e7046e9be4b7",
     "src/schema/tables/memory-audit.table.ts": "a6d87f1dcc89b9439d00384438f567c6e36f730ebccac7cb5855ff3eac81a5f6",
@@ -100,7 +100,7 @@
     "src/schema/tables/smart-search.table.ts": "b15a8c6b72292743d6c50eae0713f75da2163ce88e277efb7d53db99df76de7b",
     "src/schema/tables/stack-audit.table.ts": "c0f1a2202dabba97fc270ac95c0510dad8f18597abe94a488ba248454076aff1",
     "src/schema/tables/stack.table.ts": "d4aaadc5c5bcd1b25d49172c7e4d77fb03ed96b558709d3257863e86e0a3c1d5",
-    "src/schema/tables/studio-export.table.ts": "34588cf6f79be063318b3ddd96e06d30f9869df2cfc35fea056d168a388687a9",
+    "src/schema/tables/studio-export.table.ts": "a19caf2aa0fe338904669a8d0e3f45451d2813e59f94e80e131e87ecee7ffb31",
     "src/schema/tables/studio-preview.table.ts": "4e3c16975b6382a390f6fa7988c4417ab2b682ca6187e393c9fea676f13c130d",
     "src/schema/tables/studio-project.table.ts": "87a5bc8eb42430c11b491953e885407494ab4cd47a801aabb0d3480eb7b19943",
     "src/schema/tables/sync-checkpoint.table.ts": "6c9f888e2e0ff5b4dc53518a2bc50c932c589e631ba9f38612be6fbcc10ce7a0",
@@ -128,6 +128,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "4db6a8754593481ebc093c38bc3aefa16cd78ca1517ffa37dce25da6560b79cf",
-  "rawMetadataSha256": "dd6b3ba0ac81cb0fc31441dca6c056b7719aaba162d9039dacc9e3dcc6acf9dc"
+  "dumpSha256": "194fba04c17db8adef8d8b0cc47272b31d6e4f36b475ed1b252fa2310d0b9dd5",
+  "rawMetadataSha256": "34572ea21bdb4092d6dd70a8da147c2d63f499c51222513c4b2ec607d26f424e"
 }
