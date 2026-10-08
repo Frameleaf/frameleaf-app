@@ -14,7 +14,8 @@
     "dnsTxt": "https://api.frameleaf.cloud/v1/remote/dns/txt",
     "backupGrant": "https://api.frameleaf.cloud/v1/backup/grant",
     "mlGrant": "https://id.frameleaf.cloud/token",
-    "licenseLinkCode": "https://api.frameleaf.cloud/v1/licenses/redeem-link-code"
+    "licenseLinkCode": "https://api.frameleaf.cloud/v1/licenses/redeem-link-code",
+    "push": "https://push.frameleaf.cloud"
   },
   "jwks": { "oidc": "https://id.frameleaf.cloud/jwks", "keys": "https://api.frameleaf.cloud/.well-known/frameleaf-keys.json" },
   "regions": ["eu", "na"],
