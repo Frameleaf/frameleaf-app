@@ -1,14 +1,25 @@
-import { Kysely, sql } from 'kysely';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { TrashReviewRow, TrashScopeRow } from 'src/utils/trash-review.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
+import {
+  associatedSeeds,
+  requireEditFamilyCoverage,
+  withEditFamilyTransaction,
+} from 'src/repositories/icloud-edit-transaction.js';
 
 import { DB } from 'src/schema/index.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
-import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId, isLocked, isNotLocked } from 'src/utils/locked.js';
 import {
   TrashReviewAction,
   escapeLikeTerm,
@@ -248,42 +259,173 @@ export class TrashRepository {
     ids: string[] | undefined,
     options: TrashScopeOptions,
     verify: (rows: TrashScopeRow[]) => boolean,
+    auth?: AuthDto,
+    capture?: (sequencedAssetIds: string[]) => void,
+  ): Promise<string[] | null> {
+    if (!auth || ![TrashReviewAction.Trash, TrashReviewAction.Restore, TrashReviewAction.RestoreAll].includes(action))
+      return this.db
+        .transaction()
+        .execute((trx) => this.applyReviewedWithin(trx, userId, action, ids, options, verify));
+    if (auth.user.id !== userId || auth.sharedLink) throw new ForbiddenException('trash_owner_required');
+    const source = trashActionSourceStatus(action);
+    const hints = await this.scope(this.db, userId, source, options)
+      .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
+      .select('asset.id')
+      .execute();
+    const selected = hints.map((row) => row.id).sort();
+    const seed = await associatedSeeds(this.db, userId, selected);
+    const committed = await withEditFamilyTransaction(
+      this.db,
+      userId,
+      seed,
+      async (tx) => {
+        const binding = requireEditFamilyCoverage(tx, seed, seed.items.length > 0);
+        const locked = [...new Set([...selected, ...binding.family.assetIds])].sort();
+        if (locked.length > 0)
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('ownerId', '=', userId)
+            .where('id', 'in', locked)
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+        const refreshed = await associatedSeeds(tx, userId, selected);
+        requireEditFamilyCoverage(tx, refreshed, refreshed.items.length > 0);
+        const live = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
+        if (!live) throw new ForbiddenException('trash_owner_session_required');
+        const freshOptions = { lockedOwnerId: getLockedOwnerId(live), privacy: getHiddenContentQueryOptions(live) };
+        const eligible = await this.scope(tx, userId, source, freshOptions)
+          .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
+          .select('asset.id')
+          .execute();
+        if (eligible.some((row) => !selected.includes(row.id))) throw new ConflictException('trash_selection_changed');
+        if (refreshed.items.length > 0 && action === TrashReviewAction.Trash && !binding.epoch?.trashEnabled)
+          throw new ConflictException('edit_trash_disabled');
+        const changed = await this.applyReviewedWithin(
+          tx,
+          userId,
+          action,
+          eligible.map((row) => row.id),
+          freshOptions,
+          verify,
+        );
+        const sequenced = changed?.filter((id) => binding.family.assetIds.includes(id)) ?? [];
+        if (sequenced.length > 0) {
+          const target = trashActionTargetStatus(action) as AssetStatus.Active | AssetStatus.Trashed;
+          const stackIds = (
+            await tx.selectFrom('asset').select('stackId').where('id', 'in', sequenced).execute()
+          ).flatMap((row) => (row.stackId ? [row.stackId] : []));
+          const stacks =
+            stackIds.length > 0
+              ? await tx
+                  .selectFrom('stack')
+                  .select(['id', 'primaryAssetId'])
+                  .where('ownerId', '=', userId)
+                  .where('id', 'in', [...new Set(stackIds)])
+                  .orderBy('id')
+                  .forUpdate()
+                  .execute()
+              : [];
+          const snapshots = [];
+          for (const stack of stacks) {
+            const members = await tx
+              .selectFrom('asset')
+              .select('id')
+              .where('stackId', '=', stack.id)
+              .orderBy('id')
+              .execute();
+            if (members.some((row) => !binding.family.assetIds.includes(row.id)))
+              throw new ConflictException('edit_family_unstable');
+            snapshots.push({
+              stackId: stack.id,
+              primaryAssetId: stack.primaryAssetId,
+              memberAssetIds: members.map((row) => row.id),
+            });
+          }
+          await new AssetLocalEffectRepository(tx).append(tx, userId, randomUUID(), {
+            origin: { kind: target === AssetStatus.Trashed ? 'trash' : 'restore' },
+            assets: sequenced.map((assetId) => ({ assetId, status: target, revoke: target === AssetStatus.Trashed })),
+            stacks: snapshots,
+          });
+          // A stream counter wait must not preserve expired elevation or stale privacy at COMMIT.
+          const finalAuth = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
+          if (!finalAuth) throw new ForbiddenException('trash_owner_session_required');
+          const safe = await this.scope(tx, userId, target, {
+            lockedOwnerId: getLockedOwnerId(finalAuth),
+            privacy: getHiddenContentQueryOptions(finalAuth),
+          })
+            .where('asset.id', '=', anyUuid(changed ?? []))
+            .select('asset.id')
+            .execute();
+          if (safe.length !== changed!.length) throw new ConflictException('trash_selection_changed');
+        }
+        return { changed, sequenced };
+      },
+      seed.items.length > 0,
+    );
+    capture?.(committed.sequenced);
+    return committed.changed;
+  }
+
+  async enqueueLocalEffects(): Promise<number> {
+    return new AssetLocalEffectRepository(this.db).enqueuePending();
+  }
+
+  /** Same-transaction primitive: caller retains configuration/family and current-session authority. */
+  async applyReviewedWithin(
+    trx: Transaction<DB>,
+    userId: string,
+    action: TrashReviewAction,
+    ids: string[] | undefined,
+    options: TrashScopeOptions,
+    verify: (rows: TrashScopeRow[]) => boolean,
   ): Promise<string[] | null> {
     const source = trashActionSourceStatus(action);
     const target = trashActionTargetStatus(action);
-    return this.db.transaction().execute(async (trx) => {
-      const found = await this.scope(trx, userId, source, options)
-        .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
-        .select(['asset.id', 'asset.ownerId', 'asset.status', 'asset.deletedAt', isLocked('asset').as('isLocked')])
-        .orderBy('asset.id', 'asc')
-        .forUpdate()
-        .execute();
-      const rows = found.map((row) => ({ ...row, isLocked: !!row.isLocked }));
-      if (!verify(rows)) {
-        return null;
-      }
-      if (rows.length === 0) {
-        return [];
-      }
-      const changes =
-        target === AssetStatus.Active
-          ? { status: target, deletedAt: null }
-          : target === AssetStatus.Trashed
-            ? { status: target, deletedAt: new Date() }
-            : { status: target };
-      const updated = await trx
-        .updateTable('asset')
-        .where('asset.id', '=', anyUuid(rows.map((row) => row.id)))
-        .where('asset.status', '=', source)
-        .set(changes)
-        .returning('asset.id')
-        .execute();
-      return updated.map((row) => row.id);
-    });
+    const found = await this.scope(trx, userId, source, options)
+      .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
+      .select(['asset.id', 'asset.ownerId', 'asset.status', 'asset.deletedAt', isLocked('asset').as('isLocked')])
+      .orderBy('asset.id', 'asc')
+      .forUpdate()
+      .execute();
+    const rows = found.map((row) => ({ ...row, isLocked: !!row.isLocked }));
+    if (!verify(rows)) {
+      return null;
+    }
+    if (rows.length === 0) {
+      return [];
+    }
+    const changes =
+      target === AssetStatus.Active
+        ? { status: target, deletedAt: null }
+        : target === AssetStatus.Trashed
+          ? { status: target, deletedAt: new Date() }
+          : { status: target };
+    const updated = await trx
+      .updateTable('asset')
+      .where('asset.id', '=', anyUuid(rows.map((row) => row.id)))
+      .where('asset.status', '=', source)
+      .set(changes)
+      .returning('asset.id')
+      .execute();
+    return updated.map((row) => row.id);
   }
   /** Restores chosen items that are still in the trash, and says which ones actually were. */
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  async restoreAll(ids: string[]): Promise<string[]> {
+  async restoreAll(ids: string[], auth?: AuthDto, capture?: (ids: string[]) => void): Promise<string[]> {
+    if (auth)
+      return (
+        (await this.applyReviewed(
+          auth.user.id,
+          TrashReviewAction.Restore,
+          ids,
+          { lockedOwnerId: getLockedOwnerId(auth), privacy: getHiddenContentQueryOptions(auth) },
+          () => true,
+          auth,
+          capture,
+        )) ?? []
+      );
     if (ids.length === 0) {
       return [];
     }

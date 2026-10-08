@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
+import { probeGeometryCoordinates, validateGeometryCalibration } from './geometry-device-calibration.mjs';
 import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
 import { testedSource } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
@@ -26,13 +27,15 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
 </script>` }));
   await page.goto(origin + '/hdr-geometry');
   await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__);
-  const report = await page.evaluate(async ({ W, H, input, cases }) => {
+  const report = await page.evaluate(async ({ W, H, input, cases, probeSource }) => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/index.ts');
     const { createCompositionRenderer } = await import('/src/features/export/utils/client-render-engine.ts');
     const pipeline = await EffectsPipeline.create();
     if (!pipeline) throw new Error('WebGPU unavailable');
     pipeline.setWorkingRange('hdr');
     const device = pipeline.getDevice();
+    const probe = (0,eval)('(' + probeSource + ')');
+    const calibration = await probe(device,W,H,cases);
     const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
     const original = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
     const output = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
@@ -79,6 +82,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       } finally { tinySource.destroy(); tinyOutput.destroy(); tinyBuffer.destroy(); }
       const compositions = [];
       for (const entry of cases) {
+        if (await EffectsPipeline.requestCachedDevice() !== device) throw Error('COMPOSITION_CALIBRATION_DEVICE_CHANGED');
         const image = { id: 'image', mediaId: 'image', type: 'image', trackId: 'track', from: 0,
           durationInFrames: 1, src: '', sourceWidth: W, sourceHeight: H,
           transform: { x: 0, y: 0, width: W, height: H, rotation: 0, opacity: 1 },
@@ -94,38 +98,69 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
         try {
           await renderer.preload?.();
           const frame = await renderer.renderFrameSignal(0, 'pq');
+          if (await EffectsPipeline.requestCachedDevice() !== device) throw Error('COMPOSITION_CALIBRATION_DEVICE_CHANGED');
           const pixels = Array.from(frame.rgba);
           const repeated = await renderer.renderFrameSignal(0, 'pq');
           if (JSON.stringify(pixels) !== JSON.stringify(Array.from(repeated.rgba))) throw new Error('Repeated seek changed geometry export');
           compositions.push({ ...entry, width: frame.width, height: frame.height, pixels, repeatedSeek: true });
         } finally { renderer.dispose(); }
       }
-      return { adapter: device.adapterInfo, rows, compositions, halfCoverage };
+      return { adapter: device.adapterInfo, calibration, rows, compositions, halfCoverage, compositionUsesCalibratedDevice:true };
     } finally {
       original.destroy(); output.destroy(); buffer.destroy(); pipeline.destroy();
     }
-  }, { W, H, input, cases });
-  for (const row of report.rows) {
+  }, { W, H, input, cases, probeSource:probeGeometryCoordinates.toString() });
+  if (process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT + '.raw.json', JSON.stringify({source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), qualification:'pending assertions'},null,2));
+  try {
+  const validated = report.calibration.map((row,i) => validateGeometryCalibration(row,W,H,cases[i],i));
+  assert.equal(validated.length,cases.length);
+  report.validatedCalibration=validated;
+  const checkPixels = (pixels,expected,label) => {
+    assert.equal(pixels.length,expected.length, label + ' dimensions');
+    pixels.forEach((v,i)=>assert(Number.isFinite(v) && Math.abs(v-expected[i]) <= Math.max(.004,Math.abs(expected[i])*.003),
+      `${label} channel ${i}: ${v} vs ${expected[i]}`));
+  };
+  report.negativeControls=[];
+  for (const [index,row] of report.rows.entries()) {
     assert(HDR_GEOMETRY.includes(row.type));
-    const expected = geometryReference(input, W, H, row.type, row.params);
-    row.pixels.forEach((v, i) => assert(Number.isFinite(v) && Math.abs(v - expected[i]) <= Math.max(0.004, Math.abs(expected[i]) * 0.003),
-      `${row.type} ${JSON.stringify(row.params)} channel ${i}: ${v} vs ${expected[i]}`));
+    assert.deepEqual({type:row.type,params:row.params},cases[index],'render/calibration case binding');
+    const expected=geometryReference(input,W,H,row.type,row.params,validated[index].coordinates);
+    checkPixels(row.pixels,expected,`${row.type} ${JSON.stringify(row.params)}`);
+    const clipped=row.pixels.map((value,i)=>i%4===3?value:Math.max(0,Math.min(1,value)));
+    assert.throws(()=>checkPixels(clipped,expected,'clipped'));report.negativeControls.push({index,control:'clipping',refused:true});
+    const alpha=row.pixels.map((value,i)=>i%4===3?1:value);
+    assert.throws(()=>checkPixels(alpha,expected,'alpha'));report.negativeControls.push({index,control:'alpha',refused:true});
+    const straight=geometryReference(input.map((value,i)=>i%4===3?1:value),W,H,row.type,row.params,validated[index].coordinates);
+    const straightWithCoverage=straight.map((value,i)=>i%4===3?row.pixels[i]:value);
+    assert.throws(()=>checkPixels(straightWithCoverage,expected,'straight alpha'));report.negativeControls.push({index,control:'straight-alpha',refused:true});
+    if(!(row.type==='gpu-wave' && row.params.amplitudeX===0 && row.params.amplitudeY===0)) {
+      const identity=geometryReference(input,W,H,'gpu-wave',{amplitudeX:0,amplitudeY:0,frequencyX:1,frequencyY:1});
+      assert.throws(()=>checkPixels(identity,expected,'identity'));report.negativeControls.push({index,control:'wrong-identity-geometry',refused:true});
+    }
+    for(const [name,mutate] of [
+      ['coordinates',r=>{r.values[16]+=.01;}],['pixel',r=>{r.values[0]=1;}],
+      ['parameter',r=>{r.values[21]+=.01;}],['case',r=>{r.caseIndex=(index+1)%cases.length;}],
+    ]) {
+      const forged=structuredClone(report.calibration[index]);mutate(forged);
+      assert.throws(()=>validateGeometryCalibration(forged,W,H,cases[index],index));
+      report.negativeControls.push({index,control:'forged-'+name,refused:true});
+    }
   }
   for (const row of report.rows) {
     for (let i=0;i<row.pixels.length;i+=4) if (row.pixels[i+3] === 0)
       assert.deepEqual(row.pixels.slice(i,i+3),[0,0,0], `${row.type} zero stored coverage retains RGB`);
   }
-  const tinyExpected = geometryReference(report.halfCoverage.input,2,2,'gpu-wave',report.halfCoverage.params);
-  assert.deepEqual(report.halfCoverage.pixels,tinyExpected,'binary16 coverage boundary must clear underflow RGB and preserve the minimum positive coverage');
   const pq = nits => {
     const light = Math.max(0, Math.min(1, nits / 10000)) ** (2610 / 16384);
     return ((3424 / 4096 + (2413 / 4096) * 32 * light) / (1 + (2392 / 4096) * 32 * light)) ** ((2523 / 4096) * 128);
   };
   const bt2020 = [[.627404, .329282, .043314], [.069097, .91954, .011361], [.016392, .088013, .895595]];
   assert.equal(report.compositions.length, cases.length);
-  for (const row of report.compositions) {
+  for (const [index,row] of report.compositions.entries()) {
+    assert.deepEqual({type:row.type,params:row.params},cases[index],'composition/calibration case binding');
+    assert.equal(row.pixels.length,input.length);
     assert.deepEqual([row.width, row.height], [W, H]);
-    const filtered = geometryReference(input, W, H, row.type, row.params);
+    const filtered = geometryReference(input, W, H, row.type, row.params, validated[index].coordinates);
     for (let i = 0; i < W * H; ++i) {
       const rgb = filtered.slice(i * 4, i * 4 + 3).map(v => v * filtered[i * 4 + 3]);
       for (let c = 0; c < 3; ++c) {
@@ -135,8 +170,15 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       assert.equal(row.pixels[i * 4 + 3], 1);
     }
   }
+  report.geometryAndPqAssertionsPassed=true;
+  const tinyExpected = geometryReference(report.halfCoverage.input,2,2,'gpu-wave',report.halfCoverage.params);
+  assert.deepEqual(report.halfCoverage.pixels,tinyExpected,'binary16 coverage boundary must clear underflow RGB and preserve the minimum positive coverage');
   assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested inputs changed during measurement');
   if (process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT,
-    JSON.stringify({ source, ...report, oracle: 'independent premultiplied spatial equations; linear BT.709, straight-alpha output, 203 nits reference white' }, null, 2));
+    JSON.stringify({ source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), oracle: 'independent admitted same-device f32 coordinate witness and premultiplied sampler; unchanged thresholds; linear BT.709, straight-alpha output, 203 nits reference white' }, null, 2));
   console.log(JSON.stringify({ check: 'HDR alpha-aware Twirl/Wave/Bulge', cases: report.rows.length, compositionExports: report.compositions.length, channels: report.rows.length * input.length }));
+  } catch(error) {
+    if(process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT+'.failed.json',JSON.stringify({source,...report,backendArgs:chromeLaunchArgs(),result:'failed',failure:{name:error.name,message:error.message}},null,2));
+    throw error;
+  }
 } finally { await browser.close(); }

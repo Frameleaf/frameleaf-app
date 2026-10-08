@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as sdk from "../build/index.js";
 import {
   acceptICloudEditBaseline,
   acceptICloudEditSuccessor,
@@ -11,6 +12,80 @@ const response = (value) =>
     headers: { "content-type": "application/json" },
   });
 const headers = { Authorization: "Bearer owner-session-fixture" };
+
+test("additive original-revert intent preserves existing generated enum exports", () => {
+  assert.deepEqual(sdk.Kind3, {
+    Plan: "plan",
+    Supporter: "supporter",
+    Credit: "credit",
+  });
+  assert.deepEqual(sdk.Kind4, { EventStory: "event_story" });
+  assert.deepEqual(sdk.Kind5, { YearInReview: "year_in_review" });
+  assert.deepEqual(sdk.Kind6, { PetStory: "pet_story" });
+  assert.deepEqual(sdk.Kind7, { Birthday: "birthday" });
+  assert.deepEqual(sdk.Kind8, { PersonRecap: "person_recap" });
+  assert.deepEqual(sdk.Kind9, { Print: "print", Web: "web", Social: "social" });
+  assert.deepEqual(sdk.Kind10, {
+    CloudBackupActivation: "cloud-backup-activation",
+  });
+  assert.deepEqual(sdk.Kind11, {
+    Album: "album",
+    SmartAlbum: "smart-album",
+    SavedSearch: "saved-search",
+    Person: "person",
+    Pet: "pet",
+    Memory: "memory",
+    Builtin: "builtin",
+  });
+  assert.deepEqual(sdk.Kind12, { Space: "space" });
+  assert.deepEqual(sdk.ICloudEditOriginalRevertKind, {
+    OriginalRevert: "original-revert",
+  });
+  assert.deepEqual(sdk.ICloudEditRetentionPolicy, {
+    Keep: "keep",
+    Supersede: "supersede",
+  });
+});
+
+test("explicit original revert transports publication CAS and retention without changing administrative defaults", async () => {
+  const baseline = {
+    requestId: "original-revert-request",
+    expectedGeneration: 3,
+    receiptId: "verified-original-receipt",
+    holder: { kind: "device", id: "device" },
+    sourceIncarnation: "incarnation",
+    nativeVersion: "opaque-original-version",
+    takeOver: false,
+    intent: {
+      kind: "original-revert",
+      expectedPublicationId: "publication",
+      retention: "keep",
+    },
+  };
+  const ack = {
+    decisionId: baseline.requestId,
+    generation: 4,
+    versionId: "original",
+    evidenceType: "administrative",
+  };
+  const received = await acceptICloudEditBaseline(
+    { iCloudEditBaselineDto: baseline },
+    {
+      headers,
+      fetch: async (url, options) => {
+        assert.equal(url, "/api/icloud-sync/edits/baseline");
+        assert.equal(options.method, "POST");
+        assert.equal(
+          new Headers(options.headers).get("Authorization"),
+          headers.Authorization,
+        );
+        assert.deepEqual(JSON.parse(options.body), baseline);
+        return response(ack);
+      },
+    },
+  );
+  assert.deepEqual(received, ack);
+});
 
 test("owner discovery keeps session credentials in headers and preserves the non-admission snapshot", async () => {
   const snapshot = {

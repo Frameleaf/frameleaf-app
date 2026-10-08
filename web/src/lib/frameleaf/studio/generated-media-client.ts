@@ -27,6 +27,7 @@ export function createStudioGeneratedAccess(
   let connected = false;
   let hasGenerated = false;
   const requestedProjects = new Set<string>();
+  const requestedIds = new Set<string>();
   let generation = 0;
   let admissions: Promise<void> = Promise.resolve();
   const revoke = () => {
@@ -53,6 +54,12 @@ export function createStudioGeneratedAccess(
     PartnerRevoke: revoke,
   });
   const socketUnsubscribers = [
+    websocketEvents.on('AssetLocalEffectsV1', ({ revokedOperationIds }) => {
+      // An old local effect can only invalidate the admission that produced these exact files.
+      if ([...requestedIds].some((id) => revokedOperationIds.includes(id.slice('reverse-'.length)))) {
+        revoke();
+      }
+    }),
     websocketEvents.on('StudioProjectInvalidatedV1', ({ projectId }) => {
       if (projectId === null || requestedProjects.has(projectId)) {
         revoke();
@@ -86,6 +93,9 @@ export function createStudioGeneratedAccess(
           cache: 'no-store',
           signal: controller.signal,
         });
+        if (controller.signal.aborted) {
+          throw new Error('Generated Studio admission binding was revoked');
+        }
         if (!response.ok) {
           throw new Error('Generated Studio media is unavailable');
         }
@@ -145,6 +155,9 @@ export function createStudioGeneratedAccess(
     async admit(projectId, graph, revision) {
       const requested = generatedMediaIds(graph);
       hasGenerated ||= requested.length > 0;
+      for (const id of requested) {
+        requestedIds.add(id);
+      }
       if (requested.length > 0 && projectId) {
         requestedProjects.add(projectId);
       }

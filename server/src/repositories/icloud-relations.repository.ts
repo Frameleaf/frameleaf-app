@@ -1,12 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { isDeepStrictEqual } from 'node:util';
+import { AssetStatus, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import {
+  type AssetLocalEffectBundle,
+  AssetLocalEffectRepository,
+} from 'src/repositories/asset-local-effect.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
+import { loadLatestPolicyWithin, provenPolicyVersionsWithin } from 'src/repositories/icloud-edit-policy.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -33,6 +39,7 @@ type RelationState = {
   motionAssetId?: string;
   memberAssetIds?: string[];
   events?: ICloudRelationEvent[];
+  localPublication?: { effectId: string; streamEpoch: string; sequence: string };
 };
 type Origin = {
   sourceAssetId: string;
@@ -77,7 +84,8 @@ export class ICloudRelationsRepository {
    * This producer never holds item/connection/asset locks, so queue-first completion ordering is preserved.
    */
   async enqueuePending(): Promise<number> {
-    return this.db.transaction().execute(async (tx) => {
+    const effects = await new AssetLocalEffectRepository(this.db).enqueuePending();
+    const relations = await this.db.transaction().execute(async (tx) => {
       await sql`INSERT INTO job_queue(name) VALUES(${QueueName.BackgroundTask}) ON CONFLICT DO NOTHING`.execute(tx);
       await sql`SELECT name FROM job_queue WHERE name=${QueueName.BackgroundTask} FOR NO KEY UPDATE`.execute(tx);
       const decisions = await tx
@@ -117,6 +125,16 @@ export class ICloudRelationsRepository {
       }
       return decisions.length;
     });
+    return effects + relations;
+  }
+  async resolveEffectOwner(): Promise<string | undefined> {
+    return new AssetLocalEffectRepository(this.db).resolveOwnerTarget();
+  }
+  async dispatchOwnerEffects(
+    ownerId: string,
+    send: (bundle: AssetLocalEffectBundle) => Promise<void>,
+  ): Promise<boolean> {
+    return new AssetLocalEffectRepository(this.db).dispatch(ownerId, send);
   }
   /** Sensitive retry payloads are erased by the queue; the accepted dedup key retains the local target.
    * Resolve its owner from current server state, never from a replacement handler's empty/foreign payload.
@@ -303,6 +321,8 @@ export class ICloudRelationsRepository {
           state.reason = terminal ? 'resource_family_incomplete' : 'awaiting_resources';
           // Save this signature so a waiting or failed family cannot starve other
           // families. A changed resource status/mapping makes it eligible again.
+        } else if (await this.recognizePublishedPolicy(db, ownerId, prefix, resources, origin, state)) {
+          // An immutable publication already owns this projection. This drain is readonly.
         } else {
           const ledger = await db
             .selectFrom('icloud_edit_version')
@@ -361,6 +381,189 @@ export class ICloudRelationsRepository {
       if (result !== undefined) return result;
     }
     return false;
+  }
+  /** Verify the exact durable publication and all current facts, without republishing or changing primary. */
+  private async recognizePublishedPolicy(
+    db: Kysely<DB>,
+    ownerId: string,
+    items: string[],
+    resources: Resource[],
+    origin: Origin,
+    state: RelationState,
+  ): Promise<boolean> {
+    const refuse = (reason: string) => {
+      state.status = 'needs-review';
+      state.reason = reason;
+      return true;
+    };
+    let policy;
+    try {
+      policy = await loadLatestPolicyWithin(db, ownerId, items);
+    } catch (error) {
+      if (error instanceof ConflictException) return refuse('edit_policy_receipt_invalid');
+      throw error;
+    }
+    if (!policy) return state.localPublication ? refuse('edit_policy_receipt_invalid') : false;
+    const expected = {
+      effectId: policy.effect.effectId,
+      streamEpoch: policy.effect.streamEpoch,
+      sequence: policy.effect.sequence,
+    };
+    const originals = resources.filter((r) => r.role === 'original');
+    if (
+      originals.length === 0 ||
+      originals.some((r) => !isDeepStrictEqual(r.source._sync?.relations?.localPublication, expected))
+    )
+      return refuse('source_stack_provenance_conflict');
+    const stack = policy.stack;
+    if (
+      originals.some(
+        (r) =>
+          r.source._sync?.relations?.stackId !== stack.stackId ||
+          r.source._sync?.relations?.appliedPrimaryAssetId !== stack.primaryAssetId ||
+          !isDeepStrictEqual(
+            [...(r.source._sync?.relations?.memberAssetIds ?? [])].sort(),
+            [...stack.memberAssetIds].sort(),
+          ) ||
+          (r.source._sync?.relations?.events ?? []).length,
+      )
+    )
+      return refuse('source_stack_provenance_conflict');
+    const authority = await db
+      .selectFrom('icloud_edit_authority as a')
+      .innerJoin('icloud_edit_version as v', 'v.id', 'a.currentVersionId')
+      .select(['a.item', 'v.assetId', 'a.currentVersionId'])
+      .where('a.ownerId', '=', ownerId)
+      .where('a.item', 'in', items)
+      .execute();
+    if (authority.length !== items.length || authority.some((a) => a.assetId !== stack.primaryAssetId))
+      return refuse('edit_administrative_policy_transition_required');
+    const ids = [...new Set([...stack.memberAssetIds, ...resources.map((r) => r.assetId!)])].sort();
+    if (ids.length > 100) return refuse('resource_family_too_large');
+    const assets = await db
+      .selectFrom('asset')
+      .select(['id', 'ownerId', 'status', 'stackId', 'livePhotoVideoId', 'visibility'])
+      .where('id', 'in', ids)
+      .orderBy('id')
+      .forUpdate()
+      .execute();
+    if (
+      assets.length !== ids.length ||
+      assets.some((a) => a.ownerId !== ownerId || ![AssetStatus.Active, AssetStatus.Trashed].includes(a.status))
+    )
+      return refuse('resource_owner_or_trash_changed');
+    const actualStack = await db
+      .selectFrom('stack')
+      .select(['id', 'ownerId', 'primaryAssetId'])
+      .where('id', '=', stack.stackId)
+      .forUpdate()
+      .executeTakeFirst();
+    const members = await db
+      .selectFrom('asset')
+      .select('id')
+      .where('stackId', '=', stack.stackId)
+      .orderBy('id')
+      .execute();
+    if (
+      !actualStack ||
+      actualStack.ownerId !== ownerId ||
+      actualStack.primaryAssetId !== stack.primaryAssetId ||
+      !isDeepStrictEqual(
+        members.map((a) => a.id),
+        [...stack.memberAssetIds].sort(),
+      ) ||
+      assets.some((a) => stack.memberAssetIds.includes(a.id) && a.stackId !== stack.stackId)
+    )
+      return refuse('local_stack_override');
+    const proofs = policy.proofs;
+    if (!isDeepStrictEqual(proofs.map((p) => p.assetId).sort(), [...stack.memberAssetIds].sort()))
+      return refuse('edit_policy_receipt_invalid');
+    const versions = await provenPolicyVersionsWithin(
+      db,
+      ownerId,
+      items,
+      proofs.map((p) => p.versionId),
+    );
+    if (
+      proofs.some((p) =>
+        versions.every(
+          (v) =>
+            !(
+              v.id === p.versionId &&
+              v.assetId === p.assetId &&
+              v.sha256.toString('hex') === p.sha256 &&
+              v.isOriginal === p.isOriginal
+            ),
+        ),
+      )
+    )
+      return refuse('edit_member_evidence_unproven');
+    if (
+      resources.some(
+        (r) =>
+          ['edited-image', 'edited-video'].includes(r.role) &&
+          versions.every(
+            (v) =>
+              !(
+                v.item === r.sourceAssetId.toUpperCase() &&
+                v.assetId === r.assetId &&
+                !v.isOriginal &&
+                r.sha256?.equals(v.sha256)
+              ),
+          ),
+      )
+    )
+      return refuse('edit_member_evidence_unproven');
+    const decision = await db
+      .selectFrom('icloud_edit_decision')
+      .select('evidence')
+      .where('id', '=', policy.effect.effectId)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+    const sessionId = decision?.evidence.sessionId;
+    if (typeof sessionId !== 'string') return refuse('edit_owner_session_required');
+    const auth = await currentAuth(db, ownerId, sessionId, false);
+    if (!auth) return refuse('edit_owner_session_required');
+    const byteProofs = [
+      ...proofs.map((p) => ({ assetId: p.assetId, sha256: p.sha256 })),
+      ...resources
+        .filter((r) => !stack.memberAssetIds.includes(r.assetId!))
+        .map((r) => ({ assetId: r.assetId!, sha256: r.sha256?.toString('hex') })),
+    ];
+    if (byteProofs.some((p) => !p.sha256)) return refuse('edit_member_evidence_unproven');
+    for (const status of [AssetStatus.Active, AssetStatus.Trashed] as const) {
+      const group = byteProofs.filter((p) => assets.find((a) => a.id === p.assetId)?.status === status);
+      if (group.length === 0) continue;
+      const safe = await new IntegrityRepository(db)
+        .getLifecycleSafetyQuery(
+          auth,
+          status,
+          group.map((p) => p.sha256!),
+        )
+        .where(
+          'asset.id',
+          'in',
+          group.map((p) => p.assetId),
+        )
+        .execute();
+      if (group.some((p) => safe.every((a) => !(a.id === p.assetId && a.sha256 === p.sha256))))
+        return refuse('edit_member_unavailable');
+    }
+    const motions = [...new Set(resources.filter((r) => r.role === 'motion').map((r) => r.assetId!))];
+    const still = assets.find((a) => a.id === origin.assetId)!;
+    if (
+      motions.length > 1 ||
+      (motions.length === 1 &&
+        (state.motionAssetId !== motions[0] ||
+          still.livePhotoVideoId !== motions[0] ||
+          assets.find((a) => a.id === motions[0])?.visibility !== AssetVisibility.Hidden))
+    )
+      return refuse('local_live_photo_override');
+    state.localPublication = expected;
+    state.stackId = stack.stackId;
+    state.appliedPrimaryAssetId = stack.primaryAssetId;
+    state.memberAssetIds = [...stack.memberAssetIds];
+    return true;
   }
   private async linkMotion(
     db: Kysely<DB>,

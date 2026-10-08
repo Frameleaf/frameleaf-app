@@ -1267,6 +1267,40 @@ export class StudioProjectService {
    * FL-90: drop every cached resolution of these projects, so the next read resolves the sources
    * again rather than trusting a manifest issued before access changed.
    */
+  /** Late Locked dispatch retires only resolutions observed before this exact local transition. */
+  forgetInteractiveAdmissions(
+    ownerId: string,
+    streamEpoch: string,
+    sequence: string,
+    assetIds: readonly string[],
+  ): void {
+    for (const [key, entry] of this.manifests) {
+      const view = entry.manifest.interactiveAdmissionView;
+      const bound = view?.owners.find((row) => row.ownerId === ownerId);
+      const source = entry.manifest.sourceEpochs?.some((row) => assetIds.includes(row.assetId));
+      if (
+        source &&
+        (!view ||
+          (bound &&
+            (bound.streamEpoch === null || bound.streamEpoch === streamEpoch) &&
+            BigInt(bound.sequence) < BigInt(sequence)))
+      )
+        this.manifests.delete(key);
+    }
+  }
+
+  forgetSourceAdmissions(revocations: readonly { assetId: string; priorEpoch: string }[]): void {
+    for (const [key, entry] of this.manifests)
+      if (
+        entry.manifest.sourceEpochs?.some((bound) =>
+          revocations.some(
+            (revoked) => bound.assetId === revoked.assetId && BigInt(bound.epoch) <= BigInt(revoked.priorEpoch),
+          ),
+        )
+      )
+        this.manifests.delete(key);
+  }
+
   forgetResolutions(projectIds: readonly string[]): void {
     for (const projectId of projectIds) {
       this.forgetManifests(projectId);

@@ -200,6 +200,8 @@ export class StudioPreviewStreamService {
         projectId: dto.projectId,
         projectRevision: manifest.revision,
         manifestDigest: manifest.digest,
+        sourceEpochs: manifest.sourceEpochs,
+        ...(manifest.interactiveAdmissionView && { interactiveAdmissionView: manifest.interactiveAdmissionView }),
         resourceCacheKey: this.resources.cacheKey(manifest),
         studio: { stored: true, revision: manifest.revision, cloudConsent: false },
         stream: { start: dto.time, bounds, quality: dto.quality },
@@ -448,6 +450,12 @@ export class StudioPreviewStreamService {
    * deleted or moved to Locked, or a member leaving a space. With `ownerId`, only that account's.
    * Interactive playback never reads Locked media, so unlike an export a stream stops on relock.
    */
+  async revokeAdmissions(admissions: readonly { id: string; ownerId: string; kind: string }[]): Promise<void> {
+    for (const admission of admissions)
+      if (admission.kind === MediaOperationKind.StudioPreviewStream)
+        await this.closeById(admission.id, admission.ownerId, 'revoked');
+  }
+
   async revokeForProjects(projectIds: readonly string[], ownerId?: string): Promise<number> {
     const open = await this.operations.listUnfinishedForProjects(
       projectIds,

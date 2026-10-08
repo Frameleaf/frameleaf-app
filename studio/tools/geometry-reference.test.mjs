@@ -17,3 +17,10 @@ test('Coverage rounded to zero in binary16 clears RGB before the next pass', () 
   assert.deepEqual(actual.slice(0,4),[0,0,0,0]);
   assert.deepEqual(actual.slice(4,8),[8,-.25,2,tiny]);
 });
+
+test('serialized geometry reference remains self-contained with its unchanged default CPU oracle', () => {
+  const serialized = (0,eval)('(' + geometryReference.toString() + ')');
+  const values = [8,-.25,2,1,32,4,-2,0,8,-.25,2,1,32,4,-2,0];
+  const params = {amount:1,radius:.5,centerX:.5,centerY:.5};
+  assert.deepEqual(serialized(values,2,2,'gpu-twirl',params),geometryReference(values,2,2,'gpu-twirl',params));
+});

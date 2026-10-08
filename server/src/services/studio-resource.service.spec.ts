@@ -93,6 +93,29 @@ describe(StudioResourceService.name, () => {
   beforeEach(async () => {
     ({ sut, mocks } = newTestService(StudioResourceService));
     auth = AuthFactory.create();
+    // This existing unit fixture has no lifecycle transitions; derive owners from its asset facts.
+    // The actual signed-grant/Trash/restore boundary is qualified separately against canonical PG.
+    mocks.integrityReport.sourceEpochs.mockImplementation(async (ids) => {
+      const last = mocks.asset.getByIds.mock.results.at(-1)?.value;
+      const rows = last ? await last : [];
+      return ids.map((assetId) => ({
+        assetId,
+        ownerId: rows.find((row: { id: string; ownerId: string }) => row.id === assetId)?.ownerId ?? auth.user.id,
+        epoch: '0',
+      }));
+    });
+    // These isolated unit assets have no owner-local stream. Preserve the actual mocked
+    // asset ownership; PG admission tests cover a real stream and final insertion fences.
+    mocks.integrityReport.interactiveAdmissionViews.mockImplementation(async (ids) => {
+      // The production observation precedes getByIds; read this fixture's configured rows
+      // without recording an extra asset API call or inventing a source owner.
+      const configured = mocks.asset.getByIds.getMockImplementation();
+      const rows = configured ? await configured(ids) : [];
+      return ids.flatMap((assetId) => {
+        const asset = rows.find((row: { id: string; ownerId: string }) => row.id === assetId);
+        return asset ? [{ assetId, ownerId: asset.ownerId, streamEpoch: null, sequence: '0' }] : [];
+      });
+    });
     const actual = await vi.importActual<typeof import('src/utils/studio-rights.generated.js')>(
       'src/utils/studio-rights.generated.js',
     );
@@ -1501,6 +1524,33 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('generated intermediates', () => {
+    it('refuses an old generated producer binding after its source is restored', async () => {
+      const source = ownedVideo();
+      mocks.asset.getByIds.mockResolvedValue([source]);
+      allowOwned(source.id);
+      mocks.integrityReport.sourceEpochs.mockResolvedValue([{ assetId: source.id, ownerId: auth.user.id, epoch: '2' }]);
+      const request = context(sequenceWith({ generatedId: 'reverse' }), {
+        generated: [
+          {
+            id: 'reverse',
+            producer: 'reverse-conform',
+            checksum: 'reverse-checksum',
+            path: '/cache/reverse.mp4',
+            derivedFrom: [`library-asset:${source.id}`],
+            sourceEpochs: [{ assetId: source.id, ownerId: auth.user.id, epoch: '0' }],
+          },
+        ],
+      });
+      const resolved = await sut.resolveProjectResources(auth, request);
+      expect(resolved.manifest.complete).toBe(false);
+      expect(resolved.manifest.entries.some((entry) => entry.id === 'reverse')).toBe(false);
+      expect(resolved.refused).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'reverse', reason: StudioRefusalReason.DerivedInputRefused }),
+        ]),
+      );
+    });
+
     it('resolves a relinked reverse conform and rechecks its transitive source access', async () => {
       const source = ownedVideo();
       mocks.asset.getByIds.mockResolvedValue([source]);
@@ -1757,7 +1807,8 @@ describe(StudioResourceService.name, () => {
       ]);
       expect(mocks.crypto.signJwt).toHaveBeenCalledWith(
         {
-          v: 1,
+          v: 2,
+          sourceEpochs: [{ assetId, ownerId: auth.user.id, epoch: '0' }],
           scope: 'render',
           kind: StudioResourceKind.LibraryAsset,
           id: assetId,

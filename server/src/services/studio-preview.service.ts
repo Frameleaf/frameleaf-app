@@ -32,6 +32,7 @@ import {
   StudioPreviewRepository,
   StudioPreviewRetirement,
 } from 'src/repositories/studio-preview.repository.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
@@ -648,6 +649,11 @@ export class StudioPreviewService {
    * Stop every live preview of these projects now: frames are evicted with their files and renders
    * still in flight are cancelled. With `ownerId`, only that account's previews stop.
    */
+  async revokeAdmissions(operationIds: readonly string[]): Promise<number> {
+    const frames = await this.repository.listLiveForAdmissions(operationIds);
+    return (await this.dropFrames(frames)).length;
+  }
+
   async revokeForProjects(projectIds: readonly string[], ownerId?: string): Promise<number> {
     const frames = await this.repository.listLiveForProjects(projectIds, ownerId);
     const evicted = await this.dropFrames(frames);
@@ -826,7 +832,7 @@ export class StudioPreviewService {
       viewportHeight: dto.viewportHeight,
     };
 
-    const { frame, created } = await this.repository.upsert({
+    const requestedFrame = {
       ownerId,
       projectId,
       revisionDigest,
@@ -858,7 +864,14 @@ export class StudioPreviewService {
       errorCode: null,
       readyAt: null,
       expiresAt: previewExpiry(now),
-    });
+    };
+    const { frame, created } = manifest.interactiveAdmissionView
+      ? await this.repository.upsert(requestedFrame, {
+          kind: 'studio-preview',
+          sourceEpochs: manifest.sourceEpochs,
+          interactiveAdmissionView: manifest.interactiveAdmissionView,
+        })
+      : await this.repository.upsert(requestedFrame);
 
     const needsAllocation =
       created ||
@@ -916,6 +929,8 @@ export class StudioPreviewService {
         previewFrameId: frame.id,
         ...(previewConsumerOf(frame.cacheKey) && { consumerRequestId: previewConsumerOf(frame.cacheKey)!.requestId }),
         manifestDigest: manifest.digest,
+        sourceEpochs: manifest.sourceEpochs,
+        ...(manifest.interactiveAdmissionView && { interactiveAdmissionView: manifest.interactiveAdmissionView }),
         projectRevision: manifest.revision,
         resourceCacheKey: this.resources.cacheKey(manifest),
         // FL-93: the cadence and source timing maps, identical to what an export declares.
@@ -939,6 +954,7 @@ export class StudioPreviewService {
       try {
         const { operation } = await this.operations.createWithin(
           async (tx) => {
+            await holdSourceAdmission(tx, input.snapshot);
             await this.repository.lockPendingAdmission(tx, frame);
             return { operation: input, value: frame };
           },
@@ -955,7 +971,9 @@ export class StudioPreviewService {
     }
     const operation = await this.operations.create(input);
 
-    const marked = await this.repository.markRendering(frame.id, operation.id);
+    const marked = manifest.interactiveAdmissionView
+      ? await this.repository.markRendering(frame.id, operation.id, frame)
+      : await this.repository.markRendering(frame.id, operation.id);
     if (!marked) {
       // The row left `pending` between the write and now — superseded by a newer revision or
       // cancelled. The operation must not run for a frame nobody can be shown.

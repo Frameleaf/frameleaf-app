@@ -162,6 +162,33 @@ export class NotificationService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id: assetId, notify: true } });
   }
 
+  @OnEvent({ name: 'AssetLocalEffects' })
+  async onAssetLocalEffects(bundle: ArgOf<'AssetLocalEffects'>) {
+    const removed = await this.mediaOperationRepository.listRevokedSourceAdmissions(bundle.revocations);
+    const admissions = new Map(
+      [...removed, ...(bundle.lockedCascade?.interactiveAdmissions ?? [])].map((row) => [row.id, row]),
+    )
+      .values()
+      .toArray();
+    const audiences = new Set([bundle.ownerId, ...admissions.map((row) => row.ownerId)]);
+    for (const ownerId of audiences)
+      this.websocketRepository.clientSend('AssetLocalEffectsV1', ownerId, {
+        streamEpoch: bundle.streamEpoch,
+        sequence: bundle.sequence,
+        effectId: bundle.effectId,
+        assetIds:
+          ownerId === bundle.ownerId
+            ? [
+                ...new Set([
+                  ...bundle.assets.map((row) => row.assetId),
+                  ...bundle.stacks.flatMap((row) => row.memberAssetIds),
+                ]),
+              ]
+            : [],
+        revokedOperationIds: admissions.filter((row) => row.ownerId === ownerId).map((row) => row.id),
+      });
+  }
+
   @OnEvent({ name: 'AssetTrash' })
   onAssetTrash({ assetId, userId }: ArgOf<'AssetTrash'>) {
     this.websocketRepository.clientSend('on_asset_trash', userId, [assetId]);

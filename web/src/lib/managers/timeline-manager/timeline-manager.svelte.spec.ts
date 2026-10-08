@@ -117,6 +117,24 @@ describe('TimelineManager', () => {
     vi.resetAllMocks();
   });
 
+  it('C2 RED: a bucket refresh cannot install a pre-Trash projection after a live removal', async () => {
+    sdkMock.getTimeBuckets.mockResolvedValueOnce([{ count: 1, timeBucket: '2024-01-01' }]);
+    const manager = new TimelineManager();
+    const pending = deferred<{ count: number; timeBucket: string }[]>();
+    try {
+      await manager.updateOptions({});
+      sdkMock.getTimeBuckets.mockReturnValueOnce(pending.promise);
+      const refresh = manager.refresh();
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+      manager.removeAssets(['old-source']);
+      pending.resolve([{ count: 999, timeBucket: '2024-01-01' }]);
+      await refresh;
+      expect(manager.assetCount).not.toBe(999);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it('re-reads album membership after assets are added only to its album (FL-40)', async () => {
     sdkMock.getTimeBuckets
       .mockResolvedValueOnce([{ count: 1, timeBucket: '2024-01-01' }])
