@@ -12,7 +12,7 @@ export const WORKING_DOMAINS = {
 };
 export const REPORT_BINDINGS = ['studio/tools/lib/working-domain-report.mjs', 'studio/tools/lib/cross-browser-harness.mjs',
   'studio/tools/lib/browser-driver.mjs', 'studio/tools/photometric-goldens.mjs',
-  'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/pixelate-reference.mjs', 'studio/tools/geometry-reference.mjs', 'studio/tools/geometry-device-calibration.mjs', 'studio/tools/geometry-raster-calibration.mjs', 'studio/tools/geometry-raster-envelopes.json', 'studio/tools/hdr-source-validation.mjs',
+  'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/pixelate-reference.mjs', 'studio/tools/geometry-reference.mjs', 'studio/tools/geometry-composition-reference.mjs', 'studio/tools/geometry-device-calibration.mjs', 'studio/tools/geometry-raster-calibration.mjs', 'studio/tools/geometry-raster-envelopes.json', 'studio/tools/hdr-source-validation.mjs',
   'studio/effect-hdr-semantics.json', 'studio/transition-semantics.json'];
 const root = new URL('../../../', import.meta.url);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
