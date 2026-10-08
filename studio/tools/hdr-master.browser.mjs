@@ -78,9 +78,11 @@ window.__vite_plugin_react_preamble_installed__ = true
     const raster = (transfer) => ({ width: W, height: H, transfer,
       rgb: new Uint16Array(Array.from({ length: W * H }, () => codes[transfer]).flat()) });
     const hdrRasters = { 'master-pq': raster('pq'), 'master-hlg': raster('hlg') };
-    const clip = (id, transfer, from) => ({ ...rect(id, 'track-2', -8, 16, '#fff'), type: 'image',
+    const temperatureEffects = [{ id: 'temperature', enabled: true,
+      effect: { type: 'gpu-effect', gpuEffectType: 'gpu-temperature', params: { temperature: 1, tint: -1 } } }];
+    const clip = (id, transfer, from) => ({ ...rect(id, 'track-2', -8, 16, '#fff', { effects: temperatureEffects }), type: 'image',
       mediaId: `master-${transfer}`, src: '', from, durationInFrames: 2, sourceWidth: W, sourceHeight: H });
-    const grey = rect('opacity-grey', 'track-1', 8, 16, 'rgb(50%, 50%, 50%)');
+    const grey = rect('opacity-grey', 'track-1', 8, 16, 'rgb(50%, 50%, 50%)', { effects: temperatureEffects });
     const normal = rect('normal-strip', 'track-0', 12, 8, 'rgb(40%, 40%, 40%)');
     normal.transform.opacity = 0.5;
     const admitted = { ...composition, tracks: [track(0, [normal]), track(1, [grey]),
@@ -101,10 +103,12 @@ window.__vite_plugin_react_preamble_installed__ = true
       renderer.dispose?.();
     }
     // CPU/GPU helper parity for the admitted linear graph, not an independent physical oracle.
+    // Independent existing temperature/tint equation for T=1,Q=-1, before output mapping.
+    const shifted = rgb => rgb.map((v,c) => v + [.05,.1,-.15][c]);
     const reference = (frame) => ({
-      clip: color.signalToWorking(codes[frame < 2 ? 'pq' : 'hlg'].map(value => value / 65535), frame < 2 ? 'pq' : 'hlg'),
-      opacity: [0.5, 0.5, 0.5].map(value => color.srgbDecodeExtended(value) * frame / 3),
-      normal: [0.5, 0.5, 0.5].map(value => color.srgbDecodeExtended(value) * frame / 3 * 0.5 + color.srgbDecodeExtended(0.4) * 0.5),
+      clip: shifted(color.signalToWorking(codes[frame < 2 ? 'pq' : 'hlg'].map(value => value / 65535), frame < 2 ? 'pq' : 'hlg')),
+      opacity: [0.5, 0.5, 0.5].map((value,c) => (color.srgbDecodeExtended(value) + [.05,.1,-.15][c]) * frame / 3),
+      normal: [0.5, 0.5, 0.5].map((value,c) => (color.srgbDecodeExtended(value) + [.05,.1,-.15][c]) * frame / 3 * 0.5 + color.srgbDecodeExtended(0.4) * 0.5),
     });
     const want = {};
     for (const target of ['pq', 'hlg']) {

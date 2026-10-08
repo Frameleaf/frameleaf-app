@@ -236,6 +236,8 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const orderedWant=reverse?saturated(exposed(graphic,1,.125,2),1.5):exposed(saturated(graphic,1.5),1,.125,2);
       await render(`root saturation/exposure order ${reverse}`,comp([track(shape('saturation-ordered','#6699cc',.5,{effects:ordered}),0)]),over(background,orderedWant,.5));
     }
+    const temperatureAdjustment={id:'temperature-adjustment',type:'adjustment',trackId:'temperature-adjustment',from:0,durationInFrames:60,effects:temperature(1,-1)};
+    await render('temperature adjustment grades mixed sources before source-over',comp([track(temperatureAdjustment,0),track(shape('adjusted-graphic','#6699cc',.25),1),track(image('pq',.6),2)]),over(over(background,tempered(linear.pq,1,-1),.6),tempered(graphic,1,-1),.25));
     const mixed=over(over(over(background,linear.pq,.6),linear.hlg,.4),graphic,.25);
     await render('root mixed linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(image('hlg',.4),1),track(image('pq',.6),2)]),mixed);
     const video=(transfer,opacity)=>({id:`root-video-${transfer}`,mediaId:`root-video-${transfer}`,type:'video',trackId:`root-video-${transfer}`,src:`/hdr-fixture/${transfer}.mp4`,from:0,durationInFrames:60,sourceStart:0,sourceEnd:30,sourceFps:30,sourceDuration:30,speed:1,sourceWidth:64,sourceHeight:64,transform:{x:0,y:0,width:16,height:16,rotation:0,opacity}});
@@ -303,6 +305,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const maskedNumerator=graphic.map((v,c)=>v*.25*coverage+linear.pq[c]*.6*coverage*(1-.25*coverage));
       const maskedWant=background.map((v,c)=>v*(1-maskedAlpha*.5)+maskedNumerator[c]*.5);
       await render('nested mask preserves linear straight RGB',comp([track({...instance,compositionId:masked.id},0)]),maskedWant);
+      await render('temperature on masked nested instance preserves coverage',comp([track({...instance,compositionId:masked.id,effects:temperature(1,-1)},0)]),over(background,tempered(maskedNumerator.map(v=>v/maskedAlpha),1,-1),maskedAlpha*.5));
 
     } finally {useCompositionsStore.getState().setCompositions(previous);}
     const { CanvasPool } = await import('/src/features/export/utils/canvas-pool.ts');
