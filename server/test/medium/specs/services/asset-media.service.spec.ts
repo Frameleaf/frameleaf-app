@@ -2,16 +2,19 @@ import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
-import { AssetFileType, SharedLinkType } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, CacheControl, Permission, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -19,6 +22,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { AuthService } from 'src/services/auth.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -40,7 +44,7 @@ const setup = (db?: Kysely<DB>) => {
       SharedLinkRepository,
       UserRepository,
     ],
-    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository],
+    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, MetadataRepository],
   });
 };
 
@@ -277,6 +281,124 @@ describe(AssetService.name, () => {
   });
 
   describe('viewThumbnail', () => {
+    it.each([AssetMediaSize.PREVIEW, AssetMediaSize.FULLSIZE])(
+      'enforces authenticated ownership, locks and revoked links for HDR and SDR %s',
+      async (size) => {
+        vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        try {
+          const { sut, ctx } = setup();
+          const { user } = await ctx.newUser();
+          const { user: outsider } = await ctx.newUser({ isAdmin: true });
+          const { asset } = await ctx.newAsset({ ownerId: user.id, originalFileName: 'private-camera-name.HEIC' });
+          await ctx.newExif({
+            assetId: asset.id,
+            imageEncoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+          });
+          const sdrType = size === AssetMediaSize.PREVIEW ? AssetFileType.Preview : AssetFileType.FullSize;
+          const hdrType = size === AssetMediaSize.PREVIEW ? AssetFileType.HdrPreview : AssetFileType.HdrFullSize;
+          for (const type of [sdrType, hdrType]) {
+            await ctx.newAssetFile({
+              assetId: asset.id,
+              type,
+              path: `/${asset.id}/${type}.jpg`,
+              renditionIdentity: 'a'.repeat(64),
+            });
+          }
+          const token = randomBytes(32).toString('hex');
+          const { session } = await ctx.newSession({
+            userId: user.id,
+            token: ctx.get(CryptoRepository).hashSha256(token),
+            updatedAt: new Date(),
+          });
+          const { sut: authentication } = newMediumService(AuthService, {
+            database: ctx.database,
+            real: [
+              ConfigRepository,
+              CryptoRepository,
+              SessionRepository,
+              SharedLinkRepository,
+              SystemMetadataRepository,
+              UserRepository,
+            ],
+            mock: [LoggingRepository],
+          });
+          // This test exercises authentication/authorization; native codec tests verify the sanitized bytes.
+          ctx
+            .getMock(MetadataRepository)
+            .acquireLocationFreeOriginal.mockImplementation((path) => Promise.resolve({ path, release: vi.fn() }));
+          const ownerRequest = {
+            headers: { authorization: `Bearer ${token}` },
+            queryParams: {},
+            metadata: {
+              adminRoute: false,
+              sharedLinkRoute: true,
+              permission: Permission.AssetView,
+              uri: '/assets/:id/thumbnail',
+            },
+          };
+          const sharedLinks = ctx.get(SharedLinkRepository);
+          const key = randomBytes(50);
+          const link = await sharedLinks.create({
+            key,
+            type: SharedLinkType.Individual,
+            userId: user.id,
+            assetIds: [asset.id],
+            allowDownload: false,
+            allowUpload: false,
+            showExif: false,
+          });
+          const sharedRequest = { ...ownerRequest, headers: { 'x-immich-share-key': key.toString('hex') } };
+          const owner = await authentication.authenticate(ownerRequest);
+          const shared = await authentication.authenticate(sharedRequest);
+          const other = factory.auth({
+            user: { id: outsider.id, isAdmin: true },
+            session: { hasElevatedPermission: true },
+          });
+          for (const dynamicRange of ['hdr', 'auto', 'sdr'] as const) {
+            const dto = { size, dynamicRange, edited: true };
+            const type = dynamicRange === 'sdr' ? sdrType : hdrType;
+            for (const auth of [owner, shared]) {
+              const response = await sut.viewThumbnail(auth, asset.id, { ...dto });
+              expect(response).toBeInstanceOf(ImmichFileResponse);
+              expect(response).toMatchObject({ path: `/${asset.id}/${type}.jpg`, contentType: 'image/jpeg' });
+              if (dynamicRange !== 'sdr')
+                expect(response).toMatchObject({ cacheControl: CacheControl.PrivateWithoutCache });
+              if (auth.sharedLink) expect((response as ImmichFileResponse).fileName).toBe(`${asset.id}_${type}.jpg`);
+            }
+            await expect(sut.viewThumbnail(other, asset.id, { ...dto })).rejects.toThrow('access');
+            await defaultDatabase
+              .insertInto('asset_lock')
+              .values({
+                assetId: asset.id,
+                reason: AssetLockReason.Marked,
+                lockedBy: user.id,
+                previousVisibility: null,
+              })
+              .execute();
+            await expect(sut.viewThumbnail(owner, asset.id, { ...dto })).rejects.toThrow('access');
+            await expect(sut.viewThumbnail(shared, asset.id, { ...dto })).rejects.toThrow('access');
+            await expect(
+              sut.viewThumbnail(
+                factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } }),
+                asset.id,
+                { ...dto },
+              ),
+            ).resolves.toBeInstanceOf(ImmichFileResponse);
+            await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+          }
+          await expect(sut.downloadOriginal(shared, asset.id, {})).rejects.toThrow('access');
+          // Removal must invalidate even an already-authenticated link's database entitlement.
+          await sharedLinks.remove(link.id);
+          await expect(authentication.authenticate(sharedRequest)).rejects.toThrow('Invalid share key');
+          await expect(sut.viewThumbnail(shared, asset.id, { size, dynamicRange: 'hdr' })).rejects.toThrow('access');
+          await ctx.get(SessionRepository).delete(session.id);
+          await expect(authentication.authenticate(ownerRequest)).rejects.toThrow('Invalid user token');
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
+
     it('should return original thumbnail by default when both exist', async () => {
       const { sut, ctx } = setup();
 
