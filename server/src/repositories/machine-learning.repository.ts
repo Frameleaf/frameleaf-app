@@ -33,7 +33,12 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { fetchJobText } from 'src/queue/http.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { readConfig } from 'src/utils/config.js';
+import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
   RestorationInference,
   RestorationInferenceInput,
@@ -219,7 +224,7 @@ const isFlorenceImageDescriptionModel = (modelName: string) => {
  * Frameleaf Cloud destination resolves to `FRAMELEAF_CLOUD_ENDPOINT` (`cloud: true`): it has no URL
  * of its own, so a check of it is delegated to the cloud processing service (FL-159).
  */
-export type MlEndpoint = { url: string; authToken?: string; cloud?: true };
+export type MlEndpoint = { url: string; authToken?: string; cloud?: true; assertAuthority?: () => Promise<void> };
 
 /** The sentinel the Frameleaf Cloud destination resolves to; never fetched as a URL. */
 export const FRAMELEAF_CLOUD_ENDPOINT: MlEndpoint = Object.freeze({ url: 'frameleaf-cloud:gateway', cloud: true });
@@ -403,7 +408,7 @@ export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
-  private probeCache = new Map<string, { authToken?: string; probe: MlEndpointProbe }>();
+  private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -413,8 +418,18 @@ export class MachineLearningRepository implements RestorationInference {
     return this._config;
   }
 
-  constructor(private logger: LoggingRepository) {
+  constructor(
+    private logger: LoggingRepository,
+    private authority?: MlDestinationRepository,
+    private configRepo?: ConfigRepository,
+    private metadataRepo?: SystemMetadataRepository,
+  ) {
     this.logger.setContext(MachineLearningRepository.name);
+  }
+
+  private async authorize(endpoint: MlEndpoint) {
+    await endpoint.assertAuthority?.();
+    return this.authority?.assertEndpointAuthority(endpoint);
   }
 
   setup(config: MachineLearningConfig) {
@@ -431,6 +446,15 @@ export class MachineLearningRepository implements RestorationInference {
   async semanticMaskLocal(canvas: Buffer, target: 'subject' | 'sky', signal?: AbortSignal): Promise<Buffer> {
     if (!this.config.enabled) throw new Error('Local machine learning is disabled');
     const url = this.getLocalUrls()[0];
+    if (this.configRepo && this.metadataRepo) {
+      const current = await readConfig({
+        configRepo: this.configRepo,
+        metadataRepo: this.metadataRepo,
+        logger: this.logger,
+      });
+      if (!current.machineLearning.enabled || !current.machineLearning.urls.includes(url)) throw recoveryMlRefusal();
+    }
+    await this.authorize({ url });
     if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new Error('Configure a local semantic mask worker');
     const endpoint = new URL('predict', url.endsWith('/') ? url : `${url}/`);
     if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
@@ -480,6 +504,7 @@ export class MachineLearningRepository implements RestorationInference {
         }),
       })
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
+    await this.authorize({ url });
     return Buffer.from(result['semantic-mask'].png, 'base64');
   }
 
@@ -502,6 +527,7 @@ export class MachineLearningRepository implements RestorationInference {
    * reused so a burst of jobs does not turn into a burst of probes.
    */
   async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+    const authorityIdentity = await this.authorize(endpoint);
     if (endpoint.cloud) {
       if (!this.cloudProber) {
         return {
@@ -514,13 +540,16 @@ export class MachineLearningRepository implements RestorationInference {
           cloud: null,
         };
       }
-      return this.cloudProber({ maxAgeMs });
+      const result = await this.cloudProber({ maxAgeMs });
+      await this.authorize(endpoint);
+      return result;
     }
 
     const cached = this.probeCache.get(endpoint.url);
     if (
       cached &&
       cached.authToken === endpoint.authToken &&
+      cached.authorityIdentity === authorityIdentity &&
       maxAgeMs > 0 &&
       Date.now() - cached.probe.probedAt.getTime() < maxAgeMs
     ) {
@@ -530,14 +559,16 @@ export class MachineLearningRepository implements RestorationInference {
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
-    const finish = (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): MlEndpointProbe => {
+    const finish = async (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): Promise<MlEndpointProbe> => {
+      if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, probe: result });
+      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, authorityIdentity, probe: result });
       return result;
     };
     const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
     try {
+      await this.authorize(endpoint);
       const ping = await fetch(new URL('ping', endpoint.url), {
         headers: this.authHeaders(endpoint),
         signal: AbortSignal.timeout(timeout),
@@ -553,6 +584,7 @@ export class MachineLearningRepository implements RestorationInference {
 
     let workloads: MlWorkload[];
     try {
+      await this.authorize(endpoint);
       const response = await fetch(new URL('capabilities', endpoint.url), {
         headers: this.authHeaders(endpoint),
         signal: AbortSignal.timeout(timeout),
@@ -579,6 +611,7 @@ export class MachineLearningRepository implements RestorationInference {
 
     let hardware: MachineLearningHardwareResponse | null = null;
     try {
+      await this.authorize(endpoint);
       const response = await fetch(new URL('hardware', endpoint.url), {
         headers: this.authHeaders(endpoint),
         signal: AbortSignal.timeout(timeout),
@@ -685,11 +718,14 @@ export class MachineLearningRepository implements RestorationInference {
     let response: Response;
     let body: string;
     try {
+      await this.authorize(selection.endpoint);
       ({ response, body } = await fetchJobText(new URL('predict', selection.endpoint.url), {
         method: 'POST',
         headers: this.authHeaders(selection.endpoint),
         body: formData,
+        redirect: 'error',
       }));
+      await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
       selection.record(usage('failure', 0));
@@ -842,12 +878,14 @@ export class MachineLearningRepository implements RestorationInference {
    * media is sent. Workload names the server does not know are dropped.
    */
   async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+    await this.authorize(endpoint);
     if (endpoint.cloud) {
       throw new Error('Frameleaf Cloud models come from its catalogue, not a restoration worker');
     }
     const response = await fetch(new URL('restoration/models', endpoint.url), {
       headers: this.authHeaders(endpoint),
       signal: AbortSignal.timeout(this.timeout()),
+      redirect: 'error',
     });
     if (response.status === 404) {
       throw new Error('the destination does not run the restoration worker');
@@ -856,6 +894,7 @@ export class MachineLearningRepository implements RestorationInference {
       throw new Error(`restoration models returned ${response.status}`);
     }
     const report = RestorationCapabilityReportSchema.parse(await response.json());
+    await this.authorize(endpoint);
     return { ...report, workloads: report.workloads.filter(isMlWorkload) };
   }
 
@@ -943,11 +982,13 @@ export class MachineLearningRepository implements RestorationInference {
 
       attempted = true;
       try {
+        await this.authorize(selection.endpoint);
         response = await fetch(new URL('restoration/restore', selection.endpoint.url), {
           method: 'POST',
           headers: this.authHeaders(selection.endpoint),
           body: form,
           signal,
+          redirect: 'error',
         });
       } catch (error) {
         this.probeCache.delete(selection.endpoint.url);
@@ -1008,6 +1049,7 @@ export class MachineLearningRepository implements RestorationInference {
         );
       }
 
+      await this.authorize(selection.endpoint);
       keep = true;
       selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'success' });
       return {
@@ -1092,6 +1134,7 @@ export class MachineLearningRepository implements RestorationInference {
 
   /** Hardware of one explicit endpoint; the defaults when it does not answer. */
   async getHardware(endpoint: MlEndpoint): Promise<MachineLearningHardwareResponse> {
+    await this.authorize(endpoint);
     if (endpoint.cloud) {
       return defaultMachineLearningHardware;
     }
@@ -1102,7 +1145,9 @@ export class MachineLearningRepository implements RestorationInference {
         redirect: 'error',
       });
       if (response.ok) {
-        return diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+        const result = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+        await this.authorize(endpoint);
+        return result;
       }
 
       await response.body?.cancel();
@@ -1122,6 +1167,7 @@ export class MachineLearningRepository implements RestorationInference {
    * worker does not answer or sends no report.
    */
   async getContainerHardware(endpoint: MlEndpoint): Promise<MlContainerReport | null> {
+    await this.authorize(endpoint);
     if (endpoint.cloud) {
       return null;
     }
@@ -1135,7 +1181,9 @@ export class MachineLearningRepository implements RestorationInference {
         await response.body?.cancel();
         return null;
       }
-      return parseMlContainerReport(await this.readDiagnosticJson(response));
+      const result = parseMlContainerReport(await this.readDiagnosticJson(response));
+      await this.authorize(endpoint);
+      return result;
     } catch (error: unknown) {
       this.logger.warn(
         `Machine learning hardware request to "${endpoint.url}" failed: ${error instanceof Error ? error.message : error}`,

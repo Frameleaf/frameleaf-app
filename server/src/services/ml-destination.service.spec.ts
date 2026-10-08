@@ -643,6 +643,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
         mlDestinationStub.frameleafCloudConsented.id,
         expect.objectContaining({ cloud: mlProbeStub.frameleafCloud.cloud }),
+        mlDestinationStub.frameleafCloudConsented,
       );
     });
 
@@ -699,6 +700,7 @@ describe(MlDestinationService.name, () => {
             gpus: [{ name: 'NVIDIA RTX 4070 Ti SUPER', memoryTotalBytes: 17_171_480_576 }],
           },
         }),
+        mlDestinationStub.lan,
       );
     });
 
@@ -712,6 +714,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
         mlDestinationStub.local.id,
         expect.objectContaining({ hardware: null, latencyMs: 12 }),
+        mlDestinationStub.local,
       );
     });
   });

@@ -285,6 +285,36 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('probe', () => {
+    it.each(['policy', 'consent', 'quarantine-clear'])(
+      're-probes unchanged URL/token after %s authority changes',
+      async (transition) => {
+        let authorityIdentity = 'original';
+        const authority = {
+          assertEndpointAuthority: vi.fn(() => Promise.resolve(authorityIdentity)),
+        } as unknown as MlDestinationRepository;
+        const repository = new MachineLearningRepository(LoggingRepository.create(), authority);
+        repository.setup(defaults.machineLearning);
+        const fetch = vi
+          .fn()
+          .mockImplementation((url: URL) =>
+            Promise.resolve(
+              url.pathname === '/ping'
+                ? new Response('pong')
+                : url.pathname === '/capabilities'
+                  ? jsonResponse({ workloads: ['face'] })
+                  : new Response('', { status: 404 }),
+            ),
+          );
+        vi.stubGlobal('fetch', fetch);
+        await repository.probe({ url: lanUrl, authToken: 'unchanged' }, { maxAgeMs: 10_000 });
+        const count = fetch.mock.calls.length;
+        await repository.probe({ url: lanUrl, authToken: 'unchanged' }, { maxAgeMs: 10_000 });
+        expect(fetch).toHaveBeenCalledTimes(count);
+        authorityIdentity = transition;
+        await repository.probe({ url: lanUrl, authToken: 'unchanged' }, { maxAgeMs: 10_000 });
+        expect(fetch).toHaveBeenCalledTimes(count * 2);
+      },
+    );
     it('reports an unreachable endpoint without claiming any workload', async () => {
       const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
       vi.stubGlobal('fetch', fetch);
@@ -593,6 +623,7 @@ describe(MachineLearningRepository.name, () => {
     ) => {
       recordAccounting = vi.fn().mockResolvedValue(undefined);
       const mlDestinationRepository = {
+        assertRecoveryAuthority: vi.fn().mockResolvedValue(undefined),
         getById: vi.fn().mockResolvedValue(destination),
         getSpend: vi.fn().mockResolvedValue(0),
         recordProbe: vi.fn().mockResolvedValue(undefined),
@@ -681,6 +712,51 @@ describe(MachineLearningRepository.name, () => {
       expect(form.get('media')).toBeInstanceOf(Blob);
       expect(recordAccounting).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', bytesReceived: 20 }));
     });
+
+    it.each(['disable', 'quarantine', 'rebind'])(
+      'refuses a delayed restoration body after %s and deletes its output',
+      async () => {
+        const observed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let revoked = false;
+        const server = createServer((request, response) => {
+          request.resume();
+          request.on('end', () => {
+            response.writeHead(200, {
+              'content-type': 'video/mp4',
+              [RESTORATION_RESULT_HEADER]: Buffer.from(JSON.stringify(result())).toString('base64url'),
+            });
+            response.write(restored.subarray(0, 1));
+            observed.resolve();
+            void release.promise.then(() => response.end(restored.subarray(1)));
+          });
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (!address || typeof address === 'string') throw new Error('Expected owned loopback server');
+        const selection = await admit();
+        selection.endpoint.url = `http://127.0.0.1:${address.port}`;
+        selection.endpoint.assertAuthority = () =>
+          revoked ? Promise.reject(new Error('replacement_ml_authority_unavailable')) : Promise.resolve();
+        try {
+          const pending = restore({}, selection);
+          const assertion = expect(pending).rejects.toThrow('replacement_ml_authority');
+          await observed.promise;
+          revoked = true;
+          release.resolve();
+          await assertion;
+          expect(existsSync(outputPath)).toBe(false);
+          expect(await readFile(sourcePath)).toEqual(original);
+          expect(recordAccounting).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+          expect(recordAccounting).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+        } finally {
+          release.resolve();
+          server.closeAllConnections();
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+      },
+    );
 
     it('sends a still as an image request with no duration', async () => {
       const fetch = vi.fn().mockResolvedValue(answer(result()));

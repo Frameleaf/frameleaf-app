@@ -619,6 +619,8 @@ export enum SystemMetadataKey {
    */
   SystemConfigHistory = 'system-config-history',
   EffectiveConfigEpoch = 'effective-config-epoch',
+  /** Replacement recovery quarantine; imported health and consent never grant authority. */
+  FrameleafRecoveryMlAuthority = 'frameleaf-recovery-ml-authority',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
   /**
