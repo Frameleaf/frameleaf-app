@@ -1403,7 +1403,7 @@ describe(StudioExportService.name, () => {
             type: PushEventType.RenderFinished,
             userIds: [OWNER],
             assetIds: ['asset-new'],
-            data: expect.objectContaining({ versionId: VERSION, status: 'published' }),
+            data: expect.objectContaining({ versionId: VERSION, status: 'published', jobType: 'media-operation' }),
             systemTemplate: { version: 1, key: 'studio-export-ready-named', args: { label: 'Lake trip' } },
           }),
         },
@@ -1425,7 +1425,14 @@ describe(StudioExportService.name, () => {
         expect.objectContaining({
           type: PushEventType.RenderFinished,
           userIds: [OWNER],
-          data: expect.objectContaining({ versionId: VERSION, status: 'failed' }),
+          // native apps offer Retry for the failed render job
+          data: expect.objectContaining({
+            versionId: VERSION,
+            status: 'failed',
+            job: RENDER,
+            jobType: 'media-operation',
+            jobActions: 'retry',
+          }),
           systemTemplate: { version: 1, key: 'studio-export-failed-named', args: { label: 'Lake trip' } },
         }),
       );

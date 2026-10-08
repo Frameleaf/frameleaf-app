@@ -194,8 +194,10 @@ import {
 import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
 import {
   CloudBackupActivationProgress,
+  type PushJobRef,
   activationLine,
   cloudBackupActivationProgress,
+  pushJobData,
 } from 'src/utils/frameleaf-push.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
@@ -1454,6 +1456,7 @@ export class CloudBackupService {
           description: `The last cloud backup stopped: ${message}`,
           dedupeKey: 'cloud-backup:failed',
           dedupeDays: 1,
+          job: { id: operation.id, type: 'cloud-backup-run', actions: ['retry'] },
         });
       }
     }
@@ -1555,6 +1558,7 @@ export class CloudBackupService {
         description: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
         dedupeKey: 'cloud-backup:key-locked',
         dedupeDays: 1,
+        job: { id: operation.id, type: 'cloud-backup-run', actions: ['pause', 'cancel'] },
       });
       await this.operations.requeue(operation.id, claimToken, {
         delayMs: CLOUD_BACKUP_KEY_WAIT_MS,
@@ -2445,6 +2449,8 @@ export class CloudBackupService {
         description: message,
         dedupeKey: `cloud-backup:${operation.kind === RESTORE_KIND ? 'restore' : taskOf(operation)}-failed`,
         dedupeDays: 1,
+        // named so a device can open it; a verification, clean-up or restore is started again from settings
+        job: { id: operation.id, type: 'cloud-backup-run', actions: [] },
       });
     }
     return outcome === 'failed';
@@ -3667,9 +3673,12 @@ export class CloudBackupService {
     dedupeKey: string;
     dedupeDays?: number;
     type?: NotificationType;
+    /** The server job the notice is about, so devices can offer Retry or Pause for it. */
+    job?: PushJobRef;
   }) {
+    const { job, ...adminNotice } = notice;
     this.eventRepository
-      .emit('AdminNotify', { type: NotificationType.BackupFailed, ...notice })
+      .emit('AdminNotify', { type: NotificationType.BackupFailed, ...adminNotice })
       .catch((error) => this.logger.warn(`Could not notify administrators: ${errorMessage(error)}`));
     // FL-228: every such notice means cloud backup needs the owner; their devices hear it too
     this.eventRepository
@@ -3678,7 +3687,7 @@ export class CloudBackupService {
         admins: true,
         title: notice.title,
         body: notice.description,
-        data: { reason: notice.dedupeKey },
+        data: { reason: notice.dedupeKey, ...pushJobData(job) },
         dedupeKey: `cloud-backup-attention/${notice.dedupeKey}`,
       })
       .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${errorMessage(error)}`));
