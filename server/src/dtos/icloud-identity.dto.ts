@@ -366,8 +366,19 @@ export const ICloudEditSuccessorSchema = z
     channel: z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudEditPublicationChannel' }),
     resourceId: z.uuid().describe('Existing verified bytes; accepting this is an explicit owner successor decision'),
     policy: z.enum(['keep', 'supersede']).meta({ id: 'ICloudEditRetentionPolicy' }).default('keep'),
+    expectedPublicationId: z
+      .uuid()
+      .nullable()
+      .optional()
+      .describe(
+        'Supersede requires explicit current local publication CAS; null only for no existing local publication',
+      ),
   })
   .strict()
+  .refine((value) => value.policy !== 'supersede' || value.expectedPublicationId !== undefined, {
+    message: 'Supersede requires current publication CAS',
+    path: ['expectedPublicationId'],
+  })
   .meta({ id: 'ICloudEditSuccessorDto' });
 export class ICloudEditSuccessorDto extends createZodDto(ICloudEditSuccessorSchema) {}
 export const ICloudEditDecisionResponseSchema = z

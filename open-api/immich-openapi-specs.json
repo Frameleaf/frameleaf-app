@@ -20431,7 +20431,7 @@
     },
     "/icloud-sync/edits/successor": {
       "post": {
-        "description": "Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Unsupported or unsafe supersede decisions require review.",
+        "description": "Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Supersede explicitly binds the current local publication, verified eligible render set, effective config and owner-local policy sequence; first publication refuses changed policy, privacy or authority. Accepted decisions, committed bytes, queued effects and delivered effects are distinct.",
         "operationId": "acceptICloudEditSuccessor",
         "parameters": [],
         "requestBody": {
@@ -74212,6 +74212,13 @@
             "maximum": 2147483646,
             "minimum": 0,
             "type": "integer"
+          },
+          "expectedPublicationId": {
+            "description": "Supersede requires explicit current local publication CAS; null only for no existing local publication",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           },
           "expectedVersionId": {
             "format": "uuid",

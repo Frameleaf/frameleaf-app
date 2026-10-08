@@ -8,6 +8,7 @@ import {
   ICloudSyncService,
   mapICloudRun,
 } from 'src/services/icloud-sync.service.js';
+import { LocalEffectsPendingError } from 'src/services/media-recovery.service.js';
 
 describe(ICloudSyncService.name, () => {
   const connection = {
@@ -93,6 +94,7 @@ describe(ICloudSyncService.name, () => {
   const weeklySchedule = { schedule: vi.fn() };
   const jobs = { queue: vi.fn() };
   const albums = { reconcile: vi.fn() };
+  const relations = { reconcile: vi.fn(), enqueue: vi.fn() };
   const operations = {
     claimNext: vi.fn(),
     reportProgress: vi.fn(),
@@ -144,6 +146,8 @@ describe(ICloudSyncService.name, () => {
     recovery.reconcile.mockResolvedValue({ outcome: 'repaired-missing', assetId: 'same-asset' });
     jobs.queue.mockResolvedValue(undefined);
     albums.reconcile.mockResolvedValue(true);
+    relations.reconcile.mockResolvedValue(true);
+    relations.enqueue.mockResolvedValue(0);
     repository.finalize.mockImplementation(async (_resource, cleanup) => {
       await cleanup();
       return true;
@@ -165,7 +169,7 @@ describe(ICloudSyncService.name, () => {
       jobs as never,
       {} as never,
       albums as never,
-      albums as never,
+      relations as never,
       {} as never,
       albums as never,
       operations as never,
@@ -396,6 +400,31 @@ describe(ICloudSyncService.name, () => {
       expect(staging.cleanup).not.toHaveBeenCalled();
       expect(repository.clearOutbox).not.toHaveBeenCalled();
       expect(repository.finish).toHaveBeenCalledWith(resource, 'committed', 'icloud_transfer_failed');
+    });
+
+    it('preserves a committed edited receipt and retries its local wake before finalization', async () => {
+      const committed = {
+        ...resource,
+        status: 'committed',
+        role: 'edited-image',
+        auditRequestId: null,
+        pendingJobs: [],
+      };
+      repository.resource.mockResolvedValue(committed);
+      recovery.reconcile.mockRejectedValueOnce(new LocalEffectsPendingError());
+      await sut.run(operation(), 'token');
+      expect(repository.finish).toHaveBeenLastCalledWith(resource, 'committed', 'local_effects_pending');
+      expect(staging.cleanup).not.toHaveBeenCalled();
+      repository.claim.mockResolvedValueOnce(committed);
+      relations.enqueue.mockRejectedValueOnce(new Error('wake still unavailable'));
+      await sut.run(operation(), 'token');
+      expect(repository.finish).toHaveBeenLastCalledWith(committed, 'committed', 'local_effects_pending');
+      expect(staging.cleanup).not.toHaveBeenCalled();
+      repository.claim.mockResolvedValueOnce(committed);
+      relations.enqueue.mockResolvedValueOnce(1);
+      await sut.run(operation(), 'token');
+      expect(repository.finalize).toHaveBeenLastCalledWith(committed, expect.any(Function));
+      expect(recovery.reconcile).toHaveBeenCalledTimes(1);
     });
 
     it('preserves upload source and notification flags when dispatching the durable outbox', async () => {

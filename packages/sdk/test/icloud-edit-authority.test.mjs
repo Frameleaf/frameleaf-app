@@ -178,3 +178,39 @@ test("administrative decision transport preserves exact opaque tokens and idempo
     assert.deepEqual(received, ack);
   }
 });
+
+test("supersede transports explicit local publication CAS including null without provider order", async () => {
+  for (const expectedPublicationId of [null, "local-publication-fixture"]) {
+    const body = {
+      requestId: "supersede-request",
+      expectedGeneration: 2,
+      expectedVersionId: "canonical-version",
+      channel: "device",
+      resourceId: "verified-resource",
+      policy: "supersede",
+      expectedPublicationId,
+    };
+    let called = false;
+    await acceptICloudEditSuccessor(
+      { iCloudEditSuccessorDto: body },
+      {
+        headers,
+        fetch: async (url, init) => {
+          called = true;
+          assert.equal(
+            new URL(url, "http://fixture").pathname,
+            "/api/icloud-sync/edits/successor",
+          );
+          assert.deepEqual(JSON.parse(init.body), body);
+          return response({
+            decisionId: body.requestId,
+            generation: 2,
+            versionId: "accepted-version",
+            evidenceType: "administrative",
+          });
+        },
+      },
+    );
+    assert.equal(called, true);
+  }
+});

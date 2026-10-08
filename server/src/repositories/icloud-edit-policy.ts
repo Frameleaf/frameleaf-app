@@ -185,7 +185,193 @@ export async function lockPolicyBackrefs(tx: Transaction<DB>, ownerId: string, i
 type EditPolicyTransition = Pick<
   EditPublication,
   'item' | 'generation' | 'holder' | 'versionId' | 'sha256' | 'policy' | 'decisionId'
-> & { channel?: EditPublication['channel']; resourceId?: string; priorVersionId?: string };
+> & {
+  channel?: EditPublication['channel'];
+  resourceId?: string;
+  priorVersionId?: string;
+  acceptedVictimAssetIds?: string[];
+};
+
+/** Private immutable decision basis. Local stream order is not provider revision order. */
+export async function captureEditPolicyAcceptance(
+  tx: Transaction<DB>,
+  ownerId: string,
+  item: string,
+  sessionId: string,
+  expectedPublicationId: string | null,
+  incomingAssetId: string | null,
+) {
+  const binding = requireEditPublicationBinding(tx, item);
+  await lockPolicyBackrefs(tx, ownerId, item);
+  const authority = await tx
+    .selectFrom('icloud_edit_authority')
+    .selectAll()
+    .where('ownerId', '=', ownerId)
+    .where('item', '=', item)
+    .executeTakeFirstOrThrow();
+  const versions = await tx
+    .selectFrom('icloud_edit_version')
+    .selectAll()
+    .where('ownerId', '=', ownerId)
+    .where('item', '=', item)
+    .orderBy('assetId')
+    .limit(101)
+    .execute();
+  if (versions.length > 100) review('edit_family_too_large');
+  const assets =
+    binding.family.assetIds.length > 0
+      ? await tx
+          .selectFrom('asset')
+          .select(['id', 'ownerId', 'status', 'deletedAt', 'stackId', 'visibility', isLocked().as('locked')])
+          .where('id', 'in', binding.family.assetIds)
+          .orderBy('id')
+          .forUpdate()
+          .execute()
+      : [];
+  if (
+    assets.length !== binding.family.assetIds.length ||
+    assets.some((a) => a.ownerId !== ownerId || ![AssetStatus.Active, AssetStatus.Trashed].includes(a.status))
+  )
+    review('edit_evidence_unavailable');
+  if (versions.some((v) => assets.every((a) => a.id !== v.assetId))) review('edit_family_unstable');
+  const stackIds = [...new Set(assets.flatMap((a) => (a.stackId ? [a.stackId] : [])))].sort();
+  const stacks =
+    stackIds.length > 0
+      ? await tx
+          .selectFrom('stack')
+          .select(['id', 'ownerId', 'primaryAssetId'])
+          .where('id', 'in', stackIds)
+          .orderBy('id')
+          .forUpdate()
+          .execute()
+      : [];
+  if (stacks.length !== stackIds.length || stacks.some((s) => s.ownerId !== ownerId))
+    review('edit_manual_stack_conflict');
+  const publication = await loadLatestPolicyWithin(tx, ownerId, binding.family.items);
+  if ((publication?.effect.effectId ?? null) !== expectedPublicationId) review('edit_publication_stale');
+  const receipts = await provenPolicyVersionsWithin(
+    tx,
+    ownerId,
+    [item],
+    versions.map((v) => v.id),
+  );
+  if (versions.some((v) => receipts.every((r) => r.id !== v.id))) review('edit_member_evidence_unproven');
+  const backrefs = (
+    await sql<{ id: string; assetId: string; source: { _sync?: { relations?: Record<string, unknown> } } }>`
+    SELECT id,"assetId",source FROM icloud_resource WHERE "ownerId"=${ownerId}::uuid
+      AND "assetId"=ANY(${assets.map((a) => a.id)}::uuid[]) AND status IN ('committed','finalized')
+      ORDER BY id LIMIT 101`.execute(tx)
+  ).rows;
+  if (backrefs.length > 100) review('edit_family_too_large');
+  const head = await AssetLocalEffectRepository.lockStreamHead(tx, ownerId);
+  const epochs = await AssetLocalEffectRepository.sourceEpochs(
+    tx,
+    assets.map((a) => a.id),
+  );
+  const live = await currentAuth(tx, ownerId, sessionId, false);
+  if (!live) throw new ForbiddenException('edit_owner_session_required');
+  await assertLifecycleProofs(
+    tx,
+    live,
+    versions.map((v) => ({
+      assetId: v.assetId,
+      sha256: v.sha256.toString('hex'),
+      status: assets.find((a) => a.id === v.assetId)!.status as AssetStatus.Active | AssetStatus.Trashed,
+    })),
+  );
+  return {
+    formatVersion: 1,
+    config: { epoch: binding.epoch!.epoch, digest: binding.epoch!.digest, trashEnabled: binding.epoch!.trashEnabled },
+    authority: {
+      generation: authority.generation,
+      holder: authority.holder,
+      currentVersionId: authority.currentVersionId,
+      sourceIncarnation: authority.sourceIncarnation,
+    },
+    publicationId: expectedPublicationId,
+    head,
+    items: binding.family.items,
+    assets: assets.map((a) => ({ ...a, deletedAt: a.deletedAt?.toISOString() ?? null })),
+    stacks,
+    versions: versions.map((v) => ({
+      id: v.id,
+      item: v.item,
+      assetId: v.assetId,
+      sha256: v.sha256.toString('hex'),
+      isOriginal: v.isOriginal,
+    })),
+    backrefs: backrefs.map((r) => ({ id: r.id, assetId: r.assetId, relations: r.source._sync?.relations ?? null })),
+    epochs,
+    victimAssetIds: versions
+      .filter(
+        (v) =>
+          !v.isOriginal &&
+          v.assetId !== incomingAssetId &&
+          assets.find((a) => a.id === v.assetId)!.status === AssetStatus.Active,
+      )
+      .map((v) => v.assetId)
+      .sort(),
+  };
+}
+
+/** Equality plus held row/counter locks fence intervening policy, including equal-state round trips. */
+export async function assertEditPolicyAcceptance(
+  tx: Transaction<DB>,
+  ownerId: string,
+  item: string,
+  sessionId: string,
+  accepted: unknown,
+  incomingAssetId: string | null,
+) {
+  const expected = z
+    .object({ formatVersion: z.literal(1), publicationId: z.uuid().nullable() })
+    .passthrough()
+    .safeParse(accepted);
+  if (!expected.success) review('edit_supersede_requires_review');
+  const current = await captureEditPolicyAcceptance(
+    tx,
+    ownerId,
+    item,
+    sessionId,
+    expected.data.publicationId,
+    incomingAssetId,
+  );
+  if (!isDeepStrictEqual(current, accepted)) review('edit_policy_acceptance_stale');
+  return current;
+}
+
+export async function assertEditPolicyReceiptAccess(
+  tx: Transaction<DB>,
+  ownerId: string,
+  sessionId: string,
+  receipt: EditPolicyReceipt,
+) {
+  const live = await currentAuth(tx, ownerId, sessionId, false);
+  if (!live) throw new ForbiddenException('edit_owner_session_required');
+  const rows = await tx
+    .selectFrom('asset')
+    .select(['id', 'status'])
+    .where(
+      'id',
+      'in',
+      receipt.proofs.map((p) => p.assetId),
+    )
+    .execute();
+  if (
+    receipt.proofs.some((p) =>
+      rows.every((r) => r.id !== p.assetId || ![AssetStatus.Active, AssetStatus.Trashed].includes(r.status)),
+    )
+  )
+    review('edit_evidence_unavailable');
+  await assertLifecycleProofs(
+    tx,
+    live,
+    receipt.proofs.map((p) => ({
+      ...p,
+      status: rows.find((r) => r.id === p.assetId)!.status as AssetStatus.Active | AssetStatus.Trashed,
+    })),
+  );
+}
 
 /** Same-transaction private policy receipt; administrative bindings never imply provider order. */
 export async function applyEditPolicyWithin(
@@ -214,6 +400,7 @@ export async function applyEditPolicyWithin(
     .execute();
   if (versions.length > 100) review('edit_family_too_large');
   const members = [...new Set([...versions.map((v) => v.assetId), assetId])].sort();
+  if (members.length > 100) review('edit_family_too_large');
   if (versions.some((v) => !binding.family.assetIds.includes(v.assetId))) review('edit_family_unstable');
   // The admitted family prefix covers all pre-existing motion/stack/derived rows.
   // A newly created incoming row is already private to this writer transaction.
@@ -354,6 +541,8 @@ export async function applyEditPolicyWithin(
           .map((v) => v.assetId)
           .sort()
       : [];
+  if (publication.policy === 'supersede' && !isDeepStrictEqual(trash, publication.acceptedVictimAssetIds))
+    review('edit_policy_acceptance_stale');
   if (trash.length > 0) {
     if (!binding.epoch!.trashEnabled) review('edit_trash_disabled');
     const shared = await tx

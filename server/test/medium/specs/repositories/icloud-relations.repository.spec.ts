@@ -16,6 +16,7 @@ import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.rep
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { initializeEffectiveConfig } from 'src/utils/config.js';
@@ -150,6 +151,8 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     'changed-receipt',
     'explicit-original-revert',
     'explicit-sync-original-revert',
+    'explicit-original-supersede',
+    'explicit-sync-original-supersede',
     'administrative-only',
   ] as const)(
     'C2 advances all actual source backrefs atomically and local reconciliation preserves the published policy: %s',
@@ -335,7 +338,10 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
           break;
         }
         case 'explicit-original-revert':
-        case 'explicit-sync-original-revert': {
+        case 'explicit-sync-original-revert':
+        case 'explicit-original-supersede':
+        case 'explicit-sync-original-supersede': {
+          const retention = caseName.endsWith('supersede') ? 'supersede' : 'keep';
           const snapshot = (await edits.discover(ctx.auth, original)).items.find((i) => i.item === item)!;
           const originalReceipt = snapshot.receipts.find((r) => r.assetId === original)!;
           const publication = snapshot.authority!.currentPublicationId;
@@ -343,15 +349,14 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
             requestId: randomUUID(),
             expectedGeneration: authority.generation,
             receiptId: originalReceipt.receiptId,
-            holder:
-              caseName === 'explicit-sync-original-revert'
-                ? { kind: 'icloud-sync', id: ctx.connectionId }
-                : { kind: 'device', id: deviceKey },
+            holder: caseName.startsWith('explicit-sync-original-')
+              ? { kind: 'icloud-sync', id: ctx.connectionId }
+              : { kind: 'device', id: deviceKey },
             sourceIncarnation: randomUUID(),
             nativeVersion: 'explicit-original-revert',
-            intent: { kind: 'original-revert', expectedPublicationId: publication, retention: 'keep' },
+            intent: { kind: 'original-revert', expectedPublicationId: publication, retention },
           });
-          if (caseName === 'explicit-sync-original-revert')
+          if (caseName.startsWith('explicit-sync-original-'))
             await identities.release(ctx.ownerId, [claim.id], 'device:' + deviceKey);
           await expect(
             edits.baseline(ctx.auth, {
@@ -371,9 +376,9 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
             edits.baseline(ctx.auth, {
               ...request,
               requestId: randomUUID(),
-              intent: { ...request.intent!, retention: 'supersede' },
+              intent: { ...request.intent!, retention: 'supersede', expectedPublicationId: randomUUID() },
             }),
-          ).rejects.toThrow('edit_supersede_requires_review');
+          ).rejects.toThrow('edit_publication_stale');
           expect(
             await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', ctx.ownerId).execute(),
           ).toHaveLength(1);
@@ -417,7 +422,57 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
               .where('ownerId', '=', ctx.ownerId)
               .where('status', '=', AssetStatus.Trashed)
               .execute(),
-          ).toHaveLength(0);
+          ).toHaveLength(retention === 'supersede' ? 2 : 0);
+          if (retention === 'supersede') {
+            const victims = [edited, published.resultAssetId!].sort();
+            expect(
+              (
+                await db
+                  .selectFrom('asset')
+                  .select('id')
+                  .where('ownerId', '=', ctx.ownerId)
+                  .where('status', '=', AssetStatus.Trashed)
+                  .orderBy('id')
+                  .execute()
+              ).map((row) => row.id),
+            ).toEqual(victims);
+            expect(
+              (await db.selectFrom('asset').select('status').where('id', '=', original).executeTakeFirstOrThrow())
+                .status,
+            ).toBe(AssetStatus.Active);
+            expect((await new TrashRepository(db).restoreAll(victims, ctx.auth)).sort()).toEqual(victims);
+            await finish(ctx);
+            expect(
+              await db
+                .selectFrom('asset')
+                .select('id')
+                .where('ownerId', '=', ctx.ownerId)
+                .where('status', '=', AssetStatus.Trashed)
+                .execute(),
+            ).toHaveLength(0);
+            expect(
+              (
+                await db
+                  .selectFrom('stack')
+                  .select('primaryAssetId')
+                  .where('id', '=', stack.id)
+                  .executeTakeFirstOrThrow()
+              ).primaryAssetId,
+            ).toBe(original);
+            // Receipt replay acknowledges the old policy; it must not re-Trash restored renders.
+            expect(await edits.baseline(ctx.auth, request)).toEqual(reverted);
+            expect(
+              await db
+                .selectFrom('asset')
+                .select('id')
+                .where('ownerId', '=', ctx.ownerId)
+                .where('status', '=', AssetStatus.Trashed)
+                .execute(),
+            ).toHaveLength(0);
+            expect(
+              await db.selectFrom('icloud_edit_version').select('id').where('ownerId', '=', ctx.ownerId).execute(),
+            ).toHaveLength(3);
+          }
 
           break;
         }
