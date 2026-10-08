@@ -10,7 +10,7 @@ import sharp from 'sharp';
 import type { JobItem } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { publishJobResult } from 'src/queue/context.js';
 import { SharpProcessPool, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -165,7 +165,11 @@ describe('thumbnail batch native lifetime', () => {
         expect(operations).toEqual(Array.from({ length: hangFirst ? 2 : 1 }, () => 'generateImageThumbnails'));
         expect(adopted).toHaveBeenCalledTimes(1);
         expect(generated?.thumbhash).toBeInstanceOf(Buffer);
-        expect(generated?.files).toHaveLength(2);
+        expect(generated?.files.map((file) => file.type)).toEqual([
+          AssetFileType.Preview,
+          AssetFileType.Thumbnail,
+          AssetFileType.FullSize,
+        ]);
         for (const file of generated!.files) {
           expect((await sharp(file.path).metadata()).width).toBeGreaterThan(0);
         }
