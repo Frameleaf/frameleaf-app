@@ -514,7 +514,12 @@
       "path": "patches/0106-browser-whisper-tiny-settings-test.patch",
       "sha256": "52d2e4d90c9d8d2e5e191a0418780dad0e797a85a2db781ca95af376daab7c95",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0107-histogram-bin-correspondence.patch",
+      "sha256": "ee37477f84d5309ea4b5441550f62e9a58e657c65e2efd87694c283add9d7ee5",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "680d0070383b0b7d5721a9cd874325abc19b3d635490b90d0f0d90b72b67d5c0"
+  "sourceSha256": "c212cc40fde85a70a9054489b2da1a15dec75cea6bd9e9333230875d68a2d470"
 }
