@@ -244,3 +244,34 @@ describe('owner restore current publication authority (FL-234)', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 });
+
+it('refuses a contended Buddy publication and rechecks authority after the contender releases its row', async () => {
+  const { index, asset, operation, owner, identity, lease } = await setup();
+  await database
+    .updateTable('media_operation')
+    .set({ kind: MediaOperationKind.BuddyRestore })
+    .where('id', '=', operation.id)
+    .execute();
+  const publish = vi.fn().mockResolvedValue('published');
+  const run = () => index.withOwnerRestore(owner, identity, asset.id, lease, publish, { authorize: async () => {} });
+  const { promise: held, resolve: locked } = Promise.withResolvers<void>();
+  const { promise: done, resolve: release } = Promise.withResolvers<void>();
+  const contender = database.transaction().execute(async (trx) => {
+    await trx.updateTable('asset').set({ isFavorite: false }).where('id', '=', asset.id).execute();
+    locked();
+    await done;
+  });
+  try {
+    await held;
+    await expect(run()).rejects.toMatchObject({ code: '55P03' });
+    expect(publish).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await contender;
+  }
+  await expect(run()).resolves.toBe('published');
+  expect(publish).toHaveBeenCalledTimes(1);
+  await database.updateTable('session').set({ pinExpiresAt: null }).where('id', '=', owner.sessionId).execute();
+  await expect(run()).rejects.toThrow('Owner restore authorization unavailable');
+  expect(publish).toHaveBeenCalledTimes(1);
+});

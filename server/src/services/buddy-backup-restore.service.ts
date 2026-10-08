@@ -1674,6 +1674,8 @@ export class BuddyBackupRestoreService {
           },
           {
             retry:
+              // NOWAIT contention rolls back publication; replay rechecks every authority fence.
+              code === '55P03' ||
               error instanceof BuddyExecutionError ||
               error instanceof OperationDeadlineError ||
               (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)),
