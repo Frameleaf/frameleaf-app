@@ -474,7 +474,12 @@
       "path": "patches/0098-scope-color-source-correspondence.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "a4397d3c6d50173e2fcb632ca472b13f939dbc77da23040b7778cc38096d5f13"
+    },
+    {
+      "path": "patches/0099-native-linked-chain-join.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "93e70f7de8b71dd62e1f5ac434a257f6dbc49b78f97b39a7c651bc9a4be43233"
     }
   ],
-  "sourceSha256": "c6ac4f7c4b9d83e6fe5294008dcbf0fed751ec96d1f3bb8dbe3d030e2dc4bf4b"
+  "sourceSha256": "01d20907319c1b3228e215fe741a32a497ec41b06a1c676c1e5cfbab28f2e43d"
 }
