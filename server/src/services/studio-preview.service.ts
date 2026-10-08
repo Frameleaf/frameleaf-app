@@ -1,3 +1,4 @@
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -916,6 +917,7 @@ export class StudioPreviewService {
         previewFrameId: frame.id,
         ...(previewConsumerOf(frame.cacheKey) && { consumerRequestId: previewConsumerOf(frame.cacheKey)!.requestId }),
         manifestDigest: manifest.digest,
+        sourceEpochs: manifest.sourceEpochs,
         projectRevision: manifest.revision,
         resourceCacheKey: this.resources.cacheKey(manifest),
         // FL-93: the cadence and source timing maps, identical to what an export declares.
@@ -939,6 +941,7 @@ export class StudioPreviewService {
       try {
         const { operation } = await this.operations.createWithin(
           async (tx) => {
+            await holdSourceAdmission(tx, input.snapshot);
             await this.repository.lockPendingAdmission(tx, frame);
             return { operation: input, value: frame };
           },

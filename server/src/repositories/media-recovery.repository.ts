@@ -22,6 +22,7 @@ import {
   editAuthorityReviewReason,
 } from 'src/repositories/icloud-edit-authority.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
+import { withICloudPublicationTransaction } from 'src/repositories/icloud-edit-transaction.js';
 import { guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
 import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
@@ -290,12 +291,9 @@ export class MediaRecoveryRepository {
     if (input.audit?.purpose === 'scheduled-weekly') {
       return { outcome: 'retry', reason: 'mapping_changed' };
     }
-    return this.db.transaction().execute(async (trx) => {
+    return withICloudPublicationTransaction(this.db, input.ownerId, [{channel:'icloud-sync',id:input.resourceId}], async (trx) => {
       const editAuthority = new ICloudEditAuthorityRepository(trx);
       const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
-      if (editItem) {
-        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
-      }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const reuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
       if (reuse.required && (!input.weeklyReuse || !reuse.context)) {
@@ -536,12 +534,9 @@ export class MediaRecoveryRepository {
         return { outcome: 'retry', reason: 'final_verification_failed' };
       }
     }
-    return this.db.transaction().execute(async (trx) => {
+    return withICloudPublicationTransaction(this.db, input.ownerId, [{channel:'icloud-sync',id:input.resourceId}], async (trx) => {
       const editAuthority = new ICloudEditAuthorityRepository(trx);
       const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
-      if (editItem) {
-        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
-      }
       if (
         scheduledAuthority &&
         !(await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {

@@ -3,14 +3,18 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import { clearOrderedPageCursors, loadOrderedPage } from './load-support.svelte';
 
-const month = () => ({ getFirstAsset: vi.fn(), addOrderedAssets: vi.fn() }) as unknown as TimelineMonth;
+const month = () => ({ getFirstAsset: vi.fn(), addOrderedAssets: vi.fn(), timelineManager: { projectionGeneration: 0, months: [] } }) as unknown as TimelineMonth;
+const bind = (months: TimelineMonth[]) => {
+  for (const item of months) Object.assign(item.timelineManager, { months });
+  return months;
+};
 const response = (startCursor: string, endCursor: string) => ({ id: ['asset'], startCursor, endCursor }) as never;
 
 describe('ordered page cursors', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('seeks forward and backward from adjacent pages and falls back to offsets for random access', async () => {
-    const months = Array.from({ length: 5 }, month);
+    const months = bind(Array.from({ length: 5 }, month));
     const options = { orderedBy: TimelineOrderedSort.Filename };
     const signal = new AbortController().signal;
     sdkMock.getTimelineOrdered.mockResolvedValueOnce(response('a', 'b'));
@@ -32,7 +36,7 @@ describe('ordered page cursors', () => {
   });
 
   it('discards cursors on refresh and never caches a cancelled request', async () => {
-    const months = [month(), month()];
+    const months = bind([month(), month()]);
     const options = { orderedBy: TimelineOrderedSort.Rating };
     const controller = new AbortController();
     sdkMock.getTimelineOrdered.mockImplementationOnce(async () => {
@@ -46,7 +50,7 @@ describe('ordered page cursors', () => {
     expect(sdkMock.getTimelineOrdered).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 500 }), { signal });
     sdkMock.getTimelineOrdered.mockResolvedValueOnce(response('a', 'b'));
     await loadOrderedPage(months[0], months, options, signal);
-    const refreshed = [month(), month()];
+    const refreshed = bind([month(), month()]);
     await loadOrderedPage(
       refreshed[1],
       refreshed,

@@ -625,9 +625,22 @@ export class StudioProjectRepository {
   /** Server-side declarations only; source ACLs are still rechecked by StudioResourceService. */
   async listGeneratedResources(projectId: string): Promise<StudioDeclaredGenerated[]> {
     const { rows } = await sql<StudioDeclaredGenerated>`
-      SELECT resource.id, resource.producer, resource.checksum, resource.path, resource."derivedFrom"
+      SELECT resource.id, resource.producer, resource.checksum, resource.path, resource."derivedFrom",
+        operation.snapshot -> 'sourceEpochs' AS "sourceEpochs"
       FROM public.studio_generated_resource resource
       JOIN studio_project project ON project.id = resource."projectId" AND project."ownerId" = resource."ownerId"
+      LEFT JOIN media_operation operation ON operation."ownerId" = resource."ownerId"
+        AND operation."projectId" = resource."projectId"
+        AND operation.kind = 'studio_reverse_conform' AND operation.status = 'completed'
+        AND operation.snapshot ->> 'revision' = resource."sourceRevision"::text
+        AND (
+          (resource.producer = 'reverse-conform' AND resource.id = 'reverse-' || operation.id::text
+            AND operation.result ->> 'generatedId' = resource.id
+            AND operation.result ->> 'checksum' = resource.checksum)
+          OR (resource.producer = 'proxy' AND resource.id = 'reverse-preview-' || operation.id::text
+            AND operation.result -> 'browserPreview' ->> 'generatedId' = resource.id
+            AND operation.result -> 'browserPreview' ->> 'checksum' = resource.checksum)
+        )
       WHERE project.id = ${projectId}::uuid AND project."deletedAt" IS NULL
       ORDER BY resource.id LIMIT ${STUDIO_MAX_REFERENCES + 1}
     `.execute(this.db);
@@ -635,7 +648,7 @@ export class StudioProjectRepository {
     if (rows.length > STUDIO_MAX_REFERENCES) {
       throw new BadRequestException('The project has too many generated media declarations');
     }
-    return rows;
+    return rows.map(row => ({ ...row, sourceEpochs: row.sourceEpochs ?? undefined }));
   }
   /**
    * FL-103 / FL-105: record a file uploaded into a project. The caller has already written the

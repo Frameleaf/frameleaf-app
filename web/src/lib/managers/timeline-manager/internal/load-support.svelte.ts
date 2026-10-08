@@ -15,6 +15,8 @@ export async function loadFromTimeBuckets(
     return;
   }
 
+  const projection = timelineManager.projectionGeneration;
+  const current = () => projection === timelineManager.projectionGeneration && timelineManager.months.includes(timelineMonth);
   const timeBucket = toISOYearMonthUTC(timelineMonth.yearMonth);
   const bucketResponse = await getTimeBucket(
     {
@@ -25,7 +27,7 @@ export async function loadFromTimeBuckets(
     { signal },
   );
 
-  if (!bucketResponse || signal.aborted) {
+  if (!bucketResponse || signal.aborted || !current()) {
     return;
   }
 
@@ -38,7 +40,7 @@ export async function loadFromTimeBuckets(
       },
       { signal },
     );
-    if (!albumAssets || signal.aborted) {
+    if (!albumAssets || signal.aborted || !current()) {
       return;
     }
     for (const id of albumAssets.id) {
@@ -86,6 +88,8 @@ export async function loadOrderedPage(
   if (timelineMonth.getFirstAsset() || !options.orderedBy) {
     return;
   }
+  const manager = timelineMonth.timelineManager;
+  const projection = manager.projectionGeneration;
   const page = months.indexOf(timelineMonth);
   if (page === -1) {
     return;
@@ -107,7 +111,7 @@ export async function loadOrderedPage(
     },
     { signal },
   );
-  if (!response || signal.aborted) {
+  if (!response || signal.aborted || projection !== manager.projectionGeneration || manager.months !== months) {
     return;
   }
   // An update during this request may have invalidated its boundaries. Do not retain them.

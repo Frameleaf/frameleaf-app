@@ -1,3 +1,4 @@
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
@@ -289,6 +290,7 @@ export class StudioExportRepository {
     version: StudioExportVersion;
   }> {
     return this.db.transaction().execute(async (tx) => {
+      await holdSourceAdmission(tx, operation.snapshot);
       const created = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       const row = await tx
         .insertInto('studio_export_version')

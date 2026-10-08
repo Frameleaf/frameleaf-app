@@ -5,6 +5,7 @@ import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { IntegrityVerificationResult } from 'src/schema/tables/safety-proof.table.js';
@@ -21,10 +22,20 @@ export class IntegrityRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
+  /** Source-owner revocation facts, independent of the requesting viewer's account. */
+  sourceEpochs(ids: string[]) {
+    return AssetLocalEffectRepository.sourceEpochs(this.db, ids);
+  }
+
   /** Current own library only, using the owner-access lock and hidden-content predicates. */
   getSafetyQuery(auth: AuthDto, hashes?: string[]) {
+    return this.getLifecycleSafetyQuery(auth, AssetStatus.Active, hashes);
+  }
+
+  /** Internal reversible lifecycle proof; the ordinary SafetyQuery remains active-only. */
+  getLifecycleSafetyQuery(auth: AuthDto, status: AssetStatus.Active | AssetStatus.Trashed, hashes?: string[]) {
     const privacy = auth.hiddenContent ?? auth.hideNsfwAssets;
-    return this.getOwnedOriginalSafetyQuery(auth.user.id, hashes)
+    return this.getOwnedOriginalSafetyQuery(auth.user.id, hashes, status)
       .$if(!auth.session?.hasElevatedPermission, (qb) =>
         qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
       )
@@ -37,7 +48,7 @@ export class IntegrityRepository {
   }
 
   /** Structural ownership/content query only. Callers must apply their actual privacy authority. */
-  getOwnedOriginalSafetyQuery(ownerId: string, hashes?: string[]) {
+  getOwnedOriginalSafetyQuery(ownerId: string, hashes?: string[], status: AssetStatus.Active | AssetStatus.Trashed = AssetStatus.Active) {
     const sha256 = sql<string | null>`CASE
       WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha256File} THEN encode(asset.checksum, 'hex')
       WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File} THEN (
@@ -61,8 +72,8 @@ export class IntegrityRepository {
           .on(sql<boolean>`integrity."checksumAlgorithm" IS NOT DISTINCT FROM asset."checksumAlgorithm"::text`),
       )
       .where('asset.ownerId', '=', ownerId)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.status', '=', AssetStatus.Active)
+      .where('asset.deletedAt', status === AssetStatus.Active ? 'is' : 'is not', null)
+      .where('asset.status', '=', status)
       .where('library.deletedAt', 'is', null)
       .$if(hashes !== undefined, (qb) => qb.where(sha256, 'in', hashes!))
       .select([

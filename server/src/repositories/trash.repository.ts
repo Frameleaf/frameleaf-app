@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { TrashReviewRow, TrashScopeRow } from 'src/utils/trash-review.js';
@@ -249,9 +249,16 @@ export class TrashRepository {
     options: TrashScopeOptions,
     verify: (rows: TrashScopeRow[]) => boolean,
   ): Promise<string[] | null> {
+    return this.db.transaction().execute((trx) => this.applyReviewedWithin(trx, userId, action, ids, options, verify));
+  }
+
+  /** Same-transaction primitive: caller retains configuration/family and current-session authority. */
+  async applyReviewedWithin(
+    trx: Transaction<DB>, userId: string, action: TrashReviewAction, ids: string[] | undefined,
+    options: TrashScopeOptions, verify: (rows: TrashScopeRow[]) => boolean,
+  ): Promise<string[] | null> {
     const source = trashActionSourceStatus(action);
     const target = trashActionTargetStatus(action);
-    return this.db.transaction().execute(async (trx) => {
       const found = await this.scope(trx, userId, source, options)
         .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
         .select(['asset.id', 'asset.ownerId', 'asset.status', 'asset.deletedAt', isLocked('asset').as('isLocked')])
@@ -279,7 +286,6 @@ export class TrashRepository {
         .returning('asset.id')
         .execute();
       return updated.map((row) => row.id);
-    });
   }
   /** Restores chosen items that are still in the trash, and says which ones actually were. */
   @GenerateSql({ params: [[DummyValue.UUID]] })

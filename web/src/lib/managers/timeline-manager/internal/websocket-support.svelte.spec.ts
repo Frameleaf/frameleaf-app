@@ -18,6 +18,7 @@ const makeManager = () => ({
   upsertAssetsFromLiveEvent: vi.fn(),
   removeAssets: vi.fn(),
   refresh: vi.fn().mockResolvedValue(undefined),
+  invalidateLiveProjection: vi.fn(),
 });
 
 const connect = (manager: ReturnType<typeof makeManager>) => {
@@ -71,5 +72,57 @@ describe('WebsocketSupport restores (FL-47)', () => {
 
     await vi.waitFor(() => expect(manager.refresh).toHaveBeenCalledTimes(1));
     expect(sdkMock.getAssetInfo).not.toHaveBeenCalled();
+  });
+
+  it('C2 RED: does not apply an older restore response after a newer Trash', async () => {
+    vi.useFakeTimers();
+    const manager = makeManager();
+    const support = connect(manager);
+    const restored = assetFactory.build({ isTrashed: false });
+    const response = Promise.withResolvers<typeof restored>();
+    sdkMock.getAssetInfo.mockReturnValue(response.promise);
+    try {
+      handlers.get('on_asset_restore')!([restored.id]);
+      expect(sdkMock.getAssetInfo).toHaveBeenCalledTimes(1);
+      handlers.get('on_asset_trash')!([restored.id]);
+      expect(manager.removeAssets).toHaveBeenCalledWith([restored.id]);
+
+      response.resolve(restored);
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(manager.upsertAssetsFromLiveEvent).not.toHaveBeenCalled();
+    } finally {
+      support.disconnectWebsocketEvents();
+      vi.useRealTimers();
+    }
+  });
+
+  it('C2 RED: a newer restore wins over an older Trash pending in the same batch', async () => {
+    vi.useFakeTimers();
+    const manager = makeManager();
+    const visible = new Set<string>();
+    manager.upsertAssetsFromLiveEvent.mockImplementation((assets: { id: string }[]) => {
+      for (const asset of assets) visible.add(asset.id);
+    });
+    manager.removeAssets.mockImplementation((ids: string[]) => {
+      for (const id of ids) visible.delete(id);
+    });
+    const support = connect(manager);
+    const restored = assetFactory.build({ isTrashed: false });
+    sdkMock.getAssetInfo.mockResolvedValue(restored);
+    try {
+      // Start the throttle window so both changes reach the actual pending-batch apply.
+      handlers.get('on_asset_trash')!(['unrelated']);
+      handlers.get('on_asset_trash')!([restored.id]);
+      handlers.get('on_asset_restore')!([restored.id]);
+
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(manager.upsertAssetsFromLiveEvent).toHaveBeenCalledTimes(1);
+      expect(visible.has(restored.id)).toBe(true);
+    } finally {
+      support.disconnectWebsocketEvents();
+      vi.useRealTimers();
+    }
   });
 });

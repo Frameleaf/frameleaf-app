@@ -12,6 +12,7 @@ import {
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -233,9 +234,10 @@ export class MediaOperationRepository {
     }
   }
   async create(operation: MediaOperationCreate): Promise<MediaOperation> {
-    const row = await this.write((db) =>
-      db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow(),
-    );
+    const row = await this.write(async (db) => {
+      await holdSourceAdmission(db, operation.snapshot);
+      return db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+    });
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
@@ -287,6 +289,7 @@ export class MediaOperationRepository {
       if (!held) {
         throw new ConflictException('The reverse-conform revision or edit lease changed');
       }
+      await holdSourceAdmission(tx, operation.snapshot);
       return tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
     });
     this.changed(row as unknown as MediaOperationChange);
@@ -1792,6 +1795,7 @@ export class MediaOperationRepository {
   }> {
     const done = await this.db.transaction().execute(async (trx) => {
       const { operation, value } = await bind(trx);
+      await holdSourceAdmission(trx, operation.snapshot);
       const created = (await trx
         .insertInto('media_operation')
         .values(operation)

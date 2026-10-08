@@ -345,7 +345,12 @@ export class TimelineManager extends VirtualScrollManager {
     return this.#options.orderedBy;
   }
 
+  #projectionGeneration = 0;
+  get projectionGeneration() { return this.#projectionGeneration; }
+  invalidateLiveProjection() { this.#projectionGeneration++; }
+
   async #initializeTimelineMonths(signal: AbortSignal) {
+    const projection = this.#projectionGeneration;
     const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
@@ -353,7 +358,7 @@ export class TimelineManager extends VirtualScrollManager {
     });
 
     // A load cancelled by newer options, or a session lock, must not replace what replaced it.
-    if (signal.aborted || revision !== sessionAccess.revision) {
+    if (signal.aborted || revision !== sessionAccess.revision || projection !== this.#projectionGeneration) {
       return;
     }
 
@@ -433,7 +438,8 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
-    const overtaken = () => this.#requestedOptions !== options;
+    const projection = this.#projectionGeneration;
+    const overtaken = () => this.#requestedOptions !== options || projection !== this.#projectionGeneration;
     this.suspendTransitions = true;
     try {
       await this.initTask.reset();
@@ -559,6 +565,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
+    this.invalidateLiveProjection();
     const notUpdated = this.#updateAssets(assets);
     if (this.ordered) {
       return;
@@ -669,6 +676,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   removeAssets(ids: string[]) {
+    this.invalidateLiveProjection();
     const result = this.#runAssetCallback(new Set(ids), () => ({ remove: true }));
     if (ids.length > 0) {
       for (const listener of this.#removedListeners) {

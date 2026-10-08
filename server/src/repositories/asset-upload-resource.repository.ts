@@ -13,7 +13,7 @@ import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
-import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
+import { hasEditConfiguration, withICloudPublicationTransaction } from 'src/repositories/icloud-edit-transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
@@ -121,15 +121,8 @@ export class AssetUploadResourceRepository {
     if (ids.length === 0 || new Set(ids).size !== ids.length) {
       throw new ConflictException('Distinct upload resources are required');
     }
-    return this.db.transaction().execute(async (tx) => {
+    return withICloudPublicationTransaction(this.db, ownerId, ids.map(id=>({channel:'device',id})), async (tx) => {
       await this.ready(tx);
-      const editAuthority = new ICloudEditAuthorityRepository(tx);
-      const items = await Promise.all(ids.map((id) => editAuthority.itemHint(tx, ownerId, 'device', id)));
-      await lockICloudItemClaims(
-        tx,
-        ownerId,
-        items.filter((item): item is string => item !== null),
-      );
       const rows: AssetUploadResource[] = [];
       for (const id of [...ids].sort()) {
         const row = await tx
@@ -177,8 +170,8 @@ export class AssetUploadResourceRepository {
         .select('id')
         .where('id', '=', ownerId)
         .where('deletedAt', 'is', null)
-        .$if(ids.length > 1, (qb) => qb.forUpdate())
-        .$if(ids.length === 1, (qb) => qb.forShare())
+        .$if(ids.length > 1 || hasEditConfiguration(tx), (qb) => qb.forUpdate())
+        .$if(ids.length === 1 && !hasEditConfiguration(tx), (qb) => qb.forShare())
         .executeTakeFirst();
       if (!owner) {
         throw new NotFoundException('Upload owner unavailable');

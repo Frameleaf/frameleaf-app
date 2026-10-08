@@ -200,6 +200,7 @@ export class StudioPreviewStreamService {
         projectId: dto.projectId,
         projectRevision: manifest.revision,
         manifestDigest: manifest.digest,
+        sourceEpochs: manifest.sourceEpochs,
         resourceCacheKey: this.resources.cacheKey(manifest),
         studio: { stored: true, revision: manifest.revision, cloudConsent: false },
         stream: { start: dto.time, bounds, quality: dto.quality },

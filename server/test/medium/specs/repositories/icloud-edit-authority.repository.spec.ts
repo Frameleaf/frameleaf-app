@@ -15,6 +15,9 @@ import {
   AssetUploadResourceRepository,
 } from 'src/repositories/asset-upload-resource.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { initializeEffectiveConfig } from 'src/utils/config.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
@@ -51,6 +54,7 @@ describe('administrative iCloud edit authority', () => {
   let uploads: AssetUploadResourceRepository;
   beforeAll(async () => {
     db = await getKyselyDB();
+    await initializeEffectiveConfig({ configRepo: new ConfigRepository(), metadataRepo: new SystemMetadataRepository(db), logger: LoggingRepository.create() });
     await expectCanonicalTables(db, [
       'icloud_edit_authority',
       'icloud_edit_version',
@@ -865,6 +869,55 @@ describe('administrative iCloud edit authority', () => {
     expect(
       (await db.selectFrom('asset').select('status').where('id', '=', f.asset.id).executeTakeFirstOrThrow()).status,
     ).toBe('active');
+  });
+  it('C2 RED: accepted device supersede publishes once and moves only the prior render to reversible Trash', async () => {
+    const f = await fixture();
+    const first = await resource(f, 'accepted-first');
+    const firstDecision = await edits.successor(f.auth, decision(f, first));
+    const prior = await publish(first);
+    expect(prior.state).toBe('published');
+    const next = await resource(f, 'accepted-successor');
+    const successor = await edits.successor(f.auth, decision(f, next, firstDecision.versionId, 'supersede'));
+
+    const committed = await publish(next);
+
+    expect(committed.state).toBe('published');
+    expect(committed.resultAssetId).not.toBe(prior.resultAssetId);
+    const assets = await db
+      .selectFrom('asset')
+      .select(['id', 'status', 'deletedAt', 'stackId'])
+      .where('id', 'in', [f.asset.id, prior.resultAssetId!, committed.resultAssetId!])
+      .execute();
+    expect(assets.find((asset) => asset.id === prior.resultAssetId)).toMatchObject({
+      status: AssetStatus.Trashed,
+      deletedAt: expect.any(Date),
+    });
+    expect(assets.find((asset) => asset.id === f.asset.id)).toMatchObject({
+      status: AssetStatus.Active,
+      deletedAt: null,
+    });
+    const current = assets.find((asset) => asset.id === committed.resultAssetId)!;
+    expect(current).toMatchObject({ status: AssetStatus.Active, deletedAt: null });
+    expect(current.stackId).not.toBeNull();
+    expect(new Set(assets.map((asset) => asset.stackId))).toEqual(new Set([current.stackId]));
+    expect(
+      await db
+        .selectFrom('stack')
+        .select('primaryAssetId')
+        .where('id', '=', current.stackId!)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ primaryAssetId: committed.resultAssetId });
+    expect(
+      await db.selectFrom('icloud_edit_version').select('id').where('ownerId', '=', f.user.id).execute(),
+    ).toHaveLength(3);
+    expect(
+      await db
+        .selectFrom('icloud_edit_authority')
+        .select('currentVersionId')
+        .where('ownerId', '=', f.user.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ currentVersionId: successor.versionId });
+    expect((await publish(next)).resultAssetId).toBe(committed.resultAssetId);
   });
   it('uses real sync recovery commit and file digests, with decision refusal and post-takeover settlement', async () => {
     const f = await fixture();

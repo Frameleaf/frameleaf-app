@@ -1,4 +1,4 @@
-import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+import { getAssetInfo } from '@frameleaf/sdk';
 import { throttle } from 'lodash-es';
 import type { Unsubscriber } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -11,7 +11,9 @@ import { toTimelineAsset } from '$lib/utils/timeline-util';
 export const RESTORE_FETCH_LIMIT = 25;
 
 export class WebsocketSupport {
-  #pendingChanges: PendingChange[] = [];
+  #pendingChanges = new Map<string, { generation: number; change: PendingChange }>();
+  #assetGenerations = new Map<string, number>();
+  #connectionGeneration = 0;
   #unsubscribers: Unsubscriber[] = [];
   #timelineManager: TimelineManager;
 
@@ -26,7 +28,7 @@ export class WebsocketSupport {
     if (remove.length > 0) {
       this.#timelineManager.removeAssets(remove);
     }
-    this.#pendingChanges = [];
+    this.#pendingChanges.clear();
   }, 2500);
 
   constructor(timeineManager: TimelineManager) {
@@ -58,18 +60,20 @@ export class WebsocketSupport {
       return;
     }
     if (ids.length > RESTORE_FETCH_LIMIT) {
+      for (const id of ids) this.#nextGeneration(id);
       await this.#timelineManager.refresh();
       return;
     }
-    const assets = await Promise.all(
-      ids.map((id) => getAssetInfo({ ...authManager.params, id }).catch(() => undefined)),
-    );
-    const values = assets
-      .filter((asset): asset is AssetResponseDto => asset !== undefined && !asset.isTrashed)
-      .map((asset) => toTimelineAsset(asset));
-    if (values.length > 0) {
-      this.#addPendingChanges({ type: 'add', values });
-    }
+    const connection = this.#connectionGeneration;
+    const requests = ids.map((id) => ({ id, generation: this.#nextGeneration(id) }));
+    await Promise.all(requests.map(async ({ id, generation }) => {
+      const asset = await getAssetInfo({ ...authManager.params, id }).catch(() => undefined);
+      if (connection !== this.#connectionGeneration || this.#assetGenerations.get(id) !== generation) return;
+      if (asset && !asset.isTrashed) {
+        this.#pendingChanges.set(id, { generation, change: { type: 'add', values: [toTimelineAsset(asset)] } });
+        this.#processPendingChanges();
+      }
+    }));
   }
 
   disconnectWebsocketEvents() {
@@ -77,10 +81,34 @@ export class WebsocketSupport {
       unsubscribe();
     }
     this.#unsubscribers = [];
+    this.#connectionGeneration++;
+    this.#processPendingChanges.cancel();
+    this.#pendingChanges.clear();
+    this.#assetGenerations.clear();
+  }
+
+  #nextGeneration(id: string) {
+    this.#timelineManager.invalidateLiveProjection();
+    const generation = (this.#assetGenerations.get(id) ?? 0) + 1;
+    this.#assetGenerations.set(id, generation);
+    this.#pendingChanges.delete(id);
+    return generation;
   }
 
   #addPendingChanges(...changes: PendingChange[]) {
-    this.#pendingChanges.push(...changes);
+    for (const change of changes) {
+      if (change.type === 'add' || change.type === 'update') {
+        for (const asset of change.values) {
+          const generation = this.#nextGeneration(asset.id);
+          this.#pendingChanges.set(asset.id, { generation, change: { type: change.type, values: [asset] } });
+        }
+      } else {
+        for (const id of change.values) {
+          const generation = this.#nextGeneration(id);
+          this.#pendingChanges.set(id, { generation, change: { type: change.type, values: [id] } });
+        }
+      }
+    }
     this.#processPendingChanges();
   }
 
@@ -94,7 +122,9 @@ export class WebsocketSupport {
       update: [],
       remove: [],
     };
-    for (const { type, values } of this.#pendingChanges) {
+    for (const [id, { generation, change }] of this.#pendingChanges) {
+      if (this.#assetGenerations.get(id) !== generation) continue;
+      const { type, values } = change;
       switch (type) {
         case 'add': {
           batch.add.push(...values);
