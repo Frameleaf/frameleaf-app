@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { createClaimImageInputs, validateClaimResourceClosure } from './render-worker-image-inputs.mjs';
+import { createClaimImageInputs, validateClaimResourceClosure, validateInlineLuts } from './render-worker-image-inputs.mjs';
 
 // An input specimen, never an asserted render output. The test uses the prepared engine's real
 // collectMediaIds and media server, including its Range handling; no renderer is mocked.
@@ -529,4 +529,143 @@ test('full multiasset raster graph remains immutable through real metadata and p
     assert.deepEqual(Buffer.from(await (await fetch(adapter.input.media[1].url)).arrayBuffer()), second);
     assert.deepEqual(graph, original);
   } finally { await adapter.dispose(); }
+});
+
+function nestedClaim() {
+  const claim = prepared();
+  const graph = claim.snapshot.studio.graph;
+  const child = {
+    id: 'child',
+    name: 'Nested',
+    fps: 30,
+    width: 32,
+    height: 32,
+    durationInFrames: 30,
+    tracks: structuredClone(graph.timeline.tracks),
+    items: [{ ...graph.timeline.items[0], durationInFrames: 30 }],
+    transitions: [],
+    keyframes: [],
+  };
+  graph.timeline.compositions = [child];
+  graph.timeline.items = [
+    {
+      id: 'placement',
+      type: 'composition',
+      compositionId: 'child',
+      trackId: 'v1',
+      from: 0,
+      durationInFrames: 24,
+      sourceStart: 0,
+      sourceFps: 30,
+      compositionWidth: 32,
+      compositionHeight: 32,
+    },
+  ];
+  claim.snapshot.studio.resources[0].graphPath = '/timeline/compositions/0/items/0';
+  claim.snapshot.studio.resources.push({
+    key: 'nested-sequence:child',
+    kind: 'nested-sequence',
+    id: 'child',
+    graphPath: '/timeline/items/0',
+    grant: 'none',
+    checksum: null,
+  });
+  return claim;
+}
+
+const inlineLut = (params) => ({
+  id: 'lut',
+  enabled: true,
+  effect: { type: 'gpu-effect', gpuEffectType: 'gpu-lut', params },
+});
+
+test('whole canonical nested graph preserves parent mapping and verifies unused-definition resources', async () => {
+  const claim = nestedClaim();
+  const graph = claim.snapshot.studio.graph;
+  const unused = structuredClone(graph.timeline.compositions[0]);
+  unused.id = 'unused';
+  unused.items[0].id = 'unused-image';
+  const unusedId = '22222222-2222-4222-8222-222222222222';
+  unused.items[0].mediaId = unusedId;
+  const key = `library-asset:${unusedId}`;
+  claim.inputs.set(key, { ...claim.inputs.get(`library-asset:${mediaId}`), resourceId: unusedId, bytes: Buffer.from(png) });
+  claim.snapshot.studio.resources.push({ ...claim.snapshot.studio.resources[0], key, id: unusedId, graphPath: '/timeline/compositions/1/items/0' });
+  graph.timeline.compositions.push(unused);
+  const expected = structuredClone(graph);
+  const adapter = await createClaimImageInputs(claim, () => true);
+  try {
+    assert.deepEqual(adapter.input.project, expected);
+    assert.equal(adapter.input.media.length, 2);
+  } finally {
+    await adapter.dispose();
+  }
+});
+
+test('inline identity and nonidentity LUT data remain authored in nested graphs', async () => {
+  for (const params of [
+    { lutSize: '0', lutData: '', lutName: '' },
+    { lutSize: '2', lutData: Buffer.alloc(32, 127).toString('base64'), lutName: 'Authored grade' },
+  ]) {
+    const claim = nestedClaim();
+    claim.snapshot.studio.graph.timeline.compositions[0].items[0].effects = [inlineLut(params)];
+    const graph = structuredClone(claim.snapshot.studio.graph);
+    const adapter = await createClaimImageInputs(claim, () => true);
+    try {
+      assert.deepEqual(adapter.input.project, graph);
+    } finally {
+      await adapter.dispose();
+    }
+  }
+});
+
+for (const [name, params] of [
+  ['fractional size', { lutSize: '2.5', lutData: Buffer.alloc(32).toString('base64'), lutName: 'Bad' }],
+  ['oversize', { lutSize: '130', lutData: 'AAAA', lutName: 'Bad' }],
+  ['noncanonical base64', { lutSize: '2', lutData: Buffer.alloc(32).toString('base64') + '\n', lutName: 'Bad' }],
+  ['wrong length', { lutSize: '2', lutData: 'AAAA', lutName: 'Bad' }],
+  ['malformed identity', { lutSize: '0', lutData: '', lutName: 'Populated' }],
+])
+  test(`inline LUT refuses ${name} before creating engine resources`, async () => {
+    const claim = prepared();
+    claim.snapshot.studio.graph.timeline.items[0].effects = [inlineLut(params)];
+    await assert.rejects(async () => {
+      const adapter = await createClaimImageInputs(claim, () => true);
+      await adapter.dispose();
+    }, /INVALID_INLINE_LUT/);
+  });
+
+test('parent placement cadence must agree with actual child composition', async () => {
+  const claim = nestedClaim();
+  claim.snapshot.studio.graph.timeline.items[0].sourceFps = 24;
+  await assert.rejects(
+    createClaimImageInputs(claim, () => true),
+    /COMPOSITION_CADENCE_CHANGED/,
+  );
+});
+
+test('aggregate inline LUT allocation is bounded before decoding repeated cubes', () => {
+  const data = Buffer.alloc(100 ** 3 * 4).toString('base64');
+  const effects = Array.from({ length: 3 }, () => inlineLut({ lutSize: '100', lutData: data, lutName: 'Large' }));
+  assert.throws(() => validateInlineLuts({ effects }), /INLINE_LUT_ALLOCATION_LIMIT/);
+});
+
+test('serialized inline LUT graph limit remains independent of decoded allocation', async () => {
+  const claim = prepared();
+  claim.snapshot.studio.graph.timeline.items[0].effects = [
+    inlineLut({ lutSize: '129', lutData: Buffer.alloc(129 ** 3 * 4).toString('base64'), lutName: 'Large' }),
+  ];
+  await assert.rejects(
+    createClaimImageInputs(claim, () => true),
+    /GRAPH_RESOURCE_LIMIT/,
+  );
+});
+
+
+test('malformed LUT in an unused canonical definition refuses without identity fallback', async () => {
+  const claim = nestedClaim();
+  const unused = structuredClone(claim.snapshot.studio.graph.timeline.compositions[0]);
+  unused.id = 'unused';
+  unused.items[0].effects = [inlineLut({ lutSize: '2', lutData: 'AAAA', lutName: 'Invalid unused' })];
+  claim.snapshot.studio.graph.timeline.compositions.push(unused);
+  await assert.rejects(createClaimImageInputs(claim, () => true), /INVALID_INLINE_LUT/);
 });
