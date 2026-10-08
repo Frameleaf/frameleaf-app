@@ -1,0 +1,30 @@
+diff --git a/src/infrastructure/gpu-effects/effects/color.ts b/src/infrastructure/gpu-effects/effects/color.ts
+--- a/src/infrastructure/gpu-effects/effects/color.ts
++++ b/src/infrastructure/gpu-effects/effects/color.ts
+@@ -232,6 +232,7 @@
+ @fragment
+ fn invertFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
++  if (FL_EXTENDED_RANGE) { return vec4f(fl_range3(1.0 - color.rgb), color.a); }
+   return vec4f(1.0 - color.rgb, color.a);
+ }`,
+   params: {},
+@@ -419,6 +420,7 @@
+   let color = textureSample(inputTex, texSampler, input.uv);
+   let gray = luminance601(color.rgb);
+   let adjusted = mix(color.rgb, vec3f(gray), params.amount);
++  if (FL_EXTENDED_RANGE) { return vec4f(fl_range3(adjusted), color.a); }
+   return vec4f(adjusted, color.a);
+ }`,
+   params: {
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -63,6 +63,7 @@
+ /** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
+ export function isLinearHdrEffectType(type: string): boolean {
+   return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' || type === 'gpu-temperature' ||
++    type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
+     type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur'
+ }
+ 

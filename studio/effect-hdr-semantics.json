@@ -140,8 +140,8 @@
     "gpu-grayscale": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
     },
     "gpu-halftone": {
       "sdrParity": true,
@@ -164,8 +164,8 @@
     "gpu-invert": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
     },
     "gpu-kaleidoscope": {
       "sdrParity": true,
@@ -266,8 +266,8 @@
     "gpu-sepia": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "Preserves pinned artistic affine coefficients and SDR behavior; HDR applies the same coefficients in managed linear BT.709 and limits finite RGB to binary16 range, preserving alpha."
     },
     "gpu-sharpen": {
       "sdrParity": true,

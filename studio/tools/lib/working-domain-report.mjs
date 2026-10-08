@@ -57,9 +57,9 @@ export function domainObservations(report) {
     if (family === 'effects') {
       for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
         add(id, name, WORKING_DOMAINS.sdr, `effects.${index}.${route}`);
-      if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature'].includes(id) || HDR_BLURS.includes(id)) {
+      if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature', 'gpu-grayscale', 'gpu-sepia', 'gpu-invert'].includes(id) || HDR_BLURS.includes(id)) {
         for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
-          add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.${row.hdr ? 'hdr' : 'hdrSpatial'}.${route}`);
+          add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.${row.hdr ? 'hdr' : row.hdrAffine ? 'hdrAffine' : 'hdrSpatial'}.${row.hdrAffine && id === 'gpu-invert' && name === 'invalid' ? 'extra' : route}`);
       } else add(id, 'extreme', WORKING_DOMAINS.hdr, `effects.${index}.hdrRefusal`, 'refused');
     } else {
       const prefix = family === 'blend' ? `results.${index}` : `transitions.${index}`;
