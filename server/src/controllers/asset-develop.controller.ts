@@ -19,6 +19,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetDevelopArtifactResponseDto,
   AssetDevelopFileQueryDto,
+  AssetDevelopFillGenerateDto,
   AssetDevelopPreviewDto,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
@@ -125,7 +126,12 @@ export class AssetDevelopController {
 
   @Post(':id/develop/masks/propose')
   @Authenticated({ permission: Permission.AssetEditCreate })
-  @Endpoint({ summary: 'Suggest a subject or sky mask locally', history: history() })
+  @Endpoint({
+    summary: 'Suggest a subject or sky mask locally',
+    description:
+      'Runs on the instance-local ML worker and stores the proposal as a mask artifact of this photo. Without `coordinates` (or with `sensor-active`) the original must be a RAW and the mask covers its unrotated sensor canvas, for version 2 recipes. With `coordinates: "original"` any still works and the mask covers the whole original (EXIF orientation applied); reference it as the `artifact` of a version 1 `subject`, `sky` or `background` mask.',
+    history: history(),
+  })
   async proposeAssetDevelopMask(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
@@ -138,6 +144,31 @@ export class AssetDevelopController {
     if (res.destroyed) abandon();
     try {
       return await this.service.proposeSemanticMask(auth, id, dto, controller.signal);
+    } finally {
+      res.removeListener('close', abandon);
+    }
+  }
+
+  @Post(':id/develop/fills/generate')
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @Endpoint({
+    summary: 'Generate a Clean Up Remove fill',
+    description:
+      "Fills the area (`region` or `strokes`, in original-image fractions, as the Remove operation will carry it) on the instance-local ML worker and stores the result as a fill artifact covering the area's bounding box. Reference its `id` as the Remove operation's `fill`. Answers 503 with code `develop_inpaint_unavailable` while the worker has no inpainting model.",
+    history: history(),
+  })
+  async generateAssetDevelopFill(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetDevelopFillGenerateDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      return await this.service.generateFill(auth, id, dto, controller.signal);
     } finally {
       res.removeListener('close', abandon);
     }

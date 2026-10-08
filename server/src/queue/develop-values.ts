@@ -54,3 +54,6 @@ export const ASSET_DEVELOP_MAX_STROKE_POINTS = 512;
 export const ASSET_DEVELOP_MAX_CLEANUP = 32;
 
 export const ASSET_DEVELOP_MAX_RECIPE_POINTS = 4096;
+
+/** Longest motion clip offset a recipe key frame may name (ten minutes; Live and Motion Photo clips are seconds). */
+export const ASSET_DEVELOP_KEY_FRAME_MAX_MS = 600_000;
