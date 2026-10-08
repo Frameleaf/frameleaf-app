@@ -928,7 +928,15 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       expect(lockedOriginal.status).toBe(404);
       expect(lockedOriginal.headers.get('content-type')).toMatch(/^application\/json\b/);
       expect(lockedOriginal.headers.get('content-disposition')).toBeNull();
-      expect(await lockedOriginal.json()).toEqual({ message: 'Not Found' });
+      expect(await lockedOriginal.json()).toEqual({
+        message: 'Not Found',
+        displayError: {
+          version: 1,
+          code: 'http_not_found',
+          args: {},
+          fallback: { locale: 'en', message: 'The requested resource is unavailable.' },
+        },
+      });
       for (const path of [`${ownerRoute}/snapshots/${snapshotIds[index]}`, `${adminRoute}/preflight`]) {
         const locked = await response(
           app,
