@@ -319,3 +319,39 @@ describe('FL103 track curve host history and native persistence',()=>{
   await loadTimeline('source-edit-persistence');await saveTimeline('source-edit-persistence');expect((await getProject('source-edit-persistence'))!.timeline!.tracks).toEqual(saved!.timeline!.tracks)
  })
 })
+
+it('0092 actual entered child SET_TRACKS history and save/reset/reload/reenter preserve owning curve and untouched root/sibling',async()=>{
+ const {useItemsStore}=await import('@/features/timeline/stores/items-store');
+ const {useCompositionsStore}=await import('@/features/timeline/stores/compositions-store');
+ const {useCompositionNavigationStore}=await import('@/features/timeline/stores/composition-navigation-store');
+ const {setTracks}=await import('@/features/timeline/stores/actions/track-actions');
+ const workspace=new VirtualWorkspace();setWorkspaceRoot(workspace.handle());
+ try{
+  const project=fresh();
+  const child={id:'curve-child',name:'Child',fps:24,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],tracks:[{id:'child-a',name:'A',kind:'audio',height:56,order:0,visible:true,locked:false,muted:false,volume:-3}],items:[{id:'child-leaf',type:'audio',trackId:'child-a',from:12,durationInFrames:48,sourceStart:0,sourceEnd:48,sourceFps:24,src:'blob:local',label:'leaf'}]} as import('@/features/timeline/stores/compositions-store').SubComposition;
+  const sibling={...structuredClone(child),id:'sibling',name:'Sibling'};
+  project.timeline!.compositions=[child,sibling];
+  project.timeline!.items=[{id:'wrapper',type:'composition',trackId:'audio',from:30,durationInFrames:60,compositionId:child.id,sourceStart:12,sourceEnd:60,sourceFps:24,isReversed:true,label:'Child',compositionWidth:1920,compositionHeight:1080} as TimelineItem];
+  await createProject(project);await loadTimeline(project.id);await saveTimeline(project.id);
+  const before=(await getProject(project.id))!.timeline!;
+  useTimelineCommandStore.getState().clearHistory();
+  useCompositionNavigationStore.getState().enterComposition(child.id,'Child','wrapper');
+  const points=[{id:'owned-a',frame:12,gainDb:-20},{id:'owned-b',frame:60,gainDb:0}];
+  setTracks(useItemsStore.getState().tracks.map(t=>({...t,gainEnvelope:points})));
+  expect(useCompositionNavigationStore.getState().activeCompositionId).toBe(child.id);
+  expect(useItemsStore.getState().tracks[0]!.gainEnvelope).toEqual(points);
+  useTimelineCommandStore.getState().undo();expect(useItemsStore.getState().tracks[0]!.gainEnvelope).toBeUndefined();
+  useTimelineCommandStore.getState().redo();expect(useItemsStore.getState().tracks[0]!.gainEnvelope).toEqual(points);
+  await saveTimeline(project.id);
+  expect(useCompositionNavigationStore.getState().activeCompositionId).toBe(child.id);
+  const saved=(await getProject(project.id))!.timeline!;
+  expect(saved.items).toEqual(before.items);expect(saved.tracks).toEqual(before.tracks);
+  expect(saved.compositions!.find(c=>c.id==='sibling')).toEqual(before.compositions!.find(c=>c.id==='sibling'));
+  expect(saved.compositions!.find(c=>c.id===child.id)!.tracks[0]!.gainEnvelope).toEqual(points);
+  useCompositionNavigationStore.getState().resetToRoot();useItemsStore.getState().setItems([]);useItemsStore.getState().setTracks([]);useCompositionsStore.getState().setCompositions([]);
+  await loadTimeline(project.id);useCompositionNavigationStore.getState().enterComposition(child.id,'Child','wrapper');
+  expect(useItemsStore.getState().tracks[0]!.gainEnvelope).toEqual(points);expect(useItemsStore.getState().tracks[0]!.volume).toBe(-3);
+  expect(useItemsStore.getState().items.map(i=>[i.id,i.from,i.durationInFrames,i.sourceStart,i.sourceEnd])).toEqual([['child-leaf',12,48,0,48]]);
+  useCompositionNavigationStore.getState().exitComposition();expect(useItemsStore.getState().items).toEqual(before.items);
+ }finally{useCompositionNavigationStore.getState().resetToRoot();setWorkspaceRoot(null);workspace.dispose()}
+});
