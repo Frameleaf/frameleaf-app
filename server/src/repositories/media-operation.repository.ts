@@ -202,6 +202,17 @@ export class MediaOperationRepository {
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(query);
   }
+  /** The optional lease predicate must be evaluated AFTER any operation-row wait, in this transaction. */
+  private async lockWorkerSettlement(db: Kysely<DB>, id: string, claimToken: string) {
+    if (!db.isTransaction) throw new Error('worker_settlement_transaction_required');
+    await db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .forUpdate()
+      .executeTakeFirst();
+  }
   /**
    * Be told about rows whose status, stage or progress changed through this repository (FL-43).
    * The owner's open Activity pages are nudged to ask again; nothing about the job travels with it.
@@ -1206,11 +1217,18 @@ export class MediaOperationRepository {
     },
     options: {
       retry?: boolean;
+      /** Opt-in final-write lease fence for workers whose stop state can expire while awaiting a row lock. */
+      requireActiveClaim?: boolean;
       executor?: Kysely<DB>;
     } = {},
   ): Promise<MediaOperationFailOutcome> {
-    const write = <T>(query: (db: Kysely<DB>) => Promise<T>) =>
-      options.executor ? query(options.executor) : this.write(query);
+    const write = <T>(query: (db: Kysely<DB>) => Promise<T>) => {
+      const fenced = async (db: Kysely<DB>) => {
+        if (options.requireActiveClaim) await this.lockWorkerSettlement(db, id, claimToken);
+        return query(db);
+      };
+      return options.executor ? fenced(options.executor) : this.write(fenced);
+    };
     // A failure retrying cannot help (FL-43: an edited item that left the library) is reported at once.
     const requeued =
       options.retry === false
@@ -1231,6 +1249,9 @@ export class MediaOperationRepository {
               })
               .where('id', '=', id)
               .where('claimToken', '=', claimToken)
+              .$if(options.requireActiveClaim === true, (qb) =>
+                qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`).where('cancelRequestedAt', 'is', null),
+              )
               .where('status', 'in', WORKING_STATUSES)
               .where('cancelRequestedAt', 'is', null)
               .where(safeAutomaticReplay())
@@ -1257,6 +1278,9 @@ export class MediaOperationRepository {
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
+        .$if(options.requireActiveClaim === true, (qb) =>
+          qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`).where('cancelRequestedAt', 'is', null),
+        )
         .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
@@ -1283,11 +1307,12 @@ export class MediaOperationRepository {
   async requeue(
     id: string,
     claimToken: string,
-    options: { delayMs: number; returnAttempt?: boolean },
+    options: { delayMs: number; returnAttempt?: boolean; requireActiveClaim?: boolean },
     settled?: (trx: Transaction<DB>) => Promise<void>,
     executor?: Transaction<DB>,
   ): Promise<boolean> {
     const requeue = async (trx: Transaction<DB>) => {
+      if (options.requireActiveClaim) await this.lockWorkerSettlement(trx, id, claimToken);
       const row = await trx
         .updateTable('media_operation')
         .set({
@@ -1301,6 +1326,9 @@ export class MediaOperationRepository {
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
+        .$if(options.requireActiveClaim === true, (qb) =>
+          qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`).where('cancelRequestedAt', 'is', null),
+        )
         .where('status', 'in', WORKING_STATUSES)
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
@@ -1507,27 +1535,35 @@ export class MediaOperationRepository {
     claimToken: string,
     options: {
       released: boolean;
+      /** Opt-in final-write lease fence for workers whose stop state can expire while awaiting a row lock. */
+      requireActiveClaim?: boolean;
       executor?: Kysely<DB>;
     },
   ): Promise<boolean> {
-    const result = await (options.executor ?? this.db)
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Cancelled,
-        cancelAcknowledgedAt: sql<Date>`now()`,
-        ...(options.released && { remoteReleasedAt: sql<Date>`now()` }),
-        finishedAt: sql<Date>`coalesce("finishedAt", now())`,
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', '=', MediaOperationStatus.Cancelling)
-      // Scoped previews require a live claim at the actual ACK write, not an earlier service read.
-      // The stored frame catches a missing/malformed discriminator; it cannot fall back to legacy.
-      .where(
-        sql<boolean>`("kind" <> ${MediaOperationKind.StudioPreview} OR (
+    const acknowledge = async (db: Kysely<DB>) => {
+      if (options.requireActiveClaim) await this.lockWorkerSettlement(db, id, claimToken);
+      return (
+        db
+          .updateTable('media_operation')
+          .set({
+            status: MediaOperationStatus.Cancelled,
+            cancelAcknowledgedAt: sql<Date>`now()`,
+            ...(options.released && { remoteReleasedAt: sql<Date>`now()` }),
+            finishedAt: sql<Date>`coalesce("finishedAt", now())`,
+            claimToken: null,
+            claimedBy: null,
+            claimExpiresAt: null,
+          })
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          .$if(options.requireActiveClaim === true, (qb) =>
+            qb.where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`),
+          )
+          .where('status', '=', MediaOperationStatus.Cancelling)
+          // Scoped previews require a live claim at the actual ACK write, not an earlier service read.
+          // The stored frame catches a missing/malformed discriminator; it cannot fall back to legacy.
+          .where(
+            sql<boolean>`("kind" <> ${MediaOperationKind.StudioPreview} OR (
         NOT ("snapshot" ? 'consumerRequestId') AND NOT EXISTS (
           SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
           AND f."cacheKey" LIKE 'fl279c1:%'
@@ -1541,9 +1577,16 @@ export class MediaOperationRepository {
           AND split_part(f."cacheKey", ':', 2) = "media_operation"."snapshot"->>'consumerRequestId'
         )
       ))`,
-      )
-      .returning(['id', 'ownerId'])
-      .executeTakeFirst();
+          )
+          .returning(['id', 'ownerId'])
+          .executeTakeFirst()
+      );
+    };
+    const result = await (options.executor
+      ? acknowledge(options.executor)
+      : options.requireActiveClaim
+        ? this.write(acknowledge)
+        : acknowledge(this.db));
     this.changed(result, options.executor);
     return !!result;
   }

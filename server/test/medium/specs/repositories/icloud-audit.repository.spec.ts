@@ -3,14 +3,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto } from 'src/dtos/icloud-identity.dto.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { AssetType, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
+import { AssetType, ChecksumAlgorithm, MediaOperationKind, UserMetadataKey } from 'src/enum.js';
 import {
   AuditAuthority,
   ICloudAuditRepository,
   lockAuditOwner,
+  manualAuditClaimHolder,
   publishAudit,
 } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudIdentityRepository, recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -152,7 +154,7 @@ describe(ICloudAuditRepository.name, () => {
     const [claim] = await identities.claim(
       fixture.auth.user.id,
       [ASSET],
-      `icloud-sync:audit:${response.operationId}`,
+      manualAuditClaimHolder(fixture.auth.user.id, authority),
       1800,
     );
     await sut.setItemClaim(request.id, fixture.auth.user.id, claim.id);
@@ -163,6 +165,396 @@ describe(ICloudAuditRepository.name, () => {
     resource.stagingPath = `/private-stage/${resource.id}/complete`;
     return { ...fixture, authority, resource, claim };
   }
+
+  it('does not let an obsolete audit worker release the replacement worker live item claim', async () => {
+    const fixture = await claimed();
+    const replacementToken = randomUUID();
+    // The independently renewed item lease is live when the operation has a replacement incarnation.
+    await sql`UPDATE media_operation SET "claimToken"=${replacementToken}::uuid WHERE id=${fixture.authority.operationId}::uuid`.execute(
+      db,
+    );
+    const holder = manualAuditClaimHolder(fixture.auth.user.id, fixture.authority);
+    const replacementHolder = manualAuditClaimHolder(fixture.auth.user.id, {
+      ...fixture.authority,
+      operationClaimToken: replacementToken,
+    });
+    // A replacement must back off a live old holder rather than inherit its cleanup authority.
+    const [busy] = await identities.claim(fixture.auth.user.id, [ASSET], replacementHolder, 1800);
+    expect(busy).toMatchObject({ id: fixture.claim.id, holder });
+    await sql`UPDATE icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.claim.id}::uuid`.execute(
+      db,
+    );
+    const [replacementClaim] = await identities.claim(fixture.auth.user.id, [ASSET], replacementHolder, 1800);
+    expect(replacementClaim).toBeDefined();
+    expect(replacementClaim.holder).toBe(replacementHolder);
+    expect(replacementClaim.id).not.toBe(fixture.claim.id);
+    expect(
+      await sut.stopState(fixture.authority.operationId, fixture.auth.user.id, fixture.authority.operationClaimToken),
+    ).toMatchObject({ live: false });
+    // Retain the original causal stale-cleanup assertion, now with real incarnation ownership.
+    expect(await identities.release(fixture.auth.user.id, [fixture.claim.id], holder)).toEqual([]);
+    expect(await identities.release(fixture.auth.user.id, [replacementClaim.id], holder)).toEqual([]);
+    expect(await identities.renew(fixture.auth.user.id, [replacementClaim.id], holder, 1800)).toEqual([]);
+    expect(await identities.renew(fixture.auth.user.id, [replacementClaim.id], replacementHolder, 1800)).toHaveLength(
+      1,
+    );
+  });
+
+  it('preserves same-incarnation renewal and the four-hour ceiling, but never inherits an expired claim ID', async () => {
+    const fixture = await claimed();
+    const holder = manualAuditClaimHolder(fixture.auth.user.id, fixture.authority);
+    const [same] = await identities.claim(fixture.auth.user.id, [ASSET], holder, 1800);
+    expect(same.id).toBe(fixture.claim.id);
+    expect(await identities.renew(fixture.auth.user.id, [same.id], holder, 4 * 3600)).toHaveLength(1);
+    const bounds = (
+      await sql<{
+        bounded: boolean;
+      }>`SELECT "expiresAt"<="createdAt"+interval '4 hours' AS bounded FROM icloud_claim WHERE id=${same.id}::uuid`.execute(
+        db,
+      )
+    ).rows[0];
+    expect(bounds.bounded).toBe(true);
+    await sql`UPDATE icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${same.id}::uuid`.execute(
+      db,
+    );
+    const [fresh] = await identities.claim(fixture.auth.user.id, [ASSET], holder, 1800);
+    expect(fresh.id).not.toBe(same.id);
+    // Even an unchanged tuple/holder cannot use the old ID to renew or remove its new incarnation.
+    expect(await identities.renew(fixture.auth.user.id, [same.id], holder, 1800)).toEqual([]);
+    expect(await identities.release(fixture.auth.user.id, [same.id], holder)).toEqual([]);
+    expect(await identities.renew(fixture.auth.user.id, [fresh.id], holder, 1800)).toHaveLength(1);
+    expect(await identities.release(fixture.auth.user.id, [fresh.id], holder)).toEqual([fresh.id]);
+    const [releasedReplacement] = await identities.claim(fixture.auth.user.id, [ASSET], holder, 1800);
+    expect(releasedReplacement.id).not.toBe(fresh.id);
+  });
+
+  it('refuses legacy operation-only holders at manual publication without publishing an identity proof', async () => {
+    const fixture = await claimed();
+    await sql`UPDATE icloud_claim SET holder=${`icloud-sync:audit:${fixture.authority.operationId}`} WHERE id=${fixture.claim.id}::uuid`.execute(
+      db,
+    );
+    expect(await sut.check(fixture.authority, fixture.auth.user.id)).toBeUndefined();
+    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(
+      false,
+    );
+    await expect(
+      db
+        .transaction()
+        .execute((trx) =>
+          publishAudit(
+            trx,
+            fixture.authority,
+            fixture.auth.user.id,
+            'mismatch',
+            { id: fixture.resource.id, leaseToken: fixture.resource.leaseToken! },
+            fixture.asset.id,
+          ),
+        ),
+    ).rejects.toThrow('audit_authority_changed');
+    expect((await identities.identities(fixture.auth.user.id, [ASSET]))[0]).toMatchObject({
+      lastAuditResult: null,
+      lastVerifiedAt: null,
+    });
+  });
+
+  it.each(['claim', 'allocation'])(
+    'cancels while the actual %s admission waits, then fences the failed capacity requeue',
+    async (phase) => {
+      const fixture = await claimed();
+      // Retire this fixture's earlier lease; the new admission has not acquired a resource.
+      await sync.finish(fixture.resource, 'retry', 'audit_retry');
+      await sql`UPDATE icloud_resource SET "nextAttemptAt"=NULL WHERE id=${fixture.resource.id}::uuid`.execute(db);
+      const oldHolder = manualAuditClaimHolder(fixture.auth.user.id, fixture.authority);
+      const token = phase === 'claim' ? randomUUID() : fixture.authority.operationClaimToken;
+      const authority = { ...fixture.authority, operationClaimToken: token };
+      if (phase === 'claim')
+        await sql`UPDATE media_operation SET "claimToken"=${token}::uuid WHERE id=${authority.operationId}::uuid`.execute(
+          db,
+        );
+      else expect(await sut.check(authority, fixture.auth.user.id)).toBeDefined();
+      const holder = manualAuditClaimHolder(fixture.auth.user.id, authority);
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const blocker = db.connection().execute((connection) =>
+        connection.transaction().execute(async (trx) => {
+          if (phase === 'claim') await lockICloudItemClaims(trx, fixture.auth.user.id, [ASSET]);
+          else await trx.selectFrom('user').select('id').where('id', '=', fixture.auth.user.id).forUpdate().execute();
+          entered.resolve();
+          await release.promise;
+        }),
+      );
+      await entered.promise;
+      let pid = 0;
+      const admission = db.connection().execute(async (connection) => {
+        pid = (await sql<{ pid: number }>`SELECT pg_backend_pid()::int AS pid`.execute(connection)).rows[0].pid;
+        if (phase === 'claim') {
+          const [busy] = await new ICloudIdentityRepository(connection).claim(
+            fixture.auth.user.id,
+            [ASSET],
+            holder,
+            1800,
+          );
+          expect(busy).toMatchObject({ id: fixture.claim.id, holder: oldHolder });
+        } else
+          expect(await new ICloudAuditRepository(connection).allocate(authority, fixture.auth.user.id)).toBeUndefined();
+      });
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+          if (pid)
+            blocked = (
+              await sql<{ blocked: boolean }>`SELECT cardinality(pg_blocking_pids(${pid}))>0 AS blocked`.execute(db)
+            ).rows[0].blocked;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(blocked).toBe(true);
+        expect(await operations.requestCancel(authority.operationId, fixture.auth.user.id)).toMatchObject({
+          status: 'cancelling',
+        });
+      } finally {
+        release.resolve();
+      }
+      await blocker;
+      await admission;
+      if (phase === 'allocation')
+        expect(await identities.release(fixture.auth.user.id, [fixture.claim.id], holder)).toEqual([fixture.claim.id]);
+      else expect(await identities.renew(fixture.auth.user.id, [fixture.claim.id], oldHolder, 1800)).toHaveLength(1);
+      expect(
+        await operations.requeue(authority.operationId, token, {
+          delayMs: 60_000,
+          returnAttempt: true,
+          requireActiveClaim: true,
+        }),
+      ).toBe(false);
+      expect(
+        await operations.acknowledgeCancel(authority.operationId, token, { released: true, requireActiveClaim: true }),
+      ).toBe(true);
+      expect(await operations.getForWorker(authority.operationId)).toMatchObject({
+        status: 'cancelled',
+        errorCode: null,
+        autoRetries: 0,
+        remoteReleasedAt: expect.any(Date),
+      });
+    },
+  );
+
+  it('holds an on-demand pause without proof or retry consumption, and preserves a fresh resume', async () => {
+    const fixture = await claimed();
+    const { operationId, operationClaimToken } = fixture.authority;
+    await operations.requestPause(operationId, fixture.auth.user.id, [MediaOperationKind.ICloudSync]);
+    expect(await sut.stopState(operationId, fixture.auth.user.id, operationClaimToken)).toMatchObject({
+      live: true,
+      pauseRequestedAt: expect.any(Date),
+    });
+    expect(await sut.check(fixture.authority, fixture.auth.user.id)).toBeUndefined();
+    expect(await sut.stopState(operationId, randomUUID(), operationClaimToken)).toBeUndefined();
+    await sync.finish(fixture.resource, 'retry', 'audit_retry');
+    await identities.release(
+      fixture.auth.user.id,
+      [fixture.claim.id],
+      manualAuditClaimHolder(fixture.auth.user.id, fixture.authority),
+    );
+    expect(
+      await operations.requeue(operationId, operationClaimToken, {
+        delayMs: 0,
+        returnAttempt: true,
+        requireActiveClaim: true,
+      }),
+    ).toBe(true);
+    expect(await operations.getForWorker(operationId)).toMatchObject({
+      status: 'paused',
+      autoRetries: 0,
+      errorCode: null,
+      claimToken: null,
+    });
+    expect((await identities.identities(fixture.auth.user.id, [ASSET]))[0]).toMatchObject({
+      lastAuditResult: null,
+      lastVerifiedAt: null,
+    });
+    expect((await sut.get(fixture.authority.auditRequestId, fixture.auth.user.id))?.result).toBe('running');
+    await operations.resume(operationId, fixture.auth.user.id);
+    expect(await operations.getForWorker(operationId)).toMatchObject({
+      status: 'queued',
+      pauseRequestedAt: null,
+      autoRetries: 0,
+    });
+    // The old token cannot complete or publish after a resume; fresh bytes require a new claim.
+    expect(await operations.complete(operationId, operationClaimToken, { resultAssetId: null }, undefined, true)).toBe(
+      false,
+    );
+    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(
+      false,
+    );
+  });
+
+  it.each(['resume', 'cancel', 'replace'])(
+    'rechecks a concurrent %s at actual interrupted settlement',
+    async (change) => {
+      const fixture = await claimed();
+      const { operationId, operationClaimToken } = fixture.authority;
+      await operations.requestPause(operationId, fixture.auth.user.id, [MediaOperationKind.ICloudSync]);
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const replacement = randomUUID();
+      const blocker = db.connection().execute((connection) =>
+        connection.transaction().execute(async (trx) => {
+          await trx.selectFrom('media_operation').select('id').where('id', '=', operationId).forUpdate().execute();
+          switch (change) {
+            case 'resume': {
+              await sql`UPDATE media_operation SET "pauseRequestedAt"=NULL WHERE id=${operationId}::uuid`.execute(trx);
+              break;
+            }
+            case 'cancel': {
+              await sql`UPDATE media_operation SET status='cancelling',"cancelRequestedAt"=clock_timestamp() WHERE id=${operationId}::uuid`.execute(
+                trx,
+              );
+              break;
+            }
+            case 'replace': {
+              await sql`UPDATE media_operation SET "claimToken"=${replacement}::uuid WHERE id=${operationId}::uuid`.execute(
+                trx,
+              );
+              break;
+            }
+          }
+          entered.resolve();
+          await release.promise;
+        }),
+      );
+      await entered.promise;
+      let pid = 0;
+      const settling = db.connection().execute(async (connection) => {
+        pid = (await sql<{ pid: number }>`SELECT pg_backend_pid()::int AS pid`.execute(connection)).rows[0].pid;
+        return new MediaOperationRepository(connection).requeue(operationId, operationClaimToken, {
+          delayMs: 0,
+          returnAttempt: true,
+          requireActiveClaim: true,
+        });
+      });
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+          if (pid)
+            blocked = (
+              await sql<{ blocked: boolean }>`SELECT cardinality(pg_blocking_pids(${pid}))>0 AS blocked`.execute(db)
+            ).rows[0].blocked;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(blocked).toBe(true);
+      } finally {
+        release.resolve();
+      }
+      await blocker;
+      expect(await settling).toBe(change === 'resume');
+      switch (change) {
+        case 'resume': {
+          expect(await operations.getForWorker(operationId)).toMatchObject({
+            status: 'queued',
+            pauseRequestedAt: null,
+            autoRetries: 0,
+          });
+          break;
+        }
+        case 'replace': {
+          expect(await operations.getForWorker(operationId)).toMatchObject({
+            status: 'rendering',
+            claimToken: replacement,
+            autoRetries: 0,
+          });
+          break;
+        }
+        case 'cancel': {
+          expect(
+            await operations.fail(
+              operationId,
+              operationClaimToken,
+              { error: 'failed', errorCode: 'audit_failed' },
+              { requireActiveClaim: true },
+            ),
+          ).toBe(false);
+          expect(
+            await operations.acknowledgeCancel(operationId, operationClaimToken, {
+              released: true,
+              requireActiveClaim: true,
+            }),
+          ).toBe(true);
+          expect(await operations.getForWorker(operationId)).toMatchObject({
+            status: 'cancelled',
+            autoRetries: 0,
+            errorCode: null,
+            remoteReleasedAt: expect.any(Date),
+          });
+          break;
+        }
+      }
+    },
+  );
+
+  it.each(['pause', 'failure', 'cancel'])(
+    'refuses late %s settlement after the claim expires at a real row-lock wait',
+    async (action) => {
+      const fixture = await claimed();
+      const { operationId, operationClaimToken } = fixture.authority;
+      if (action === 'cancel') await operations.requestCancel(operationId, fixture.auth.user.id);
+      else await operations.requestPause(operationId, fixture.auth.user.id, [MediaOperationKind.ICloudSync]);
+      const deadline = (
+        await sql<{
+          deadline: Date;
+        }>`UPDATE media_operation SET "claimExpiresAt"=clock_timestamp()+interval '2 seconds' WHERE id=${operationId}::uuid RETURNING "claimExpiresAt" AS deadline`.execute(
+          db,
+        )
+      ).rows[0].deadline;
+      const before = await operations.getForWorker(operationId);
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const blocker = db.connection().execute((connection) =>
+        connection.transaction().execute(async (trx) => {
+          await trx.selectFrom('media_operation').select('id').where('id', '=', operationId).forUpdate().execute();
+          entered.resolve();
+          await release.promise;
+        }),
+      );
+      await entered.promise;
+      let pid = 0;
+      const settling = db.connection().execute(async (connection) => {
+        pid = (await sql<{ pid: number }>`SELECT pg_backend_pid()::int AS pid`.execute(connection)).rows[0].pid;
+        const repo = new MediaOperationRepository(connection);
+        if (action === 'cancel')
+          return repo.acknowledgeCancel(operationId, operationClaimToken, { released: true, requireActiveClaim: true });
+        if (action === 'failure')
+          return repo.fail(
+            operationId,
+            operationClaimToken,
+            { error: 'failed', errorCode: 'audit_failed' },
+            { requireActiveClaim: true },
+          );
+        return repo.requeue(operationId, operationClaimToken, {
+          delayMs: 0,
+          returnAttempt: true,
+          requireActiveClaim: true,
+        });
+      });
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+          if (pid)
+            blocked = (
+              await sql<{ blocked: boolean }>`SELECT cardinality(pg_blocking_pids(${pid}))>0 AS blocked`.execute(db)
+            ).rows[0].blocked;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(blocked).toBe(true);
+        await sql`SELECT pg_sleep(GREATEST(0,extract(epoch FROM (${deadline}::timestamptz-clock_timestamp())))+0.05)`.execute(
+          db,
+        );
+      } finally {
+        release.resolve();
+      }
+      await blocker;
+      expect(await settling).toBe(false);
+      expect(await operations.getForWorker(operationId)).toEqual(before);
+    },
+  );
 
   it('replays the canonical input and unavailable outcomes, rejects altered batches, and queues no unresolved descriptor', async () => {
     const fixture = await arrange();

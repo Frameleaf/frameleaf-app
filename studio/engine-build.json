@@ -489,7 +489,22 @@
       "path": "patches/0101-recorded-audio-decoded-duration.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "95adf0bb31c891b2232fc502424994b1d2d6814f6b3377b4ba1c739079a94923"
+    },
+    {
+      "path": "patches/0102-scope-displayed-frame-correspondence.patch",
+      "sha256": "56acb04a30928d3e6154f968cbd4d6808355583d5236baed1098802c5a345e7c",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0103-native-rate-stretch-lock-admission.patch",
+      "sha256": "c3464a13943783f6f5c115a436fd40bee879b523b5558828b13b52e0ecbab31b",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0104-browser-whisper-tiny-selector.patch",
+      "sha256": "c57d67bbf395e68e83c385e18034219a4f00c8a1533703eb4c2edf4fbde3487b",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711"
+  "sourceSha256": "01983a71b49ed5721ed9692b6bfd92b3122c651b7f48d1a5c7e675007f410156"
 }

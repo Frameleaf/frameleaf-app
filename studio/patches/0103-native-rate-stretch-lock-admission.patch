@@ -1,0 +1,985 @@
+diff --git a/src/features/timeline/hooks/use-rate-stretch.ts b/src/features/timeline/hooks/use-rate-stretch.ts
+--- a/src/features/timeline/hooks/use-rate-stretch.ts
++++ b/src/features/timeline/hooks/use-rate-stretch.ts
+@@ -1,3 +1,12 @@
++import { useItemsStore } from '../stores/items-store'
++import { useKeyframesStore } from '../stores/keyframes-store'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
++import { useCompositionNavigationStore } from '../stores/composition-navigation-store'
++import { resolveEffectiveTrackStates } from '../utils/group-utils'
++import { roundFrame, roundDuration } from '../stores/items-store-normalize'
++import { getSynchronizedLinkedItemsForEdit } from '../stores/actions/linked-edit'
++import { getRateStretchRippleUpdates } from '../stores/actions/edit/rate-stretch-participants'
+ import { useState, useCallback, useRef, useEffect, useEffectEvent } from 'react'
+ import type { TimelineItem } from '@/types/timeline'
+ import { useEditorStore } from '@/shared/state/editor'
+@@ -302,6 +311,39 @@
+   // Track previous snap target to avoid unnecessary store updates
+   const prevSnapTargetRef = useRef<{ frame: number; type: string } | null>(null)
+   const magneticSnapTargetsRef = useRef<SnapTarget[]>([])
++  const gestureRef = useRef<{
++    validate: (from?: number, duration?: number) => boolean
++    unsubscribe: () => void
++  } | null>(null)
++  const ownedPreviewRef = useRef<
++    ReturnType<typeof useLinkedEditPreviewStore.getState>['updatesById'] | null
++  >(null)
++  const ownedDragRef = useRef<ReturnType<typeof useSelectionStore.getState>['dragState']>(null)
++  const clearGesture = useCallback(() => {
++    gestureRef.current?.unsubscribe()
++    gestureRef.current = null
++    if (ownedPreviewRef.current === useLinkedEditPreviewStore.getState().updatesById) {
++      useLinkedEditPreviewStore.getState().clear()
++    }
++    if (ownedDragRef.current === useSelectionStore.getState().dragState) {
++      setActiveSnapTarget(null)
++      setDragState(null)
++    }
++    ownedPreviewRef.current = null
++    ownedDragRef.current = null
++    prevSnapTargetRef.current = null
++    magneticSnapTargetsRef.current = []
++    stretchStateRef.current = { ...stretchStateRef.current, isStretching: false, handle: null }
++    setStretchState(stretchStateRef.current)
++  }, [setActiveSnapTarget, setDragState])
++  useEffect(() => {
++    if (trackLocked) clearGesture()
++  }, [trackLocked, clearGesture])
++  useEffect(() => () => clearGesture(), [item.id, clearGesture])
++  const publishPreview = (updates: PreviewItemUpdate[]) => {
++    useLinkedEditPreviewStore.getState().setUpdates(updates)
++    ownedPreviewRef.current = useLinkedEditPreviewStore.getState().updatesById
++  }
+ 
+   /**
+    * Find nearest snap target for a given frame position
+@@ -336,7 +378,11 @@
+   // Mouse move handler - only updates local state for visual feedback
+   // Using useEffectEvent so changes to fps, trackLocked, etc. don't re-register listeners
+   const onMouseMove = useEffectEvent((e: MouseEvent) => {
+-    if (!stretchStateRef.current.isStretching || trackLocked) return
++    if (!stretchStateRef.current.isStretching) return
++    if (trackLocked || !gestureRef.current?.validate()) {
++      clearGesture()
++      return
++    }
+ 
+     const deltaX = e.clientX - stretchStateRef.current.startX
+     const deltaTime = pixelsToTime(deltaX)
+@@ -379,7 +425,11 @@
+               applyRateStretchPreview(linkedItem, initialFrom, initialDuration, previewSpeed, fps),
+             )
+         : []
+-      useLinkedEditPreviewStore.getState().setUpdates(linkedPreviewUpdates)
++      if (!gestureRef.current?.validate(initialFrom, initialDuration)) {
++        clearGesture()
++        return
++      }
++      publishPreview(linkedPreviewUpdates)
+       // No snap target visualization for GIFs since clip doesn't move
+       return
+     }
+@@ -504,9 +554,11 @@
+       previewEnd,
+     )
+ 
+-    useLinkedEditPreviewStore
+-      .getState()
+-      .setUpdates([stretchedItemPreview, ...linkedPreviewUpdates, ...rippleUpdates])
++    if (!gestureRef.current?.validate(previewFrom, previewDuration)) {
++      clearGesture()
++      return
++    }
++    publishPreview([stretchedItemPreview, ...linkedPreviewUpdates, ...rippleUpdates])
+ 
+     setActiveSnapTargetIfChanged({
+       previousRef: prevSnapTargetRef,
+@@ -546,6 +598,11 @@
+ 
+         // Only update if speed actually changed
+         if (Math.abs(newSpeed - initialSpeed) > 0.01) {
++          if (trackLocked || !gestureRef.current?.validate(newFrom, newDuration)) {
++            clearGesture()
++            return
++          }
++          gestureRef.current.unsubscribe()
+           rateStretchItem(item.id, newFrom, newDuration, newSpeed)
+         }
+       } else {
+@@ -577,31 +634,16 @@
+ 
+         // Only update store if there was actual change (compare rounded values)
+         if (newDuration !== initialDuration) {
++          if (trackLocked || !gestureRef.current?.validate(newFrom, newDuration)) {
++            clearGesture()
++            return
++          }
++          gestureRef.current.unsubscribe()
+           rateStretchItem(item.id, newFrom, newDuration, newSpeed)
+         }
+       }
+ 
+-      // Clear drag state (including snap indicator)
+-      setActiveSnapTarget(null)
+-      setDragState(null)
+-      useLinkedEditPreviewStore.getState().clear()
+-      prevSnapTargetRef.current = null
+-      magneticSnapTargetsRef.current = []
+-
+-      setStretchState({
+-        isStretching: false,
+-        handle: null,
+-        startX: 0,
+-        initialFrom: 0,
+-        initialDuration: 0,
+-        sourceDuration: 0,
+-        sourceFps: 30,
+-        initialSpeed: 1,
+-        currentDelta: 0,
+-        isLoopingMedia: false,
+-        isConstrained: false,
+-        constraintLabel: null,
+-      })
++      clearGesture()
+     }
+   })
+ 
+@@ -615,11 +657,10 @@
+       return () => {
+         window.removeEventListener('mousemove', onMouseMove)
+         window.removeEventListener('mouseup', onMouseUp)
+-        useLinkedEditPreviewStore.getState().clear()
+-        magneticSnapTargetsRef.current = []
+-      }
+-    }
+-  }, [stretchState.isStretching])
++        clearGesture()
++      }
++    }
++  }, [stretchState.isStretching, clearGesture])
+ 
+   // Start stretch drag
+   const handleStretchStart = useCallback(
+@@ -634,6 +675,79 @@
+       // Only works on source-bounded items and GIFs.
+       if (!isRateStretchableItem(currentItem)) return
+ 
++      clearGesture()
++      const original = useItemsStore.getState()
++      const originalKeyframes = useKeyframesStore.getState().keyframesByItemId
++      const originalTransitions = useTransitionsStore.getState().transitions
++      const originalContext = useTimelineCommandStore.getState().activeContextKey
++      const originalComposition = useCompositionNavigationStore.getState().activeCompositionId
++      const linked = useEditorStore.getState().linkedSelectionEnabled
++      const participants = getSynchronizedLinkedItemsForEdit(original.items, item.id, linked)
++      if (!participants.some((participant) => participant.id === item.id)) return
++      const admittedIds = new Set(participants.map((participant) => participant.id))
++      let invalidated = false
++      const validate = (from?: number, duration?: number) => {
++        if (invalidated) return false
++        const live = useItemsStore.getState()
++        if (from !== undefined && duration !== undefined) {
++          // _rateStretchItem rounds these boundaries before the shared action discovers ripple movers.
++          const actualFrom = roundFrame(from)
++          const actualDuration = roundDuration(duration)
++          const freshItems = original.items.map((candidate) =>
++            participants.some((p) => p.id === candidate.id)
++              ? {
++                  ...candidate,
++                  from: roundFrame(candidate.from + actualFrom - currentItem.from),
++                  durationInFrames: actualDuration,
++                }
++              : candidate,
++          )
++          for (const update of getRateStretchRippleUpdates(
++            freshItems,
++            participants,
++            originalTransitions,
++            currentItem.from,
++            currentItem.durationInFrames,
++            actualFrom,
++            actualDuration,
++          )) {
++            const candidate = original.itemById[update.id]
++            if (candidate && roundFrame(update.from) !== candidate.from) admittedIds.add(update.id)
++          }
++        }
++        const tracks = resolveEffectiveTrackStates(live.tracks)
++        const valid =
++          live.items === original.items &&
++          useKeyframesStore.getState().keyframesByItemId === originalKeyframes &&
++          useTransitionsStore.getState().transitions === originalTransitions &&
++          useTimelineCommandStore.getState().activeContextKey === originalContext &&
++          useCompositionNavigationStore.getState().activeCompositionId === originalComposition &&
++          useEditorStore.getState().linkedSelectionEnabled === linked &&
++          useTimelineSettingsStore.getState().fps === fps &&
++          [...admittedIds].every((id) =>
++            tracks.some((track) => track.id === original.itemById[id]?.trackId && !track.locked),
++          )
++        invalidated = !valid
++        return valid
++      }
++      if (!validate()) return
++      const observe = () => {
++        if (!validate()) clearGesture()
++      }
++      const subscriptions = [
++        useItemsStore.subscribe(observe),
++        useKeyframesStore.subscribe(observe),
++        useTransitionsStore.subscribe(observe),
++        useEditorStore.subscribe(observe),
++        useTimelineSettingsStore.subscribe(observe),
++        useTimelineCommandStore.subscribe(observe),
++        useCompositionNavigationStore.subscribe(observe),
++      ]
++      gestureRef.current = {
++        validate,
++        unsubscribe: () => subscriptions.forEach((unsubscribe) => unsubscribe()),
++      }
++
+       e.stopPropagation()
+       e.preventDefault()
+       commitPreviewFrameToCurrentFrame()
+@@ -643,6 +757,7 @@
+         draggedItemIds: [item.id],
+         offset: { x: 0, y: 0 },
+       })
++      ownedDragRef.current = useSelectionStore.getState().dragState
+       setActiveSnapTarget(null)
+ 
+       const currentSpeed = currentItem.speed || 1
+@@ -691,6 +806,7 @@
+     },
+     [
+       trackLocked,
++      clearGesture,
+       getItemFromStore,
+       item.id,
+       fps,
+diff --git a/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts b/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
+--- a/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
++++ b/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
+@@ -1,3 +1,4 @@
++import { getRateStretchRippleUpdates } from './rate-stretch-participants'
+ import { useItemsStore } from '../../items-store'
+ import { useTransitionsStore } from '../../transitions-store'
+ import { useKeyframesStore } from '../../keyframes-store'
+@@ -27,7 +28,6 @@
+   // Capture old boundaries BEFORE stretch (needed for ripple + keyframe scaling)
+   const oldDuration = anchorBefore.durationInFrames
+   const oldFrom = anchorBefore.from
+-  const oldEnd = oldFrom + oldDuration
+ 
+   itemsStore._rateStretchItem(id, newFrom, newDuration, newSpeed)
+ 
+@@ -66,140 +66,17 @@
+   // Ripple phase: push/pull adjacent clips to maintain adjacency and prevent overlaps.
+   // End handle: endDelta !== 0 → shift downstream clips.
+   // Start handle: fromDelta !== 0, end stays fixed → shift upstream clips.
+-  const newEnd = actualFrom + actualDuration
+-  const endDelta = newEnd - oldEnd
++  const moveUpdates = getRateStretchRippleUpdates(
++    useItemsStore.getState().items,
++    synchronizedItems,
++    useTransitionsStore.getState().transitions,
++    oldFrom,
++    oldDuration,
++    actualFrom,
++    actualDuration,
++  )
+   const allSynchronizedIds = new Set(synchronizedItems.map((si) => si.id))
+-  const freshItems = useItemsStore.getState().items
+-  const transitions = useTransitionsStore.getState().transitions
+-  const movedIds = new Set<string>()
+-  const moveUpdates: Array<{ id: string; from: number }> = []
+-
+-  // Collect all track IDs touched by the stretched item + its linked companions
+-  const touchedTrackIds = new Set<string>()
+-  for (const si of synchronizedItems) {
+-    const freshSi = freshItems.find((i) => i.id === si.id)
+-    if (freshSi) touchedTrackIds.add(freshSi.trackId)
+-  }
+-
+-  if (endDelta !== 0) {
+-    // End handle changed — shift downstream clips (at or past old end) on touched tracks
+-    for (const trackId of touchedTrackIds) {
+-      const downstreamItems = freshItems
+-        .filter((i) => i.trackId === trackId && !allSynchronizedIds.has(i.id) && i.from >= oldEnd)
+-        .sort((a, b) => a.from - b.from)
+-
+-      for (const downstream of downstreamItems) {
+-        if (movedIds.has(downstream.id)) continue
+-        movedIds.add(downstream.id)
+-        moveUpdates.push({ id: downstream.id, from: downstream.from + endDelta })
+-
+-        // Also move linked companions on other tracks
+-        const linkedIds = expandItemIdsWithAttachedCaptions(
+-          freshItems,
+-          getLinkedItemIds(freshItems, downstream.id),
+-        )
+-        for (const linkedId of linkedIds) {
+-          if (linkedId === downstream.id || movedIds.has(linkedId)) continue
+-          const linked = freshItems.find((i) => i.id === linkedId)
+-          if (linked) {
+-            movedIds.add(linkedId)
+-            moveUpdates.push({ id: linkedId, from: linked.from + endDelta })
+-          }
+-        }
+-      }
+-    }
+-
+-    // Also shift transition-connected neighbors that aren't downstream by position
+-    // but are directly bridged to the stretched clip's end
+-    for (const si of synchronizedItems) {
+-      for (const t of transitions) {
+-        if (
+-          t.leftClipId === si.id &&
+-          !allSynchronizedIds.has(t.rightClipId) &&
+-          !movedIds.has(t.rightClipId)
+-        ) {
+-          const neighbor = freshItems.find((i) => i.id === t.rightClipId)
+-          if (neighbor) {
+-            movedIds.add(neighbor.id)
+-            moveUpdates.push({ id: neighbor.id, from: neighbor.from + endDelta })
+-            const linkedIds = expandItemIdsWithAttachedCaptions(
+-              freshItems,
+-              getLinkedItemIds(freshItems, neighbor.id),
+-            )
+-            for (const linkedId of linkedIds) {
+-              if (linkedId === neighbor.id || movedIds.has(linkedId)) continue
+-              const linked = freshItems.find((i) => i.id === linkedId)
+-              if (linked) {
+-                movedIds.add(linkedId)
+-                moveUpdates.push({ id: linkedId, from: linked.from + endDelta })
+-              }
+-            }
+-          }
+-        }
+-      }
+-    }
+-  }
+-
+-  if (fromDelta !== 0) {
+-    // Start handle changed — shift upstream clips (ending at or before old from) on touched tracks
+-    for (const trackId of touchedTrackIds) {
+-      const upstreamItems = freshItems
+-        .filter((i) => {
+-          if (i.trackId !== trackId || allSynchronizedIds.has(i.id)) return false
+-          const iEnd = i.from + i.durationInFrames
+-          return iEnd <= oldFrom
+-        })
+-        .sort((a, b) => a.from - b.from)
+-
+-      for (const upstream of upstreamItems) {
+-        if (movedIds.has(upstream.id)) continue
+-        movedIds.add(upstream.id)
+-        moveUpdates.push({ id: upstream.id, from: Math.max(0, upstream.from + fromDelta) })
+-
+-        const linkedIds = expandItemIdsWithAttachedCaptions(
+-          freshItems,
+-          getLinkedItemIds(freshItems, upstream.id),
+-        )
+-        for (const linkedId of linkedIds) {
+-          if (linkedId === upstream.id || movedIds.has(linkedId)) continue
+-          const linked = freshItems.find((i) => i.id === linkedId)
+-          if (linked) {
+-            movedIds.add(linkedId)
+-            moveUpdates.push({ id: linkedId, from: Math.max(0, linked.from + fromDelta) })
+-          }
+-        }
+-      }
+-    }
+-
+-    // Also shift transition-connected neighbors bridged to the stretched clip's start
+-    for (const si of synchronizedItems) {
+-      for (const t of transitions) {
+-        if (
+-          t.rightClipId === si.id &&
+-          !allSynchronizedIds.has(t.leftClipId) &&
+-          !movedIds.has(t.leftClipId)
+-        ) {
+-          const neighbor = freshItems.find((i) => i.id === t.leftClipId)
+-          if (neighbor) {
+-            movedIds.add(neighbor.id)
+-            moveUpdates.push({ id: neighbor.id, from: Math.max(0, neighbor.from + fromDelta) })
+-            const linkedIds = expandItemIdsWithAttachedCaptions(
+-              freshItems,
+-              getLinkedItemIds(freshItems, neighbor.id),
+-            )
+-            for (const linkedId of linkedIds) {
+-              if (linkedId === neighbor.id || movedIds.has(linkedId)) continue
+-              const linked = freshItems.find((i) => i.id === linkedId)
+-              if (linked) {
+-                movedIds.add(linkedId)
+-                moveUpdates.push({ id: linkedId, from: Math.max(0, linked.from + fromDelta) })
+-              }
+-            }
+-          }
+-        }
+-      }
+-    }
+-  }
++  const movedIds = new Set(moveUpdates.map((update) => update.id))
+ 
+   if (moveUpdates.length > 0) {
+     useItemsStore.getState()._moveItems(moveUpdates)
+diff --git a/src/features/timeline/hooks/use-rate-stretch.admission.test.tsx b/src/features/timeline/hooks/use-rate-stretch.admission.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/hooks/use-rate-stretch.admission.test.tsx
+@@ -0,0 +1,398 @@
++import { useTransitionsStore } from '../stores/transitions-store'
++import { useKeyframesStore } from '../stores/keyframes-store'
++import { useCompositionNavigationStore } from '../stores/composition-navigation-store'
++import { useLinkedEditPreviewStore } from '../stores/linked-edit-preview-store'
++import { beforeEach, expect, it } from 'vite-plus/test'
++import { act, renderHook } from '@testing-library/react'
++import { useRateStretch } from '@/features/timeline/hooks/use-rate-stretch'
++import {
++  makeTimelineAudioItem,
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++  resetTimelineCompositionTestState,
++} from '@/features/timeline/test-helpers'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
++import { useZoomStore } from '@/features/timeline/stores/zoom-store'
++import { useEditorStore } from '@/shared/state/editor'
++import { useSelectionStore } from '@/shared/state/selection'
++import { resetPlaybackPreviewState } from '@/shared/state/playback-preview-test-helpers'
++
++beforeEach(() => {
++  resetTimelineCompositionTestState()
++  useTimelineSettingsStore.setState({ fps: 30, isDirty: false, snapEnabled: false })
++  useZoomStore.setState({ level: 0.3, pixelsPerSecond: 30 })
++  useEditorStore.setState({ linkedSelectionEnabled: true })
++  useSelectionStore.getState().selectItems([])
++  useSelectionStore.getState().setDragState(null)
++  resetPlaybackPreviewState()
++})
++const seed = (locked: boolean) => {
++  const video = makeTimelineVideoItem({
++    id: 'v',
++    linkedGroupId: 'pair',
++    sourceEnd: 60,
++    sourceDuration: 120,
++  })
++  const audio = makeTimelineAudioItem({
++    id: 'a',
++    linkedGroupId: 'pair',
++    sourceEnd: 60,
++    sourceDuration: 120,
++  })
++  useItemsStore
++    .getState()
++    .setTracks([
++      makeTimelineTrack({ id: 'track-v1', name: 'V1', kind: 'video', order: 0 }),
++      makeTimelineTrack({ id: 'track-a1', name: 'A1', kind: 'audio', order: 1, locked }),
++    ])
++  useItemsStore.getState().setItems([video, audio])
++  return video
++}
++const gesture = (
++  result: ReturnType<typeof renderHook<ReturnType<typeof useRateStretch>, unknown>>,
++) => {
++  act(() =>
++    result.result.current.handleStretchStart(
++      { button: 0, clientX: 0, stopPropagation() {}, preventDefault() {} } as never,
++      'end',
++    ),
++  )
++  act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 30 })))
++  act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 30 })))
++}
++it('CONTROL unlocked linked rate stretch commits one real history entry and undo/redo both source ranges', () => {
++  const video = seed(false)
++  const hook = renderHook(() => useRateStretch(video, 600, false))
++  gesture(hook)
++  const after = JSON.stringify(useItemsStore.getState().items)
++  expect(useItemsStore.getState().itemById.v?.durationInFrames).toBe(90)
++  expect(useItemsStore.getState().itemById.a?.durationInFrames).toBe(90)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  act(() => useTimelineCommandStore.getState().undo())
++  expect(useItemsStore.getState().itemById.v?.durationInFrames).toBe(60)
++  expect(useItemsStore.getState().itemById.a?.durationInFrames).toBe(60)
++  act(() => useTimelineCommandStore.getState().redo())
++  expect(JSON.stringify(useItemsStore.getState().items)).toBe(after)
++  hook.unmount()
++})
++it('RED locked linked companion refuses actual pointer hook before mutation/history', () => {
++  const video = seed(true)
++  const before = JSON.stringify(useItemsStore.getState().items)
++  const hook = renderHook(() => useRateStretch(video, 600, false))
++  gesture(hook)
++  const after = useItemsStore.getState().items
++
++  hook.unmount()
++  expect(JSON.stringify(after)).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++})
++
++it('RED companion locked after pointer preview refuses commit/history', () => {
++  const video = seed(false)
++  const before = JSON.stringify(useItemsStore.getState().items)
++  const hook = renderHook(() => useRateStretch(video, 600, false))
++  act(() =>
++    hook.result.current.handleStretchStart(
++      { button: 0, clientX: 0, stopPropagation() {}, preventDefault() {} } as never,
++      'end',
++    ),
++  )
++  act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 30 })))
++  act(() =>
++    useItemsStore
++      .getState()
++      .setTracks(
++        useItemsStore
++          .getState()
++          .tracks.map((t) => (t.id === 'track-a1' ? { ...t, locked: true } : t)),
++      ),
++  )
++  act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 30 })))
++
++  hook.unmount()
++  expect(JSON.stringify(useItemsStore.getState().items)).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++})
++it('CONTROL unrelated locked track does not block the valid linked edit', () => {
++  const video = seed(false)
++  useItemsStore
++    .getState()
++    .setTracks([
++      ...useItemsStore.getState().tracks,
++      makeTimelineTrack({ id: 'unrelated', name: 'U', order: 2, locked: true }),
++    ])
++  const hook = renderHook(() => useRateStretch(video, 600, false))
++  gesture(hook)
++  expect(useItemsStore.getState().itemById.a?.durationInFrames).toBe(90)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  hook.unmount()
++})
++it('CONTROL linked selection disabled keeps locked audio independent', () => {
++  const video = seed(true)
++  useEditorStore.setState({ linkedSelectionEnabled: false })
++  const hook = renderHook(() => useRateStretch(video, 600, false))
++  gesture(hook)
++  expect(useItemsStore.getState().itemById.v?.durationInFrames).toBe(90)
++  expect(useItemsStore.getState().itemById.a?.durationInFrames).toBe(60)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  hook.unmount()
++})
++
++const begin = (hook: ReturnType<typeof renderHook<ReturnType<typeof useRateStretch>, unknown>>) =>
++  act(() =>
++    hook.result.current.handleStretchStart(
++      { button: 0, clientX: 0, stopPropagation() {}, preventDefault() {} } as never,
++      'end',
++    ),
++  )
++const move = (x: number) =>
++  act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: x })))
++const finish = () => act(() => window.dispatchEvent(new MouseEvent('mouseup')))
++const lockAudio = (locked: boolean) =>
++  useItemsStore
++    .getState()
++    .setTracks(
++      useItemsStore.getState().tracks.map((t) => (t.id === 'track-a1' ? { ...t, locked } : t)),
++    )
++const graph = () =>
++  JSON.stringify({
++    items: useItemsStore.getState().items,
++    keyframes: useKeyframesStore.getState().keyframesByItemId,
++    transitions: useTransitionsStore.getState().transitions,
++  })
++it('inherited companion lock refuses without graph/history writes', () => {
++  const video = seed(false)
++  useItemsStore
++    .getState()
++    .setTracks([
++      ...useItemsStore
++        .getState()
++        .tracks.map((t) => (t.id === 'track-a1' ? { ...t, parentTrackId: 'group' } : t)),
++      makeTimelineTrack({ id: 'group', name: 'group', order: 2, isGroup: true, locked: true }),
++    ])
++  const before = graph()
++  const hook = renderHook(() => useRateStretch(video, 600))
++  gesture(hook)
++  expect(graph()).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  hook.unmount()
++})
++it('lock then unlock without pointer events permanently cancels gesture', () => {
++  const video = seed(false)
++  const before = graph()
++  const hook = renderHook(() => useRateStretch(video, 600))
++  begin(hook)
++  move(30)
++  act(() => {
++    lockAudio(true)
++    lockAudio(false)
++  })
++  move(40)
++  finish()
++  expect(graph()).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  expect(useSelectionStore.getState().dragState).toBeNull()
++  hook.unmount()
++})
++for (const target of ['linked', 'caption', 'neighbor'] as const)
++  it(`transition-connected ripple ${target} lock refuses with linked selection disabled`, () => {
++    const video = seed(false)
++    useEditorStore.setState({ linkedSelectionEnabled: false })
++    const neighbor = makeTimelineVideoItem({
++      id: 'neighbor',
++      from: 45,
++      linkedGroupId: 'next',
++      mediaId: 'next',
++    })
++    const linked = makeTimelineAudioItem({
++      id: 'linked',
++      from: 45,
++      linkedGroupId: 'next',
++      mediaId: 'next',
++      trackId: 'ripple-a',
++    })
++    const caption = {
++      id: 'caption',
++      type: 'text',
++      from: 45,
++      durationInFrames: 20,
++      trackId: 'caption-track',
++      label: 'caption',
++      textRole: 'caption',
++      captionSource: { clipId: 'neighbor' },
++      text: 'Caption',
++    }
++    useItemsStore.getState().setTracks(
++      [
++        ...useItemsStore.getState().tracks,
++        makeTimelineTrack({ id: 'ripple-a', name: 'R', order: 2, locked: target === 'linked' }),
++        makeTimelineTrack({
++          id: 'caption-track',
++          name: 'C',
++          order: 3,
++          locked: target === 'caption',
++        }),
++      ].map((t) => (target === 'neighbor' && t.id === 'track-v1' ? { ...t, locked: true } : t)),
++    )
++    // Neighbor lock uses its independent destination lane to keep the primary admitted.
++    if (target === 'neighbor') {
++      neighbor.trackId = 'neighbor-track'
++      useItemsStore
++        .getState()
++        .setTracks([
++          ...useItemsStore.getState().tracks.map((t) => ({ ...t, locked: false })),
++          makeTimelineTrack({ id: 'neighbor-track', name: 'N', order: 4, locked: true }),
++        ])
++    }
++    useItemsStore
++      .getState()
++      .setItems([...useItemsStore.getState().items, neighbor, linked, caption as never])
++    useTransitionsStore.setState({
++      transitions: [
++        {
++          id: 'bridge',
++          type: 'crossfade',
++          presentation: 'fade',
++          timing: 'linear',
++          leftClipId: 'v',
++          rightClipId: 'neighbor',
++          trackId: 'track-v1',
++          durationInFrames: 15,
++        },
++      ],
++    })
++    const before = graph()
++    const hook = renderHook(() => useRateStretch(video, 600))
++    gesture(hook)
++    expect(graph()).toBe(before)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    hook.unmount()
++  })
++it('downstream ripple linked companion lock refuses even when linked selection disabled', () => {
++  const video = seed(false)
++  useEditorStore.setState({ linkedSelectionEnabled: false })
++  useItemsStore
++    .getState()
++    .setTracks([
++      ...useItemsStore.getState().tracks,
++      makeTimelineTrack({ id: 'ripple-a', name: 'R', order: 2, locked: true }),
++    ])
++  useItemsStore.getState().setItems([
++    ...useItemsStore.getState().items,
++    makeTimelineVideoItem({ id: 'next', from: 60, linkedGroupId: 'next', mediaId: 'next' }),
++    makeTimelineAudioItem({
++      id: 'next-a',
++      from: 60,
++      linkedGroupId: 'next',
++      mediaId: 'next',
++      trackId: 'ripple-a',
++    }),
++  ])
++  const before = graph()
++  const hook = renderHook(() => useRateStretch(video, 600))
++  gesture(hook)
++  expect(graph()).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  hook.unmount()
++})
++it('no-op pointer return does not cancel a valid later change', () => {
++  const video = seed(false)
++  const hook = renderHook(() => useRateStretch(video, 600))
++  begin(hook)
++  move(30)
++  move(0)
++  move(30)
++  finish()
++  expect(useItemsStore.getState().itemById.a?.durationInFrames).toBe(90)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  hook.unmount()
++})
++it('boundary no-op produces no history', () => {
++  const video = seed(false)
++  const before = graph()
++  const hook = renderHook(() => useRateStretch(video, 600))
++  begin(hook)
++  move(0)
++  finish()
++  expect(graph()).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  hook.unmount()
++})
++for (const change of [
++  'source',
++  'keyframes',
++  'transitions',
++  'context',
++  'composition',
++  'cadence',
++  'linked',
++] as const)
++  it(`external ${change} edit cancels without overwriting current graph`, () => {
++    const video = seed(false)
++    const hook = renderHook(() => useRateStretch(video, 600))
++    begin(hook)
++    move(30)
++    act(() => {
++      if (change === 'source')
++        useItemsStore
++          .getState()
++          .setItems(
++            useItemsStore
++              .getState()
++              .items.map((i) => (i.id === 'v' ? { ...i, src: 'blob:new' } : i)),
++          )
++      if (change === 'keyframes') useKeyframesStore.setState({ keyframesByItemId: {} })
++      if (change === 'transitions') useTransitionsStore.setState({ transitions: [] })
++      if (change === 'context') useTimelineCommandStore.getState().setActiveContext('other')
++      if (change === 'composition')
++        useCompositionNavigationStore.setState({ activeCompositionId: 'child' })
++      if (change === 'cadence') useTimelineSettingsStore.setState({ fps: 24 })
++      if (change === 'linked') useEditorStore.setState({ linkedSelectionEnabled: false })
++    })
++    const afterExternal = graph()
++    move(40)
++    finish()
++    expect(graph()).toBe(afterExternal)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    hook.unmount()
++  })
++it('cancellation preserves existing undo and redo branches', () => {
++  const video = seed(false)
++  const hook = renderHook(() => useRateStretch(video, 600))
++  gesture(hook)
++  act(() => useTimelineCommandStore.getState().undo())
++  const history = useTimelineCommandStore.getState()
++  const before = graph()
++  begin(hook)
++  move(30)
++  act(() => {
++    lockAudio(true)
++    lockAudio(false)
++  })
++  finish()
++  expect(graph()).toBe(before)
++  expect(useTimelineCommandStore.getState().undoStack).toBe(history.undoStack)
++  expect(useTimelineCommandStore.getState().redoStack).toBe(history.redoStack)
++  hook.unmount()
++})
++it('cancellation does not clear a newer owner preview or drag state', () => {
++  const video = seed(false)
++  const hook = renderHook(() => useRateStretch(video, 600))
++  begin(hook)
++  move(30)
++  act(() => {
++    useLinkedEditPreviewStore.getState().setUpdates([{ id: 'other', from: 10 }])
++    useSelectionStore
++      .getState()
++      .setDragState({ isDragging: true, draggedItemIds: ['other'], offset: { x: 0, y: 0 } })
++  })
++  const preview = useLinkedEditPreviewStore.getState().updatesById
++  const drag = useSelectionStore.getState().dragState
++  act(() => lockAudio(true))
++  finish()
++  expect(useLinkedEditPreviewStore.getState().updatesById).toBe(preview)
++  expect(useSelectionStore.getState().dragState).toBe(drag)
++  hook.unmount()
++})
+diff --git a/src/features/timeline/stores/actions/edit/rate-stretch-participants.ts b/src/features/timeline/stores/actions/edit/rate-stretch-participants.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/rate-stretch-participants.ts
+@@ -0,0 +1,151 @@
++import type { TimelineItem } from '@/types/timeline'
++import type { Transition } from '@/types/transition'
++import { expandItemIdsWithAttachedCaptions, getLinkedItemIds } from '../../../utils/linked-items'
++
++// Shared discovery from the action's actual rounded anchor boundaries, not rendered previews.
++export function getRateStretchRippleUpdates(
++  freshItems: TimelineItem[],
++  synchronizedItems: TimelineItem[],
++  transitions: Transition[],
++  oldFrom: number,
++  oldDuration: number,
++  actualFrom: number,
++  actualDuration: number,
++): Array<{ id: string; from: number }> {
++  const oldEnd = oldFrom + oldDuration
++  const fromDelta = actualFrom - oldFrom
++  const newEnd = actualFrom + actualDuration
++  const endDelta = newEnd - oldEnd
++  const allSynchronizedIds = new Set(synchronizedItems.map((si) => si.id))
++  const movedIds = new Set<string>()
++  const moveUpdates: Array<{ id: string; from: number }> = []
++
++  // Collect all track IDs touched by the stretched item + its linked companions
++  const touchedTrackIds = new Set<string>()
++  for (const si of synchronizedItems) {
++    const freshSi = freshItems.find((i) => i.id === si.id)
++    if (freshSi) touchedTrackIds.add(freshSi.trackId)
++  }
++
++  if (endDelta !== 0) {
++    // End handle changed — shift downstream clips (at or past old end) on touched tracks
++    for (const trackId of touchedTrackIds) {
++      const downstreamItems = freshItems
++        .filter((i) => i.trackId === trackId && !allSynchronizedIds.has(i.id) && i.from >= oldEnd)
++        .sort((a, b) => a.from - b.from)
++
++      for (const downstream of downstreamItems) {
++        if (movedIds.has(downstream.id)) continue
++        movedIds.add(downstream.id)
++        moveUpdates.push({ id: downstream.id, from: downstream.from + endDelta })
++
++        // Also move linked companions on other tracks
++        const linkedIds = expandItemIdsWithAttachedCaptions(
++          freshItems,
++          getLinkedItemIds(freshItems, downstream.id),
++        )
++        for (const linkedId of linkedIds) {
++          if (linkedId === downstream.id || movedIds.has(linkedId)) continue
++          const linked = freshItems.find((i) => i.id === linkedId)
++          if (linked) {
++            movedIds.add(linkedId)
++            moveUpdates.push({ id: linkedId, from: linked.from + endDelta })
++          }
++        }
++      }
++    }
++
++    // Also shift transition-connected neighbors that aren't downstream by position
++    // but are directly bridged to the stretched clip's end
++    for (const si of synchronizedItems) {
++      for (const t of transitions) {
++        if (
++          t.leftClipId === si.id &&
++          !allSynchronizedIds.has(t.rightClipId) &&
++          !movedIds.has(t.rightClipId)
++        ) {
++          const neighbor = freshItems.find((i) => i.id === t.rightClipId)
++          if (neighbor) {
++            movedIds.add(neighbor.id)
++            moveUpdates.push({ id: neighbor.id, from: neighbor.from + endDelta })
++            const linkedIds = expandItemIdsWithAttachedCaptions(
++              freshItems,
++              getLinkedItemIds(freshItems, neighbor.id),
++            )
++            for (const linkedId of linkedIds) {
++              if (linkedId === neighbor.id || movedIds.has(linkedId)) continue
++              const linked = freshItems.find((i) => i.id === linkedId)
++              if (linked) {
++                movedIds.add(linkedId)
++                moveUpdates.push({ id: linkedId, from: linked.from + endDelta })
++              }
++            }
++          }
++        }
++      }
++    }
++  }
++
++  if (fromDelta !== 0) {
++    // Start handle changed — shift upstream clips (ending at or before old from) on touched tracks
++    for (const trackId of touchedTrackIds) {
++      const upstreamItems = freshItems
++        .filter((i) => {
++          if (i.trackId !== trackId || allSynchronizedIds.has(i.id)) return false
++          const iEnd = i.from + i.durationInFrames
++          return iEnd <= oldFrom
++        })
++        .sort((a, b) => a.from - b.from)
++
++      for (const upstream of upstreamItems) {
++        if (movedIds.has(upstream.id)) continue
++        movedIds.add(upstream.id)
++        moveUpdates.push({ id: upstream.id, from: Math.max(0, upstream.from + fromDelta) })
++
++        const linkedIds = expandItemIdsWithAttachedCaptions(
++          freshItems,
++          getLinkedItemIds(freshItems, upstream.id),
++        )
++        for (const linkedId of linkedIds) {
++          if (linkedId === upstream.id || movedIds.has(linkedId)) continue
++          const linked = freshItems.find((i) => i.id === linkedId)
++          if (linked) {
++            movedIds.add(linkedId)
++            moveUpdates.push({ id: linkedId, from: Math.max(0, linked.from + fromDelta) })
++          }
++        }
++      }
++    }
++
++    // Also shift transition-connected neighbors bridged to the stretched clip's start
++    for (const si of synchronizedItems) {
++      for (const t of transitions) {
++        if (
++          t.rightClipId === si.id &&
++          !allSynchronizedIds.has(t.leftClipId) &&
++          !movedIds.has(t.leftClipId)
++        ) {
++          const neighbor = freshItems.find((i) => i.id === t.leftClipId)
++          if (neighbor) {
++            movedIds.add(neighbor.id)
++            moveUpdates.push({ id: neighbor.id, from: Math.max(0, neighbor.from + fromDelta) })
++            const linkedIds = expandItemIdsWithAttachedCaptions(
++              freshItems,
++              getLinkedItemIds(freshItems, neighbor.id),
++            )
++            for (const linkedId of linkedIds) {
++              if (linkedId === neighbor.id || movedIds.has(linkedId)) continue
++              const linked = freshItems.find((i) => i.id === linkedId)
++              if (linked) {
++                movedIds.add(linkedId)
++                moveUpdates.push({ id: linkedId, from: Math.max(0, linked.from + fromDelta) })
++              }
++            }
++          }
++        }
++      }
++    }
++  }
++
++  return moveUpdates
++}

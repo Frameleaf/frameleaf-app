@@ -180,6 +180,20 @@ describe(MediaRecoveryService.name, () => {
     expect(await pending).toEqual({ outcome: 'reused', assetId: candidate.id });
     expect(repository.enqueueLocalEffects).toHaveBeenCalledTimes(2);
   });
+  it.each(['audit_authority_changed', 'audit_authority_expired'])(
+    'preserves the manual audit control refusal %s without confusing ordinary recovery errors',
+    async (reason) => {
+      input.audit = { auditRequestId: randomUUID(), operationId: randomUUID(), operationClaimToken: randomUUID() };
+      repository.getResource.mockRejectedValueOnce(new Error(reason));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'manual_audit_authority_changed' });
+      repository.getResource.mockRejectedValueOnce(new Error('fixture_integrity_or_commit_error'));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'recovery_not_committed' });
+      input.audit = undefined;
+      repository.getResource.mockRejectedValueOnce(new Error(reason));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'recovery_not_committed' });
+    },
+  );
+
   it('repairs missing originals at a new path with the same ID and retained stage', async () => {
     expect(await sut.reconcile(input)).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });
     expect(await readFile(reservation.promotedPath)).toEqual(bytes);
