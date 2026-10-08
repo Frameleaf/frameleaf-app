@@ -74,7 +74,7 @@ const source = await testedSource(new URL(import.meta.url));
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
   'effects/color.ts': '3db983b8869e446d3a5b3037e8a1a0efcf146927f1f65cade0bd01c280695e90',
-  'common.ts': '52ab33cf18b4a855898a008acf9dea98e8438971f777dda80cd9da09cb4f8d90',
+  'common.ts': 'aa331c3e74e465b567a2e319d8227001e33ed9be927970e89014edb621fa6410',
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
   // Pinned SDR colour and spatial branches remain unchanged; HDR sampling is independently measured.
