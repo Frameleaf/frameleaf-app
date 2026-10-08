@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -173,7 +174,20 @@ describe(AssetMediaController.name, () => {
       );
     });
 
-    // TODO figure out how to deal with `sendFile`
+    describe('GET /assets/:id/original', () => {
+      it('masks inaccessible originals at the file response boundary', async () => {
+        service.downloadOriginal.mockRejectedValue(new BadRequestException('Not found or no asset.read access'));
+        const { status, body } = await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/original`);
+        expect(status).toBe(404);
+        expect(body.message).toBe('Not Found');
+        expect(service.downloadOriginal).toHaveBeenCalledWith(
+          undefined,
+          expect.any(String),
+          { edited: false },
+          expect.any(AbortSignal),
+        );
+      });
+    });
 
     describe('GET /assets/:id/edit-versions/:versionId/download (FL-39)', () => {
       it('requires download permission without a shared-link route', async () => {
