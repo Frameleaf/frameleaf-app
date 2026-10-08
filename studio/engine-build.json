@@ -449,7 +449,12 @@
       "path": "patches/0093-lottie-range-source-clock.patch",
       "sha256": "38ed91a5a4b77ef407b8bce8e8c3c2ea23e3cddc8b3547baba3cb42347a48d07",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0095-decoded-channel-fixture-timestamps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fcf9823b752f7ec782879dbac5828806b2e58525b77abca2f51ae71de985e6f9"
     }
   ],
-  "sourceSha256": "0f73569b7e96f442a137524d2af032bcd7514ee03a1ab019d59fe812d58c65d5"
+  "sourceSha256": "df0790d8edb41707ff3c8a2f68a34b505ba89fe264568fe31fdd384bd3f6a408"
 }
