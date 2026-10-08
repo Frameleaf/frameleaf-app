@@ -283,3 +283,25 @@ it('retains a terminal restore diagnostic without exposing exception text or det
   expect(JSON.stringify(logger.error.mock.calls)).not.toContain(sentinel);
   expect(JSON.stringify(fail.mock.calls)).not.toContain(sentinel);
 });
+
+it.each(['direct', 'cause'] as const)(
+  'uses the single automatic retry for %s PostgreSQL lock contention',
+  async (source) => {
+    const sentinel = 'private-buddy-lock-sentinel';
+    const contention = Object.assign(new Error(sentinel), { code: '55P03', detail: sentinel });
+    const error = source === 'direct' ? contention : new Error(sentinel, { cause: contention });
+    const fail = vi.fn().mockResolvedValue('retrying');
+    const logger = { error: vi.fn() };
+    const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
+      logger,
+      binding: () => Promise.reject(error),
+      operations: { fail },
+    });
+    await service.runClaim({ id: 'operation', snapshot: {} }, 'claim');
+    expect(fail).toHaveBeenCalledWith('operation', 'claim', expect.any(Object), { retry: true });
+    expect(logger.error).toHaveBeenCalledExactlyOnceWith(
+      'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"55P03","status":null}',
+    );
+    expect(JSON.stringify([fail.mock.calls, logger.error.mock.calls])).not.toContain(sentinel);
+  },
+);
