@@ -6541,6 +6541,86 @@ export type ICloudCoverageResponseDto = {
     /** False when identity matching is switched off: no connection can then be shown to cover the library */
     identityMatching: boolean;
 };
+export type ICloudEditBaselineDto = {
+    expectedGeneration: number;
+    holder: {
+        kind: ICloudEditDeviceHolderKind;
+        id: string;
+    } | {
+        kind: ICloudEditSyncHolderKind;
+        id: string;
+    };
+    nativeVersion: string;
+    /** An accessible owned stored source identity with verified current asset digest */
+    receiptId: string;
+    requestId: string;
+    sourceIncarnation: string;
+    /** Only bypasses the 72-hour wait for an unhealthy source */
+    takeOver?: boolean;
+};
+export type ICloudEditDecisionResponseDto = {
+    decisionId: string;
+    evidenceType: EvidenceType;
+    generation: number;
+    versionId: string;
+};
+export type ICloudEditEvidenceResponseDto = {
+    admissionGuaranteed: false;
+    complete: true;
+    items: {
+        authority: {
+            assetId: string;
+            evidenceType: EvidenceType;
+            generation: number;
+            holder: string;
+            sha256: string;
+            sourceIncarnation: string;
+            versionId: string;
+        } | null;
+        claims: {
+            claimId: string;
+            expiresAt: string;
+            holder: string;
+        }[];
+        holders: {
+            automaticTakeoverEligible: boolean;
+            holder: string;
+            state: string;
+            unhealthySince: string | null;
+        }[];
+        incoming: {
+            administrativeDecisionRequired: true;
+            channel: ICloudEditPublicationChannel;
+            claimLive: boolean;
+            holder: string;
+            nativeVersion: string;
+            resourceId: string;
+            sha256: string;
+            state: string;
+        }[];
+        item: string;
+        receipts: {
+            assetId: string;
+            deliveredBy: string;
+            nativeVersion: string;
+            receiptId: string;
+            role: ICloudEditReceiptRole;
+            sha256: string;
+            suggestedAdministrativeLabel: "administrative-original" | null;
+        }[];
+    }[];
+};
+export type ICloudEditSuccessorDto = {
+    channel: ICloudEditPublicationChannel;
+    expectedGeneration: number;
+    expectedVersionId: string;
+    policy?: ICloudEditRetentionPolicy;
+    requestId: string;
+    /** Existing verified bytes; accepting this is an explicit owner successor decision */
+    resourceId: string;
+    /** Explicit administrative binding to a known canonical version with identical verified render bytes; never inferred provider equivalence */
+    reuseVersionId?: string;
+};
 export type ICloudAttachItemDto = {
     assetId: string;
     /** PHCloudIdentifier.stringValue, as the device reports it */
@@ -20465,6 +20545,51 @@ export function probeICloudCoverage({ iCloudCoverageDto }: {
     })));
 }
 /**
+ * Accept an administrative edit-owner baseline
+ */
+export function acceptICloudEditBaseline({ iCloudEditBaselineDto }: {
+    iCloudEditBaselineDto: ICloudEditBaselineDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudEditDecisionResponseDto;
+    }>("/icloud-sync/edits/baseline", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudEditBaselineDto
+    })));
+}
+/**
+ * Discover owned edit evidence and administrative authority
+ */
+export function discoverICloudEditEvidence({ assetId }: {
+    assetId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudEditEvidenceResponseDto;
+    }>(`/icloud-sync/edits/evidence${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Accept verified bytes as an administrative edit successor
+ */
+export function acceptICloudEditSuccessor({ iCloudEditSuccessorDto }: {
+    iCloudEditSuccessorDto: ICloudEditSuccessorDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudEditDecisionResponseDto;
+    }>("/icloud-sync/edits/successor", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudEditSuccessorDto
+    })));
+}
+/**
  * Attach iCloud identities to originals already uploaded by this device
  */
 export function attachICloudIdentities({ iCloudAttachDto }: {
@@ -29337,6 +29462,27 @@ export enum ICloudConnectionHealth {
     Failing = "failing",
     Disconnected = "disconnected"
 }
+export enum ICloudEditDeviceHolderKind {
+    Device = "device"
+}
+export enum ICloudEditSyncHolderKind {
+    IcloudSync = "icloud-sync"
+}
+export enum EvidenceType {
+    Administrative = "administrative"
+}
+export enum ICloudEditPublicationChannel {
+    Device = "device",
+    IcloudSync = "icloud-sync"
+}
+export enum ICloudEditReceiptRole {
+    Original = "original",
+    EditRender = "edit-render"
+}
+export enum ICloudEditRetentionPolicy {
+    Keep = "keep",
+    Supersede = "supersede"
+}
 export enum ICloudIdentityRole {
     Original = "original",
     LiveMotion = "live-motion",
@@ -30379,6 +30525,7 @@ export enum QueueJobStatus {
 }
 export enum JobName {
     ICloudSync = "ICloudSync",
+    ICloudRelations = "ICloudRelations",
     AnalyticsCollect = "AnalyticsCollect",
     AssetDelete = "AssetDelete",
     AssetDeleteCheck = "AssetDeleteCheck",

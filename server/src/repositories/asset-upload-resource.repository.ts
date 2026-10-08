@@ -12,6 +12,8 @@ import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
@@ -121,6 +123,13 @@ export class AssetUploadResourceRepository {
     }
     return this.db.transaction().execute(async (tx) => {
       await this.ready(tx);
+      const editAuthority = new ICloudEditAuthorityRepository(tx);
+      const items = await Promise.all(ids.map((id) => editAuthority.itemHint(tx, ownerId, 'device', id)));
+      await lockICloudItemClaims(
+        tx,
+        ownerId,
+        items.filter((item): item is string => item !== null),
+      );
       const rows: AssetUploadResource[] = [];
       for (const id of [...ids].sort()) {
         const row = await tx
@@ -249,20 +258,27 @@ export class AssetUploadResourceRepository {
     ) {
       throw new ConflictException('Upload is not ready for publication');
     }
+    const editAuthority = new ICloudEditAuthorityRepository(tx);
+    const edit = await editAuthority.publication(tx, resource.ownerId, 'device', resource.id);
     const assets = new AssetRepository(tx);
-    const duplicateId = options.rejectDuplicate
-      ? (
-          await tx
-            .selectFrom('asset')
-            .select('id')
-            .where('ownerId', '=', resource.ownerId)
-            .where('checksum', '=', resource.verifiedChecksum)
-            .where('libraryId', 'is', null)
-            .executeTakeFirst()
-        )?.id
-      : await assets.getUploadAssetIdByChecksum(resource.ownerId, resource.verifiedChecksum, {
-          lockedOwnerId: resource.ownerId,
-        });
+    const duplicateId =
+      edit?.existingAssetId ??
+      (options.rejectDuplicate
+        ? (
+            await tx
+              .selectFrom('asset')
+              .select('id')
+              .where('ownerId', '=', resource.ownerId)
+              .where('checksum', '=', resource.verifiedChecksum)
+              .where('libraryId', 'is', null)
+              .executeTakeFirst()
+          )?.id
+        : await assets.getUploadAssetIdByChecksum(resource.ownerId, resource.verifiedChecksum, {
+            lockedOwnerId: resource.ownerId,
+          }));
+    if (edit && duplicateId && edit.existingAssetId !== duplicateId) {
+      throw new ConflictException('edit_bound_asset_required');
+    }
     if (duplicateId && options.rejectDuplicate) {
       throw new ConflictException('Live Photo resources cannot reuse an existing asset');
     }
@@ -303,6 +319,9 @@ export class AssetUploadResourceRepository {
         path: resource.finalPath,
         source: 'upload',
       });
+    }
+    if (edit) {
+      await editAuthority.published(tx, resource.ownerId, edit, assetId, !duplicateId);
     }
     return tx
       .updateTable('asset_upload_resource')
