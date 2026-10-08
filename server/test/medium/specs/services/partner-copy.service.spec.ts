@@ -8,6 +8,7 @@ import {
   AlbumUserRole,
   AssetFileType,
   AssetLockReason,
+  AssetStatus,
   AssetVisibility,
   ImmichWorker,
   JobName,
@@ -44,6 +45,7 @@ import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -106,6 +108,7 @@ const assetService = () => {
       PersonRepository,
       SharedLinkAssetRepository,
       StackRepository,
+      TrashRepository,
     ],
     mock: [EventRepository, JobRepository, LoggingRepository, OcrRepository, StorageRepository, WebsocketRepository],
   });
@@ -820,8 +823,16 @@ describe(PartnerCopyService.name, () => {
       await assets.deleteAll(factory.auth({ user: alice }), { ids: [source.id] });
       expect(await drain(sut, [ctx, assetCtx])).toBe(0);
 
+      await expect(
+        db.selectFrom('asset').selectAll().where('id', '=', source.id).executeTakeFirstOrThrow(),
+      ).resolves.toMatchObject({
+        ownerId: alice.id,
+        isFavorite: true,
+        status: AssetStatus.Trashed,
+        deletedAt: expect.any(Date),
+      });
       const copy = await db.selectFrom('asset').selectAll().where('id', '=', bobCopy!).executeTakeFirstOrThrow();
-      expect(copy).toMatchObject({ isFavorite: false, deletedAt: null });
+      expect(copy).toMatchObject({ ownerId: bob.id, isFavorite: false, status: AssetStatus.Active, deletedAt: null });
     });
 
     it("copies a sharing user's new item to every partner, onward", async () => {
