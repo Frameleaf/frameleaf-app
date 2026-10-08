@@ -37,7 +37,7 @@ async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, v
         return;
       }
       if (req.method === 'GET' && req.url.endsWith('/element/native-frame/rect')) {
-        res.end(JSON.stringify({ value: { x: 10, y: 20, width: 200, height: 20 } }));
+        res.end(JSON.stringify({ value: rect }));
         return;
       }
       if (req.method === 'POST' && req.url.endsWith('/url')) {
@@ -50,11 +50,16 @@ async function startStubDriver({rect = {x: 10, y: 20, width: 200, height: 20}, v
           return;
         }
         if (body.args[0]?.selector && body.args[0]?.position) {
-          const value = runInNewContext(`(() => { ${body.script} })()`, {
-            arguments: body.args, innerWidth: viewport.width, innerHeight: viewport.height,
-            document: {querySelector: () => ({getClientRects: () => [rect]})},
-          });
-          res.end(JSON.stringify({value}));
+          try {
+            const value = runInNewContext(`(() => { ${body.script} })()`, {
+              arguments: body.args, innerWidth: viewport.width, innerHeight: viewport.height,
+              document: {querySelector: () => ({getClientRects: () => rect ? [rect] : []})},
+            });
+            res.end(JSON.stringify({value}));
+          } catch (error) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({value: {error: 'javascript error', message: error.message}}));
+          }
           return;
         }
         res.end(JSON.stringify({ value: { sawScript: body.script, sawArgs: body.args } }));
@@ -372,19 +377,42 @@ test('WebDriver positioned iframe click uses pointer down/up and restores frame 
   }
 });
 
-test('WebDriver native iframe hover sends one element-origin pointerMove and restores frame on refusal', async () => {
-  const stub = await startStubDriver();
-  const driver = await createWebDriverClassicDriver({endpoint:stub.endpoint,harnessOrigin:'http://127.0.0.1:5555'});
-  try {
-    const page = await driver.newPage();
-    await assert.rejects(page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', {x:50,y:8})), /unknown command/);
-    const action = stub.requests.find(r => r.url.endsWith('/actions'));
-    assert.ok(action, 'native pointer actions required');
-    assert.deepEqual(action.body.actions, [{type:'pointer',id:'fixture-mouse',parameters:{pointerType:'mouse'},actions:[{
-      type:'pointerMove',origin:{'element-6066-11e4-a52e-4f735466cecf':'native-frame'},x:-50,y:-2,duration:0,
-    }]}]);
-    assert.equal(stub.requests.at(-1).url,'/session/s1/frame/parent');
-  } finally { await driver.close(); await stub.close(); }
+test('WebDriver native iframe hover reaches the same point when clipped and restores frame on action refusal', async () => {
+  for (const width of [200, 700]) {
+    const stub = await startStubDriver({rect: {x: 100, y: 40, width, height: 40}, viewport: {width: 500, height: 200}});
+    const driver = await createWebDriverClassicDriver({endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555'});
+    try {
+      const page = await driver.newPage();
+      await assert.rejects(page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', {x: 50, y: 8})), /unknown command/);
+      const action = stub.requests.find(r => r.url.endsWith('/actions'));
+      assert.ok(action, 'native pointer actions required');
+      assert.deepEqual(action.body.actions, [{type: 'pointer', id: 'fixture-mouse', parameters: {pointerType: 'mouse'}, actions: [{
+        type: 'pointerMove', origin: {'element-6066-11e4-a52e-4f735466cecf': 'native-frame'}, x: width === 200 ? -50 : -150, y: -12, duration: 0,
+      }]}]);
+      // The native fixture's visible centers are 200 and 300; both inputs must land at (150, 48).
+      const offset = action.body.actions[0].actions[0];
+      assert.equal((width === 200 ? 200 : 300) + offset.x, 150);
+      assert.equal(60 + offset.y, 48);
+      assert.equal(stub.requests.at(-1).url, '/session/s1/frame/parent');
+    } finally { await driver.close(); await stub.close(); }
+  }
+});
+
+test('WebDriver iframe hover refuses invisible or unrendered targets without actions and restores frame', async () => {
+  for (const {rect, position, error} of [
+    {rect: {x: 100, y: 40, width: 700, height: 40}, position: {x: 450, y: 8}, error: /hover point must be visible/},
+    {rect: {x: 100, y: 40, width: 700, height: 40}, position: {x: 50, y: 170}, error: /hover point must be visible/},
+    {rect: null, position: {x: 50, y: 8}, error: /hover requires a rendered element/},
+  ]) {
+    const stub = await startStubDriver({rect, viewport: {width: 500, height: 200}});
+    const driver = await createWebDriverClassicDriver({endpoint: stub.endpoint, harnessOrigin: 'http://127.0.0.1:5555'});
+    try {
+      const page = await driver.newPage();
+      await assert.rejects(page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', position)), error);
+      assert.ok(!stub.requests.some(r => r.url.endsWith('/actions')), 'invalid hover must send no pointer input');
+      assert.equal(stub.requests.at(-1).url, '/session/s1/frame/parent');
+    } finally { await driver.close(); await stub.close(); }
+  }
 });
 
 for (const browser of ['firefox', 'safari']) test(`resource admission selects actual ${browser} without loading Chromium`, async () => {
