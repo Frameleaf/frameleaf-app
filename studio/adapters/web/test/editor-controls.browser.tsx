@@ -11,6 +11,7 @@ import {
   getEditorLayout,
   getEditorLayoutCssVars,
 } from "@/config/editor-layout";
+import { useEditingShortcuts } from "@/features/timeline/hooks/shortcuts/use-editing-shortcuts";
 import { useUIShortcuts } from "@/features/timeline/hooks/shortcuts/use-ui-shortcuts";
 import { useItemsStore } from "@/features/timeline/stores/items-store";
 import { useCompositionsStore } from "@/features/timeline/stores/compositions-store";
@@ -23,6 +24,8 @@ import { buildTimelineFromStores } from "@/features/timeline/stores/timeline-per
 import { usePlaybackStore } from "@/shared/state/playback";
 import {
   makeTimelineTrack,
+  makeTimelineVideoItem,
+  makeTimelineAudioItem,
   resetTimelineCompositionTestState,
 } from "@/features/timeline/test-helpers";
 import { renderItem } from "@/features/export/utils/canvas-item-renderer/render-item";
@@ -127,6 +130,10 @@ function mountEditorControls(surface: Surface, reset = false) {
   }
   flushSync(() => root.render(<Controls surface={surface} />));
 }
+function NativeEditTimeline() {
+  useEditingShortcuts({});
+  return <Timeline duration={3} />;
+}
 function Controls({ surface }: { surface: Surface }) {
   useUIShortcuts({});
   const density = useSettingsStore((settings) => settings.editorDensity);
@@ -140,7 +147,7 @@ function Controls({ surface }: { surface: Surface }) {
           getEditorLayoutCssVars(getEditorLayout(density)) as CSSProperties
         }
       >
-        <Timeline duration={2} />
+        <NativeEditTimeline />
       </div>
     );
   }
@@ -160,6 +167,9 @@ const state = () =>
     items: useItemsStore.getState().items,
     tracks: useItemsStore.getState().tracks,
     keys: useKeyframesStore.getState().keyframes,
+    selectedItemIds: useSelectionStore.getState().selectedItemIds,
+    linkedSelectionEnabled: useEditorStore.getState().linkedSelectionEnabled,
+    undoCount: useTimelineCommandStore.getState().undoStack.length,
     canUndo: useTimelineCommandStore.getState().canUndo,
     canRedo: useTimelineCommandStore.getState().canRedo,
     mode: localStorage.getItem("timeline:keyframeEditorMode"),
@@ -231,6 +241,61 @@ async function renderHero(frame = 0, expectedX?: number) {
 }
 Object.assign(window, {
   fl100Editor: {
+    // Arrangement only: all selection/join/history input is sent through native controls.
+    seedLinkedChain: (legacy = false) => {
+      resetTimelineCompositionTestState();
+      useEditorStore.setState({
+        workspace: "edit",
+        linkedSelectionEnabled: true,
+      });
+      useItemsStore
+        .getState()
+        .setTracks([
+          makeTimelineTrack({
+            id: "chain-v",
+            name: "V1",
+            kind: "video",
+            order: 0,
+          }),
+          makeTimelineTrack({
+            id: "chain-a",
+            name: "A1",
+            kind: "audio",
+            order: 1,
+          }),
+        ]);
+      useItemsStore.getState().setItems(
+        Array.from({ length: 3 }, (_, index) => [
+          makeTimelineVideoItem({
+            id: `chain-v-${index}`,
+            trackId: "chain-v",
+            src: "",
+            from: index * 30,
+            durationInFrames: 30,
+            sourceStart: index * 24,
+            sourceEnd: (index + 1) * 24,
+            sourceFps: 24,
+            linkedGroupId: legacy ? undefined : `chain-g-${index}`,
+            originId: "native-linked-source",
+          }),
+          makeTimelineAudioItem({
+            id: `chain-a-${index}`,
+            trackId: "chain-a",
+            src: "",
+            from: index * 30,
+            durationInFrames: 30,
+            sourceStart: index * 24,
+            sourceEnd: (index + 1) * 24,
+            sourceFps: 24,
+            linkedGroupId: legacy ? undefined : `chain-g-${index}`,
+            originId: "native-linked-source",
+          }),
+        ]).flat(),
+      );
+      useSelectionStore.getState().clearSelection();
+      useTimelineCommandStore.getState().clearHistory();
+      mountEditorControls("edit");
+    },
     mount: mountEditorControls,
     state,
     renderHero,

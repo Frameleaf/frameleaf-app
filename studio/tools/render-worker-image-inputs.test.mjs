@@ -670,3 +670,101 @@ test('malformed LUT in an unused canonical definition refuses without identity f
   claim.snapshot.studio.graph.timeline.compositions.push(unused);
   await assert.rejects(createClaimImageInputs(claim, () => true), /INVALID_INLINE_LUT/);
 });
+
+test('actual preparation pauses at post-await authority boundaries and terminal loss cannot finish it', async () => {
+  const { createClaimLeaseAuthority } = await import('./render-worker-claim.mjs');
+  for (const terminate of [false, true]) {
+    const claim = prepared();
+    const authority = createClaimLeaseAuthority();
+    authority.activate(performance.now() + 30_000);
+    const wait = authority.wait.bind(authority);
+    let reached;
+    const barrier = new Promise(resolve => { reached = resolve; });
+    let calls = 0;
+    authority.wait = async signal => {
+      // Initial admission, pre-read admission, then the configuration read's post-await gate.
+      if (++calls === 3) { authority.pending(); reached(); }
+      await wait(signal);
+    };
+    let settled = false;
+    const preparing = createClaimImageInputs(claim, authority.isActive, authority);
+    preparing.finally(() => { settled = true; }).catch(() => {});
+    await barrier;
+    await new Promise(resolve => setTimeout(resolve, 75));
+    assert.equal(settled, false, 'pending renewal must pause rather than abort preparation');
+    if (terminate) {
+      const failure = new Error('DEFINITIVE_PREPARATION_LEASE_LOSS');
+      authority.terminate(failure);
+      await assert.rejects(preparing, error => error === failure);
+    } else {
+      authority.activate(performance.now() + 30_000);
+      const adapter = await preparing;
+      try { assert.deepEqual(adapter.input.project, claim.snapshot.studio.graph); }
+      finally { await adapter.dispose(); }
+    }
+    assert.equal(authority.signal.aborted, true);
+    for (const input of claim.inputs.values()) input.bytes.fill(0);
+  }
+});
+
+test('actual private serving closes suspended open/read handles before forwarding after loss', async () => {
+  const fs = await import('node:fs');
+  const { createServer } = await import('node:http');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { serveFile } = await import('../engine/headless/lib/http-security.mjs');
+  const { createClaimLeaseAuthority } = await import('./render-worker-claim.mjs');
+  for (const boundary of ['open', 'read']) {
+    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-lease-fs-test-'));
+    const file = path.join(folder, 'bound.png');
+    await writeFile(file, png, { mode: 0o600 });
+    const authority = createClaimLeaseAuthority();
+    authority.activate(performance.now() + 30_000);
+    let entered, release;
+    const reached = new Promise(resolve => { entered = resolve; });
+    const blocked = new Promise(resolve => { release = resolve; });
+    const originalOpen = fs.promises.open;
+    let closed = false, writes = 0;
+    fs.promises.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      if (args[0] !== file) return handle;
+      const close = handle.close.bind(handle);
+      handle.close = async () => { try { return await close(); } finally { closed = true; } };
+      if (boundary === 'open') { entered(); await blocked; }
+      else {
+        const read = handle.read.bind(handle);
+        handle.read = async (...values) => { const result = await read(...values); entered(); await blocked; return result; };
+      }
+      return handle;
+    };
+    let served;
+    const servingDone = new Promise(resolve => { served = resolve; });
+    const server = createServer(async (req, res) => {
+      const write = res.write.bind(res);
+      res.write = (...args) => { writes++; return write(...args); };
+      try { await serveFile(req, res, file, { authority, allowRange: true }); }
+      finally { served(); }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const reading = fetch(`http://127.0.0.1:${server.address().port}/media/bound`, { headers: { range: 'bytes=0-7' } }).then(response => response.arrayBuffer());
+      reading.catch(() => {});
+      await reached;
+      authority.terminate(new Error('DEFINITIVE_FS_LEASE_LOSS'));
+      release();
+      await assert.rejects(reading);
+      await new Promise(resolve => server.close(resolve));
+      await servingDone;
+      assert.equal(writes, 0, boundary + ' post-await fence must refuse every new forwarding');
+      assert.equal(closed, true, boundary + ' owned handle must close');
+    } finally {
+      release();
+      authority.terminate();
+      fs.promises.open = originalOpen;
+      server.closeAllConnections();
+      if (server.listening) await new Promise(resolve => server.close(resolve));
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
+});

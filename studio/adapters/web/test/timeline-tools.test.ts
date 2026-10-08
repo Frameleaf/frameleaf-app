@@ -475,6 +475,25 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     await refused(graph, [envelope('clip.join', { clipIds: [parts[0]!.id] })], 'invalid')
   })
 
+  it.each(['ambiguous', 'locked'])('refuses %s legacy counterpart chains without graph mutation', async (failure) => {
+    const graph = await fourParts()
+    graph.timeline!.items = graph.timeline!.items!.map((item) => ({ ...item, linkedGroupId: undefined, originId: 'legacy-source' }))
+    if (failure === 'ambiguous') {
+      graph.timeline!.tracks.push(track('a2', 'audio', 2))
+      graph.timeline!.items!.push({ ...onTrack(graph, 'a1')[0]!, id: 'legacy-extra-audio', trackId: 'a2' })
+    } else graph.timeline!.tracks.find((candidate) => candidate.id === 'a1')!.locked = true
+    await refused(graph, [envelope('clip.join', { clipIds: onTrack(graph, 'v1').map((item) => item.id).reverse() })], 'failed')
+  })
+
+  it.each([3, 4])('joins %i legacy A/V parts without explicit linked groups through the shared action', async (count) => {
+    const graph = await fourParts()
+    graph.timeline!.items = graph.timeline!.items!.filter((item) => item.from < count * 60).map((item) => ({ ...item, linkedGroupId: undefined, originId: 'legacy-source' }))
+    const parts = onTrack(graph, 'v1')
+    const joined = await applied(graph, [envelope('clip.join', { clipIds: parts.map((item) => item.id).reverse() })])
+    expect(spans(joined, 'v1')).toEqual([[0, count * 60, 0, count * 60]])
+    expect(spans(joined, 'a1')).toEqual([[0, count * 60, 0, count * 60]])
+  })
+
   it('pushes and pulls everything from a clip onward on every track', async () => {
     const { graph, a, b } = await touchingPair()
     const pushed = await applied(graph, [envelope('clip.push', { clipId: b, delta: seconds(1) })])
@@ -717,6 +736,10 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
   it('undoes and redoes every tool through the host graph history', async () => {
     const { graph: start, a } = await touchingPair()
     const parts = await fourParts()
+    const legacyParts = structuredClone(parts)
+    legacyParts.timeline!.items = legacyParts.timeline!.items!.map((item) => ({ ...item, linkedGroupId: undefined, originId: 'legacy-source' }))
+    const legacyThree = structuredClone(legacyParts)
+    legacyThree.timeline!.items = legacyThree.timeline!.items!.filter((item) => item.from < 180)
     const gapped = await applied(start, [
       envelope('clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }),
     ])
@@ -759,6 +782,8 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       [start, 'track.reorder', { trackId: 'a1', index: 0 }],
       [start, 'marker.add', { at: seconds(1) }],
       [parts, 'clip.join', { clipIds: onTrack(parts, 'v1').map((part) => part.id) }],
+      [legacyParts, 'clip.join', { clipIds: onTrack(legacyParts, 'v1').map((part) => part.id).reverse() }],
+      [legacyThree, 'clip.join', { clipIds: onTrack(legacyThree, 'v1').map((part) => part.id).reverse() }],
       [start, 'clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }],
       [gapped, 'track.closeGap', { trackId: 'v1' }],
       [companions.graph, 'track.closeGap', { trackId: 'v1' }],

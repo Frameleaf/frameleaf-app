@@ -26,6 +26,7 @@ import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studi
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -73,7 +74,7 @@ describe('Buddy Studio library fidelity', () => {
     db = await getKyselyDB();
     ({ sut: resources, ctx } = newMediumService(StudioResourceService, {
       database: db,
-      real: [AccessRepository, AssetRepository, CryptoRepository],
+      real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
       mock: [LoggingRepository],
     }));
     ownerId = (await ctx.newUser({ isAdmin: true })).user.id;

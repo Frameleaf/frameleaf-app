@@ -65,11 +65,13 @@ import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
+import { TrashReviewAction } from 'src/utils/trash-review.js';
 
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
@@ -549,7 +551,7 @@ export class AssetService extends BaseService {
     }
 
     if (stack) {
-      await this.copyStack({ sourceAsset, targetAsset });
+      await this.copyStack(auth, { sourceAsset, targetAsset });
     }
 
     if (favorite) {
@@ -561,23 +563,25 @@ export class AssetService extends BaseService {
     }
   }
 
-  private async copyStack({
-    sourceAsset,
-    targetAsset,
-  }: {
-    sourceAsset: { id: string; stackId: string | null };
-    targetAsset: { id: string; stackId: string | null };
-  }) {
+  private async copyStack(
+    auth: AuthDto,
+    {
+      sourceAsset,
+      targetAsset,
+    }: {
+      sourceAsset: { id: string; stackId: string | null };
+      targetAsset: { id: string; stackId: string | null };
+    },
+  ) {
     if (!sourceAsset.stackId) {
       return;
     }
 
-    if (targetAsset.stackId) {
-      await this.stackRepository.merge({ sourceId: sourceAsset.stackId, targetId: targetAsset.stackId });
-      await this.stackRepository.delete(sourceAsset.stackId);
-    } else {
-      await this.assetRepository.update({ id: targetAsset.id, stackId: sourceAsset.stackId });
-    }
+    let sequenced = false;
+    await this.stackRepository.copyMembership(sourceAsset.id, targetAsset.id, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
   }
 
   private async copySidecar({
@@ -800,14 +804,27 @@ export class AssetService extends BaseService {
     const { ids, force } = dto;
 
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
-    await this.assetRepository.updateAll(ids, {
-      deletedAt: new Date(),
-      status: force ? AssetStatus.Deleted : AssetStatus.Trashed,
-    });
-    await this.eventRepository.emit(force ? 'AssetDeleteAll' : 'AssetTrashAll', {
-      assetIds: ids,
-      userId: auth.user.id,
-    });
+    if (force) {
+      await this.assetRepository.updateAll(ids, { deletedAt: new Date(), status: AssetStatus.Deleted });
+      await this.eventRepository.emit('AssetDeleteAll', { assetIds: ids, userId: auth.user.id });
+      return;
+    }
+    let sequenced: string[] = [];
+    const changed = await this.trashRepository.applyReviewed(
+      auth.user.id,
+      TrashReviewAction.Trash,
+      ids,
+      { lockedOwnerId: getLockedOwnerId(auth), privacy: getHiddenContentQueryOptions(auth) },
+      () => true,
+      auth,
+      (value) => {
+        sequenced = value;
+      },
+    );
+    if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
+    const ordinary = (changed ?? []).filter((id) => !sequenced.includes(id));
+    if (ordinary.length > 0)
+      await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
   }
 
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {

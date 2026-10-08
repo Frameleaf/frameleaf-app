@@ -1,17 +1,20 @@
-import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+import { getAssetInfo } from '@frameleaf/sdk';
 import { throttle } from 'lodash-es';
 import type { Unsubscriber } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { PendingChange, TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { websocketEvents } from '$lib/stores/websocket';
+import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 
 /** A restore of more items than this reloads the timeline instead of fetching each one (FL-47). */
 export const RESTORE_FETCH_LIMIT = 25;
 
 export class WebsocketSupport {
-  #pendingChanges: PendingChange[] = [];
+  #pendingChanges = new Map<string, { generation: number; change: PendingChange }>();
+  #assetGenerations = new Map<string, number>();
+  #connectionGeneration = 0;
+  #sequences = new Map<string, bigint>();
   #unsubscribers: Unsubscriber[] = [];
   #timelineManager: TimelineManager;
 
@@ -26,7 +29,7 @@ export class WebsocketSupport {
     if (remove.length > 0) {
       this.#timelineManager.removeAssets(remove);
     }
-    this.#pendingChanges = [];
+    this.#pendingChanges.clear();
   }, 2500);
 
   constructor(timeineManager: TimelineManager) {
@@ -44,6 +47,7 @@ export class WebsocketSupport {
       ),
       websocketEvents.on('on_asset_delete', (id: string) => this.#addPendingChanges({ type: 'delete', values: [id] })),
       websocketEvents.on('on_asset_restore', (ids) => void this.#restore(ids)),
+      websocketEvents.on('AssetLocalEffectsV1', (bundle) => void this.#reconcileSequence(bundle)),
     );
   }
 
@@ -58,18 +62,65 @@ export class WebsocketSupport {
       return;
     }
     if (ids.length > RESTORE_FETCH_LIMIT) {
+      for (const id of ids) {
+        this.#nextGeneration(id);
+      }
       await this.#timelineManager.refresh();
       return;
     }
-    const assets = await Promise.all(
-      ids.map((id) => getAssetInfo({ ...authManager.params, id }).catch(() => undefined)),
+    const connection = this.#connectionGeneration;
+    const requests = ids.map((id) => ({ id, generation: this.#nextGeneration(id) }));
+    await Promise.all(
+      requests.map(async ({ id, generation }) => {
+        const asset = await getAssetInfo({ ...authManager.params, id }).catch(() => undefined);
+        if (connection !== this.#connectionGeneration || this.#assetGenerations.get(id) !== generation) {
+          return;
+        }
+        if (asset && !asset.isTrashed) {
+          this.#pendingChanges.set(id, { generation, change: { type: 'add', values: [toTimelineAsset(asset)] } });
+          this.#processPendingChanges();
+        }
+      }),
     );
-    const values = assets
-      .filter((asset): asset is AssetResponseDto => asset !== undefined && !asset.isTrashed)
-      .map((asset) => toTimelineAsset(asset));
-    if (values.length > 0) {
-      this.#addPendingChanges({ type: 'add', values });
+  }
+
+  async #reconcileSequence(bundle: AssetLocalEffectsV1) {
+    if (!/^[1-9][0-9]{0,18}$/.test(bundle.sequence) || !bundle.streamEpoch || bundle.assetIds.length > 100) {
+      return;
     }
+    const sequence = BigInt(bundle.sequence);
+    const connection = this.#connectionGeneration;
+    const requests = [...new Set(bundle.assetIds)].flatMap((id) => {
+      const key = `${bundle.streamEpoch}:${id}`;
+      if ((this.#sequences.get(key) ?? 0n) >= sequence) {
+        return [];
+      }
+      this.#sequences.set(key, sequence);
+      return [{ id, key, generation: this.#nextGeneration(id) }];
+    });
+    if (requests.length > RESTORE_FETCH_LIMIT) {
+      await this.#timelineManager.refresh();
+      return;
+    }
+    await Promise.all(
+      requests.map(async ({ id, key, generation }) => {
+        // The old bundle may arrive after a restore/new publication. Reconcile current authorized state.
+        const asset = await getAssetInfo({ ...authManager.params, id }).catch(() => undefined);
+        if (
+          connection !== this.#connectionGeneration ||
+          this.#sequences.get(key) !== sequence ||
+          this.#assetGenerations.get(id) !== generation
+        ) {
+          return;
+        }
+        const change: PendingChange =
+          asset && !asset.isTrashed
+            ? { type: 'update', values: [toTimelineAsset(asset)] }
+            : { type: 'trash', values: [id] };
+        this.#pendingChanges.set(id, { generation, change });
+        this.#processPendingChanges();
+      }),
+    );
   }
 
   disconnectWebsocketEvents() {
@@ -77,10 +128,34 @@ export class WebsocketSupport {
       unsubscribe();
     }
     this.#unsubscribers = [];
+    this.#connectionGeneration++;
+    this.#processPendingChanges.cancel();
+    this.#pendingChanges.clear();
+    this.#assetGenerations.clear();
+  }
+
+  #nextGeneration(id: string) {
+    this.#timelineManager.invalidateLiveProjection();
+    const generation = (this.#assetGenerations.get(id) ?? 0) + 1;
+    this.#assetGenerations.set(id, generation);
+    this.#pendingChanges.delete(id);
+    return generation;
   }
 
   #addPendingChanges(...changes: PendingChange[]) {
-    this.#pendingChanges.push(...changes);
+    for (const change of changes) {
+      if (change.type === 'add' || change.type === 'update') {
+        for (const asset of change.values) {
+          const generation = this.#nextGeneration(asset.id);
+          this.#pendingChanges.set(asset.id, { generation, change: { type: change.type, values: [asset] } });
+        }
+      } else {
+        for (const id of change.values) {
+          const generation = this.#nextGeneration(id);
+          this.#pendingChanges.set(id, { generation, change: { type: change.type, values: [id] } });
+        }
+      }
+    }
     this.#processPendingChanges();
   }
 
@@ -94,7 +169,11 @@ export class WebsocketSupport {
       update: [],
       remove: [],
     };
-    for (const { type, values } of this.#pendingChanges) {
+    for (const [id, { generation, change }] of this.#pendingChanges) {
+      if (this.#assetGenerations.get(id) !== generation) {
+        continue;
+      }
+      const { type, values } = change;
       switch (type) {
         case 'add': {
           batch.add.push(...values);

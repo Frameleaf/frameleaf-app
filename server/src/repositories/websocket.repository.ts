@@ -34,6 +34,10 @@ export const serverEvents = [
 export type ServerEvents = (typeof serverEvents)[number];
 
 export interface ClientEventMap {
+  /** Complete local sequence; never translated into broad Trash/Delete handlers. */
+  AssetLocalEffectsV1: [
+    { streamEpoch: string; sequence: string; effectId: string; assetIds: string[]; revokedOperationIds: string[] },
+  ];
   on_upload_success: [AssetResponseDto];
   on_user_delete: [string];
   on_asset_delete: [string];

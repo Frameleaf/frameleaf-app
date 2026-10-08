@@ -335,6 +335,20 @@ export const ICloudEditBaselineSchema = z
     sourceIncarnation: z.uuid(),
     nativeVersion: z.string().min(1).max(256),
     takeOver: z.boolean().default(false).describe('Only bypasses the 72-hour wait for an unhealthy source'),
+    intent: z
+      .discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('original-revert').meta({ id: 'ICloudEditOriginalRevertKind' }),
+            expectedPublicationId: z.uuid(),
+            retention: z.enum(['keep', 'supersede']).meta({ id: 'ICloudEditRetentionPolicy' }),
+          })
+          .strict(),
+      ])
+      .optional()
+      .describe(
+        'Explicit local original-primary policy transition, separate from administrative baseline acceptance; binds the current immutable publication and explicit retention choice',
+      ),
   })
   .strict()
   .meta({ id: 'ICloudEditBaselineDto' });
@@ -352,8 +366,19 @@ export const ICloudEditSuccessorSchema = z
     channel: z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudEditPublicationChannel' }),
     resourceId: z.uuid().describe('Existing verified bytes; accepting this is an explicit owner successor decision'),
     policy: z.enum(['keep', 'supersede']).meta({ id: 'ICloudEditRetentionPolicy' }).default('keep'),
+    expectedPublicationId: z
+      .uuid()
+      .nullable()
+      .optional()
+      .describe(
+        'Supersede requires explicit current local publication CAS; null only for no existing local publication',
+      ),
   })
   .strict()
+  .refine((value) => value.policy !== 'supersede' || value.expectedPublicationId !== undefined, {
+    message: 'Supersede requires current publication CAS',
+    path: ['expectedPublicationId'],
+  })
   .meta({ id: 'ICloudEditSuccessorDto' });
 export class ICloudEditSuccessorDto extends createZodDto(ICloudEditSuccessorSchema) {}
 export const ICloudEditDecisionResponseSchema = z
@@ -393,6 +418,12 @@ export const ICloudEditEvidenceResponseSchema = z
         authority: z
           .object({
             evidenceType: z.literal('administrative'),
+            currentPublicationId: z
+              .uuid()
+              .nullable()
+              .describe(
+                'Current immutable Frameleaf local publication decision for explicit policy CAS; never provider revision or admission guarantee',
+              ),
             generation: z.int(),
             versionId: z.uuid(),
             assetId: z.uuid(),

@@ -5,6 +5,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -30,7 +31,7 @@ describe('StudioProjectService.requireOwnedProject (FL-112)', () => {
   it('lets the owner through, refuses a reviewer with 403 and everyone else with 404', async () => {
     const { sut: resources, ctx } = newMediumService(StudioResourceService, {
       database,
-      real: [AccessRepository, AssetRepository, CryptoRepository],
+      real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
       mock: [LoggingRepository],
     });
     const { user: owner } = await ctx.newUser();

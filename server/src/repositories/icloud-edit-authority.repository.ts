@@ -11,6 +11,15 @@ import {
   ICloudEditSuccessorDto,
 } from 'src/dtos/icloud-identity.dto.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
+import {
+  applyEditPolicyWithin,
+  assertEditPolicyAcceptance,
+  assertEditPolicyReceiptAccess,
+  captureEditPolicyAcceptance,
+  loadLatestPolicyWithin,
+  lockPolicyBackrefs,
+} from 'src/repositories/icloud-edit-policy.js';
+import { requireEditPublicationBinding, withEditFamilyTransaction } from 'src/repositories/icloud-edit-transaction.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -31,12 +40,24 @@ export function editAuthorityReviewReason(error: unknown): string | undefined {
     'edit_render_conflict',
     'edit_capacity_reached',
     'edit_supersede_requires_review',
+    'edit_policy_acceptance_stale',
+    'edit_trash_disabled',
+    'edit_shared_current_conflict',
+    'edit_manual_stack_conflict',
+    'edit_source_backrefs_changed',
+    'edit_member_evidence_unproven',
+    'edit_family_too_large',
+    'edit_family_unstable',
+    'edit_legacy_pending_effects_review',
+    'edit_policy_receipt_invalid',
     'edit_owner_session_required',
     'edit_item_claimed',
     'edit_owner_unavailable',
     'edit_publication_already_committed',
     'edit_bound_asset_required',
     'edit_alias_conflict',
+    'edit_publication_stale',
+    'edit_administrative_policy_transition_required',
   ];
   return (error instanceof ConflictException || error instanceof ForbiddenException) && codes.includes(error.message)
     ? error.message
@@ -64,6 +85,7 @@ export type EditPublication = {
   sha256: Buffer;
   existingAssetId: string | null;
   policy: 'keep' | 'supersede';
+  acceptedVictimAssetIds?: string[];
 };
 
 /** Owner decisions are administrative acceptance of specific evidence, never Apple chronology. */
@@ -234,7 +256,12 @@ export class ICloudEditAuthorityRepository {
             deliveredBy: r.deliveredBy,
           })),
           authority: authority
-            ? { ...authority, sha256: authority.sha256.toString('hex'), evidenceType: 'administrative' }
+            ? {
+                ...authority,
+                currentPublicationId: (await loadLatestPolicyWithin(tx, auth.user.id, [item]))?.effect.effectId ?? null,
+                sha256: authority.sha256.toString('hex'),
+                evidenceType: 'administrative',
+              }
             : null,
           holders: [
             ...devices.map((d) => ({
@@ -374,7 +401,13 @@ export class ICloudEditAuthorityRepository {
       conflict('edit_owner_unavailable');
     }
   }
-  private async request(tx: Transaction<DB>, ownerId: string, requestId: string, evidence: Record<string, unknown>) {
+  private async request(
+    tx: Transaction<DB>,
+    ownerId: string,
+    requestId: string,
+    evidence: Record<string, unknown>,
+    sessionId: string,
+  ) {
     const row = await tx.selectFrom('icloud_edit_decision').selectAll().where('id', '=', requestId).executeTakeFirst();
     if (!row) {
       return;
@@ -387,6 +420,45 @@ export class ICloudEditAuthorityRepository {
       )
     ) {
       conflict('edit_decision_conflict');
+    }
+    if (row.kind === 'baseline') {
+      const receipt = evidence.receipt as { item: string; assetId: string; sha256: string; role: string } | undefined;
+      if (row.evidence.publication && !(await loadLatestPolicyWithin(tx, ownerId, [row.item], row.id)))
+        conflict('edit_policy_receipt_invalid');
+      const version = await tx
+        .selectFrom('icloud_edit_version')
+        .selectAll()
+        .where('id', '=', row.versionId)
+        .where('ownerId', '=', ownerId)
+        .executeTakeFirst();
+      if (
+        !receipt ||
+        !version ||
+        version.item !== receipt.item ||
+        version.assetId !== receipt.assetId ||
+        version.sha256.toString('hex') !== receipt.sha256 ||
+        version.isOriginal !== (receipt.role === 'original')
+      )
+        conflict('edit_decision_conflict');
+    }
+    if (row.kind === 'successor' && row.assetId) {
+      const version = await tx
+        .selectFrom('icloud_edit_version')
+        .selectAll()
+        .where('id', '=', row.versionId)
+        .where('ownerId', '=', ownerId)
+        .where('item', '=', row.item)
+        .executeTakeFirst();
+      const receipt = await loadLatestPolicyWithin(tx, ownerId, [row.item], row.id);
+      if (
+        !version ||
+        version.assetId !== row.assetId ||
+        version.sha256.toString('hex') !== row.evidence.sha256 ||
+        !receipt ||
+        typeof row.evidence.sessionId !== 'string'
+      )
+        conflict('edit_decision_conflict');
+      await assertEditPolicyReceiptAccess(tx, ownerId, sessionId, receipt);
     }
     return {
       decisionId: row.id,
@@ -407,8 +479,8 @@ export class ICloudEditAuthorityRepository {
     const item = hint.rows[0].item.toUpperCase();
     const holder = `${dto.holder.kind}:${dto.holder.id}`;
     const baseEvidence = { type: 'administrative', ...dto, request: { ...dto }, sessionId: auth.session?.id };
-    return this.db.transaction().execute(async (tx) => {
-      await lockICloudItemClaims(tx, auth.user.id, [item]);
+    const execute = async (tx: Transaction<DB>) => {
+      if (!dto.intent) await lockICloudItemClaims(tx, auth.user.id, [item]);
       await this.session(tx, auth);
       const receipt = await sql<{
         assetId: string;
@@ -431,10 +503,32 @@ export class ICloudEditAuthorityRepository {
           sha256: receipt.rows[0].sha256.toString('hex'),
         },
       };
+      if (dto.intent) {
+        if (receipt.rows[0].role !== 'original') conflict('edit_original_required');
+        await lockPolicyBackrefs(tx, auth.user.id, item);
+        const family = requireEditPublicationBinding(tx, item).family;
+        if (family.assetIds.length > 0)
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('id', 'in', family.assetIds)
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+      }
       await this.ownedAsset(tx, auth, receipt.rows[0].assetId, receipt.rows[0].sha256);
-      const replay = await this.request(tx, auth.user.id, dto.requestId, evidence);
+      const replay = await this.request(tx, auth.user.id, dto.requestId, evidence, auth.session!.id);
       if (replay) {
         return replay;
+      }
+      if (dto.intent) {
+        const publication = await loadLatestPolicyWithin(
+          tx,
+          auth.user.id,
+          requireEditPublicationBinding(tx, item).family.items,
+        );
+        if (!publication || publication.effect.effectId !== dto.intent.expectedPublicationId)
+          conflict('edit_publication_stale');
       }
       await this.holder(tx, auth.user.id, holder);
       const prior = await tx
@@ -468,6 +562,17 @@ export class ICloudEditAuthorityRepository {
           conflict('edit_owner_held');
         }
       }
+      const policyAcceptance =
+        dto.intent?.retention === 'supersede'
+          ? await captureEditPolicyAcceptance(
+              tx,
+              auth.user.id,
+              item,
+              auth.session!.id,
+              dto.intent.expectedPublicationId,
+              receipt.rows[0].assetId,
+            )
+          : undefined;
       // Existing assets are bound explicitly by the owner. No synthetic source-equivalence claim.
       const existing = await tx
         .selectFrom('icloud_edit_version')
@@ -573,9 +678,45 @@ export class ICloudEditAuthorityRepository {
           }),
         )
         .execute();
+      if (dto.intent) {
+        if (!prior) conflict('edit_baseline_unproven');
+        const publication = await applyEditPolicyWithin(
+          tx,
+          auth.user.id,
+          {
+            item,
+            generation,
+            holder,
+            versionId,
+            sha256: receipt.rows[0].sha256,
+            policy: dto.intent.retention,
+            decisionId: dto.requestId,
+            priorVersionId: prior.currentVersionId,
+            acceptedVictimAssetIds: policyAcceptance?.victimAssetIds,
+          },
+          receipt.rows[0].assetId,
+          auth.session!.id,
+        );
+        if (dto.intent.retention === 'supersede')
+          await assertEditPolicyReceiptAccess(tx, auth.user.id, auth.session!.id, publication);
+        const saved = await tx
+          .updateTable('icloud_edit_decision')
+          .set({ evidence: { ...evidence, ...(policyAcceptance && { policyAcceptance }), publication } })
+          .where('id', '=', dto.requestId)
+          .where('ownerId', '=', auth.user.id)
+          .where('kind', '=', 'baseline')
+          .where('versionId', '=', versionId)
+          .where(sql<boolean>`NOT (evidence ? 'publication')`)
+          .returning('id')
+          .execute();
+        if (saved.length !== 1) conflict('edit_decision_conflict');
+      }
       await this.ownedAsset(tx, auth, receipt.rows[0].assetId, receipt.rows[0].sha256);
       return { decisionId: dto.requestId, generation, versionId, evidenceType: 'administrative' as const };
-    });
+    };
+    return dto.intent
+      ? withEditFamilyTransaction(this.db, auth.user.id, { items: [item], assetIds: [] }, execute, true)
+      : this.db.transaction().execute(execute);
   }
 
   /** Read immutable source hints before taking the item prefix; re-read under resource lock. */
@@ -652,7 +793,7 @@ export class ICloudEditAuthorityRepository {
     if (!hint) {
       conflict('edit_evidence_unavailable');
     }
-    return this.db.transaction().execute(async (tx) => {
+    const execute = async (tx: Transaction<DB>) => {
       await lockICloudItemClaims(tx, auth.user.id, [hint.item]);
       await this.session(tx, auth);
       const authority = await tx
@@ -702,7 +843,6 @@ export class ICloudEditAuthorityRepository {
         .where('ownerId', '=', auth.user.id)
         .where('item', '=', source.item)
         .executeTakeFirstOrThrow();
-      await this.ownedAsset(tx, auth, version.assetId, version.sha256);
       const evidence = {
         type: 'administrative',
         ...dto,
@@ -713,10 +853,11 @@ export class ICloudEditAuthorityRepository {
         sourceIncarnation: authority.sourceIncarnation,
         sessionId: auth.session?.id,
       };
-      const replay = await this.request(tx, auth.user.id, dto.requestId, evidence);
+      const replay = await this.request(tx, auth.user.id, dto.requestId, evidence, auth.session!.id);
       if (replay) {
         return replay;
       }
+      await this.ownedAsset(tx, auth, version.assetId, version.sha256);
       await this.holder(tx, auth.user.id, authority.holder);
       if (authority.generation !== dto.expectedGeneration || authority.holder !== source.holder) {
         conflict('edit_owner_stale');
@@ -765,6 +906,17 @@ export class ICloudEditAuthorityRepository {
           conflict('edit_existing_render_review_required');
         }
       }
+      const policyAcceptance =
+        dto.policy === 'supersede'
+          ? await captureEditPolicyAcceptance(
+              tx,
+              auth.user.id,
+              source.item,
+              auth.session!.id,
+              dto.expectedPublicationId!,
+              reuse?.assetId ?? alias?.assetId ?? null,
+            )
+          : undefined;
       const versionId = alias?.id ?? reuse?.id ?? randomUUID();
       await tx
         .insertInto('icloud_edit_decision')
@@ -775,7 +927,7 @@ export class ICloudEditAuthorityRepository {
           kind: 'successor',
           generation: authority.generation,
           versionId,
-          evidence,
+          evidence: { ...evidence, ...(policyAcceptance && { policyAcceptance }) },
           channel: dto.channel,
           resourceId: dto.resourceId,
           assetId: null,
@@ -797,7 +949,10 @@ export class ICloudEditAuthorityRepository {
         versionId,
         evidenceType: 'administrative' as const,
       };
-    });
+    };
+    return dto.policy === 'supersede'
+      ? withEditFamilyTransaction(this.db, auth.user.id, { items: [hint.item], assetIds: [] }, execute, true)
+      : this.db.transaction().execute(execute);
   }
   /** Must be called under the item prefix before any asset/quota publication. */
   async publication(
@@ -810,6 +965,7 @@ export class ICloudEditAuthorityRepository {
     if (!source) {
       return;
     }
+    await lockPolicyBackrefs(tx, ownerId, source.item);
     const authority = await tx
       .selectFrom('icloud_edit_authority')
       .selectAll()
@@ -893,12 +1049,20 @@ export class ICloudEditAuthorityRepository {
     if (canonical) {
       await this.ownedAsset(tx, live, canonical.assetId, canonical.sha256);
     }
-    // Existing static config + event paths cannot yet guarantee transactional reversible supersede.
-    // Keep remains a positive admission; supersede must never silently become keep or permanent delete.
-    if (evidence.policy !== 'keep') {
-      conflict('edit_supersede_requires_review');
-    }
-    if (!canonical) {
+    // Explicit accepted policy and local stream head must still match before any publication mutation.
+    let acceptedVictimAssetIds: string[] | undefined;
+    if (evidence.policy === 'supersede') {
+      const accepted = await assertEditPolicyAcceptance(
+        tx,
+        ownerId,
+        source.item,
+        evidence.sessionId as string,
+        evidence.policyAcceptance,
+        canonical?.assetId ?? null,
+      );
+      acceptedVictimAssetIds = accepted.victimAssetIds;
+    } else if (evidence.policy !== 'keep') conflict('edit_supersede_requires_review');
+    if (!canonical && evidence.policy === 'keep') {
       await this.capacity(tx, ownerId, source.item);
     }
     return {
@@ -913,7 +1077,8 @@ export class ICloudEditAuthorityRepository {
       generation: authority.generation,
       sha256: source.sha256,
       existingAssetId: canonical?.assetId ?? null,
-      policy: 'keep',
+      policy: evidence.policy,
+      ...(acceptedVictimAssetIds && { acceptedVictimAssetIds }),
     };
   }
   /** Asset, ledger/current authority and immutable resource receipt share the writer transaction. */
@@ -972,6 +1137,37 @@ export class ICloudEditAuthorityRepository {
     if (bound && bound.id !== publication.versionId) {
       conflict('edit_render_conflict');
     }
+    // Policy, reversible status/stack changes and its immutable local effect share
+    // this first-publication transaction. Supersede admission is still separately gated.
+    const policyReceipt = await applyEditPolicyWithin(tx, ownerId, publication, assetId, sessionId as string);
+    // Time continues during the policy's asset/counter waits. A failed final guard
+    // throws so every policy mutation rolls back; it never acknowledges partial DML.
+    const finalSource = await this.source(tx, ownerId, publication.channel, publication.resourceId);
+    if (
+      !finalSource ||
+      finalSource.item !== publication.item ||
+      finalSource.holder !== publication.holder ||
+      finalSource.nativeVersion !== publication.nativeVersion ||
+      !finalSource.sha256.equals(publication.sha256)
+    )
+      conflict('edit_evidence_changed');
+    await this.holder(tx, ownerId, publication.holder);
+    await this.claim(tx, ownerId, finalSource);
+    if (!(await currentAuth(tx, ownerId, sessionId as string, false)))
+      throw new ForbiddenException('edit_owner_session_required');
+    const freshResource =
+      publication.channel === 'device'
+        ? await sql`SELECT id FROM asset_upload_resource WHERE id=${publication.resourceId}::uuid AND "ownerId"=${ownerId}::uuid
+          AND state='verified' AND "expiresAt">clock_timestamp() AND "verifiedChecksum"=${publication.sha256}`.execute(
+            tx,
+          )
+        : await sql`SELECT id FROM icloud_resource WHERE id=${publication.resourceId}::uuid AND "ownerId"=${ownerId}::uuid
+          AND status IN ('validated','promoted','committed') AND "leaseToken" IS NOT NULL AND "leaseExpiresAt">clock_timestamp() AND sha256=${publication.sha256}`.execute(
+            tx,
+          );
+    if (freshResource.rows.length !== 1) conflict('edit_evidence_unavailable');
+    if (publication.policy === 'supersede')
+      await assertEditPolicyReceiptAccess(tx, ownerId, sessionId as string, policyReceipt);
     const versionId = publication.versionId;
     if (!bound) {
       await tx
@@ -1005,17 +1201,26 @@ export class ICloudEditAuthorityRepository {
       .where('item', '=', publication.item)
       .where('generation', '=', publication.generation)
       .where('holder', '=', publication.holder)
+      .where('currentVersionId', '=', policyReceipt.authority.currentVersionId)
       .returning('item')
       .execute();
     if (current.length !== 1) {
       conflict('edit_owner_stale');
     }
-    await tx
+    const settled = await tx
       .updateTable('icloud_edit_decision')
-      .set({ assetId, versionId, events: [{ type: 'local-relations' }] })
+      .set({
+        assetId,
+        versionId,
+        evidence: { ...decision.evidence, publication: policyReceipt },
+        events: [{ type: 'local-relations' }],
+      })
       .where('id', '=', publication.decisionId)
+      .where('ownerId', '=', ownerId)
       .where('assetId', 'is', null)
+      .returning('id')
       .execute();
+    if (settled.length !== 1) conflict('edit_decision_conflict');
   }
 
   private async capacity(tx: Transaction<DB>, ownerId: string, item: string) {

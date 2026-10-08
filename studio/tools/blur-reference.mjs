@@ -38,6 +38,7 @@ export function blurReference(values, width, height, type, params) {
       pixel.forEach((v, c) => { accumulated[c] += v * w; });
     }
     const alpha = accumulated[3] / weight;
-    return [...accumulated.slice(0, 3).map(v => alpha > 0 ? v / accumulated[3] : 0), alpha];
+    const coverage = Number(new Float16Array([Math.max(0, Math.min(1, alpha))])[0]);
+    return coverage > 0 ? [...accumulated.slice(0, 3).map(v => Math.max(-65504, Math.min(65504, v / accumulated[3]))), coverage] : [0,0,0,0];
   }).flat();
 }

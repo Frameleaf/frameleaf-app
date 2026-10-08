@@ -8,7 +8,7 @@ import {
   type TrashItemResponseDto,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { flushSync } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import TrashManager from '$lib/components/frameleaf/TrashManager.svelte';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
@@ -308,6 +308,27 @@ describe('TrashManager (FL-47)', () => {
   });
 
   describe('when the trash changes elsewhere', () => {
+    it('C2 RED: drops an awaited older page immediately on a newer complete local effect', async () => {
+      serve([]);
+      const old = deferred<Awaited<ReturnType<typeof getTrashItems>>>();
+      vi.mocked(getTrashItems).mockReturnValueOnce(old.promise);
+      render(TrashManager);
+      await waitFor(() => expect(getTrashItems).toHaveBeenCalledTimes(1));
+      serve([item('fresh')]);
+      bus.socket.get('AssetLocalEffectsV1')?.({
+        streamEpoch: 'actual-stream',
+        sequence: '2',
+        effectId: 'effect-2',
+        assetIds: ['stale', 'fresh'],
+        revokedOperationIds: [],
+      } as never);
+      old.resolve({ items: [item('stale')], total: 1, nextPage: null });
+      await tick();
+      expect(screen.queryByText('stale.jpg')).toBeNull();
+      expect(await screen.findByText('fresh.jpg', {}, reload)).toBeInTheDocument();
+      expect(screen.queryByText('stale.jpg')).toBeNull();
+    });
+
     it('reloads when something is trashed, keeping the selection', async () => {
       serve([item('lake'), item('camp')]);
       render(TrashManager);
@@ -409,3 +430,11 @@ describe('TrashManager (FL-47)', () => {
     });
   });
 });
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
+};

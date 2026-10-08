@@ -442,6 +442,9 @@ export class AssetUploadResourceService {
         current.state === 'published' ? Promise.resolve(current) : this.uploads.publish(tx, current, prepared),
       );
     }
+    if (row.state === 'published' && row.metadata.sourceIdentity?.role === 'edit-render') {
+      await this.uploads.enqueueLocalEffects();
+    }
     if (row.state === 'published' && !row.ingested) {
       await this.ingest(auth, row);
     }
@@ -683,6 +686,7 @@ export class AssetUploadResourceService {
       }
       try {
         if (row.state === 'published') {
+          if (row.metadata.sourceIdentity?.role === 'edit-render') await this.uploads.enqueueLocalEffects();
           await this.ingest({ user }, row);
         } else {
           await this.withStreamAdmission({ user }, row.id, (check) => this.finalize({ user }, row.id, check));

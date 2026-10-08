@@ -391,6 +391,7 @@ export class StudioExportService {
           revision: authorized.revision.revision,
           revisionDigest: authorized.revision.digest,
           manifestDigest: authorized.manifest.digest,
+          sourceEpochs: authorized.manifest.sourceEpochs,
           requestKey: dto.requestKey ?? null,
           studio: { stored: true, revision: authorized.revision.revision, cloudConsent: dto.cloudConsent === true },
           // FL-93 / FL-102: the cadence and source timing the worker renders on, and the precision

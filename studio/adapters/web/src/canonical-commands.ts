@@ -2311,11 +2311,7 @@ const handlers: Record<string, Handler> = {
     assertUnlocked(linkedSet(unique), 'clip.join')
     const first = chain[0]!
     const last = chain.at(-1)!
-    // Freecut joins a linked pair's counterparts only for two clips, so a longer chain is joined a
-    // pair at a time; every step keeps the linked audio joined with its pictures.
-    withLinkedSelection(true, () => {
-      for (const next of chain.slice(1)) joinItems([first.id, next.id])
-    })
+    withLinkedSelection(true, () => joinItems(unique))
     const joined = requireItem(first.id)
     if (
       joined.from !== first.from ||

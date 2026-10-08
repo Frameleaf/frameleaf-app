@@ -254,14 +254,48 @@ describe(StackService.name, () => {
       await sut.update(auth, stack.id, { primaryAssetId: asset.id });
 
       expect(mocks.stack.getById).toHaveBeenCalledWith(stack.id);
-      expect(mocks.stack.update).toHaveBeenCalledWith(stack.id, {
-        id: stack.id,
-        primaryAssetId: asset.id,
-      });
+      expect(mocks.stack.update).toHaveBeenCalledWith(
+        stack.id,
+        {
+          id: stack.id,
+          primaryAssetId: asset.id,
+        },
+        undefined,
+        auth,
+        expect.any(Function),
+      );
       expect(mocks.event.emit).toHaveBeenCalledWith('StackUpdate', {
         stackId: stack.id,
         userId: auth.user.id,
       });
+    });
+
+    it('awaits the durable stream wake and omits the legacy stack event after a sequenced commit', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from().exif().build();
+      const stack = StackFactory.from()
+        .primaryAsset(asset, (builder) => builder.exif())
+        .build();
+      mocks.access.stack.checkOwnerAccess.mockResolvedValue(new Set([stack.id]));
+      mocks.stack.getById.mockResolvedValue(getForStack(stack));
+      mocks.stack.update.mockImplementation((_id, _update, _privacy, _auth, capture) => {
+        capture?.(true);
+        return Promise.resolve(getForStack(stack));
+      });
+      const release = Promise.withResolvers<number>();
+      mocks.stack.enqueueLocalEffects.mockReturnValue(release.promise);
+      let finished = false;
+      const pending = sut.update(auth, stack.id, { primaryAssetId: asset.id }).then((value) => {
+        finished = true;
+        return value;
+      });
+      await vi.waitFor(() => expect(mocks.stack.enqueueLocalEffects).toHaveBeenCalledOnce());
+      expect(finished).toBe(false);
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+      release.resolve(1);
+      await expect(pending).resolves.toMatchObject({ id: stack.id, primaryAssetId: asset.id });
+      expect(finished).toBe(true);
+      expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
     it('should hide private NSFW assets from updated stack responses when requested', async () => {
@@ -285,6 +319,8 @@ describe(StackService.name, () => {
           primaryAssetId: asset.id,
         },
         { excludeNsfw: true },
+        auth,
+        expect.any(Function),
       );
     });
   });
@@ -305,7 +341,7 @@ describe(StackService.name, () => {
 
       await sut.delete(auth, 'stack-id');
 
-      expect(mocks.stack.delete).toHaveBeenCalledWith('stack-id');
+      expect(mocks.stack.delete).toHaveBeenCalledWith('stack-id', auth, expect.any(Function));
       expect(mocks.event.emit).toHaveBeenCalledWith('StackDelete', {
         stackId: 'stack-id',
         userId: auth.user.id,
@@ -327,7 +363,7 @@ describe(StackService.name, () => {
 
       await sut.deleteAll(authStub.admin, { ids: ['stack-id'] });
 
-      expect(mocks.stack.deleteAll).toHaveBeenCalledWith(['stack-id']);
+      expect(mocks.stack.deleteAll).toHaveBeenCalledWith(['stack-id'], authStub.admin, expect.any(Function));
       expect(mocks.event.emit).toHaveBeenCalledWith('StackDeleteAll', {
         stackIds: ['stack-id'],
         userId: authStub.admin.user.id,
@@ -375,10 +411,11 @@ describe(StackService.name, () => {
       const [primaryAsset, asset] = [AssetFactory.create(), AssetFactory.create()];
       mocks.access.stack.checkOwnerAccess.mockResolvedValue(new Set(['stack-id']));
       mocks.stack.getForAssetRemoval.mockResolvedValue({ id: 'stack-id', primaryAssetId: primaryAsset.id });
+      mocks.stack.removeMember.mockResolvedValue(undefined);
 
       await sut.removeAsset(authStub.admin, { id: 'stack-id', assetId: asset.id });
 
-      expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, stackId: null });
+      expect(mocks.stack.removeMember).toHaveBeenCalledWith('stack-id', asset.id, authStub.admin, expect.any(Function));
       expect(mocks.event.emit).toHaveBeenCalledWith('StackUpdate', {
         stackId: 'stack-id',
         userId: authStub.admin.user.id,

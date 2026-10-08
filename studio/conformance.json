@@ -3563,11 +3563,11 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "blocked",
-          "reason": "Missing firefox-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All firefox-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "safari": {
           "status": "not-tested"
@@ -3657,11 +3657,11 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "blocked",
-          "reason": "Missing firefox-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All firefox-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "safari": {
           "status": "not-tested"
@@ -3751,11 +3751,11 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "blocked",
-          "reason": "Missing firefox-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All firefox-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "safari": {
           "status": "not-tested"
@@ -3798,11 +3798,11 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "blocked",
-          "reason": "Missing firefox-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All firefox-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "safari": {
           "status": "not-tested"
@@ -3892,11 +3892,11 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All chromium-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "firefox": {
           "status": "blocked",
-          "reason": "Missing firefox-axis case(s): extreme (FL-112). Linear HDR operator is typed-refused; refusal regression does not cover an HDR render fixture. SDR measurements cannot cover HDR extremes."
+          "reason": "All firefox-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "safari": {
           "status": "not-tested"

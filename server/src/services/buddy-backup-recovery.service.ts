@@ -26,11 +26,23 @@ import {
 } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
-import { finalizeBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
+import { finalizeBuddyBootBinding, verifyBuddyRecoveryBootBinding } from 'src/utils/buddy-boot-binding.js';
+import {
+  admitReplacementMl,
+  captureReplacementMl,
+  preserveHistoricalMl,
+  readReplacementMl,
+  verifyCommittedReplacementMl,
+} from 'src/utils/buddy-recovery-ml.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
 import { publishFileConfig, recoverEffectiveConfig } from 'src/utils/config.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 import { canonicalJson } from 'src/utils/object.js';
+import {
+  recoveryAuthorityDigest,
+  recoveryMlRefusal,
+  recoveryMlRegistrySchema,
+} from 'src/utils/recovery-ml-authority.js';
 
 /** Available in maintenance without booting application jobs, accounts or the Cloud client. */
 @Injectable()
@@ -124,7 +136,7 @@ export class BuddyBackupRecoveryService {
     return { plan, buddy };
   }
 
-  async prepare(id: string) {
+  async prepare(id: string, assert: () => Promise<void> = () => Promise.reject(recoveryMlRefusal())) {
     const { plan } = await this.plan(id);
     if (plan.scope !== 'server' || !plan.manifest.library.database)
       throw new Error('A staged full server recovery is required');
@@ -175,15 +187,36 @@ export class BuddyBackupRecoveryService {
       SystemMetadataKey.FrameleafRemoteAccess,
       SystemMetadataKey.FrameleafMlSuspension,
     ];
-    const metadata = await this.repository.db
-      .selectFrom('system_metadata')
-      .select(['key', 'value'])
-      .where('key', 'in', keys)
-      .execute();
-    await writeBuddyFile(
-      join(this.repository.root(), 'recovery', id, 'replacement.json'),
-      JSON.stringify({ keys, metadata }),
-    );
+    const directory = join(this.repository.root(), 'recovery', id);
+    const verify = async () => verifyBuddyRecoveryBootBinding(this.repository.root(), id, assert);
+    await new SystemMetadataRepository(this.repository.db).withConfigTransaction(async (metadataRepo, tx) => {
+      await verify();
+      await captureReplacementMl(
+        { metadataRepo, configRepo: this.config, logger: LoggingRepository.create() },
+        tx,
+        directory,
+        id,
+        plan,
+        verify,
+      );
+      const metadata = await tx
+        .selectFrom('system_metadata')
+        .select(['key', 'value'])
+        .where('key', 'in', keys)
+        .execute();
+      const value = { keys, metadata };
+      try {
+        await writeBuddyFile(join(directory, 'replacement.json'), JSON.stringify(value), true, assert);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        if (
+          canonicalJson(JSON.parse(await readFile(join(directory, 'replacement.json'), 'utf8'))) !==
+          canonicalJson(value)
+        )
+          throw recoveryMlRefusal();
+      }
+      await assert();
+    });
     return filename;
   }
 
@@ -208,7 +241,18 @@ export class BuddyBackupRecoveryService {
     const roots = plan.manifest.storageRoots;
     const files = new BuddyRecoveryFiles(this.repository.root(), id, assert);
     const before = await files.load();
+    const directory = join(this.repository.root(), 'recovery', id);
+    const authority = await readReplacementMl(directory, id, plan);
+    await verifyBuddyRecoveryBootBinding(this.repository.root(), id, assert);
     if (before === 'complete') {
+      await verifyCommittedReplacementMl(
+        {
+          metadataRepo: new SystemMetadataRepository(this.repository.db),
+          configRepo: this.config,
+          logger: LoggingRepository.create(),
+        },
+        authority,
+      );
       await files.verify(plan, roots, settings.configurationFiles);
       await this.restoreKeys(plan.manifest, assert);
       return finalizeBuddyBootBinding(this.repository.root(), id, assert);
@@ -235,6 +279,17 @@ export class BuddyBackupRecoveryService {
     const recovered = await new SystemMetadataRepository(this.repository.db).withConfigTransaction(
       async (metadataRepo, trx) => {
         await assert();
+        if (
+          recoveryAuthorityDigest(await readReplacementMl(directory, id, plan)) !== recoveryAuthorityDigest(authority)
+        )
+          throw recoveryMlRefusal();
+        await preserveHistoricalMl(
+          { metadataRepo, configRepo: this.config, logger: LoggingRepository.create() },
+          trx,
+          directory,
+          authority,
+          assert,
+        );
         await trx.deleteFrom('session').execute();
         // Stopped-worker restore: fence active claims and retain only the queue's safe durable work.
         await resetQueueAfterRestore(trx);
@@ -249,11 +304,23 @@ export class BuddyBackupRecoveryService {
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
         await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::text::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-        const result = await recoverEffectiveConfig({
+        const repos = {
           metadataRepo,
           configRepo: this.config,
           logger: LoggingRepository.create(),
-        });
+        };
+        if (before !== 'database-ready')
+          await trx
+            .deleteFrom('system_metadata')
+            .where('key', '=', SystemMetadataKey.FrameleafRecoveryMlAuthority)
+            .execute();
+        await admitReplacementMl(repos, trx, directory, authority, assert);
+        await verifyBuddyRecoveryBootBinding(this.repository.root(), id, assert);
+        const result = await recoverEffectiveConfig(repos, authority);
+        if (
+          recoveryAuthorityDigest(await readReplacementMl(directory, id, plan)) !== recoveryAuthorityDigest(authority)
+        )
+          throw recoveryMlRefusal();
         await assert();
         return result;
       },
@@ -286,11 +353,27 @@ export class BuddyBackupRecoveryService {
     const directory = join(this.repository.root(), 'recovery', id);
     const before = await files.load();
     if (before === 'complete') {
+      await verifyCommittedReplacementMl(
+        {
+          metadataRepo: new SystemMetadataRepository(this.repository.db),
+          configRepo: this.config,
+          logger: LoggingRepository.create(),
+        },
+        await readReplacementMl(directory, id, plan),
+      );
       await files.verify(plan, [], settings.configurationFiles);
       await this.restoreKeys(plan.manifest, assert);
       return finalizeBuddyBootBinding(this.repository.root(), id, assert);
     }
     if (before === 'database-ready') {
+      await verifyCommittedReplacementMl(
+        {
+          metadataRepo: new SystemMetadataRepository(this.repository.db),
+          configRepo: this.config,
+          logger: LoggingRepository.create(),
+        },
+        await readReplacementMl(directory, id, plan),
+      );
       await files.verify(plan, [], settings.configurationFiles);
       await this.restoreKeys(plan.manifest, assert);
       await this.restoreBuddySettings(buddy, plan.mode, assert);
@@ -318,6 +401,22 @@ export class BuddyBackupRecoveryService {
     }
     if (previous.id !== id || previous.digest !== digest)
       throw new Error('Settings rollback does not match this recovery');
+    const authority = await new SystemMetadataRepository(this.repository.db).withConfigTransaction(
+      async (metadataRepo, tx) => {
+        try {
+          return await readReplacementMl(directory, id, plan);
+        } catch {
+          return captureReplacementMl(
+            { metadataRepo, configRepo: this.config, logger: LoggingRepository.create() },
+            tx,
+            directory,
+            id,
+            plan,
+            assert,
+          );
+        }
+      },
+    );
     let recovered: Awaited<ReturnType<typeof recoverEffectiveConfig>>;
     let published = false;
     let callbackCompleted = false;
@@ -327,6 +426,11 @@ export class BuddyBackupRecoveryService {
       await assert();
       recovered = await new SystemMetadataRepository(this.repository.db).withConfigTransaction(
         async (metadataRepo, trx) => {
+          await verifyBuddyRecoveryBootBinding(this.repository.root(), id, assert);
+          if (
+            recoveryAuthorityDigest(await readReplacementMl(directory, id, plan)) !== recoveryAuthorityDigest(authority)
+          )
+            throw recoveryMlRefusal();
           const old = (previous.system ?? {}) as Record<string, unknown>;
           const restored = plan.manifest.settings.system as Record<string, unknown>;
           const merged = plan.mode === 'replace' ? restored : { ...restored, ...old };
@@ -352,11 +456,24 @@ export class BuddyBackupRecoveryService {
               trx,
             );
           }
-          const result = await recoverEffectiveConfig({
-            metadataRepo,
-            configRepo: this.config,
-            logger: LoggingRepository.create(),
+          const registry = await metadataRepo.get(SystemMetadataKey.FrameleafRecoveryMlAuthority);
+          if (registry && !recoveryMlRegistrySchema.safeParse(registry).success) throw recoveryMlRefusal();
+          await metadataRepo.set(SystemMetadataKey.FrameleafRecoveryMlAuthority, {
+            ...authority.binding,
+            quarantine: registry?.quarantine ?? {},
           });
+          const result = await recoverEffectiveConfig(
+            {
+              metadataRepo,
+              configRepo: this.config,
+              logger: LoggingRepository.create(),
+            },
+            authority,
+          );
+          if (
+            recoveryAuthorityDigest(await readReplacementMl(directory, id, plan)) !== recoveryAuthorityDigest(authority)
+          )
+            throw recoveryMlRefusal();
           await assert();
           callbackCompleted = true;
           return result;

@@ -288,3 +288,83 @@ test('input digest mismatch refuses before engine/build/browser or private outpu
   await assert.rejects(renderStillImage({ claim: c, isLeaseActive: () => true,
     elapsedMs: () => 0 }, () => assert.fail()), /INPUT_DIGEST_REQUIRED/);
 });
+
+test('terminal authority after output read clears the actual returned buffer and refuses completion', async () => {
+  const { execFileSync } = await import('node:child_process');
+  // Run the actual executor with controlled browser/IO boundaries; this is not hardware qualification.
+  execFileSync(
+    process.execPath,
+    [
+      '--experimental-test-module-mocks',
+      '--input-type=module',
+      '-e',
+      `
+    import assert from 'node:assert/strict';
+    import { mock } from 'node:test';
+    import * as fs from 'node:fs/promises';
+    import * as modules from 'node:module';
+    import * as children from 'node:child_process';
+    import { createHash } from 'node:crypto';
+    const root = ${JSON.stringify(new URL('../../', import.meta.url).pathname.replace(/\/$/, ''))};
+    const {default: fsDefault, ...fsNamed} = fs;
+    const {default: modulesDefault, ...moduleNamed} = modules;
+    const {default: childrenDefault, ...childrenNamed} = children;
+    const executor = new URL('./studio/tools/render-worker-still-executor.mjs', 'file://' + root + '/');
+    const engine = new URL('./studio/engine/', 'file://' + root + '/');
+    const build = JSON.parse(await fs.readFile(new URL('./studio/engine-build.json', 'file://' + root + '/')));
+    const bytes = Buffer.from('private-output');
+    const originalError = new Error('TERMINAL_AFTER_READ');
+    let terminal = false, consumed = false, closed = false;
+    const report = { ...build, node: 'v' + build.node,
+      artifactSha256: createHash('sha256').update('[]').digest('hex') };
+    mock.module('node:fs/promises', { namedExports: { ...fsNamed,
+      readFile: async file => {
+        if (String(file).endsWith('engine-build.json')) return JSON.stringify(build);
+        if (String(file).endsWith('frameleaf-build.json')) return JSON.stringify(report);
+        assert.equal(file, '/controlled-output.mp4'); terminal = true; return bytes;
+      },
+      realpath: async file => file, mkdtemp: async () => '/controlled-private-folder',
+      stat: async () => ({ isFile: () => true, size: bytes.length }), rm: async () => {},
+    }});
+    const page = { route: async () => {}, goto: async () => {}, waitForFunction: async () => {},
+      evaluate: async () => ({vendor:'controlled', architecture:'test', isFallbackAdapter:false}) };
+    mock.module('node:module', { namedExports: { ...moduleNamed, createRequire: base => name => {
+      if (name === 'sharp') return {};
+      if (name !== 'playwright') return modules.createRequire(base)(name);
+      return { chromium: { launch: async () => ({ newPage: async () => page, close: async () => {closed = true;} }) } };
+    } }});
+    mock.module(new URL('./studio/tools/engine.mjs', 'file://' + root + '/').href,
+      { namedExports: { inventory: async () => [] } });
+    mock.module(new URL('./studio/tools/render-worker-vector-inputs.mjs', 'file://' + root + '/').href,
+      { namedExports: { deriveClaimVectors: async () => ({digest:null, resources:[], sources:[]}) } });
+    mock.module(new URL('headless/lib/cli.mjs', engine).href, { namedExports: {chromeLaunchArgs: () => []} });
+    mock.module(new URL('headless/lib/render-core.mjs', engine).href, { namedExports: {
+      renderJob: async (_page, input) => ({ok:true,warnings:[],effectiveSettings:input.settings,outputPath:'/controlled-output.mp4'})
+    }});
+    const claim = ${JSON.stringify(claim())};
+    claim.artifactInputDigest = 'a'.repeat(64);
+    // Avoid native ffprobe: the boundary under review is after an already validated output.
+    const { mock: childMock } = await import('node:test');
+    childMock.module('node:child_process', {namedExports: {...childrenNamed, execFileSync: () => JSON.stringify({
+      streams:[{codec_type:'video',codec_name:'h264',width:1280,height:720,pix_fmt:'yuv420p',
+        avg_frame_rate:'24/1',nb_read_frames:'24',color_transfer:'bt709',color_primaries:'bt709',
+        color_space:'bt709',color_range:'tv',time_base:'1/24',start_pts:0,duration_ts:24,index:0}],
+      packets:Array.from({length:24},(_,pts)=>({stream_index:0,pts,duration:1})),format:{format_name:'mp4'}
+    })}});
+    const {renderStillImage} = await import(executor.href);
+    const context = {claim, prepared:{artifactInputDigest:claim.artifactInputDigest,inputs:new Map()},
+      engineInputs:{sourceSha256:build.sourceSha256,input:{project:claim.snapshot.studio.graph,media:[]},
+        binding:{operationId:claim.operationId,claimToken:claim.claimToken,revisionId:claim.revisionId},
+        createHarness:async()=>({harnessUrl:'http://localhost/controlled',media:[]})},
+      isLeaseActive:()=>true, heartbeat:async()=>{}, elapsedMs:()=>0, registerRelease:()=>{},
+      leaseAuthority:{wait:async()=>{if(terminal) throw originalError;},isPending:()=>false,
+        assertActive:()=>{},terminate:()=>{}}
+    };
+    await assert.rejects(renderStillImage(context, async()=>{consumed=true;}), error=>error===originalError);
+    assert.deepEqual(bytes, Buffer.alloc(bytes.length));
+    assert.equal(consumed,false); assert.equal(closed,true);
+  `,
+    ],
+    { cwd: new URL('../../', import.meta.url), stdio: 'pipe' },
+  );
+});

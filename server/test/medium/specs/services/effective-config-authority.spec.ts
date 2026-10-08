@@ -15,6 +15,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
@@ -332,8 +333,17 @@ describe('effective configuration transaction authority', () => {
         const [event] = args;
         if (event === 'ConfigValidate') await writeFile(f.filename, JSON.stringify({ trash: { enabled: false } }));
       });
+      await expect(f.sut.reloadConfigFile(f.auth, { expectedEpoch: f.epoch.epoch })).rejects.toThrow(
+        'effective_config_epoch_changed',
+      );
+      expect(await f.repos.metadataRepo.getEffectiveConfigEpoch()).toEqual(f.epoch);
+      expect((await readConfig(f.repos)).trash.enabled).toBe(false);
+      // A fresh candidate may activate; changed bytes after activation still require another reload.
+      f.ctx.getMock(EventRepository).emit.mockResolvedValue(undefined);
+      await writeFile(f.filename, JSON.stringify({ trash: { enabled: true } }));
       const result = await f.sut.reloadConfigFile(f.auth, { expectedEpoch: f.epoch.epoch });
       expect((await readConfig(f.repos)).trash.enabled).toBe(true);
+      await writeFile(f.filename, JSON.stringify({ trash: { enabled: false } }));
       const cold = { ...f.repos, configRepo: { getEnv: () => f.repos.configRepo.getEnv() } as ConfigRepository };
       await expect(readConfig(cold)).rejects.toThrow('effective_config_activation_required');
       f.ctx.getMock(EventRepository).emit.mockRejectedValue(new Error('validator refused'));
@@ -470,6 +480,10 @@ describe('effective configuration transaction authority', () => {
       const directory = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-config-recovery-')));
       try {
         const f = await fileSetup(directory);
+        await f.ctx.get(DatabaseRepository).withLock(DatabaseLock.FrameleafIdentity, async () => {
+          const identity = await new InstanceIdentityRepository().loadOrCreate(join(directory, 'identity'), null);
+          await f.repos.metadataRepo.set(SystemMetadataKey.FrameleafInstance, identity);
+        });
         const root = join(directory, 'identity', 'buddy'),
           id = randomUUID(),
           recovery = join(root, 'recovery', id);
@@ -524,15 +538,29 @@ describe('effective configuration transaction authority', () => {
         });
         await held.promise;
         const original = SystemMetadataRepository.prototype.withConfigTransaction;
+        // Replacement authority capture is a separate real transaction. Lose only the response
+        // from the settings publication, whose result carries the durable epoch object.
+        const loseRecoveryPublicationResponse = (message: string) => {
+          let injected = false;
+          return vi
+            .spyOn(SystemMetadataRepository.prototype, 'withConfigTransaction')
+            .mockImplementation(async function (this: SystemMetadataRepository, callback) {
+              const committed = await original.call(this, callback);
+              if (
+                !injected &&
+                committed &&
+                typeof committed === 'object' &&
+                'epoch' in committed &&
+                typeof committed.epoch === 'object'
+              ) {
+                injected = true;
+                throw new Error(message);
+              }
+              return committed;
+            });
+        };
         const commitLoss =
-          failure === 'commit-response'
-            ? vi
-                .spyOn(SystemMetadataRepository.prototype, 'withConfigTransaction')
-                .mockImplementationOnce(async function (this: SystemMetadataRepository, callback) {
-                  await original.call(this, callback);
-                  throw new Error('lost COMMIT response');
-                })
-            : undefined;
+          failure === 'commit-response' ? loseRecoveryPublicationResponse('lost COMMIT response') : undefined;
         const result = service
           .settings(id, async () => {
             const active = await f.repos.metadataRepo.getEffectiveConfigEpoch();
@@ -568,12 +596,7 @@ describe('effective configuration transaction authority', () => {
         expect(committed).toMatchObject({ epoch: f.epoch.epoch + 1, trashEnabled: true });
         const preimage = await readFile(join(recovery, 'settings-rollback.json'));
         if (failure === 'commit-response') {
-          const lostReplay = vi
-            .spyOn(SystemMetadataRepository.prototype, 'withConfigTransaction')
-            .mockImplementationOnce(async function (this: SystemMetadataRepository, callback) {
-              await original.call(this, callback);
-              throw new Error('lost repeated COMMIT response');
-            });
+          const lostReplay = loseRecoveryPublicationResponse('lost repeated COMMIT response');
           try {
             await expect(service.settings(id, async () => {})).rejects.toThrow(
               'Settings recovery commit outcome requires review',

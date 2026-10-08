@@ -52,7 +52,13 @@ export class SystemMetadataRepository {
 
   async set<T extends keyof SystemMetadata>(key: T, value: SystemMetadata[T], overwrite = true): Promise<void> {
     if (
-      (key === SystemMetadataKey.SystemConfig || key === SystemMetadataKey.EffectiveConfigEpoch) &&
+      (
+        [
+          SystemMetadataKey.SystemConfig,
+          SystemMetadataKey.EffectiveConfigEpoch,
+          SystemMetadataKey.FrameleafRecoveryMlAuthority,
+        ] as readonly string[]
+      ).includes(key) &&
       !this.configTransaction
     )
       throw new Error('effective_config_transaction_required');
@@ -141,7 +147,15 @@ export class SystemMetadataRepository {
 
   @GenerateSql({ params: ['metadata_key'] })
   async delete<T extends keyof SystemMetadata>(key: T): Promise<void> {
-    if (key === SystemMetadataKey.SystemConfig || key === SystemMetadataKey.EffectiveConfigEpoch)
+    if (
+      (
+        [
+          SystemMetadataKey.SystemConfig,
+          SystemMetadataKey.EffectiveConfigEpoch,
+          SystemMetadataKey.FrameleafRecoveryMlAuthority,
+        ] as readonly string[]
+      ).includes(key)
+    )
       throw new Error('effective_config_delete_refused');
     await this.db.deleteFrom('system_metadata').where('key', '=', key).execute();
   }

@@ -1,0 +1,69 @@
+Subject: Discard scope captures when media and color inputs change (FL-98)
+
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -187,6 +187,7 @@
+   const timeline = useTimelineStore.getState()
+   return {
+     source: [source.captureCanvasSource, source.captureFrameImageData, source.captureFrame],
++    color: [source.captureFrameSignal, source.scopeColor, useMediaLibraryStore.getState().mediaById],
+     items: timeline.items,
+     graph: [timeline.tracks, timeline.keyframes, timeline.transitions, timeline.fps,
+       useCompositionNavigationStore.getState().activeCompositionId],
+@@ -197,6 +198,7 @@
+ function isScopeSourceCurrent(inputs: ReturnType<typeof getScopeInputs>): boolean {
+   const current = getScopeInputs()
+   return current.source.every((input, index) => input === inputs.source[index]) &&
++    current.color.every((input, index) => input === inputs.color[index]) &&
+     current.graph.every((input, index) => input === inputs.graph[index]) &&
+     current.items === inputs.items && current.compositions === inputs.compositions
+ }
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -367,6 +367,46 @@
+     expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
+   })
+ 
++  it.each([['gpu', 'media'], ['gpu', 'color'], ['gpu', 'capture'], ['cpu', 'media'], ['cpu', 'color'], ['cpu', 'capture']] as const)('discards an HDR %s sample after its %s input changes', async (path, input) => {
++    placeClip('pq')
++    const oldCapture = deferred<ReturnType<typeof pqFrame>>()
++    const newCapture = deferred<ReturnType<typeof pqFrame>>()
++    const capture = vi.fn().mockReturnValueOnce(oldCapture.promise).mockReturnValue(newCapture.promise)
++    usePreviewBridgeStore.setState({ captureFrameSignal: capture })
++    const context = {
++      createImageData: (width: number, height: number) => new ImageData(width, height),
++      putImageData: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
++      beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
++      fillText: vi.fn(), arc: vi.fn(),
++    }
++    if (path === 'cpu') {
++      createRenderer.mockResolvedValue(null)
++      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never)
++      usePreviewBridgeStore.setState({ captureFrameImageData: vi.fn().mockResolvedValue(new ImageData(2, 2)) })
++    }
++    const upload = path === 'cpu' ? context.putImageData : renderer.uploadFrame
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    expect(capture).toHaveBeenCalledOnce()
++    await act(async () => {
++      if (input === 'media') {
++        useMediaLibraryStore.setState({ mediaById: { ...useMediaLibraryStore.getState().mediaById } })
++      } else if (input === 'color') {
++        usePreviewBridgeStore.setState({ scopeColor: () => ({ workingRange: 'hdr', sdrMonitoring: 'none' }) })
++      } else {
++        usePreviewBridgeStore.setState({ captureFrameSignal: vi.fn().mockReturnValue(newCapture.promise) })
++      }
++      oldCapture.resolve(pqFrame(12))
++    })
++    expect(upload).not.toHaveBeenCalled()
++    expect(renderer.renderWaveforms).not.toHaveBeenCalled()
++    await tick(200)
++    expect(upload).not.toHaveBeenCalled()
++    await act(async () => { newCapture.resolve(pqFrame(12)) })
++    expect(upload).toHaveBeenCalled()
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++  })
++
+   it('reuses a paused HDR sample until the frame, graph or colour inputs change', async () => {
+     placeClip('pq')
+     await act(async () => { render(<ColorScopesView open />) })

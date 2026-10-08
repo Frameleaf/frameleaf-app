@@ -19,11 +19,21 @@ import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { notificationManager } from '$lib/stores/notification-manager.svelte';
 import { createEventEmitter } from '$lib/utils/eventemitter';
 
+/** One complete local effect notification; visibility is read from the authenticated current asset route. */
+export type AssetLocalEffectsV1 = {
+  streamEpoch: string;
+  sequence: string;
+  effectId: string;
+  assetIds: string[];
+  revokedOperationIds: string[];
+};
+
 interface AppRestartEvent {
   isMaintenanceMode: boolean;
 }
 
 export interface Events {
+  AssetLocalEffectsV1: (data: AssetLocalEffectsV1) => void;
   /** FL-111: owner project shelf/audience changed; null invalidates all owner projects. */
   StudioProjectInvalidatedV1: (data: { projectId: string | null }) => void;
   on_upload_success: (asset: AssetResponseDto) => void;

@@ -25,6 +25,7 @@ describe(MediaRecoveryService.name, () => {
   const importedId = randomUUID();
   const repository = {
     getResource: vi.fn(),
+    enqueueLocalEffects: vi.fn().mockResolvedValue(0),
     findCandidates: vi.fn(),
     reserve: vi.fn(),
     commit: vi.fn(),
@@ -125,6 +126,59 @@ describe(MediaRecoveryService.name, () => {
   });
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
+  });
+  it('awaits the durable local-effect wake after a committed edited sync result', async () => {
+    repository.getResource.mockResolvedValue({
+      ...(await repository.getResource(input)),
+      role: 'edited-image',
+      auditRequestId: null,
+    });
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    repository.enqueueLocalEffects.mockImplementationOnce(async () => {
+      expect(repository.commit).toHaveBeenCalledOnce();
+      entered.resolve();
+      await release.promise;
+      return 1;
+    });
+    let complete = false;
+    const pending = sut.reconcile(input).then((result) => {
+      complete = true;
+      return result;
+    });
+    await entered.promise;
+    expect(complete).toBe(false);
+    release.resolve();
+    expect(await pending).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });
+  });
+  it('retries a failed postcommit wake and awaits it on mapped edited receipt settlement', async () => {
+    await writeFile(original, bytes);
+    repository.getResource.mockResolvedValue({
+      ...(await repository.getResource(input)),
+      role: 'edited-image',
+      auditRequestId: null,
+      assetId: candidate.id,
+    });
+    repository.enqueueLocalEffects.mockRejectedValueOnce(new Error('queue unavailable'));
+    await expect(sut.verifyMapped(input)).rejects.toThrow('local_effects_pending');
+    expect(repository.commitVerifiedReuse).toHaveBeenCalledOnce();
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    repository.enqueueLocalEffects.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return 1;
+    });
+    let complete = false;
+    const pending = sut.verifyMapped(input).then((result) => {
+      complete = true;
+      return result;
+    });
+    await entered.promise;
+    expect(complete).toBe(false);
+    release.resolve();
+    expect(await pending).toEqual({ outcome: 'reused', assetId: candidate.id });
+    expect(repository.enqueueLocalEffects).toHaveBeenCalledTimes(2);
   });
   it('repairs missing originals at a new path with the same ID and retained stage', async () => {
     expect(await sut.reconcile(input)).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });

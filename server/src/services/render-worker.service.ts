@@ -1612,6 +1612,17 @@ export class RenderWorkerService {
         };
       }
 
+      if (
+        resolution.manifest.sourceEpochs &&
+        !(await this.studioResources.sourceEpochsMatch(
+          operation.snapshot.sourceEpochs as typeof resolution.manifest.sourceEpochs,
+          resolution.manifest.sourceEpochs.map((row) => row.assetId),
+          operation.snapshot.sourceEpochs !== undefined,
+        ))
+      ) {
+        return { complete: false, refused: [{ key: 'source', reason: 'source-admission-revoked' }] };
+      }
+
       return {
         complete: true,
         studio: resolution.manifest,

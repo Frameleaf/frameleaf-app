@@ -5,6 +5,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -50,7 +51,7 @@ it.each([
   async (boundary) => {
     const { sut: resources, ctx } = newMediumService(StudioResourceService, {
       database,
-      real: [AccessRepository, AssetRepository, CryptoRepository],
+      real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
       mock: [LoggingRepository],
     });
     const { user: owner } = await ctx.newUser();

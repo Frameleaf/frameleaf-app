@@ -43,6 +43,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Selectable } from 'kysely';
 import { createHmac } from 'node:crypto';
+import type { SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
+import type { InteractiveAdmissionSource, InteractiveAdmissionView } from 'src/repositories/studio-source-admission.js';
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
@@ -53,6 +55,7 @@ import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.
 import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
+import { studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
@@ -109,6 +112,8 @@ export type StudioDeclaredGenerated = {
   id: string;
   /** What produced it: `proxy`, `waveform`, `reverse-conform`, `transcript`, `tts`, `musicgen`, `chunk`. */
   producer: string;
+  /** Original server producer admission; never refreshed from current source state. */
+  sourceEpochs?: SourceEpoch[];
   checksum: string | null;
   path: string;
   /** Reference keys ({@link studioReferenceKey}) of the inputs. Every one must be authorized. */
@@ -221,6 +226,10 @@ export type StudioAuthorizedManifest = {
   complete: boolean;
   refusedCount: number;
   entries: StudioAuthorizedEntry[];
+  /** Private signed source-owner admission snapshot. Legacy manifests are never relabelled. */
+  sourceEpochs?: SourceEpoch[];
+  /** Original acting-session/local order view, carried only by interactive server admissions. */
+  interactiveAdmissionView?: InteractiveAdmissionView;
   privacy: {
     /** At least one source reaches the acting user through sharing, so the output inherits that. */
     includesSharedSources: boolean;
@@ -247,7 +256,8 @@ const LIBRARY_BACKED_KINDS: ReadonlySet<StudioResourceKind> = new Set([
 ]);
 
 export type StudioReadGrantPayload = {
-  v: 1;
+  v: 1 | 2;
+  sourceEpochs?: SourceEpoch[];
   scope: 'render' | 'preview';
   kind: StudioResourceKind;
   id: string;
@@ -372,6 +382,7 @@ export class StudioResourceService extends BaseService {
     auth: AuthDto,
     context: StudioProjectResourceContext,
   ): Promise<StudioResourceResolution> {
+    const admissionSources = new Map<string, InteractiveAdmissionSource>();
     if (!isStudioDestination(context.destination)) {
       throw new BadRequestException('Unknown Studio destination');
     }
@@ -519,7 +530,7 @@ export class StudioResourceService extends BaseService {
       for (const reference of references) {
         refuse(reference, StudioRefusalReason.SharedLinkSession, 'Shared links cannot resolve Studio resources.');
       }
-      return this.finish(auth, context, entries, refused);
+      return this.finish(auth, context, entries, refused, new Date(), [], admissionSources);
     }
 
     // Destination policy per class, decided once.
@@ -550,6 +561,7 @@ export class StudioResourceService extends BaseService {
     }
     const assetDecisions = await this.decideAssets(auth, assetIds, {
       backgroundRunner: context.backgroundRunner,
+      admissionSources,
     });
 
     const undecodable = await this.findUndecodableVideos(references, assetDecisions);
@@ -960,6 +972,7 @@ export class StudioResourceService extends BaseService {
     for (const reference of restoredReferences) {
       const decision = await this.decideRestoredVersion(auth, reference.id, {
         backgroundRunner: context.backgroundRunner,
+        admissionSources,
       });
       if (!decision.ok) {
         refuse(reference, decision.reason, decision.detail);
@@ -976,6 +989,8 @@ export class StudioResourceService extends BaseService {
     }
 
     // Generated intermediates last, and to a fixed point, because one may derive from another.
+    const generatedSourceIds = new Map<string, string[]>();
+    const generatedEpochs = new Map<string, SourceEpoch>();
     let pending = generatedReferences;
     let progressed = true;
     while (pending.length > 0 && progressed) {
@@ -1015,6 +1030,26 @@ export class StudioResourceService extends BaseService {
           next.push(reference);
           continue;
         }
+        const inputEntries = entries.filter((entry) => record.derivedFrom.includes(entry.key));
+        const inputIds = [
+          ...new Set([
+            ...studioMediaSources(inputEntries).ids,
+            ...inputEntries.flatMap((entry) => (entry.assetId ? [entry.assetId] : [])),
+            ...record.derivedFrom.flatMap((key) => generatedSourceIds.get(key) ?? []),
+          ]),
+        ].sort();
+        if (!(await this.sourceEpochsMatch(record.sourceEpochs, inputIds, record.sourceEpochs !== undefined))) {
+          refuse(
+            reference,
+            StudioRefusalReason.DerivedInputRefused,
+            'The original producer source admission was revoked.',
+          );
+          progressed = true;
+          continue;
+        }
+        generatedSourceIds.set(studioReferenceKey(reference), inputIds);
+        const originalEpochs = record.sourceEpochs ?? (await this.integrityRepository.sourceEpochs(inputIds));
+        for (const epoch of originalEpochs) generatedEpochs.set(epoch.assetId, epoch);
         authorize(reference, {
           ownerId: context.ownerId,
           checksum: record.checksum,
@@ -1065,7 +1100,15 @@ export class StudioResourceService extends BaseService {
         for (const bytes of snapshots) bytes.fill(0);
       }
     }
-    return this.finish(auth, context, entries, refused);
+    return this.finish(
+      auth,
+      context,
+      entries,
+      refused,
+      new Date(),
+      generatedEpochs.values().toArray(),
+      admissionSources,
+    );
   }
 
   /**
@@ -1117,7 +1160,8 @@ export class StudioResourceService extends BaseService {
         continue;
       }
       const payload: StudioReadGrantPayload = {
-        v: 1,
+        v: manifest.sourceEpochs ? 2 : 1,
+        sourceEpochs: manifest.sourceEpochs,
         scope: 'render',
         kind: entry.kind,
         id: entry.id,
@@ -1157,7 +1201,8 @@ export class StudioResourceService extends BaseService {
   ): string {
     this.assertAuthorizedManifest(manifest, { now });
     const payload: StudioReadGrantPayload = {
-      v: 1,
+      v: manifest.sourceEpochs ? 2 : 1,
+      sourceEpochs: manifest.sourceEpochs,
       scope: 'preview',
       kind: StudioResourceKind.RemotePreviewFrame,
       id: manifest.digest,
@@ -1203,7 +1248,7 @@ export class StudioResourceService extends BaseService {
       return { valid: false, reason: /expired/i.test(detail) ? 'expired' : 'invalid-token', detail };
     }
 
-    if (grant?.v !== 1 || !grant.kind || !grant.id) {
+    if (![1, 2].includes(grant?.v) || !grant.kind || !grant.id) {
       return { valid: false, reason: 'invalid-token', detail: 'Malformed grant.' };
     }
     if (grant.workerId !== workerId) {
@@ -1217,6 +1262,17 @@ export class StudioResourceService extends BaseService {
         valid: false,
         reason: StudioRefusalReason.SharedLinkSession,
         detail: 'Shared links cannot redeem grants.',
+      };
+    }
+
+    const sourceIds = [
+      ...new Set([...(grant.assetIds ?? []), ...(LIBRARY_BACKED_KINDS.has(grant.kind) ? [grant.id] : [])]),
+    ];
+    if (!(await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))) {
+      return {
+        valid: false,
+        reason: 'invalid-token',
+        detail: 'Source admission was revoked; resolve the project again.',
       };
     }
 
@@ -1244,7 +1300,9 @@ export class StudioResourceService extends BaseService {
           return { valid: false, reason: decision.reason, detail: decision.detail };
         }
       }
-      return { valid: true, grant, path: '' };
+      return (await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))
+        ? { valid: true, grant, path: '' }
+        : { valid: false, reason: 'invalid-token', detail: 'Source admission was revoked; resolve the project again.' };
     }
 
     if (grant.kind === StudioResourceKind.RestoredVersion) {
@@ -1253,7 +1311,9 @@ export class StudioResourceService extends BaseService {
       if (!decision.ok) {
         return { valid: false, reason: decision.reason, detail: decision.detail };
       }
-      return { valid: true, grant, path: decision.path };
+      return (await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))
+        ? { valid: true, grant, path: decision.path }
+        : { valid: false, reason: 'invalid-token', detail: 'Source admission was revoked; resolve the project again.' };
     }
 
     if (LIBRARY_BACKED_KINDS.has(grant.kind)) {
@@ -1283,7 +1343,13 @@ export class StudioResourceService extends BaseService {
         if (!master) {
           return { valid: false, reason: StudioRefusalReason.NotFound, detail: 'The edited master is gone.' };
         }
-        return { valid: true, grant, path: master.path };
+        return (await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))
+          ? { valid: true, grant, path: master.path }
+          : {
+              valid: false,
+              reason: 'invalid-token',
+              detail: 'Source admission was revoked; resolve the project again.',
+            };
       }
       const checksum = decision.asset.checksum.toString('base64');
       if (grant.checksum !== checksum) {
@@ -1293,13 +1359,17 @@ export class StudioResourceService extends BaseService {
           detail: 'The source file changed since the grant was issued.',
         };
       }
-      return { valid: true, grant, path: decision.asset.originalPath };
+      return (await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))
+        ? { valid: true, grant, path: decision.asset.originalPath }
+        : { valid: false, reason: 'invalid-token', detail: 'Source admission was revoked; resolve the project again.' };
     }
 
     // Project-owned and deployment-owned files carry their checksum in the grant; the reader
     // (FL-95) compares it with the bytes it serves. Their access is the project's, decided when the
     // manifest was resolved and bound here by the manifest digest.
-    return { valid: true, grant, path: '' };
+    return (await this.sourceEpochsMatch(grant.sourceEpochs, sourceIds, grant.v === 2))
+      ? { valid: true, grant, path: '' }
+      : { valid: false, reason: 'invalid-token', detail: 'Source admission was revoked; resolve the project again.' };
   }
 
   /**
@@ -1361,7 +1431,11 @@ export class StudioResourceService extends BaseService {
   async decideRestoredVersion(
     auth: AuthDto,
     restorationId: string,
-    { backgroundRunner = false, now = new Date() }: { backgroundRunner?: boolean; now?: Date } = {},
+    {
+      backgroundRunner = false,
+      now = new Date(),
+      admissionSources,
+    }: { backgroundRunner?: boolean; now?: Date; admissionSources?: Map<string, InteractiveAdmissionSource> } = {},
   ): Promise<RestoredVersionDecision> {
     const notFound: RestoredVersionDecision = {
       ok: false,
@@ -1382,7 +1456,9 @@ export class StudioResourceService extends BaseService {
     if (!row || row.ownerId !== auth.user.id) {
       return notFound;
     }
-    const asset = (await this.decideAssets(auth, new Set([row.assetId]), { backgroundRunner })).get(row.assetId);
+    const asset = (await this.decideAssets(auth, new Set([row.assetId]), { backgroundRunner, admissionSources })).get(
+      row.assetId,
+    );
     if (!asset || (asset.ok && asset.sourceAccess !== 'owner')) {
       return notFound;
     }
@@ -1539,13 +1615,30 @@ export class StudioResourceService extends BaseService {
   private async decideAssets(
     auth: AuthDto,
     ids: Set<string>,
-    { backgroundRunner = false }: { backgroundRunner?: boolean } = {},
+    {
+      backgroundRunner = false,
+      admissionSources,
+    }: { backgroundRunner?: boolean; admissionSources?: Map<string, InteractiveAdmissionSource> } = {},
   ): Promise<Map<string, AssetDecision>> {
     const decisions = new Map<string, AssetDecision>();
     if (ids.size === 0) {
       return decisions;
     }
 
+    if (admissionSources && !backgroundRunner && (auth.session || auth.apiKey)) {
+      const observed = await this.integrityRepository.interactiveAdmissionViews([...ids]);
+      for (const row of observed) {
+        const previous = admissionSources.get(row.assetId);
+        if (
+          previous &&
+          (previous.ownerId !== row.ownerId ||
+            previous.streamEpoch !== row.streamEpoch ||
+            previous.sequence !== row.sequence)
+        )
+          throw new BadRequestException('Studio source admission changed; resolve the project again');
+        if (!previous) admissionSources.set(row.assetId, row);
+      }
+    }
     const rows: AssetRow[] = await this.assetRepository.getByIds([...ids]);
     const byId = new Map(rows.map((row) => [row.id, row]));
 
@@ -1614,13 +1707,88 @@ export class StudioResourceService extends BaseService {
     return decisions;
   }
 
-  private finish(
+  /** Exact binding equality; an unversioned source with any recorded Trash epoch requires re-resolution. */
+  async sourceEpochsMatch(
+    bound: readonly SourceEpoch[] | undefined,
+    ids: string[],
+    requireBound = true,
+  ): Promise<boolean> {
+    if ((bound !== undefined && !Array.isArray(bound)) || ids.some((id) => !isStudioUuid(id))) return false;
+    if (
+      bound?.some(
+        (row) => !row || !isStudioUuid(row.assetId) || !isStudioUuid(row.ownerId) || typeof row.epoch !== 'string',
+      )
+    )
+      return false;
+    const sourceIds = [...new Set([...ids, ...(bound?.map((row) => row.assetId) ?? [])])].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    if (sourceIds.length > STUDIO_MAX_REFERENCES) return false;
+    if (sourceIds.length === 0) return !requireBound || Array.isArray(bound);
+    if (requireBound && (!Array.isArray(bound) || new Set(bound.map((row) => row.assetId)).size !== sourceIds.length))
+      return false;
+    if (bound?.some((row) => !/^(0|[1-9][0-9]*)$/.test(row.epoch))) return false;
+    const current = await this.integrityRepository.sourceEpochs(sourceIds);
+    if (current.length !== sourceIds.length) return false;
+    return current.every((row) =>
+      bound
+        ? bound.some(
+            (value) => value.assetId === row.assetId && value.ownerId === row.ownerId && value.epoch === row.epoch,
+          )
+        : row.epoch === '0',
+    );
+  }
+
+  private async finish(
     auth: AuthDto,
     context: StudioProjectResourceContext,
     entries: StudioAuthorizedEntry[],
     refused: StudioRefusedReference[],
     now: Date = new Date(),
-  ): StudioResourceResolution {
+    producerEpochs: SourceEpoch[] = [],
+    admissionSources?: Map<string, InteractiveAdmissionSource>,
+  ): Promise<StudioResourceResolution> {
+    const ids = [
+      ...new Set([
+        ...studioMediaSources(entries).ids,
+        ...entries.flatMap((entry) => (entry.assetId ? [entry.assetId] : [])),
+      ]),
+    ].sort();
+    const sourceEpochs = await this.integrityRepository.sourceEpochs(ids);
+    if (sourceEpochs.length !== ids.length)
+      throw new BadRequestException('Studio source admission changed; resolve the project again');
+    if (
+      producerEpochs.some((bound) =>
+        sourceEpochs.every(
+          (current) =>
+            !(current.assetId === bound.assetId && current.ownerId === bound.ownerId && current.epoch === bound.epoch),
+        ),
+      )
+    ) {
+      throw new BadRequestException('Studio source admission changed; resolve the project again');
+    }
+    let interactiveAdmissionView: InteractiveAdmissionView | undefined;
+    if (!context.backgroundRunner && (auth.session || auth.apiKey) && ids.length > 0) {
+      const owners = new Map<string, InteractiveAdmissionSource>();
+      for (const epoch of sourceEpochs) {
+        const observed = admissionSources?.get(epoch.assetId);
+        if (!observed || observed.ownerId !== epoch.ownerId)
+          throw new BadRequestException('Studio source admission changed; resolve the project again');
+        const previous = owners.get(observed.ownerId);
+        if (previous && (previous.sequence !== observed.sequence || previous.streamEpoch !== observed.streamEpoch))
+          throw new BadRequestException('Studio source admission changed; resolve the project again');
+        owners.set(observed.ownerId, observed);
+      }
+      interactiveAdmissionView = {
+        actorId: auth.user.id,
+        sessionId: auth.session?.id ?? null,
+        owners: owners
+          .values()
+          .toArray()
+          .sort((a, b) => a.ownerId.localeCompare(b.ownerId))
+          .map(({ ownerId, streamEpoch, sequence }) => ({ ownerId, streamEpoch, sequence })),
+      };
+    }
     const unsigned: Omit<StudioAuthorizedManifest, 'digest'> = {
       schemaVersion: STUDIO_MANIFEST_SCHEMA_VERSION,
       projectId: context.projectId,
@@ -1632,6 +1800,8 @@ export class StudioResourceService extends BaseService {
       complete: refused.length === 0,
       refusedCount: refused.length,
       entries,
+      sourceEpochs,
+      ...(interactiveAdmissionView && { interactiveAdmissionView }),
       privacy: {
         includesSharedSources: entries.some((entry) => entry.sourceAccess === 'shared'),
         includesPersonalData: entries.some((entry) => getStudioResourceClass(entry.kind).carriesPersonalData),

@@ -2,7 +2,9 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -47,6 +49,7 @@ type ReverseSnapshot = {
   digest: string;
   sourceKey: string;
   checksum: string;
+  sourceEpochs?: SourceEpoch[];
 };
 type Job = { operation: MediaOperation; claimToken: string };
 
@@ -113,6 +116,7 @@ export class StudioReverseConformService {
       digest: resolved.digest,
       sourceKey: input.sourceKey,
       checksum: resolved.entry.checksum!,
+      sourceEpochs: resolved.sourceEpochs?.filter((row) => row.assetId === resolved.entry.id),
     };
     const operation: MediaOperationCreate = {
       ownerId: auth.user.id,
@@ -379,6 +383,8 @@ export class StudioReverseConformService {
       await this.checkBytes(current.entry);
       const result = {
         kind: 'studio-source-reverse',
+        // Private producer byte binding, retained with the immutable operation result.
+        checksum,
         generatedId,
         sourceKey: snapshot.sourceKey,
         sourceRevision: snapshot.revision,
@@ -569,14 +575,21 @@ export class StudioReverseConformService {
     }
     return {
       entry,
+      sourceEpochs: resolution.manifest.sourceEpochs?.filter((row) => row.assetId === entry.id),
       digest: authorized.revision.digest,
       revisionId: authorized.revision.id,
       graph: authorized.envelope.graph,
     };
   }
 
-  private requireBinding(snapshot: ReverseSnapshot, resolved: { entry: StudioAuthorizedEntry; digest: string }) {
-    if (resolved.digest !== snapshot.digest || resolved.entry.checksum !== snapshot.checksum) {
+  private requireBinding(
+    snapshot: ReverseSnapshot,
+    resolved: { entry: StudioAuthorizedEntry; digest: string; sourceEpochs?: SourceEpoch[] },
+  ) {
+    const epochChanged = snapshot.sourceEpochs
+      ? !isDeepStrictEqual(snapshot.sourceEpochs, resolved.sourceEpochs)
+      : resolved.sourceEpochs?.some((row) => row.epoch !== '0');
+    if (epochChanged || resolved.digest !== snapshot.digest || resolved.entry.checksum !== snapshot.checksum) {
       throw new BadRequestException('The source revision or source bytes changed');
     }
   }

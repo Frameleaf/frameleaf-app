@@ -69,13 +69,28 @@ describe(TrashService.name, () => {
       expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
     });
 
+    it('C2 awaits durable wake and suppresses broad restore only for the committed sequenced IDs', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['sequenced', 'ordinary']));
+      mocks.trash.restoreAll.mockImplementation((_ids, _auth, capture) => {
+        capture?.(['sequenced']);
+        return Promise.resolve(['sequenced', 'ordinary']);
+      });
+      mocks.trash.enqueueLocalEffects.mockResolvedValue(1);
+      expect(await sut.restoreAssets(authStub.user1, { ids: ['sequenced', 'ordinary'] })).toEqual({ count: 2 });
+      expect(mocks.trash.enqueueLocalEffects).toHaveBeenCalledOnce();
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetRestoreAll', {
+        assetIds: ['ordinary'],
+        userId: authStub.user1.user.id,
+      });
+    });
+
     it('should restore a batch of assets', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset1', 'asset2']));
       mocks.trash.restoreAll.mockResolvedValue(['asset1', 'asset2']);
 
       await expect(sut.restoreAssets(authStub.user1, { ids: ['asset1', 'asset2'] })).resolves.toEqual({ count: 2 });
 
-      expect(mocks.trash.restoreAll).toHaveBeenCalledWith(['asset1', 'asset2']);
+      expect(mocks.trash.restoreAll).toHaveBeenCalledWith(['asset1', 'asset2'], authStub.user1, expect.any(Function));
       expect(mocks.event.emit).toHaveBeenCalledWith('AssetRestoreAll', {
         assetIds: ['asset1', 'asset2'],
         userId: 'user-id',
@@ -111,6 +126,8 @@ describe(TrashService.name, () => {
         TrashReviewAction.RestoreAll,
         undefined,
         { privacy: {} },
+        expect.any(Function),
+        authStub.user1,
         expect.any(Function),
       );
       expect(mocks.event.emit).not.toHaveBeenCalled();
@@ -159,6 +176,8 @@ describe(TrashService.name, () => {
         TrashReviewAction.RestoreAll,
         undefined,
         { lockedOwnerId: elevated.user.id, privacy: { revealLockedOwnerId: elevated.user.id } },
+        expect.any(Function),
+        elevated,
         expect.any(Function),
       );
       expect(mocks.trash.applyReviewed).toHaveBeenCalledWith(

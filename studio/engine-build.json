@@ -454,7 +454,37 @@
       "path": "patches/0095-decoded-channel-fixture-timestamps.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "fcf9823b752f7ec782879dbac5828806b2e58525b77abca2f51ae71de985e6f9"
+    },
+    {
+      "path": "patches/0094-linear-hdr-pixelate.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c174f96b2de818dd168bbf74f0b2897f590960dc1ca43e8ef38158e0be597ac3"
+    },
+    {
+      "path": "patches/0097-linear-hdr-geometry.patch",
+      "sha256": "cbfa3e72f455e1b20b4f28cab44bb343c120beb7a4eaca8633ddaa2f637010b7",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0096-lease-gated-private-media-streams.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "170459465d2367418a2882c3cafa254df4ff63560dcc636001f514c8fc8f5a61"
+    },
+    {
+      "path": "patches/0098-scope-color-source-correspondence.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a4397d3c6d50173e2fcb632ca472b13f939dbc77da23040b7778cc38096d5f13"
+    },
+    {
+      "path": "patches/0099-native-linked-chain-join.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "93e70f7de8b71dd62e1f5ac434a257f6dbc49b78f97b39a7c651bc9a4be43233"
+    },
+    {
+      "path": "patches/0100-preserve-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6773faccb20c02e5dabba33a9387eb7199b033548ad04979dc6a9040d48ab0d"
     }
   ],
-  "sourceSha256": "df0790d8edb41707ff3c8a2f68a34b505ba89fe264568fe31fdd384bd3f6a408"
+  "sourceSha256": "e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689"
 }
