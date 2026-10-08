@@ -1212,3 +1212,32 @@ it('refuses a keep-time retime that collapses envelope points without changing t
   expect(before).toEqual(original)
   expect(usePlaybackStore.getState()).toMatchObject({ masterBusDb: -3, masterGainEnvelope: [{ id: 'a', frame: 1, gainDb: -20 }, { id: 'b', frame: 2, gainDb: 0 }] })
 })
+
+
+it('FL103 probe: accepts track automation independently from clip and master gain', async () => {
+  const before = project({ masterBusDb: -3, masterGainEnvelope: [{ id: 'master', frame: 0, gainDb: -6 }] })
+  const outcome = await applyCanonicalCommands(before, [envelope('track.setAudio', {
+    trackId: 'a1', gainDb: -2,
+    gainEnvelope: [{ id: 'start', at: seconds(0), gainDb: -20 }, { id: 'end', at: seconds(1), gainDb: 0 }],
+  })], media)
+  expect(outcome).toMatchObject({ status: 'applied' })
+})
+
+it('FL103 track curve admission, clearing, atomic refusal and rational empty-track retime',async()=>{
+ const original=(await applied(project({masterBusDb:-6}),[])).project
+ const curve=[{id:'z',at:seconds(1),gainDb:0},{id:'a',at:seconds(0),gainDb:-20}]
+ const first=await applied(original,[envelope('track.setAudio',{trackId:'a1',gainDb:-2,gainEnvelope:curve})])
+ const track=()=>first.project.timeline!.tracks.find(t=>t.id==='a1') as unknown as {gainEnvelope:unknown;volume:number}
+ expect(track()).toMatchObject({volume:-2,gainEnvelope:[{id:'a',frame:0,gainDb:-20},{id:'z',frame:30,gainDb:0}]})
+ expect(first.project.timeline!.tracks[0]).toEqual(original.timeline!.tracks[0]);expect(first.project.timeline!.masterBusDb).toBe(-6)
+ const omitted=await applied(first.project,[envelope('track.setAudio',{trackId:'a1',gainDb:-4})]);expect((omitted.project.timeline!.tracks[1] as never as {gainEnvelope:unknown}).gainEnvelope).toEqual(track().gainEnvelope)
+ const cleared=await applied(first.project,[envelope('track.setAudio',{trackId:'a1',gainEnvelope:[]})]);expect((cleared.project.timeline!.tracks[1] as never as {gainEnvelope:unknown}).gainEnvelope).toEqual([])
+ for(const bad of [[{id:'same',at:seconds(0),gainDb:0},{id:'same',at:seconds(1),gainDb:0}],[{id:'x',at:seconds(0),gainDb:0},{id:'y',at:seconds(0),gainDb:0}],[{id:'x',at:{num:1,den:100},gainDb:0}],[{id:'x',at:seconds(0),gainDb:13}],[{id:'x',at:seconds(0),gainDb:0,easing:'linear'}]]){
+  const before=canonicalJson(first.project);const result=await applyCanonicalCommands(first.project,[envelope('track.setAudio',{trackId:'a1',gainDb:-8}),envelope('track.setAudio',{trackId:'a1',gainEnvelope:bad})],media);expect(result.status).toBe('rejected');expect(canonicalJson(first.project)).toBe(before)
+ }
+ const locked=structuredClone(first.project);locked.timeline!.tracks[1]!.locked=true
+ expect(await applyCanonicalCommands(locked,[envelope('track.setAudio',{trackId:'a1',gainEnvelope:curve})],media)).toMatchObject({status:'rejected',reason:'failed'})
+ const retimed=await applied(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1},timing:'keep-time'})]);expect((retimed.project.timeline!.tracks[1] as never as {gainEnvelope:{frame:number}[]}).gainEnvelope.map(p=>p.frame)).toEqual([0,24])
+ const kept=await applied(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1},timing:'keep-frames'})]);expect((kept.project.timeline!.tracks[1] as never as {gainEnvelope:unknown}).gainEnvelope).toEqual(track().gainEnvelope)
+ expect(await applyCanonicalCommands(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1}})],media)).toMatchObject({status:'rejected'})
+})

@@ -1,0 +1,1979 @@
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+index bc7103f028..3138dd2006 100644
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -53,6 +53,9 @@ vi.mock('mediabunny', () => {
+         const plane = new Float32Array(frameCount)
+         if (ramp) {
+           for (let i = 0; i < frameCount; i++) plane[i] = (startIndex + i) / 1_000_000
++        } else if (this.track.src.includes('impulse44100')) {
++          // Authored alternating impulses make gain/resampling non-commutation visible.
++          for (let i = 0; i < frameCount; i++) plane[i] = (startIndex+i)%11===0 ? 0.1 : 0
+         } else {
+           plane.fill(0.1)
+         }
+@@ -1779,3 +1782,147 @@ it('applies the immutable root envelope through real full/window PCM and refuses
+   }
+   expect(offset).toBe(full!.samples[0]!.length)
+ })
++
++it.each([30,30000/1001])('FL103 track automation: real full/window mixers on cadence %s replace only target scalar, honor absolute range and refuse copy', async(fps)=>{
++ const composition:CompositionInputProps={fps,durationInFrames:60,masterOriginFrame:15,masterBusDb:-6,tracks:[{...makeTrack({id:'track-a1',order:0,kind:'audio',items:[makeAudioItem({volume:-3,durationInFrames:60})]}),volume:-2,gainEnvelope:[{id:'first',frame:0,gainDb:-20},{id:'last',frame:90,gainDb:0}]}],transitions:[],keyframes:[]}
++ const passthrough={...composition,masterBusDb:0,masterOriginFrame:0,tracks:[{...makeTrack({id:'track-a1',order:0,kind:'audio',items:[makeAudioItem({volume:0,durationInFrames:60})]}),volume:0,gainEnvelope:[{id:'unity',frame:0,gainDb:0}]}]}
++ expect(getAudioPacketPassthroughPlan(passthrough)).toBeNull()
++ const full=await processAudio(composition);expect(full).not.toBeNull()
++ let offset=0
++ for await(const window of processAudioWindows(composition)){
++  for(let i=0;i<window.samples[0]!.length;i+=997){const frame=15+(offset+i)*fps/48000;const expected=0.1*10**((-3-6-20+Math.min(90,frame)*20/90)/20);expect(window.samples[0]![i]).toBeCloseTo(expected,6);expect(full!.samples[0]![offset+i]).toBeCloseTo(expected,6)}offset+=window.samples[0]!.length
++ }
++ expect(offset).toBe(full!.samples[0]!.length)
++})
++
++it('FL103 nested track stages retain independent wrapper and child maps across reused offsets with real PCM',async()=>{
++ const points=[{id:'start',frame:0,gainDb:-20},{id:'end',frame:90,gainDb:0}]
++ const child={id:'track-child',name:'nested',fps:24,width:1920,height:1080,durationInFrames:120,transitions:[],keyframes:[],items:[makeAudioItem({id:'leaf',trackId:'child-a',from:0,durationInFrames:120,sourceFps:24,volume:0})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),volume:-2,gainEnvelope:points}]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrappers=[{id:'w1',type:'composition',trackId:'parent',compositionId:child.id,from:30,durationInFrames:30,sourceStart:12,sourceFps:24,speed:1},{id:'w2',type:'composition',trackId:'parent',compositionId:child.id,from:90,durationInFrames:30,sourceStart:12,sourceFps:24,speed:1}] as CompositionItem[]
++ const composition:CompositionInputProps={fps:30,durationInFrames:120,tracks:[{...makeTrack({id:'parent',order:0,kind:'audio',items:wrappers}),volume:-3}],transitions:[],keyframes:[]}
++ const segments=extractAudioSegments(composition,30);expect(segments).toHaveLength(2);expect(segments[0]!.trackGainStages).toHaveLength(2)
++ const full=await processAudio(composition);expect(full).not.toBeNull()
++ const expected=0.1*10**((-3-20+24*20/90)/20)
++ expect(full!.samples[0]![Math.round(1.5*48000)]).toBeCloseTo(expected,6);expect(full!.samples[0]![Math.round(3.5*48000)]).toBeCloseTo(expected,6)
++ expect(child.tracks[0]!.gainEnvelope).toEqual(points);expect(segments[0]!.trackGainStages![1]!.offset+45*segments[0]!.trackGainStages![1]!.scale).toBe(24)
++})
++
++
++it('FL103 real six-plane PCM retains center ownership and untouched track contribution in both mixers', async () => {
++ const points=[{id:'curve',frame:0,gainDb:-20}]
++ const target={...makeTrack({id:'target',order:0,kind:'audio',items:[makeAudioItem({id:'center-a',trackId:'target',src:'blob:audio-center-51',durationInFrames:30,volume:-3})]}),volume:-2,gainEnvelope:points}
++ const other={...makeTrack({id:'other',order:1,kind:'audio',items:[makeAudioItem({id:'center-b',trackId:'other',src:'blob:audio-center-51',durationInFrames:30,volume:0})]}),volume:-6}
++ const composition:CompositionInputProps={fps:30,durationInFrames:30,tracks:[target,other],transitions:[],keyframes:[]}
++ const untouched=structuredClone(other)
++ const expected=0.1*(10**(-23/20)+10**(-6/20))
++ const full=await processAudio(composition);expect(full!.channels).toBe(6)
++ const windows=[];for await(const window of processAudioWindows(composition))windows.push(window)
++ expect(windows[0]!.channels).toBe(6)
++ for(const result of [full!,windows[0]!]){expect(result.samples[2]![24000]).toBeCloseTo(expected,6);for(const c of [0,1,3,4,5])expect(result.samples[c]![24000]).toBe(0)}
++ expect(other).toEqual(untouched)
++})
++
++it('FL103 linked transition rebuilding preserves one original track stage per segment and PCM crossfade', async () => {
++ const original=makeLinkedTransitionComposition({includeVideoTransition:true,includeAudioTransition:true})
++ const baseline=await processAudio(original)
++ const curve=[{id:'curve',frame:0,gainDb:-20}]
++ const composition={...original,tracks:original.tracks.map(t=>t.id==='track-a1'?{...t,volume:-3,gainEnvelope:curve}:t)}
++ const segments=extractAudioSegments(composition,30)
++ expect(segments).toHaveLength(2);expect(segments.every(s=>s.trackGainStages?.length===1&&s.trackGainStages[0]!.trackId==='track-a1')).toBe(true)
++ const full=await processAudio(composition)
++ for(const frame of [10,27,30,33,50]){const sample=Math.round(frame*48000/30);expect(full!.samples[0]![sample]).toBeCloseTo(baseline!.samples[0]![sample]!*0.1,6)}
++})
++
++it('FL103 refuses reversed composition track automation maps before either mixer can publish output',async()=>{
++ const child={id:'reverse-child',name:'child',fps:30,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],items:[makeAudioItem({id:'leaf',trackId:'child-a',durationInFrames:60})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'curve',frame:0,gainDb:-20}]}]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'reverse',type:'composition',trackId:'parent',compositionId:child.id,from:0,durationInFrames:30,sourceStart:0,sourceEnd:30,sourceFps:30,isReversed:true} as CompositionItem
++ const composition:CompositionInputProps={fps:30,durationInFrames:30,tracks:[makeTrack({id:'parent',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ await expect(processAudio(composition)).rejects.toThrow('Unsupported reversed composition track automation map')
++ await expect(processAudioWindows(composition).next()).rejects.toThrow('Unsupported reversed composition track automation map')
++})
++
++
++it.each([['full','impulse44100'],['window','impulse44100'],['full','ramp44100'],['window','ramp44100']])('FL103 unequal decoded/output rates sample track gain after resampling: %s %s selected origin and nested placement',async(mode,source)=>{
++    class ResamplingOfflineAudioContext {
++      readonly destination = {}
++      private sourceBuffer: AudioBuffer | null = null
++
++      constructor(
++        _channels: number,
++        private readonly length: number,
++        private readonly sampleRate: number,
++      ) {}
++
++      createBuffer(channels: number, length: number, sampleRate: number): AudioBuffer {
++        const channelData = Array.from({ length: channels }, () => new Float32Array(length))
++        return {
++          length,
++          sampleRate,
++          duration: length / sampleRate,
++          numberOfChannels: channels,
++          getChannelData: (channel: number) => channelData[channel]!,
++        } as AudioBuffer
++      }
++
++      createBufferSource() {
++        const context = this
++        return {
++          set buffer(value: AudioBuffer | null) {
++            context.sourceBuffer = value
++          },
++          connect() {},
++          start() {},
++        }
++      }
++
++      async startRendering(): Promise<AudioBuffer> {
++        const source = this.sourceBuffer!
++        const output = this.createBuffer(1, this.length, this.sampleRate)
++        const sourceSamples = source.getChannelData(0)
++        const outputSamples = output.getChannelData(0)
++        for (let i = 0; i < outputSamples.length; i++) {
++          outputSamples[i] =
++            sourceSamples[
++              Math.min(
++                sourceSamples.length - 1,
++                Math.floor((i * source.sampleRate) / this.sampleRate),
++              )
++            ]!
++        }
++        return output
++      }
++    }
++    vi.stubGlobal('OfflineAudioContext', ResamplingOfflineAudioContext)
++ try {
++ const fps=30000/1001, origin=17, placement=1
++ const points=[{id:'start',frame:17,gainDb:-60},{id:'peak',frame:19,gainDb:12},{id:'tail',frame:21,gainDb:-20}]
++ const child={id:'rate-child',name:'child',fps,width:1920,height:1080,durationInFrames:10,transitions:[],keyframes:[],items:[makeAudioItem({id:'rate-leaf',trackId:'child-a',src:'blob:audio-'+source,durationInFrames:10,sourceFps:fps,volume:0})],tracks:[makeTrack({id:'child-a',order:0,kind:'audio'})]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'rate-wrapper',type:'composition',trackId:'parent',compositionId:child.id,from:placement,durationInFrames:5,sourceStart:0,sourceFps:fps,speed:1} as CompositionItem
++ const composition:CompositionInputProps={fps,durationInFrames:7,masterOriginFrame:origin,tracks:[makeTrack({id:'parent',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ const curved={...composition,tracks:[{...composition.tracks[0]!,gainEnvelope:points}]}
++ const plainFull=await processAudio(composition), gainFull=await processAudio(curved)
++ const plainWindows=[], gainWindows=[]
++ for await(const w of processAudioWindows(composition)) plainWindows.push(w)
++ for await(const w of processAudioWindows(curved)) gainWindows.push(w)
++ const independentGain=(frame:number)=>{
++   if(frame<=17)return 10**(-60/20)
++   if(frame>=21)return 10**(-20/20)
++   const db=frame<19?-60+(frame-17)*36:12-(frame-19)*16
++   return 10**(db/20)
++ }
++ const pair=mode==='full'?[plainFull!,gainFull!] as const:[plainWindows[0]!,gainWindows[0]!] as const
++ for(const [plain,actual] of [pair]){
++  expect(actual.sampleRate).toBe(48000)
++  expect(actual.channels).toBe(plain.channels)
++  const start=Math.floor(placement*48000/fps)
++  for(let i=start;i<Math.min(actual.samples[0]!.length,start+7000);i++){
++   const frame=origin+i*fps/48000
++   const expected=Math.fround(plain.samples[0]![i]!*independentGain(frame))
++   expect(actual.samples[0]![i],`output ${i}, frame ${frame}`).toBe(expected)
++  }
++ }
++ } finally { clearAudioDecodeCache(); vi.unstubAllGlobals() }
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+index 997a145ddd..35b9af6fba 100644
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1,3 +1,4 @@
++import { applyTrackGain, validateTrackStages, type TrackGainStage } from '@/shared/utils/track-audio'
+ import { applyMasterGain } from '@/shared/utils/master-audio'
+ /**
+  * Canvas Audio Processing System
+@@ -86,6 +87,8 @@ export function clearAudioDecodeCache(): void {
+  * Audio segment representing a timeline item's audio
+  */
+ interface AudioSegment {
++  trackGainStages?: TrackGainStage[]
++  trackRootOrigin?: number
+   itemId: string
+   trackId: string
+   src: string
+@@ -132,6 +135,7 @@ interface TransitionAudioEntry<TItem extends TransitionAudioItem> {
+   trackId: string
+   muted: boolean
+   trackVolume: number
++  trackGainStages?: TrackGainStage[]
+   panStages?: number[]
+   trackAudioEq?: AudioEqSettings
+   audioEqStages?: ResolvedAudioEqSettings[]
+@@ -450,6 +454,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+       sourceFps,
+       volume: (item.volume ?? 0) + entry.trackVolume,
+       trackVolumeDb: entry.trackVolume,
++      trackGainStages: entry.trackGainStages,
+       panStages: entry.panStages,
+       fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+       fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+@@ -511,6 +516,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     if (left.isReversed !== right.isReversed) return false
+     if (Math.abs(left.volume - right.volume) > 0.0001) return false
+     if (left.muted !== right.muted) return false
++    if(JSON.stringify(left.trackGainStages)!==JSON.stringify(right.trackGainStages)) return false
+     if (JSON.stringify(left.panStages) !== JSON.stringify(right.panStages)) return false
+     if (!areAudioEqStagesEqual(left.audioEqStages, right.audioEqStages)) return false
+     if (Math.abs(left.pitchShiftSemitones - right.pitchShiftSemitones) > 0.0001) return false
+@@ -529,6 +535,8 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     sourceFps: segment.sourceFps,
+     volume: segment.volume,
+     trackVolumeDb: segment.trackVolumeDb,
++    trackGainStages: segment.trackGainStages,
++    trackRootOrigin: segment.trackRootOrigin,
+     panStages: segment.panStages,
+     fadeInFrames: segment.fadeInFrames,
+     fadeOutFrames: segment.fadeOutFrames,
+@@ -761,6 +769,8 @@ function appendCompositionAudioSegments(params: {
+   audioPitchShiftSemitones?: number
+   panStages?: number[]
+   visited?: Set<string>
++  trackGainStages?: TrackGainStage[]
++  trackRootOrigin?: number
+ }): void {
+   const { segments, track, compositionItem, subComp, fps } = params
+   const visited = params.visited ?? new Set<string>()
+@@ -774,11 +784,17 @@ function appendCompositionAudioSegments(params: {
+   const linkedSubCompVideoIds = getLinkedVideoIdsWithAudio(subComp.items)
+   const wrapper = resolveCompositionWrapper(compositionItem, fps)
+   const { wrapperSpeed, wrapperSourceFps } = wrapper
++  const trackRootOrigin=params.trackRootOrigin??0
++  const wrapperTrackStages=params.trackGainStages??[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}]
++  const ownerScale=wrapperSpeed*wrapperSourceFps/fps
++  const ownerOffset=wrapper.sourceOffset-(wrapper.compFrom+trackRootOrigin)*ownerScale
+   const trackMuted = (track.muted ?? false) || compositionItem.muted === true
+ 
+   for (const subItem of subComp.items) {
+     const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
+     const subTrackMuted = (subTrack?.muted ?? false) || subItem.muted === true
++    const trackGainStages=[...wrapperTrackStages,...(subTrack?[{trackId:subTrack.id,points:subTrack.gainEnvelope??[],gainDb:subTrack.volume??0,muted:subTrack.muted===true,offset:ownerOffset,scale:ownerScale}]:[])]
++    if(compositionItem.isReversed && trackGainStages.some(s=>s.points.length)) throw new Error('Unsupported reversed composition track automation map')
+     const window = mapNestedItemWindow(subItem, wrapper, fps)
+     if (!window) continue
+     const { overlapStart, overlapEnd, effectiveStart, effectiveDuration } = window
+@@ -816,6 +832,8 @@ function appendCompositionAudioSegments(params: {
+         audioPitchShiftSemitones: wrapperAudioPitchShiftSemitones,
+         panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
+         visited: nestedVisited,
++        trackGainStages,
++        trackRootOrigin,
+       })
+       continue
+     }
+@@ -877,6 +895,7 @@ function appendCompositionAudioSegments(params: {
+       sourceFps: subItem.sourceFps ?? fps,
+       volume: (subItem.volume ?? 0) + (track.volume ?? 0) + (subTrack?.volume ?? 0),
+       trackVolumeDb: (track.volume ?? 0) + (subTrack?.volume ?? 0),
++      trackGainStages,
+       panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
+       fadeInFrames: adjustedFadeInFrames,
+       fadeOutFrames: adjustedFadeOutFrames,
+@@ -989,6 +1008,7 @@ export function extractAudioSegments(
+           trackId: track.id,
+           muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
++          trackGainStages:[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}],
+           panStages: getAudioPanStages(track.pan),
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+@@ -1010,6 +1030,7 @@ export function extractAudioSegments(
+             segments: audioOnlySegments,
+             track,
+             compositionItem: audioItem,
++            trackRootOrigin: composition.masterOriginFrame??0,
+             subComp,
+             fps,
+             audioEqStages: appendResolvedAudioEqSources(busAudioEqStages, track.audioEq),
+@@ -1027,6 +1048,7 @@ export function extractAudioSegments(
+           trackId: track.id,
+           muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
++          trackGainStages:[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}],
+           panStages: getAudioPanStages(track.pan),
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+@@ -1056,6 +1078,7 @@ export function extractAudioSegments(
+           sourceFps: audioItem.sourceFps ?? fps,
+           volume: (item.volume ?? 0) + (track.volume ?? 0),
+           trackVolumeDb: track.volume ?? 0,
++          trackGainStages:[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}],
+           panStages: getAudioPanStages(track.pan),
+           fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+           fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+@@ -1131,6 +1154,7 @@ export function extractAudioSegments(
+         segments,
+         track,
+         compositionItem: compItem,
++        trackRootOrigin: composition.masterOriginFrame??0,
+         subComp,
+         fps,
+         audioEqStages: appendResolvedAudioEqSources(busAudioEqStages, track.audioEq),
+@@ -1138,6 +1162,14 @@ export function extractAudioSegments(
+     }
+   }
+ 
++  for(const segment of segments) {
++    if(segment.trackGainStages?.some(stage=>stage.points.length)) {
++      segment.trackGainStages=validateTrackStages(segment.trackGainStages)
++      segment.volume-=segment.trackVolumeDb
++      segment.trackVolumeDb=0
++      segment.trackRootOrigin=composition.masterOriginFrame??0
++    } else delete segment.trackGainStages
++  }
+   log.info('Extracted audio segments', {
+     count: segments.length,
+     videoCount: segments.filter((s) => s.type === 'video').length,
+@@ -2286,6 +2318,7 @@ function hasPacketCopyEffects(segment: AudioSegment): boolean {
+   return (
+     isAudioPitchShiftActive(segment.pitchShiftSemitones) ||
+     (segment.panStages?.length ?? 0) > 0 ||
++    (segment.trackGainStages?.length??0)>0 ||
+     segment.audioEqStages.some(isAudioEqStageActive)
+   )
+ }
+@@ -2598,6 +2631,11 @@ async function processAudioWindowChannels(
+     if (decoded.sampleRate !== sampleRate) {
+       samples = await resample(samples, decoded.sampleRate, sampleRate)
+     }
++    // Owner gain is sampled on the actual contribution clock after resampling.
++    if (segment.trackGainStages) {
++      applyTrackGain([samples], segment.trackGainStages, fps, sampleRate,
++        segment.trackRootOrigin ?? 0, intersection.intersectionStart)
++    }
+     processed[channel] = samples
+   }
+   return applyAudioPanStages(processed, segment.panStages)
+@@ -2965,10 +3003,15 @@ export async function processAudio(
+           )
+         }
+ 
+-        // Resample to target sample rate
++        // Resample before evaluating owner gain on the output contribution clock.
+         if (decoded.sampleRate !== config.sampleRate) {
+           channelSamples = await resample(channelSamples, decoded.sampleRate, config.sampleRate)
+         }
++        if (segment.trackGainStages) {
++          const contributionStart = Math.floor((segment.startFrame / fps) * config.sampleRate)
++          applyTrackGain([channelSamples], segment.trackGainStages, fps, config.sampleRate,
++            segment.trackRootOrigin ?? 0, contributionStart)
++        }
+ 
+         processedChannels[c] = channelSamples
+       }
+diff --git a/src/features/export/utils/smart-copy.test.ts b/src/features/export/utils/smart-copy.test.ts
+index e4295a526e..e409fa4533 100644
+--- a/src/features/export/utils/smart-copy.test.ts
++++ b/src/features/export/utils/smart-copy.test.ts
+@@ -173,3 +173,10 @@ describe('smart copy eligibility', () => {
+     ).toBe('timeline-layout')
+   })
+ })
++
++it('FL103 active target track curve refuses smart copy, cleared curve and unrelated track remain eligible',()=>{
++ const original=context();const active={...original,tracks:original.tracks.map(t=>({...t,gainEnvelope:[{id:'unity',frame:0,gainDb:0}]}))}
++ expect(assessSmartCopyEligibility(active).eligible).toBe(false)
++ expect(assessSmartCopyEligibility({...active,tracks:active.tracks.map(t=>({...t,gainEnvelope:[]}))}).eligible).toBe(true)
++ expect(assessSmartCopyEligibility({...original,tracks:[...original.tracks,{...original.tracks[0]!,id:'unrelated',muted:true,items:[],gainEnvelope:[{id:'curve',frame:0,gainDb:-20}]}]}).eligible).toBe(true)
++})
+diff --git a/src/features/export/utils/smart-copy.ts b/src/features/export/utils/smart-copy.ts
+index 6d2fcf3593..04069acdcb 100644
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -250,7 +250,7 @@ function hasTimelineAudioProcessing(
+     .some(hasItemAudioProcessing)
+   const trackProcessing = [tracks.video, tracks.audio]
+     .filter((track): track is TimelineTrack => track !== undefined)
+-    .some((track) => (track.volume ?? 0) !== 0 || hasEqProcessing(track.audioEq))
++    .some((track) => (track.volume ?? 0) !== 0 || (track.gainEnvelope?.length??0)>0 || hasEqProcessing(track.audioEq))
+   return (
+     candidate.video.embeddedAudioMuted === true ||
+     itemProcessing ||
+diff --git a/src/features/timeline/stores/timeline-persistence.ts b/src/features/timeline/stores/timeline-persistence.ts
+index a3ac3b6018..5240058b3a 100644
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -1130,6 +1130,7 @@ export async function saveTimeline(projectId: string): Promise<void> {
+  */
+ export async function hydrateTimelineStoresFromProject(project: Project): Promise<void> {
+   validateMasterGainEnvelope(project.timeline?.masterGainEnvelope ?? [])
++  for(const owner of [project.timeline,...(project.timeline?.compositions??[])]) for(const track of owner?.tracks??[]) validateMasterGainEnvelope((track as TimelineTrack).gainEnvelope??[])
+   // Unwind the outgoing runtime context before replacing any live domain
+   // stores. If a Motion composition is active and root items are loaded first,
+   // resetToRoot() mistakes those freshly loaded root items for composition
+diff --git a/src/features/timeline/utils/project-retime.test.ts b/src/features/timeline/utils/project-retime.test.ts
+index d95303e451..c2db58c27f 100644
+--- a/src/features/timeline/utils/project-retime.test.ts
++++ b/src/features/timeline/utils/project-retime.test.ts
+@@ -426,3 +426,21 @@ describe('project retime (FL-94)', () => {
+     expect(failures).toEqual([])
+   })
+ })
++
++
++describe('FL103 envelope-only track retime',()=>{
++ it('retimes empty owning tracks with nearest-frame policy and detects timed content',()=>{
++  const content={items:[],tracks:[{id:'target',gainEnvelope:[{id:'point',frame:12,gainDb:-6}]},{id:'untouched'}]}
++  expect(hasTimedContent(content)).toBe(true)
++  expect(retimeContent(content,24,30).tracks![0]!.gainEnvelope).toEqual([{id:'point',frame:15,gainDb:-6}])
++  expect(content.tracks[0]!.gainEnvelope![0]!.frame).toBe(12)
++  expect(retimeContent(content,24,30).tracks![1]).toEqual(content.tracks[1])
++ })
++ it('refuses collapsed curve points and unsupported cadence without mutating the owner',()=>{
++  const content={items:[],tracks:[{id:'target',gainEnvelope:[{id:'a',frame:1,gainDb:-20},{id:'b',frame:2,gainDb:0}]}]}
++  const original=structuredClone(content)
++  expect(()=>retimeContent(content,240,24)).toThrow()
++  expect(()=>retimeContent(content,30,27.3)).toThrow()
++  expect(content).toEqual(original)
++ })
++})
+diff --git a/src/features/timeline/utils/project-retime.ts b/src/features/timeline/utils/project-retime.ts
+index 5e502065ec..2d747ea481 100644
+--- a/src/features/timeline/utils/project-retime.ts
++++ b/src/features/timeline/utils/project-retime.ts
+@@ -1,3 +1,4 @@
++import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
+ /**
+  * Frameleaf (FL-94): changing the frame rate of a project or sequence that
+  * already has content never retimes it silently. The person picks a policy:
+@@ -236,6 +237,7 @@ export interface RetimableContent {
+ 
+ /** A track's sync lock: on unless turned off or the track is locked (`isTrackSyncLockEnabled`). */
+ export interface RetimeTrack {
++  gainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
+   id: string
+   syncLock?: boolean
+   locked?: boolean
+@@ -359,6 +361,7 @@ export function retimeContent<T extends RetimableContent>(content: T, fromFps: n
+       content.tracks,
+     ),
+   }
++  if(content.tracks) next.tracks=content.tracks.map(track=>track.gainEnvelope?.length ? {...track,gainEnvelope:validateMasterGainEnvelope(track.gainEnvelope.map(p=>({...p,frame:scaleFrame(p.frame,ratio)})))}:track)
+   if (content.transitions) {
+     next.transitions = content.transitions.map((transition) => ({
+       ...transition,
+@@ -406,6 +409,7 @@ export function retimeCompositionReaders(
+ export function hasTimedContent(
+   content:
+     | {
++        tracks?: readonly RetimeTrack[]
+         items?: readonly unknown[]
+         markers?: readonly unknown[]
+         inPoint?: number | null
+@@ -415,7 +419,7 @@ export function hasTimedContent(
+ ): boolean {
+   return Boolean(
+     content &&
+-      ((content.items?.length ?? 0) > 0 ||
++      ((content.tracks?.some(t=>t.gainEnvelope?.length) ?? false) || (content.items?.length ?? 0) > 0 ||
+         (content.markers?.length ?? 0) > 0 ||
+         (content.inPoint ?? null) !== null ||
+         (content.outPoint ?? null) !== null),
+diff --git a/src/runtime/composition-runtime/components/audio-playback-props.ts b/src/runtime/composition-runtime/components/audio-playback-props.ts
+index 5411bf814d..1d726d1aa8 100644
+--- a/src/runtime/composition-runtime/components/audio-playback-props.ts
++++ b/src/runtime/composition-runtime/components/audio-playback-props.ts
+@@ -13,6 +13,7 @@ export interface AudioPlaybackProps {
+   volume?: number
+   /** Static track gain already included in volume; kept separate from clip automation. */
+   trackVolumeDb?: number
++  inheritedTrackVolumeDb?: number
+   playbackRate?: number
+   isReversed?: boolean
+   reverseSourceEnd?: number
+diff --git a/src/runtime/composition-runtime/components/composition-content.tsx b/src/runtime/composition-runtime/components/composition-content.tsx
+index 4287216596..c0dcd237af 100644
+--- a/src/runtime/composition-runtime/components/composition-content.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.tsx
+@@ -70,6 +70,7 @@ interface CompositionContentProps {
+   parentVisible?: boolean
+   renderDepth?: number
+   renderMode?: 'full' | 'visual-only' | 'audio-only'
++  audioInheritedTrackVolumeDb?: number
+   audioGainMultiplier?: number
+   audioGainLiveItemIds?: string[]
+   audioEqStages?: ResolvedAudioEqSettings[]
+@@ -188,6 +189,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+     renderDepth = 0,
+     renderMode = 'full',
+     audioGainMultiplier = 1,
++    audioInheritedTrackVolumeDb = 0,
+     audioGainLiveItemIds,
+     audioEqStages = EMPTY_AUDIO_EQ_STAGES,
+     audioPitchShiftSemitones = 0,
+@@ -518,6 +520,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+             renderDepth={renderDepth}
+             renderCompositionContent={renderCompositionContent}
+             audioGainMultiplier={effectiveAudioGainMultiplier}
++            audioInheritedTrackVolumeDb={audioInheritedTrackVolumeDb}
+             audioGainLiveItemIds={effectiveAudioGainLiveItemIds}
+             audioEqStages={trackMergedEqStages.get(videoItem.trackId) ?? audioEqStages}
+             audioPitchShiftSemitones={audioPitchShiftSemitones}
+@@ -619,6 +622,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+                               : 'full'
+                           }
+                           audioGainMultiplier={effectiveAudioGainMultiplier}
++            audioInheritedTrackVolumeDb={audioInheritedTrackVolumeDb}
+                           audioGainLiveItemIds={effectiveAudioGainLiveItemIds}
+                           audioEqStages={trackMergedEqStages.get(track.trackId) ?? audioEqStages}
+                           audioPitchShiftSemitones={audioPitchShiftSemitones}
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+index 098dad1199..4410d76a71 100644
+--- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+@@ -55,6 +55,7 @@ const DecodedPitchFallbackAudio: React.FC<DecodedPitchFallbackAudioProps> = ({
+   sourceFps,
+   volume,
+   trackVolumeDb,
++  inheritedTrackVolumeDb,
+   playbackRate,
+   isReversed,
+   reverseSourceEnd,
+@@ -125,6 +126,7 @@ const DecodedPitchFallbackAudio: React.FC<DecodedPitchFallbackAudioProps> = ({
+       sourceStartOffsetSec={reversedPlayback ? 0 : sourceStartOffsetSec}
+       volume={volume}
+       trackVolumeDb={trackVolumeDb}
++      inheritedTrackVolumeDb={inheritedTrackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed && !reversedPlayback}
+       reverseSourceEnd={reversedPlayback ? undefined : reverseSourceEnd}
+@@ -187,6 +189,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+   sourceFps,
+   volume = 0,
+   trackVolumeDb,
++  inheritedTrackVolumeDb,
+   playbackRate = 1,
+   isReversed,
+   reverseSourceEnd,
+@@ -216,6 +219,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+     liveGainItemIds,
+     volume,
+     trackVolumeDb,
++  inheritedTrackVolumeDb,
+     muted,
+     durationInFrames,
+     audioFadeIn,
+@@ -416,6 +420,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       sourceFps={sourceFps}
+       volume={volume}
+       trackVolumeDb={trackVolumeDb}
++      inheritedTrackVolumeDb={inheritedTrackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed}
+       reverseSourceEnd={reverseSourceEnd}
+@@ -454,6 +459,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       isComplete={decodedSource.isComplete}
+       volume={volume}
+       trackVolumeDb={trackVolumeDb}
++      inheritedTrackVolumeDb={inheritedTrackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed}
+       reverseSourceEnd={reverseSourceEnd}
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+index 284d6d30e4..7b133e9b37 100644
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -104,6 +104,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+     sourceFps,
+     volume = 0,
+     trackVolumeDb,
++    inheritedTrackVolumeDb,
+     playbackRate = 1,
+     muted = false,
+     durationInFrames,
+@@ -139,6 +140,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       liveGainItemIds,
+       volume,
+       trackVolumeDb,
++      inheritedTrackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+@@ -553,7 +555,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       if (isPreviewScrubbing) return
+ 
+       // Keep the preview graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph({ rootClock })
++      const graph = createPreviewClipAudioGraph({ rootClock, itemId, ancestorItemIds:liveGainItemIds })
+       if (!graph) return
+       graphRef.current = graph
+ 
+diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+index d909bb3577..d5afedd5e9 100644
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -1,3 +1,4 @@
++import { resolveTrackGainStages } from '@/shared/utils/track-audio'
+ import { useCallback, useEffect, useMemo } from 'react'
+ import { useClockPlaybackRate, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useVideoConfig, useIsPlaying } from '../../hooks/use-player-compat'
+@@ -40,11 +41,18 @@ export function useTrackAudioPanStages(itemId: string, ancestorItemIds?: string[
+   )
+ }
+ 
++export function useTrackGainStages(itemId: string, ancestors?: string[]) {
++  const items=useTimelineStore(s=>s.items), tracks=useTimelineStore(s=>s.tracks), compositions=useCompositionsStore(s=>s.compositions)
++  const {fps}=useVideoConfig()
++  return useMemo(()=>resolveTrackGainStages(items,tracks,compositions,itemId,ancestors,fps),[items,tracks,compositions,itemId,ancestors,fps])
++}
++
+ export function useAudioPlaybackState({
+   itemId,
+   liveGainItemIds,
+   volume = 0,
+   trackVolumeDb = 0,
++  inheritedTrackVolumeDb = 0,
+   muted = false,
+   durationInFrames,
+   audioFadeIn = 0,
+@@ -128,14 +136,15 @@ export function useAudioPlaybackState({
+       useEqualPower: true,
+     })
+ 
+-  const linearVolume = Math.pow(10, (effectiveVolumeDb + trackVolumeDb) / 20)
+-  const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier)
++  const trackStages = useTrackGainStages(itemId,liveGainItemIds)
++  const linearVolume = Math.pow(10, (effectiveVolumeDb + (trackStages.length ? 0:trackVolumeDb)) / 20)
++  const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier * (trackStages.length ? 10**(-inheritedTrackVolumeDb/20):1))
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+ 
+   const mixerGain = useMixerLiveGainProduct([itemId, ...(liveGainItemIds ?? [])])
+   useEffect(() => {
+     clearMixerLiveGain(itemId)
+-  }, [itemId, volume])
++  }, [itemId, volume, JSON.stringify(trackStages)])
+ 
+   const resolvedPitchShiftSemitones = useMemo(
+     () =>
+diff --git a/src/runtime/composition-runtime/components/item-content.tsx b/src/runtime/composition-runtime/components/item-content.tsx
+index 1ca91fd05f..2ee6e08854 100644
+--- a/src/runtime/composition-runtime/components/item-content.tsx
++++ b/src/runtime/composition-runtime/components/item-content.tsx
+@@ -68,6 +68,7 @@ export interface RenderCompositionContentProps {
+   parentVisible: boolean
+   renderDepth: number
+   renderMode: CompositionRenderMode
++  audioInheritedTrackVolumeDb?: number
+   audioGainMultiplier: number
+   audioGainLiveItemIds?: string[]
+   audioEqStages?: ResolvedAudioEqSettings[]
+@@ -83,6 +84,7 @@ export interface ItemProps {
+   /** Current composition nesting depth (prevents infinite recursion) */
+   renderDepth?: number
+   compositionRenderMode?: CompositionRenderMode
++  audioInheritedTrackVolumeDb?: number
+   audioGainMultiplier?: number
+   audioGainLiveItemIds?: string[]
+   audioEqStages?: ResolvedAudioEqSettings[]
+@@ -103,6 +105,7 @@ function getItemAudioPlaybackProps({
+   audioEqStages,
+   liveGainItemIds,
+   volumeMultiplier,
++  inheritedTrackVolumeDb,
+ }: {
+   item: TimelineItem
+   trimBefore: number
+@@ -116,6 +119,7 @@ function getItemAudioPlaybackProps({
+   audioEqStages: ResolvedAudioEqSettings[]
+   liveGainItemIds?: string[]
+   volumeMultiplier: number
++  inheritedTrackVolumeDb?: number
+ }): AudioPlaybackProps {
+   return {
+     itemId: item.id,
+@@ -141,6 +145,7 @@ function getItemAudioPlaybackProps({
+     audioEqStages,
+     liveGainItemIds,
+     volumeMultiplier,
++    inheritedTrackVolumeDb,
+   }
+ }
+ 
+@@ -167,6 +172,7 @@ export const ItemContent = React.memo<ItemProps>(
+     renderDepth = 0,
+     compositionRenderMode = 'full',
+     audioGainMultiplier = 1,
++    audioInheritedTrackVolumeDb = 0,
+     audioGainLiveItemIds,
+     audioEqStages,
+     audioPitchShiftSemitones = 0,
+@@ -371,6 +377,7 @@ export const ItemContent = React.memo<ItemProps>(
+         audioEqStages: itemAudioEqStages,
+         liveGainItemIds: audioGainLiveItemIds,
+         volumeMultiplier: audioGainMultiplier,
++        inheritedTrackVolumeDb: audioInheritedTrackVolumeDb,
+       })
+       const externalVideoAudio = renderExternalVideoAudio ? (
+         shouldUseCustomDecodedVideoAudio ? (
+@@ -391,6 +398,9 @@ export const ItemContent = React.memo<ItemProps>(
+       const videoContent = (
+         <>
+           <VideoContent
++            audioGainLiveItemIds={audioGainLiveItemIds}
++            audioGainMultiplier={audioGainMultiplier}
++            audioInheritedTrackVolumeDb={audioInheritedTrackVolumeDb}
+             item={item}
+             muted={muted || renderExternalVideoAudio}
+             safeTrimBefore={safeTrimBefore}
+@@ -452,6 +462,7 @@ export const ItemContent = React.memo<ItemProps>(
+           renderDepth: renderDepth + 1,
+           renderMode: 'audio-only',
+           audioGainMultiplier,
++          audioInheritedTrackVolumeDb,
+           audioGainLiveItemIds,
+           audioEqStages: itemAudioEqStages,
+           audioPitchShiftSemitones: audioPitchShiftSemitones + itemLocalPitchShiftSemitones,
+@@ -491,6 +502,7 @@ export const ItemContent = React.memo<ItemProps>(
+         audioEqStages: itemAudioEqStages,
+         liveGainItemIds: audioGainLiveItemIds,
+         volumeMultiplier: audioGainMultiplier,
++        inheritedTrackVolumeDb: audioInheritedTrackVolumeDb,
+       })
+ 
+       // Use PitchCorrectedAudio for pitch-preserved playback during preview
+@@ -639,6 +651,7 @@ export const ItemContent = React.memo<ItemProps>(
+             renderDepth: renderDepth + 1,
+             renderMode: compositionRenderMode,
+             audioGainMultiplier,
++            audioInheritedTrackVolumeDb,
+             audioGainLiveItemIds,
+             audioEqStages: itemAudioEqStages,
+             audioPitchShiftSemitones: audioPitchShiftSemitones + itemLocalPitchShiftSemitones,
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+index 51f640f28e..0f4ac80a4a 100644
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -145,6 +145,7 @@ export const NativePitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = Rea
+     itemId,
+     volume = 0,
+     trackVolumeDb,
++    inheritedTrackVolumeDb,
+     playbackRate = 1,
+     isReversed = false,
+     reverseSourceEnd,
+@@ -185,6 +186,7 @@ export const NativePitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = Rea
+       liveGainItemIds,
+       volume,
+       trackVolumeDb,
++      inheritedTrackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+@@ -223,7 +225,7 @@ export const NativePitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = Rea
+     useEffect(() => {
+       const audio = acquirePreviewAudioElement(src)
+       // Keep the media element and graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph({ rootClock })
++      const graph = createPreviewClipAudioGraph({ rootClock, itemId, ancestorItemIds:liveGainItemIds })
+       if (!graph) {
+         releasePreviewAudioElement(audio)
+         return
+@@ -481,6 +483,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+       sourceStartOffsetSec = 0,
+       volume = 0,
+       trackVolumeDb,
++      inheritedTrackVolumeDb,
+       playbackRate = 1,
+       isReversed = false,
+       reverseSourceEnd,
+@@ -510,6 +513,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         liveGainItemIds,
+         volume,
+         trackVolumeDb,
++      inheritedTrackVolumeDb,
+         muted,
+         durationInFrames,
+         audioFadeIn,
+@@ -732,6 +736,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         isComplete={decodedSource.isComplete}
+         volume={volume}
+         trackVolumeDb={trackVolumeDb}
++      inheritedTrackVolumeDb={inheritedTrackVolumeDb}
+         playbackRate={playbackRate}
+         isReversed={isReversed}
+         reverseSourceEnd={reverseSourceEnd}
+diff --git a/src/runtime/composition-runtime/components/preview-track-gain.test.tsx b/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
+index 25fb1f6624..018dd3e184 100644
+--- a/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
++++ b/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
+@@ -7,6 +7,7 @@ import { useAudioPlaybackState } from './hooks/use-audio-playback-state'
+ import { useVideoAudioState } from './video-audio-context'
+ 
+ const state = vi.hoisted(() => ({
++  trackCurve: undefined as import('@/shared/utils/master-audio').MasterGainPoint[]|undefined,
+   keyframes: undefined as ItemKeyframes | undefined,
+   preview: undefined as { volume: number } | undefined,
+ }))
+@@ -29,7 +30,7 @@ vi.mock('@/runtime/composition-runtime/deps/stores', () => ({
+     select({
+       keyframes: state.keyframes ? [state.keyframes] : [],
+       items: [{ id: 'clip', trackId: 'audio' }],
+-      tracks: [{ id: 'audio' }],
++      tracks: [{ id: 'audio',volume:-12,gainEnvelope:state.trackCurve }],
+     }),
+ }))
+ vi.mock('../contexts/keyframes-context', () => ({ useItemKeyframesFromContext: () => undefined }))
+@@ -38,6 +39,7 @@ vi.mock('./hooks/use-runtime-item-keyframes', () => ({
+ }))
+ afterEach(() => {
+   cleanup()
++  state.trackCurve = undefined
+   state.keyframes = undefined
+   state.preview = undefined
+ })
+@@ -82,3 +84,10 @@ it.each(['static', 'keyframes', 'gizmo'] as const)(
+     expect(result.current.audio).toBeCloseTo(expected, 8)
+   },
+ )
++
++it('FL103 decoded/native preview removes exactly one scalar while active stage owns gain, preserving gizmo and monitor',()=>{
++ state.trackCurve=[{id:'p',frame:0,gainDb:-20}];state.preview={volume:-9}
++ const clip={id:'clip',trackId:'audio',type:'video',durationInFrames:60,volume:-3,trackVolumeDb:-12} as VideoItem&{trackVolumeDb:number}
++ const {result}=renderHook(()=>({audio:useAudioPlaybackState({itemId:'clip',durationInFrames:60,volume:-15,trackVolumeDb:-12}).resolvedVolume,video:useVideoAudioState(clip,false,[]).audioVolume}))
++ expect(result.current.audio).toBeCloseTo(0.5*10**(-9/20),8);expect(result.current.video).toBeCloseTo(result.current.audio,8)
++})
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+index 217519e3ad..55d210504c 100644
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -41,6 +41,7 @@ export const SoundTouchWorkletAudio: React.FC<SoundTouchWorkletAudioProps> = Rea
+     itemId,
+     volume = 0,
+     trackVolumeDb,
++    inheritedTrackVolumeDb,
+     playbackRate = 1,
+     isReversed = false,
+     reverseSourceEnd,
+@@ -85,6 +86,7 @@ export const SoundTouchWorkletAudio: React.FC<SoundTouchWorkletAudioProps> = Rea
+       liveGainItemIds,
+       volume,
+       trackVolumeDb,
++      inheritedTrackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+@@ -159,7 +161,7 @@ export const SoundTouchWorkletAudio: React.FC<SoundTouchWorkletAudioProps> = Rea
+ 
+     useEffect(() => {
+       // Keep the preview graph alive across EQ toggles; the EQ stages ramp in place below.
+-      const graph = createPreviewClipAudioGraph({ rootClock })
++      const graph = createPreviewClipAudioGraph({ rootClock, itemId, ancestorItemIds:liveGainItemIds })
+       if (!graph) {
+         setFallbackRequested(true)
+         return
+diff --git a/src/runtime/composition-runtime/components/video-audio-context.ts b/src/runtime/composition-runtime/components/video-audio-context.ts
+index 657c0e1a78..34694ce337 100644
+--- a/src/runtime/composition-runtime/components/video-audio-context.ts
++++ b/src/runtime/composition-runtime/components/video-audio-context.ts
+@@ -1,5 +1,10 @@
++import { resolveTrackGainStages } from '@/shared/utils/track-audio'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import { useTrackGainStages } from './hooks/use-audio-playback-state'
+ import type { Clock } from '@/runtime/composition-runtime/deps/player'
+-import { getPreviewMasterInput, reportMasterPreviewUnavailable } from '../utils/preview-master-bus'
++import { reportMasterPreviewUnavailable } from '../utils/preview-master-bus'
+ import { useCallback, useEffect, useMemo } from 'react'
+ import { interpolate, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -16,7 +21,7 @@ import {
+   evaluateAudioFadeOutCurve,
+ } from '@/shared/utils/audio-fade-curve'
+ import { resolvePreviewAudioEqStages } from '@/shared/utils/audio-eq'
+-import { useMixerLiveGain, clearMixerLiveGain } from '@/shared/state/mixer-live-gain'
++import { useMixerLiveGainProduct, clearMixerLiveGain } from '@/shared/state/mixer-live-gain'
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
+ import {
+   createPreviewClipAudioGraph,
+@@ -35,11 +40,18 @@ const connectedVideoElements = new WeakSet<HTMLVideoElement>()
+ const videoAudioGraphs = new WeakMap<HTMLVideoElement, PreviewClipAudioGraph>()
+ const videoAudioContexts = new WeakMap<HTMLVideoElement, AudioContext>()
+ 
++function hasTrackAutomation(itemId?:string,ancestors:string[]=[]):boolean {
++ if(!itemId) return false
++ try{const state=useItemsStore.getState();return resolveTrackGainStages(state.items,state.tracks,useCompositionsStore.getState().compositions,itemId,ancestors,useTimelineSettingsStore.getState().fps).length>0}catch{return true}
++}
++
+ export function applyVideoElementAudioState(
+   video: HTMLVideoElement,
+   audioVolume: number,
+   audioEqStages: ReadonlyArray<ResolvedAudioEqSettings>,
+   rootClock: Clock,
++  itemId?: string,
++  ancestorItemIds?: string[],
+ ): void {
+   // Pool creates elements muted. Keep element unmuted and control via volume/gain.
+   video.muted = false
+@@ -50,8 +62,7 @@ export function applyVideoElementAudioState(
+     const graph = videoAudioGraphs.get(video)
+     const audioContext = videoAudioContexts.get(video)
+     if (graph && audioContext) {
+-      graph.outputGainNode.disconnect()
+-      graph.outputGainNode.connect(getPreviewMasterInput(rootClock, audioContext))
++      graph.setTrackOwner(rootClock,itemId,ancestorItemIds)
+     }
+     if (graph && audioContext?.state === 'running') {
+       rampPreviewClipEq(graph, audioEqStages)
+@@ -70,11 +81,11 @@ export function applyVideoElementAudioState(
+   // Always route preview video audio through the shared clip graph so future
+   // EQ/SFX can be inserted in one place for video and audio clips alike.
+   try {
+-    const graph = createPreviewClipAudioGraph({ eqStageCount: audioEqStages.length, rootClock })
++    const graph = createPreviewClipAudioGraph({ eqStageCount: audioEqStages.length, rootClock, itemId, ancestorItemIds })
+     if (!graph) {
+       reportMasterPreviewUnavailable()
+       const state = usePlaybackStore.getState()
+-      video.volume = state.masterGainEnvelope.length
++      video.volume = state.masterGainEnvelope.length || hasTrackAutomation(itemId,ancestorItemIds)
+         ? 0
+         : state.masterBusMuted
+           ? 0
+@@ -99,7 +110,7 @@ export function applyVideoElementAudioState(
+     // Fallback if Web Audio setup fails.
+     reportMasterPreviewUnavailable()
+     const state = usePlaybackStore.getState()
+-    video.volume = state.masterGainEnvelope.length
++    video.volume = state.masterGainEnvelope.length || hasTrackAutomation(itemId,ancestorItemIds)
+       ? 0
+       : state.masterBusMuted
+         ? 0
+@@ -177,6 +188,8 @@ export function useVideoAudioState(
+   item: VideoItem & { _sequenceFrameOffset?: number; trackVolumeDb?: number },
+   muted: boolean,
+   audioEqStages: ReadonlyArray<ResolvedAudioEqSettings>,
++  ancestorItemIds?: string[],
++  inheritedTrackVolumeDb=0,
+ ): {
+   audioVolume: number
+   resolvedAudioEqStages: ResolvedAudioEqSettings[]
+@@ -208,7 +221,8 @@ export function useVideoAudioState(
+     volumeKeyframes.length > 0
+       ? interpolatePropertyValue(volumeKeyframes, frame, staticVolumeDb)
+       : staticVolumeDb
+-  const volumeDb = itemVolumeDb + (item.trackVolumeDb ?? 0)
++  const trackStages=useTrackGainStages(item.id,ancestorItemIds)
++  const volumeDb = itemVolumeDb + (trackStages.length ? 0:(item.trackVolumeDb ?? 0))
+ 
+   // Use preview values if available, otherwise use item's stored values
+   const audioFadeIn = preview?.audioFadeIn ?? item.audioFadeIn ?? 0
+@@ -225,11 +239,11 @@ export function useVideoAudioState(
+ 
+   // Mixer fader live gain - updated during drag without re-rendering the composition.
+   // Clear when the composition re-renders with updated track volume (trackVolumeDb changes).
+-  const mixerGain = useMixerLiveGain(item.id)
++  const mixerGain = useMixerLiveGainProduct([item.id,...(ancestorItemIds??[])])
+   const trackVolumeDb = item.trackVolumeDb
+   useEffect(() => {
+     clearMixerLiveGain(item.id)
+-  }, [trackVolumeDb, item.id])
++  }, [trackVolumeDb, item.id, JSON.stringify(trackStages)])
+ 
+   if (muted) {
+     return {
+@@ -287,7 +301,7 @@ export function useVideoAudioState(
+   // +20dB = 10x, -20dB = 0.1x, -60dB ≈ 0.001x
+   const linearVolume = Math.pow(10, volumeDb / 20)
+   // Item volume with fades - allow values > 1 for volume boost (Web Audio API handles this)
+-  const itemVolume = Math.max(0, linearVolume * fadeMultiplier)
++  const itemVolume = Math.max(0, linearVolume * fadeMultiplier * (trackStages.length ? 10**(-inheritedTrackVolumeDb/20):1))
+ 
+   // Apply master bus gain (project) then monitor volume (per-device).
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+diff --git a/src/runtime/composition-runtime/components/video-content.tsx b/src/runtime/composition-runtime/components/video-content.tsx
+index 60c1717480..172aa3c508 100644
+--- a/src/runtime/composition-runtime/components/video-content.tsx
++++ b/src/runtime/composition-runtime/components/video-content.tsx
+@@ -90,6 +90,7 @@ function isRecoverableVideoLoadError(message: string): boolean {
+ const NativePreviewVideo: React.FC<{
+   poolClipId: string
+   itemId: string
++  audioGainLiveItemIds?: string[]
+   src: string
+   safeTrimBefore: number
+   sequenceFrameOffset?: number
+@@ -107,6 +108,7 @@ const NativePreviewVideo: React.FC<{
+ }> = ({
+   poolClipId,
+   itemId,
++  audioGainLiveItemIds,
+   src,
+   safeTrimBefore,
+   sequenceFrameOffset = 0,
+@@ -395,7 +397,7 @@ const NativePreviewVideo: React.FC<{
+ 
+     elementRef.current = element
+     syncRegisteredVideoElement(itemIdRef.current, element)
+-    applyVideoElementAudioState(element, audioVolumeRef.current, audioEqStagesRef.current, clock)
++    applyVideoElementAudioState(element, audioVolumeRef.current, audioEqStagesRef.current, clock,itemIdRef.current,audioGainLiveItemIds)
+ 
+     if (initialRequiresVisualSeek) {
+       element.pause()
+@@ -1079,7 +1081,7 @@ const NativePreviewVideo: React.FC<{
+   useEffect(() => {
+     const video = elementRef.current
+     if (!video) return
+-    applyVideoElementAudioState(video, audioVolume, audioEqStages, clock)
++    applyVideoElementAudioState(video, audioVolume, audioEqStages, clock,itemId,audioGainLiveItemIds)
+   }, [audioEqStages, audioVolume, clock])
+ 
+   // Guard: itemId is required for rendering
+@@ -1140,7 +1142,13 @@ export const VideoContent: React.FC<{
+   reverseSourceEnd?: number
+   audioEqStages: ReadonlyArray<ResolvedAudioEqSettings>
+   forceCssComposite?: boolean
++  audioGainLiveItemIds?: string[]
++  audioGainMultiplier?: number
++  audioInheritedTrackVolumeDb?: number
+ }> = ({
++  audioGainLiveItemIds,
++  audioGainMultiplier = 1,
++  audioInheritedTrackVolumeDb = 0,
+   item,
+   muted,
+   safeTrimBefore,
+@@ -1155,12 +1163,14 @@ export const VideoContent: React.FC<{
+     item,
+     muted,
+     audioEqStages,
++    audioGainLiveItemIds,
++    audioInheritedTrackVolumeDb,
+   )
+   // During transition overlaps, the composition's audio crossfade system
+   // (CustomDecoderAudio) handles audio mixing. Mute the DOM video element
+   // to prevent doubling — one audio stream from the element and another
+   // from the crossfade renderer.
+-  const audioVolume = item._sharedTransitionSync ? 0 : baseAudioVolume
++  const audioVolume = item._sharedTransitionSync ? 0 : baseAudioVolume * audioGainMultiplier
+   const [hasError, setHasError] = useState(false)
+   // ProRes (and other browser-undecodable codecs) can't play through a <video>
+   // element, so on failure we fall back to live turbores decode painted to a canvas.
+@@ -1279,6 +1289,7 @@ export const VideoContent: React.FC<{
+   // Export uses Canvas + WebCodecs (client-render-engine.ts), not Composition's renderer
+   return (
+     <NativePreviewVideo
++      audioGainLiveItemIds={audioGainLiveItemIds}
+       poolClipId={item._poolClipId ?? item.id}
+       itemId={item.id}
+       src={item.src!}
+diff --git a/src/runtime/composition-runtime/compositions/main-composition.tsx b/src/runtime/composition-runtime/compositions/main-composition.tsx
+index ba33ba5c75..d51b7080b6 100644
+--- a/src/runtime/composition-runtime/compositions/main-composition.tsx
++++ b/src/runtime/composition-runtime/compositions/main-composition.tsx
+@@ -650,6 +650,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({
+                         parentMuted={segment.muted}
+                         renderMode="audio-only"
+                         audioGainMultiplier={Math.pow(10, segment.volumeDb / 20)}
++                        audioInheritedTrackVolumeDb={compoundItem.trackVolumeDb}
+                         audioEqStages={appendResolvedAudioEqSources(
+                           undefined,
+                           busAudioEq,
+@@ -675,6 +676,7 @@ export const MainComposition: React.FC<MainCompositionProps> = ({
+                       item={item}
+                       parentMuted={item.muted || !item.trackVisible}
+                       renderMode="audio-only"
++                      audioInheritedTrackVolumeDb={item.trackVolumeDb}
+                       audioGainMultiplier={Math.pow(
+                         10,
+                         ((item.volume ?? 0) + (item.trackVolumeDb ?? 0)) / 20,
+diff --git a/src/runtime/composition-runtime/utils/preview-audio-graph.ts b/src/runtime/composition-runtime/utils/preview-audio-graph.ts
+index 37deaa272e..15a4c6e14c 100644
+--- a/src/runtime/composition-runtime/utils/preview-audio-graph.ts
++++ b/src/runtime/composition-runtime/utils/preview-audio-graph.ts
+@@ -1,3 +1,4 @@
++import { createPreviewTrackStage } from './preview-track-stage'
+ import type { Clock } from '@/runtime/composition-runtime/deps/player'
+ import { getPreviewMasterInput, reportMasterPreviewUnavailable } from './preview-master-bus'
+ import {
+@@ -34,6 +35,7 @@ export interface PreviewClipAudioGraph {
+   outputGainNode: GainNode
+   eqStageNodes: PreviewClipAudioEqStageNodes[]
+   panNodes: StereoPannerNode[]
++  setTrackOwner: (clock:Clock,itemId?:string,ancestors?:readonly string[])=>void
+   dispose: () => void
+ }
+ 
+@@ -494,6 +496,8 @@ function ensurePreviewClipEqStage(
+ export function createPreviewClipAudioGraph(options?: {
+   eqStageCount?: number
+   rootClock?: Clock
++  itemId?: string
++  ancestorItemIds?: readonly string[]
+ }): PreviewClipAudioGraph | null {
+   const context = getSharedPreviewAudioContext()
+   if (!context) {
+@@ -510,13 +514,24 @@ export function createPreviewClipAudioGraph(options?: {
+     createPreviewClipAudioEqStage(context, DEFAULT_AUDIO_EQ_SETTINGS),
+   )
+ 
++  let releaseTrackStage: (()=>void)|undefined
++  let trackOwnerKey="", trackRoot:Clock|undefined
+   const graph: PreviewClipAudioGraph = {
+     context,
+     sourceInputNode,
+     outputGainNode,
+     eqStageNodes,
+     panNodes: [],
++    setTrackOwner:(clock,itemId,ancestors=[])=>{
++      const key=JSON.stringify([itemId,ancestors])
++      if(trackRoot===clock && trackOwnerKey===key) return
++      releaseTrackStage?.();outputGainNode.disconnect();trackRoot=clock;trackOwnerKey=key
++      const destination=getPreviewMasterInput(clock,context)
++      if(itemId) releaseTrackStage=createPreviewTrackStage(clock,context,outputGainNode,destination,itemId,ancestors)
++      else {releaseTrackStage=undefined;outputGainNode.connect(destination)}
++    },
+     dispose: () => {
++      releaseTrackStage?.()
+       sourceInputNode.disconnect()
+       for (const stageNodes of eqStageNodes) {
+         disconnectStageInternals(stageNodes)
+@@ -527,9 +542,9 @@ export function createPreviewClipAudioGraph(options?: {
+   }
+ 
+   reconnectPreviewClipAudioGraph(graph)
+-  outputGainNode.connect(
+-    options?.rootClock ? getPreviewMasterInput(options.rootClock, context) : context.destination,
+-  )
++  const destination=options?.rootClock ? getPreviewMasterInput(options.rootClock, context) : context.destination
++  if(options?.rootClock) graph.setTrackOwner(options.rootClock,options.itemId,options.ancestorItemIds)
++  else outputGainNode.connect(destination)
+   return graph
+ }
+ 
+diff --git a/src/runtime/composition-runtime/utils/preview-track-stage.test.ts b/src/runtime/composition-runtime/utils/preview-track-stage.test.ts
+new file mode 100644
+index 0000000000..08a74ed906
+--- /dev/null
++++ b/src/runtime/composition-runtime/utils/preview-track-stage.test.ts
+@@ -0,0 +1,111 @@
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
++import { createPreviewTrackStage } from './preview-track-stage'
++import type { TrackAudioEpoch } from '@/shared/utils/track-audio'
++import type { Clock } from '@/runtime/composition-runtime/deps/player'
++afterEach(() => vi.unstubAllGlobals())
++it('native graph producer ACKs each curve/static/mute/history revision while transport stays unchanged, and disconnects retired owners', async () => {
++  let ready!: () => void
++  const moduleReady = new Promise<void>((r) => (ready = r))
++  const nodes: Node[] = [],
++    gates: {
++      gain: { setValueAtTime: ReturnType<typeof vi.fn> }
++      connect: ReturnType<typeof vi.fn>
++      disconnect: ReturnType<typeof vi.fn>
++    }[] = []
++  class Node {
++    port = {
++      postMessage: vi.fn(),
++      onmessage: null as null | ((e: { data: unknown }) => void),
++      close: vi.fn(),
++    }
++    connect = vi.fn()
++    disconnect = vi.fn()
++    onprocessorerror: unknown
++    constructor() {
++      nodes.push(this)
++    }
++  }
++  vi.stubGlobal('AudioWorkletNode', Node)
++  const context = {
++    currentTime: 0,
++    state: 'running',
++    audioWorklet: { addModule: () => moduleReady },
++    createGain: () => {
++      const g = {
++        gain: { value: 0, setValueAtTime: vi.fn() },
++        connect: vi.fn(),
++        disconnect: vi.fn(),
++      }
++      gates.push(g)
++      return g
++    },
++  } as unknown as AudioContext
++  const transport = {
++    context,
++    rootId: 'r',
++    contextId: 'c',
++    generation: 5,
++    contextTime: 0,
++    frame: 0,
++    num: 30,
++    den: 1,
++    rate: 1,
++    running: true,
++    loop: true,
++    firstFrame: 0,
++    lastFrame: 29,
++  }
++  const clock = Object.assign(new EventTarget(), {
++    getAudioTransportSnapshot: () => transport,
++  }) as unknown as Clock
++  const curve = [{ id: 'p', frame: 0, gainDb: -20 }],
++    track = { id: 'a1', volume: -3, gainEnvelope: curve, muted: false }
++  useItemsStore.setState({
++    items: [{ id: 'clip', trackId: 'a1', type: 'audio' } as never],
++    tracks: [track as never],
++  })
++  useCompositionsStore.setState({ compositions: [] })
++  const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode
++  const dispose = createPreviewTrackStage(clock, context, input, {} as AudioNode, 'clip')
++  expect(nodes).toHaveLength(0)
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++  ready()
++  await vi.waitFor(() => expect(nodes).toHaveLength(1))
++  const latest = () => nodes[0]!.port.postMessage.mock.lastCall![0] as TrackAudioEpoch
++  const ack = (v = latest(), accepted = true) =>
++    nodes[0]!.port.onmessage!({
++      data: { rootId: 'r', contextId: 'c', revision: v.revision, accepted },
++    })
++  const old = latest()
++  ack()
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(1)
++  for (const updates of [
++    { volume: -9 },
++    { gainEnvelope: [{ id: 'p', frame: 0, gainDb: -10 }] },
++    { muted: true },
++    { ...track },
++  ]) {
++    const previous = latest()
++    useItemsStore.setState({ tracks: [{ ...track, ...updates } as never] })
++    expect(latest().revision).toBeGreaterThan(previous.revision)
++    expect(latest().epoch.generation).toBe(5)
++    expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++    ack(old)
++    expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++    ack()
++  }
++  // A terminal processor failure must invalidate an already matching pending ACK.
++  const terminal = latest()
++  ;(nodes[0]!.onprocessorerror as () => void)()
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++  ack(terminal)
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++  useItemsStore.setState({ tracks: [{ ...track, volume: -4 } as never] })
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
++  dispose()
++  expect(nodes[0]!.disconnect).toHaveBeenCalled()
++  expect(nodes[0]!.port.close).toHaveBeenCalled()
++  expect(nodes[0]!.port.onmessage).toBeNull()
++})
+diff --git a/src/runtime/composition-runtime/utils/preview-track-stage.ts b/src/runtime/composition-runtime/utils/preview-track-stage.ts
+new file mode 100644
+index 0000000000..ed3cbeec79
+--- /dev/null
++++ b/src/runtime/composition-runtime/utils/preview-track-stage.ts
+@@ -0,0 +1,184 @@
++import type { Clock } from '@/runtime/composition-runtime/deps/player'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import { resolveTrackGainStages, type TrackAudioEpoch } from '@/shared/utils/track-audio'
++import moduleUrl from '../worklets/track-gain-processor.worklet.ts?worker&url'
++const modules = new WeakMap<AudioContext, Promise<void>>()
++/** Independent publication revision: store/history edits replace gain even without transport changes. */
++export function createPreviewTrackStage(
++  clock: Clock,
++  context: AudioContext,
++  input: AudioNode,
++  destination: AudioNode,
++  itemId: string,
++  ancestors: readonly string[] = [],
++): () => void {
++  const gate = context.createGain()
++  gate.channelInterpretation = 'discrete'
++  gate.gain.value = 0
++  gate.connect(destination)
++  let processor: AudioWorkletNode | null = null,
++    disposed = false,
++    loaded = false,
++    revision = 0,
++    pending: TrackAudioEpoch | null = null,
++    loading = false,
++    failed = false
++  const silent = () => {
++    gate.gain.setValueAtTime(0, context.currentTime)
++  }
++  const publish = () => {
++    if (disposed || failed) return
++    silent()
++    const anchor = clock.getAudioTransportSnapshot()
++    if (anchor.context !== context || !anchor.contextId) return
++    let stages
++    try {
++      const state = useItemsStore.getState()
++      stages = resolveTrackGainStages(
++        state.items,
++        state.tracks,
++        useCompositionsStore.getState().compositions,
++        itemId,
++        ancestors,
++        useTimelineSettingsStore.getState().fps,
++      )
++    } catch {
++      pending = null
++      input.disconnect()
++      return
++    }
++    if (!stages.length) {
++      input.disconnect()
++      processor?.disconnect()
++      input.connect(gate)
++      gate.gain.setValueAtTime(1, context.currentTime)
++      pending = null
++      return
++    }
++    input.disconnect()
++    if (!loaded) {
++      if (!loading) {
++        loading = true
++        let module = modules.get(context)
++        if (!module) {
++          module = context.audioWorklet.addModule(moduleUrl)
++          modules.set(context, module)
++        }
++        void module
++          .then(() => {
++            loaded = true
++            publish()
++          })
++          .catch(() => {
++            failed = true
++            pending = null
++            silent()
++          })
++      }
++      return
++    }
++    if (!processor) {
++      processor = new AudioWorkletNode(context, 'frameleaf-track-gain', {
++        numberOfInputs: 1,
++        numberOfOutputs: 1,
++        channelCountMode: 'max',
++        channelInterpretation: 'discrete',
++        processorOptions: { rootId: anchor.rootId, contextId: anchor.contextId },
++      })
++      processor.onprocessorerror = () => {
++        failed = true
++        pending = null
++        silent()
++      }
++      processor.port.onmessage = (
++        event: MessageEvent<{
++          rootId: string
++          contextId: string
++          revision: number
++          accepted: boolean
++        }>,
++      ) => {
++        const ack = event.data
++        if (
++          disposed ||
++          failed ||
++          !pending ||
++          ack.rootId !== pending.epoch.rootId ||
++          ack.contextId !== pending.epoch.contextId ||
++          ack.revision !== pending.revision
++        )
++          return
++        const now = clock.getAudioTransportSnapshot()
++        if (
++          now.generation !== pending.epoch.generation ||
++          now.rootId !== pending.epoch.rootId ||
++          now.context !== context
++        )
++          return
++        if (!ack.accepted) {
++          failed = true
++          pending = null
++          silent()
++          return
++        }
++        gate.gain.setValueAtTime(
++          pending.epoch.running && context.state === 'running' ? 1 : 0,
++          context.currentTime,
++        )
++      }
++    }
++    input.connect(processor)
++    processor.connect(gate)
++    pending = {
++      revision: ++revision,
++      epoch: {
++        rootId: anchor.rootId,
++        contextId: anchor.contextId,
++        generation: anchor.generation,
++        contextTime: anchor.contextTime,
++        frame: anchor.frame,
++        num: anchor.num,
++        den: anchor.den,
++        rate: anchor.rate,
++        running: anchor.running,
++        loop: anchor.loop,
++        firstFrame: anchor.firstFrame,
++        lastFrame: anchor.lastFrame,
++        gainDb: 0,
++        muted: false,
++        points: [],
++      },
++      stages,
++    }
++    processor.port.postMessage(pending)
++  }
++  const unsubItems = useItemsStore.subscribe((s, p) => {
++    if (s.tracks !== p.tracks || s.items !== p.items) publish()
++  })
++  const unsubComps = useCompositionsStore.subscribe((s, p) => {
++    if (s.compositions !== p.compositions) publish()
++  })
++  const unsubSettings = useTimelineSettingsStore.subscribe((s, p) => {
++    if (s.fps !== p.fps) publish()
++  })
++  clock.addEventListener('transportchange', publish)
++  publish()
++  return () => {
++    disposed = true
++    pending = null
++    silent()
++    clock.removeEventListener('transportchange', publish)
++    unsubItems()
++    unsubComps()
++    unsubSettings()
++    input.disconnect()
++    processor?.disconnect()
++    if (processor) {
++      processor.port.onmessage = null
++      processor.port.close()
++    }
++    gate.disconnect()
++  }
++}
+diff --git a/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.test.ts b/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.test.ts
+new file mode 100644
+index 0000000000..d75bbb7895
+--- /dev/null
++++ b/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.test.ts
+@@ -0,0 +1,90 @@
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import type { TrackAudioEpoch } from '@/shared/utils/track-audio'
++import { masterFrameAtSample } from '@/shared/utils/master-audio-epoch'
++import { masterGainAtFrame } from '@/shared/utils/master-audio'
++afterEach(() => vi.unstubAllGlobals())
++it('actual track worklet maps root loops first on eight planes; replaces map/curve/mute with independent ACK', async () => {
++  let Constructor: new (options: unknown) => {
++    port: { onmessage: (event: { data: TrackAudioEpoch }) => void }
++    process: (inputs: Float32Array[][], outputs: Float32Array[][]) => boolean
++  }
++  const acknowledgements: unknown[] = []
++  vi.stubGlobal(
++    'AudioWorkletProcessor',
++    class {
++      port = { onmessage: null, postMessage: (value: unknown) => acknowledgements.push(value) }
++    },
++  )
++  vi.stubGlobal('registerProcessor', (_name: string, ctor: typeof Constructor) => {
++    Constructor = ctor
++  })
++  vi.stubGlobal('sampleRate', 120)
++  vi.stubGlobal('currentFrame', 0)
++  await import('./track-gain-processor.worklet')
++  const p = new Constructor!({ processorOptions: { rootId: 'root', contextId: 'context' } })
++  const points = [
++    { id: 'a', frame: 0, gainDb: -20 },
++    { id: 'b', frame: 30, gainDb: 0 },
++  ]
++  const value: TrackAudioEpoch = {
++    revision: 1,
++    epoch: {
++      rootId: 'root',
++      contextId: 'context',
++      generation: 7,
++      contextTime: 0,
++      frame: 12.5,
++      num: 30000,
++      den: 1001,
++      rate: -2,
++      running: true,
++      loop: true,
++      firstFrame: 10,
++      lastFrame: 14,
++      gainDb: 0,
++      muted: false,
++      points: [],
++    },
++    stages: [
++      { trackId: 'a1', points, gainDb: -6, muted: false, offset: 0, scale: 1 },
++      { trackId: 'child', points, gainDb: -3, muted: false, offset: 2, scale: 0.8 },
++    ],
++  }
++  const inputs = [Array.from({ length: 8 }, (_, c) => new Float32Array(128).fill((c + 1) / 8))],
++    outputs = [inputs[0]!.map((x) => new Float32Array(x.length))]
++  p.process(inputs, outputs)
++  expect(outputs[0]!.every((x) => x.every((y) => y === 0))).toBe(true)
++  p.port.onmessage({ data: value })
++  expect(acknowledgements.at(-1)).toEqual({
++    rootId: 'root',
++    contextId: 'context',
++    revision: 1,
++    accepted: true,
++  })
++  for (let block = 0; block < 100; block++) {
++    vi.stubGlobal('currentFrame', block * 128)
++    p.process(inputs, outputs)
++    for (let i = 0; i < 128; i += 17) {
++      const f = masterFrameAtSample(value.epoch, block * 128 + i, 120),
++        gain = masterGainAtFrame(points, f) * masterGainAtFrame(points, 2 + 0.8 * f)
++      for (let c = 0; c < 8; c++) expect(outputs[0]![c]![i]).toBeCloseTo(((c + 1) / 8) * gain, 6)
++    }
++  }
++  p.port.onmessage({
++    data: { ...value, revision: 2, stages: [{ ...value.stages[0]!, points: [], gainDb: -6 }] },
++  })
++  vi.stubGlobal('currentFrame', 12800)
++  p.process(inputs, outputs)
++  expect(outputs[0]![0]![0]).toBeCloseTo(10 ** (-6 / 20) / 8, 6)
++  p.port.onmessage({
++    data: { ...value, revision: 3, stages: [{ ...value.stages[0]!, muted: true }] },
++  })
++  p.process(inputs, outputs)
++  expect(outputs[0]!.every((x) => x.every((y) => y === 0))).toBe(true)
++  p.port.onmessage({
++    data: { ...value, revision: 4, epoch: { ...value.epoch, rootId: 'foreign' } },
++  })
++  expect(acknowledgements.at(-1)).toMatchObject({ accepted: false })
++  p.process(inputs, outputs)
++  expect(outputs[0]!.every((x) => x.every((y) => y === 0))).toBe(true)
++})
+diff --git a/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.ts b/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.ts
+new file mode 100644
+index 0000000000..73a4e5f974
+--- /dev/null
++++ b/src/runtime/composition-runtime/worklets/track-gain-processor.worklet.ts
+@@ -0,0 +1,31 @@
++import { TrackGainProcessor, type TrackAudioEpoch } from '@/shared/utils/track-audio'
++declare const currentFrame: number
++declare const sampleRate: number
++declare abstract class AudioWorkletProcessor {
++  readonly port: MessagePort
++  constructor(options?: unknown)
++}
++declare function registerProcessor(
++  name: string,
++  constructor: new (options: {
++    processorOptions: { rootId: string; contextId: string }
++  }) => AudioWorkletProcessor,
++): void
++class RootTrackProcessor extends AudioWorkletProcessor {
++  private readonly processor: TrackGainProcessor
++  constructor(options: { processorOptions: { rootId: string; contextId: string } }) {
++    super()
++    const { rootId, contextId } = options.processorOptions
++    this.processor = new TrackGainProcessor(rootId, contextId)
++    this.port.onmessage = (event: MessageEvent<TrackAudioEpoch>) => {
++      const value = event.data
++      const accepted = this.processor.replace(value)
++      this.port.postMessage({ rootId, contextId, revision: value.revision, accepted })
++    }
++  }
++  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
++    this.processor.process(inputs[0] ?? [], outputs[0] ?? [], currentFrame, sampleRate)
++    return true
++  }
++}
++registerProcessor('frameleaf-track-gain', RootTrackProcessor)
+diff --git a/src/shared/utils/track-audio.test.ts b/src/shared/utils/track-audio.test.ts
+new file mode 100644
+index 0000000000..4ff9ad5d93
+--- /dev/null
++++ b/src/shared/utils/track-audio.test.ts
+@@ -0,0 +1,169 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { masterGainAtFrame } from './master-audio'
++import { masterFrameAtSample, type MasterAudioEpoch } from './master-audio-epoch'
++import {
++  trackGainAtRootFrame,
++  applyTrackGain,
++  TrackGainProcessor,
++  resolveTrackGainStages,
++} from './track-audio'
++const curve = [
++  { id: 'a', frame: 0, gainDb: -20 },
++  { id: 'b', frame: 30, gainDb: 0 },
++]
++const stage = { trackId: 'a1', points: curve, gainDb: -2, muted: false, offset: 0, scale: 1 }
++const epoch: MasterAudioEpoch = {
++  rootId: 'r',
++  contextId: 'c',
++  generation: 1,
++  contextTime: 0,
++  frame: 0,
++  num: 30,
++  den: 1,
++  rate: 1,
++  running: true,
++  loop: true,
++  firstFrame: 0,
++  lastFrame: 29,
++  gainDb: 0,
++  muted: false,
++  points: [],
++}
++describe('track gain sample authority', () => {
++  it('uses linear master evaluator and independent owner maps after root modulo', () => {
++    const f = masterFrameAtSample(epoch, 45 * 1600, 48000)
++    expect(f).toBe(15)
++    expect(
++      trackGainAtRootFrame([stage, { ...stage, trackId: 'nested', offset: 3, scale: 0.5 }], f),
++    ).toBeCloseTo(masterGainAtFrame(curve, 15) * masterGainAtFrame(curve, 10.5), 12)
++  })
++  it('applies selected-range origin uniformly without folding six planes', () => {
++    const planes = Array.from({ length: 6 }, (_, i) => new Float32Array([i + 1, i + 1]))
++    applyTrackGain(planes, [stage], 30, 48000, 15, 0)
++    planes.forEach((p, i) => expect(p[0]).toBeCloseTo((i + 1) * 10 ** (-10 / 20), 6))
++  })
++  it('replaces track revision independently from unchanged transport generation; bad ACK data is silent', () => {
++    const p = new TrackGainProcessor('r', 'c')
++    const out = [new Float32Array(1)]
++    expect(p.replace({ epoch, revision: 1, stages: [stage] })).toBe(true)
++    p.process([new Float32Array([1])], out, 0, 48000)
++    expect(out[0]![0]).toBeCloseTo(0.1, 6)
++    expect(p.replace({ epoch, revision: 2, stages: [{ ...stage, points: [], gainDb: -6 }] })).toBe(
++      true,
++    )
++    p.process([new Float32Array([1])], out, 0, 48000)
++    expect(out[0]![0]).toBeCloseTo(10 ** (-6 / 20), 6)
++    expect(p.replace({ epoch, revision: 1, stages: [stage] })).toBe(false)
++    p.process([new Float32Array([1])], out, 0, 48000)
++    expect(out[0]![0]).toBe(0)
++  })
++  it('preserves cleared static fallback and loops for 100 passes without timers', () => {
++    const p = new TrackGainProcessor('r', 'c')
++    p.replace({ epoch, revision: 1, stages: [stage] })
++    for (let k = 0; k < 100; k++) {
++      const out = [new Float32Array(1)]
++      p.process([new Float32Array([1])], out, (k * 30 + 15) * 1600, 48000)
++      expect(out[0]![0]).toBeCloseTo(10 ** (-10 / 20), 6)
++    }
++    expect(trackGainAtRootFrame([{ ...stage, points: [] }], 15)).toBeCloseTo(10 ** (-2 / 20), 12)
++    expect(trackGainAtRootFrame([{ ...stage, muted: true }], 15)).toBe(0)
++  })
++  it('maps reused nested ownership through trim, speed and cadence without editing tracks', () => {
++    const leaf = { id: 'leaf', trackId: 'child', type: 'audio', from: 0, durationInFrames: 100 }
++    const wrappers = [
++      {
++        id: 'w1',
++        trackId: 'a1',
++        type: 'composition',
++        compositionId: 'sub',
++        from: 30,
++        durationInFrames: 60,
++        sourceStart: 12,
++        sourceFps: 24,
++        speed: 2,
++      },
++      {
++        id: 'w2',
++        trackId: 'a1',
++        type: 'composition',
++        compositionId: 'sub',
++        from: 120,
++        durationInFrames: 60,
++        sourceStart: 12,
++        sourceFps: 24,
++        speed: 2,
++      },
++    ]
++    const tracks = [{ id: 'a1', volume: -3, gainEnvelope: curve }],
++      childTracks = [{ id: 'child', volume: -4, gainEnvelope: curve }]
++    const comps = [{ id: 'sub', fps: 24, items: [leaf], tracks: childTracks }]
++    const a = resolveTrackGainStages(
++      wrappers as never,
++      tracks as never,
++      comps as never,
++      'leaf',
++      ['w1'],
++      30,
++    )
++    const b = resolveTrackGainStages(
++      wrappers as never,
++      tracks as never,
++      comps as never,
++      'leaf',
++      ['w2'],
++      30,
++    )
++    expect(trackGainAtRootFrame(a, 45)).toBeCloseTo(trackGainAtRootFrame(b, 135), 12)
++    expect(a[1]!.offset + a[1]!.scale * 45).toBe(36)
++    expect(tracks[0]!.volume).toBe(-3)
++  })
++  it('leaves unrelated unsupported maps untouched and refuses ambiguous active instances', () => {
++    const leaf = { id: 'leaf', trackId: 'child', type: 'audio', from: 0, durationInFrames: 60 }
++    const bad = {
++      id: 'bad',
++      trackId: 'a',
++      type: 'composition',
++      compositionId: 'other',
++      from: 0,
++      durationInFrames: 60,
++      sourceFps: 27.3,
++    }
++    const valid = {
++      id: 'good',
++      trackId: 'a',
++      type: 'composition',
++      compositionId: 'sub',
++      from: 0,
++      durationInFrames: 60,
++    }
++    const tracks = [{ id: 'a', volume: -3, gainEnvelope: curve }]
++    const comps = [
++      { id: 'other', fps: 27.3, tracks: [{ id: 'child' }], items: [{ ...leaf, id: 'untouched' }] },
++      { id: 'sub', fps: 30, tracks: [{ id: 'child', volume: -4 }], items: [leaf] },
++    ]
++    expect(
++      resolveTrackGainStages([bad, valid] as never, tracks as never, comps as never, 'leaf', [
++        'good',
++      ]),
++    ).toHaveLength(2)
++    expect(
++      resolveTrackGainStages([bad] as never, tracks as never, comps as never, 'missing'),
++    ).toEqual([])
++    expect(() =>
++      resolveTrackGainStages(
++        [valid, { ...valid, id: 'reuse' }] as never,
++        tracks as never,
++        comps as never,
++        'leaf',
++      ),
++    ).toThrow('Ambiguous')
++    expect(() =>
++      resolveTrackGainStages(
++        [{ ...bad, compositionId: 'sub' }] as never,
++        tracks as never,
++        comps as never,
++        'leaf',
++      ),
++    ).toThrow()
++  })
++})
+diff --git a/src/shared/utils/track-audio.ts b/src/shared/utils/track-audio.ts
+new file mode 100644
+index 0000000000..101e3b1d8b
+--- /dev/null
++++ b/src/shared/utils/track-audio.ts
+@@ -0,0 +1,218 @@
++import { masterGainAtFrame, validateMasterGainEnvelope, type MasterGainPoint } from './master-audio'
++import {
++  cadenceFromFps,
++  masterFrameAtSample,
++  validateMasterEpoch,
++  type MasterAudioEpoch,
++} from './master-audio-epoch'
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++
++/** Root modulo is evaluated first; each stage then maps that frame into its owner's timeline. */
++export interface TrackGainStage {
++  trackId: string
++  points: readonly MasterGainPoint[]
++  gainDb: number
++  muted: boolean
++  offset: number
++  scale: number
++}
++export function validateTrackStages(stages: readonly TrackGainStage[]): TrackGainStage[] {
++  if (!Array.isArray(stages) || stages.length > 64) throw new Error('Invalid track gain stages')
++  return stages.map((s) => {
++    if (
++      !s ||
++      typeof s.trackId !== 'string' ||
++      !s.trackId ||
++      !Number.isFinite(s.gainDb) ||
++      s.gainDb < -60 ||
++      s.gainDb > 12 ||
++      typeof s.muted !== 'boolean' ||
++      !Number.isFinite(s.offset) ||
++      !Number.isFinite(s.scale) ||
++      s.scale === 0
++    )
++      throw new Error('Invalid track gain stage')
++    return { ...s, points: validateMasterGainEnvelope(s.points) }
++  })
++}
++export function trackGainAtRootFrame(stages: readonly TrackGainStage[], rootFrame: number): number {
++  return stages.reduce(
++    (gain, s) =>
++      gain * (s.muted ? 0 : masterGainAtFrame(s.points, s.offset + rootFrame * s.scale, s.gainDb)),
++    1,
++  )
++}
++export function applyTrackGain(
++  planes: Float32Array[],
++  stages: readonly TrackGainStage[],
++  fps: number,
++  sampleRate: number,
++  originFrame = 0,
++  sampleStart = 0,
++): void {
++  const { num, den } = cadenceFromFps(fps)
++  for (let i = 0; i < (planes[0]?.length ?? 0); i++) {
++    const gain = trackGainAtRootFrame(
++      stages,
++      originFrame + ((sampleStart + i) * num) / (den * sampleRate),
++    )
++    for (const plane of planes) plane[i] = plane[i]! * gain
++  }
++}
++export interface TrackAudioEpoch {
++  epoch: MasterAudioEpoch
++  revision: number
++  stages: readonly TrackGainStage[]
++}
++export class TrackGainProcessor {
++  private current: TrackAudioEpoch | null = null
++  private revision = -1
++  constructor(
++    private readonly rootId: string,
++    private readonly contextId: string,
++  ) {}
++  replace(value: TrackAudioEpoch): boolean {
++    this.current = null
++    if (!value || !Number.isSafeInteger(value.revision) || value.revision <= this.revision)
++      return false
++    this.revision = value.revision
++    try {
++      const epoch = validateMasterEpoch(value.epoch)
++      if (epoch.rootId !== this.rootId || epoch.contextId !== this.contextId) return false
++      this.current = { epoch, revision: value.revision, stages: validateTrackStages(value.stages) }
++      return true
++    } catch {
++      return false
++    }
++  }
++  process(
++    input: Float32Array[],
++    output: Float32Array[],
++    firstSample: number,
++    sampleRate: number,
++  ): void {
++    const current = this.current
++    for (let i = 0; i < (output[0]?.length ?? 0); i++) {
++      const frame = current ? masterFrameAtSample(current.epoch, firstSample + i, sampleRate) : 0
++      const gain =
++        current &&
++        current.epoch.running &&
++        (firstSample + i) / sampleRate >= current.epoch.contextTime &&
++        (current.epoch.loop ||
++          (frame >= current.epoch.firstFrame && frame < current.epoch.lastFrame + 1))
++          ? trackGainAtRootFrame(current.stages, frame)
++          : 0
++      for (let c = 0; c < output.length; c++) output[c]![i] = (input[c]?.[i] ?? 0) * gain
++    }
++  }
++}
++
++/** Returns all contributing static/animated track stages only when a curve owns the gain. */
++export function resolveTrackGainStages(
++  items: readonly TimelineItem[],
++  tracks: readonly TimelineTrack[],
++  compositions: readonly {
++    id: string
++    fps?: number
++    items: TimelineItem[]
++    tracks: TimelineTrack[]
++  }[],
++  itemId: string,
++  ancestorItemIds: readonly string[] = [],
++  fps = 30,
++): TrackGainStage[] {
++  const matches: TrackGainStage[][] = []
++  // Only validate maps that contribute to this exact instance. An unrelated sequence
++  // with an unsupported map must not silence a playable track.
++  const containsGainItem = (
++    ownerItems: readonly TimelineItem[],
++    remainingAncestors: readonly string[],
++    seen: Set<string>,
++  ): boolean =>
++    ownerItems.some((item) => {
++      if (item.id === itemId && remainingAncestors.length === 0) return true
++      if (item.type !== 'composition' && !(item.type === 'audio' && 'compositionId' in item))
++        return false
++      const compositionId = (item as { compositionId: string }).compositionId
++      if (seen.has(compositionId)) return false
++      const child = compositions.find((c) => c.id === compositionId)
++      return (
++        !!child &&
++        containsGainItem(
++          child.items,
++          remainingAncestors.filter((id) => id !== item.id),
++          new Set([...seen, compositionId]),
++        )
++      )
++    })
++  const visit = (
++    ownerItems: readonly TimelineItem[],
++    ownerTracks: readonly TimelineTrack[],
++    ownerFps: number,
++    offset: number,
++    scale: number,
++    stages: TrackGainStage[],
++    path: string[],
++    seen: Set<string>,
++  ) => {
++    for (const item of ownerItems) {
++      const track = ownerTracks.find((t) => t.id === item.trackId)
++      if (!track) continue
++      const next = [
++        ...stages,
++        {
++          trackId: track.id,
++          points: track.gainEnvelope ?? [],
++          gainDb: track.volume ?? 0,
++          muted: track.muted === true,
++          offset,
++          scale,
++        },
++      ]
++      if (
++        item.id === itemId &&
++        ancestorItemIds.filter((id) => id !== itemId).every((id) => path.includes(id))
++      )
++        matches.push(next)
++      if (item.type !== 'composition' && !(item.type === 'audio' && 'compositionId' in item))
++        continue
++      const compositionId = (item as { compositionId: string }).compositionId
++      if (seen.has(compositionId)) continue
++      const child = compositions.find((c) => c.id === compositionId)
++      if (!child) continue
++      if (
++        !containsGainItem(
++          child.items,
++          ancestorItemIds.filter((id) => id !== itemId && id !== item.id && !path.includes(id)),
++          new Set([...seen, compositionId]),
++        )
++      )
++        continue
++      const sourceFps = item.sourceFps ?? child.fps ?? ownerFps
++      cadenceFromFps(sourceFps)
++      cadenceFromFps(ownerFps)
++      const speed = item.speed ?? 1
++      if (!Number.isFinite(speed) || speed <= 0) throw new Error('Unsupported track owner map')
++      const ratio = (speed * sourceFps) / ownerFps
++      const start = item.sourceStart ?? item.trimStart ?? 0
++      const end = item.sourceEnd ?? start + item.durationInFrames * ratio
++      const localScale = item.isReversed ? -ratio : ratio
++      const localOffset = (item.isReversed ? end : start) - item.from * localScale
++      visit(
++        child.items,
++        child.tracks,
++        child.fps ?? sourceFps,
++        localOffset + offset * localScale,
++        scale * localScale,
++        next,
++        [...path, item.id],
++        new Set([...seen, compositionId]),
++      )
++    }
++  }
++  visit(items, tracks, fps, 0, 1, [], [], new Set())
++  const active = matches.filter((s) => s.some((t) => t.points.length > 0))
++  if (!active.length) return []
++  if (active.length !== 1) throw new Error('Ambiguous track automation owner')
++  return validateTrackStages(active[0]!)
++}
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+index 76557a6d73..5782feb2c9 100644
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -485,6 +485,7 @@ export interface TimelineTrack {
+   muted: boolean // Audio muting (Volume icon)
+   solo: boolean
+   volume?: number // Track gain in dB (default: 0)
++  gainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[] // Owning timeline frame domain
+   pan?: number // -1 = left, 1 = right; 0/omitted bypasses the stereo pan stage
+   audioEq?: AudioEqSettings // Per-track EQ (separate from per-clip EQ)
+   color?: string // Optional - tracks are generic containers, items have colors

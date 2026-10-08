@@ -429,7 +429,12 @@
       "path": "patches/0089-linear-hdr-vibrance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8399344be7f803ecda59eb150cf177616b0597bfdb9209c6685f5ebaa203df1d"
+    },
+    {
+      "path": "patches/0090-track-gain-automation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c35bb781740d188b051a833530d86160203059102d6e8d943192cf99b2221eba"
     }
   ],
-  "sourceSha256": "c90d3267e27e5eb53f011ca29691b0f8889e172ead6292b0f2f25f5ec555cdb8"
+  "sourceSha256": "b70a2799ba381ceab831c4fb2c80143227c93bd31369fd63085a9b77596a3299"
 }

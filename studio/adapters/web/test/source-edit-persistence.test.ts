@@ -300,3 +300,22 @@ describe('FL94 source edits through host history and real engine persistence', (
     },
   );
 });
+
+describe('FL103 track curve host history and native persistence',()=>{
+ afterEach(()=>setWorkspaceRoot(null))
+ it('saves/reopens owning track curve and restores exact graph with actual undo/redo',async()=>{
+  setWorkspaceRoot(new VirtualWorkspace().handle())
+  let graph:unknown=fresh();const history=createStudioGraphHistory()
+  const handlers=createStudioEngineCommandHandlers({graph:()=>graph,revision:()=>3,assets:()=>[],restore:async()=>false,history,stage:next=>{graph=next},engine:async()=>({dispose(){},async apply(current,envelopes){const o=await applyCanonicalCommands(current,envelopes,media);return o.status==='applied'?{status:'applied',graph:o.project,digest:o.digest}:o}})})
+  const run=(id:StudioCommandId,payload:Record<string,unknown>)=>handlers[id]!(createStudioCommandEnvelope(id as never,payload as never,3))
+  const before=canonicalJson(graph)
+  await run('track.setAudio',{trackId:'audio',gainDb:-3,gainEnvelope:[{id:'start',at:{num:0,den:1},gainDb:-20},{id:'end',at:{num:1,den:1},gainDb:0}]})
+  const after=canonicalJson(graph);expect(after).not.toBe(before)
+  await run('history.undo',{});expect(canonicalJson(graph)).toBe(before)
+  await run('history.redo',{});expect(canonicalJson(graph)).toBe(after)
+  await createProject(graph as Project);await loadTimeline('source-edit-persistence');await saveTimeline('source-edit-persistence')
+  const saved=await getProject('source-edit-persistence');const expected=[{id:'start',frame:0,gainDb:-20},{id:'end',frame:30,gainDb:0}]
+  expect((saved!.timeline!.tracks.find(t=>t.id==='audio') as unknown as {gainEnvelope:unknown}).gainEnvelope).toEqual(expected)
+  await loadTimeline('source-edit-persistence');await saveTimeline('source-edit-persistence');expect((await getProject('source-edit-persistence'))!.timeline!.tracks).toEqual(saved!.timeline!.tracks)
+ })
+})

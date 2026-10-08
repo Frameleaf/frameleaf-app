@@ -154385,6 +154385,928 @@
         "reason": "invalid",
         "detail": "lottie.update: text values must be strings"
       }
+    },
+    {
+      "id": "track.setAudio/gain-envelope",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainDb": -2,
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              },
+              {
+                "id": "last",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "29c5d89098508b3a3c736b5bdcf29dfcf2c16f0351b341d76b5ab03ae79b7c54",
+        "envelopeDigest": "701995b87afc9a4752ead128506ee112b540a0222bc723a025d8bc4589953444",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -2,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "gainEnvelope": [
+                  {
+                    "id": "first",
+                    "frame": 0,
+                    "gainDb": -20
+                  },
+                  {
+                    "id": "last",
+                    "frame": 30,
+                    "gainDb": 0
+                  }
+                ]
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-clear",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-clear",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "415122f33d518de73f1cd23f426ccc057289fac750d46782edfc9c4ec6479a6c",
+        "envelopeDigest": "2d3a4af41b6065a2872e93bf2a9689a780b5f8a1c12f3611dd710f824d5dac0e",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "gainEnvelope": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-single-unity",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-single-unity",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "unity",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 0
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-single-unity",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "82b88eceb625d3394cba6d4a5602117c7871a0ea1f04d3fa35fb8f4cf81a1b15",
+        "envelopeDigest": "4e0261e26f33f6e42086cd1813dcde7fcdd9f6ca37337025a2080a6e2d00e23e",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": -6,
+                "audioEq": {
+                  "outputGainDb": 0,
+                  "band1Enabled": false,
+                  "band1Type": "high-pass",
+                  "band1FrequencyHz": 30,
+                  "band1GainDb": 0,
+                  "band1Q": 1.1,
+                  "band1SlopeDbPerOct": 12,
+                  "lowCutEnabled": false,
+                  "lowCutFrequencyHz": 30,
+                  "lowCutSlopeDbPerOct": 12,
+                  "lowEnabled": true,
+                  "lowType": "low-shelf",
+                  "lowGainDb": 4,
+                  "lowFrequencyHz": 250,
+                  "lowQ": 1.5,
+                  "lowMidEnabled": true,
+                  "lowMidType": "peaking",
+                  "lowMidGainDb": 0,
+                  "lowMidFrequencyHz": 400,
+                  "lowMidQ": 1.1,
+                  "midGainDb": 0,
+                  "highMidEnabled": true,
+                  "highMidType": "peaking",
+                  "highMidGainDb": 0,
+                  "highMidFrequencyHz": 1600,
+                  "highMidQ": 1.1,
+                  "highEnabled": true,
+                  "highType": "high-shelf",
+                  "highGainDb": 0,
+                  "highFrequencyHz": 2800,
+                  "highQ": 2.3,
+                  "band6Enabled": false,
+                  "band6Type": "low-pass",
+                  "band6FrequencyHz": 22000,
+                  "band6GainDb": 0,
+                  "band6Q": 1.1,
+                  "band6SlopeDbPerOct": 12,
+                  "highCutEnabled": false,
+                  "highCutFrequencyHz": 22000,
+                  "highCutSlopeDbPerOct": 12
+                },
+                "items": [],
+                "gainEnvelope": [
+                  {
+                    "id": "unity",
+                    "frame": 0,
+                    "gainDb": 0
+                  }
+                ]
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioPitchSemitones": 2,
+                "audioPitchCents": 25,
+                "audioEqOutputGainDb": -2,
+                "audioEqBand1Enabled": false,
+                "audioEqBand1Type": "high-pass",
+                "audioEqBand1FrequencyHz": 30,
+                "audioEqBand1GainDb": 0,
+                "audioEqBand1Q": 1.1,
+                "audioEqBand1SlopeDbPerOct": 12,
+                "audioEqLowCutEnabled": false,
+                "audioEqLowCutFrequencyHz": 30,
+                "audioEqLowCutSlopeDbPerOct": 12,
+                "audioEqLowEnabled": true,
+                "audioEqLowType": "peaking",
+                "audioEqLowGainDb": 4,
+                "audioEqLowFrequencyHz": 250,
+                "audioEqLowQ": 1.5,
+                "audioEqLowMidEnabled": true,
+                "audioEqLowMidType": "peaking",
+                "audioEqLowMidGainDb": 0,
+                "audioEqLowMidFrequencyHz": 400,
+                "audioEqLowMidQ": 1.1,
+                "audioEqMidGainDb": 0,
+                "audioEqHighMidEnabled": true,
+                "audioEqHighMidType": "peaking",
+                "audioEqHighMidGainDb": 0,
+                "audioEqHighMidFrequencyHz": 1600,
+                "audioEqHighMidQ": 1.1,
+                "audioEqHighEnabled": true,
+                "audioEqHighType": "high-shelf",
+                "audioEqHighGainDb": 0,
+                "audioEqHighFrequencyHz": 2800,
+                "audioEqHighQ": 2.3,
+                "audioEqBand6Enabled": true,
+                "audioEqBand6Type": "low-pass",
+                "audioEqBand6FrequencyHz": 9000,
+                "audioEqBand6GainDb": 0,
+                "audioEqBand6Q": 1.1,
+                "audioEqBand6SlopeDbPerOct": 12,
+                "audioEqHighCutEnabled": true,
+                "audioEqHighCutFrequencyHz": 9000,
+                "audioEqHighCutSlopeDbPerOct": 12,
+                "audioEqEnabled": true
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-duplicate-id",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-duplicate-id",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              },
+              {
+                "id": "first",
+                "at": {
+                  "num": 1,
+                  "den": 1
+                },
+                "gainDb": 0
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-duplicate-id",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Invalid track gainEnvelope"
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-duplicate-frame",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-duplicate-frame",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20
+              },
+              {
+                "id": "last",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 0
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-duplicate-frame",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Invalid track gainEnvelope"
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-offframe",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-offframe",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 1,
+                  "den": 100
+                },
+                "gainDb": -20
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-offframe",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Track gain point must be on an exact frame"
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-unknown-easing",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-unknown-easing",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": -20,
+                "easing": "linear"
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-unknown-easing",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Unsupported track gain point field"
+      },
+      "covers": [
+        "track.setAudio"
+      ]
+    },
+    {
+      "id": "track.setAudio/gain-envelope-range",
+      "story": "FL-103",
+      "summary": "Independent owning-track gain envelope gain-envelope-range",
+      "base": "track-audio",
+      "envelopes": [
+        {
+          "id": "track.setAudio",
+          "payload": {
+            "trackId": "a1",
+            "gainEnvelope": [
+              {
+                "id": "first",
+                "at": {
+                  "num": 0,
+                  "den": 1
+                },
+                "gainDb": 13
+              }
+            ]
+          },
+          "revision": 1,
+          "idempotencyKey": "fl103-track:gain-envelope-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "Invalid track gainEnvelope"
+      },
+      "covers": [
+        "track.setAudio"
+      ]
     }
   ],
   "history": [
@@ -155410,6 +156332,132 @@
           "sameAs": 1,
           "depth": {
             "undo": 1,
+            "redo": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "history/track-gain-envelope",
+      "story": "FL-103",
+      "summary": "Track curve, undo/redo, fallback edit and clear preserve independent state",
+      "base": "track-audio",
+      "steps": [
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainEnvelope": [
+                {
+                  "id": "first",
+                  "at": {
+                    "num": 0,
+                    "den": 1
+                  },
+                  "gainDb": -20
+                },
+                {
+                  "id": "last",
+                  "at": {
+                    "num": 1,
+                    "den": 1
+                  },
+                  "gainDb": 0
+                }
+              ]
+            },
+            "revision": 1,
+            "idempotencyKey": "fl103-track:history",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        },
+        {
+          "redo": {}
+        },
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainDb": -3
+            },
+            "revision": 1,
+            "idempotencyKey": "fl103-track:history-fallback",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "command": {
+            "id": "track.setAudio",
+            "payload": {
+              "trackId": "a1",
+              "gainEnvelope": []
+            },
+            "revision": 1,
+            "idempotencyKey": "fl103-track:history-clear",
+            "issuedAt": 1758800000000
+          }
+        },
+        {
+          "undo": {}
+        }
+      ],
+      "expect": [
+        {
+          "outcome": "accepted",
+          "digest": "48154f41818a2fcf42b47df8f44bec34b02ac22794ccfd090f1e8c00d86520ad",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "d320f82221831ad3adae3b699e125555c5637f19effd723ca156e6f72fba2ff3",
+          "sameAs": 0,
+          "depth": {
+            "undo": 0,
+            "redo": 1
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "48154f41818a2fcf42b47df8f44bec34b02ac22794ccfd090f1e8c00d86520ad",
+          "sameAs": 1,
+          "depth": {
+            "undo": 1,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "4575a8a40608b723300c6be1b26ef4602b355c042b73c8ace9ac3f163b7e096a",
+          "sameAs": 4,
+          "depth": {
+            "undo": 2,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "f426b88e668f3d8ed3cf49157e27579317b55237b8dab0b09e520f129d2268a7",
+          "sameAs": 5,
+          "depth": {
+            "undo": 3,
+            "redo": 0
+          }
+        },
+        {
+          "outcome": "accepted",
+          "digest": "4575a8a40608b723300c6be1b26ef4602b355c042b73c8ace9ac3f163b7e096a",
+          "sameAs": 4,
+          "depth": {
+            "undo": 2,
             "redo": 1
           }
         }

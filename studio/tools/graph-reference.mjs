@@ -1367,9 +1367,20 @@ const commands = {
     const track = namedTrack(state, payload);
     if (track.isGroup) invalid('track.setAudio applies to media tracks, not organizational groups');
     for (const key of Object.keys(payload)) {
-      if (!['trackId', 'gainDb', 'pan', 'eq'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`);
+      if (!['trackId', 'gainDb', 'pan', 'eq', 'gainEnvelope'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`);
     }
     const updates = {};
+    if(payload.gainEnvelope!==undefined){
+      if(!Array.isArray(payload.gainEnvelope)||payload.gainEnvelope.length>4096) invalid('Invalid track gainEnvelope');
+      const ids=new Set(),frames=new Set();
+      updates.gainEnvelope=payload.gainEnvelope.map(point=>{
+        if(!point||typeof point!=='object'||Array.isArray(point)||Object.keys(point).some(k=>!['id','at','gainDb'].includes(k))) invalid('Invalid track gainEnvelope');
+        const id=text(point,'id'),frame=time(state,point,'at'),gainDb=point.gainDb;
+        if(point.at.num<0 || (BigInt(point.at.num)*BigInt(state.rate.num))%(BigInt(point.at.den)*BigInt(state.rate.den))!==0n) invalid('Track gain point must be on an exact frame');
+        if([...id].length>128||ids.has(id)||frames.has(frame)||!finite(gainDb)||gainDb< -60||gainDb>12) invalid('Invalid track gainEnvelope');
+        ids.add(id);frames.add(frame);return {id,frame,gainDb};
+      }).sort((a,b)=>a.frame-b.frame);
+    }
     if (payload.gainDb !== undefined) {
       if (!finite(payload.gainDb)) invalid('gainDb must be a number');
       if (payload.gainDb < -60 || payload.gainDb > 12) invalid('gainDb must be in -60..12 dB');
@@ -2880,6 +2891,12 @@ function retimed(content, from, to) {
     return next;
   });
   const next = { ...content, items: untangled(content.items, items, content.tracks) };
+  if(content.tracks) next.tracks=content.tracks.map(track=>{
+    if(!track.gainEnvelope?.length) return track;
+    const points=track.gainEnvelope.map(point=>({...point,frame:carry(point.frame)}));
+    if(new Set(points.map(p=>p.frame)).size!==points.length) invalid('Track envelope retime collides');
+    return {...track,gainEnvelope:points};
+  });
   if (content.transitions) next.transitions = content.transitions.map((transition) => ({ ...transition, durationInFrames: Math.max(1, carry(transition.durationInFrames)) }));
   if (content.keyframes) {
     next.keyframes = content.keyframes.map((entry) => ({
@@ -2963,7 +2980,7 @@ function applySettings(state, sequenceId, settings, timing) {
   const to = settings.rate ? settings.rate.num / settings.rate.den : undefined;
   const composition = compositionOf(state, sequenceId);
   if (sequenceId === 'main' && composition) invalid('sequenceId: "main" names both the main timeline and a composition');
-  const timed = (content) => (content.items?.length ?? 0) > 0 || (content.markers?.length ?? 0) > 0 || (content.inPoint ?? null) !== null || (content.outPoint ?? null) !== null;
+  const timed = (content) => content.tracks?.some(t=>t.gainEnvelope?.length) || (content.items?.length ?? 0) > 0 || (content.markers?.length ?? 0) > 0 || (content.inPoint ?? null) !== null || (content.outPoint ?? null) !== null;
   const policy = (what) => timing ?? invalid(`timing is required: ${what} has content`);
   if (sequenceId === 'main') {
     const from = state.fps;
@@ -2979,7 +2996,7 @@ function applySettings(state, sequenceId, settings, timing) {
         if (new Set(points.map(point=>point.frame)).size !== points.length) invalid('Master envelope retime collides');
         state.timeline.masterGainEnvelope=points;
       }
-      Object.assign(state, { items: next.items, transitions: next.transitions, keyframes: next.keyframes, markers: next.markers, inPoint: next.inPoint, outPoint: next.outPoint });
+      Object.assign(state, { tracks:next.tracks,items: next.items, transitions: next.transitions, keyframes: next.keyframes, markers: next.markers, inPoint: next.inPoint, outPoint: next.outPoint });
       state.timeline = { ...state.timeline, currentFrame: next.currentFrame };
     }
     state.metadata = {
