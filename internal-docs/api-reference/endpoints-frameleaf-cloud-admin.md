@@ -1,12 +1,12 @@
 # Server API — Frameleaf Cloud (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## checkInCloud
 
 `POST /api/admin/cloud/heartbeat`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L282).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L282).
 
 Check in with Frameleaf Cloud now
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `DELETE /api/admin/cloud/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L131).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L131).
 
 Unlink this server from Frameleaf Cloud
 
@@ -162,7 +162,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L93).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L93).
 
 Check the Frameleaf Cloud link
 
@@ -240,7 +240,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L79).
 
 Start linking this server to a Frameleaf account
 
@@ -319,7 +319,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/link/continue`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L106).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L106).
 
 Link in the Frameleaf account’s data region
 
@@ -397,7 +397,7 @@ Complete operation contract:
 
 `DELETE /api/admin/cloud/link/pending`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L119).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L119).
 
 Cancel a pending link
 
@@ -474,7 +474,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/permissions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L144).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L144).
 
 Choose what Frameleaf Cloud may ask this server to do
 
@@ -562,7 +562,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/remote`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L183).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L183).
 
 Get remote access
 
@@ -640,7 +640,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/remote`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L209).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L209).
 
 Change remote access
 
@@ -728,7 +728,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/remote-access`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L170).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L170).
 
 Choose what remote access may carry
 
@@ -816,7 +816,7 @@ Complete operation contract:
 
 `DELETE /api/admin/cloud/remote/hostname`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L269).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L269).
 
 Stop using the custom hostname
 
@@ -894,7 +894,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/remote/hostname`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L239).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L239).
 
 Use your own domain for remote access
 
@@ -982,7 +982,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/remote/hostname/check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L255).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L255).
 
 Check the custom hostname’s DNS records
 
@@ -1061,7 +1061,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/remote/test`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L225).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L225).
 
 Test remote access
 
@@ -1140,7 +1140,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/remote/usage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L196).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L196).
 
 Get relay use this month
 
@@ -1218,7 +1218,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/sign-in`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L157).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L157).
 
 Choose where Sign in with Frameleaf is offered
 
@@ -1306,7 +1306,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/status`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L66).
 
 Get the Frameleaf Cloud link status
 
@@ -1384,7 +1384,7 @@ Complete operation contract:
 
 `GET /api/admin/cloud/tour`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L40).
 
 Get your linked-server tour
 
@@ -1462,7 +1462,7 @@ Complete operation contract:
 
 `PUT /api/admin/cloud/tour`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cloud-admin.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-admin.controller.ts#L53).
 
 Mark your linked-server tour as seen
 

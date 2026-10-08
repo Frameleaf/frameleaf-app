@@ -1,12 +1,12 @@
 # Server API — Documents
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchDocuments
 
 `GET /api/documents`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L31).
 
 Search documents
 
@@ -115,7 +115,7 @@ Complete operation contract:
 
 `GET /api/documents/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L43).
 
 Retrieve a document
 
@@ -202,7 +202,7 @@ Complete operation contract:
 
 `DELETE /api/documents/{id}/fields/{field}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L101).
 
 Clear a document field decision
 
@@ -307,7 +307,7 @@ Complete operation contract:
 
 `PUT /api/documents/{id}/fields/{field}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L86).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L86).
 
 Decide a document field
 
@@ -411,7 +411,7 @@ Complete operation contract:
 
 `PUT /api/documents/{id}/lines`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L55).
 
 Correct or dismiss a line of text
 
@@ -508,7 +508,7 @@ Complete operation contract:
 
 `DELETE /api/documents/{id}/lines/{editId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/document.controller.ts#L71).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/document.controller.ts#L71).
 
 Restore a line of text
 

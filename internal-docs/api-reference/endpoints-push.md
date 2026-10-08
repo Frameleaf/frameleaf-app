@@ -1,12 +1,12 @@
 # Server API — Push
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## listPushDevices
 
 `GET /api/push/devices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L40).
 
 List own push devices
 
@@ -76,7 +76,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L75).
 
 Unregister this device from push
 
@@ -138,7 +138,7 @@ Complete operation contract:
 
 `PATCH /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L63).
 
 Update this device’s push registration
 
@@ -219,7 +219,7 @@ Complete operation contract:
 
 `PUT /api/push/devices/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L51).
 
 Register this device for push
 
@@ -300,7 +300,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/current/activities/{activityId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L114).
 
 Remove a Live Activity push token
 
@@ -375,7 +375,7 @@ Complete operation contract:
 
 `PUT /api/push/devices/current/activities/{activityId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L98).
 
 Set a Live Activity push token
 
@@ -469,7 +469,7 @@ Complete operation contract:
 
 `DELETE /api/push/devices/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L87).
 
 Remove an own push device
 
@@ -540,7 +540,7 @@ Complete operation contract:
 
 `GET /api/push/status`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/push.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/push.controller.ts#L28).
 
 Push availability
 

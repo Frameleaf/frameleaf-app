@@ -1,12 +1,12 @@
 # Server API — Sessions
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteAllSessions
 
 `DELETE /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L43).
 
 Delete all sessions
 
@@ -77,7 +77,7 @@ Complete operation contract:
 
 `GET /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L32).
 
 Retrieve sessions
 
@@ -159,7 +159,7 @@ Complete operation contract:
 
 `POST /api/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L21).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L21).
 
 Create a session
 
@@ -248,7 +248,7 @@ Complete operation contract:
 
 `DELETE /api/sessions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L85).
 
 Delete a session
 
@@ -330,7 +330,7 @@ Complete operation contract:
 
 `PUT /api/sessions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L55).
 
 Update a session
 
@@ -441,7 +441,7 @@ Complete operation contract:
 
 `POST /api/sessions/{id}/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L97).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L97).
 
 Lock a session
 

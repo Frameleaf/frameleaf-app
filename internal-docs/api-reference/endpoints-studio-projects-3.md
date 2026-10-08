@@ -1,12 +1,12 @@
 # Server API — Studio projects 3
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteStudioProject
 
 `DELETE /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L135).
 
 Delete a Studio project
 
@@ -93,7 +93,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L107).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L107).
 
 Get a Studio project
 
@@ -179,7 +179,7 @@ Complete operation contract:
 
 `PUT /api/studio/projects/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L119).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L119).
 
 Update a Studio project
 
@@ -275,13 +275,13 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/bundle`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L181).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L181).
 
 Export a Studio project as a bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioBundleExportCreateDto](models-32.md#studiobundleexportcreatedto).
+Models: [MediaOperationDto](models-16.md#mediaoperationdto), [StudioBundleExportCreateDto](models-32.md#studiobundleexportcreatedto).
 
 Controller access declarations:
 
@@ -372,7 +372,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L344).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L344).
 
 List Studio review comments
 
@@ -479,7 +479,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/comments`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L359).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L359).
 
 Add a Studio review comment
 
@@ -575,7 +575,7 @@ Complete operation contract:
 
 `DELETE /api/studio/projects/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L390).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L390).
 
 Remove a Studio review comment
 
@@ -662,7 +662,7 @@ Complete operation contract:
 
 `PUT /api/studio/projects/{id}/comments/{commentId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L375).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L375).
 
 Update a Studio review comment
 
@@ -767,7 +767,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/duplicate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L164).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L164).
 
 Duplicate a Studio project
 
@@ -864,7 +864,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L53).
 
 List a Studio project’s exports
 
@@ -971,7 +971,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-export.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L36).
 
 Export a Studio project
 
@@ -1068,7 +1068,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project-import.controller.ts#L94).
 
 List the files imported into a Studio project
 
@@ -1156,7 +1156,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project-import.controller.ts#L69).
 
 Import a file into a Studio project
 
@@ -1257,7 +1257,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/imports/{importId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project-import.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project-import.controller.ts#L105).
 
 Read a file imported into a Studio project
 
@@ -1354,7 +1354,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/lease`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L232).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L232).
 
 Acquire or renew the write lease
 
@@ -1451,7 +1451,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/lease/release`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L249).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L249).
 
 Release the write lease
 
@@ -1540,7 +1540,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L282).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L282).
 
 Restore a Studio project revision
 
@@ -1637,7 +1637,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/reverse-conform`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L198).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L198).
 
 Queue a Studio clip source reversal
 
@@ -1733,7 +1733,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/reverse-conform/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L215).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L215).
 
 Apply a completed Studio clip source reversal
 
@@ -1830,7 +1830,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L299).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L299).
 
 List Studio project history
 

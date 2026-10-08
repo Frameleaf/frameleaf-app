@@ -1,12 +1,12 @@
 # Server API — Studio projects 4
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## saveStudioProjectRevision
 
 `POST /api/studio/projects/{id}/revisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L265).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L265).
 
 Save a Studio project revision
 
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L314).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L314).
 
 Get a Studio project revision
 
@@ -198,7 +198,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}/diff`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L328).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L328).
 
 Compare two Studio project revisions
 
@@ -305,7 +305,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/trash/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-project.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L152).
 
 Restore a Studio project from the trash
 
@@ -391,7 +391,7 @@ Complete operation contract:
 
 `GET /api/studio/restored-versions/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-source.controller.ts#L20).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-source.controller.ts#L20).
 
 Get a restored version for Studio
 
@@ -478,7 +478,7 @@ Complete operation contract:
 
 `GET /api/studio/workspace`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-workspace.controller.ts#L19).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-workspace.controller.ts#L19).
 
 Get your Studio workspace layout
 
@@ -552,7 +552,7 @@ Complete operation contract:
 
 `PUT /api/studio/workspace`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/studio-workspace.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-workspace.controller.ts#L30).
 
 Save your Studio workspace layout
 

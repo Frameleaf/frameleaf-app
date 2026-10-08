@@ -1,10 +1,828 @@
 # Server API models 17
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## MemoryCreateDto
+
+Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md#memorytype).
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "Asset IDs to associate with memory",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "data": {
+      "$ref": "#/components/schemas/MemoryData"
+    },
+    "hideAt": {
+      "description": "Date when memory should be hidden",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v2.6.0",
+          "state": "Added"
+        },
+        {
+          "version": "v2.6.0",
+          "state": "Stable"
+        }
+      ],
+      "x-immich-state": "Stable"
+    },
+    "isSaved": {
+      "description": "Is memory saved",
+      "type": "boolean"
+    },
+    "memoryAt": {
+      "description": "Memory date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "seenAt": {
+      "description": "Date when memory was seen",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "showAt": {
+      "description": "Date when memory should be shown",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v2.6.0",
+          "state": "Added"
+        },
+        {
+          "version": "v2.6.0",
+          "state": "Stable"
+        }
+      ],
+      "x-immich-state": "Stable"
+    },
+    "type": {
+      "$ref": "#/components/schemas/MemoryType"
+    }
+  },
+  "required": [
+    "data",
+    "memoryAt",
+    "type"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryData
+
+Related models: [BirthdayMemoryDto](models-06.md#birthdaymemorydto), [EventStoryDto](models-11.md#eventstorydto), [OnThisDayDto](models-18.md#onthisdaydto), [PersonRecapDto](models-19.md#personrecapdto), [PetStoryDto](models-19.md#petstorydto), [YearInReviewDto](models-39.md#yearinreviewdto).
+
+```json
+{
+  "anyOf": [
+    {
+      "$ref": "#/components/schemas/EventStoryDto"
+    },
+    {
+      "$ref": "#/components/schemas/YearInReviewDto"
+    },
+    {
+      "$ref": "#/components/schemas/PetStoryDto"
+    },
+    {
+      "$ref": "#/components/schemas/BirthdayMemoryDto"
+    },
+    {
+      "$ref": "#/components/schemas/PersonRecapDto"
+    },
+    {
+      "$ref": "#/components/schemas/OnThisDayDto"
+    }
+  ],
+  "description": "Memory data"
+}
+```
+
+## MemoryExportCreateDto
+
+Related models: [MemoryExportFormat](models-17.md#memoryexportformat), [MemoryHighlightOptionsDto](models-17.md#memoryhighlightoptionsdto).
+
+```json
+{
+  "properties": {
+    "format": {
+      "$ref": "#/components/schemas/MemoryExportFormat",
+      "description": "Export format, defaults to an archive of the originals"
+    },
+    "highlight": {
+      "$ref": "#/components/schemas/MemoryHighlightOptionsDto",
+      "description": "Options for a `highlight` export",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    }
+  },
+  "type": "object"
+}
+```
+
+## MemoryExportFormat
+
+
+```json
+{
+  "description": "Memory export format",
+  "enum": [
+    "archive",
+    "highlight"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryExportResponseDto
+
+Related models: [MemoryExportFormat](models-17.md#memoryexportformat), [MemoryExportStatus](models-17.md#memoryexportstatus), [MemoryHighlightResponseDto](models-17.md#memoryhighlightresponsedto).
+
+```json
+{
+  "properties": {
+    "assetCount": {
+      "description": "Number of assets in the export",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "description": "When the export was requested",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "error": {
+      "description": "Failure reason, when the export failed",
+      "nullable": true,
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When the archive is deleted",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "finishedAt": {
+      "description": "When the export reached a terminal state",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "format": {
+      "$ref": "#/components/schemas/MemoryExportFormat"
+    },
+    "highlight": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MemoryHighlightResponseDto"
+        }
+      ],
+      "description": "The highlight video settings and render state, for a `highlight` export",
+      "nullable": true,
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "id": {
+      "description": "Export ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isDownloadable": {
+      "description": "Whether the archive can be downloaded right now",
+      "type": "boolean"
+    },
+    "memoryId": {
+      "description": "Memory the export was requested for",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner user ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "processedAssets": {
+      "description": "Number of assets written so far",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sizeInBytes": {
+      "description": "Size of the finished archive",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "startedAt": {
+      "description": "When the worker picked the export up",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MemoryExportStatus"
+    },
+    "title": {
+      "description": "The memory's title when the export was requested",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetCount",
+    "createdAt",
+    "error",
+    "expiresAt",
+    "finishedAt",
+    "format",
+    "highlight",
+    "id",
+    "isDownloadable",
+    "memoryId",
+    "ownerId",
+    "processedAssets",
+    "sizeInBytes",
+    "startedAt",
+    "status",
+    "title",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryExportStatus
+
+
+```json
+{
+  "description": "Memory export status",
+  "enum": [
+    "pending",
+    "running",
+    "ready",
+    "failed",
+    "cancelling",
+    "cancelled"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryHighlightAudio
+
+
+```json
+{
+  "description": "Sound of a memory highlight video",
+  "enum": [
+    "original",
+    "silent"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryHighlightDestination
+
+
+```json
+{
+  "description": "Where the highlight renders: this server or another computer on your home network",
+  "enum": [
+    "local",
+    "lan"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryHighlightOptionsDto
+
+Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-33.md#studioexportresolution).
+
+```json
+{
+  "properties": {
+    "audio": {
+      "$ref": "#/components/schemas/MemoryHighlightAudio",
+      "description": "Sound policy, each video's own sound by default"
+    },
+    "destination": {
+      "$ref": "#/components/schemas/MemoryHighlightDestination",
+      "description": "Where it renders, this server by default"
+    },
+    "lengthSeconds": {
+      "description": "Target length in seconds, 60 by default",
+      "maximum": 300,
+      "minimum": 15,
+      "type": "integer"
+    },
+    "resolution": {
+      "$ref": "#/components/schemas/StudioExportResolution",
+      "description": "Output resolution, 2160p by default"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MemoryHighlightResponseDto
+
+Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-33.md#studioexportresolution).
+
+```json
+{
+  "properties": {
+    "audio": {
+      "$ref": "#/components/schemas/MemoryHighlightAudio"
+    },
+    "destination": {
+      "$ref": "#/components/schemas/MemoryHighlightDestination"
+    },
+    "lengthSeconds": {
+      "description": "Target length in seconds",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "progress": {
+      "description": "Render progress, 0 to 100",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "resolution": {
+      "$ref": "#/components/schemas/StudioExportResolution"
+    },
+    "savedAssetId": {
+      "description": "The library asset the highlight was saved as, once saved",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "audio",
+    "destination",
+    "lengthSeconds",
+    "progress",
+    "resolution",
+    "savedAssetId"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryResponseDto
+
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md#memorytype).
+
+```json
+{
+  "properties": {
+    "assets": {
+      "items": {
+        "$ref": "#/components/schemas/AssetResponseDto"
+      },
+      "type": "array"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/components/schemas/MemoryData"
+    },
+    "deletedAt": {
+      "description": "Deletion date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "hideAt": {
+      "description": "Date when memory should be hidden",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Memory ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isHidden": {
+      "description": "Hidden by the owner; shown only in the hidden memories list",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "isSaved": {
+      "description": "Is memory saved",
+      "type": "boolean"
+    },
+    "memoryAt": {
+      "description": "Memory date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner user ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "seenAt": {
+      "description": "Date when memory was seen",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "showAt": {
+      "description": "Date when memory should be shown",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "title": {
+      "description": "The owner's own title, when they set one",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "type": {
+      "$ref": "#/components/schemas/MemoryType"
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assets",
+    "createdAt",
+    "data",
+    "id",
+    "isHidden",
+    "isSaved",
+    "memoryAt",
+    "ownerId",
+    "title",
+    "type",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## MemorySearchOrder
+
+
+```json
+{
+  "description": "Sort order",
+  "enum": [
+    "asc",
+    "desc",
+    "random"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryShowLessDto
+
+Related models: [MemoryShowLessKind](models-17.md#memoryshowlesskind).
+
+```json
+{
+  "properties": {
+    "kind": {
+      "$ref": "#/components/schemas/MemoryShowLessKind"
+    },
+    "value": {
+      "description": "A person or pet id, a date as 'MM-dd', or a memory type",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryShowLessKind
+
+
+```json
+{
+  "description": "What a memories show-less rule names",
+  "enum": [
+    "person",
+    "pet",
+    "date",
+    "type"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryShowLessResponseDto
+
+Related models: [MemoryShowLessKind](models-17.md#memoryshowlesskind).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "When the rule was added",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MemoryShowLessKind"
+    },
+    "name": {
+      "description": "The person's or pet's name, for person and pet rules",
+      "nullable": true,
+      "type": "string"
+    },
+    "value": {
+      "description": "A person or pet id, a date as 'MM-dd', or a memory type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "kind",
+    "name",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "total": {
+      "description": "Total number of memories",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryStoryPlaceDto
+
+
+```json
+{
+  "properties": {
+    "city": {
+      "description": "City",
+      "nullable": true,
+      "type": "string"
+    },
+    "country": {
+      "description": "Country",
+      "nullable": true,
+      "type": "string"
+    },
+    "state": {
+      "description": "State or region",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "city",
+    "country",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryType
+
+
+```json
+{
+  "description": "Memory type",
+  "enum": [
+    "on_this_day",
+    "event_story",
+    "year_in_review",
+    "pet_story",
+    "birthday",
+    "person_recap"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryUpdateDto
+
+
+```json
+{
+  "properties": {
+    "assetOrder": {
+      "description": "The memory's items in the order the owner chose; items not listed follow in capture order",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 5000,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "isHidden": {
+      "description": "Hide the memory from the memories list; false restores it",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "isSaved": {
+      "description": "Is memory saved",
+      "type": "boolean"
+    },
+    "memoryAt": {
+      "description": "Memory date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "seenAt": {
+      "description": "Date when memory was seen",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "title": {
+      "description": "The owner's own title for the memory; null returns to the generated one",
+      "maxLength": 200,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    }
+  },
+  "type": "object"
+}
+```
+
+## MergePersonDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Person IDs to merge",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
+
+## MergeSuggestionsResponseDto
+
+Related models: [PersonMergeSuggestionDto](models-19.md#personmergesuggestiondto).
+
+```json
+{
+  "properties": {
+    "suggestions": {
+      "description": "Suggested pairs of people that may be the same person",
+      "items": {
+        "$ref": "#/components/schemas/PersonMergeSuggestionDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "suggestions"
+  ],
+  "type": "object"
+}
+```
 
 ## MetadataSearchDto
 
-Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
+Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
 
 ```json
 {
@@ -978,7 +1796,7 @@ Related models: [MirrorAxis](models-17.md#mirroraxis).
 
 ## MlAdmissionRequestDto
 
-Related models: [MlStudioFeature](models-17.md#mlstudiofeature), [MlWorkload](models-17.md#mlworkload).
+Related models: [MlStudioFeature](models-18.md#mlstudiofeature), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1004,7 +1822,7 @@ Related models: [MlStudioFeature](models-17.md#mlstudiofeature), [MlWorkload](mo
 
 ## MlAdmissionResponseDto
 
-Related models: [MlDestinationHealthStateDto](models-17.md#mldestinationhealthstatedto), [MlDestinationKind](models-17.md#mldestinationkind), [MlThroughputEstimateDto](models-17.md#mlthroughputestimatedto), [MlWorkload](models-17.md#mlworkload).
+Related models: [MlDestinationHealthStateDto](models-18.md#mldestinationhealthstatedto), [MlDestinationKind](models-18.md#mldestinationkind), [MlThroughputEstimateDto](models-18.md#mlthroughputestimatedto), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1040,7 +1858,7 @@ Related models: [MlDestinationHealthStateDto](models-17.md#mldestinationhealthst
 
 ## MlCapabilitiesResponseDto
 
-Related models: [MlWorkloadCapabilityDto](models-17.md#mlworkloadcapabilitydto), [StudioCapabilitiesDto](models-33.md#studiocapabilitiesdto).
+Related models: [MlWorkloadCapabilityDto](models-18.md#mlworkloadcapabilitydto), [StudioCapabilitiesDto](models-33.md#studiocapabilitiesdto).
 
 ```json
 {
@@ -1063,984 +1881,6 @@ Related models: [MlWorkloadCapabilityDto](models-17.md#mlworkloadcapabilitydto),
     "probedAt",
     "studio",
     "workloads"
-  ],
-  "type": "object"
-}
-```
-
-## MlCapabilityDestinationDto
-
-Related models: [MlDestinationHealth](models-17.md#mldestinationhealth), [MlDestinationKind](models-17.md#mldestinationkind), [MlWorkerAcceleration](models-17.md#mlworkeracceleration), [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "acceleration": {
-      "$ref": "#/components/schemas/MlWorkerAcceleration",
-      "description": "CPU or accelerator, from the last check; unknown without facts"
-    },
-    "available": {
-      "description": "Enabled, healthy on a check that is not stale, consented and reporting this workload",
-      "type": "boolean"
-    },
-    "checkedAt": {
-      "description": "When the destination was last checked, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "consentGranted": {
-      "description": "True when the destination needs no consent or consent is recorded",
-      "type": "boolean"
-    },
-    "gpuMemoryBytes": {
-      "description": "Largest GPU memory the worker reported, or null",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "health": {
-      "$ref": "#/components/schemas/MlDestinationHealth"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MlDestinationKind"
-    },
-    "leavesNetwork": {
-      "description": "Work sent here leaves this network (Frameleaf Cloud)",
-      "type": "boolean"
-    },
-    "name": {
-      "type": "string"
-    },
-    "region": {
-      "description": "Frameleaf Cloud data region, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "servedWorkloads": {
-      "description": "Workloads the last check verified, or null when it never answered",
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "nullable": true,
-      "type": "array"
-    },
-    "stale": {
-      "description": "The last check is too old to count as evidence; the destination is checked again first",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "acceleration",
-    "available",
-    "checkedAt",
-    "consentGranted",
-    "gpuMemoryBytes",
-    "health",
-    "id",
-    "kind",
-    "leavesNetwork",
-    "name",
-    "region",
-    "servedWorkloads",
-    "stale"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationCloudDto
-
-Related models: [MlAdmissionRefusal](models-17.md#mladmissionrefusal).
-
-```json
-{
-  "properties": {
-    "balanceUsd": {
-      "description": "AI Wallet balance, USD",
-      "format": "double",
-      "type": "number"
-    },
-    "dailyCapUsd": {
-      "description": "Daily AI Wallet limit, USD, or null",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "entitled": {
-      "description": "The Frameleaf account has the cloud processing entitlement",
-      "type": "boolean"
-    },
-    "heldUsd": {
-      "description": "AI Wallet amount held by running jobs, USD",
-      "format": "double",
-      "type": "number"
-    },
-    "refusal": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MlAdmissionRefusal"
-        }
-      ],
-      "description": "Why the last check refused, or null",
-      "nullable": true
-    },
-    "refusalDetail": {
-      "nullable": true,
-      "type": "string"
-    },
-    "region": {
-      "description": "Frameleaf Cloud data region",
-      "nullable": true,
-      "type": "string"
-    },
-    "spentTodayUsd": {
-      "description": "AI Wallet spend today, USD",
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "required": [
-    "balanceUsd",
-    "dailyCapUsd",
-    "entitled",
-    "heldUsd",
-    "refusal",
-    "refusalDetail",
-    "region",
-    "spentTodayUsd"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationConsentDto
-
-
-```json
-{
-  "properties": {
-    "acknowledgedAt": {
-      "description": "When an administrator recorded consent, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "acknowledgedBy": {
-      "description": "Administrator who recorded consent, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "required": {
-      "description": "Whether this destination sends media off the network and needs consent",
-      "type": "boolean"
-    },
-    "requiredVersion": {
-      "description": "Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "version": {
-      "description": "Frameleaf Cloud: the consent version accepted, or null",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "acknowledgedAt",
-    "acknowledgedBy",
-    "required",
-    "requiredVersion",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationConsentRequestDto
-
-
-```json
-{
-  "properties": {
-    "acknowledgeMediaLeavesNetwork": {
-      "description": "The administrator confirms that media sent to this destination leaves the network",
-      "enum": [
-        true
-      ],
-      "type": "boolean"
-    },
-    "features": {
-      "description": "Frameleaf Cloud: per-feature choices; every feature is off unless chosen",
-      "properties": {
-        "identityNames": {
-          "default": false,
-          "description": "Allow people names in cloud description prompts",
-          "type": "boolean"
-        },
-        "medicalSignals": {
-          "default": false,
-          "description": "Allow medical signals in cloud descriptions",
-          "type": "boolean"
-        },
-        "ocrAddon": {
-          "default": false,
-          "description": "Allow the cloud text-recognition add-on",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
-    "textSha256": {
-      "description": "Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms",
-      "pattern": "^[\\da-f]{64}$",
-      "type": "string"
-    },
-    "version": {
-      "description": "Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud",
-      "maxLength": 64,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "acknowledgeMediaLeavesNetwork"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationCostControlsDto
-
-
-```json
-{
-  "properties": {
-    "budgetLimitUsd": {
-      "description": "Spend ceiling over the rolling budget window, or null for no ceiling",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "budgetWindowDays": {
-      "description": "Length of the rolling window `spentUsd` covers",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxRuntimeMinutes": {
-      "description": "Longest single job this destination may run, or null",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "maxUploadBytes": {
-      "description": "Largest upload one job may send to this destination, or null",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "spentUsd": {
-      "description": "Attributed spend inside the budget window; 0 when no cost has been attributed yet",
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "required": [
-    "budgetLimitUsd",
-    "budgetWindowDays",
-    "maxRuntimeMinutes",
-    "maxUploadBytes",
-    "spentUsd"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationCreateDto
-
-Related models: [MlDestinationKind](models-17.md#mldestinationkind), [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "authToken": {
-      "description": "Bearer token for a LAN worker (write-only)",
-      "maxLength": 4096,
-      "type": "string"
-    },
-    "budgetLimitUsd": {
-      "format": "double",
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "enabled": {
-      "default": true,
-      "type": "boolean"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MlDestinationKind"
-    },
-    "maxRuntimeMinutes": {
-      "maximum": 10080,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "maxUploadBytes": {
-      "format": "double",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "name": {
-      "maxLength": 80,
-      "minLength": 1,
-      "type": "string"
-    },
-    "sharesLibraryHardware": {
-      "description": "Restoration workers only: full restorations wait while library analysis has work",
-      "type": "boolean"
-    },
-    "url": {
-      "description": "Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint",
-      "format": "uri",
-      "type": "string"
-    },
-    "workloads": {
-      "default": [],
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "maxItems": 16,
-      "type": "array"
-    }
-  },
-  "required": [
-    "kind",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationHealth
-
-
-```json
-{
-  "description": "Last probed health of a machine-learning destination",
-  "enum": [
-    "healthy",
-    "unhealthy",
-    "unknown"
-  ],
-  "type": "string"
-}
-```
-
-## MlDestinationHealthStateDto
-
-Related models: [MlDestinationHealth](models-17.md#mldestinationhealth), [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "probedAt": {
-      "description": "When the destination was last probed, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "servedWorkloads": {
-      "description": "Workloads the worker itself reported on the last probe, or null when it never answered",
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "nullable": true,
-      "type": "array"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MlDestinationHealth"
-    },
-    "summary": {
-      "description": "Human-readable probe result, or null",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "probedAt",
-    "servedWorkloads",
-    "status",
-    "summary"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationKind
-
-
-```json
-{
-  "description": "Kind of machine-learning destination",
-  "enum": [
-    "local",
-    "lan",
-    "frameleaf-cloud"
-  ],
-  "type": "string"
-}
-```
-
-## MlDestinationResponseDto
-
-Related models: [MlDestinationCloudDto](models-17.md#mldestinationclouddto), [MlDestinationConsentDto](models-17.md#mldestinationconsentdto), [MlDestinationCostControlsDto](models-17.md#mldestinationcostcontrolsdto), [MlDestinationHealthStateDto](models-17.md#mldestinationhealthstatedto), [MlDestinationKind](models-17.md#mldestinationkind), [MlWorkerRole](models-17.md#mlworkerrole), [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "authTokenConfigured": {
-      "description": "Whether a bearer token is stored for this destination",
-      "type": "boolean"
-    },
-    "cloud": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MlDestinationCloudDto"
-        }
-      ],
-      "description": "Frameleaf Cloud facts from the last check; null for other kinds",
-      "nullable": true
-    },
-    "consent": {
-      "$ref": "#/components/schemas/MlDestinationConsentDto"
-    },
-    "costControls": {
-      "$ref": "#/components/schemas/MlDestinationCostControlsDto"
-    },
-    "createdAt": {
-      "type": "string"
-    },
-    "enabled": {
-      "type": "boolean"
-    },
-    "health": {
-      "$ref": "#/components/schemas/MlDestinationHealthStateDto"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MlDestinationKind"
-    },
-    "name": {
-      "type": "string"
-    },
-    "role": {
-      "$ref": "#/components/schemas/MlWorkerRole"
-    },
-    "sharesLibraryHardware": {
-      "description": "A restoration worker on the GPU library analysis uses; its full restorations wait for library work",
-      "type": "boolean"
-    },
-    "updatedAt": {
-      "type": "string"
-    },
-    "url": {
-      "description": "Endpoint URL; always null for Frameleaf Cloud",
-      "nullable": true,
-      "type": "string"
-    },
-    "workloads": {
-      "description": "Workloads the administrator allows on this destination",
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "authTokenConfigured",
-    "cloud",
-    "consent",
-    "costControls",
-    "createdAt",
-    "enabled",
-    "health",
-    "id",
-    "kind",
-    "name",
-    "role",
-    "sharesLibraryHardware",
-    "updatedAt",
-    "url",
-    "workloads"
-  ],
-  "type": "object"
-}
-```
-
-## MlDestinationUpdateDto
-
-Related models: [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "authToken": {
-      "description": "New bearer token; null clears it; omitted keeps the stored token",
-      "maxLength": 4096,
-      "nullable": true,
-      "type": "string"
-    },
-    "budgetLimitUsd": {
-      "format": "double",
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "enabled": {
-      "type": "boolean"
-    },
-    "maxRuntimeMinutes": {
-      "maximum": 10080,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "maxUploadBytes": {
-      "format": "double",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "name": {
-      "maxLength": 80,
-      "minLength": 1,
-      "type": "string"
-    },
-    "sharesLibraryHardware": {
-      "description": "Restoration workers only: full restorations wait while library analysis has work",
-      "type": "boolean"
-    },
-    "url": {
-      "format": "uri",
-      "nullable": true,
-      "type": "string"
-    },
-    "workloads": {
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "maxItems": 16,
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## MlRestorationModelsResponseDto
-
-Related models: [MlWorkload](models-17.md#mlworkload), [RestorationGpuDto](models-29.md#restorationgpudto), [RestorationModelCapabilityDto](models-29.md#restorationmodelcapabilitydto).
-
-```json
-{
-  "properties": {
-    "checkedAt": {
-      "description": "When the destination last verified its models, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "configurationProblems": {
-      "description": "Problems reading the model manifest or qualification evidence on the destination",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "destinationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "error": {
-      "description": "Why no report could be read, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "gpus": {
-      "items": {
-        "$ref": "#/components/schemas/RestorationGpuDto"
-      },
-      "type": "array"
-    },
-    "models": {
-      "items": {
-        "$ref": "#/components/schemas/RestorationModelCapabilityDto"
-      },
-      "type": "array"
-    },
-    "reachable": {
-      "description": "Whether the destination answered with a restoration report",
-      "type": "boolean"
-    },
-    "workloads": {
-      "description": "Restoration workloads the destination serves now; empty unless a model is available",
-      "items": {
-        "$ref": "#/components/schemas/MlWorkload"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "checkedAt",
-    "configurationProblems",
-    "destinationId",
-    "error",
-    "gpus",
-    "models",
-    "reachable",
-    "workloads"
-  ],
-  "type": "object"
-}
-```
-
-## MlStudioFeature
-
-
-```json
-{
-  "description": "Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)",
-  "enum": [
-    "speech-to-text",
-    "captions",
-    "speech"
-  ],
-  "type": "string"
-}
-```
-
-## MlThroughputEstimateDto
-
-
-```json
-{
-  "properties": {
-    "bytesPerSecond": {
-      "description": "Measured throughput for this destination and workload, or null with no samples",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "sampleCount": {
-      "description": "Successful requests the estimate is measured from",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "windowDays": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "bytesPerSecond",
-    "sampleCount",
-    "windowDays"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkerAcceleration
-
-
-```json
-{
-  "description": "Acceleration a worker reported on its last check",
-  "enum": [
-    "unknown",
-    "cpu",
-    "gpu"
-  ],
-  "type": "string"
-}
-```
-
-## MlWorkerReadiness
-
-
-```json
-{
-  "description": "State of one worker in the inventory",
-  "enum": [
-    "unknown",
-    "disabled",
-    "unreachable",
-    "not-serving",
-    "cpu",
-    "model-ready"
-  ],
-  "type": "string"
-}
-```
-
-## MlWorkerRole
-
-
-```json
-{
-  "description": "What a worker is for",
-  "enum": [
-    "library-analysis",
-    "restoration",
-    "studio",
-    "mixed",
-    "unassigned"
-  ],
-  "type": "string"
-}
-```
-
-## MlWorkload
-
-
-```json
-{
-  "description": "Machine-learning workload",
-  "enum": [
-    "face",
-    "clip",
-    "ocr",
-    "enrichment",
-    "restoration-faithful",
-    "restoration-creative",
-    "studio-ai",
-    "upscale",
-    "interpolation",
-    "studio-render",
-    "pet-recognition"
-  ],
-  "type": "string"
-}
-```
-
-## MlWorkloadCapabilityDto
-
-Related models: [MlCapabilityDestinationDto](models-17.md#mlcapabilitydestinationdto), [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "available": {
-      "description": "At least one destination can serve this workload right now",
-      "type": "boolean"
-    },
-    "destinations": {
-      "items": {
-        "$ref": "#/components/schemas/MlCapabilityDestinationDto"
-      },
-      "type": "array"
-    },
-    "routedDestinationId": {
-      "description": "Destination library jobs use for this workload, or null",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "workload": {
-      "$ref": "#/components/schemas/MlWorkload"
-    }
-  },
-  "required": [
-    "available",
-    "destinations",
-    "routedDestinationId",
-    "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRouteDto
-
-Related models: [MlWorkload](models-17.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "destinationId": {
-      "description": "Destination the workload is routed to, or null when unrouted",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "workload": {
-      "$ref": "#/components/schemas/MlWorkload"
-    }
-  },
-  "required": [
-    "destinationId",
-    "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRouteUpdateDto
-
-
-```json
-{
-  "properties": {
-    "destinationId": {
-      "description": "Destination to route the workload to; null removes the route",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "destinationId"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRoutesResponseDto
-
-Related models: [MlWorkloadRouteDto](models-17.md#mlworkloadroutedto).
-
-```json
-{
-  "properties": {
-    "routes": {
-      "items": {
-        "$ref": "#/components/schemas/MlWorkloadRouteDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "routes"
-  ],
-  "type": "object"
-}
-```
-
-## MoveAlbumDto
-
-
-```json
-{
-  "properties": {
-    "collectionId": {
-      "description": "Collection to move the album into, or null to take it out so it stands on its own",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "expectedParentId": {
-      "description": "Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "collectionId"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationCreateDto
-
-Related models: [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
-
-```json
-{
-  "properties": {
-    "data": {
-      "additionalProperties": {},
-      "description": "Additional notification data",
-      "type": "object"
-    },
-    "description": {
-      "description": "Notification description",
-      "nullable": true,
-      "type": "string"
-    },
-    "level": {
-      "$ref": "#/components/schemas/NotificationLevel"
-    },
-    "readAt": {
-      "description": "Date when notification was read",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "title": {
-      "description": "Notification title",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/NotificationType"
-    },
-    "userId": {
-      "description": "User ID to send notification to",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "title",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationDeleteAllDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Notification IDs to delete",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
   ],
   "type": "object"
 }

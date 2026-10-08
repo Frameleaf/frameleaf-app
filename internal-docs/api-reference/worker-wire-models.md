@@ -1,6 +1,6 @@
 # Worker wire models and non-controller HTTP inventory
 
-Source baseline: **0a503215fa351aafbeea57c6d19899a9e943fa88**. This is an exact schema supplement for ML, restoration, render workers and Buddy peers. Snippets are source schema/type declarations; they are not runnable standalone modules. `z` is Zod, `Field`/`BaseModel` are Pydantic. Optional omission and nullable values are distinct. DTO field descriptions and validators are contract evidence, not proof that an inference/runtime/deployment works.
+Source baseline: **84601cc0814d82ddfcf113a25e4046c930dd64b8**. This is an exact schema supplement for ML, restoration, render workers and Buddy peers. Snippets are source schema/type declarations; they are not runnable standalone modules. `z` is Zod, `Field`/`BaseModel` are Pydantic. Optional omission and nullable values are distinct. DTO field descriptions and validators are contract evidence, not proof that an inference/runtime/deployment works. This pin identifies committed server/API/SDK source. Historical source-99 runtime receipts do not qualify this revision or its current engine; runtime, built-bundle interaction, physical-device and deployment acceptance remain separate.
 
 ## ML HTTP and envelopes
 
@@ -10,20 +10,20 @@ Ordinary ML has GET `/`, `/ping`, `/capabilities`, `/hardware`, POST `/predict`.
 
 **Options qualification:** listed registered `(task,type)` combinations use Pydantic validators with `extra="forbid"`; unknown keys are rejected there. The `validate_options` fallback returns options unchanged when no validator is registered for the pair. Enum annotations in a TypedDict are not themselves full request validation: do not claim every unknown task/type is rejected by that annotation alone. Subsequent model/dependency admission can still fail.
 
-[machine-learning/immich_ml/main.py:182–207](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/main.py#L182-L207) [machine-learning/immich_ml/main.py:213–287](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/main.py#L213-L287) [machine-learning/immich_ml/main.py:383–428](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/main.py#L383-L428) [machine-learning/immich_ml/schemas.py:245–264](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L245-L264)
+[machine-learning/immich_ml/main.py:182–207](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/main.py#L182-L207) [machine-learning/immich_ml/main.py:213–287](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/main.py#L213-L287) [machine-learning/immich_ml/main.py:383–428](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/main.py#L383-L428) [machine-learning/immich_ml/schemas.py:245–264](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L245-L264)
 
 ## Ordinary ML complete declarations
 
 `ModelTask`, `ModelType`, `PipelineEntry`, `PipelineRequest`, `InferenceResponse` and every registered option class follow. Runtime-only ONNX session protocols are omitted. `InferenceResponse` intentionally uses `Any`; typed server response contracts below narrow the built-in workloads. `external_prompt` is capped at 65536 characters by its validator. `ImageDescriptionOptions.acceleration` is annotated enum **or string**, so the schema alone does not enforce only enum spellings. `nsfw` is dict[str,Any], not a strictly typed object at this boundary.
 
-[machine-learning/immich_ml/schemas.py:18–19](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L18-L19)
+[machine-learning/immich_ml/schemas.py:18–19](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L18-L19)
 
 ```python
 class StrEnum(str, Enum):
     __str__ = str.__str__
 ```
 
-[machine-learning/immich_ml/schemas.py:22–26](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L22-L26)
+[machine-learning/immich_ml/schemas.py:22–26](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L22-L26)
 
 ```python
 class BoundingBox(TypedDict):
@@ -33,7 +33,7 @@ class BoundingBox(TypedDict):
     y2: int
 ```
 
-[machine-learning/immich_ml/schemas.py:29–35](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L29-L35)
+[machine-learning/immich_ml/schemas.py:29–35](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L29-L35)
 
 ```python
 class ModelTask(StrEnum):
@@ -45,7 +45,7 @@ class ModelTask(StrEnum):
     SEMANTIC_MASK = "semantic-mask"
 ```
 
-[machine-learning/immich_ml/schemas.py:38–43](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L38-L43)
+[machine-learning/immich_ml/schemas.py:38–43](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L38-L43)
 
 ```python
 class ModelType(StrEnum):
@@ -56,7 +56,7 @@ class ModelType(StrEnum):
     VISUAL = "visual"
 ```
 
-[machine-learning/immich_ml/schemas.py:46–49](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L46-L49)
+[machine-learning/immich_ml/schemas.py:46–49](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L46-L49)
 
 ```python
 class ModelFormat(StrEnum):
@@ -65,7 +65,7 @@ class ModelFormat(StrEnum):
     RKNN = "rknn"
 ```
 
-[machine-learning/immich_ml/schemas.py:52–56](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L52-L56)
+[machine-learning/immich_ml/schemas.py:52–56](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L52-L56)
 
 ```python
 class ModelSource(StrEnum):
@@ -75,7 +75,7 @@ class ModelSource(StrEnum):
     PADDLE = "paddle"
 ```
 
-[machine-learning/immich_ml/schemas.py:59–61](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L59-L61)
+[machine-learning/immich_ml/schemas.py:59–61](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L59-L61)
 
 ```python
 class ModelPrecision(StrEnum):
@@ -83,7 +83,7 @@ class ModelPrecision(StrEnum):
     FP32 = "FP32"
 ```
 
-[machine-learning/immich_ml/schemas.py:64–67](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L64-L67)
+[machine-learning/immich_ml/schemas.py:64–67](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L64-L67)
 
 ```python
 class ImageDescriptionAcceleration(StrEnum):
@@ -92,7 +92,7 @@ class ImageDescriptionAcceleration(StrEnum):
     CUDA = "cuda"
 ```
 
-[machine-learning/immich_ml/schemas.py:108–111](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L108-L111)
+[machine-learning/immich_ml/schemas.py:108–111](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L108-L111)
 
 ```python
 class DetectedFace(TypedDict):
@@ -101,13 +101,13 @@ class DetectedFace(TypedDict):
     score: float
 ```
 
-[machine-learning/immich_ml/schemas.py:114](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L114)
+[machine-learning/immich_ml/schemas.py:114](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L114)
 
 ```python
 FacialRecognitionOutput = list[DetectedFace]
 ```
 
-[machine-learning/immich_ml/schemas.py:117–119](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L117-L119)
+[machine-learning/immich_ml/schemas.py:117–119](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L117-L119)
 
 ```python
 class PipelineEntry(TypedDict):
@@ -115,13 +115,13 @@ class PipelineEntry(TypedDict):
     options: dict[str, Any]
 ```
 
-[machine-learning/immich_ml/schemas.py:122](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L122)
+[machine-learning/immich_ml/schemas.py:122](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L122)
 
 ```python
 PipelineRequest = dict[ModelTask, dict[ModelType, PipelineEntry]]
 ```
 
-[machine-learning/immich_ml/schemas.py:125–129](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L125-L129)
+[machine-learning/immich_ml/schemas.py:125–129](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L125-L129)
 
 ```python
 class InferenceEntry(TypedDict):
@@ -131,25 +131,25 @@ class InferenceEntry(TypedDict):
     options: dict[str, Any]
 ```
 
-[machine-learning/immich_ml/schemas.py:132](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L132)
+[machine-learning/immich_ml/schemas.py:132](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L132)
 
 ```python
 InferenceEntries = tuple[list[InferenceEntry], list[InferenceEntry]]
 ```
 
-[machine-learning/immich_ml/schemas.py:135](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L135)
+[machine-learning/immich_ml/schemas.py:135](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L135)
 
 ```python
 InferenceResponse = dict[ModelTask | Literal["imageHeight"] | Literal["imageWidth"], Any]
 ```
 
-[machine-learning/immich_ml/schemas.py:146](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L146)
+[machine-learning/immich_ml/schemas.py:146](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L146)
 
 ```python
 MAX_EXTERNAL_PROMPT_LENGTH = 64 * 1024
 ```
 
-[machine-learning/immich_ml/schemas.py:149–167](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L149-L167)
+[machine-learning/immich_ml/schemas.py:149–167](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L149-L167)
 
 ```python
 class _OptionsBase(BaseModel):
@@ -173,7 +173,7 @@ class _OptionsBase(BaseModel):
     device: str | None = Field(default=None, max_length=64)
 ```
 
-[machine-learning/immich_ml/schemas.py:170–177](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L170-L177)
+[machine-learning/immich_ml/schemas.py:170–177](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L170-L177)
 
 ```python
 class ClipOptions(_OptionsBase):
@@ -186,7 +186,7 @@ class ClipOptions(_OptionsBase):
     language: str | None = Field(default=None, max_length=64)
 ```
 
-[machine-learning/immich_ml/schemas.py:180–183](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L180-L183)
+[machine-learning/immich_ml/schemas.py:180–183](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L180-L183)
 
 ```python
 class FacialRecognitionDetectionOptions(_OptionsBase):
@@ -195,14 +195,14 @@ class FacialRecognitionDetectionOptions(_OptionsBase):
     minScore: float | None = Field(default=None, ge=0.0, le=1.0)
 ```
 
-[machine-learning/immich_ml/schemas.py:186–187](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L186-L187)
+[machine-learning/immich_ml/schemas.py:186–187](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L186-L187)
 
 ```python
 class FacialRecognitionRecognitionOptions(_OptionsBase):
     """Options for the facial-recognition recognition task."""
 ```
 
-[machine-learning/immich_ml/schemas.py:190–198](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L190-L198)
+[machine-learning/immich_ml/schemas.py:190–198](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L190-L198)
 
 ```python
 class OcrDetectionOptions(_OptionsBase):
@@ -216,7 +216,7 @@ class OcrDetectionOptions(_OptionsBase):
     maxResolution: int | None = Field(default=None, ge=1)
 ```
 
-[machine-learning/immich_ml/schemas.py:201–204](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L201-L204)
+[machine-learning/immich_ml/schemas.py:201–204](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L201-L204)
 
 ```python
 class OcrRecognitionOptions(_OptionsBase):
@@ -225,7 +225,7 @@ class OcrRecognitionOptions(_OptionsBase):
     minScore: float | None = Field(default=None, ge=0.0, le=1.0)
 ```
 
-[machine-learning/immich_ml/schemas.py:207–210](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L207-L210)
+[machine-learning/immich_ml/schemas.py:207–210](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L207-L210)
 
 ```python
 class NsfwDetectionOptions(_OptionsBase):
@@ -234,7 +234,7 @@ class NsfwDetectionOptions(_OptionsBase):
     threshold: float | None = Field(default=None, ge=0.0, le=1.0)
 ```
 
-[machine-learning/immich_ml/schemas.py:213–233](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L213-L233)
+[machine-learning/immich_ml/schemas.py:213–233](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L213-L233)
 
 ```python
 class ImageDescriptionOptions(_OptionsBase):
@@ -260,7 +260,7 @@ class ImageDescriptionOptions(_OptionsBase):
         return value
 ```
 
-[machine-learning/immich_ml/schemas.py:236–238](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L236-L238)
+[machine-learning/immich_ml/schemas.py:236–238](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L236-L238)
 
 ```python
 class SemanticMaskOptions(_OptionsBase):
@@ -268,7 +268,7 @@ class SemanticMaskOptions(_OptionsBase):
     device: Literal["cpu", "cuda"] = "cpu"
 ```
 
-[machine-learning/immich_ml/schemas.py:242–252](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/schemas.py#L242-L252)
+[machine-learning/immich_ml/schemas.py:242–252](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/schemas.py#L242-L252)
 
 ```python
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
@@ -288,7 +288,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
 
 These are exact HTTP caller-side response expectations for CLIP, OCR, face recognition, NSFW and image description. A declaration is not additional validation beyond the actual caller. `embedding`/CLIP encodings are strings; OCR boxes are flat numeric arrays as declared. The backend model still determines encoding internals.
 
-[server/src/repositories/machine-learning.repository.ts:47–193](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/machine-learning.repository.ts#L47-L193)
+[server/src/repositories/machine-learning.repository.ts:52–198](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L52-L198)
 
 ```ts
 export interface BoundingBox {
@@ -442,15 +442,17 @@ export type MachineLearningRequest =
 
 ## Semantic-mask response
 
-The `semantic-mask`/`visual` pipeline returns task-keyed data with `png` (standard base64 grayscale PNG), width, height, target (`subject` or `sky`), coordinates (`sensor-active`), and models (`{repository,revision}[]`). It shares `/predict`; there is no separate `/enrichment` or `/semantic-mask` HTTP route in either FastAPI application. The server constructs a local-only request with modelName `frameleaf-florence2-sam2.1` and does not force a CPU device in its request options. The worker selects the configured semantic-mask device; `auto` chooses CUDA when available and CPU otherwise. Empty proposals fail instead of publishing an empty mask. [machine-learning/immich_ml/models/semantic_mask.py:35–77](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/models/semantic_mask.py#L35-L77)
+The `semantic-mask`/`visual` pipeline returns task-keyed data with `png` (standard base64 grayscale PNG), width, height, target (`subject` or `sky`), coordinates (`sensor-active`), and models (`{repository,revision}[]`). It shares `/predict`; there is no separate `/enrichment` or `/semantic-mask` HTTP route in either FastAPI application. The server constructs a local-only request with modelName `frameleaf-florence2-sam2.1` and does not force a CPU device in its request options. The worker selects the configured semantic-mask device; `auto` chooses CUDA when available and CPU otherwise. Empty proposals fail instead of publishing an empty mask. [machine-learning/immich_ml/models/semantic_mask.py:35–77](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/models/semantic_mask.py#L35-L77)
 
-[machine-learning/immich_ml/models/semantic_mask.py:116–127](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/models/semantic_mask.py#L116-L127) [server/src/repositories/machine-learning.repository.ts:429–451](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/machine-learning.repository.ts#L429-L451)
+[machine-learning/immich_ml/models/semantic_mask.py:116–127](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/models/semantic_mask.py#L116-L127) [server/src/repositories/machine-learning.repository.ts:444–475](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L444-L475)
+
+The caller also enforces current endpoint authority. Local semantic-mask work checks effective ML enablement and configured URLs; direct restoration model discovery and probes authorize before outbound requests and again after response parsing. Restoration output is size/hash verified and authority is checked after the body finishes, before retaining output or reporting success; refusal removes the attempted output. Probe reuse is bound to authentication and authority identity, rather than treating a cached successful probe as permanent consent. These internal guards are not new wire fields. [server/src/repositories/machine-learning.repository.ts:447–475](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L447-L475) [server/src/repositories/machine-learning.repository.ts:528–644](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L528-L644) [server/src/repositories/machine-learning.repository.ts:879–900](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L879-L900) [server/src/repositories/machine-learning.repository.ts:983–1080](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L983-L1080)
 
 ## ML hardware response
 
 Ordinary `/hardware` combines providers:string[], openvinoDeviceIds:string[], torchCudaAvailable:boolean, cudaDeviceCount:number, preferredAcceleration (`auto`,`cuda`,`openvino`) and container below. Restoration `/hardware` reports the same five top-level hardware fields but no container; providers/openvinoDeviceIds are empty and torchCudaAvailable is false because its worker process does not open a torch context. GPU count comes from the registry report.
 
-[server/src/utils/hardware-check.ts:1–92](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/hardware-check.ts#L1-L92)
+[server/src/utils/hardware-check.ts:1–92](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/hardware-check.ts#L1-L92)
 
 ```ts
 /**
@@ -553,15 +555,15 @@ This is a separate FastAPI app (default port 3004). Its six explicit routes are 
 
 **Source discrepancies to retain:** Python accepts optional `segment` (ordered start/end milliseconds); server RestorationWorkerRequestSchema has no segment field and prepares/cuts media before submission. Python request defaults `kind="video"`, scale=2 and output box defaults; server schema requires those fields explicitly. Python output/timing fields have fewer nonnegative/positive constraints than server result parsing, whose declarations follow. The HTTP FileResponse currently hardcodes `media_type="video/mp4"` even though the result schema supports `container:"png"` for still images; consumers must validate result metadata/bytes rather than infer the actual file format from that header alone.
 
-[machine-learning/immich_ml/video_restoration/app.py:189–308](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/video_restoration/app.py#L189-L308) [server/src/repositories/machine-learning.repository.ts:875–971](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/machine-learning.repository.ts#L875-L971)
+[machine-learning/immich_ml/video_restoration/app.py:189–308](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/video_restoration/app.py#L189-L308) [server/src/repositories/machine-learning.repository.ts:914–1012](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/machine-learning.repository.ts#L914-L1012)
 
-The restore handler admits one request at a time. On client disconnect or task cancellation, it cancels managed runtimes and waits for inference cleanup before releasing admission; a disconnected caller may receive no result body. Shutdown also cancels managed runtimes. Warm model processes and their JSON-lines control are internal worker execution details; the external `restoration-v1` request/result schemas remain those below. [machine-learning/immich_ml/video_restoration/app.py:152–181](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/video_restoration/app.py#L152-L181) [machine-learning/immich_ml/video_restoration/app.py:220–307](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/video_restoration/app.py#L220-L307)
+The restore handler admits one request at a time. On client disconnect or task cancellation, it cancels managed runtimes and waits for inference cleanup before releasing admission; a disconnected caller may receive no result body. Shutdown also cancels managed runtimes. Warm model processes and their JSON-lines control are internal worker execution details; the external `restoration-v1` request/result schemas remain those below. [machine-learning/immich_ml/video_restoration/app.py:152–181](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/video_restoration/app.py#L152-L181) [machine-learning/immich_ml/video_restoration/app.py:220–307](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/video_restoration/app.py#L220-L307)
 
 ## Restoration complete Python wire schemas
 
 All fields, optional/default values, enum alternatives and cross-field validators are reproduced. Every WireModel rejects extra fields. TimeSegment requires endMs \> startMs. Video requires durationMs; still images cannot have segment. Smooth motion requires interpolationFactor, video and scale=1; other modes refuse interpolationFactor/trailingContextFrame. Width/height source bounds are 1–16384, output box 16–3840, seed 0–2147483647. SHA-256 is lowercase 64 hex; frame-rate rational parts are positive 1–9 digit integers.
 
-[machine-learning/immich_ml/video_restoration/schemas.py:18–274](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/video_restoration/schemas.py#L18-L274)
+[machine-learning/immich_ml/video_restoration/schemas.py:18–274](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/video_restoration/schemas.py#L18-L274)
 
 ```python
 
@@ -827,7 +829,7 @@ class CapabilityReport(WireModel):
 
 These define what the server actually submits and accepts on return. They use shared AssetRestorationMode (`faithful`,`creative`,`smooth_motion`) and upscale (1,2,4), and include capability/model projections into public administrator DTOs. Keep Python and server differences explicit rather than silently merging them into an invented schema.
 
-[server/src/dtos/restoration-inference.dto.ts:1–276](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/restoration-inference.dto.ts#L1-L276)
+[server/src/dtos/restoration-inference.dto.ts:1–276](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/restoration-inference.dto.ts#L1-L276)
 
 ```ts
 import { createZodDto } from 'nestjs-zod';
@@ -1112,7 +1114,7 @@ export class RestorationModelCapabilityDto extends createZodDto(RestorationModel
 
 `busy` also returns Retry-After:30. `model-changed` requires a fresh preview/model binding. The exact error-code → status map is:
 
-[machine-learning/immich_ml/video_restoration/models.py:109–120](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/machine-learning/immich_ml/video_restoration/models.py#L109-L120)
+[machine-learning/immich_ml/video_restoration/models.py:109–120](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/machine-learning/immich_ml/video_restoration/models.py#L109-L120)
 
 ```python
     STATUS: ClassVar[dict[RestorationErrorCode, int]] = {
@@ -1155,13 +1157,13 @@ Worker base `/api/render-workers` is HomeNetworkOnly. Admission uses enrollment 
 
 Admin models below cover identity creation/update/listing, limits, audit, compatibility and revocation. The accompanying operation reference supplies every administrator route. `snapshot` and `settings` are arbitrary JSON object schemas at this HTTP boundary; their operation-kind-specific semantics are not a single invented closed wire model.
 
-[server/src/controllers/render-worker.controller.ts:234–541](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L234-L541)
+[server/src/controllers/render-worker.controller.ts:234–541](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L234-L541)
 
 ## Render-worker complete DTO constraints
 
 Exact declarations include all request/response models, helper fields and class-to-schema names. `BigIntString` is a **decimal string**, never a JSON number. Important service checks are stronger than these schemas: Studio export completion requires resultAssetId=null and the verified whole-export checkpoint; the schema permits artifactSequence only 0. Legacy output paths are constrained again by service publication; exposing a path field here is restricted worker protocol, not an invitation for user API path writes.
 
-[server/src/dtos/render-worker.dto.ts:1–427](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/render-worker.dto.ts#L1-L427)
+[server/src/dtos/render-worker.dto.ts:1–431](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/render-worker.dto.ts#L1-L431)
 
 ```ts
 import { createZodDto } from 'nestjs-zod';
@@ -1332,7 +1334,7 @@ const RenderWorkerAdmissionSchema = z
       .array(z.string().max(30))
       .max(32)
       .optional()
-      .describe('Containers the check verified writing, such as `mp4`, `webm` or `mov`'),
+      .describe('Containers and versioned paired-output profiles the check verified writing'),
   })
   .meta({ id: 'RenderWorkerAdmissionDto' });
 
@@ -1484,7 +1486,11 @@ const RenderWorkerOutputSchema = z
       .regex(/^[\da-f]{64}$/i, 'SHA-256 hex digest')
       .describe('SHA-256 of the whole file'),
     sizeInBytes: BigIntString,
-    contentType: z.string().min(1).max(100).describe('`video/mp4`, `video/webm` or `video/quicktime`'),
+    contentType: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe('Verified output MIME: `video/mp4`, `video/webm`, `video/quicktime`, `image/jpeg` or `image/heic`'),
     remoteRef: z
       .string()
       .min(1)
@@ -1593,17 +1599,19 @@ export class RenderWorkerArtifactDto extends createZodDto(RenderWorkerArtifactSc
 export class RenderWorkerArtifactReadDto extends createZodDto(RenderWorkerArtifactReadSchema) {}
 ```
 
+The optional conformance `formats` array can name versioned paired-output profiles as well as containers. Sidecar candidate selection requires the exact `mp4-h264+srt-sidecar-v1` profile together with the MP4 container and a recognized encoder in the same session. Paired-output claim admission requires fresh current session evidence, current worker engine identity and a matching immutable operation engine; stale, revoked or changed-engine sessions cannot substitute another session’s report. The optional `sidecarOutputFormats` administrator projection describes candidate support only. At this pin the public Studio export DTO still accepts only `burn` or `off`, and defaults to Burn; the profile does not expose Sidecar creation or prove that a worker measured it. [server/src/utils/render-admission.ts:215–236](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/render-admission.ts#L215-L236) [server/src/utils/render-admission.ts:320–393](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/render-admission.ts#L320-L393) [server/src/utils/render-admission.ts:463–510](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/render-admission.ts#L463-L510) [server/src/services/render-worker.service.ts:720–755](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/render-worker.service.ts#L720-L755) [server/src/dtos/ml-destination.dto.ts:290–295](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/ml-destination.dto.ts#L290-L295)
+
 ## Studio export settings and declared worker contract
 
-`StudioExportCreateDto.quality` accepts `low`, `medium`, `high` or `ultra`; omission stores `high`. Quality is independent of format, color, resolution and audio. `StudioExportSettingsDto.quality` remains optional for older readbacks. The generated DTO models include optional `range` and `mastering`; settings retain the choices fixed at submission. [server/src/dtos/studio-export.dto.ts:44–146](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/studio-export.dto.ts#L44-L146) [server/src/services/studio-export.service.ts:332–351](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L332-L351)
+`StudioExportCreateDto.quality` accepts `low`, `medium`, `high` or `ultra`; omission stores `high`. For video, quality is independent of format, color, resolution and audio. Explicit still exports require high quality, original resolution, preserved color/audio and no subtitle setting or smooth motion. `StudioExportSettingsDto.quality` remains optional for older readbacks. The generated DTO models include optional `range` and `mastering`; settings retain the choices fixed at submission. [server/src/dtos/studio-export.dto.ts:44–146](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/studio-export.dto.ts#L44-L146) [server/src/services/studio-export.service.ts:335–367](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L335-L367)
 
-`range: {inPoint, outPoint}` selects main-timeline frames: `inPoint` is included, `outPoint` is excluded, and omission exports the whole timeline. Bounds must be safe integers with `0 <= inPoint < outPoint`, within a non-empty timeline with an exact project cadence. Nested compositions are refused. Ranges require the recorded output cadence decision to be `convert`; timestamp passthrough is unsupported. The worker contract records the selected bounds and rational cadence, and output starts at zero. Audio expectations consider only audible items overlapping that range. A timing refusal is 409 `studio_export_timing_unknown`. [server/src/utils/studio-export-contract.ts:108–145](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L108-L145) [server/src/utils/studio-export-contract.ts:172–191](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L172-L191) [server/src/services/studio-export.service.ts:415–443](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L415-L443)
+`range: {inPoint, outPoint}` selects main-timeline frames: `inPoint` is included, `outPoint` is excluded, and omission exports the whole timeline. Bounds must be safe integers with `0 <= inPoint < outPoint`, within a non-empty timeline with an exact project cadence. Nested compositions are refused. Ranges require the recorded output cadence decision to be `convert`; timestamp passthrough is unsupported. The worker contract records the selected bounds and rational cadence, and output starts at zero. Audio expectations consider only audible items overlapping that range. A timing refusal is 409 `studio_export_timing_unknown`. [server/src/utils/studio-export-contract.ts:133–170](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L133-L170) [server/src/utils/studio-export-contract.ts:197–216](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L197-L216) [server/src/services/studio-export.service.ts:432–463](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L432-L463)
 
-PQ output (`smpte2084`, including HDR10 or preserved PQ) requires an explicit `mastering: {primaries: "bt2020", maxNits, minNits}`. The strict schema fixes BT.2020 primaries and D65 white; both luminances are at most 10000 nits and use 0.0001-nit increments, with `maxNits > minNits >= 0`. Source content-light metadata and preview defaults do not supply this authority. A supplied mastering profile is refused for HLG/SDR. A mastering refusal is 409 `studio_export_mastering_unknown`. Existing Dolby rights and worker-qualification gates still apply. [server/src/utils/studio-export-contract.ts:55–70](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L55-L70) [server/src/utils/studio-export-contract.ts:367–382](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L367-L382) [server/src/services/studio-export.service.ts:294–313](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L294-L313) [server/src/services/studio-export.service.ts:435–440](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L435-L440)
+Video PQ output (`smpte2084`, including HDR10 or preserved PQ) requires an explicit `mastering: {primaries: "bt2020", maxNits, minNits}`. The strict schema fixes BT.2020 primaries and D65 white; both luminances are at most 10000 nits and use 0.0001-nit increments, with `maxNits > minNits >= 0`. Source content-light metadata and preview defaults do not supply this authority. A supplied mastering profile is refused for HLG/SDR. A mastering refusal is 409 `studio_export_mastering_unknown`. Existing Dolby rights and worker-qualification gates still apply. [server/src/utils/studio-export-contract.ts:55–70](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L55-L70) [server/src/utils/studio-export-contract.ts:392–432](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L392-L432) [server/src/services/studio-export.service.ts:297–316](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L297-L316) [server/src/services/studio-export.service.ts:452–460](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L452-L460)
 
-The export snapshot sent to the worker contains the declared timing and contract below. Publication requires settings and contract range bounds to agree, exact constant-cadence packet evidence for the selected frame count and zero-based presentation span, and matching PQ mastering-display side data with exact rational primaries, white point and luminances. Missing or mismatched evidence refuses publication. The mastering profile also enters the worker artifact input digest. [server/src/services/studio-export.service.ts:1105–1149](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L1105-L1149) [server/src/utils/studio-export-contract.ts:410–449](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L410-L449) [server/src/utils/studio-export-contract.ts:499–528](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L499-L528) [server/src/services/render-worker.service.ts:252–263](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/render-worker.service.ts#L252-L263)
+The export snapshot sent to the worker contains the declared timing and contract below, with authorized source epochs in its canonical manifest. Video publication requires settings and contract range bounds to agree, exact constant-cadence packet evidence for the selected frame count and zero-based presentation span, and matching PQ mastering-display side data with exact rational primaries, white point and luminances. Missing or mismatched evidence refuses publication. The mastering profile also enters the worker artifact input digest. [server/src/services/studio-export.service.ts:1172–1245](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L1172-L1245) [server/src/utils/studio-export-contract.ts:460–499](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L460-L499) [server/src/utils/studio-export-contract.ts:550–579](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L550-L579) [server/src/services/render-worker.service.ts:252–270](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/render-worker.service.ts#L252-L270)
 
-[server/src/utils/studio-export-contract.ts:55–98](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export-contract.ts#L55-L98)
+[server/src/utils/studio-export-contract.ts:55–123](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L55-L123)
 
 ```ts
 export const STUDIO_EXPORT_AUDIO = ['preserve', 'stereo'] as const;
@@ -1632,7 +1640,32 @@ export type StudioExportTiming = {
   sources: StudioSourceTiming[];
 };
 
+/** Still output identity is independent of the legacy video contract. */
+export const StudioExportImageContractSchema = z
+  .object({
+    version: z.literal(1),
+    format: z.enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']),
+    width: z.int().positive().max(16_384),
+    height: z.int().positive().max(16_384),
+    frame: z.int().nonnegative(),
+    dynamicRange: z.enum(['sdr', 'hdr']),
+    outputIntent: z.enum(['sdr', 'hdr']),
+    referenceWhite: z.literal(203),
+    renderer: z.literal('frameleaf-studio-image-v1'),
+  })
+  .strict()
+  .refine(
+    (image) =>
+      image.width * image.height <= 48_000_000 &&
+      image.dynamicRange === (image.format === 'sdr-jpeg' ? 'sdr' : 'hdr') &&
+      (image.dynamicRange === 'sdr' || image.outputIntent === 'hdr'),
+    'Invalid still output contract',
+  );
+export type StudioExportImageContract = z.infer<typeof StudioExportImageContractSchema>;
+export class StudioExportImageError extends Error {}
+
 export type StudioExportContract = {
+  image?: StudioExportImageContract;
   /** Main-timeline frame selection; the output is rebased to zero at this exact cadence. */
   range?: StudioExportRange & { cadence: string };
   video: {
@@ -1652,15 +1685,17 @@ export type StudioExportContract = {
 type GraphItem = Record<string, unknown>;
 ```
 
-`StudioExportCreateDto.subtitleMode` optionally accepts `burn` or `off`; omission uses the native `burn` default. The server stores the field only when explicitly supplied, and older `StudioExportSettingsDto` readbacks may omit it. `off` omits subtitle captions while preserving ordinary title overlays. This setting does not change export admission or PQ mastering requirements. [server/src/dtos/studio-export.dto.ts:46–122](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/studio-export.dto.ts#L46-L122) [server/src/utils/studio-export.ts:61–65](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/studio-export.ts#L61-L65) [server/src/services/studio-export.service.ts:338–347](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/studio-export.service.ts#L338-L347)
+Still formats `sdr-jpeg`, `hdr-jpeg` and `hdr-heic` carry a separate strict image contract: one selected frame, integral dimensions at most 16384 per edge and 48 million pixels, fixed reference white 203 and renderer `frameleaf-studio-image-v1`. HDR requires an HDR working-range graph and the experimental image gate; still exports refuse video mastering profiles. The service re-encodes the worker’s verified image through the existing isolated image worker, revalidates format, dimensions, dynamic range and HEIC codec/transfer constraints, and publishes only its own bounded, hashed attempt file. The worker artifact remains available for retry; these source rules do not prove native codec or completed still-export acceptance. [server/src/utils/studio-export-contract.ts:80–106](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L80-L106) [server/src/utils/studio-export-contract.ts:392–418](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export-contract.ts#L392-L418) [server/src/services/studio-export.service.ts:349–367](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L349-L367) [server/src/services/studio-export.service.ts:1052–1128](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L1052-L1128) [server/src/services/studio-export.service.ts:1190–1227](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L1190-L1227)
 
-The Studio dialog starts with blank mastering display limits. HDR10 requires a profile; Preserve offers an explicit PQ declaration because an HDR source flag does not distinguish PQ from HLG. Turning the declaration off omits the profile, and reopening clears it. The host forwards the chosen profile; the server still decides from source transfer and worker qualification. [studio/render-worker-claim.md:114–138](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/studio/render-worker-claim.md#L114-L138)
+`StudioExportCreateDto.subtitleMode` optionally accepts `burn` or `off`; omission uses the native `burn` default. The server stores the field only when explicitly supplied, and older `StudioExportSettingsDto` readbacks may omit it. `off` omits subtitle captions while preserving ordinary title overlays. This setting does not change export admission or PQ mastering requirements. [server/src/dtos/studio-export.dto.ts:46–122](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/studio-export.dto.ts#L46-L122) [server/src/utils/studio-export.ts:74–78](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/studio-export.ts#L74-L78) [server/src/services/studio-export.service.ts:341–350](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/studio-export.service.ts#L341-L350)
+
+The Studio dialog starts with blank mastering display limits. HDR10 requires a profile; Preserve offers an explicit PQ declaration because an HDR source flag does not distinguish PQ from HLG. Turning the declaration off omits the profile, and reopening clears it. The host forwards the chosen profile; the server still decides from source transfer and worker qualification. [studio/render-worker-claim.md:114–138](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/studio/render-worker-claim.md#L114-L138)
 
 ## Render-worker enum dependencies
 
 All enum values imported by these models are listed below. Schema acceptance of a MediaOperationKind does not mean every worker may claim it; admitted scopes and service eligibility decide that.
 
-[server/src/enum.ts:1305–1422](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1305-L1422)
+[server/src/enum.ts:1308–1425](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1308-L1425)
 
 ```ts
 export enum MediaOperationKind {
@@ -1783,7 +1818,7 @@ export enum MediaOperationKind {
 }
 ```
 
-[server/src/enum.ts:1709–1723](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1709-L1723)
+[server/src/enum.ts:1712–1726](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1712-L1726)
 
 ```ts
 export enum MediaOperationStatus {
@@ -1803,7 +1838,7 @@ export enum MediaOperationStatus {
 }
 ```
 
-[server/src/enum.ts:1734–1741](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1734-L1741)
+[server/src/enum.ts:1737–1744](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1737-L1744)
 
 ```ts
 export enum MediaOperationDestination {
@@ -1816,7 +1851,7 @@ export enum MediaOperationDestination {
 }
 ```
 
-[server/src/enum.ts:1749–1756](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1749-L1756)
+[server/src/enum.ts:1752–1759](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1752-L1759)
 
 ```ts
 export enum MediaOperationCheckpointState {
@@ -1829,7 +1864,7 @@ export enum MediaOperationCheckpointState {
 }
 ```
 
-[server/src/enum.ts:1818–1821](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1818-L1821)
+[server/src/enum.ts:1821–1824](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1821-L1824)
 
 ```ts
 export enum RenderWorkerStatus {
@@ -1838,7 +1873,7 @@ export enum RenderWorkerStatus {
 }
 ```
 
-[server/src/enum.ts:1829–1849](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1829-L1849)
+[server/src/enum.ts:1832–1852](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1832-L1852)
 
 ```ts
 export enum RenderWorkerAuditEvent {
@@ -1864,7 +1899,7 @@ export enum RenderWorkerAuditEvent {
 }
 ```
 
-[server/src/enum.ts:1860–1895](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L1860-L1895)
+[server/src/enum.ts:1863–1898](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L1863-L1898)
 
 ```ts
 export enum RenderWorkerRefusalReason {
@@ -1905,7 +1940,7 @@ export enum RenderWorkerRefusalReason {
 }
 ```
 
-[server/src/enum.ts:3031–3040](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L3031-L3040)
+[server/src/enum.ts:3035–3044](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L3035-L3044)
 
 ```ts
 export enum StudioExportRemoteReason {
@@ -1924,7 +1959,7 @@ export enum StudioExportRemoteReason {
 
 CheckpointParamDto coerces sequence to a nonnegative integer; operation ID is UUIDv7; input grant length is 1–8192. PreviewTimeSchema carries numerator/denominator as safe integer decimal strings and denominator \>0. SDP length ceiling is 65536. Stream close reasons: closed, superseded, revoked, stale-revision, expired, worker-lost, failed. Browser/worker signaling is non-trickle ICE; session descriptions are complete. The active streaming keepalive in source is product behavior, distinct from agents polling external CI state.
 
-[server/src/controllers/render-worker.controller.ts:65–76](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L65-L76)
+[server/src/controllers/render-worker.controller.ts:65–76](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L65-L76)
 
 ```ts
   id: z.uuidv7(),
@@ -1941,7 +1976,7 @@ class CheckpointParamDto extends createZodDto(CheckpointParamSchema) {}
 const history = () => new HistoryBuilder().added('v3.0.0').alpha('v3.0.0');
 ```
 
-[server/src/dtos/media-operation.dto.ts:42–55](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/media-operation.dto.ts#L42-L55)
+[server/src/dtos/media-operation.dto.ts:42–55](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/media-operation.dto.ts#L42-L55)
 
 ```ts
 const MediaOperationCheckpointSchema = z
@@ -1960,7 +1995,7 @@ const MediaOperationCheckpointSchema = z
   .meta({ id: 'MediaOperationCheckpointDto' });
 ```
 
-[server/src/dtos/studio-preview.dto.ts:13–26](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/studio-preview.dto.ts#L13-L26)
+[server/src/dtos/studio-preview.dto.ts:13–26](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/studio-preview.dto.ts#L13-L26)
 
 ```ts
 const safeIntegerString = (label: string) =>
@@ -1979,7 +2014,7 @@ export const PreviewTimeSchema = z
   .meta({ id: 'StudioPreviewTimeDto' });
 ```
 
-[server/src/dtos/studio-preview-stream.dto.ts:13–113](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/studio-preview-stream.dto.ts#L13-L113)
+[server/src/dtos/studio-preview-stream.dto.ts:13–113](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/studio-preview-stream.dto.ts#L13-L113)
 
 ```ts
 const SdpSchema = z.string().min(1).max(STREAM_MAX_SDP_BYTES).describe('A complete session description (SDP)');
@@ -2102,8 +2137,8 @@ Base `/api/buddy/v1/vaults/:vaultId`. Request JSON content type is application/v
 
 Receipt constraints: only id/bytes/digest fields; id and digest lowercase 64 hex; bytes safe integer from 28 through 8388636. Snapshot envelope only snapshot/signature fields; snapshot only the declared fields. Sequence/keyVersion safe integer ≥1, previous null or lowercase UUID, valid parseable createdAt/retainUntil, manifest 1–128 IDs, objects ≤1000000, no duplicate receipt IDs; each manifest ID must occur among objects. Signature is 86-character unpadded base64url Ed25519 signature over JSON.stringify(snapshot), validated against the pinned source Ed25519 key. These runtime validation constraints supplement the TypeScript type declarations below.
 
-[server/src/utils/buddy-backup-vault.ts:109–143](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-vault.ts#L109-L143) [server/src/utils/buddy-backup-vault.ts:307–359](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-vault.ts#L307-L359) [server/src/controllers/buddy-backup-peer.controller.ts:11–170](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L11-L170)
-[server/src/utils/buddy-backup-vault.ts:8–27](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-vault.ts#L8-L27)
+[server/src/utils/buddy-backup-vault.ts:109–143](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-vault.ts#L109-L143) [server/src/utils/buddy-backup-vault.ts:307–359](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-vault.ts#L307-L359) [server/src/controllers/buddy-backup-peer.controller.ts:11–170](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L11-L170)
+[server/src/utils/buddy-backup-vault.ts:8–27](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-vault.ts#L8-L27)
 
 ```ts
 export type BuddyReceipt = { id: string; bytes: number; digest: string };
@@ -2128,7 +2163,7 @@ export type BuddySnapshotSummary = Pick<
 type BuddyPublicKey = { kty: 'OKP'; crv: 'Ed25519'; x: string };
 ```
 
-[server/src/utils/buddy-backup-crypto.ts:12–18](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-crypto.ts#L12-L18)
+[server/src/utils/buddy-backup-crypto.ts:12–18](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-crypto.ts#L12-L18)
 
 ```ts
 export const BUDDY_BLOCK_BYTES = 8 * 1024 * 1024;
@@ -2144,7 +2179,7 @@ export type BuddyKeyring = { version: 1; vaultId: string; current: number; keys:
 
 The first snippet is the locally pinned Cloud contract copy: all request/response schemas, grant/key types and bounds used by the Buddy transport. The second snippet supplies strict DPoP header/claim schemas; final proof verification additionally checks binding, method/URI (query/fragment excluded), ≤60-second timestamp drift, nonce replay admission, and SHA-256 token hash.
 
-[server/src/utils/frameleaf-buddy.ts:1–159](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/frameleaf-buddy.ts#L1-L159)
+[server/src/utils/frameleaf-buddy.ts:1–159](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/frameleaf-buddy.ts#L1-L159)
 
 ```ts
 // Wire contracts from Frameleaf/frameleaf-cloud packages/contracts/src/buddy (Apache-2.0), commit 7f094c00.
@@ -2308,7 +2343,7 @@ export type BuddyRecoveryRelayRequest = z.infer<typeof BuddyRecoveryRelayRequest
 export const BuddyRecoveryRelayResponse = RelayTokenResponse.extend({ recoveryHost: z.string().max(253) });
 ```
 
-[server/src/utils/buddy-backup-protocol.ts:18–34](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-protocol.ts#L18-L34)
+[server/src/utils/buddy-backup-protocol.ts:18–34](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-protocol.ts#L18-L34)
 
 ```ts
 const publicKey = z.strictObject({
@@ -2334,7 +2369,7 @@ const proofClaims = z.strictObject({
 
 JSON envelope: `{data:T,proof:string}`. Proof JWT header is strict `{typ:"buddy-response+jwt",alg:"EdDSA"}`. Claims below are strict; destination key is the grant-pinned key, requestId is the original DPoP jti, exp equals grant.exp, digest is lowercase hex SHA-256 of JSON.stringify(data). Binary Buddy-Proof signs a receipt over the actual bytes. Commit response data is `{snapshotId: snapshot.id,digest: SHA256(JSON.stringify(snapshot))}`.
 
-[server/src/utils/buddy-backup-protocol.ts:100–112](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-protocol.ts#L100-L112)
+[server/src/utils/buddy-backup-protocol.ts:100–112](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-protocol.ts#L100-L112)
 
 ```ts
   const header = z.strictObject({ typ: z.literal('buddy-response+jwt'), alg: z.literal('EdDSA') }).parse(jwt.header);
@@ -2352,13 +2387,13 @@ JSON envelope: `{data:T,proof:string}`. Proof JWT header is strict `{typ:"buddy-
     header.alg !== 'EdDSA' ||
 ```
 
-[server/src/services/buddy-backup-peer.service.ts:330–345](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/buddy-backup-peer.service.ts#L330-L345) [server/src/utils/buddy-backup-protocol.ts:7–15](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/buddy-backup-protocol.ts#L7-L15)
+[server/src/services/buddy-backup-peer.service.ts:330–345](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/buddy-backup-peer.service.ts#L330-L345) [server/src/utils/buddy-backup-protocol.ts:7–15](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/buddy-backup-protocol.ts#L7-L15)
 
 ## Source image encoding model
 
-`ImageEncodingInfo` is shared by asset responses and image-worker inspection. `dynamicRange`, `gainMap` and `reconstructionAvailable` are required; the technical detail fields are optional. `container`, `codec` and gain-map descriptions are bounded strings rather than closed capability enums. Unknown values do not imply reconstruction support. `referenceWhite` is an optional positive processing reference in cd/m²; it is not measured screen brightness. `inspectionStatus` optionally distinguishes `identified` from `failed`. The schema describes technical color encoding and does not expose capture EXIF or location. The unknown default does not invent SDR, bit depth or reference white. [server/src/dtos/image-encoding.dto.ts:3–36](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/image-encoding.dto.ts#L3-L36)
+`ImageEncodingInfo` is shared by asset responses and image-worker inspection. `dynamicRange`, `gainMap` and `reconstructionAvailable` are required; the technical detail fields are optional. `container`, `codec` and gain-map descriptions are bounded strings rather than closed capability enums. Unknown values do not imply reconstruction support. `referenceWhite` is an optional positive processing reference in cd/m²; it is not measured screen brightness. `inspectionStatus` optionally distinguishes `identified` from `failed`. The schema describes technical color encoding and does not expose capture EXIF or location. The unknown default does not invent SDR, bit depth or reference white. [server/src/dtos/image-encoding.dto.ts:3–36](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/image-encoding.dto.ts#L3-L36)
 
-[server/src/dtos/image-encoding.dto.ts:4–36](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/image-encoding.dto.ts#L4-L36)
+[server/src/dtos/image-encoding.dto.ts:4–36](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/image-encoding.dto.ts#L4-L36)
 
 ```ts
 export const ImageEncodingSchema = z
@@ -2398,9 +2433,9 @@ export const unknownImageEncoding = (): ImageEncodingInfo => ({
 
 ## Internal image-worker HDR IPC
 
-The image worker registers `getHdrCodecCapabilities`, `inspectImageEncoding`, `decodeHdrImage`, `encodeHdrImage` and `generateHdrRenditions` alongside the existing Sharp operations. These are child-process IPC calls through `MediaRepository`, not additional HTTP routes or Studio render-worker enrollment capabilities. Requests carry an ID, operation, argument array and pixel/byte budgets; responses distinguish readiness, progress, result and classified failure. HDR inspection accepts a source path or buffer; decode returns the declared linear surface, and encode accepts that surface and returns a buffer. Encoded input is capped at the smaller of the worker budget and 128 MiB. A native `RESOURCE_LIMIT` becomes a Sharp resource-limit failure; the native codec binding is a separate runtime dependency. [server/src/queue/sharp-operations.ts:77–134](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L77-L134) [server/src/queue/image-hdr.ts:45–89](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L45-L89) [server/src/repositories/media.repository.ts:111–150](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.ts#L111-L150)
+The image worker registers `getHdrCodecCapabilities`, `inspectImageEncoding`, `decodeHdrImage`, `encodeHdrImage`, `generateHdrRenditions` and `exportPhotoStill` alongside the existing Sharp operations. These are child-process IPC calls through `MediaRepository`, not additional HTTP routes or Studio render-worker enrollment capabilities. Requests carry an ID, operation, argument array and pixel/byte budgets; responses distinguish readiness, progress, result and classified failure. HDR inspection accepts a source path or buffer; decode returns the declared linear surface, and encode accepts that surface and returns a buffer. Encoded input is capped at the smaller of the worker budget and 128 MiB. Internal result/failure messages can include worker lifetime peak RSS telemetry; that telemetry does not admit an HTTP request or render-worker session. A native `RESOURCE_LIMIT` becomes a Sharp resource-limit failure; the native codec binding is a separate runtime dependency. [server/src/queue/sharp-operations.ts:78–209](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L78-L209) [server/src/queue/image-hdr.ts:48–92](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L48-L92) [server/src/repositories/media.repository.ts:111–157](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L111-L157)
 
-[server/src/queue/sharp-protocol.ts:3–38](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-protocol.ts#L3-L38)
+[server/src/queue/sharp-protocol.ts:3–46](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-protocol.ts#L3-L46)
 
 ```ts
 export const SHARP_OPERATIONS = [
@@ -2409,6 +2444,7 @@ export const SHARP_OPERATIONS = [
   'decodeHdrImage',
   'encodeHdrImage',
   'generateHdrRenditions',
+  'exportPhotoStill',
   'decodeImage',
   'generateImageThumbnails',
   'generateThumbnail',
@@ -2437,11 +2473,18 @@ export type SharpRequest = {
 export type SharpResponse =
   | { type: 'ready' }
   | { type: 'progress'; id: number; completed: number }
-  | { type: 'result'; id: number; value: unknown }
-  | { type: 'failure'; id: number; message: string; resourceLimit: boolean; decodeFailure?: boolean };
+  | { type: 'result'; id: number; value: unknown; workerLifetimePeakRssBytes?: number }
+  | {
+      type: 'failure';
+      id: number;
+      message: string;
+      resourceLimit: boolean;
+      decodeFailure?: boolean;
+      workerLifetimePeakRssBytes?: number;
+    };
 ```
 
-[server/src/queue/image-hdr.ts:7–11](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L7-L11)
+[server/src/queue/image-hdr.ts:7–11](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L7-L11)
 
 ```ts
 export type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
@@ -2451,13 +2494,13 @@ export type LinearHdrImage = { data: Buffer; width: number; height: number; gamu
 export type PairedHdrImage = LinearHdrImage & { sdr: Buffer; sdrGamut: 0 | 1 | 2 };
 ```
 
-`decodeHdrImage(input, preserveSdrBaseline = false)` keeps the ordinary linear HDR path by default. Passing true requests a `PairedHdrImage`, adding the authored SDR baseline buffer and sdrGamut. `SharpOperations.encodeHdrImage(image, format = "jpeg")` selects native `encodeHeic` for HEIC using only the linear surface; JPEG retains paired encoding when sdr is present and ordinary encoding otherwise. The existing MediaRepository encode wrapper retains its single-image argument and JPEG default. Native buffers remain subject to worker pixel/byte budgets. HEIC does not embed the authored paired SDR baseline. [server/src/queue/sharp-operations.ts:107–133](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L107-L133) [server/src/repositories/media.repository.ts:127–147](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.ts#L127-L147) [server/src/queue/image-hdr.ts:10–42](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L10-L42)
+`decodeHdrImage(input, preserveSdrBaseline = false)` keeps the ordinary linear HDR path by default. Passing true requests a `PairedHdrImage`, adding the authored SDR baseline buffer and sdrGamut. `SharpOperations.encodeHdrImage(image, format = "jpeg")` selects native `encodeHeic` for HEIC using only the linear surface; JPEG retains paired encoding when sdr is present and ordinary encoding otherwise. The existing MediaRepository encode wrapper retains its single-image argument and JPEG default. Native buffers remain subject to worker pixel/byte budgets. Float input byte lengths must be divisible by four; unaligned IPC buffers are copied into aligned storage and the copy is cleared on exit. HEIC does not embed the authored paired SDR baseline. [server/src/queue/sharp-operations.ts:164–209](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L164-L209) [server/src/repositories/media.repository.ts:127–154](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L127-L154) [server/src/queue/image-hdr.ts:10–45](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L10-L45)
 
-`generateHdrRenditions(input, outputs, develop?)` accepts one or two distinct outputs without Develop, or up to four with a Develop projection. Each `HdrRenditionOutput` has path, optional positive safe-integer longest-edge size (never upscaled), optional `dynamicRange: "hdr" | "sdr"` defaulting to hdr, optional `format: "jpeg" | "heic"` defaulting to jpeg, and optional histogram. Invalid output formats and HEIC with explicit SDR are refused with `INVALID_HDR_OUTPUT_FORMAT`; invalid ranges, duplicate resolved paths, zero/excess outputs and paths equal to the source are refused. The source must inspect as HDR with reconstruction support. Without Develop, gain-map JPEG uses paired authored decode only when at least one output is JPEG; an all-HEIC request reconstructs a single linear HDR surface. Supplying Develop also uses the linear surface for editing. [server/src/queue/sharp-operations.ts:135–176](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L135-L176)
+`generateHdrRenditions(input, outputs, develop?, checksum?)` accepts one or two distinct outputs without Develop, or up to four with a Develop projection. Each `HdrRenditionOutput` has path, optional positive safe-integer longest-edge size (never upscaled), optional `dynamicRange: "hdr" | "sdr"` defaulting to hdr, optional `format: "jpeg" | "heic"` defaulting to jpeg, and optional histogram. Invalid output formats and HEIC with explicit SDR are refused with `INVALID_HDR_OUTPUT_FORMAT`; invalid ranges, duplicate resolved paths, zero/excess outputs and paths equal to the source are refused. The source must inspect as HDR with reconstruction support. An optional source checksum must be a 20-byte SHA-1 or 32-byte SHA-256 matching the exact loaded bytes; mismatch refuses processing with `IMAGE_SOURCE_CHANGED`. Without Develop, a supported reconstructable gain map uses paired authored decode only when at least one output is JPEG, including supported non-JPEG input containers; an all-HEIC request reconstructs a single linear HDR surface. Supplying Develop also uses the linear surface for editing. [server/src/queue/sharp-operations.ts:174–258](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L174-L258)
 
-`HdrDevelopRender` carries the known recipe projection, seed, and dictionaries of mask and fill bitmaps. The worker reserves encoded-input and artifact bytes before decode, checks every referenced mask/fill, converts fill artifacts to premultiplied linear source-gamut values, then runs cleanup, geometry, seeded global tone, selective masks and detail in that order. Retained input/artifact/fill/mask-cache surfaces remain in subsequent memory admission. Missing artifacts raise `MISSING_DEVELOP_ARTIFACT`; insufficient combined budgets raise a Sharp resource-limit error. This typed internal request expects owner-verified artifacts from its caller; the worker does not itself establish asset ownership or authorize a public request. [server/src/queue/sharp-operations.ts:159–229](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L159-L229)
+`HdrDevelopRender` carries the known recipe projection, seed, and dictionaries of mask and fill bitmaps. The worker reserves encoded-input and artifact bytes before decode, checks every referenced mask/fill, converts fill artifacts to premultiplied linear source-gamut values, then runs cleanup, geometry, seeded global tone, selective masks and detail in that order. Retained input/artifact/fill/mask-cache surfaces remain in subsequent memory admission. Missing artifacts raise `MISSING_DEVELOP_ARTIFACT`; insufficient combined budgets raise a Sharp resource-limit error. This typed internal request expects owner-verified artifacts from its caller; the worker does not itself establish asset ownership or authorize a public request. [server/src/queue/sharp-operations.ts:245–311](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L245-L311)
 
-[server/src/queue/sharp-operations.ts:40–53](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L40-L53)
+[server/src/queue/sharp-operations.ts:41–54](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L41-L54)
 
 ```ts
 /** Recipe projection and owner-verified artifacts supplied by the existing Develop admission. */
@@ -2476,17 +2519,17 @@ export type HdrRenditionOutput = {
 };
 ```
 
-Every output uses aligned linear resize and the selected HDR codec encoder. An SDR JPEG request re-encodes the encoder baseline with explicit sRGB ICC, quality 95 and 4:4:4 chroma, removing gain-map metadata. Inspection must confirm selected dynamic range and exact dimensions; HDR requires reconstruction support, and HEIC additionally requires bitDepth 10, transfer 16 and codec hevc. A failed output check raises `INVALID_HDR_RENDITION`. Results retain `{path, width, height, gamut, encoding}` and optional requested histogram, with SDR gamut 0 and HDR retaining surface gamut. Exclusive output creation and failure cleanup remove only files created by that call, preserving published paths. [server/src/queue/sharp-operations.ts:232–291](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L232-L291) [server/src/queue/image-hdr-pixels.ts:6–95](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-pixels.ts#L6-L95)
+Every output uses aligned linear resize and the selected HDR codec encoder. An SDR JPEG request re-encodes the encoder baseline with explicit sRGB ICC, quality 95 and 4:4:4 chroma, removing gain-map metadata. Inspection must confirm selected dynamic range and exact dimensions; HDR requires reconstruction support, and HEIC additionally requires bitDepth 10, transfer 16 and codec hevc. A failed output check raises `INVALID_HDR_RENDITION`. Results retain `{path, width, height, gamut, encoding}` and optional requested histogram, with SDR gamut 0 and HDR retaining surface gamut. Exclusive output creation and failure cleanup remove only files created by that call, preserving published paths. [server/src/queue/sharp-operations.ts:314–373](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L314-L373) [server/src/queue/image-hdr-pixels.ts:6–95](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-pixels.ts#L6-L95)
 
-`generateHdrRenditions` remains the existing registered Sharp IPC operation. `MediaRepository` now accepts the optional Develop projection and abort signal, forwards `[input, outputs, develop]` when supplied, and passes cancellation to the process pool. `AssetDevelopService` supplies the owner-verified projection for version 3; the existing media service continues to generate gated unedited renditions. No standalone helper IPC operation or HTTP route is added. [server/src/queue/sharp-protocol.ts:3–27](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-protocol.ts#L3-L27) [server/src/repositories/media.repository.ts:134–147](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.ts#L134-L147) [server/src/services/asset-develop.service.ts:1258–1289](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1258-L1289) [server/src/services/media.service.ts:605–668](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/media.service.ts#L605-L668)
+`generateHdrRenditions` remains the existing registered Sharp IPC operation. `MediaRepository` now accepts the optional Develop projection and abort signal, forwards `[input, outputs, develop, checksum]`, and passes cancellation to the process pool. `AssetDevelopService` supplies the owner-verified projection for admitted versions 3–6; the existing media service continues to generate gated unedited renditions. No standalone helper IPC operation or HTTP route is added. [server/src/queue/sharp-protocol.ts:3–28](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-protocol.ts#L3-L28) [server/src/repositories/media.repository.ts:144–154](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L144-L154) [server/src/services/asset-develop.service.ts:1282–1322](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1282-L1322) [server/src/services/media.service.ts:610–680](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/media.service.ts#L610-L680)
 
 ## Linear HDR preview histogram
 
-The optional output `histogram` flag uses the same resized, edited `LinearHdrImage` as the encoded preview. Counts come from linear source-gamut RGB, before output tone mapping; selecting an SDR JPEG does not turn these into SDR canvas counts. The result is returned on the existing `generateHdrRenditions` IPC operation and forwarded by the version-3 preview service to its optional HTTP header. It adds no HTTP route, standalone worker operation or public DTO schema. [server/src/queue/sharp-operations.ts:234–284](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L234-L284) [server/src/services/asset-develop.service.ts:1291–1324](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1291-L1324) [server/src/controllers/asset-develop.controller.ts:79–123](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L79-L123)
+The optional output `histogram` flag uses the same resized, edited `LinearHdrImage` as the encoded preview. Counts come from linear source-gamut RGB, before output tone mapping; selecting an SDR JPEG does not turn these into SDR canvas counts. The result is returned on the existing `generateHdrRenditions` IPC operation and forwarded by the admitted HDR preview service to its optional HTTP header. It adds no HTTP route, standalone worker operation or public DTO schema. [server/src/queue/sharp-operations.ts:316–366](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L316-L366) [server/src/services/asset-develop.service.ts:1324–1357](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1324-L1357) [server/src/controllers/asset-develop.controller.ts:79–123](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L79-L123)
 
-The exact helper below defines the version-1 result: `version`, `bins`, `minStops`, `maxStops`, `referenceWhite`, `peakStops`, `red`, `green`, `blue`, `luma`, `max`, `samples`, and `clipped: {shadows, highlights}`. Each RGB/luma array has 64 integer counts. Only alpha exactly zero is excluded; every remaining pixel contributes one count, with no alpha weighting. Non-finite RGB fails with `INVALID_HDR_PIXELS`. Luma uses source-gamut weights; channel/luma bins clamp the log2 position to 0–63 across −10 to +6 stops. `max` is the largest count, at least 1. Shadow clipping counts luminance ≤0; highlight clipping counts any channel ≥10000/referenceWhite. Both fractions divide by at least one sample. `peakStops` is log2 of the largest channel, floored at −10 but not capped at +6. [server/src/queue/image-hdr-histogram.ts:5–65](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-histogram.ts#L5-L65)
+The exact helper below defines the version-1 result: `version`, `bins`, `minStops`, `maxStops`, `referenceWhite`, `peakStops`, `red`, `green`, `blue`, `luma`, `max`, `samples`, and `clipped: {shadows, highlights}`. Each RGB/luma array has 64 integer counts. Only alpha exactly zero is excluded; every remaining pixel contributes one count, with no alpha weighting. Non-finite RGB fails with `INVALID_HDR_PIXELS`. Luma uses source-gamut weights; channel/luma bins clamp the log2 position to 0–63 across −10 to +6 stops. `max` is the largest count, at least 1. Shadow clipping counts luminance ≤0; highlight clipping counts any channel ≥10000/referenceWhite. Both fractions divide by at least one sample. `peakStops` is log2 of the largest channel, floored at −10 but not capped at +6. [server/src/queue/image-hdr-histogram.ts:5–65](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-histogram.ts#L5-L65)
 
-[server/src/queue/image-hdr-histogram.ts:5–65](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-histogram.ts#L5-L65)
+[server/src/queue/image-hdr-histogram.ts:5–65](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-histogram.ts#L5-L65)
 
 ```ts
 /** Stops are relative to reference white, before tone mapping or encoding. */
@@ -2552,19 +2595,19 @@ export function hdrHistogram(image: LinearHdrImage) {
 export type HdrHistogram = ReturnType<typeof hdrHistogram>;
 ```
 
-The web parser requires version 1, bins 64, range −10/+6, referenceWhite 203, finite `max >= 1`, `samples >= 0`, `peakStops` within −10/+6, clipping fractions within 0–1, and four arrays of 64 non-negative safe-integer counts no larger than samples. A server peak above +6 therefore makes this client treat the header as unavailable even though bin indices clamp. The parser does not additionally enforce array totals or consistency of `max` with the counts. Header absence/invalidity never becomes an 8-bit HDR approximation. [web/src/lib/frameleaf/develop-api.ts:52–97](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/web/src/lib/frameleaf/develop-api.ts#L52-L97) [web/src/lib/components/frameleaf/editor/Histogram.svelte:76–96](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/web/src/lib/components/frameleaf/editor/Histogram.svelte#L76-L96)
+The web parser requires version 1, bins 64, range −10/+6, referenceWhite 203, finite `max >= 1`, `samples >= 0`, `peakStops` within −10/+6, clipping fractions within 0–1, and four arrays of 64 non-negative safe-integer counts no larger than samples. A server peak above +6 therefore makes this client treat the header as unavailable even though bin indices clamp. The parser does not additionally enforce array totals or consistency of `max` with the counts. Header absence/invalidity never becomes an 8-bit HDR approximation. [web/src/lib/frameleaf/develop-api.ts:52–97](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/web/src/lib/frameleaf/develop-api.ts#L52-L97) [web/src/lib/components/frameleaf/editor/Histogram.svelte:76–96](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/web/src/lib/components/frameleaf/editor/Histogram.svelte#L76-L96)
 
-The source histogram test excludes a fully transparent high-value pixel and retains an 8×reference-white channel in the +3-stop bin. The native fixture source separately asks for histogram evidence on the edited HDR preview and checks version, peak and resized sample count; this citation does not assert that the native fixture was executed or qualifies real camera media/display behavior. [server/src/queue/image-hdr-histogram.spec.ts:1–17](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-histogram.spec.ts#L1-L17) [server/test/native/image-hdr-renditions.test.mjs:109–148](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr-renditions.test.mjs#L109-L148)
+The source histogram test excludes a fully transparent high-value pixel and retains an 8×reference-white channel in the +3-stop bin. The native fixture source separately asks for histogram evidence on the edited HDR preview and checks version, peak and resized sample count; this citation does not assert that the native fixture was executed or qualifies real camera media/display behavior. [server/src/queue/image-hdr-histogram.spec.ts:1–17](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-histogram.spec.ts#L1-L17) [server/test/native/image-hdr-renditions.test.mjs:243–282](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr-renditions.test.mjs#L243-L282)
 
 ## Explicit still-export worker contract
 
-The existing `writeStrippedStill` IPC operation now accepts `colorspace: "preserve" | "srgb"`, defaulting to `preserve`. Its MediaRepository wrapper forwards `[input, output, format, colorspace]` and an optional AbortSignal to the existing process pool. Original callers retain ICC preservation; explicit historical SDR export selects sRGB. The worker refuses other color-space values, applies source orientation once, embeds the selected ICC profile, and writes JPEG at quality 98 with 4:4:4 chroma or PNG. Capture metadata is not retained. This operation is an internal worker contract, not a new HTTP route. [server/src/repositories/media.repository.ts:298–306](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.ts#L298-L306) [server/src/queue/sharp-operations.ts:387–404](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L387-L404)
+The existing `writeStrippedStill` IPC operation now accepts `colorspace: "preserve" | "srgb"`, defaulting to `preserve`. Its MediaRepository wrapper forwards `[input, output, format, colorspace]` and an optional AbortSignal to the existing process pool. Original callers retain ICC preservation; explicit historical SDR export selects sRGB. The worker refuses other color-space values, applies source orientation once, embeds the selected ICC profile, and writes JPEG at quality 98 with 4:4:4 chroma or PNG. Capture metadata is not retained. This operation is an internal worker contract, not a new HTTP route. [server/src/repositories/media.repository.ts:313–321](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L313-L321) [server/src/queue/sharp-operations.ts:469–486](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L469-L486)
 
-[server/src/queue/sharp-operations.ts:393–404](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L393-L404)
+[server/src/queue/sharp-operations.ts:475–486](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L475-L486)
 
 ```ts
   async writeStrippedStill(
-    input: string,
+    input: string | Buffer,
     output: string,
     format: 'jpeg' | 'png',
     colorspace: 'preserve' | 'srgb' = 'preserve',
@@ -2577,19 +2620,21 @@ The existing `writeStrippedStill` IPC operation now accepts `colorspace: "preser
   }
 ```
 
-The export service creates a private temporary directory for historical SDR JPEG or HDR HEIC, passes worker cancellation and revalidates download access plus current publication, selected path/time/checksum before returning the file. A release callback schedules removal after file send success/failure; processing failures await cleanup. Version-3 SDR JPEG and HDR JPEG reuse their published masters; HDR HEIC reconstructs the published HDR master into a temporary file through `generateHdrRenditions` with no Develop projection. The [explicit still export contract](auth-mobile.md#explicit-saved-version-still-exports) records the query, download scope, MIME, cache policy and capability admission. [server/src/services/asset-develop.service.ts:334–430](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L334-L430) [server/src/utils/file.ts:49–84](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/file.ts#L49-L84)
+The export service creates a private temporary directory for historical SDR JPEG or HDR HEIC, passes worker cancellation and revalidates download access plus current publication, selected path/time/checksum before returning the file. A release callback schedules removal after file send success/failure; processing failures await cleanup. Admitted version-3–6 SDR JPEG and HDR JPEG reuse their published masters; HDR HEIC reconstructs the published HDR master into a temporary file through `generateHdrRenditions` with no Develop projection. The [explicit still export contract](auth-mobile.md#explicit-saved-version-still-exports) records the query, download scope, MIME, cache policy and capability admission. [server/src/services/asset-develop.service.ts:340–444](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L340-L444) [server/src/utils/file.ts:49–84](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/file.ts#L49-L84)
 
-The native test source separately constructs a rotated P3 fixture and asserts oriented dimensions, embedded ICC, absence of EXIF/XMP/orientation metadata, SDR inspection and unchanged source bytes after the sRGB export. This is a declared fixture check; its citation does not assert native execution or real camera/display qualification. The service tests cover actual temporary-file release, nullable checksum handling and cleanup after failure, cancellation, a stale revision or revoked download access. [server/test/native/image-hdr-renditions.test.mjs:16–45](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr-renditions.test.mjs#L16-L45) [server/src/services/asset-develop.service.spec.ts:618–823](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.spec.ts#L618-L823)
+The native test source separately constructs a rotated P3 fixture and asserts oriented dimensions, embedded ICC, absence of EXIF/XMP/orientation metadata, SDR inspection and unchanged source bytes after the sRGB export. This is a declared fixture check; its citation does not assert native execution or real camera/display qualification. The service tests cover actual temporary-file release, nullable checksum handling and cleanup after failure, cancellation, a stale revision or revoked download access. [server/test/native/image-hdr-renditions.test.mjs:150–179](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr-renditions.test.mjs#L150-L179) [server/src/services/asset-develop.service.spec.ts:618–827](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.spec.ts#L618-L827)
+
+`exportPhotoStill(input, output, format, checksum)` is an internal checksum-bound operation for `sdr-jpeg`, `hdr-jpeg` and `hdr-heic`. It verifies the exact loaded source against SHA-1/SHA-256, refuses source/output aliasing and multi-page input, applies encoded/surface memory limits, and clears retained input bytes on exit. It delegates to the existing stripped-still/HDR rendition encoders; it does not create a new user HTTP route. [server/src/queue/sharp-operations.ts:107–162](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L107-L162) [server/src/repositories/media.repository.ts:129–138](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L129-L138)
 
 ## HDR Develop application admission and four-file publication
 
-`HdrAssetDevelopRecipe` is the strict render model for recipe version 3. Only `version` is required on input. `renderer` defaults to `frameleaf-develop-hdr/1`; omitted `hdr` defaults to the fixed version-1 preserve policy, reference white 203 and `libultrahdr/2.0.2` SDR tone mapper. Known adjustment fields retain their existing bounds/defaults and total stroke points remain capped at 4096. The complete generated JSON model is normative for wire defaults and required fields. The SDK carries that model and the new revision/file choices. [server/src/dtos/asset-develop.dto.ts:505–523](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/asset-develop.dto.ts#L505-L523) [packages/sdk/src/fetch-client.ts:14622–14641](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/packages/sdk/src/fetch-client.ts#L14622-L14641) [packages/sdk/src/fetch-client.ts:18553–18569](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/packages/sdk/src/fetch-client.ts#L18553-L18569)
+`HdrAssetDevelopRecipeSchema` is the strict render union for recipe versions 3–6. Each requires its declared `version` and defaults its own renderer/HDR policy: version 3 uses `frameleaf-develop-hdr/1`, HDR policy 1 and `libultrahdr/2.0.2`; versions 4, 5 and 6 use renderer `/2`, `/3`, `/4`, HDR policy 2, 3, 4 and tone mapper `libultrahdr/2.0.2-frameleaf.2`, `.3`, `.4` respectively. All preserve reference white 203. The legacy `HdrAssetDevelopRecipe` generated model remains version 3; the SDK also declares separate V4, V5 and V6 models. Known adjustment fields retain their existing bounds/defaults and total stroke points remain capped at 4096. The complete generated JSON model is normative for wire defaults and required fields. The SDK carries that model and the new revision/file choices. [server/src/dtos/asset-develop.dto.ts:505–574](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/asset-develop.dto.ts#L505-L574) [packages/sdk/src/fetch-client.ts:14721–14740](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/packages/sdk/src/fetch-client.ts#L14721-L14740) [packages/sdk/src/fetch-client.ts:18832–18848](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/packages/sdk/src/fetch-client.ts#L18832-L18848)
 
-[server/src/dtos/asset-develop.dto.ts:505–523](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/asset-develop.dto.ts#L505-L523)
+[server/src/dtos/asset-develop.dto.ts:505–574](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/asset-develop.dto.ts#L505-L574)
 
 ```ts
 /** HDR revisions use a separate identity; historical v1 and darktable v2 are unchanged. */
-export const HdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
+const LegacyHdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
   version: z.literal(3).meta({ type: 'integer', format: 'int32' }),
   renderer: z.literal('frameleaf-develop-hdr/1').default('frameleaf-develop-hdr/1'),
   hdr: z
@@ -2602,30 +2647,81 @@ export const HdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend(
     .prefault({}),
 })
   .strict()
+  .meta({ id: 'HdrAssetDevelopRecipe' });
+const VersionFourHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+  version: z.literal(4).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/2').default('frameleaf-develop-hdr/2'),
+  hdr: z
+    .strictObject({
+      version: z.literal(2).meta({ type: 'integer', format: 'int32' }).default(2),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2-frameleaf.2').default('libultrahdr/2.0.2-frameleaf.2'),
+    })
+    .prefault({}),
+})
   .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
     error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
   })
-  .meta({ id: 'HdrAssetDevelopRecipe' });
+  .meta({ id: 'HdrAssetDevelopRecipeV4' });
+const VersionFiveHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+  version: z.literal(5).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/3').default('frameleaf-develop-hdr/3'),
+  hdr: z
+    .strictObject({
+      version: z.literal(3).meta({ type: 'integer', format: 'int32' }).default(3),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2-frameleaf.3').default('libultrahdr/2.0.2-frameleaf.3'),
+    })
+    .prefault({}),
+})
+  .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
+  })
+  .meta({ id: 'HdrAssetDevelopRecipeV5' });
+const CurrentHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+  version: z.literal(6).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/4').default('frameleaf-develop-hdr/4'),
+  hdr: z
+    .strictObject({
+      version: z.literal(4).meta({ type: 'integer', format: 'int32' }).default(4),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2-frameleaf.4').default('libultrahdr/2.0.2-frameleaf.4'),
+    })
+    .prefault({}),
+})
+  .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
+  })
+  .meta({ id: 'HdrAssetDevelopRecipeV6' });
+export const HdrAssetDevelopRecipeSchema = z.union([
+  LegacyHdrAssetDevelopRecipeSchema.refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS),
+  VersionFourHdrAssetDevelopRecipeSchema,
+  VersionFiveHdrAssetDevelopRecipeSchema,
+  CurrentHdrAssetDevelopRecipeSchema,
+]);
 export type HdrAssetDevelopRecipe = z.infer<typeof HdrAssetDevelopRecipeSchema>;
 ```
 
-Storage and render admission remain distinct. `AssetDevelopRecipe` is still the opaque JSON wire/storage envelope: save with `render: false` preserves supported-size future content even with the HDR gate disabled. Source-preserving saves require the same recipe version and stable unique mask IDs; omitted matching nested fields survive, while incoming arrays specify deliberate replacement/removal. Version 3 preserves unknown masks rather than silently dropping them. Rendering validates the fixed policy and strict known adjustment projection; unknown nested keys or unsupported semantics fail with `develop_renderer_unsupported`. The worker receives an internal version-1 adjustment shape only after validation; stored/wire recipe version 3 is retained. [server/src/services/asset-develop.service.ts:208–237](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L208-L237) [server/src/utils/develop-envelope.ts:15–138](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/develop-envelope.ts#L15-L138) [server/src/repositories/asset-develop.repository.ts:179–223](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/asset-develop.repository.ts#L179-L223) [server/src/services/asset-develop.service.ts:1265–1289](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1265-L1289)
+Storage and render admission remain distinct. `AssetDevelopRecipe` is still the opaque JSON wire/storage envelope: save with `render: false` preserves supported-size future content even with the HDR gate disabled. Source-preserving saves require the same recipe version and stable unique mask IDs; omitted matching nested fields survive, while incoming arrays specify deliberate replacement/removal. Versions 3–6 preserve unknown masks rather than silently dropping them. Rendering validates the fixed policy and strict known adjustment projection; unknown nested keys or unsupported semantics fail with `develop_renderer_unsupported`. The worker receives an internal version-1 adjustment shape only after validation; the declared stored/wire recipe version and renderer policy are retained. [server/src/services/asset-develop.service.ts:209–240](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L209-L240) [server/src/utils/develop-envelope.ts:15–139](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/develop-envelope.ts#L15-L139) [server/src/repositories/asset-develop.repository.ts:178–222](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/asset-develop.repository.ts#L178-L222) [server/src/services/asset-develop.service.ts:1295–1322](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1295-L1322)
 
-Admission requires the experimental gate and a reconstructed HDR still. Gate refusal is 400 `develop_hdr_render_unavailable`; RAW still uses native version-2 development. Referenced active mask/fill artifacts must belong to the asset and match their declared kind. Before HDR decode the service also verifies each stored artifact's owner against the source owner and SHA-256 against its content-addressed ID; changed/not-owned artifacts return `develop_artifact_changed`, missing/kind-mismatched artifacts return `develop_artifact_missing`. Client, shared-row and job cancellation reach the isolated worker through the abort signal. [server/src/services/asset-develop.service.ts:992–1043](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L992-L1043) [server/src/services/asset-develop.service.ts:1223–1289](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1223-L1289) [server/src/queue/sharp-operations.ts:135–229](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L135-L229)
+Admission requires the experimental gate and a reconstructed HDR still. The installed codec renderer must match the recipe’s renderer; historical envelopes remain readable, but rendering refuses silent renderer upgrades with `develop_renderer_unsupported`. Gate refusal is 400 `develop_hdr_render_unavailable`; RAW still uses native version-2 development. Referenced active mask/fill artifacts must belong to the asset and match their declared kind. Before HDR decode the service also verifies each stored artifact's owner against the source owner and SHA-256 against its content-addressed ID; changed/not-owned artifacts return `develop_artifact_changed`, missing/kind-mismatched artifacts return `develop_artifact_missing`. Client, shared-row and job cancellation reach the isolated worker through the abort signal. [server/src/services/asset-develop.service.ts:1013–1067](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1013-L1067) [server/src/services/asset-develop.service.ts:1247–1322](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1247-L1322) [server/src/queue/sharp-operations.ts:174–311](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L174-L311)
 
-The version-3 revision render produces HDR master/preview and compatible SDR master/preview in one isolated call. Preview size follows server configuration; the master retains dimensions without upscale. After worker encoding inspection, the service hashes both masters with SHA-256 and renames all four attempt files. Each attempt uses new paths. Publication rechecks source identity, cancellation and the existing Activity job claim, then updates the four paths/checksums and current selection; replaced old paths are queued for reference-aware deletion only after acceptance. A failed/cancelled/lost-claim attempt discards its own outputs and preserves the previous accepted set. Permanent validation/source changes do not auto-retry; existing transient retry policy remains. [server/src/services/asset-develop.service.ts:471–596](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L471-L596) [server/src/services/asset-develop.service.ts:1129–1151](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1129-L1151) [server/src/services/asset-develop.service.ts:1330–1371](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.ts#L1330-L1371) [server/src/queue/sharp-operations.ts:233–291](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L233-L291)
+An admitted version-3–6 revision render produces HDR master/preview and compatible SDR master/preview in one isolated call. Preview size follows server configuration; the master retains dimensions without upscale. After worker encoding inspection, the service hashes both masters with SHA-256 and renames all four attempt files. Each attempt uses new paths. Publication rechecks source identity, cancellation and the existing Activity job claim, then updates the four paths/checksums and current selection; replaced old paths are queued for reference-aware deletion only after acceptance. A failed/cancelled/lost-claim attempt discards its own outputs and preserves the previous accepted set. Permanent validation/source changes do not auto-retry; existing transient retry policy remains. [server/src/services/asset-develop.service.ts:485–617](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L485-L617) [server/src/services/asset-develop.service.ts:1153–1175](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1153-L1175) [server/src/services/asset-develop.service.ts:1363–1407](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.ts#L1363-L1407) [server/src/queue/sharp-operations.ts:315–373](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L315-L373)
 
-`hasPublishedDevelopRendition` accepts a rendered row or a retained complete four-file set with a 32-byte HDR checksum and prior render timestamp. This preserves accepted SDR/HDR delivery during regeneration failure, cancellation or requeue. The private HDR master checksum/path fields are publication metadata, not new public wire fields. Revision availability and gated owner delivery are described in the [authentication guide](auth-mobile.md#hdr-develop-version-3-requests-and-revision-availability). [server/src/utils/develop-envelope.ts:142–163](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/develop-envelope.ts#L142-L163) [server/src/repositories/asset-develop.repository.ts:24–66](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/asset-develop.repository.ts#L24-L66) [server/src/repositories/asset.repository.ts:2794–2813](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/asset.repository.ts#L2794-L2813)
+`hasPublishedDevelopRendition` accepts a rendered row or a retained complete four-file set with a 32-byte HDR checksum and prior render timestamp. This preserves accepted SDR/HDR delivery during regeneration failure, cancellation or requeue. The private HDR master checksum/path fields are publication metadata, not new public wire fields. Revision availability and gated owner delivery are described in the [authentication guide](auth-mobile.md#hdr-develop-version-3-requests-and-revision-availability). [server/src/utils/develop-envelope.ts:142–163](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/develop-envelope.ts#L142-L163) [server/src/repositories/asset-develop.repository.ts:23–65](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/asset-develop.repository.ts#L23-L65) [server/src/repositories/asset.repository.ts:2795–2814](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/asset.repository.ts#L2795-L2814)
 
-The ordered `1791368400000-HdrDevelopRenditions` migration adds nullable HDR master/preview paths and a bytea HDR checksum. Its check permits either all three absent or all three present with exactly 32 checksum bytes. The feature schema and desired catalog retain the same constraint. The catalog manifest/provenance records source commit `aa0bbd426609b944e28777383e282441fa8539b2`; these checked source artifacts do not prove a database migration was applied. Retained HDR paths also enter backup dependencies, integrity and file reference accounting, as described in the [backup protocol](protocols.md#hdr-derivative-inclusion-in-existing-backup-selection). [server/src/schema/migrations/1791368400000-HdrDevelopRenditions.ts:1–15](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/migrations/1791368400000-HdrDevelopRenditions.ts#L1-L15) [server/src/schema/migrations/ORDER:16](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/migrations/ORDER#L16) [server/src/schema/frameleaf-feature-schema.ts:69](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/frameleaf-feature-schema.ts#L69) [server/src/schema/catalog/desired-schema.catalog.json:1188–1222](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/catalog/desired-schema.catalog.json#L1188-L1222) [server/src/schema/catalog/desired-schema.catalog.json:1347–1356](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/catalog/desired-schema.catalog.json#L1347-L1356) [server/src/schema/catalog/desired-schema.catalog.json.manifest.json:1–4](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/catalog/desired-schema.catalog.json.manifest.json#L1-L4) [server/src/schema/catalog/desired-schema.provenance.json:1–11](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/schema/catalog/desired-schema.provenance.json#L1-L11)
+The ordered `1791368400000-HdrDevelopRenditions` migration adds nullable HDR master/preview paths and a bytea HDR checksum. Its check permits either all three absent or all three present with exactly 32 checksum bytes. The feature schema and desired catalog retain the same constraint. The catalog manifest/provenance records source commit `45bef091fb7863749beaac7c9ef3f59499085738`; these checked source artifacts do not prove a database migration was applied. Retained HDR paths also enter backup dependencies, integrity and file reference accounting, as described in the [backup protocol](protocols.md#hdr-derivative-inclusion-in-existing-backup-selection). [server/src/schema/migrations/1791368400000-HdrDevelopRenditions.ts:1–15](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/migrations/1791368400000-HdrDevelopRenditions.ts#L1-L15) [server/src/schema/migrations/ORDER:16](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/migrations/ORDER#L16) [server/src/schema/frameleaf-feature-schema.ts:69](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/frameleaf-feature-schema.ts#L69) [server/src/schema/catalog/desired-schema.catalog.json:37326–37366](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/catalog/desired-schema.catalog.json#L37326-L37366) [server/src/schema/catalog/desired-schema.catalog.json:37754–37763](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/catalog/desired-schema.catalog.json#L37754-L37763) [server/src/schema/catalog/desired-schema.catalog.json.manifest.json:1–4](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/catalog/desired-schema.catalog.json.manifest.json#L1-L4) [server/src/schema/catalog/desired-schema.provenance.json:1–11](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/schema/catalog/desired-schema.provenance.json#L1-L11)
 
-Version-3 source admission, wire generation and application publication logic are implemented at this pin. Native codec, camera-media reconstruction, mastered output and physical-device acceptance remain separate qualification criteria.
+Version-3–6 source admission, wire generation and application publication logic are implemented at this pin. Native codec, camera-media reconstruction, mastered output and physical-device acceptance remain separate qualification criteria.
 
 ## Isolated HDR codec capability contract
 
-`getHdrCodecCapabilities` is the existing zero-argument Sharp IPC operation exposed through MediaRepository. Native `capabilities()` obtains libheif/runtime and libultrahdr/build versions plus HEVC/AV1 decoder presence. The worker adds the optional HEIC encoder flag by encoding and inspecting a 16×16 fixture with its admitted budgets. This exercises serialized HEVC ten-bit PQ output; it does not reconstruct camera input or test a display. The public projection is described in [capability discovery](auth-mobile.md#hdr-capability-discovery). [server/src/queue/sharp-protocol.ts:3–39](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-protocol.ts#L3-L39) [server/src/queue/sharp-operations.ts:80–100](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L80-L100) [server/src/queue/image-hdr.ts:12–18](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L12-L18) [server/native/image-hdr.cc:610–630](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/native/image-hdr.cc#L610-L630)
+`getHdrCodecCapabilities` is the existing zero-argument Sharp IPC operation exposed through MediaRepository. Native `capabilities()` obtains libheif/runtime and libultrahdr/build versions plus HEVC/AV1 decoder presence, Apple gain-map decoder presence and build-dependent ISO gain-map decoder/renderer identity. The worker adds the optional HEIC encoder flag by encoding and inspecting a 16×16 fixture with its admitted budgets. This exercises serialized HEVC ten-bit PQ output; it does not reconstruct camera input or test a display. The public projection is described in [capability discovery](auth-mobile.md#hdr-capability-discovery). [server/src/queue/sharp-protocol.ts:3–47](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-protocol.ts#L3-L47) [server/src/queue/sharp-operations.ts:81–101](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L81-L101) [server/src/queue/image-hdr.ts:12–21](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L12-L21) [server/native/image-hdr.cc:1068–1099](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/native/image-hdr.cc#L1068-L1099)
 
-[server/src/queue/image-hdr.ts:12–18](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L12-L18)
+[server/src/queue/image-hdr.ts:12–21](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L12-L21)
 
 ```ts
 export type HdrCodecCapabilities = {
@@ -2633,15 +2729,18 @@ export type HdrCodecCapabilities = {
   libultrahdr: string;
   heicDecoder: boolean;
   avifDecoder: boolean;
+  appleGainMapDecoder?: boolean;
+  isoGainMapDecoder?: boolean;
+  renderer?: string;
   heicPqEncoder?: boolean;
 };
 ```
 
-The repository passes `AbortSignal.timeout(2000)` to the admitted process pool and catches overall probe failures as null. It shares the pending promise; a successful codec object has no expiry until restart, including one with `heicPqEncoder: false`. Only null becomes retryable 30 seconds after completion. The existing pool handles aborts for admitted/pending work and caps queue bytes/count. The binding loads lazily inside the image worker from `FRAMELEAF_HDR_BINDING` or `/usr/local/lib/frameleaf/image-hdr.node`; missing binding/loading/probe failures follow the overall null result, while encoder-only failures retain other capabilities. [server/src/repositories/media.repository.ts:112–124](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.ts#L112-L124) [server/src/queue/sharp-pool.ts:86–139](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-pool.ts#L86-L139) [server/src/queue/image-hdr.ts:44–64](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr.ts#L44-L64)
+The repository passes `AbortSignal.timeout(2000)` to the admitted process pool and catches overall probe failures as null. It shares the pending promise; a successful codec object has no expiry until restart, including one with `heicPqEncoder: false`. Only null becomes retryable 30 seconds after completion. The existing pool handles aborts for admitted/pending work and caps queue bytes/count. The binding loads lazily inside the image worker from `FRAMELEAF_HDR_BINDING` or `/usr/local/lib/frameleaf/image-hdr.node`; missing binding/loading/probe failures follow the overall null result, while encoder-only failures retain other capabilities. [server/src/repositories/media.repository.ts:112–124](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.ts#L112-L124) [server/src/queue/sharp-pool.ts:100–215](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-pool.ts#L100-L215) [server/src/queue/image-hdr.ts:47–67](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr.ts#L47-L67)
 
-The wire model retains nullable renderer identity and independent decode/render/export lists. `qualified` is a boolean field, but the service sets it false at this exact source. Optional `imageCapabilities` preserves older-server compatibility; the object fields are required when it exists. Codec support, administrator enablement, per-source reconstruction and real-media/display qualification are distinct authorities. [server/src/dtos/server.dto.ts:210–232](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/server.dto.ts#L210-L232)
+The wire model retains nullable renderer identity and independent decode/render/export lists. `qualified` is a boolean field, but the service sets it false at this exact source. Optional `imageCapabilities` preserves older-server compatibility; the object fields are required when it exists. Codec support, administrator enablement, per-source reconstruction and real-media/display qualification are distinct authorities. [server/src/dtos/server.dto.ts:210–232](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/server.dto.ts#L210-L232)
 
-[server/src/dtos/server.dto.ts:210–230](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/server.dto.ts#L210-L230)
+[server/src/dtos/server.dto.ts:210–230](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/server.dto.ts#L210-L230)
 
 ```ts
 const ImageCapabilitiesSchema = z
@@ -2667,18 +2766,18 @@ const ImageCapabilitiesSchema = z
 export type ImageCapabilitiesDto = z.infer<typeof ImageCapabilitiesSchema>;
 ```
 
-Source tests cover shared timeout/failure caching and successful result reuse, server projection/fallback, native decoder-presence metadata and isolated worker routing. These test declarations and installed-codec probes are not camera-media or physical-device acceptance receipts. [server/src/repositories/media.repository.spec.ts:101–136](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/media.repository.spec.ts#L101-L136) [server/src/services/server.service.spec.ts:426–504](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/server.service.spec.ts#L426-L504) [server/test/native/image-hdr.test.mjs:251–257](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr.test.mjs#L251-L257) [server/test/native/image-hdr-renditions.test.mjs:232–239](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr-renditions.test.mjs#L232-L239)
+Source tests cover shared timeout/failure caching and successful result reuse, server projection/fallback, native decoder-presence metadata and isolated worker routing. These test declarations and installed-codec probes are not camera-media or physical-device acceptance receipts. [server/src/repositories/media.repository.spec.ts:101–136](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/media.repository.spec.ts#L101-L136) [server/src/services/server.service.spec.ts:426–538](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/server.service.spec.ts#L426-L538) [server/test/native/image-hdr.test.mjs:280–973](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr.test.mjs#L280-L973) [server/test/native/image-hdr-renditions.test.mjs:366–373](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr-renditions.test.mjs#L366-L373)
 
 ## Gated rendition identity and internal linear Develop
 
-`FRAMELEAF_HDR_IMAGES=experimental` admits unedited still HDR generation only when retained source encoding reports HDR reconstruction support. Preview and full-size derivatives are generated by the existing image job; the SDR derivatives are produced from the HDR master. They enter the existing publication lease together. Legacy edited HDR generation is refused with the previous rendition retained. These are source implementation and admission boundaries; camera-media, native codec and physical-display acceptance remain separate. [server/src/services/media.service.ts:605–687](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/media.service.ts#L605-L687)
+`FRAMELEAF_HDR_IMAGES=experimental` admits unedited still HDR generation only when retained source encoding reports HDR reconstruction support. Preview and full-size derivatives are generated by the existing image job; the SDR derivatives are produced from the HDR master. They enter the existing publication lease together. Legacy edited HDR generation is refused with the previous rendition retained. These are source implementation and admission boundaries; camera-media, native codec and physical-display acceptance remain separate. [server/src/services/media.service.ts:610–699](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/media.service.ts#L610-L699)
 
-Private HDR file types are `hdr_preview` and `hdr_fullsize`. The server stores a SHA-256 `renditionIdentity` over the source checksum, edit revision, renderer version, output dimensions, gamut and dynamic range. Source checksums must be 20 or 32 bytes; revision/dimensions are safe integers, revision is non-negative, dimensions positive, renderer version is non-empty and at most 120 characters, and gamut is 0, 1 or 2. Shared physical derivatives require matching identity; the identity is not exposed in the asset response. [server/src/utils/image-rendition.ts:3–39](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/image-rendition.ts#L3-L39) [server/src/repositories/physical-file.repository.ts:948–975](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/physical-file.repository.ts#L948-L975)
+Private HDR file types are `hdr_preview` and `hdr_fullsize`. The current rendition renderer identity is `frameleaf-hdr-rendition/4`. The server stores a SHA-256 `renditionIdentity` over the source checksum, edit revision, renderer version, output dimensions, gamut and dynamic range. Source checksums must be 20 or 32 bytes; revision/dimensions are safe integers, revision is non-negative, dimensions positive, renderer version is non-empty and at most 120 characters, and gamut is 0, 1 or 2. Shared physical derivatives require matching identity; the identity is not exposed in the asset response. [server/src/utils/image-rendition.ts:3–39](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/image-rendition.ts#L3-L39) [server/src/repositories/physical-file.repository.ts:948–975](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/physical-file.repository.ts#L948-L975)
 
-[server/src/utils/image-rendition.ts:3–13](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/image-rendition.ts#L3-L13)
+[server/src/utils/image-rendition.ts:3–13](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/image-rendition.ts#L3-L13)
 
 ```ts
-export const HDR_RENDITION_RENDERER_VERSION = 'frameleaf-hdr-rendition/1';
+export const HDR_RENDITION_RENDERER_VERSION = 'frameleaf-hdr-rendition/4';
 
 export const imageRenditionIdentity = (input: {
   sourceChecksum: Buffer;
@@ -2691,9 +2790,9 @@ export const imageRenditionIdentity = (input: {
 }): string => {
 ```
 
-The linear Develop helpers are now called inside the existing `generateHdrRenditions` worker when its optional Develop projection is supplied. The version-3 application path forwards this projection and cancellation as described above. The public recipe values are moved to a framework-free shared module and re-exported by the DTO; their existing adjustment values and version-1 contract remain unchanged; the new HDR recipe has a separate version-3 envelope. `transformHdrGeometry` performs a single inverse transform with alpha-weighted bilinear sampling on a float surface. `applyHdrDevelopTone` mutates linear RGB using exposure, luminance-weighted tone, chroma, look, vignette and seeded grain without SDR integer clipping. `applyHdrDevelopMasks` applies the same tone to a scratch surface, preserving original-image mask coordinates; missing verified bitmap artifacts and excess combined surface budgets refuse processing. The application publishes the accepted HDR Develop set through its existing job claim; linear helper source does not establish detail-stage or device qualification. [server/src/queue/image-hdr-develop.ts:59–271](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L59-L271) [server/src/queue/develop-values.ts:1–56](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/develop-values.ts#L1-L56) [server/src/dtos/asset-develop.dto.ts:6–30](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/dtos/asset-develop.dto.ts#L6-L30) [server/src/queue/sharp-protocol.ts:3–27](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-protocol.ts#L3-L27)
+The linear Develop helpers are now called inside the existing `generateHdrRenditions` worker when its optional Develop projection is supplied. The admitted version-3–6 application path forwards this projection and cancellation as described above. The public recipe values are moved to a framework-free shared module and re-exported by the DTO; their existing adjustment values and version-1 contract remain unchanged; HDR recipes retain separate declared version-3–6 envelopes. `transformHdrGeometry` performs a single inverse transform with alpha-weighted bilinear sampling on a float surface. `applyHdrDevelopTone` mutates linear RGB using exposure, luminance-weighted tone, chroma, look, vignette and seeded grain without SDR integer clipping. `applyHdrDevelopMasks` applies the same tone to a scratch surface, preserving original-image mask coordinates; missing verified bitmap artifacts and excess combined surface budgets refuse processing. The application publishes the accepted HDR Develop set through its existing job claim; linear helper source does not establish detail-stage or device qualification. [server/src/queue/image-hdr-develop.ts:59–271](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L59-L271) [server/src/queue/develop-values.ts:1–56](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/develop-values.ts#L1-L56) [server/src/dtos/asset-develop.dto.ts:6–30](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/dtos/asset-develop.dto.ts#L6-L30) [server/src/queue/sharp-protocol.ts:3–28](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-protocol.ts#L3-L28)
 
-[server/src/queue/image-hdr-develop.ts:59–63](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L59-L63)
+[server/src/queue/image-hdr-develop.ts:59–63](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L59-L63)
 
 ```ts
 export function transformHdrGeometry(
@@ -2703,13 +2802,13 @@ export function transformHdrGeometry(
 ): LinearHdrImage {
 ```
 
-[server/src/queue/image-hdr-develop.ts:121](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L121)
+[server/src/queue/image-hdr-develop.ts:121](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L121)
 
 ```ts
 export function applyHdrDevelopTone(image: LinearHdrImage, recipe: KnownAssetDevelopRecipe, seed = 1): LinearHdrImage {
 ```
 
-[server/src/queue/image-hdr-develop.ts:213–219](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L213-L219)
+[server/src/queue/image-hdr-develop.ts:213–219](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L213-L219)
 
 ```ts
 export function applyHdrDevelopMasks(
@@ -2721,9 +2820,9 @@ export function applyHdrDevelopMasks(
 ): LinearHdrImage {
 ```
 
-`applyHdrDevelopDetail(image, recipe, maxBytes)` adds internal linear noise reduction, sharpening and clarity in that order. With all three controls inactive it returns the same surface without allocating filters. Active processing requires a safe-integer budget for three float surfaces (the image plus two reusable filters). The filters premultiply RGB by alpha, use three variance-matched box passes to approximate a Gaussian, and unpremultiply filtered RGB for the tone operations. Noise reduction reduces blending across luminance edges; sharpening applies unsharp RGB detail; clarity adjusts luminance contrast while retaining hue and source alpha. It mutates and returns the same linear image without integer/SDR intermediates or SDR clipping. This helper now runs after selective masks inside the optional Develop worker branch; it adds no standalone IPC operation and does not establish physical-display qualification. [server/src/queue/image-hdr-develop.ts:273–369](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L273-L369)
+`applyHdrDevelopDetail(image, recipe, maxBytes)` adds internal linear noise reduction, sharpening and clarity in that order. With all three controls inactive it returns the same surface without allocating filters. Active processing requires a safe-integer budget for three float surfaces (the image plus two reusable filters). The filters premultiply RGB by alpha, use three variance-matched box passes to approximate a Gaussian, and unpremultiply filtered RGB for the tone operations. Noise reduction reduces blending across luminance edges; sharpening applies unsharp RGB detail; clarity adjusts luminance contrast while retaining hue and source alpha. It mutates and returns the same linear image without integer/SDR intermediates or SDR clipping. This helper now runs after selective masks inside the optional Develop worker branch; it adds no standalone IPC operation and does not establish physical-display qualification. [server/src/queue/image-hdr-develop.ts:273–369](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L273-L369)
 
-[server/src/queue/image-hdr-develop.ts:274–278](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L274-L278)
+[server/src/queue/image-hdr-develop.ts:274–278](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L274-L278)
 
 ```ts
 export function applyHdrDevelopDetail(
@@ -2733,9 +2832,9 @@ export function applyHdrDevelopDetail(
 ): LinearHdrImage {
 ```
 
-`applyDevelopCleanup` retains the byte-image path and adds float cleanup in linear source-gamut RGB. Float processing requires an explicit safe-integer byte budget covering image copies, fills, stroke surfaces and pixelation means. Clone/heal and pixelate weight source alpha; blended RGB is not rounded or clipped to 0–255. Remove requires a fill in the matching renderer color space. `linearizeDevelopFill` validates normalized RGBA fills, converts sRGB to the source gamut and premultiplies alpha before filtered sampling; it does not infer HDR brightness from an SDR fill. Missing fills, mismatched color spaces and insufficient budgets fail rather than silently flattening the image. [server/src/utils/develop-cleanup.ts:457–632](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/develop-cleanup.ts#L457-L632) [server/src/queue/image-hdr-develop.ts:19–56](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L19-L56)
+`applyDevelopCleanup` retains the byte-image path and adds float cleanup in linear source-gamut RGB. Float processing requires an explicit safe-integer byte budget covering image copies, fills, stroke surfaces and pixelation means. Clone/heal and pixelate weight source alpha; blended RGB is not rounded or clipped to 0–255. Remove requires a fill in the matching renderer color space. `linearizeDevelopFill` validates normalized RGBA fills, converts sRGB to the source gamut and premultiplies alpha before filtered sampling; it does not infer HDR brightness from an SDR fill. Missing fills, mismatched color spaces and insufficient budgets fail rather than silently flattening the image. [server/src/utils/develop-cleanup.ts:457–632](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/develop-cleanup.ts#L457-L632) [server/src/queue/image-hdr-develop.ts:19–56](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L19-L56)
 
-[server/src/utils/develop-cleanup.ts:27–30](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/develop-cleanup.ts#L27-L30)
+[server/src/utils/develop-cleanup.ts:27–30](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/develop-cleanup.ts#L27-L30)
 
 ```ts
 /** A decoded artifact: greyscale (1 channel) for a mask, RGBA (4 channels) for a fill. */
@@ -2744,7 +2843,7 @@ export type DevelopBitmap = { data: Uint8Array; width: number; height: number; c
 export type DevelopLinearFill = { data: Float32Array; width: number; height: number; channels: 4 };
 ```
 
-[server/src/utils/develop-cleanup.ts:457–463](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/develop-cleanup.ts#L457-L463)
+[server/src/utils/develop-cleanup.ts:457–463](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/develop-cleanup.ts#L457-L463)
 
 ```ts
 export function applyDevelopCleanup<T extends Uint8Array | Float32Array>(
@@ -2756,7 +2855,7 @@ export function applyDevelopCleanup<T extends Uint8Array | Float32Array>(
 ): T {
 ```
 
-[server/src/queue/image-hdr-develop.ts:19–20](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/image-hdr-develop.ts#L19-L20)
+[server/src/queue/image-hdr-develop.ts:19–20](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/image-hdr-develop.ts#L19-L20)
 
 ```ts
 /** Verified fill artifacts are sRGB. Convert before compositing, then premultiply for filtered sampling. */
@@ -2789,7 +2888,7 @@ EdgeRelayService creates an HTTP/2 server over the authenticated outbound tunnel
 
 Both FastAPI apps use default FastAPI configuration and therefore also provide framework documentation routes (`/openapi.json`, `/docs`, `/docs/oauth2-redirect`, `/redoc`) unless deployment policy blocks them; these are inferred FastAPI defaults, not explicitly declared business operations. Configured bearer middleware protects them. No other explicit HTTP path declarations were found in the two production ML apps; enrichment, pet recognition, NSFW, OCR and semantic mask are /predict pipelines.
 
-[server/src/maintenance/maintenance-worker.controller.ts:38–140](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/maintenance/maintenance-worker.controller.ts#L38-L140) [server/src/app.common.ts:71–100](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/app.common.ts#L71-L100) [server/src/edge/edge-proxy.service.ts:109–144](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/edge/edge-proxy.service.ts#L109-L144) [server/src/edge/edge-proxy.service.ts:239–275](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/edge/edge-proxy.service.ts#L239-L275) [server/src/edge/edge-direct.service.ts:104–126](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/edge/edge-direct.service.ts#L104-L126) [server/src/edge/edge-relay.service.ts:505–568](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/edge/edge-relay.service.ts#L505-L568) [server/src/utils/frameleaf-relay.ts:22](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/frameleaf-relay.ts#L22)
+[server/src/maintenance/maintenance-worker.controller.ts:38–140](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/maintenance/maintenance-worker.controller.ts#L38-L140) [server/src/app.common.ts:71–100](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/app.common.ts#L71-L100) [server/src/edge/edge-proxy.service.ts:109–144](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/edge/edge-proxy.service.ts#L109-L144) [server/src/edge/edge-proxy.service.ts:239–275](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/edge/edge-proxy.service.ts#L239-L275) [server/src/edge/edge-direct.service.ts:104–126](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/edge/edge-direct.service.ts#L104-L126) [server/src/edge/edge-relay.service.ts:505–568](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/edge/edge-relay.service.ts#L505-L568) [server/src/utils/frameleaf-relay.ts:22](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/frameleaf-relay.ts#L22)
 
 ## Source limitations and known gaps
 
@@ -2797,9 +2896,9 @@ This supplement inventories server/src production controllers/direct listeners a
 
 ## HDR HEIC native export and startup dependencies
 
-The native encoder accepts float32 RGBA with working white 203 nits and gamut 0/1/2. It requires finite integral dimensions/gamut, aligned exact RGBA length, at most 200 million admitted pixels, a maximum byte budget of 1 GiB and 64 bytes per pixel within that budget. RGB must be finite in 0–10000/203 and alpha in 0–1. It requires libheif's x265 HEVC encoder, quality 95, 4:2:0 chroma and bounded x265 thread settings. It writes ten-bit interleaved RGBA: RGB is converted to absolute ST 2084 PQ and alpha directly quantized. NCLX primaries are 1/12/9 for BT.709/P3/BT.2020, transfer 16, full range and normal orientation. Capture metadata is not copied. The serialized output is capped at the smaller of maxBytes and 128 MiB, reopened and checked for ten-bit luma, PQ transfer and matching primaries before return. Encoding is lossy; this contract makes no lossless-pixel or display qualification claim.
+The native encoder accepts float32 RGBA with working white 203 nits and gamut 0/1/2. It requires finite integral dimensions/gamut, aligned exact RGBA length, at most 200 million admitted pixels, a maximum byte budget of 8 GiB and 64 bytes per pixel within that budget. RGB must be finite in 0–10000/203 and alpha in 0–1. It requires libheif's x265 HEVC encoder, quality 95, 4:2:0 chroma and bounded x265 thread settings. It writes ten-bit interleaved RGBA: RGB is converted to absolute ST 2084 PQ and alpha directly quantized. NCLX primaries are 1/12/9 for BT.709/P3/BT.2020, transfer 16, full range and normal orientation. Capture metadata is not copied. The serialized output is capped at the smaller of maxBytes and 128 MiB, reopened and checked for ten-bit luma, PQ transfer and matching primaries before return. Encoding is lossy; this contract makes no lossless-pixel or display qualification claim.
 
-[server/native/image-hdr.cc:516–609](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/native/image-hdr.cc#L516-L609)
+[server/native/image-hdr.cc:974–1067](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/native/image-hdr.cc#L974-L1067)
 
 ```cpp
 napi_value encodeHeic(napi_env env, napi_callback_info info) {
@@ -2814,7 +2913,7 @@ napi_value encodeHeic(napi_env env, napi_callback_info info) {
         || reinterpret_cast<uintptr_t>(bytes) % alignof(float) != 0
         || wd < 1 || hd < 1 || wd != std::floor(wd) || hd != std::floor(hd)
         || maxPixels < 1 || maxPixels > 200000000 || wd * hd > maxPixels
-        || maxBytes <= 0 || maxBytes > 1073741824 || wd * hd * 64 > maxBytes
+        || maxBytes <= 0 || maxBytes > 8589934592 || wd * hd * 64 > maxBytes
         || size != wd * hd * 16 || gd < 0 || gd > 2 || gd != std::floor(gd))
       throw std::runtime_error("RESOURCE_LIMIT");
     const auto* source = static_cast<const float*>(bytes);
@@ -2900,7 +2999,7 @@ napi_value encodeHeic(napi_env env, napi_callback_info info) {
 
 The worker's format selection and capability probe use that exported native method through the existing binding and process isolation. The probe's flag checks only HEVC/bit depth/PQ transfer; per-rendition validation also checks range, reconstruction and dimensions.
 
-[server/src/queue/sharp-operations.ts:80–100](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L80-L100)
+[server/src/queue/sharp-operations.ts:81–101](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L81-L101)
 
 ```ts
   getHdrCodecCapabilities() {
@@ -2926,38 +3025,59 @@ The worker's format selection and capability probe use that exported native meth
   }
 ```
 
-[server/src/queue/sharp-operations.ts:116–133](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/sharp-operations.ts#L116-L133)
+[server/src/queue/sharp-operations.ts:173–209](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/sharp-operations.ts#L173-L209)
 
 ```ts
   encodeHdrImage(image: LinearHdrImage | PairedHdrImage, format: 'jpeg' | 'heic' = 'jpeg') {
-    return imageHdrOperation((codec) =>
-      format === 'heic'
-        ? codec.encodeHeic(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes)
-        : 'sdr' in image
-          ? codec.encodePaired(
-              image.data,
-              image.width,
-              image.height,
-              image.gamut,
-              this.maxPixels,
-              this.maxBytes,
-              image.sdr,
-              image.sdrGamut,
-            )
-          : codec.encode(image.data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
-    );
+    // Advanced IPC may reconstruct a Buffer at an unaligned byte offset. Native float
+    // access requires alignment; include the retained input in the temporary-copy budget.
+    const copy = image.data.byteOffset % Float32Array.BYTES_PER_ELEMENT !== 0;
+    if (copy && (image.data.length % 4 !== 0 || image.data.length * 5 > this.maxBytes)) {
+      throw new SharpResourceLimitError('HDR alignment copy exceeds the image worker budget');
+    }
+    const data = copy ? Buffer.from(new ArrayBuffer(image.data.length)) : image.data;
+    if (copy) image.data.copy(data);
+    try {
+      return imageHdrOperation((codec) =>
+        format === 'heic'
+          ? codec.encodeHeic(data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes)
+          : 'sdr' in image
+            ? codec.encodePaired(
+                data,
+                image.width,
+                image.height,
+                image.gamut,
+                this.maxPixels,
+                this.maxBytes,
+                image.sdr,
+                image.sdrGamut,
+              )
+            : codec.encode(data, image.width, image.height, image.gamut, this.maxPixels, this.maxBytes),
+      );
+    } finally {
+      if (copy) data.fill(0);
+    }
   }
+
+  async generateHdrRenditions(
+    input: string | Buffer,
+    outputs: HdrRenditionOutput[],
+    develop?: HdrDevelopRender,
+    checksum?: Buffer,
+  ) {
 ```
 
-Both server Docker recipes build checksum-pinned x265 4.3 before libheif, combining static main10 into the shared ordinary 8/10-bit library. libheif's release-noplugins recipe enables x265 alongside libde265. The existing native stage builds/installs the addon and declares a native fixture test; the gathered runtime libraries include libx265.so, libheif and libultrahdr, and the addon is copied into lib/frameleaf. Production copies that library tree; development inherits the same base. The native CMake target links libheif and libultrahdr and installs image-hdr.node. These are exact build/startup source requirements, not evidence of a completed image build or running container. [server/base-image/sources/x265.json:1–7](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/x265.json#L1-L7) [server/base-image/sources/x265.sh:4–22](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/x265.sh#L4-L22) [server/base-image/sources/libheif.json:1–6](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/libheif.json#L1-L6) [server/base-image/sources/libheif.sh:13–25](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/libheif.sh#L13-L25) [server/base-image/sources/libultrahdr.json:1–8](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/libultrahdr.json#L1-L8) [server/base-image/sources/libultrahdr.sh:3–15](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/base-image/sources/libultrahdr.sh#L3-L15) [server/native/CMakeLists.txt:1–17](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/native/CMakeLists.txt#L1-L17) [server/Dockerfile:105–123](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile#L105-L123) [server/Dockerfile:137–149](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile#L137-L149) [server/Dockerfile:176–178](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile#L176-L178) [server/Dockerfile:322–325](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile#L322-L325) [server/Dockerfile.dev:105–123](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile.dev#L105-L123) [server/Dockerfile.dev:137–149](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile.dev#L137-L149) [server/Dockerfile.dev:176–178](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile.dev#L176-L178) [server/Dockerfile.dev:215](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/Dockerfile.dev#L215)
+Both server Docker recipes build checksum-pinned x265 4.3 before libheif, combining static main10 into the shared ordinary 8/10-bit library. libheif's release-noplugins recipe enables x265 alongside libde265. The existing native stage builds/installs the addon and declares a native fixture test; the gathered runtime libraries include libx265.so, libheif and libultrahdr, and the addon is copied into lib/frameleaf. Production copies that library tree; development inherits the same base. The native CMake target links libheif and libultrahdr and installs image-hdr.node. These are exact build/startup source requirements, not evidence of a completed image build or running container. [server/base-image/sources/x265.json:1–7](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/x265.json#L1-L7) [server/base-image/sources/x265.sh:4–22](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/x265.sh#L4-L22) [server/base-image/sources/libheif.json:1–8](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libheif.json#L1-L8) [server/base-image/sources/libheif.sh:15–28](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libheif.sh#L15-L28) [server/base-image/sources/libultrahdr.json:1–10](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libultrahdr.json#L1-L10) [server/base-image/sources/libultrahdr.sh:3–16](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libultrahdr.sh#L3-L16) [server/native/CMakeLists.txt:1–19](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/native/CMakeLists.txt#L1-L19) [server/Dockerfile:105–123](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile#L105-L123) [server/Dockerfile:137–149](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile#L137-L149) [server/Dockerfile:176–178](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile#L176-L178) [server/Dockerfile:322–325](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile#L322-L325) [server/Dockerfile.dev:105–123](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile.dev#L105-L123) [server/Dockerfile.dev:137–149](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile.dev#L137-L149) [server/Dockerfile.dev:176–178](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile.dev#L176-L178) [server/Dockerfile.dev:215](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/Dockerfile.dev#L215)
 
-The native fixture source checks serialized HEVC/PQ/ten-bit output, reconstruction and all three gamut tags, alpha tolerance, malformed pixels and resource refusal. The rendition fixture checks retained HDR headroom, no EXIF, unchanged input bytes and refusal of SDR HEIC. The service fixture checks temporary HEIC MIME/name, no asset/source publication, release and cleanup after cancellation, changed HDR checksum or revoked download access; the editor fixture checks conditional capability admission. Citations describe those declared checks and do not assert that native or editor fixtures ran. Real camera/media and physical display qualification remain separately owned. [server/test/native/image-hdr.test.mjs:21–53](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr.test.mjs#L21-L53) [server/test/native/image-hdr-renditions.test.mjs:232–271](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/native/image-hdr-renditions.test.mjs#L232-L271) [server/src/services/asset-develop.service.spec.ts:733–796](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/asset-develop.service.spec.ts#L733-L796) [web/src/lib/components/frameleaf/editor/QuickEditor.spec.ts:488–508](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/web/src/lib/components/frameleaf/editor/QuickEditor.spec.ts#L488-L508)
+The pinned recipes also verify and apply the recorded libheif/libultrahdr patch hashes. libheif enables experimental gain-map support; the libultrahdr HEIF adaptation is decoder-only and does not establish adaptive HEIF encoding. Capability flags and recipe presence remain distinct from real camera-media qualification. [server/base-image/sources/libheif.json:1–8](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libheif.json#L1-L8) [server/base-image/sources/libheif.sh:15–28](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libheif.sh#L15-L28) [server/base-image/sources/libultrahdr.json:1–10](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libultrahdr.json#L1-L10) [server/base-image/sources/libultrahdr.sh:3–16](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/base-image/sources/libultrahdr.sh#L3-L16)
+
+The native fixture source checks serialized HEVC/PQ/ten-bit output, reconstruction and all three gamut tags, alpha tolerance, malformed pixels and resource refusal. The rendition fixture checks retained HDR headroom, no EXIF, unchanged input bytes and refusal of SDR HEIC. The service fixture checks temporary HEIC MIME/name, no asset/source publication, release and cleanup after cancellation, changed HDR checksum or revoked download access; the editor fixture checks conditional capability admission. Citations describe those declared checks and do not assert that native or editor fixtures ran. Real camera/media and physical display qualification remain separately owned. [server/test/native/image-hdr.test.mjs:47–79](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr.test.mjs#L47-L79) [server/test/native/image-hdr-renditions.test.mjs:366–405](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/native/image-hdr-renditions.test.mjs#L366-L405) [server/src/services/asset-develop.service.spec.ts:736–800](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/asset-develop.service.spec.ts#L736-L800) [web/src/lib/components/frameleaf/editor/QuickEditor.spec.ts:501–521](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/web/src/lib/components/frameleaf/editor/QuickEditor.spec.ts#L501-L521)
 
 ## Duplicate resolution lifecycle job
 
-`DuplicateResolutionLifecycle` is an added member of the existing public `JobName` enum in canonical OpenAPI and generated SDK. It adds no HTTP route, DTO property or component schema. The existing duplicate-resolution route retains its bulk response. Its internal job payload carries receipt/owner IDs, sidecar/Locked/trash asset ID arrays and the force-delete decision; it carries no original media. It is handled on BackgroundTask after the database decision commits. [server/src/enum.ts:2182–2189](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/enum.ts#L2182-L2189) [packages/sdk/src/fetch-client.ts:30198–30207](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/packages/sdk/src/fetch-client.ts#L30198-L30207) [server/src/controllers/duplicate.controller.ts:52–62](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/duplicate.controller.ts#L52-L62)
+`DuplicateResolutionLifecycle` is an added member of the existing public `JobName` enum in canonical OpenAPI and generated SDK. It adds no HTTP route, DTO property or component schema. The existing duplicate-resolution route retains its bulk response. Its internal job payload carries receipt/owner IDs, sidecar/Locked/trash asset ID arrays and the force-delete decision; it carries no original media. It is handled on BackgroundTask after the database decision commits. [server/src/enum.ts:2186–2193](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/enum.ts#L2186-L2193) [packages/sdk/src/fetch-client.ts:30579–30588](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/packages/sdk/src/fetch-client.ts#L30579-L30588) [server/src/controllers/duplicate.controller.ts:52–62](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate.controller.ts#L52-L62)
 
-[server/src/types.ts:289–297](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/types.ts#L289-L297)
+[server/src/types.ts:289–297](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/types.ts#L289-L297)
 
 ```ts
 /** Retried independently after a duplicate decision commits; no original media is carried. */
@@ -2971,13 +3091,13 @@ export type IDuplicateResolutionLifecycleJob = {
 };
 ```
 
-`DuplicateRepository.withResolutionLock` bounds one decision to 512 group members and a five-second lock timeout in serializable isolation. It locks BackgroundTask and any active caller queue first, verifies an active unexpired uncancelled caller claim when present, then takes ordered asset/motion identity, Develop-history and row locks. The callback runs in publicationTransaction; participating asset/album/tag writes and nested repository transactions use that connection. Current authorization, visible membership and edit/history protection are rechecked before database mutation. This is a per-group transaction, not an atomic batch. [server/src/repositories/duplicate.repository.ts:52–90](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/duplicate.repository.ts#L52-L90) [server/src/queue/transaction.ts:4–27](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/queue/transaction.ts#L4-L27) [server/src/services/duplicate.service.ts:261–435](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.ts#L261-L435)
+`DuplicateRepository.withResolutionLock` bounds one decision to 512 group members and a five-second lock timeout in serializable isolation. It locks BackgroundTask and any active caller queue first, verifies an active unexpired uncancelled caller claim when present, then takes ordered asset/motion identity, Develop-history and row locks. The callback runs in publicationTransaction; participating asset/album/tag writes and nested repository transactions use that connection. Current authorization, visible membership and edit/history protection are rechecked before database mutation. This is a per-group transaction, not an atomic batch. [server/src/repositories/duplicate.repository.ts:52–90](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/duplicate.repository.ts#L52-L90) [server/src/queue/transaction.ts:4–27](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/queue/transaction.ts#L4-L27) [server/src/services/duplicate.service.ts:261–435](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.ts#L261-L435)
 
-The lifecycle receipt is enqueued through the same transaction only for a successful decision with effects. queueInTransaction retains the run-admission refusal and ordinary queue-owned producer restriction, but admits this specific committed effect after rechecking its caller claim. It constructs that intent outside queueExecution and runSubmission, detaching the receipt from the original run/parent. Post-commit parent cancellation therefore does not cancel this committed cleanup obligation; a lost pre-commit claim aborts the decision. The job is explicitly in the existing repeatable-job classification. This classification is not an exactly-once guarantee: after partial side effects or an ambiguous stop, an admitted retry may repeat work. [server/src/repositories/job.repository.ts:720–740](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/job.repository.ts#L720-L740) [server/src/repositories/job.repository.ts:71–79](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/job.repository.ts#L71-L79) [server/src/repositories/job.repository.ts:525–537](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/job.repository.ts#L525-L537) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:271–322](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L271-L322)
+The lifecycle receipt is enqueued through the same transaction only for a successful decision with effects. queueInTransaction retains the run-admission refusal and ordinary queue-owned producer restriction, but admits this specific committed effect after rechecking its caller claim. It constructs that intent outside queueExecution and runSubmission, detaching the receipt from the original run/parent. Post-commit parent cancellation therefore does not cancel this committed cleanup obligation; a lost pre-commit claim aborts the decision. The job is explicitly in the existing repeatable-job classification. This classification is not an exactly-once guarantee: after partial side effects or an ambiguous stop, an admitted retry may repeat work. [server/src/repositories/job.repository.ts:720–740](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/job.repository.ts#L720-L740) [server/src/repositories/job.repository.ts:71–79](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/job.repository.ts#L71-L79) [server/src/repositories/job.repository.ts:525–537](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/job.repository.ts#L525-L537) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:271–322](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L271-L322)
 
-After commit the service attempts this same handler immediately outside the original queue context and removes the receipt only after success. It keeps the committed bulk success if work or receipt removal fails. The handler uses allSettled so a sidecar scheduling failure does not suppress disposal events; it throws when any branch rejects so cleanup remains retryable. It does not rerun metadata merging or the disposal decision. [server/src/services/duplicate.service.ts:202–259](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.ts#L202-L259)
+After commit the service attempts this same handler immediately outside the original queue context and removes the receipt only after success. It keeps the committed bulk success if work or receipt removal fails. The handler uses allSettled so a sidecar scheduling failure does not suppress disposal events; it throws when any branch rejects so cleanup remains retryable. It does not rerun metadata merging or the disposal decision. [server/src/services/duplicate.service.ts:202–259](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.ts#L202-L259)
 
-[server/src/services/duplicate.service.ts:235–259](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.ts#L235-L259)
+[server/src/services/duplicate.service.ts:235–259](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.ts#L235-L259)
 
 ```ts
   @OnJob({ name: JobName.DuplicateResolutionLifecycle, queue: QueueName.BackgroundTask })
@@ -3007,13 +3127,13 @@ After commit the service attempts this same handler immediately outside the orig
   }
 ```
 
-The service test source covers committed success with a retained receipt after sidecar failure, attempted disposal events and a later successful lifecycle retry. The database fixture source checks cross-repository rollback, image/video/Develop save races, transactional receipt commit/rollback and an expired versus live caller claim; after live commit its receipt has no parentId/runId and survives caller cancellation. These are declared fixture assertions; no database or filesystem-cleanup acceptance claim follows from their citation. [server/src/services/duplicate.service.spec.ts:634–663](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.spec.ts#L634-L663) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:151–322](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L151-L322)
+The service test source covers committed success with a retained receipt after sidecar failure, attempted disposal events and a later successful lifecycle retry. The database fixture source checks cross-repository rollback, image/video/Develop save races, transactional receipt commit/rollback and an expired versus live caller claim; after live commit its receipt has no parentId/runId and survives caller cancellation. These are declared fixture assertions; no database or filesystem-cleanup acceptance claim follows from their citation. [server/src/services/duplicate.service.spec.ts:634–663](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.spec.ts#L634-L663) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:151–322](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L151-L322)
 
 ## Proven Live Photo motion retention and undo
 
-This repository contract changes duplicate-disposal admission and stored decision state, not the HTTP/SDK shape or image-worker codec protocol. `findMotionTransfer` returns a motion ID only for an unpaired keeper whose original filename has a case-insensitive .heic/.heif/.hif extension. Among disposable stills with a motion link, at least one must exist, every link must name the same video and every linked source must satisfy the full relational proof. All source/keeper/video records are active and non-deleted, owner and library match, the source and keeper share a duplicate group, source/keeper are images, motion is video, three EXIF content identifiers match a non-empty keeper identifier and the video is unlocked. The proof does not discard independent edit/history protection. [server/src/utils/mime-types.ts:101](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/mime-types.ts#L101) [server/src/utils/mime-types.ts:168](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/mime-types.ts#L168) [server/src/utils/duplicate-review.ts:192–208](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/utils/duplicate-review.ts#L192-L208)
+This repository contract changes duplicate-disposal admission and stored decision state, not the HTTP/SDK shape or image-worker codec protocol. `findMotionTransfer` returns a motion ID only for an unpaired keeper whose original filename has a case-insensitive .heic/.heif/.hif extension. Among disposable stills with a motion link, at least one must exist, every link must name the same video and every linked source must satisfy the full relational proof. All source/keeper/video records are active and non-deleted, owner and library match, the source and keeper share a duplicate group, source/keeper are images, motion is video, three EXIF content identifiers match a non-empty keeper identifier and the video is unlocked. The proof does not discard independent edit/history protection. [server/src/utils/mime-types.ts:101](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/mime-types.ts#L101) [server/src/utils/mime-types.ts:168](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/mime-types.ts#L168) [server/src/utils/duplicate-review.ts:192–208](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/utils/duplicate-review.ts#L192-L208)
 
-[server/src/repositories/duplicate.repository.ts:92–129](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/duplicate.repository.ts#L92-L129)
+[server/src/repositories/duplicate.repository.ts:92–129](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/duplicate.repository.ts#L92-L129)
 
 ```ts
   /** A reference may move only when every disposable motion proves the same owned pair. */
@@ -3056,11 +3176,11 @@ This repository contract changes duplicate-disposal admission and stored decisio
   }
 ```
 
-The read path catches inconclusive proof and retains review protection. It computes reasons on a prospective keeper link but returns the actual mapped assets unchanged. The disposal path reruns proof under the existing group transaction, checks keeper AssetUpdate access and attaches only after all disposal reasons clear. It preserves the source still's original link. This is a retained reference to existing owned motion, not a new media encode, physical copy or capture qualification. [server/src/services/duplicate.service.ts:138–170](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.ts#L138-L170) [server/src/services/duplicate.service.ts:327–350](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.ts#L327-L350) [server/src/services/duplicate.service.spec.ts:91–103](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.spec.ts#L91-L103) [server/src/services/duplicate.service.spec.ts:611–633](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.spec.ts#L611-L633)
+The read path catches inconclusive proof and retains review protection. It computes reasons on a prospective keeper link but returns the actual mapped assets unchanged. The disposal path reruns proof under the existing group transaction, checks keeper AssetUpdate access and attaches only after all disposal reasons clear. It preserves the source still's original link. This is a retained reference to existing owned motion, not a new media encode, physical copy or capture qualification. [server/src/services/duplicate.service.ts:138–170](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.ts#L138-L170) [server/src/services/duplicate.service.ts:327–350](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.ts#L327-L350) [server/src/services/duplicate.service.spec.ts:91–103](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.spec.ts#L91-L103) [server/src/services/duplicate.service.spec.ts:611–633](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.spec.ts#L611-L633)
 
-New keeper snapshots include optional livePhotoVideoId; historical decisions may omit it. Undo only considers removing a decision-added reference when before is explicitly null, after names a motion and current still equals after. It calls the repository guard after restoration of trashed originals and notifies the owner only after a successful clear. Historical absence and later link changes do not authorize removal. [server/src/repositories/duplicate-decision.repository.ts:128–180](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/duplicate-decision.repository.ts#L128-L180) [server/src/services/duplicate-decision.service.ts:675–719](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate-decision.service.ts#L675-L719)
+New keeper snapshots include optional livePhotoVideoId; historical decisions may omit it. Undo only considers removing a decision-added reference when before is explicitly null, after names a motion and current still equals after. It calls the repository guard after restoration of trashed originals and notifies the owner only after a successful clear. Historical absence and later link changes do not authorize removal. [server/src/repositories/duplicate-decision.repository.ts:128–180](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/duplicate-decision.repository.ts#L128-L180) [server/src/services/duplicate-decision.service.ts:675–719](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate-decision.service.ts#L675-L719)
 
-[server/src/repositories/duplicate-decision.repository.ts:35–46](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/duplicate-decision.repository.ts#L35-L46)
+[server/src/repositories/duplicate-decision.repository.ts:35–46](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/duplicate-decision.repository.ts#L35-L46)
 
 ```ts
 export type DuplicateKeeperState = {
@@ -3079,7 +3199,7 @@ export type DuplicateKeeperState = {
 
 `restoreKeeperMotion` uses serializable isolation, a five-second lock timeout and ordered identity/asset locks over the keeper, expected motion and referring stills. Its conditional update clears only the same-owner, non-deleted keeper's expected link while a different same-owner, non-deleted original still references that motion. It never removes the source link or video. If that protecting original is deleted concurrently, the transaction refuses the clear or returns false; it does not remove the surviving reference.
 
-[server/src/repositories/duplicate-decision.repository.ts:183–219](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/repositories/duplicate-decision.repository.ts#L183-L219)
+[server/src/repositories/duplicate-decision.repository.ts:183–219](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/repositories/duplicate-decision.repository.ts#L183-L219)
 
 ```ts
   /** Undo an added still reference only; the restored original must still protect its motion. */
@@ -3121,4 +3241,4 @@ export type DuplicateKeeperState = {
   }
 ```
 
-The service fixture checks prospective recommendations without falsely paired response assets, attachment before disposal with retained original links, and undo preserving a newer link. The database fixture source checks matching versus mismatched CID, owner/missing-CID/deleted-video/multiple-clip refusal and concurrency with permanent deletion of the protecting still. These citations describe source checks; they do not assert medium database fixture execution or runtime/media qualification. [server/src/services/duplicate.service.spec.ts:91–103](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.spec.ts#L91-L103) [server/src/services/duplicate.service.spec.ts:611–633](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate.service.spec.ts#L611-L633) [server/src/services/duplicate-decision.service.spec.ts:506–528](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/services/duplicate-decision.service.spec.ts#L506-L528) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:47–149](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L47-L149)
+The service fixture checks prospective recommendations without falsely paired response assets, attachment before disposal with retained original links, and undo preserving a newer link. The database fixture source checks matching versus mismatched CID, owner/missing-CID/deleted-video/multiple-clip refusal and concurrency with permanent deletion of the protecting still. These citations describe source checks; they do not assert medium database fixture execution or runtime/media qualification. [server/src/services/duplicate.service.spec.ts:91–103](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.spec.ts#L91-L103) [server/src/services/duplicate.service.spec.ts:611–633](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate.service.spec.ts#L611-L633) [server/src/services/duplicate-decision.service.spec.ts:506–528](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/services/duplicate-decision.service.spec.ts#L506-L528) [server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts:47–149](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/test/medium/specs/repositories/duplicate-resolution.repository.spec.ts#L47-L149)

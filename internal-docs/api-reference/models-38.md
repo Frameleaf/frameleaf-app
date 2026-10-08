@@ -1,6 +1,6 @@
 # Server API models 38
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## UserConfigMachineLearningDto
 
@@ -1095,7 +1095,7 @@ Related models: [UtilityActivityEntryDto](models-38.md#utilityactivityentrydto).
 
 ## ValidateLibraryImportPathResponseDto
 
-Related models: [LibraryImportPathReason](models-14.md#libraryimportpathreason).
+Related models: [LibraryImportPathReason](models-15.md#libraryimportpathreason).
 
 ```json
 {
@@ -1908,7 +1908,7 @@ Related models: [EnrichmentStaleReason](models-11.md#enrichmentstalereason), [Vi
 
 ## WorkerInventoryEntryDto
 
-Related models: [MediaOperationKind](models-16.md#mediaoperationkind), [MlWorkerAcceleration](models-17.md#mlworkeracceleration), [MlWorkerReadiness](models-17.md#mlworkerreadiness), [MlWorkerRole](models-17.md#mlworkerrole), [MlWorkload](models-17.md#mlworkload), [WorkerCredentialState](models-38.md#workercredentialstate), [WorkerGpuDto](models-38.md#workergpudto), [WorkerInventorySource](models-38.md#workerinventorysource), [WorkerWorkloadAdmissionDto](models-38.md#workerworkloadadmissiondto).
+Related models: [MediaOperationKind](models-16.md#mediaoperationkind), [MlWorkerAcceleration](models-18.md#mlworkeracceleration), [MlWorkerReadiness](models-18.md#mlworkerreadiness), [MlWorkerRole](models-18.md#mlworkerrole), [MlWorkload](models-18.md#mlworkload), [WorkerCredentialState](models-38.md#workercredentialstate), [WorkerGpuDto](models-38.md#workergpudto), [WorkerInventorySource](models-38.md#workerinventorysource), [WorkerWorkloadAdmissionDto](models-38.md#workerworkloadadmissiondto).
 
 ```json
 {
@@ -2173,7 +2173,7 @@ Related models: [WorkerInventoryEntryDto](models-38.md#workerinventoryentrydto),
 
 ## WorkerLibraryRouteDto
 
-Related models: [MlWorkload](models-17.md#mlworkload), [QueueName](models-27.md#queuename).
+Related models: [MlWorkload](models-18.md#mlworkload), [QueueName](models-27.md#queuename).
 
 ```json
 {
@@ -2276,7 +2276,7 @@ Related models: [MediaOperationKind](models-16.md#mediaoperationkind).
 
 ## WorkerWorkloadAdmissionDto
 
-Related models: [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlWorkload](models-17.md#mlworkload).
+Related models: [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {

@@ -1,18 +1,18 @@
 # Server API — Media Health
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## list
 
 `GET /api/media-health`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L28).
 
 List media health findings
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthCategory](models-15.md#mediahealthcategory), [MediaHealthListResponseDto](models-15.md#mediahealthlistresponsedto), [MediaHealthStatus](models-15.md#mediahealthstatus).
+Models: [MediaHealthCategory](models-16.md#mediahealthcategory), [MediaHealthListResponseDto](models-16.md#mediahealthlistresponsedto), [MediaHealthStatus](models-16.md#mediahealthstatus).
 
 Controller access declarations:
 
@@ -148,13 +148,13 @@ Complete operation contract:
 
 `POST /api/media-health/candidates/choose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L62).
 
 Choose media health candidates
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkResponseDto](models-15.md#mediahealthbulkresponsedto), [MediaHealthChooseCandidatesDto](models-15.md#mediahealthchoosecandidatesdto).
+Models: [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto), [MediaHealthChooseCandidatesDto](models-16.md#mediahealthchoosecandidatesdto).
 
 Controller access declarations:
 
@@ -232,13 +232,13 @@ Complete operation contract:
 
 `DELETE /api/media-health/corrupt`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L157).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L157).
 
 Move confirmed corrupt media to trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkResponseDto](models-15.md#mediahealthbulkresponsedto), [MediaHealthDeleteCorruptDto](models-15.md#mediahealthdeletecorruptdto).
+Models: [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto), [MediaHealthDeleteCorruptDto](models-16.md#mediahealthdeletecorruptdto).
 
 Controller access declarations:
 
@@ -316,13 +316,13 @@ Complete operation contract:
 
 `POST /api/media-health/corrupt/recover`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L121).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L121).
 
 Recover damaged media from a verified copy
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkResponseDto](models-15.md#mediahealthbulkresponsedto), [MediaHealthRecoverDto](models-15.md#mediahealthrecoverdto).
+Models: [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto), [MediaHealthRecoverDto](models-16.md#mediahealthrecoverdto).
 
 Controller access declarations:
 
@@ -401,13 +401,13 @@ Complete operation contract:
 
 `POST /api/media-health/corrupt/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L110).
 
 Start corrupt media scan
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthScanResponseDto](models-15.md#mediahealthscanresponsedto).
+Models: [MediaHealthScanResponseDto](models-16.md#mediahealthscanresponsedto).
 
 Controller access declarations:
 
@@ -475,7 +475,7 @@ Complete operation contract:
 
 `POST /api/media-health/dismiss`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L133).
 
 Dismiss media health findings
 
@@ -553,13 +553,13 @@ Complete operation contract:
 
 `POST /api/media-health/missing/locate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L87).
 
 Locate missing media
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthLocateDto](models-15.md#mediahealthlocatedto), [MediaHealthScanResponseDto](models-15.md#mediahealthscanresponsedto).
+Models: [MediaHealthLocateDto](models-16.md#mediahealthlocatedto), [MediaHealthScanResponseDto](models-16.md#mediahealthscanresponsedto).
 
 Controller access declarations:
 
@@ -638,13 +638,13 @@ Complete operation contract:
 
 `POST /api/media-health/missing/relink`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L99).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L99).
 
 Relink missing media
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-15.md#mediahealthbulkresponsedto).
+Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
 
 Controller access declarations:
 
@@ -722,13 +722,13 @@ Complete operation contract:
 
 `POST /api/media-health/missing/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L76).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L76).
 
 Start missing media scan
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthScanResponseDto](models-15.md#mediahealthscanresponsedto).
+Models: [MediaHealthScanResponseDto](models-16.md#mediahealthscanresponsedto).
 
 Controller access declarations:
 
@@ -796,13 +796,13 @@ Complete operation contract:
 
 `POST /api/media-health/reopen`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L145).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L145).
 
 Reopen media health findings
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-15.md#mediahealthbulkresponsedto).
+Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
 
 Controller access declarations:
 
@@ -881,13 +881,13 @@ Complete operation contract:
 
 `GET /api/media-health/roots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L51).
 
 List Library Care search locations
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthRootsResponseDto](models-15.md#mediahealthrootsresponsedto).
+Models: [MediaHealthRootsResponseDto](models-16.md#mediahealthrootsresponsedto).
 
 Controller access declarations:
 
@@ -955,13 +955,13 @@ Complete operation contract:
 
 `GET /api/media-health/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/media-health.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L39).
 
 Get Library Care summary
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthSummaryResponseDto](models-15.md#mediahealthsummaryresponsedto).
+Models: [MediaHealthSummaryResponseDto](models-16.md#mediahealthsummaryresponsedto).
 
 Controller access declarations:
 

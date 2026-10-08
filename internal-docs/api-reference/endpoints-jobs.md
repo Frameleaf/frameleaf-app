@@ -1,12 +1,12 @@
 # Server API — Jobs
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getQueuesLegacy
 
 `GET /api/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L39).
 
 Retrieve queue counts and status
 
@@ -92,13 +92,13 @@ Complete operation contract:
 
 `POST /api/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L64).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L64).
 
 Create a manual job
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [JobCreateDto](models-13.md#jobcreatedto).
+Models: [JobCreateDto](models-14.md#jobcreatedto).
 
 Controller access declarations:
 
@@ -177,7 +177,7 @@ Complete operation contract:
 
 `GET /api/jobs/running`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L52).
 
 Get running jobs
 
@@ -252,13 +252,13 @@ Complete operation contract:
 
 `GET /api/jobs/runs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L25).
 
 List durable job runs
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [JobRunPageDto](models-13.md#jobrunpagedto).
+Models: [JobRunPageDto](models-14.md#jobrunpagedto).
 
 Controller access declarations:
 
@@ -346,13 +346,13 @@ Complete operation contract:
 
 `GET /api/jobs/runs/{id}/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L32).
 
 Inspect selected job run items
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [JobRunItemPageDto](models-13.md#jobrunitempagedto).
+Models: [JobRunItemPageDto](models-14.md#jobrunitempagedto).
 
 Controller access declarations:
 
@@ -450,7 +450,7 @@ Complete operation contract:
 
 `PUT /api/jobs/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/job.controller.ts#L77).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/job.controller.ts#L77).
 
 Run jobs
 

@@ -1,12 +1,12 @@
 # Server API — Cluster groups
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getClusterGroupRequests
 
 `GET /api/cluster-groups/requests`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L18).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L18).
 
 Retrieve cluster group requests
 
@@ -79,7 +79,7 @@ Complete operation contract:
 
 `DELETE /api/cluster-groups/requests/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L41).
 
 Decline a cluster group request
 
@@ -152,7 +152,7 @@ Complete operation contract:
 
 `POST /api/cluster-groups/requests/{id}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L29).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L29).
 
 Accept a cluster group request
 
@@ -225,7 +225,7 @@ Complete operation contract:
 
 `POST /api/cluster-groups/{id}/leave`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L108).
 
 Leave a cluster group
 
@@ -298,7 +298,7 @@ Complete operation contract:
 
 `POST /api/cluster-groups/{id}/regenerate-people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L96).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L96).
 
 Regenerate people of users in cluster group
 
@@ -371,7 +371,7 @@ Complete operation contract:
 
 `GET /api/cluster-groups/{id}/requests`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L53).
 
 Retrieve the requests sent by a cluster group
 
@@ -455,7 +455,7 @@ Complete operation contract:
 
 `PUT /api/cluster-groups/{id}/requests`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L78).
 
 Create a cluster group request
 
@@ -546,7 +546,7 @@ Complete operation contract:
 
 `GET /api/cluster-groups/{id}/users`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/cluster-group.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cluster-group.controller.ts#L67).
 
 Retrieve the users of a cluster group
 

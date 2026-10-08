@@ -1,6 +1,6 @@
 # Server API models 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## ActivityCreateDto
 
@@ -841,7 +841,7 @@ Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrea
 
 ## AdminConfigFFmpegRealtimeDto
 
-Related models: [HlsVideoResolution](models-12.md#hlsvideoresolution), [VideoCodec](models-38.md#videocodec).
+Related models: [HlsVideoResolution](models-13.md#hlsvideoresolution), [VideoCodec](models-38.md#videocodec).
 
 ```json
 {
@@ -1435,7 +1435,7 @@ Related models: [AdminConfigFrameleafCustomHostnameDto](models-01.md#adminconfig
 
 ## AdminConfigGeneratedFullsizeImageDto
 
-Related models: [ImageFormat](models-13.md#imageformat).
+Related models: [ImageFormat](models-14.md#imageformat).
 
 ```json
 {
@@ -1469,7 +1469,7 @@ Related models: [ImageFormat](models-13.md#imageformat).
 
 ## AdminConfigGeneratedImageDto
 
-Related models: [ImageFormat](models-13.md#imageformat).
+Related models: [ImageFormat](models-14.md#imageformat).
 
 ```json
 {
@@ -1536,7 +1536,7 @@ Related models: [ImageFormat](models-13.md#imageformat).
 
 ## AdminConfigImageDescriptionDto
 
-Related models: [AdminConfigImageDescriptionPromptDto](models-01.md#adminconfigimagedescriptionpromptdto), [MachineLearningHardwareAcceleration](models-14.md#machinelearninghardwareacceleration).
+Related models: [AdminConfigImageDescriptionPromptDto](models-01.md#adminconfigimagedescriptionpromptdto), [MachineLearningHardwareAcceleration](models-15.md#machinelearninghardwareacceleration).
 
 ```json
 {
@@ -2199,7 +2199,7 @@ Related models: [AdminConfigAskSearchDto](models-01.md#adminconfigasksearchdto).
 
 ## AdminConfigLoggingDto
 
-Related models: [LogLevel](models-14.md#loglevel).
+Related models: [LogLevel](models-15.md#loglevel).
 
 ```json
 {

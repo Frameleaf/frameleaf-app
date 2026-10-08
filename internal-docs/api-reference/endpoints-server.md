@@ -1,12 +1,12 @@
 # Server API — Server
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAboutInfo
 
 `GET /api/server/about`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L37).
 
 Get server information
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `GET /api/server/apk-links`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L48).
 
 Get APK links
 
@@ -169,7 +169,7 @@ Complete operation contract:
 
 `GET /api/server/app-releases`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L61).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L61).
 
 Get app releases
 
@@ -245,7 +245,7 @@ Complete operation contract:
 
 `GET /api/server/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L144).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L144).
 
 Get config
 
@@ -323,7 +323,7 @@ Complete operation contract:
 
 `GET /api/server/connections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L84).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L84).
 
 Get connections
 
@@ -399,7 +399,7 @@ Complete operation contract:
 
 `GET /api/server/features`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L129).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L129).
 
 Get features
 
@@ -477,13 +477,13 @@ Complete operation contract:
 
 `GET /api/server/library-setup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L66).
 
 Library preparation for this authenticated device
 
 Permission: `sync.stream`. Admin only: `false`.
 
-Models: [LibrarySetupStatusDto](models-14.md#librarysetupstatusdto).
+Models: [LibrarySetupStatusDto](models-15.md#librarysetupstatusdto).
 
 Controller access declarations:
 
@@ -551,13 +551,13 @@ Complete operation contract:
 
 `POST /api/server/library-setup/begin`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L77).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L77).
 
 Start the managed library rescan
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [LibrarySetupStatusDto](models-14.md#librarysetupstatusdto).
+Models: [LibrarySetupStatusDto](models-15.md#librarysetupstatusdto).
 
 Controller access declarations:
 
@@ -621,13 +621,13 @@ Complete operation contract:
 
 `POST /api/server/library-setup/finish`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L157).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L157).
 
 Finish after catalog and browsing previews are cached
 
 Permission: `sync.stream`. Admin only: `false`.
 
-Models: [FinishLibrarySetupDto](models-11.md#finishlibrarysetupdto), [LibrarySetupStatusDto](models-14.md#librarysetupstatusdto).
+Models: [FinishLibrarySetupDto](models-11.md#finishlibrarysetupdto), [LibrarySetupStatusDto](models-15.md#librarysetupstatusdto).
 
 Controller access declarations:
 
@@ -705,13 +705,13 @@ Complete operation contract:
 
 `GET /api/server/library-setup/manager`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L85).
 
 Manager machine-authenticated setup status
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LibrarySetupStatusDto](models-14.md#librarysetupstatusdto).
+Models: [LibrarySetupStatusDto](models-15.md#librarysetupstatusdto).
 
 Controller access declarations:
 
@@ -772,13 +772,13 @@ Complete operation contract:
 
 `POST /api/server/library-setup/manager`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L93).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L93).
 
 Manager machine-authenticated rescan
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LibrarySetupStatusDto](models-14.md#librarysetupstatusdto).
+Models: [LibrarySetupStatusDto](models-15.md#librarysetupstatusdto).
 
 Controller access declarations:
 
@@ -839,7 +839,7 @@ Complete operation contract:
 
 `POST /api/server/library-setup/sync`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-library-setup.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-library-setup.controller.ts#L102).
 
 Warm the authenticated device catalog during setup
 
@@ -912,7 +912,7 @@ Complete operation contract:
 
 `GET /api/server/media-types`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L170).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L170).
 
 Get supported media types
 
@@ -979,7 +979,7 @@ Complete operation contract:
 
 `GET /api/server/ping`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L96).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L96).
 
 Ping
 
@@ -1046,7 +1046,7 @@ Complete operation contract:
 
 `POST /api/server/setup/admin`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-server-setup.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-server-setup.controller.ts#L75).
 
 Set up a new server with a password administrator
 
@@ -1132,7 +1132,7 @@ Complete operation contract:
 
 `POST /api/server/setup/code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-server-setup.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-server-setup.controller.ts#L39).
 
 Check a new server’s setup code
 
@@ -1219,7 +1219,7 @@ Complete operation contract:
 
 `POST /api/server/setup/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-server-setup.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-server-setup.controller.ts#L57).
 
 Set up a new server with a Frameleaf account
 
@@ -1306,7 +1306,7 @@ Complete operation contract:
 
 `GET /api/server/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L159).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L159).
 
 Get statistics
 
@@ -1386,7 +1386,7 @@ Complete operation contract:
 
 `GET /api/server/storage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L73).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L73).
 
 Get storage
 
@@ -1465,7 +1465,7 @@ Complete operation contract:
 
 `GET /api/server/version`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L107).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L107).
 
 Get server version
 
@@ -1532,7 +1532,7 @@ Complete operation contract:
 
 `GET /api/server/version-check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L181).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L181).
 
 Get version check status
 
@@ -1611,7 +1611,7 @@ Complete operation contract:
 
 `POST /api/server/version-check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L192).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L192).
 
 Check for updates now
 
@@ -1689,7 +1689,7 @@ Complete operation contract:
 
 `GET /api/server/version-history`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/server.controller.ts#L118).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/server.controller.ts#L118).
 
 Get version history
 

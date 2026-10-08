@@ -1,12 +1,12 @@
 # Server API — Tags
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllTags
 
 `GET /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L36).
 
 Retrieve tags
 
@@ -88,7 +88,7 @@ Complete operation contract:
 
 `POST /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L25).
 
 Create a tag
 
@@ -177,7 +177,7 @@ Complete operation contract:
 
 `PUT /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L59).
 
 Upsert tags
 
@@ -269,7 +269,7 @@ Complete operation contract:
 
 `PUT /api/tags/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L70).
 
 Tag assets
 
@@ -358,7 +358,7 @@ Complete operation contract:
 
 `GET /api/tags/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L47).
 
 Retrieve tag statistics
 
@@ -437,7 +437,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L114).
 
 Delete a tag
 
@@ -519,7 +519,7 @@ Complete operation contract:
 
 `GET /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L81).
 
 Retrieve a tag
 
@@ -609,7 +609,7 @@ Complete operation contract:
 
 `PUT /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L92).
 
 Update a tag
 
@@ -716,7 +716,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L141).
 
 Untag assets
 
@@ -819,7 +819,7 @@ Complete operation contract:
 
 `PUT /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L126).
 
 Tag assets
 

@@ -1,6 +1,454 @@
 # Server API models 20
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## PhotographyBrandSaveDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "brand": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "pattern": "^#[\\da-fA-F]{6}$",
+          "type": "string"
+        },
+        "color": {
+          "pattern": "^#[\\da-fA-F]{6}$",
+          "type": "string"
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 254,
+              "format": "email",
+              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            },
+            {
+              "type": "string",
+              "enum": [
+                ""
+              ]
+            }
+          ]
+        },
+        "exportWatermarkPresetId": {
+          "format": "uuid",
+          "nullable": true,
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "font": {
+          "enum": [
+            "editorial",
+            "modern",
+            "classic"
+          ],
+          "type": "string"
+        },
+        "logoAssetId": {
+          "description": "Omit to retain the existing logo reference; null explicitly selects initials",
+          "format": "uuid",
+          "nullable": true,
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "logoInitials": {
+          "maxLength": 12,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "phone": {
+          "maxLength": 100,
+          "type": "string"
+        },
+        "proofWatermarkPresetId": {
+          "format": "uuid",
+          "nullable": true,
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        },
+        "tagline": {
+          "maxLength": 300,
+          "type": "string"
+        },
+        "textColor": {
+          "pattern": "^#[\\da-fA-F]{6}$",
+          "type": "string"
+        },
+        "watermarkColor": {
+          "pattern": "^#[\\da-fA-F]{6}$",
+          "type": "string"
+        },
+        "watermarkOpacity": {
+          "maximum": 100,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "watermarkPosition": {
+          "enum": [
+            "bottom-right",
+            "bottom-left",
+            "center",
+            "top-right"
+          ],
+          "type": "string"
+        },
+        "watermarkPresets": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "version": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "watermark": {
+                "additionalProperties": false,
+                "properties": {
+                  "alignment": {
+                    "default": "center",
+                    "enum": [
+                      "left",
+                      "center",
+                      "right"
+                    ],
+                    "type": "string"
+                  },
+                  "backing": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "default": "#ffffff",
+                    "pattern": "^#[\\da-fA-F]{6}$",
+                    "type": "string"
+                  },
+                  "font": {
+                    "default": "script",
+                    "enum": [
+                      "script",
+                      "serif",
+                      "sans"
+                    ],
+                    "type": "string"
+                  },
+                  "logoAssetId": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "logoPosition": {
+                    "default": "above",
+                    "enum": [
+                      "above",
+                      "below",
+                      "left",
+                      "right"
+                    ],
+                    "type": "string"
+                  },
+                  "logoScale": {
+                    "default": 1,
+                    "maximum": 4,
+                    "minimum": 0.25,
+                    "type": "number"
+                  },
+                  "logoVariant": {
+                    "default": "original",
+                    "enum": [
+                      "original",
+                      "light",
+                      "dark"
+                    ],
+                    "type": "string"
+                  },
+                  "margin": {
+                    "default": 4,
+                    "maximum": 25,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "opacity": {
+                    "default": 45,
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "outline": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "pattern": {
+                    "default": "signature",
+                    "enum": [
+                      "signature",
+                      "centre",
+                      "diagonal",
+                      "tile"
+                    ],
+                    "type": "string"
+                  },
+                  "position": {
+                    "default": "bottom-right",
+                    "enum": [
+                      "top-left",
+                      "top-right",
+                      "bottom-left",
+                      "bottom-right",
+                      "center"
+                    ],
+                    "type": "string"
+                  },
+                  "rotation": {
+                    "default": 0,
+                    "maximum": 180,
+                    "minimum": -180,
+                    "type": "number"
+                  },
+                  "secondLine": {
+                    "default": "",
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "size": {
+                    "default": 6,
+                    "maximum": 30,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "spacing": {
+                    "default": 6,
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "text": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "default": "text",
+                    "enum": [
+                      "text",
+                      "logo",
+                      "both"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "watermark"
+            ],
+            "type": "object"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "watermarkSize": {
+          "maximum": 12,
+          "minimum": 3,
+          "type": "integer"
+        },
+        "webWatermarkPresetId": {
+          "format": "uuid",
+          "nullable": true,
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tagline",
+        "email",
+        "phone",
+        "logoInitials",
+        "color",
+        "background",
+        "textColor",
+        "font",
+        "watermarkColor",
+        "watermarkOpacity",
+        "watermarkPosition",
+        "watermarkSize"
+      ],
+      "type": "object"
+    },
+    "expectedRevision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "brand",
+    "expectedRevision"
+  ],
+  "type": "object"
+}
+```
+
+## PhotographyCallbackDto
+
+
+```json
+{
+  "properties": {
+    "received": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "received"
+  ],
+  "type": "object"
+}
+```
+
+## PhotographyCheckoutDto
+
+
+```json
+{
+  "properties": {
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "type": "object"
+}
+```
+
+## PhotographyChoicesDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "captureIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 10000,
+      "type": "array"
+    },
+    "expectedRevision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "notes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "annotations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "height": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "text": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "width": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "x": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y",
+                "width",
+                "height",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "captureId",
+          "text"
+        ],
+        "type": "object"
+      },
+      "maxItems": 10000,
+      "type": "array"
+    }
+  },
+  "required": [
+    "captureIds",
+    "expectedRevision",
+    "notes"
+  ],
+  "type": "object"
+}
+```
 
 ## PhotographyGalleryDto
 

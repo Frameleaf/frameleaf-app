@@ -1,6 +1,6 @@
 # Server API models 31
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## ServerAppReleasesResponseDto
 
@@ -165,7 +165,7 @@ Related models: [ServerFrameleafConfigDto](models-31.md#serverframeleafconfigdto
 
 ## ServerFeaturesDto
 
-Related models: [ImageCapabilitiesDto](models-13.md#imagecapabilitiesdto).
+Related models: [ImageCapabilitiesDto](models-14.md#imagecapabilitiesdto).
 
 ```json
 {
@@ -852,7 +852,7 @@ Related models: [UsageByUserDto](models-37.md#usagebyuserdto).
 
 ## SetMaintenanceModeDto
 
-Related models: [MaintenanceAction](models-14.md#maintenanceaction).
+Related models: [MaintenanceAction](models-15.md#maintenanceaction).
 
 ```json
 {
@@ -1709,7 +1709,7 @@ Related models: [SharedSpaceMemberResponseDto](models-31.md#sharedspacememberres
 
 ## SharedSpacePeopleResponseDto
 
-Related models: [PersonResponseDto](models-18.md#personresponsedto), [SharedSpacePersonResponseDto](models-31.md#sharedspacepersonresponsedto).
+Related models: [PersonResponseDto](models-19.md#personresponsedto), [SharedSpacePersonResponseDto](models-31.md#sharedspacepersonresponsedto).
 
 ```json
 {

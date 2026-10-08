@@ -1,6 +1,6 @@
 # Server API models 29
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## RenderWorkerAuditDto
 
@@ -230,7 +230,7 @@ Related models: [RenderWorkerAuditEvent](models-29.md#renderworkerauditevent), [
 
 ## RenderWorkerClaimDto
 
-Related models: [MediaOperationCheckpointDto](models-15.md#mediaoperationcheckpointdto), [MediaOperationKind](models-16.md#mediaoperationkind), [RenderWorkerClaimLimitsDto](models-29.md#renderworkerclaimlimitsdto), [RenderWorkerInputGrantDto](models-29.md#renderworkerinputgrantdto).
+Related models: [MediaOperationCheckpointDto](models-16.md#mediaoperationcheckpointdto), [MediaOperationKind](models-16.md#mediaoperationkind), [RenderWorkerClaimLimitsDto](models-29.md#renderworkerclaimlimitsdto), [RenderWorkerInputGrantDto](models-29.md#renderworkerinputgrantdto).
 
 ```json
 {
@@ -428,7 +428,7 @@ Related models: [RenderWorkerOutputDto](models-29.md#renderworkeroutputdto).
 
 ## RenderWorkerCreateDto
 
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind).
+Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind).
 
 ```json
 {
@@ -515,7 +515,7 @@ Related models: [RenderWorkerDto](models-29.md#renderworkerdto).
 
 ## RenderWorkerDto
 
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind), [RenderWorkerStatus](models-29.md#renderworkerstatus).
+Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind), [RenderWorkerStatus](models-29.md#renderworkerstatus).
 
 ```json
 {
@@ -894,7 +894,7 @@ Related models: [RenderWorkerLimitDto](models-29.md#renderworkerlimitdto).
       "type": "string"
     },
     "contentType": {
-      "description": "`video/mp4`, `video/webm` or `video/quicktime`",
+      "description": "Verified output MIME: `video/mp4`, `video/webm`, `video/quicktime`, `image/jpeg` or `image/heic`",
       "maxLength": 100,
       "minLength": 1,
       "type": "string"
@@ -1562,7 +1562,7 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Rest
 
 ## RunningJobsResponseDto
 
-Related models: [JobRunResponseDto](models-14.md#jobrunresponsedto), [MediaOperationDto](models-15.md#mediaoperationdto), [MemoryExportResponseDto](models-16.md#memoryexportresponsedto), [QueueRunDto](models-27.md#queuerundto).
+Related models: [JobRunResponseDto](models-14.md#jobrunresponsedto), [MediaOperationDto](models-16.md#mediaoperationdto), [MemoryExportResponseDto](models-17.md#memoryexportresponsedto), [QueueRunDto](models-27.md#queuerundto).
 
 ```json
 {

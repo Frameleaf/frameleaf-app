@@ -1,12 +1,12 @@
 # Server API — Database Backups (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteDatabaseBackup
 
 `DELETE /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L101).
 
 Delete database backup
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L46).
 
 List database backups
 
@@ -161,7 +161,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L58).
 
 Get backup restore verification
 
@@ -237,7 +237,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L69).
 
 Record a backup restore test
 
@@ -324,7 +324,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/start-restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L112).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L112).
 
 Start database backup restore flow
 
@@ -378,7 +378,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/upload`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L130).
 
 Upload database backup
 
@@ -461,7 +461,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/{filename}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/database-backup.controller.ts#L84).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L84).
 
 Download database backup
 

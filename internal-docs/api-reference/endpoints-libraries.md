@@ -1,18 +1,18 @@
 # Server API — Libraries
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllLibraries
 
 `GET /api/libraries`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L31).
 
 Retrieve libraries
 
 Permission: `library.read`. Admin only: `true`.
 
-Models: [LibraryResponseDto](models-14.md#libraryresponsedto).
+Models: [LibraryResponseDto](models-15.md#libraryresponsedto).
 
 Controller access declarations:
 
@@ -108,13 +108,13 @@ Complete operation contract:
 
 `POST /api/libraries`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L58).
 
 Create a library
 
 Permission: `library.create`. Admin only: `true`.
 
-Models: [CreateLibraryDto](models-09.md#createlibrarydto), [LibraryResponseDto](models-14.md#libraryresponsedto).
+Models: [CreateLibraryDto](models-09.md#createlibrarydto), [LibraryResponseDto](models-15.md#libraryresponsedto).
 
 Controller access declarations:
 
@@ -198,7 +198,7 @@ Complete operation contract:
 
 `GET /api/libraries/managed-uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L46).
 
 Retrieve managed upload statistics
 
@@ -273,7 +273,7 @@ Complete operation contract:
 
 `DELETE /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L111).
 
 Delete a library
 
@@ -356,13 +356,13 @@ Complete operation contract:
 
 `GET /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L69).
 
 Retrieve a library
 
 Permission: `library.read`. Admin only: `true`.
 
-Models: [LibraryResponseDto](models-14.md#libraryresponsedto).
+Models: [LibraryResponseDto](models-15.md#libraryresponsedto).
 
 Controller access declarations:
 
@@ -447,13 +447,13 @@ Complete operation contract:
 
 `PUT /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L81).
 
 Update a library
 
 Permission: `library.update`. Admin only: `true`.
 
-Models: [LibraryResponseDto](models-14.md#libraryresponsedto), [UpdateLibraryDto](models-37.md#updatelibrarydto).
+Models: [LibraryResponseDto](models-15.md#libraryresponsedto), [UpdateLibraryDto](models-37.md#updatelibrarydto).
 
 Controller access declarations:
 
@@ -559,13 +559,13 @@ Complete operation contract:
 
 `GET /api/libraries/{id}/removal`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L173).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L173).
 
 Review a library removal
 
 Permission: `library.delete`. Admin only: `true`.
 
-Models: [LibraryRemovalReviewDto](models-14.md#libraryremovalreviewdto).
+Models: [LibraryRemovalReviewDto](models-15.md#libraryremovalreviewdto).
 
 Controller access declarations:
 
@@ -642,13 +642,13 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/removal`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L186).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L186).
 
 Remove a library
 
 Permission: `library.delete`. Admin only: `true`.
 
-Models: [LibraryRemovalDto](models-14.md#libraryremovaldto).
+Models: [LibraryRemovalDto](models-15.md#libraryremovaldto).
 
 Controller access declarations:
 
@@ -729,7 +729,7 @@ Complete operation contract:
 
 `DELETE /api/libraries/{id}/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L160).
 
 Cancel a library scan
 
@@ -804,7 +804,7 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L148).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L148).
 
 Scan a library
 
@@ -887,13 +887,13 @@ Complete operation contract:
 
 `GET /api/libraries/{id}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L136).
 
 Retrieve library statistics
 
 Permission: `library.statistics`. Admin only: `true`.
 
-Models: [LibraryStatsResponseDto](models-14.md#librarystatsresponsedto).
+Models: [LibraryStatsResponseDto](models-15.md#librarystatsresponsedto).
 
 Controller access declarations:
 
@@ -979,7 +979,7 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/validate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L123).
 
 Validate library settings
 

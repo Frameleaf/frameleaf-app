@@ -4,7 +4,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateApiKeyV3
 
-`PATCH /api-keys/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/api-key.controller.ts#L79).
+`PATCH /api-keys/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/api-key.controller.ts#L79).
 
 ```typescript
 @ApiTags(ApiTag.ApiKeys)
@@ -16,7 +16,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## getImmichWellKnown
 
-`GET /.well-known/immich` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/app.controller.ts#L10).
+`GET /.well-known/immich` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/app.controller.ts#L10).
 
 ```typescript
 @Controller()
@@ -27,7 +27,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## getCustomCss
 
-`GET /custom.css` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/app.controller.ts#L17).
+`GET /custom.css` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/app.controller.ts#L17).
 
 ```typescript
 @Controller()
@@ -39,7 +39,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateAssetsV3
 
-`PATCH /assets` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L86).
+`PATCH /assets` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L86).
 
 ```typescript
 @ApiTags(ApiTag.Assets)
@@ -52,7 +52,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateAssetV3
 
-`PATCH /assets/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L229).
+`PATCH /assets/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L229).
 
 ```typescript
 @ApiTags(ApiTag.Assets)
@@ -64,7 +64,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## handshake
 
-`GET /buddy/v1/vaults/{vaultId}/handshake` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L53).
+`GET /buddy/v1/vaults/{vaultId}/handshake` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L53).
 
 ```typescript
 @ApiExcludeController()
@@ -75,7 +75,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## inventory
 
-`POST /buddy/v1/vaults/{vaultId}/inventory` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L64).
+`POST /buddy/v1/vaults/{vaultId}/inventory` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L64).
 
 ```typescript
 @ApiExcludeController()
@@ -86,7 +86,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## reserve
 
-`POST /buddy/v1/vaults/{vaultId}/reservations` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L78).
+`POST /buddy/v1/vaults/{vaultId}/reservations` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L78).
 
 ```typescript
 @ApiExcludeController()
@@ -97,7 +97,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## put
 
-`PUT /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L91).
+`PUT /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L91).
 
 ```typescript
 @ApiExcludeController()
@@ -108,7 +108,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## get
 
-`GET /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L105).
+`GET /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L105).
 
 ```typescript
 @ApiExcludeController()
@@ -119,7 +119,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## snapshots
 
-`GET /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L118).
+`GET /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L118).
 
 ```typescript
 @ApiExcludeController()
@@ -130,7 +130,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## snapshot
 
-`GET /buddy/v1/vaults/{vaultId}/snapshots/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L133).
+`GET /buddy/v1/vaults/{vaultId}/snapshots/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L133).
 
 ```typescript
 @ApiExcludeController()
@@ -141,7 +141,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## commit
 
-`POST /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/buddy-backup-peer.controller.ts#L148).
+`POST /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L148).
 
 ```typescript
 @ApiExcludeController()
@@ -152,7 +152,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateLibraryV3
 
-`PATCH /libraries/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/library.controller.ts#L100).
+`PATCH /libraries/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L100).
 
 ```typescript
 @ApiTags(ApiTag.Libraries)
@@ -164,7 +164,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateMemoryV3
 
-`PATCH /memories/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/memory.controller.ts#L250).
+`PATCH /memories/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L250).
 
 ```typescript
 @ApiTags(ApiTag.Memories)
@@ -176,7 +176,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updatePersonV3
 
-`PATCH /people/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L189).
+`PATCH /people/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L189).
 
 ```typescript
 @ApiTags(ApiTag.People)
@@ -188,7 +188,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateSessionV3
 
-`PATCH /sessions/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/session.controller.ts#L74).
+`PATCH /sessions/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/session.controller.ts#L74).
 
 ```typescript
 @ApiTags(ApiTag.Sessions)
@@ -200,7 +200,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateStackV3
 
-`PATCH /stacks/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/stack.controller.ts#L82).
+`PATCH /stacks/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/stack.controller.ts#L82).
 
 ```typescript
 @ApiTags(ApiTag.Stacks)
@@ -212,7 +212,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateTagV3
 
-`PATCH /tags/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/tag.controller.ts#L103).
+`PATCH /tags/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L103).
 
 ```typescript
 @ApiTags(ApiTag.Tags)
@@ -224,7 +224,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateUserAdminV3
 
-`PATCH /admin/users/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user-admin.controller.ts#L82).
+`PATCH /admin/users/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L82).
 
 ```typescript
 @ApiTags(ApiTag.UsersAdmin)
@@ -236,7 +236,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateUserPreferencesAdminV3
 
-`PATCH /admin/users/{id}/preferences` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user-admin.controller.ts#L230).
+`PATCH /admin/users/{id}/preferences` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L230).
 
 ```typescript
 @ApiTags(ApiTag.UsersAdmin)
@@ -248,7 +248,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateMyUserV3
 
-`PATCH /users/me` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L134).
+`PATCH /users/me` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user.controller.ts#L134).
 
 ```typescript
 @ApiTags(ApiTag.Users)
@@ -260,7 +260,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateMyPreferencesV3
 
-`PATCH /users/me/preferences` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/user.controller.ts#L182).
+`PATCH /users/me/preferences` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user.controller.ts#L182).
 
 ```typescript
 @ApiTags(ApiTag.Users)
@@ -272,7 +272,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## updateWorkflowV3
 
-`PATCH /workflows/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L97).
+`PATCH /workflows/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L97).
 
 ```typescript
 @ApiTags('Workflows')

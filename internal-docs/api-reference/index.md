@@ -1,6 +1,6 @@
 # Complete Frameleaf server API reference
 
-Contract snapshot: `0a503215fa351aafbeea57c6d19899a9e943fa88`, API `3.2.0`. This reference covers **833 OpenAPI operations**, **1518 schemas**, and **24 deliberately excluded controller routes**.
+Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **838 OpenAPI operations**, **1533 schemas**, and **24 deliberately excluded controller routes**.
 
 Start with [authentication and mobile workflows](auth-mobile.md) and [streaming, workers and other protocols](protocols.md), then the [complete worker wire models](worker-wire-models.md). Separate Frameleaf Cloud control-plane contracts are maintained with the Cloud service. Server URLs are relative to your installation, not the Cloud account host. This complete internal reference is kept outside the public documentation build; it includes administrative, Cloud integration and worker contracts.
 
@@ -96,18 +96,18 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 6: AssetResponseDto through BoolFilter](models-06.md)
 - [Models 7: BuddyAcceptDto through ClassificationRuleCountsDto](models-07.md)
 - [Models 8: ClassificationRuleCreateDto through CloudMlDescriptionBatchesResponseDto](models-08.md)
-- [Models 9: CloudMlDescriptionEstimateResponseDto through CreateProfileImageDto](models-09.md)
-- [Models 10: CreateProfileImageResponseDto through DownloadArchiveInfo](models-10.md)
-- [Models 11: DownloadInfoDto through FrameleafLinkRoleChange](models-11.md)
-- [Models 12: FrameleafPublicConfigDto through ICloudConnectionUpdateDto](models-12.md)
-- [Models 13: ICloudConnectionsResponseDto through JobRunPageDto](models-13.md)
-- [Models 14: JobRunResponseDto through MaintenanceStatusResponseDto](models-14.md)
-- [Models 15: ManagedUploadsStatsResponseDto through MediaOperationDto](models-15.md)
-- [Models 16: MediaOperationDuplicateGroupDto through MergeSuggestionsResponseDto](models-16.md)
-- [Models 17: MetadataSearchDto through NotificationDeleteAllDto](models-17.md)
-- [Models 18: NotificationDto through PetObservationCreateDto](models-18.md)
-- [Models 19: PetObservationResponseDto through PhotographyChoicesDto](models-19.md)
-- [Models 20: PhotographyGalleryDto through PhotographyIntakeDto](models-20.md)
+- [Models 9: CloudMlDescriptionEstimateResponseDto through CreateLibraryDto](models-09.md)
+- [Models 10: CreateProfileImageDto through DownloadArchiveDto](models-10.md)
+- [Models 11: DownloadArchiveInfo through FrameleafLinkResponseDto](models-11.md)
+- [Models 12: FrameleafLinkRoleChange through HdrAssetDevelopRecipeV5](models-12.md)
+- [Models 13: HdrAssetDevelopRecipeV6 through ICloudIdentityRole](models-13.md)
+- [Models 14: ICloudInventoryResponseDto through KnownAssetDevelopCrop](models-14.md)
+- [Models 15: KnownAssetDevelopRecipe through MediaHealthBulkActionDto](models-15.md)
+- [Models 16: MediaHealthBulkResponseDto through MemoriesUpdate](models-16.md)
+- [Models 17: MemoryCreateDto through MlCapabilitiesResponseDto](models-17.md)
+- [Models 18: MlCapabilityDestinationDto through Permission](models-18.md)
+- [Models 19: PersonCorrectionAction through PhotographyBrandDto](models-19.md)
+- [Models 20: PhotographyBrandSaveDto through PhotographyIntakeDto](models-20.md)
 - [Models 21: PhotographyInvitationDto through PhotographyInvitationDto](models-21.md)
 - [Models 22: PhotographyLogoCandidatesDto through PhotographyRenditionPreviewDto](models-22.md)
 - [Models 23: PhotographySiteDto through PhotographyStudioPresetsDto](models-23.md)

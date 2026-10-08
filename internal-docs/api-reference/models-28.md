@@ -1,6 +1,6 @@
 # Server API models 28
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## QueuesResponseLegacyDto
 
@@ -118,7 +118,7 @@ Related models: [QueueResponseLegacyDto](models-27.md#queueresponselegacydto).
 
 ## RandomSearchDto
 
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter).
 
 ```json
 {
@@ -2035,7 +2035,7 @@ Related models: [RemoteDnsRecordType](models-28.md#remotednsrecordtype).
       "type": "string"
     },
     "formats": {
-      "description": "Containers the check verified writing, such as `mp4`, `webm` or `mov`",
+      "description": "Containers and versioned paired-output profiles the check verified writing",
       "items": {
         "maxLength": 30,
         "type": "string"

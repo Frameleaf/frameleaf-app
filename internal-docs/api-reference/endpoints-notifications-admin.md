@@ -1,18 +1,18 @@
 # Server API — Notifications (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## createNotification
 
 `POST /api/admin/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification-admin.controller.ts#L23).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification-admin.controller.ts#L23).
 
 Create a notification
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [NotificationCreateDto](models-17.md#notificationcreatedto), [NotificationDto](models-18.md#notificationdto).
+Models: [NotificationCreateDto](models-18.md#notificationcreatedto), [NotificationDto](models-18.md#notificationdto).
 
 Controller access declarations:
 
@@ -95,7 +95,7 @@ Complete operation contract:
 
 `POST /api/admin/notifications/templates/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification-admin.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification-admin.controller.ts#L46).
 
 Render email template
 
@@ -194,7 +194,7 @@ Complete operation contract:
 
 `POST /api/admin/notifications/test-email`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification-admin.controller.ts#L34).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification-admin.controller.ts#L34).
 
 Send test email
 

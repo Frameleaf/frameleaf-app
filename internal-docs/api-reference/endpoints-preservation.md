@@ -1,12 +1,12 @@
 # Server API — Preservation
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getPreservationPackages
 
 `GET /api/preservation/packages`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L85).
 
 List preservation packages
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `POST /api/preservation/packages`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L113).
 
 Create a preservation package
 
@@ -172,7 +172,7 @@ Complete operation contract:
 
 `DELETE /api/preservation/packages/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L207).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L207).
 
 Remove a preservation package
 
@@ -251,7 +251,7 @@ Complete operation contract:
 
 `GET /api/preservation/packages/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L129).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L129).
 
 Get a preservation package
 
@@ -334,7 +334,7 @@ Complete operation contract:
 
 `GET /api/preservation/packages/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L179).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L179).
 
 Download a preservation package
 
@@ -423,7 +423,7 @@ Complete operation contract:
 
 `GET /api/preservation/packages/{id}/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L137).
 
 Get a preservation package item report
 
@@ -547,7 +547,7 @@ Complete operation contract:
 
 `GET /api/preservation/packages/{id}/manifest`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L194).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L194).
 
 Download a preservation manifest
 
@@ -634,13 +634,13 @@ Complete operation contract:
 
 `POST /api/preservation/packages/{id}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L154).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L154).
 
 Retry a preservation export
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto).
+Models: [MediaOperationDto](models-16.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -721,13 +721,13 @@ Complete operation contract:
 
 `POST /api/preservation/packages/{id}/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L166).
 
 Verify a preservation package
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto).
+Models: [MediaOperationDto](models-16.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -809,7 +809,7 @@ Complete operation contract:
 
 `POST /api/preservation/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L97).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L97).
 
 Preview a preservation export
 
@@ -896,7 +896,7 @@ Complete operation contract:
 
 `GET /api/preservation/restores`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L260).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L260).
 
 List restorations
 
@@ -971,7 +971,7 @@ Complete operation contract:
 
 `POST /api/preservation/restores`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L268).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L268).
 
 Start a restoration
 
@@ -1058,7 +1058,7 @@ Complete operation contract:
 
 `GET /api/preservation/restores/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L284).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L284).
 
 Get a restoration
 
@@ -1141,13 +1141,13 @@ Complete operation contract:
 
 `POST /api/preservation/restores/{id}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L325).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L325).
 
 Restore a reviewed package
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-15.md#mediaoperationdto).
+Models: [MediaOperationDto](models-16.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -1229,7 +1229,7 @@ Complete operation contract:
 
 `PUT /api/preservation/restores/{id}/decisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L309).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L309).
 
 Record restoration choices
 
@@ -1326,7 +1326,7 @@ Complete operation contract:
 
 `GET /api/preservation/restores/{id}/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L292).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L292).
 
 Get restoration items
 
@@ -1442,7 +1442,7 @@ Complete operation contract:
 
 `POST /api/preservation/server-packages`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L244).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L244).
 
 Register a preservation package on the server
 
@@ -1530,7 +1530,7 @@ Complete operation contract:
 
 `POST /api/preservation/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/preservation.controller.ts#L220).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/preservation.controller.ts#L220).
 
 Upload a preservation package
 

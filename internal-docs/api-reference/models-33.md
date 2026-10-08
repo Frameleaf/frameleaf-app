@@ -1,6 +1,6 @@
 # Server API models 33
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## StudioBundleOperationDto
 
@@ -583,7 +583,7 @@ Related models: [StudioCommentDto](models-33.md#studiocommentdto).
 
 ## StudioExportCreateDto
 
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSmoothMotionDto](models-33.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
+Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSmoothMotionDto](models-33.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
 
 ```json
 {
@@ -652,7 +652,7 @@ Related models: [MediaOperationDestination](models-15.md#mediaoperationdestinati
 
 ## StudioExportCreateResponseDto
 
-Related models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioExportVersionDto](models-33.md#studioexportversiondto).
+Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [StudioExportVersionDto](models-33.md#studioexportversiondto).
 
 ```json
 {
@@ -683,7 +683,10 @@ Related models: [MediaOperationDto](models-15.md#mediaoperationdto), [StudioExpo
     "mp4-hevc-main10",
     "mp4-h264",
     "webm-av1",
-    "prores-422-hq"
+    "prores-422-hq",
+    "sdr-jpeg",
+    "hdr-jpeg",
+    "hdr-heic"
   ],
   "type": "string"
 }
@@ -824,7 +827,8 @@ Related models: [StudioExportVersionDto](models-33.md#studioexportversiondto).
     "720p",
     "1080p",
     "1440p",
-    "2160p"
+    "2160p",
+    "original"
   ],
   "type": "string"
 }
@@ -954,7 +958,7 @@ Related models: [StudioExportAudio](models-33.md#studioexportaudio), [StudioExpo
 
 ## StudioExportVersionDto
 
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [StudioExportScope](models-33.md#studioexportscope), [StudioExportSettingsDto](models-33.md#studioexportsettingsdto), [StudioExportVersionState](models-33.md#studioexportversionstate).
+Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportScope](models-33.md#studioexportscope), [StudioExportSettingsDto](models-33.md#studioexportsettingsdto), [StudioExportVersionState](models-33.md#studioexportversionstate).
 
 ```json
 {

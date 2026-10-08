@@ -1,18 +1,18 @@
 # Server API — Notifications
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteNotifications
 
 `DELETE /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L45).
 
 Delete notifications
 
 Permission: `notification.delete`. Admin only: `false`.
 
-Models: [NotificationDeleteAllDto](models-17.md#notificationdeletealldto).
+Models: [NotificationDeleteAllDto](models-18.md#notificationdeletealldto).
 
 Controller access declarations:
 
@@ -89,7 +89,7 @@ Complete operation contract:
 
 `GET /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L22).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L22).
 
 Retrieve notifications
 
@@ -208,7 +208,7 @@ Complete operation contract:
 
 `PUT /api/notifications`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L33).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L33).
 
 Update notifications
 
@@ -291,7 +291,7 @@ Complete operation contract:
 
 `DELETE /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L83).
 
 Delete a notification
 
@@ -373,7 +373,7 @@ Complete operation contract:
 
 `GET /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L57).
 
 Get a notification
 
@@ -463,7 +463,7 @@ Complete operation contract:
 
 `PUT /api/notifications/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/notification.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/notification.controller.ts#L68).
 
 Update a notification
 

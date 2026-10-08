@@ -1,6 +1,36 @@
 # Server API models 11
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## DownloadArchiveInfo
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "Asset IDs in this archive",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "size": {
+      "description": "Archive size in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "assetIds",
+    "size"
+  ],
+  "type": "object"
+}
+```
 
 ## DownloadInfoDto
 
@@ -67,7 +97,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## DownloadResponseDto
 
-Related models: [DownloadArchiveInfo](models-10.md#downloadarchiveinfo).
+Related models: [DownloadArchiveInfo](models-11.md#downloadarchiveinfo).
 
 ```json
 {
@@ -145,7 +175,7 @@ Related models: [DownloadArchiveInfo](models-10.md#downloadarchiveinfo).
 
 ## DuplicateActiveOperationDto
 
-Related models: [DuplicateActiveGroupDto](models-11.md#duplicateactivegroupdto), [MediaOperationBulkAction](models-15.md#mediaoperationbulkaction).
+Related models: [DuplicateActiveGroupDto](models-11.md#duplicateactivegroupdto), [MediaOperationBulkAction](models-16.md#mediaoperationbulkaction).
 
 ```json
 {
@@ -677,7 +707,7 @@ Related models: [DuplicateQualityReason](models-11.md#duplicatequalityreason).
 
 ## EnrichmentDestinationOptionDto
 
-Related models: [EnrichmentDestinationAdmissionDto](models-11.md#enrichmentdestinationadmissiondto), [MlDestinationHealth](models-17.md#mldestinationhealth), [MlDestinationKind](models-17.md#mldestinationkind).
+Related models: [EnrichmentDestinationAdmissionDto](models-11.md#enrichmentdestinationadmissiondto), [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind).
 
 ```json
 {
@@ -1003,7 +1033,7 @@ Related models: [EnrichmentItemState](models-11.md#enrichmentitemstate), [Enrich
 
 ## EnrichmentPlanResponseDto
 
-Related models: [EnrichmentPlanCountsDto](models-11.md#enrichmentplancountsdto), [EnrichmentPlanDestinationDto](models-11.md#enrichmentplandestinationdto), [EnrichmentPlanItemDto](models-11.md#enrichmentplanitemdto), [EnrichmentStage](models-11.md#enrichmentstage), [MediaOperationDto](models-15.md#mediaoperationdto).
+Related models: [EnrichmentPlanCountsDto](models-11.md#enrichmentplancountsdto), [EnrichmentPlanDestinationDto](models-11.md#enrichmentplandestinationdto), [EnrichmentPlanItemDto](models-11.md#enrichmentplanitemdto), [EnrichmentStage](models-11.md#enrichmentstage), [MediaOperationDto](models-16.md#mediaoperationdto).
 
 ```json
 {
@@ -1410,7 +1440,7 @@ Related models: [AssetVisibility](models-06.md#assetvisibility).
 
 ## EventStoryDto
 
-Related models: [MemoryStoryPlaceDto](models-16.md#memorystoryplacedto).
+Related models: [MemoryStoryPlaceDto](models-17.md#memorystoryplacedto).
 
 ```json
 {
@@ -2123,7 +2153,7 @@ Related models: [FileTrashItemResponseDto](models-11.md#filetrashitemresponsedto
 
 ## FrameleafLinkResponseDto
 
-Related models: [FrameleafLinkRoleChange](models-11.md#frameleaflinkrolechange), [UserAvatarColor](models-37.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
+Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-37.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
 
 ```json
 {
@@ -2275,19 +2305,5 @@ Related models: [FrameleafLinkRoleChange](models-11.md#frameleaflinkrolechange),
     "updatedAt"
   ],
   "type": "object"
-}
-```
-
-## FrameleafLinkRoleChange
-
-
-```json
-{
-  "description": "granted-admin: the Frameleaf account holds an admin share of this server on Frameleaf Cloud, so linking makes (or made) you an administrator here",
-  "enum": [
-    "none",
-    "granted-admin"
-  ],
-  "type": "string"
 }
 ```

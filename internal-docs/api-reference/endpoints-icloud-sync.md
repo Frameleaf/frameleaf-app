@@ -1,18 +1,18 @@
 # Server API — ICloud Sync
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## claimICloudItems
 
 `POST /api/icloud-sync/claims`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L140).
 
 Claim iCloud items for this device to fetch and upload
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [ICloudClaimDto](models-12.md#icloudclaimdto), [ICloudClaimResponseDto](models-12.md#icloudclaimresponsedto).
+Models: [ICloudClaimDto](models-13.md#icloudclaimdto), [ICloudClaimResponseDto](models-13.md#icloudclaimresponsedto).
 
 Controller access declarations:
 
@@ -93,13 +93,13 @@ Complete operation contract:
 
 `POST /api/icloud-sync/claims/release`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L166).
 
 Release iCloud claims this device holds
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [ICloudClaimReleaseDto](models-12.md#icloudclaimreleasedto), [ICloudClaimReleaseResponseDto](models-12.md#icloudclaimreleaseresponsedto).
+Models: [ICloudClaimReleaseDto](models-13.md#icloudclaimreleasedto), [ICloudClaimReleaseResponseDto](models-13.md#icloudclaimreleaseresponsedto).
 
 Controller access declarations:
 
@@ -179,13 +179,13 @@ Complete operation contract:
 
 `POST /api/icloud-sync/claims/renew`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L100).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L153).
 
 Renew iCloud claims this device holds
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [ICloudClaimRenewDto](models-12.md#icloudclaimrenewdto), [ICloudClaimRenewResponseDto](models-12.md#icloudclaimrenewresponsedto).
+Models: [ICloudClaimRenewDto](models-13.md#icloudclaimrenewdto), [ICloudClaimRenewResponseDto](models-13.md#icloudclaimrenewresponsedto).
 
 Controller access declarations:
 
@@ -266,7 +266,7 @@ Complete operation contract:
 
 `GET /api/icloud-sync/connections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L37).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -332,11 +332,11 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L44).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudConnectionCreateDto](models-12.md#icloudconnectioncreatedto), [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto).
+Models: [ICloudConnectionCreateDto](models-13.md#icloudconnectioncreatedto), [ICloudConnectionResponseDto](models-13.md#icloudconnectionresponsedto).
 
 Controller access declarations:
 
@@ -408,7 +408,7 @@ Complete operation contract:
 
 `DELETE /api/icloud-sync/connections/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L95).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -477,11 +477,11 @@ Complete operation contract:
 
 `PATCH /api/icloud-sync/connections/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L54).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto), [ICloudConnectionUpdateDto](models-12.md#icloudconnectionupdatedto).
+Models: [ICloudConnectionResponseDto](models-13.md#icloudconnectionresponsedto), [ICloudConnectionUpdateDto](models-13.md#icloudconnectionupdatedto).
 
 Controller access declarations:
 
@@ -564,11 +564,11 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/auth`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L65).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudAuthDto](models-12.md#icloudauthdto), [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto).
+Models: [ICloudAuthDto](models-13.md#icloudauthdto), [ICloudConnectionResponseDto](models-13.md#icloudconnectionresponsedto).
 
 Controller access declarations:
 
@@ -651,11 +651,11 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/control`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L77).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L77).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudConnectionResponseDto](models-12.md#icloudconnectionresponsedto), [ICloudControlDto](models-13.md#icloudcontroldto).
+Models: [ICloudConnectionResponseDto](models-13.md#icloudconnectionresponsedto), [ICloudControlDto](models-13.md#icloudcontroldto).
 
 Controller access declarations:
 
@@ -738,7 +738,7 @@ Complete operation contract:
 
 `PATCH /api/icloud-sync/connections/{id}/identity-reuse-authority`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L26).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -825,11 +825,11 @@ Complete operation contract:
 
 `GET /api/icloud-sync/connections/{id}/inventory`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L88).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L88).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudInventoryResponseDto](models-13.md#icloudinventoryresponsedto).
+Models: [ICloudInventoryResponseDto](models-14.md#icloudinventoryresponsedto).
 
 Controller access declarations:
 
@@ -902,7 +902,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/connections/{id}/remove`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-sync.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-sync.controller.ts#L105).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -971,7 +971,7 @@ Complete operation contract:
 
 `POST /api/icloud-sync/coverage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L101).
 
 Does a sync connection cover this device library?
 
@@ -1054,17 +1054,279 @@ Complete operation contract:
 }
 ```
 
+## acceptICloudEditBaseline
+
+`POST /api/icloud-sync/edits/baseline`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L56).
+
+Accept an administrative edit-owner baseline
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [ICloudEditBaselineDto](models-13.md#icloudeditbaselinedto), [ICloudEditDecisionResponseDto](models-13.md#icloudeditdecisionresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags('ICloud Sync')
+@Controller('icloud-sync')
+@Post('edits/baseline')
+@HttpCode(HttpStatus.OK)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({
+    summary: 'Accept an administrative edit-owner baseline',
+    description:
+      'Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access. Optional original-revert intent explicitly changes local primary against the current immutable publication with the selected retention policy; without intent this remains administrative and cannot reinterpret an existing publication.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access. Optional original-revert intent explicitly changes local primary against the current immutable publication with the selected retention policy; without intent this remains administrative and cannot reinterpret an existing publication.",
+  "operationId": "acceptICloudEditBaseline",
+  "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/ICloudEditBaselineDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ICloudEditDecisionResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Accept an administrative edit-owner baseline",
+  "tags": [
+    "ICloud Sync"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## discoverICloudEditEvidence
+
+`GET /api/icloud-sync/edits/evidence`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L40).
+
+Discover owned edit evidence and administrative authority
+
+Permission: `asset.read`. Admin only: `false`.
+
+Models: [ICloudEditEvidenceResponseDto](models-13.md#icloudeditevidenceresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags('ICloud Sync')
+@Controller('icloud-sync')
+@Get('edits/evidence')
+@Header('Cache-Control', 'private, no-store')
+@Authenticated({ permission: Permission.AssetRead, refreshElevation: false })
+@Endpoint({
+    summary: 'Discover owned edit evidence and administrative authority',
+    description:
+      'Complete bounded owner-session snapshot. Receipts are current owned bytes; administrative authority is not provider chronology. Incoming eligibility is a snapshot, never admission permission. Oversized or inaccessible evidence requires review.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Complete bounded owner-session snapshot. Receipts are current owned bytes; administrative authority is not provider chronology. Incoming eligibility is a snapshot, never admission permission. Oversized or inaccessible evidence requires review.",
+  "operationId": "discoverICloudEditEvidence",
+  "parameters": [
+    {
+      "name": "assetId",
+      "required": true,
+      "in": "query",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ICloudEditEvidenceResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Discover owned edit evidence and administrative authority",
+  "tags": [
+    "ICloud Sync"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.read",
+  "x-immich-state": "Alpha"
+}
+```
+
+## acceptICloudEditSuccessor
+
+`POST /api/icloud-sync/edits/successor`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L72).
+
+Accept verified bytes as an administrative edit successor
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [ICloudEditDecisionResponseDto](models-13.md#icloudeditdecisionresponsedto), [ICloudEditSuccessorDto](models-13.md#icloudeditsuccessordto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags('ICloud Sync')
+@Controller('icloud-sync')
+@Post('edits/successor')
+@HttpCode(HttpStatus.OK)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({
+    summary: 'Accept verified bytes as an administrative edit successor',
+    description:
+      'Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Supersede explicitly binds the current local publication, verified eligible render set, effective config and owner-local policy sequence; first publication refuses changed policy, privacy or authority. Accepted decisions, committed bytes, queued effects and delivered effects are distinct.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Supersede explicitly binds the current local publication, verified eligible render set, effective config and owner-local policy sequence; first publication refuses changed policy, privacy or authority. Accepted decisions, committed bytes, queued effects and delivered effects are distinct.",
+  "operationId": "acceptICloudEditSuccessor",
+  "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/ICloudEditSuccessorDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ICloudEditDecisionResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Accept verified bytes as an administrative edit successor",
+  "tags": [
+    "ICloud Sync"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## attachICloudIdentities
 
 `POST /api/icloud-sync/identities/attach`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L74).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L127).
 
 Attach iCloud identities to originals already uploaded by this device
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [ICloudAttachDto](models-12.md#icloudattachdto), [ICloudAttachResponseDto](models-12.md#icloudattachresponsedto).
+Models: [ICloudAttachDto](models-13.md#icloudattachdto), [ICloudAttachResponseDto](models-13.md#icloudattachresponsedto).
 
 Controller access declarations:
 
@@ -1145,13 +1407,13 @@ Complete operation contract:
 
 `POST /api/icloud-sync/identities/lookup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L61).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L114).
 
 Is this iCloud item on the server, or coming from the sync?
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ICloudLookupDto](models-13.md#icloudlookupdto), [ICloudLookupResponseDto](models-13.md#icloudlookupresponsedto).
+Models: [ICloudLookupDto](models-14.md#icloudlookupdto), [ICloudLookupResponseDto](models-14.md#icloudlookupresponsedto).
 
 Controller access declarations:
 
@@ -1232,13 +1494,13 @@ Complete operation contract:
 
 `POST /api/icloud-sync/identities/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/icloud-identity.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/icloud-identity.controller.ts#L88).
 
 Download and verify named iCloud originals
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ICloudVerifyDto](models-13.md#icloudverifydto), [ICloudVerifyResponseDto](models-13.md#icloudverifyresponsedto).
+Models: [ICloudVerifyDto](models-14.md#icloudverifydto), [ICloudVerifyResponseDto](models-14.md#icloudverifyresponsedto).
 
 Controller access declarations:
 

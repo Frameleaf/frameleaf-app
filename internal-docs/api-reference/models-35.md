@@ -1,10 +1,10 @@
 # Server API models 35
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## SyncAssetExifV1
 
-Related models: [ImageEncodingInfo](models-13.md#imageencodinginfo).
+Related models: [ImageEncodingInfo](models-14.md#imageencodinginfo).
 
 ```json
 {
@@ -1412,7 +1412,7 @@ Related models: [UserAvatarColor](models-37.md#useravatarcolor).
 
 ## SyncMemoryV1
 
-Related models: [MemoryType](models-16.md#memorytype).
+Related models: [MemoryType](models-17.md#memorytype).
 
 ```json
 {

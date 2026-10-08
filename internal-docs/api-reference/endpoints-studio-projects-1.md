@@ -1,12 +1,12 @@
 # Server API — Studio projects 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## photographyGallery
 
 `GET /api/photography/galleries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L285).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L285).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -70,7 +70,7 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/approve`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L322).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L322).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -144,11 +144,11 @@ Complete operation contract:
 
 `PUT /api/photography/galleries/{id}/choices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L298).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L298).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyChoicesDto](models-19.md#photographychoicesdto), [PhotographyGalleryDto](models-20.md#photographygallerydto).
+Models: [PhotographyChoicesDto](models-20.md#photographychoicesdto), [PhotographyGalleryDto](models-20.md#photographygallerydto).
 
 Controller access declarations:
 
@@ -218,7 +218,7 @@ Complete operation contract:
 
 `GET /api/photography/galleries/{id}/logo`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L137).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -282,7 +282,7 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/orders/{orderId}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L334).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L334).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -364,11 +364,11 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/orders/{orderId}/checkout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L347).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L347).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyCheckoutDto](models-19.md#photographycheckoutdto).
+Models: [PhotographyCheckoutDto](models-20.md#photographycheckoutdto).
 
 Controller access declarations:
 
@@ -436,7 +436,7 @@ Complete operation contract:
 
 `GET /api/photography/galleries/{id}/photos/{captureId}/outputs/{outputId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L413).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L413).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -516,7 +516,7 @@ Complete operation contract:
 
 `GET /api/photography/galleries/{id}/photos/{captureId}/outputs/{outputId}/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L396).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L396).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -596,7 +596,7 @@ Complete operation contract:
 
 `GET /api/photography/galleries/{id}/photos/{captureId}/{kind}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L436).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L436).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -676,7 +676,7 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/session`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L277).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L277).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -741,7 +741,7 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/submit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L310).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L310).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -815,7 +815,7 @@ Complete operation contract:
 
 `POST /api/photography/galleries/{id}/zip`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L359).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L359).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -889,7 +889,7 @@ Complete operation contract:
 
 `GET /api/photography/galleries/{id}/zip/{zipId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L371).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L371).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -960,11 +960,11 @@ Complete operation contract:
 
 `POST /api/photography/payments/stripe`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L460).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L460).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyCallbackDto](models-19.md#photographycallbackdto).
+Models: [PhotographyCallbackDto](models-20.md#photographycallbackdto).
 
 Controller access declarations:
 
@@ -1034,7 +1034,7 @@ Complete operation contract:
 
 `GET /api/photography/presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L65).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1090,7 +1090,7 @@ Complete operation contract:
 
 `POST /api/photography/presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L72).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L72).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1156,7 +1156,7 @@ Complete operation contract:
 
 `GET /api/photography/shoots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L32).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L32).
 
 Read your private shoots
 
@@ -1225,7 +1225,7 @@ Complete operation contract:
 
 `PUT /api/photography/shoots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L39).
 
 Save your shoots using the loaded revision
 
@@ -1307,7 +1307,7 @@ Complete operation contract:
 
 `GET /api/photography/shoots/branding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L52).
 
 Read your private studio branding
 
@@ -1379,13 +1379,13 @@ Complete operation contract:
 
 `PUT /api/photography/shoots/branding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L62).
 
 Save private studio branding with the workspace revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyBrandDto](models-19.md#photographybranddto), [PhotographyBrandSaveDto](models-19.md#photographybrandsavedto).
+Models: [PhotographyBrandDto](models-19.md#photographybranddto), [PhotographyBrandSaveDto](models-20.md#photographybrandsavedto).
 
 Controller access declarations:
 
@@ -1461,7 +1461,7 @@ Complete operation contract:
 
 `GET /api/photography/shoots/branding/logos`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L72).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L72).
 
 List your eligible unlocked studio logo images
 
@@ -1544,7 +1544,7 @@ Complete operation contract:
 
 `GET /api/photography/shoots/branding/logos/{id}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L85).
 
 View an eligible owned logo thumbnail without original metadata
 
@@ -1641,7 +1641,7 @@ Complete operation contract:
 
 `POST /api/photography/shoots/branding/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L108).
 
 Preview a watermark using the production font metrics and renderer
 
@@ -1716,7 +1716,7 @@ Complete operation contract:
 
 `GET /api/photography/shoots/{id}/photos`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L124).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L124).
 
 Read a page of unlocked shoot photos
 
@@ -1809,7 +1809,7 @@ Complete operation contract:
 
 `PATCH /api/photography/shoots/{id}/rating`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workspace.controller.ts#L138).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workspace.controller.ts#L138).
 
 Rate or reject an owned photo in your shoot
 
@@ -1896,7 +1896,7 @@ Complete operation contract:
 
 `GET /api/photography/site`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L91).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1952,7 +1952,7 @@ Complete operation contract:
 
 `PUT /api/photography/site`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L98).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -2018,7 +2018,7 @@ Complete operation contract:
 
 `GET /api/photography/studios/{ownerId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L105).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -2072,7 +2072,7 @@ Complete operation contract:
 
 `GET /api/photography/studios/{ownerId}/logo`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L113).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -2126,7 +2126,7 @@ Complete operation contract:
 
 `GET /api/photography/studios/{ownerId}/photos/{shootId}/{captureId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photography-workflow.controller.ts#L122).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L122).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 

@@ -1,6 +1,1933 @@
 # Server API models 15
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## KnownAssetDevelopRecipe
+
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+
+```json
+{
+  "properties": {
+    "blacks": {
+      "default": 0,
+      "description": "Black point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "brilliance": {
+      "default": 0,
+      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "clarity": {
+      "default": 0,
+      "description": "Local contrast in the midtones",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "cleanup": {
+      "default": [],
+      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopCleanup"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "contrast": {
+      "default": 0,
+      "description": "Contrast around middle grey",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "crop": {
+      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
+      "default": {
+        "h": 1,
+        "w": 1,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "dehaze": {
+      "default": 0,
+      "description": "Haze removal (positive) or addition (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "exposure": {
+      "default": 0,
+      "description": "Exposure in EV; each whole stop doubles the light",
+      "format": "double",
+      "maximum": 2,
+      "minimum": -2,
+      "type": "number"
+    },
+    "flipHorizontal": {
+      "default": false,
+      "description": "Mirror left to right",
+      "type": "boolean"
+    },
+    "flipVertical": {
+      "default": false,
+      "description": "Mirror top to bottom",
+      "type": "boolean"
+    },
+    "grain": {
+      "default": 0,
+      "description": "Film grain amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "highlights": {
+      "default": 0,
+      "description": "Highlight recovery (negative) or lift (positive)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "masks": {
+      "default": [],
+      "description": "Selective adjustments, applied in order after the global develop",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopMask"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "noiseReduction": {
+      "default": 0,
+      "description": "Luminance noise reduction amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "preset": {
+      "$ref": "#/components/schemas/AssetDevelopPreset",
+      "default": "Original"
+    },
+    "presetStrength": {
+      "default": 100,
+      "description": "How much of the preset is applied, as a percentage",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "rotation": {
+      "default": 0,
+      "description": "Quarter-turn rotation in degrees, clockwise",
+      "maximum": 270,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "saturation": {
+      "default": 0,
+      "description": "Global saturation",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "shadows": {
+      "default": 0,
+      "description": "Shadow lift (positive) or deepening (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "sharpen": {
+      "default": 0,
+      "description": "Detail sharpening amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "straighten": {
+      "default": 0,
+      "description": "Straighten angle in degrees, applied before the crop",
+      "format": "double",
+      "maximum": 45,
+      "minimum": -45,
+      "type": "number"
+    },
+    "temperature": {
+      "default": 0,
+      "description": "Warm (positive) or cool (negative) white balance shift",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "tint": {
+      "default": 0,
+      "description": "Magenta (positive) or green (negative) tint",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "version": {
+      "description": "Recipe contract version",
+      "enum": [
+        1
+      ],
+      "format": "double",
+      "type": "number"
+    },
+    "vibrance": {
+      "default": 0,
+      "description": "Saturation weighted towards muted colours",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "vignette": {
+      "default": 0,
+      "description": "Darkened (positive) or lightened (negative) edges",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "whites": {
+      "default": 0,
+      "description": "White point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryImportPathReason
+
+
+```json
+{
+  "description": "Why an import folder was accepted or refused",
+  "enum": [
+    "valid",
+    "not_absolute",
+    "invalid_characters",
+    "parent_traversal",
+    "upload_folder",
+    "contains_upload_folder",
+    "not_found",
+    "not_directory",
+    "not_readable",
+    "unavailable",
+    "duplicate",
+    "nested",
+    "other_library"
+  ],
+  "type": "string"
+}
+```
+
+## LibraryRemovalDto
+
+
+```json
+{
+  "properties": {
+    "confirmName": {
+      "description": "The library name, typed to confirm",
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    },
+    "reviewToken": {
+      "description": "The token from the removal review",
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "confirmName",
+    "reviewToken"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryRemovalReviewDto
+
+
+```json
+{
+  "properties": {
+    "albums": {
+      "description": "Albums that lose items",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "faces": {
+      "description": "Detected faces that will be removed with their items",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "libraryId": {
+      "description": "Library ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "Library name, to be typed to confirm",
+      "type": "string"
+    },
+    "offline": {
+      "description": "Items already offline",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "originalsKept": {
+      "description": "Source files in the import folders are never deleted",
+      "type": "boolean"
+    },
+    "ownerId": {
+      "description": "Owner user ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "photos": {
+      "description": "Indexed photos that will be removed",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "reviewToken": {
+      "description": "Present this to confirm the removal",
+      "type": "string"
+    },
+    "scanActive": {
+      "description": "A scan is running and will be stopped",
+      "type": "boolean"
+    },
+    "sharedLinks": {
+      "description": "Shared links that lose items",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "total": {
+      "description": "Indexed items that will be removed",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "usage": {
+      "description": "Original bytes those items reference",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "videos": {
+      "description": "Indexed videos that will be removed",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "albums",
+    "faces",
+    "libraryId",
+    "name",
+    "offline",
+    "originalsKept",
+    "ownerId",
+    "photos",
+    "reviewToken",
+    "scanActive",
+    "sharedLinks",
+    "total",
+    "usage",
+    "videos"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryResponseDto
+
+Related models: [LibraryScanResponseDto](models-15.md#libraryscanresponsedto).
+
+```json
+{
+  "properties": {
+    "assetCount": {
+      "description": "Number of assets",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "deletedAt": {
+      "description": "When removal was confirmed; set while removal is in progress",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "exclusionPatterns": {
+      "description": "Exclusion patterns",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "description": "Library ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "importPaths": {
+      "description": "Import paths",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "Library name",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner user ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "refreshedAt": {
+      "description": "Last refresh date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "scan": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LibraryScanResponseDto"
+        }
+      ],
+      "description": "The latest scan, or null if the library was never scanned",
+      "nullable": true
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetCount",
+    "createdAt",
+    "deletedAt",
+    "exclusionPatterns",
+    "id",
+    "importPaths",
+    "name",
+    "ownerId",
+    "refreshedAt",
+    "scan",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryScanPhase
+
+
+```json
+{
+  "description": "Scan phase",
+  "enum": [
+    "crawl",
+    "check",
+    "done"
+  ],
+  "type": "string"
+}
+```
+
+## LibraryScanResponseDto
+
+Related models: [LibraryScanPhase](models-15.md#libraryscanphase), [LibraryScanStopReason](models-15.md#libraryscanstopreason), [MediaOperationStatus](models-16.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "added": {
+      "description": "New items indexed",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "checked": {
+      "description": "Indexed items checked against their folder",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "description": "When the scan was asked for",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "error": {
+      "description": "Failure detail for the administrator",
+      "nullable": true,
+      "type": "string"
+    },
+    "errorCode": {
+      "description": "Stable failure code",
+      "nullable": true,
+      "type": "string"
+    },
+    "finishedAt": {
+      "description": "When the scan ended",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "offlined": {
+      "description": "Items whose file is missing, marked offline",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "onlined": {
+      "description": "Offline items whose file is back",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "operationId": {
+      "description": "The scan job, a media operation of kind library_scan",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "pauseRequested": {
+      "description": "A pause was asked for and the scan has not reached it yet",
+      "type": "boolean"
+    },
+    "phase": {
+      "$ref": "#/components/schemas/LibraryScanPhase"
+    },
+    "processedUnits": {
+      "description": "Files and items handled so far",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "progress": {
+      "description": "Progress, 0 to 100",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "retrying": {
+      "description": "The scan failed once and waits for its automatic retry",
+      "type": "boolean"
+    },
+    "startedAt": {
+      "description": "When the scan first started",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    },
+    "stopReason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LibraryScanStopReason"
+        }
+      ],
+      "nullable": true
+    },
+    "totalUnits": {
+      "description": "Files and items known so far; grows while the folders are read",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "updated": {
+      "description": "Items whose file changed and are read again",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "added",
+    "checked",
+    "createdAt",
+    "error",
+    "errorCode",
+    "finishedAt",
+    "offlined",
+    "onlined",
+    "operationId",
+    "pauseRequested",
+    "phase",
+    "processedUnits",
+    "progress",
+    "retrying",
+    "startedAt",
+    "status",
+    "stopReason",
+    "totalUnits",
+    "updated"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryScanStopReason
+
+
+```json
+{
+  "description": "Why the server stopped a scan on its own",
+  "enum": [
+    "paths_changed",
+    "library_removed",
+    "owner_deleted"
+  ],
+  "type": "string"
+}
+```
+
+## LibrarySetupStatusDto
+
+
+```json
+{
+  "properties": {
+    "canFinish": {
+      "type": "boolean"
+    },
+    "installation": {
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "new_import",
+        "new_library",
+        "restored_library"
+      ],
+      "type": "string"
+    },
+    "phase": {
+      "enum": [
+        "awaiting-account",
+        "rescanning",
+        "verifying",
+        "needs-attention",
+        "complete"
+      ],
+      "type": "string"
+    },
+    "regeneration": {
+      "nullable": true,
+      "properties": {
+        "blocked": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needsAttention": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preparedAt": {
+          "nullable": true,
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "runId": {
+          "format": "uuid",
+          "nullable": true,
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "startedAt": {
+          "nullable": true,
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "runId",
+        "state",
+        "preparedAt",
+        "startedAt",
+        "completed",
+        "total",
+        "failed",
+        "blocked",
+        "needsAttention",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "rescanComplete": {
+      "type": "boolean"
+    },
+    "revision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "setupRequired": {
+      "type": "boolean"
+    },
+    "sync": {
+      "properties": {
+        "authenticated": {
+          "type": "boolean"
+        },
+        "catalogComplete": {
+          "type": "boolean"
+        },
+        "previewsReady": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "authenticated",
+        "catalogComplete",
+        "previewsReady"
+      ],
+      "type": "object"
+    },
+    "verificationPassed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "canFinish",
+    "installation",
+    "origin",
+    "phase",
+    "rescanComplete",
+    "revision",
+    "setupRequired",
+    "sync",
+    "verificationPassed"
+  ],
+  "type": "object"
+}
+```
+
+## LibraryStatsResponseDto
+
+
+```json
+{
+  "properties": {
+    "photos": {
+      "description": "Number of photos",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "total": {
+      "description": "Total number of assets",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "usage": {
+      "description": "Storage usage in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "usagePhysical": {
+      "description": "Storage usage in bytes, counting each distinct original file once",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "videos": {
+      "description": "Number of videos",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "photos",
+    "total",
+    "usage",
+    "usagePhysical",
+    "videos"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseActivateDto
+
+
+```json
+{
+  "properties": {
+    "key": {
+      "description": "A licence key, FL-KXXX-XXXX-XXXX",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseCertificateDto
+
+
+```json
+{
+  "properties": {
+    "certificate": {
+      "description": "The contents of a licence file: the signed certificate, or a JSON file holding it",
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "certificate"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseEntitlementsDto
+
+
+```json
+{
+  "properties": {
+    "cloudBackup": {
+      "type": "boolean"
+    },
+    "cloudMl": {
+      "type": "boolean"
+    },
+    "frameleafCloud": {
+      "type": "boolean"
+    },
+    "remoteAccess": {
+      "type": "boolean"
+    },
+    "supporter": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cloudBackup",
+    "cloudMl",
+    "frameleafCloud",
+    "remoteAccess",
+    "supporter"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseKind
+
+
+```json
+{
+  "description": "server or individual supporter key, or a Frameleaf Cloud plan",
+  "enum": [
+    "server",
+    "individual",
+    "plan"
+  ],
+  "type": "string"
+}
+```
+
+## LicenseLinkCodeDto
+
+
+```json
+{
+  "properties": {
+    "code": {
+      "description": "A one-time link code from the Frameleaf account site: flc_ and 26 lower-case base32 symbols",
+      "pattern": "^flc_[a-z2-7]{26}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseLinkCodeKind
+
+
+```json
+{
+  "description": "A server key (this server) or a personal key (this account)",
+  "enum": [
+    "server",
+    "individual"
+  ],
+  "type": "string"
+}
+```
+
+## LicenseLinkCodeResponseDto
+
+Related models: [LicenseLinkCodeKind](models-15.md#licenselinkcodekind).
+
+```json
+{
+  "properties": {
+    "keyHint": {
+      "description": "Last four symbols of the key",
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/LicenseLinkCodeKind"
+    }
+  },
+  "required": [
+    "keyHint",
+    "kind"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseProductDto
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "plan",
+        "supporter",
+        "credit"
+      ],
+      "type": "string"
+    },
+    "period": {
+      "enum": [
+        "month",
+        "year",
+        "one-time"
+      ],
+      "type": "string"
+    },
+    "priceUsd": {
+      "format": "double",
+      "type": "number"
+    },
+    "storeUrl": {
+      "description": "Where to buy it; null when no store is configured",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "period",
+    "priceUsd",
+    "storeUrl"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseProductsResponseDto
+
+Related models: [LicenseProductDto](models-15.md#licenseproductdto).
+
+```json
+{
+  "properties": {
+    "backup": {
+      "description": "Cloud backup a plan includes, and the blocks and monthly rate for more",
+      "properties": {
+        "blockTb": {
+          "format": "double",
+          "type": "number"
+        },
+        "includedTb": {
+          "format": "double",
+          "type": "number"
+        },
+        "usdPerTbMonth": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "includedTb",
+        "blockTb",
+        "usdPerTbMonth"
+      ],
+      "type": "object"
+    },
+    "credit": {
+      "description": "AI credit top-ups the store accepts; credit is never discounted",
+      "properties": {
+        "maximumUsd": {
+          "format": "double",
+          "type": "number"
+        },
+        "minimumUsd": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimumUsd",
+        "maximumUsd"
+      ],
+      "type": "object"
+    },
+    "currency": {
+      "enum": [
+        "USD"
+      ],
+      "type": "string"
+    },
+    "licensedDiscount": {
+      "description": "Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
+      "format": "double",
+      "type": "number"
+    },
+    "pricesVersion": {
+      "description": "Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot",
+      "type": "string"
+    },
+    "products": {
+      "items": {
+        "$ref": "#/components/schemas/LicenseProductDto"
+      },
+      "type": "array"
+    },
+    "storeUrl": {
+      "description": "The store this server was deployed with; null when there is none",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "backup",
+    "credit",
+    "currency",
+    "licensedDiscount",
+    "pricesVersion",
+    "products",
+    "storeUrl"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseResponseDto
+
+Related models: [UserLicense](models-38.md#userlicense).
+
+```json
+{
+  "$ref": "#/components/schemas/UserLicense"
+}
+```
+
+## LicenseSlotDto
+
+Related models: [LicenseKind](models-15.md#licensekind), [LicenseState](models-15.md#licensestate).
+
+```json
+{
+  "properties": {
+    "activatedAt": {
+      "description": "When this server received the certificate",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When the certificate or its period ends; null for a lifetime key",
+      "nullable": true,
+      "type": "string"
+    },
+    "graceUntil": {
+      "nullable": true,
+      "type": "string"
+    },
+    "keyHint": {
+      "description": "Last four symbols of the key, for a key activation",
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/LicenseKind"
+    },
+    "refreshedAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "source": {
+      "description": "Activated by key, installed from a file, or from the account",
+      "enum": [
+        "key",
+        "file",
+        "account"
+      ],
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/LicenseState"
+    }
+  },
+  "required": [
+    "activatedAt",
+    "expiresAt",
+    "graceUntil",
+    "keyHint",
+    "kind",
+    "refreshedAt",
+    "source",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseState
+
+
+```json
+{
+  "description": "none: no licence; active; grace: renewal failed and cloud features keep working until graceUntil; expired: cloud features are paused, local features are unaffected; invalid: the stored certificate no longer verifies",
+  "enum": [
+    "none",
+    "active",
+    "grace",
+    "expired",
+    "invalid"
+  ],
+  "type": "string"
+}
+```
+
+## LicenseStatusResponseDto
+
+Related models: [LicenseEntitlementsDto](models-15.md#licenseentitlementsdto), [LicenseKind](models-15.md#licensekind), [LicenseSlotDto](models-15.md#licenseslotdto), [LicenseState](models-15.md#licensestate).
+
+```json
+{
+  "properties": {
+    "configured": {
+      "description": "Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL)",
+      "type": "boolean"
+    },
+    "entitlements": {
+      "$ref": "#/components/schemas/LicenseEntitlementsDto"
+    },
+    "expiresAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "fingerprint": {
+      "description": "What a licence is bound to: this server’s instance ID and key thumbprint",
+      "properties": {
+        "instanceId": {
+          "nullable": true,
+          "type": "string"
+        },
+        "jkt": {
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "instanceId",
+        "jkt"
+      ],
+      "type": "object"
+    },
+    "graceUntil": {
+      "nullable": true,
+      "type": "string"
+    },
+    "key": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseSlotDto"
+        }
+      ],
+      "description": "The supporter key held by this server",
+      "nullable": true
+    },
+    "keyHint": {
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseKind"
+        }
+      ],
+      "nullable": true
+    },
+    "licensed": {
+      "description": "A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products",
+      "type": "boolean"
+    },
+    "linked": {
+      "description": "This server is linked to a Frameleaf account",
+      "type": "boolean"
+    },
+    "offline": {
+      "description": "The licence came from a file and is not refreshed online",
+      "type": "boolean"
+    },
+    "plan": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseSlotDto"
+        }
+      ],
+      "description": "The Frameleaf Cloud plan held by this server",
+      "nullable": true
+    },
+    "refresh": {
+      "description": "The daily certificate refresh",
+      "properties": {
+        "lastError": {
+          "nullable": true,
+          "type": "string"
+        },
+        "nextRefreshAt": {
+          "nullable": true,
+          "type": "string"
+        },
+        "refreshedAt": {
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "refreshedAt",
+        "nextRefreshAt",
+        "lastError"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "$ref": "#/components/schemas/LicenseState",
+      "description": "The overall state: the plan’s when there is one, else the key’s"
+    }
+  },
+  "required": [
+    "configured",
+    "entitlements",
+    "expiresAt",
+    "fingerprint",
+    "graceUntil",
+    "key",
+    "keyHint",
+    "kind",
+    "licensed",
+    "linked",
+    "offline",
+    "plan",
+    "refresh",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoCandidateDto
+
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [LivePhotoMatchConfidence](models-15.md#livephotomatchconfidence).
+
+```json
+{
+  "properties": {
+    "confidence": {
+      "$ref": "#/components/schemas/LivePhotoMatchConfidence"
+    },
+    "matchReason": {
+      "description": "Why these two assets are believed to be a separated live photo pair",
+      "type": "string"
+    },
+    "photo": {
+      "$ref": "#/components/schemas/AssetResponseDto"
+    },
+    "video": {
+      "$ref": "#/components/schemas/AssetResponseDto"
+    }
+  },
+  "required": [
+    "confidence",
+    "matchReason",
+    "photo",
+    "video"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoCandidatesResponseDto
+
+Related models: [LivePhotoCandidateDto](models-15.md#livephotocandidatedto).
+
+```json
+{
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoCandidateDto"
+      },
+      "type": "array"
+    },
+    "suggestionsEnabled": {
+      "description": "Library care suggests Live Photo pairs; when false no pairs are looked for",
+      "type": "boolean"
+    },
+    "total": {
+      "description": "Total number of candidate pairs found",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "candidates",
+    "suggestionsEnabled",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoMatchConfidence
+
+
+```json
+{
+  "enum": [
+    "high",
+    "low"
+  ],
+  "type": "string"
+}
+```
+
+## LivePhotoRelinkDto
+
+Related models: [LivePhotoRelinkItemDto](models-15.md#livephotorelinkitemdto).
+
+```json
+{
+  "properties": {
+    "pairs": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoRelinkItemDto"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "pairs"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoRelinkItemDto
+
+
+```json
+{
+  "properties": {
+    "photoId": {
+      "description": "Still image asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "Motion video asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "photoId",
+    "videoId"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoRelinkResponseDto
+
+Related models: [LivePhotoRelinkResultDto](models-15.md#livephotorelinkresultdto).
+
+```json
+{
+  "properties": {
+    "results": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoRelinkResultDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "results"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoRelinkResultDto
+
+
+```json
+{
+  "properties": {
+    "error": {
+      "type": "string"
+    },
+    "photoId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "videoId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "photoId",
+    "success",
+    "videoId"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoUploadCommitDto
+
+
+```json
+{
+  "properties": {
+    "stillResourceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "videoResourceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "stillResourceId",
+    "videoResourceId"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoUploadResultDto
+
+Related models: [AssetUploadResultDto](models-06.md#assetuploadresultdto).
+
+```json
+{
+  "properties": {
+    "still": {
+      "$ref": "#/components/schemas/AssetUploadResultDto"
+    },
+    "video": {
+      "$ref": "#/components/schemas/AssetUploadResultDto"
+    }
+  },
+  "required": [
+    "still",
+    "video"
+  ],
+  "type": "object"
+}
+```
+
+## LogLevel
+
+
+```json
+{
+  "description": "Log level",
+  "enum": [
+    "verbose",
+    "debug",
+    "log",
+    "warn",
+    "error",
+    "fatal"
+  ],
+  "type": "string"
+}
+```
+
+## LoginCredentialDto
+
+
+```json
+{
+  "properties": {
+    "email": {
+      "description": "User email",
+      "example": "testuser@email.com",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "password": {
+      "description": "User password",
+      "example": "password",
+      "type": "string"
+    },
+    "rememberMe": {
+      "description": "Persist authentication cookies across browser sessions (default true)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "email",
+    "password"
+  ],
+  "type": "object"
+}
+```
+
+## LoginResponseDto
+
+
+```json
+{
+  "properties": {
+    "accessToken": {
+      "description": "Access token",
+      "type": "string"
+    },
+    "isAdmin": {
+      "description": "Is admin user",
+      "type": "boolean"
+    },
+    "isOnboarded": {
+      "description": "Is onboarded",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "profileImagePath": {
+      "description": "Profile image path",
+      "type": "string"
+    },
+    "shouldChangePassword": {
+      "description": "Should change password",
+      "type": "boolean"
+    },
+    "userEmail": {
+      "description": "User email",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "accessToken",
+    "isAdmin",
+    "isOnboarded",
+    "name",
+    "profileImagePath",
+    "shouldChangePassword",
+    "userEmail",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## LogoutResponseDto
+
+
+```json
+{
+  "properties": {
+    "redirectUri": {
+      "description": "Redirect URI",
+      "type": "string"
+    },
+    "successful": {
+      "description": "Logout successful",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "redirectUri",
+    "successful"
+  ],
+  "type": "object"
+}
+```
+
+## LookParameters
+
+
+```json
+{
+  "properties": {
+    "intensity": {
+      "default": 100,
+      "description": "Filter or effect intensity",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "name": {
+      "description": "Filter or effect name",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## MachineLearningHardwareAcceleration
+
+
+```json
+{
+  "description": "Machine learning hardware acceleration backend",
+  "enum": [
+    "auto",
+    "openvino",
+    "cuda"
+  ],
+  "type": "string"
+}
+```
+
+## MachineLearningHardwareResponseDto
+
+Related models: [MachineLearningHardwareAcceleration](models-15.md#machinelearninghardwareacceleration).
+
+```json
+{
+  "properties": {
+    "cudaDeviceCount": {
+      "description": "Available PyTorch CUDA device count",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "openvinoDeviceIds": {
+      "description": "Available OpenVINO device IDs",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "preferredAcceleration": {
+      "$ref": "#/components/schemas/MachineLearningHardwareAcceleration",
+      "description": "Detected preferred hardware acceleration"
+    },
+    "providers": {
+      "description": "Available ONNX Runtime providers",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "torchCudaAvailable": {
+      "description": "Whether PyTorch CUDA is available",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cudaDeviceCount",
+    "openvinoDeviceIds",
+    "preferredAcceleration",
+    "providers",
+    "torchCudaAvailable"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceAction
+
+
+```json
+{
+  "description": "Maintenance action",
+  "enum": [
+    "start",
+    "end",
+    "select_database_restore",
+    "restore_database"
+  ],
+  "type": "string"
+}
+```
+
+## MaintenanceAuthDto
+
+
+```json
+{
+  "properties": {
+    "username": {
+      "description": "Maintenance username",
+      "type": "string"
+    }
+  },
+  "required": [
+    "username"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceDetectInstallResponseDto
+
+Related models: [MaintenanceDetectInstallStorageFolderDto](models-15.md#maintenancedetectinstallstoragefolderdto).
+
+```json
+{
+  "properties": {
+    "storage": {
+      "items": {
+        "$ref": "#/components/schemas/MaintenanceDetectInstallStorageFolderDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "storage"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceDetectInstallStorageFolderDto
+
+Related models: [StorageFolder](models-32.md#storagefolder).
+
+```json
+{
+  "properties": {
+    "files": {
+      "description": "Number of files in the folder",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "folder": {
+      "$ref": "#/components/schemas/StorageFolder"
+    },
+    "readable": {
+      "description": "Whether the folder is readable",
+      "type": "boolean"
+    },
+    "writable": {
+      "description": "Whether the folder is writable",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "files",
+    "folder",
+    "readable",
+    "writable"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceLoginDto
+
+
+```json
+{
+  "properties": {
+    "token": {
+      "description": "Maintenance token",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MaintenanceStatusResponseDto
+
+Related models: [MaintenanceAction](models-15.md#maintenanceaction).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/MaintenanceAction"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "error": {
+      "type": "string"
+    },
+    "progress": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "reason": {
+      "description": "Why the server is in maintenance, as set by the administrator (public)",
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "active"
+  ],
+  "type": "object"
+}
+```
 
 ## ManagedUploadsStatsResponseDto
 
@@ -287,7 +2214,7 @@ Related models: [MediaHealthActivityAction](models-15.md#mediahealthactivityacti
 
 ## MediaHealthBucketDto
 
-Related models: [MediaHealthItemDto](models-15.md#mediahealthitemdto).
+Related models: [MediaHealthItemDto](models-16.md#mediahealthitemdto).
 
 ```json
 {
@@ -338,1951 +2265,6 @@ Related models: [MediaHealthItemDto](models-15.md#mediahealthitemdto).
   },
   "required": [
     "ids"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBulkResponseDto
-
-Related models: [MediaHealthBulkResultDto](models-15.md#mediahealthbulkresultdto).
-
-```json
-{
-  "properties": {
-    "operationId": {
-      "description": "The durable job applying the accepted findings, in Activity; null when none was accepted",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "results": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthBulkResultDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "results"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBulkResultDto
-
-Related models: [MediaHealthStatus](models-15.md#mediahealthstatus).
-
-```json
-{
-  "properties": {
-    "error": {
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaHealthStatus"
-    },
-    "success": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "id",
-    "success"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthCandidateChoiceDto
-
-
-```json
-{
-  "properties": {
-    "candidateId": {
-      "description": "Candidate ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "findingId": {
-      "description": "Media health finding ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "candidateId",
-    "findingId"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthCandidateDto
-
-Related models: [MediaHealthChecksumDto](models-15.md#mediahealthchecksumdto), [MediaHealthRootKind](models-15.md#mediahealthrootkind), [MediaHealthStatus](models-15.md#mediahealthstatus).
-
-```json
-{
-  "properties": {
-    "candidatePath": {
-      "description": "Candidate file path",
-      "type": "string"
-    },
-    "checkedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "checksumMatch": {
-      "description": "The candidate has exactly the checksum recorded for the original",
-      "type": "boolean"
-    },
-    "checksums": {
-      "description": "The checksums the candidate matched, as measured",
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthChecksumDto"
-      },
-      "type": "array"
-    },
-    "chosen": {
-      "description": "The reviewer chose this candidate for the finding",
-      "type": "boolean"
-    },
-    "decodeValid": {
-      "description": "The candidate decoded successfully; null when not checked",
-      "nullable": true,
-      "type": "boolean"
-    },
-    "evidence": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "healthId": {
-      "description": "Media health finding ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Candidate ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "resolution": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "rootId": {
-      "description": "Search location the candidate was found in",
-      "nullable": true,
-      "type": "string"
-    },
-    "rootKind": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthRootKind"
-        }
-      ],
-      "nullable": true
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaHealthStatus"
-    },
-    "visualMatchScore": {
-      "description": "Visual match score from 0 to 1",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    }
-  },
-  "required": [
-    "candidatePath",
-    "checkedAt",
-    "checksumMatch",
-    "checksums",
-    "chosen",
-    "decodeValid",
-    "evidence",
-    "healthId",
-    "id",
-    "resolution",
-    "rootId",
-    "rootKind",
-    "status",
-    "visualMatchScore"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthCareSettingsDto
-
-
-```json
-{
-  "properties": {
-    "checksumScan": {
-      "description": "Health scans verify original checksums",
-      "type": "boolean"
-    },
-    "duplicateReview": {
-      "description": "Near-duplicates are grouped for review",
-      "type": "boolean"
-    },
-    "healthScan": {
-      "description": "Incremental health scans run on a schedule",
-      "type": "boolean"
-    },
-    "integrityAudit": {
-      "description": "Database and file reference audits run on their schedules",
-      "type": "boolean"
-    },
-    "rawRecovery": {
-      "description": "Searches for originals include RAW originals",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "checksumScan",
-    "duplicateReview",
-    "healthScan",
-    "integrityAudit",
-    "rawRecovery"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthCategory
-
-
-```json
-{
-  "description": "Media health category",
-  "enum": [
-    "missing",
-    "corrupt"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthChecksumAlgorithm
-
-
-```json
-{
-  "description": "Checksum algorithm",
-  "enum": [
-    "sha1",
-    "sha256"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthChecksumDto
-
-Related models: [MediaHealthChecksumAlgorithm](models-15.md#mediahealthchecksumalgorithm).
-
-```json
-{
-  "properties": {
-    "algorithm": {
-      "$ref": "#/components/schemas/MediaHealthChecksumAlgorithm"
-    },
-    "value": {
-      "description": "Checksum as lowercase hex",
-      "type": "string"
-    }
-  },
-  "required": [
-    "algorithm",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthChooseCandidatesDto
-
-Related models: [MediaHealthCandidateChoiceDto](models-15.md#mediahealthcandidatechoicedto).
-
-```json
-{
-  "properties": {
-    "choices": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "choices"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthDeleteCorruptDto
-
-
-```json
-{
-  "properties": {
-    "confirmText": {
-      "description": "Typed confirmation text",
-      "type": "string"
-    },
-    "ids": {
-      "description": "Media health finding IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "confirmText",
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthItemDto
-
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MediaHealthCandidateDto](models-15.md#mediahealthcandidatedto), [MediaHealthCategory](models-15.md#mediahealthcategory), [MediaHealthChecksumDto](models-15.md#mediahealthchecksumdto), [MediaHealthProvenanceDto](models-15.md#mediahealthprovenancedto), [MediaHealthSeverity](models-15.md#mediahealthseverity), [MediaHealthStatus](models-15.md#mediahealthstatus).
-
-```json
-{
-  "properties": {
-    "asset": {
-      "$ref": "#/components/schemas/AssetResponseDto"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "candidates": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthCandidateDto"
-      },
-      "type": "array"
-    },
-    "category": {
-      "$ref": "#/components/schemas/MediaHealthCategory"
-    },
-    "checkedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "dismissedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "evidence": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "expectedChecksums": {
-      "description": "The checksums recorded for the original, which a copy must match exactly",
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthChecksumDto"
-      },
-      "type": "array"
-    },
-    "id": {
-      "description": "Media health finding ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "originalFileName": {
-      "description": "Original media filename",
-      "type": "string"
-    },
-    "originalPath": {
-      "description": "Original media path",
-      "type": "string"
-    },
-    "provenance": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthProvenanceDto"
-        }
-      ],
-      "nullable": true
-    },
-    "resolution": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "resolvedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "severity": {
-      "$ref": "#/components/schemas/MediaHealthSeverity"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaHealthStatus"
-    }
-  },
-  "required": [
-    "asset",
-    "assetId",
-    "candidates",
-    "category",
-    "checkedAt",
-    "dismissedAt",
-    "evidence",
-    "expectedChecksums",
-    "id",
-    "originalFileName",
-    "originalPath",
-    "provenance",
-    "resolution",
-    "resolvedAt",
-    "severity",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthListResponseDto
-
-Related models: [MediaHealthBucketDto](models-15.md#mediahealthbucketdto), [MediaHealthRunResponseDto](models-15.md#mediahealthrunresponsedto).
-
-```json
-{
-  "properties": {
-    "buckets": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthBucketDto"
-      },
-      "type": "array"
-    },
-    "run": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthRunResponseDto"
-        }
-      ],
-      "nullable": true
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "buckets",
-    "run",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthLocateDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Media health finding IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "rootIds": {
-      "description": "Search locations; library storage and external libraries when omitted",
-      "items": {
-        "maxLength": 200,
-        "minLength": 1,
-        "type": "string"
-      },
-      "maxItems": 50,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthOperationDto
-
-Related models: [MediaHealthOperationMode](models-15.md#mediahealthoperationmode), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "autoRetries": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "cancelRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "mode": {
-      "$ref": "#/components/schemas/MediaHealthOperationMode"
-    },
-    "pauseRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "processedUnits": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "progress": {
-      "format": "double",
-      "type": "number"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    },
-    "totalUnits": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "autoRetries",
-    "cancelRequestedAt",
-    "createdAt",
-    "error",
-    "finishedAt",
-    "id",
-    "mode",
-    "pauseRequestedAt",
-    "processedUnits",
-    "progress",
-    "status",
-    "totalUnits",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthOperationMode
-
-
-```json
-{
-  "description": "A library scan or a search for originals",
-  "enum": [
-    "scan",
-    "locate"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthProvenanceAction
-
-
-```json
-{
-  "description": "What was done",
-  "enum": [
-    "relinked",
-    "recovered"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthProvenanceDto
-
-Related models: [MediaHealthProvenanceAction](models-15.md#mediahealthprovenanceaction), [MediaHealthRootKind](models-15.md#mediahealthrootkind).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaHealthProvenanceAction"
-    },
-    "at": {
-      "description": "When it was done",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "previousPath": {
-      "description": "The path the original had before",
-      "nullable": true,
-      "type": "string"
-    },
-    "rootId": {
-      "description": "Search location the copy came from",
-      "nullable": true,
-      "type": "string"
-    },
-    "rootKind": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthRootKind"
-        }
-      ],
-      "nullable": true
-    },
-    "rootLabel": {
-      "description": "Name of the search location",
-      "nullable": true,
-      "type": "string"
-    },
-    "sourcePath": {
-      "description": "The verified copy that was used",
-      "nullable": true,
-      "type": "string"
-    },
-    "userId": {
-      "description": "The account that did it",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "at",
-    "previousPath",
-    "rootId",
-    "rootKind",
-    "rootLabel",
-    "sourcePath",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthQueuesDto
-
-
-```json
-{
-  "properties": {
-    "damagedConfirmed": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "damagedSuspected": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "duplicates": {
-      "description": "Duplicate groups waiting for review",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "enrichmentPending": {
-      "description": "Items whose metadata has not been read yet",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "importReview": {
-      "description": "Imported items that need review; null when unavailable",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "missing": {
-      "description": "Missing originals that still need a decision",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "missingVerified": {
-      "description": "Missing originals with a verified exact copy",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "unsupportedRaw": {
-      "description": "Kept apart from damage: the decoder cannot read the format",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "damagedConfirmed",
-    "damagedSuspected",
-    "duplicates",
-    "enrichmentPending",
-    "importReview",
-    "missing",
-    "missingVerified",
-    "unsupportedRaw"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthRecoverDto
-
-Related models: [MediaHealthCandidateChoiceDto](models-15.md#mediahealthcandidatechoicedto).
-
-```json
-{
-  "properties": {
-    "choices": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "confirmed": {
-      "description": "Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "choices",
-    "confirmed"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthRootDto
-
-Related models: [MediaHealthRootKind](models-15.md#mediahealthrootkind).
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "Search location ID",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaHealthRootKind"
-    },
-    "label": {
-      "type": "string"
-    },
-    "paths": {
-      "description": "Folders searched, for review",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "id",
-    "kind",
-    "label",
-    "paths"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthRootKind
-
-
-```json
-{
-  "description": "Kind of search location",
-  "enum": [
-    "managed",
-    "library",
-    "recovery"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthRootsResponseDto
-
-Related models: [MediaHealthRootDto](models-15.md#mediahealthrootdto).
-
-```json
-{
-  "properties": {
-    "roots": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthRootDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "roots"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthRunResponseDto
-
-Related models: [MediaHealthCategory](models-15.md#mediahealthcategory).
-
-```json
-{
-  "properties": {
-    "category": {
-      "$ref": "#/components/schemas/MediaHealthCategory"
-    },
-    "checkedAssets": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "foundAssets": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Media health run ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "startedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "status": {
-      "description": "Run status",
-      "type": "string"
-    },
-    "totalAssets": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "category",
-    "checkedAssets",
-    "error",
-    "finishedAt",
-    "foundAssets",
-    "id",
-    "startedAt",
-    "status",
-    "totalAssets"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthRunsDto
-
-Related models: [MediaHealthRunResponseDto](models-15.md#mediahealthrunresponsedto).
-
-```json
-{
-  "properties": {
-    "corrupt": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthRunResponseDto"
-        }
-      ],
-      "nullable": true
-    },
-    "missing": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthRunResponseDto"
-        }
-      ],
-      "nullable": true
-    }
-  },
-  "required": [
-    "corrupt",
-    "missing"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthScanResponseDto
-
-
-```json
-{
-  "properties": {
-    "operationId": {
-      "description": "The durable job doing the work, in Activity",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "runId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "runId"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthSeverity
-
-
-```json
-{
-  "description": "Media health severity",
-  "enum": [
-    "info",
-    "warning",
-    "critical"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthStatus
-
-
-```json
-{
-  "description": "Media health status",
-  "enum": [
-    "found",
-    "missing",
-    "candidate",
-    "relinked",
-    "dismissed",
-    "resolved",
-    "unsupported_raw",
-    "corrupt_suspect",
-    "corrupt_confirmed",
-    "trash_queued",
-    "trashed",
-    "delete_queued",
-    "deleted"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthSummaryResponseDto
-
-Related models: [MediaHealthActivityDto](models-15.md#mediahealthactivitydto), [MediaHealthCareSettingsDto](models-15.md#mediahealthcaresettingsdto), [MediaHealthOperationDto](models-15.md#mediahealthoperationdto), [MediaHealthQueuesDto](models-15.md#mediahealthqueuesdto), [MediaHealthRunsDto](models-15.md#mediahealthrunsdto).
-
-```json
-{
-  "properties": {
-    "care": {
-      "$ref": "#/components/schemas/MediaHealthCareSettingsDto"
-    },
-    "operation": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthOperationDto"
-        }
-      ],
-      "nullable": true
-    },
-    "queues": {
-      "$ref": "#/components/schemas/MediaHealthQueuesDto"
-    },
-    "recent": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthActivityDto"
-      },
-      "type": "array"
-    },
-    "recoveryAvailable": {
-      "description": "At least one recovery location is configured for this reader",
-      "type": "boolean"
-    },
-    "runs": {
-      "$ref": "#/components/schemas/MediaHealthRunsDto"
-    }
-  },
-  "required": [
-    "care",
-    "operation",
-    "queues",
-    "recent",
-    "recoveryAvailable",
-    "runs"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationAggregateDto
-
-Related models: [MediaOperationDestination](models-15.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "count": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "oldestCreatedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "count",
-    "destination",
-    "kind",
-    "oldestCreatedAt",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkAction
-
-
-```json
-{
-  "description": "Bulk action a durable media operation applies",
-  "enum": [
-    "favorite",
-    "unfavorite",
-    "archive",
-    "unarchive",
-    "add-to-album",
-    "remove-from-album",
-    "tag",
-    "untag",
-    "change-date",
-    "change-description",
-    "change-location",
-    "mark-sensitive",
-    "unmark-sensitive",
-    "delete",
-    "delete-permanently",
-    "restore",
-    "stack",
-    "unstack",
-    "refresh-thumbnails",
-    "refresh-metadata",
-    "refresh-encoded",
-    "refresh-faces",
-    "relink-live-photo",
-    "resolve-duplicates",
-    "undo-duplicates",
-    "relink-missing-media",
-    "recover-damaged-media",
-    "trash-damaged-media",
-    "apply-classification-rule"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationBulkCreateDto
-
-Related models: [MediaOperationBulkAction](models-15.md#mediaoperationbulkaction), [MediaOperationBulkPayloadDto](models-15.md#mediaoperationbulkpayloaddto).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaOperationBulkAction"
-    },
-    "assetIds": {
-      "description": "The frozen matching set, in order",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "payload": {
-      "$ref": "#/components/schemas/MediaOperationBulkPayloadDto"
-    },
-    "requestId": {
-      "description": "Client idempotency key; submitting the same key again returns the existing operation",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "scope": {
-      "additionalProperties": {},
-      "description": "A record of the view the set came from; never re-resolved",
-      "type": "object"
-    },
-    "submittedTotal": {
-      "description": "The count shown to the person at submit",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "truncated": {
-      "description": "The client could not resolve the whole matching set",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "action",
-    "assetIds"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkItemDto
-
-Related models: [MediaOperationItemStatus](models-16.md#mediaoperationitemstatus).
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "message": {
-      "description": "Operator detail from the server",
-      "nullable": true,
-      "type": "string"
-    },
-    "reasonKey": {
-      "description": "Stable key the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationItemStatus"
-    }
-  },
-  "required": [
-    "id",
-    "message",
-    "reasonKey",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkPayloadDto
-
-Related models: [MediaOperationDuplicateGroupDto](models-16.md#mediaoperationduplicategroupdto), [MediaOperationLivePhotoPairDto](models-16.md#mediaoperationlivephotopairdto), [MediaOperationMediaHealthEntryDto](models-16.md#mediaoperationmediahealthentrydto).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "classificationRuleId": {
-      "description": "For `apply-classification-rule`: the rule to apply to the items (FL-60)",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "dateMode": {
-      "enum": [
-        "set",
-        "shift"
-      ],
-      "type": "string"
-    },
-    "dateTimeOriginal": {
-      "type": "string"
-    },
-    "description": {
-      "maxLength": 10000,
-      "type": "string"
-    },
-    "duplicateGroups": {
-      "description": "Duplicate review decisions, one complete group each (FL-61)",
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationDuplicateGroupDto"
-      },
-      "maxItems": 5000,
-      "type": "array"
-    },
-    "latitude": {
-      "format": "double",
-      "maximum": 90,
-      "minimum": -90,
-      "type": "number"
-    },
-    "longitude": {
-      "format": "double",
-      "maximum": 180,
-      "minimum": -180,
-      "type": "number"
-    },
-    "mediaHealth": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationMediaHealthEntryDto"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    },
-    "minutes": {
-      "description": "Relative shift in minutes, for `dateMode: shift`",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pairs": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationLivePhotoPairDto"
-      },
-      "maxItems": 50000,
-      "type": "array"
-    },
-    "primaryId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "stackIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    },
-    "tagIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50,
-      "type": "array"
-    },
-    "timeZone": {
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## MediaOperationBulkSummaryDto
-
-Related models: [MediaOperationBulkAction](models-15.md#mediaoperationbulkaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaOperationBulkAction"
-    },
-    "failed": {
-      "description": "Items the server attempted and could not apply; a retry covers these",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "itemsTruncated": {
-      "type": "boolean"
-    },
-    "requested": {
-      "description": "Items in the frozen set",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "retried": {
-      "description": "Items that failed and were given their one automatic retry",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "skipped": {
-      "description": "Items refused before anything changed, e.g. no access",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "snapshotTruncated": {
-      "type": "boolean"
-    },
-    "succeeded": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "action",
-    "failed",
-    "itemsTruncated",
-    "requested",
-    "retried",
-    "skipped",
-    "snapshotTruncated",
-    "succeeded"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationCheckpointDto
-
-Related models: [MediaOperationCheckpointState](models-15.md#mediaoperationcheckpointstate).
-
-```json
-{
-  "properties": {
-    "chunkKey": {
-      "description": "Digest over every input to this chunk; the reuse key",
-      "type": "string"
-    },
-    "completedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "endTicks": {
-      "description": "Chunk end, in ticks of the timebase",
-      "type": "string"
-    },
-    "id": {
-      "description": "Checkpoint ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "requiresSequentialContext": {
-      "description": "A render may not start inside this chunk",
-      "type": "boolean"
-    },
-    "sequence": {
-      "description": "Chunk order within the render",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "sizeInBytes": {
-      "nullable": true,
-      "type": "string"
-    },
-    "startTicks": {
-      "description": "Chunk start, in ticks of the timebase",
-      "type": "string"
-    },
-    "state": {
-      "$ref": "#/components/schemas/MediaOperationCheckpointState"
-    },
-    "timebase": {
-      "description": "Rational timebase for the tick range, e.g. 30000/1001",
-      "type": "string"
-    }
-  },
-  "required": [
-    "chunkKey",
-    "completedAt",
-    "endTicks",
-    "id",
-    "requiresSequentialContext",
-    "sequence",
-    "sizeInBytes",
-    "startTicks",
-    "state",
-    "timebase"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationCheckpointState
-
-
-```json
-{
-  "description": "Media operation checkpoint state",
-  "enum": [
-    "pending",
-    "complete",
-    "invalid"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationDestination
-
-
-```json
-{
-  "description": "Media operation destination",
-  "enum": [
-    "local",
-    "lan",
-    "frameleaf-cloud"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationDetailDto
-
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkItemDto](models-15.md#mediaoperationbulkitemdto), [MediaOperationBulkSummaryDto](models-15.md#mediaoperationbulksummarydto), [MediaOperationCheckpointDto](models-15.md#mediaoperationcheckpointdto), [MediaOperationDestination](models-15.md#mediaoperationdestination), [MediaOperationEstimateDto](models-16.md#mediaoperationestimatedto), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Source asset, when the workload has exactly one",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "attempt": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "autoRetries": {
-      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "bulk": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
-        }
-      ],
-      "nullable": true
-    },
-    "bulkItems": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationBulkItemDto"
-      },
-      "type": "array"
-    },
-    "bulkRetryPending": {
-      "description": "Asset IDs waiting for their automatic retry",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "cancelAcknowledgedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cancelRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "checkpoints": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationCheckpointDto"
-      },
-      "type": "array"
-    },
-    "cloudJob": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudMlJobActivityDto"
-        }
-      ],
-      "nullable": true
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "destinationDetail": {
-      "description": "Which worker or endpoint the destination resolved to",
-      "nullable": true,
-      "type": "string"
-    },
-    "error": {
-      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "description": "Stable code the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "estimate": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationEstimateDto"
-        }
-      ],
-      "nullable": true
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "label": {
-      "description": "What the person sees in Activity; empty when withheld",
-      "type": "string"
-    },
-    "maxAttempts": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pausable": {
-      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
-      "type": "boolean"
-    },
-    "pauseRequestedAt": {
-      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "processedUnits": {
-      "type": "string"
-    },
-    "progress": {
-      "description": "Percent complete, from counted work",
-      "format": "double",
-      "type": "number"
-    },
-    "projectId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "resultAssetId": {
-      "description": "The asset a completed job published",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "retryAt": {
-      "description": "When a job waiting for its automatic retry may run again",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "retryOfId": {
-      "description": "The job this one retries",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revisionId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "settings": {
-      "additionalProperties": {},
-      "description": "User-visible render settings",
-      "type": "object"
-    },
-    "snapshot": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "startedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    },
-    "totalUnits": {
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "withheld": {
-      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "assetId",
-    "attempt",
-    "autoRetries",
-    "bulk",
-    "bulkItems",
-    "bulkRetryPending",
-    "cancelAcknowledgedAt",
-    "cancelRequestedAt",
-    "checkpoints",
-    "createdAt",
-    "destination",
-    "destinationDetail",
-    "error",
-    "errorCode",
-    "estimate",
-    "finishedAt",
-    "id",
-    "kind",
-    "label",
-    "maxAttempts",
-    "pausable",
-    "pauseRequestedAt",
-    "processedUnits",
-    "progress",
-    "projectId",
-    "resultAssetId",
-    "retryAt",
-    "retryOfId",
-    "revisionId",
-    "settings",
-    "snapshot",
-    "startedAt",
-    "status",
-    "totalUnits",
-    "updatedAt",
-    "withheld"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationDto
-
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkSummaryDto](models-15.md#mediaoperationbulksummarydto), [MediaOperationDestination](models-15.md#mediaoperationdestination), [MediaOperationEstimateDto](models-16.md#mediaoperationestimatedto), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Source asset, when the workload has exactly one",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "attempt": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "autoRetries": {
-      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "bulk": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
-        }
-      ],
-      "nullable": true
-    },
-    "cancelAcknowledgedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cancelRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cloudJob": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudMlJobActivityDto"
-        }
-      ],
-      "nullable": true
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "destinationDetail": {
-      "description": "Which worker or endpoint the destination resolved to",
-      "nullable": true,
-      "type": "string"
-    },
-    "error": {
-      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "description": "Stable code the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "estimate": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationEstimateDto"
-        }
-      ],
-      "nullable": true
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "label": {
-      "description": "What the person sees in Activity; empty when withheld",
-      "type": "string"
-    },
-    "maxAttempts": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pausable": {
-      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
-      "type": "boolean"
-    },
-    "pauseRequestedAt": {
-      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "processedUnits": {
-      "type": "string"
-    },
-    "progress": {
-      "description": "Percent complete, from counted work",
-      "format": "double",
-      "type": "number"
-    },
-    "projectId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "resultAssetId": {
-      "description": "The asset a completed job published",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "retryAt": {
-      "description": "When a job waiting for its automatic retry may run again",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "retryOfId": {
-      "description": "The job this one retries",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revisionId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "settings": {
-      "additionalProperties": {},
-      "description": "User-visible render settings",
-      "type": "object"
-    },
-    "startedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    },
-    "totalUnits": {
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "withheld": {
-      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "assetId",
-    "attempt",
-    "autoRetries",
-    "bulk",
-    "cancelAcknowledgedAt",
-    "cancelRequestedAt",
-    "createdAt",
-    "destination",
-    "destinationDetail",
-    "error",
-    "errorCode",
-    "estimate",
-    "finishedAt",
-    "id",
-    "kind",
-    "label",
-    "maxAttempts",
-    "pausable",
-    "pauseRequestedAt",
-    "processedUnits",
-    "progress",
-    "projectId",
-    "resultAssetId",
-    "retryAt",
-    "retryOfId",
-    "revisionId",
-    "settings",
-    "startedAt",
-    "status",
-    "totalUnits",
-    "updatedAt",
-    "withheld"
   ],
   "type": "object"
 }

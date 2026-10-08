@@ -1,12 +1,12 @@
 # Server API — Queues
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getQueues
 
 `GET /api/queues`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L25).
 
 List all queues
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `GET /api/queues/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L36).
 
 Retrieve a queue
 
@@ -170,7 +170,7 @@ Complete operation contract:
 
 `PUT /api/queues/{name}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L47).
 
 Update a queue
 
@@ -265,7 +265,7 @@ Complete operation contract:
 
 `DELETE /api/queues/{name}/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L110).
 
 Empty a queue
 
@@ -354,7 +354,7 @@ Complete operation contract:
 
 `GET /api/queues/{name}/jobs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L62).
 
 Retrieve queue jobs
 
@@ -465,7 +465,7 @@ Complete operation contract:
 
 `POST /api/queues/{name}/jobs/retry-failed`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L95).
 
 Retry failed queue jobs
 
@@ -551,7 +551,7 @@ Complete operation contract:
 
 `GET /api/queues/{name}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/queue.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/queue.controller.ts#L78).
 
 Retrieve queue statistics for an account
 

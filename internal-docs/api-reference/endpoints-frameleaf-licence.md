@@ -1,18 +1,18 @@
 # Server API — Frameleaf licence
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## removeLicenseKey
 
 `DELETE /api/admin/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L68).
 
 Remove the licence key
 
 Permission: `serverLicense.delete`. Admin only: `true`.
 
-Models: [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -84,13 +84,13 @@ Complete operation contract:
 
 `GET /api/admin/license`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L27).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L27).
 
 Get the licence status
 
 Permission: `serverLicense.read`. Admin only: `true`.
 
-Models: [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -162,13 +162,13 @@ Complete operation contract:
 
 `PUT /api/admin/license/activate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L40).
 
 Activate a server licence key
 
 Permission: `serverLicense.update`. Admin only: `true`.
 
-Models: [LicenseActivateDto](models-14.md#licenseactivatedto), [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseActivateDto](models-15.md#licenseactivatedto), [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -251,13 +251,13 @@ Complete operation contract:
 
 `PUT /api/admin/license/certificate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L54).
 
 Install a licence file
 
 Permission: `serverLicense.update`. Admin only: `true`.
 
-Models: [LicenseCertificateDto](models-14.md#licensecertificatedto), [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseCertificateDto](models-15.md#licensecertificatedto), [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -340,13 +340,13 @@ Complete operation contract:
 
 `DELETE /api/admin/license/plan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L81).
 
 Remove the plan from this server
 
 Permission: `serverLicense.delete`. Admin only: `true`.
 
-Models: [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -418,13 +418,13 @@ Complete operation contract:
 
 `POST /api/admin/license/refresh`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L94).
 
 Refresh the licence now
 
 Permission: `serverLicense.update`. Admin only: `true`.
 
-Models: [LicenseStatusResponseDto](models-14.md#licensestatusresponsedto).
+Models: [LicenseStatusResponseDto](models-15.md#licensestatusresponsedto).
 
 Controller access declarations:
 
@@ -496,13 +496,13 @@ Complete operation contract:
 
 `POST /api/license/link-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L127).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L127).
 
 Redeem a Frameleaf account link code
 
 Permission: `userLicense.update`. Admin only: `false`.
 
-Models: [LicenseLinkCodeDto](models-14.md#licenselinkcodedto), [LicenseLinkCodeResponseDto](models-14.md#licenselinkcoderesponsedto).
+Models: [LicenseLinkCodeDto](models-15.md#licenselinkcodedto), [LicenseLinkCodeResponseDto](models-15.md#licenselinkcoderesponsedto).
 
 Controller access declarations:
 
@@ -585,13 +585,13 @@ Complete operation contract:
 
 `GET /api/license/products`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/license-admin.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/license-admin.controller.ts#L114).
 
 Get Support Frameleaf prices
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LicenseProductsResponseDto](models-14.md#licenseproductsresponsedto).
+Models: [LicenseProductsResponseDto](models-15.md#licenseproductsresponsedto).
 
 Controller access declarations:
 

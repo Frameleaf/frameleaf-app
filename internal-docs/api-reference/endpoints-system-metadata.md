@@ -1,12 +1,12 @@
 # Server API — System metadata
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAdminOnboarding
 
 `GET /api/system-metadata/admin-onboarding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L24).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L24).
 
 Retrieve admin onboarding
 
@@ -86,7 +86,7 @@ Complete operation contract:
 
 `POST /api/system-metadata/admin-onboarding`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L35).
 
 Update admin onboarding
 
@@ -170,7 +170,7 @@ Complete operation contract:
 
 `GET /api/system-metadata/frameleaf-setup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L47).
 
 Retrieve Frameleaf setup
 
@@ -246,7 +246,7 @@ Complete operation contract:
 
 `PUT /api/system-metadata/frameleaf-setup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L58).
 
 Save Frameleaf setup progress
 
@@ -332,7 +332,7 @@ Complete operation contract:
 
 `POST /api/system-metadata/frameleaf-setup/finish`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L69).
 
 Finish Frameleaf setup
 
@@ -409,7 +409,7 @@ Complete operation contract:
 
 `GET /api/system-metadata/frameleaf-setup/library`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L81).
 
 Retrieve library totals for setup
 
@@ -485,7 +485,7 @@ Complete operation contract:
 
 `GET /api/system-metadata/frameleaf-setup/storage`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L92).
 
 Check library storage for setup
 
@@ -561,7 +561,7 @@ Complete operation contract:
 
 `GET /api/system-metadata/reverse-geocoding-state`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L103).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L103).
 
 Retrieve reverse geocoding state
 
@@ -641,7 +641,7 @@ Complete operation contract:
 
 `GET /api/system-metadata/version-check-state`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-metadata.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-metadata.controller.ts#L114).
 
 Retrieve version check state
 

@@ -1,6 +1,984 @@
 # Server API models 18
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## MlCapabilityDestinationDto
+
+Related models: [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind), [MlWorkerAcceleration](models-18.md#mlworkeracceleration), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "acceleration": {
+      "$ref": "#/components/schemas/MlWorkerAcceleration",
+      "description": "CPU or accelerator, from the last check; unknown without facts"
+    },
+    "available": {
+      "description": "Enabled, healthy on a check that is not stale, consented and reporting this workload",
+      "type": "boolean"
+    },
+    "checkedAt": {
+      "description": "When the destination was last checked, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "consentGranted": {
+      "description": "True when the destination needs no consent or consent is recorded",
+      "type": "boolean"
+    },
+    "gpuMemoryBytes": {
+      "description": "Largest GPU memory the worker reported, or null",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "health": {
+      "$ref": "#/components/schemas/MlDestinationHealth"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MlDestinationKind"
+    },
+    "leavesNetwork": {
+      "description": "Work sent here leaves this network (Frameleaf Cloud)",
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "region": {
+      "description": "Frameleaf Cloud data region, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "servedWorkloads": {
+      "description": "Workloads the last check verified, or null when it never answered",
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "nullable": true,
+      "type": "array"
+    },
+    "stale": {
+      "description": "The last check is too old to count as evidence; the destination is checked again first",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "acceleration",
+    "available",
+    "checkedAt",
+    "consentGranted",
+    "gpuMemoryBytes",
+    "health",
+    "id",
+    "kind",
+    "leavesNetwork",
+    "name",
+    "region",
+    "servedWorkloads",
+    "stale"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationCloudDto
+
+Related models: [MlAdmissionRefusal](models-17.md#mladmissionrefusal).
+
+```json
+{
+  "properties": {
+    "balanceUsd": {
+      "description": "AI Wallet balance, USD",
+      "format": "double",
+      "type": "number"
+    },
+    "dailyCapUsd": {
+      "description": "Daily AI Wallet limit, USD, or null",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "entitled": {
+      "description": "The Frameleaf account has the cloud processing entitlement",
+      "type": "boolean"
+    },
+    "heldUsd": {
+      "description": "AI Wallet amount held by running jobs, USD",
+      "format": "double",
+      "type": "number"
+    },
+    "refusal": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MlAdmissionRefusal"
+        }
+      ],
+      "description": "Why the last check refused, or null",
+      "nullable": true
+    },
+    "refusalDetail": {
+      "nullable": true,
+      "type": "string"
+    },
+    "region": {
+      "description": "Frameleaf Cloud data region",
+      "nullable": true,
+      "type": "string"
+    },
+    "spentTodayUsd": {
+      "description": "AI Wallet spend today, USD",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "balanceUsd",
+    "dailyCapUsd",
+    "entitled",
+    "heldUsd",
+    "refusal",
+    "refusalDetail",
+    "region",
+    "spentTodayUsd"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationConsentDto
+
+
+```json
+{
+  "properties": {
+    "acknowledgedAt": {
+      "description": "When an administrator recorded consent, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "acknowledgedBy": {
+      "description": "Administrator who recorded consent, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "required": {
+      "description": "Whether this destination sends media off the network and needs consent",
+      "type": "boolean"
+    },
+    "requiredVersion": {
+      "description": "Frameleaf Cloud: the consent version the cloud requires now, from the last check, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "version": {
+      "description": "Frameleaf Cloud: the consent version accepted, or null",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "acknowledgedAt",
+    "acknowledgedBy",
+    "required",
+    "requiredVersion",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationConsentRequestDto
+
+
+```json
+{
+  "properties": {
+    "acknowledgeMediaLeavesNetwork": {
+      "description": "The administrator confirms that media sent to this destination leaves the network",
+      "enum": [
+        true
+      ],
+      "type": "boolean"
+    },
+    "features": {
+      "description": "Frameleaf Cloud: per-feature choices; every feature is off unless chosen",
+      "properties": {
+        "identityNames": {
+          "default": false,
+          "description": "Allow people names in cloud description prompts",
+          "type": "boolean"
+        },
+        "medicalSignals": {
+          "default": false,
+          "description": "Allow medical signals in cloud descriptions",
+          "type": "boolean"
+        },
+        "ocrAddon": {
+          "default": false,
+          "description": "Allow the cloud text-recognition add-on",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "textSha256": {
+      "description": "Frameleaf Cloud (FC-62): SHA-256 of the terms text the administrator was shown; refused when the cloud now asks for other terms",
+      "pattern": "^[\\da-f]{64}$",
+      "type": "string"
+    },
+    "version": {
+      "description": "Frameleaf Cloud: the consent version being accepted; required for Frameleaf Cloud",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "acknowledgeMediaLeavesNetwork"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationCostControlsDto
+
+
+```json
+{
+  "properties": {
+    "budgetLimitUsd": {
+      "description": "Spend ceiling over the rolling budget window, or null for no ceiling",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "budgetWindowDays": {
+      "description": "Length of the rolling window `spentUsd` covers",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxRuntimeMinutes": {
+      "description": "Longest single job this destination may run, or null",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "maxUploadBytes": {
+      "description": "Largest upload one job may send to this destination, or null",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "spentUsd": {
+      "description": "Attributed spend inside the budget window; 0 when no cost has been attributed yet",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "budgetLimitUsd",
+    "budgetWindowDays",
+    "maxRuntimeMinutes",
+    "maxUploadBytes",
+    "spentUsd"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationCreateDto
+
+Related models: [MlDestinationKind](models-18.md#mldestinationkind), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "authToken": {
+      "description": "Bearer token for a LAN worker (write-only)",
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "budgetLimitUsd": {
+      "format": "double",
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MlDestinationKind"
+    },
+    "maxRuntimeMinutes": {
+      "maximum": 10080,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "maxUploadBytes": {
+      "format": "double",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sharesLibraryHardware": {
+      "description": "Restoration workers only: full restorations wait while library analysis has work",
+      "type": "boolean"
+    },
+    "url": {
+      "description": "Required for a LAN destination, optional for a local one; Frameleaf Cloud is added from its own endpoint",
+      "format": "uri",
+      "type": "string"
+    },
+    "workloads": {
+      "default": [],
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "maxItems": 16,
+      "type": "array"
+    }
+  },
+  "required": [
+    "kind",
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationHealth
+
+
+```json
+{
+  "description": "Last probed health of a machine-learning destination",
+  "enum": [
+    "healthy",
+    "unhealthy",
+    "unknown"
+  ],
+  "type": "string"
+}
+```
+
+## MlDestinationHealthStateDto
+
+Related models: [MlDestinationHealth](models-18.md#mldestinationhealth), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "probedAt": {
+      "description": "When the destination was last probed, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "servedWorkloads": {
+      "description": "Workloads the worker itself reported on the last probe, or null when it never answered",
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "nullable": true,
+      "type": "array"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MlDestinationHealth"
+    },
+    "summary": {
+      "description": "Human-readable probe result, or null",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "probedAt",
+    "servedWorkloads",
+    "status",
+    "summary"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationKind
+
+
+```json
+{
+  "description": "Kind of machine-learning destination",
+  "enum": [
+    "local",
+    "lan",
+    "frameleaf-cloud"
+  ],
+  "type": "string"
+}
+```
+
+## MlDestinationResponseDto
+
+Related models: [MlDestinationCloudDto](models-18.md#mldestinationclouddto), [MlDestinationConsentDto](models-18.md#mldestinationconsentdto), [MlDestinationCostControlsDto](models-18.md#mldestinationcostcontrolsdto), [MlDestinationHealthStateDto](models-18.md#mldestinationhealthstatedto), [MlDestinationKind](models-18.md#mldestinationkind), [MlWorkerRole](models-18.md#mlworkerrole), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "authTokenConfigured": {
+      "description": "Whether a bearer token is stored for this destination",
+      "type": "boolean"
+    },
+    "cloud": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MlDestinationCloudDto"
+        }
+      ],
+      "description": "Frameleaf Cloud facts from the last check; null for other kinds",
+      "nullable": true
+    },
+    "consent": {
+      "$ref": "#/components/schemas/MlDestinationConsentDto"
+    },
+    "costControls": {
+      "$ref": "#/components/schemas/MlDestinationCostControlsDto"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "health": {
+      "$ref": "#/components/schemas/MlDestinationHealthStateDto"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MlDestinationKind"
+    },
+    "name": {
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/components/schemas/MlWorkerRole"
+    },
+    "sharesLibraryHardware": {
+      "description": "A restoration worker on the GPU library analysis uses; its full restorations wait for library work",
+      "type": "boolean"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "url": {
+      "description": "Endpoint URL; always null for Frameleaf Cloud",
+      "nullable": true,
+      "type": "string"
+    },
+    "workloads": {
+      "description": "Workloads the administrator allows on this destination",
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "authTokenConfigured",
+    "cloud",
+    "consent",
+    "costControls",
+    "createdAt",
+    "enabled",
+    "health",
+    "id",
+    "kind",
+    "name",
+    "role",
+    "sharesLibraryHardware",
+    "updatedAt",
+    "url",
+    "workloads"
+  ],
+  "type": "object"
+}
+```
+
+## MlDestinationUpdateDto
+
+Related models: [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "authToken": {
+      "description": "New bearer token; null clears it; omitted keeps the stored token",
+      "maxLength": 4096,
+      "nullable": true,
+      "type": "string"
+    },
+    "budgetLimitUsd": {
+      "format": "double",
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "maxRuntimeMinutes": {
+      "maximum": 10080,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "maxUploadBytes": {
+      "format": "double",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sharesLibraryHardware": {
+      "description": "Restoration workers only: full restorations wait while library analysis has work",
+      "type": "boolean"
+    },
+    "url": {
+      "format": "uri",
+      "nullable": true,
+      "type": "string"
+    },
+    "workloads": {
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "maxItems": 16,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MlRestorationModelsResponseDto
+
+Related models: [MlWorkload](models-18.md#mlworkload), [RestorationGpuDto](models-29.md#restorationgpudto), [RestorationModelCapabilityDto](models-29.md#restorationmodelcapabilitydto).
+
+```json
+{
+  "properties": {
+    "checkedAt": {
+      "description": "When the destination last verified its models, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "configurationProblems": {
+      "description": "Problems reading the model manifest or qualification evidence on the destination",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "destinationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "error": {
+      "description": "Why no report could be read, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "gpus": {
+      "items": {
+        "$ref": "#/components/schemas/RestorationGpuDto"
+      },
+      "type": "array"
+    },
+    "models": {
+      "items": {
+        "$ref": "#/components/schemas/RestorationModelCapabilityDto"
+      },
+      "type": "array"
+    },
+    "reachable": {
+      "description": "Whether the destination answered with a restoration report",
+      "type": "boolean"
+    },
+    "workloads": {
+      "description": "Restoration workloads the destination serves now; empty unless a model is available",
+      "items": {
+        "$ref": "#/components/schemas/MlWorkload"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "checkedAt",
+    "configurationProblems",
+    "destinationId",
+    "error",
+    "gpus",
+    "models",
+    "reachable",
+    "workloads"
+  ],
+  "type": "object"
+}
+```
+
+## MlStudioFeature
+
+
+```json
+{
+  "description": "Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)",
+  "enum": [
+    "speech-to-text",
+    "captions",
+    "speech"
+  ],
+  "type": "string"
+}
+```
+
+## MlThroughputEstimateDto
+
+
+```json
+{
+  "properties": {
+    "bytesPerSecond": {
+      "description": "Measured throughput for this destination and workload, or null with no samples",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "sampleCount": {
+      "description": "Successful requests the estimate is measured from",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "windowDays": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "bytesPerSecond",
+    "sampleCount",
+    "windowDays"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkerAcceleration
+
+
+```json
+{
+  "description": "Acceleration a worker reported on its last check",
+  "enum": [
+    "unknown",
+    "cpu",
+    "gpu"
+  ],
+  "type": "string"
+}
+```
+
+## MlWorkerReadiness
+
+
+```json
+{
+  "description": "State of one worker in the inventory",
+  "enum": [
+    "unknown",
+    "disabled",
+    "unreachable",
+    "not-serving",
+    "cpu",
+    "model-ready"
+  ],
+  "type": "string"
+}
+```
+
+## MlWorkerRole
+
+
+```json
+{
+  "description": "What a worker is for",
+  "enum": [
+    "library-analysis",
+    "restoration",
+    "studio",
+    "mixed",
+    "unassigned"
+  ],
+  "type": "string"
+}
+```
+
+## MlWorkload
+
+
+```json
+{
+  "description": "Machine-learning workload",
+  "enum": [
+    "face",
+    "clip",
+    "ocr",
+    "enrichment",
+    "restoration-faithful",
+    "restoration-creative",
+    "studio-ai",
+    "upscale",
+    "interpolation",
+    "studio-render",
+    "pet-recognition"
+  ],
+  "type": "string"
+}
+```
+
+## MlWorkloadCapabilityDto
+
+Related models: [MlCapabilityDestinationDto](models-18.md#mlcapabilitydestinationdto), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "available": {
+      "description": "At least one destination can serve this workload right now",
+      "type": "boolean"
+    },
+    "destinations": {
+      "items": {
+        "$ref": "#/components/schemas/MlCapabilityDestinationDto"
+      },
+      "type": "array"
+    },
+    "routedDestinationId": {
+      "description": "Destination library jobs use for this workload, or null",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "workload": {
+      "$ref": "#/components/schemas/MlWorkload"
+    }
+  },
+  "required": [
+    "available",
+    "destinations",
+    "routedDestinationId",
+    "workload"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkloadRouteDto
+
+Related models: [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "destinationId": {
+      "description": "Destination the workload is routed to, or null when unrouted",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "workload": {
+      "$ref": "#/components/schemas/MlWorkload"
+    }
+  },
+  "required": [
+    "destinationId",
+    "workload"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkloadRouteUpdateDto
+
+
+```json
+{
+  "properties": {
+    "destinationId": {
+      "description": "Destination to route the workload to; null removes the route",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "destinationId"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkloadRoutesResponseDto
+
+Related models: [MlWorkloadRouteDto](models-18.md#mlworkloadroutedto).
+
+```json
+{
+  "properties": {
+    "routes": {
+      "items": {
+        "$ref": "#/components/schemas/MlWorkloadRouteDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "routes"
+  ],
+  "type": "object"
+}
+```
+
+## MoveAlbumDto
+
+
+```json
+{
+  "properties": {
+    "collectionId": {
+      "description": "Collection to move the album into, or null to take it out so it stands on its own",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "expectedParentId": {
+      "description": "Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collectionId"
+  ],
+  "type": "object"
+}
+```
+
+## NotificationCreateDto
+
+Related models: [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
+
+```json
+{
+  "properties": {
+    "data": {
+      "additionalProperties": {},
+      "description": "Additional notification data",
+      "type": "object"
+    },
+    "description": {
+      "description": "Notification description",
+      "nullable": true,
+      "type": "string"
+    },
+    "level": {
+      "$ref": "#/components/schemas/NotificationLevel"
+    },
+    "readAt": {
+      "description": "Date when notification was read",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "title": {
+      "description": "Notification title",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/NotificationType"
+    },
+    "userId": {
+      "description": "User ID to send notification to",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## NotificationDeleteAllDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Notification IDs to delete",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
 
 ## NotificationDto
 
@@ -151,7 +1129,7 @@ Related models: [NotificationLevel](models-18.md#notificationlevel), [Notificati
 
 ## NsfwDetectionEnrichmentResponseDto
 
-Related models: [ImageEnrichmentReview](models-13.md#imageenrichmentreview).
+Related models: [ImageEnrichmentReview](models-14.md#imageenrichmentreview).
 
 ```json
 {
@@ -1369,903 +2347,5 @@ Related models: [PeopleUpdateItem](models-18.md#peopleupdateitem).
     "adminAuth.unlinkAll"
   ],
   "type": "string"
-}
-```
-
-## PersonCorrectionAction
-
-
-```json
-{
-  "description": "What the decision did",
-  "enum": [
-    "reassign",
-    "new-person",
-    "unassign",
-    "remove",
-    "merge",
-    "box-move",
-    "partner-merge"
-  ],
-  "type": "string"
-}
-```
-
-## PersonCorrectionDto
-
-Related models: [FaceEvidenceDto](models-11.md#faceevidencedto), [PersonCorrectionAction](models-18.md#personcorrectionaction), [PersonCorrectionPersonDto](models-18.md#personcorrectionpersondto).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/PersonCorrectionAction"
-    },
-    "createdAt": {
-      "description": "When the decision was made",
-      "format": "date-time",
-      "type": "string"
-    },
-    "evidence": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/FaceEvidenceDto"
-        }
-      ],
-      "description": "The photo and face, when it may still be shown",
-      "nullable": true
-    },
-    "evidenceRevoked": {
-      "description": "True when the decision was about a photo that can no longer be shown (trashed, Locked, hidden)",
-      "type": "boolean"
-    },
-    "fromPerson": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PersonCorrectionPersonDto"
-        }
-      ],
-      "description": "Who the face belonged to before",
-      "nullable": true
-    },
-    "id": {
-      "description": "Correction ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "toPerson": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PersonCorrectionPersonDto"
-        }
-      ],
-      "description": "Who the face belongs to after",
-      "nullable": true
-    },
-    "undoable": {
-      "description": "Whether this kind of decision can be undone and has not been",
-      "type": "boolean"
-    },
-    "undoneAt": {
-      "description": "When the decision was undone",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "createdAt",
-    "evidence",
-    "evidenceRevoked",
-    "fromPerson",
-    "id",
-    "toPerson",
-    "undoable",
-    "undoneAt"
-  ],
-  "type": "object"
-}
-```
-
-## PersonCorrectionPersonDto
-
-
-```json
-{
-  "properties": {
-    "exists": {
-      "description": "Whether the person still exists",
-      "type": "boolean"
-    },
-    "id": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "name": {
-      "description": "The current name, or the name at the time when the person no longer exists",
-      "type": "string"
-    }
-  },
-  "required": [
-    "exists",
-    "id",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## PersonCorrectionsResponseDto
-
-Related models: [PersonCorrectionDto](models-18.md#personcorrectiondto).
-
-```json
-{
-  "properties": {
-    "corrections": {
-      "description": "Manual face decisions for this person, most recent first",
-      "items": {
-        "$ref": "#/components/schemas/PersonCorrectionDto"
-      },
-      "type": "array"
-    },
-    "hasNextPage": {
-      "description": "Whether there are more pages",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "corrections",
-    "hasNextPage"
-  ],
-  "type": "object"
-}
-```
-
-## PersonCreateDto
-
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Person date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "color": {
-      "description": "Person color (hex)",
-      "nullable": true,
-      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Person visibility (hidden)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PersonMergeSuggestionDto
-
-Related models: [FaceEvidenceDto](models-11.md#faceevidencedto), [PersonResponseDto](models-18.md#personresponsedto).
-
-```json
-{
-  "properties": {
-    "distance": {
-      "description": "Face embedding distance between the two people (lower is more similar)",
-      "format": "double",
-      "minimum": 0,
-      "type": "number"
-    },
-    "person": {
-      "$ref": "#/components/schemas/PersonResponseDto",
-      "description": "The person being reviewed"
-    },
-    "personEvidence": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/FaceEvidenceDto"
-        }
-      ],
-      "description": "The reviewed person's reference face and its complete photo, or null when none may be shown",
-      "nullable": true
-    },
-    "suggestion": {
-      "$ref": "#/components/schemas/PersonResponseDto",
-      "description": "The suggested match for that person"
-    },
-    "suggestionEvidence": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/FaceEvidenceDto"
-        }
-      ],
-      "description": "The suggested person's reference face and its complete photo, or null when none may be shown",
-      "nullable": true
-    }
-  },
-  "required": [
-    "distance",
-    "person",
-    "personEvidence",
-    "suggestion",
-    "suggestionEvidence"
-  ],
-  "type": "object"
-}
-```
-
-## PersonMergeVerdict
-
-
-```json
-{
-  "description": "\"same\": merge the two people now (the named one survives, or `personId` when both or neither are named); \"different\": never suggest this pair again; \"later\": skip it for 30 days; \"ignore\": stop suggesting `personId` with anyone",
-  "enum": [
-    "same",
-    "different",
-    "later",
-    "ignore"
-  ],
-  "type": "string"
-}
-```
-
-## PersonMergeVerdictCreateDto
-
-Related models: [PersonMergeVerdict](models-18.md#personmergeverdict).
-
-```json
-{
-  "properties": {
-    "personId": {
-      "description": "One person of the suggested pair (the reviewed person, for \"ignore\")",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "suggestionId": {
-      "description": "The other person of the suggested pair",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "verdict": {
-      "$ref": "#/components/schemas/PersonMergeVerdict"
-    }
-  },
-  "required": [
-    "personId",
-    "suggestionId",
-    "verdict"
-  ],
-  "type": "object"
-}
-```
-
-## PersonMergeVerdictDeleteDto
-
-
-```json
-{
-  "properties": {
-    "personId": {
-      "description": "One person of the suggested pair (the reviewed person, for \"ignore\")",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "suggestionId": {
-      "description": "The other person of the suggested pair",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "personId",
-    "suggestionId"
-  ],
-  "type": "object"
-}
-```
-
-## PersonMergeVerdictResponseDto
-
-Related models: [PersonMergeVerdict](models-18.md#personmergeverdict).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "When the verdict was recorded",
-      "format": "date-time",
-      "type": "string"
-    },
-    "personId": {
-      "description": "The person of the pair whose id sorts first; the ignored person for \"ignore\"; the surviving person for \"same\"",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "suggestionId": {
-      "description": "The other person of the pair; the ignored person again for \"ignore\"; the merged person for \"same\"",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "verdict": {
-      "$ref": "#/components/schemas/PersonMergeVerdict"
-    }
-  },
-  "required": [
-    "createdAt",
-    "personId",
-    "suggestionId",
-    "verdict"
-  ],
-  "type": "object"
-}
-```
-
-## PersonRecapDto
-
-
-```json
-{
-  "properties": {
-    "assetCount": {
-      "description": "Number of their photos and videos that year",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "kind": {
-      "description": "Discriminator for a person or pet recap",
-      "enum": [
-        "person_recap"
-      ],
-      "type": "string"
-    },
-    "name": {
-      "description": "Their name when the memory was made",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Whether the recap is about a person or a pet",
-      "enum": [
-        "person",
-        "pet"
-      ],
-      "type": "string"
-    },
-    "subjectId": {
-      "description": "The owner's person or pet",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "year": {
-      "description": "Calendar year being recapped",
-      "maximum": 9999,
-      "minimum": 1000,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetCount",
-    "kind",
-    "name",
-    "subject",
-    "subjectId",
-    "year"
-  ],
-  "type": "object"
-}
-```
-
-## PersonResponseDto
-
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Person date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "color": {
-      "description": "Person color (hex)",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1.126.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "featuredAssetId": {
-      "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.1",
-          "state": "Added"
-        },
-        {
-          "version": "v3.2.1",
-          "state": "Alpha"
-        }
-      ],
-      "x-immich-state": "Alpha"
-    },
-    "id": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Is favorite",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1.126.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "isHidden": {
-      "description": "Is hidden",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    },
-    "thumbnailPath": {
-      "description": "Thumbnail path",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Last update date",
-      "format": "date-time",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1.107.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    }
-  },
-  "required": [
-    "birthDate",
-    "id",
-    "isHidden",
-    "name",
-    "thumbnailPath"
-  ],
-  "type": "object"
-}
-```
-
-## PersonStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "assets": {
-      "description": "Number of assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "photos": {
-      "description": "Number of photos among the assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "videos": {
-      "description": "Number of videos among the assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assets",
-    "photos",
-    "videos"
-  ],
-  "type": "object"
-}
-```
-
-## PersonUpdateDto
-
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Person date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "color": {
-      "description": "Person color (hex)",
-      "nullable": true,
-      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
-      "type": "string"
-    },
-    "featureFaceAssetId": {
-      "description": "Asset ID used for feature face thumbnail",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Person visibility (hidden)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetCandidateListResponseDto
-
-Related models: [PetCandidateResponseDto](models-18.md#petcandidateresponsedto), [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
-
-```json
-{
-  "properties": {
-    "candidates": {
-      "description": "Proposals awaiting review",
-      "items": {
-        "$ref": "#/components/schemas/PetCandidateResponseDto"
-      },
-      "type": "array"
-    },
-    "recognition": {
-      "$ref": "#/components/schemas/PetRecognitionStatusResponseDto"
-    },
-    "recognitionAvailable": {
-      "description": "Whether a pet recognition model is configured and available",
-      "type": "boolean"
-    },
-    "recognitionUnavailableReason": {
-      "description": "Why recognition is unavailable, for display; null when it is available",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "candidates",
-    "recognition",
-    "recognitionAvailable",
-    "recognitionUnavailableReason"
-  ],
-  "type": "object"
-}
-```
-
-## PetCandidateRejectDto
-
-
-```json
-{
-  "properties": {
-    "expectedChecksum": {
-      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetCandidateResponseDto
-
-
-```json
-{
-  "properties": {
-    "assetChecksum": {
-      "description": "Checksum (base64) of the asset now; send it back as expectedChecksum",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset the proposal is about",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "boundingBoxX1": {
-      "description": "Region X1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "boundingBoxX2": {
-      "description": "Region X2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "boundingBoxY1": {
-      "description": "Region Y1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "boundingBoxY2": {
-      "description": "Region Y2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "detectedSpecies": {
-      "description": "The detector's species guess, which is never the pet's species",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Candidate ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "imageHeight": {
-      "description": "Height of the image the region was found on",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "imageWidth": {
-      "description": "Width of the image the region was found on",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "modelName": {
-      "description": "Model that produced the detection",
-      "type": "string"
-    },
-    "modelRevision": {
-      "description": "Revision of the model that produced the detection",
-      "type": "string"
-    },
-    "petId": {
-      "description": "Proposed pet ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "score": {
-      "description": "Model confidence, 0 to 1",
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "required": [
-    "assetChecksum",
-    "assetId",
-    "boundingBoxX1",
-    "boundingBoxX2",
-    "boundingBoxY1",
-    "boundingBoxY2",
-    "detectedSpecies",
-    "id",
-    "imageHeight",
-    "imageWidth",
-    "modelName",
-    "modelRevision",
-    "petId",
-    "score"
-  ],
-  "type": "object"
-}
-```
-
-## PetCandidateReviewDto
-
-
-```json
-{
-  "properties": {
-    "expectedChecksum": {
-      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "petId": {
-      "description": "Pet to assign instead of the proposed one",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetCreateDto
-
-Related models: [PetSpecies](models-19.md#petspecies).
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Pet date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "featuredAssetId": {
-      "description": "Asset used as the pet thumbnail",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Pet visibility (hidden)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Pet name",
-      "maxLength": 100,
-      "type": "string"
-    },
-    "species": {
-      "$ref": "#/components/schemas/PetSpecies",
-      "default": "other"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetMergeDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Pet IDs to merge into this pet",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## PetObservationCreateDto
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset the pet appears in",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "boundingBoxX1": {
-      "description": "Region X1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxX2": {
-      "description": "Region X2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxY1": {
-      "description": "Region Y1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxY2": {
-      "description": "Region Y2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "expectedChecksum": {
-      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "imageHeight": {
-      "description": "Height of the image the region was drawn on",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "imageWidth": {
-      "description": "Width of the image the region was drawn on",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetId"
-  ],
-  "type": "object"
 }
 ```

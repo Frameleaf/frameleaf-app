@@ -1,12 +1,12 @@
 # Server API — Shared links
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllSharedLinks
 
 `GET /api/shared-links`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L59).
 
 Retrieve all shared links
 
@@ -117,7 +117,7 @@ Complete operation contract:
 
 `POST /api/shared-links`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L115).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L115).
 
 Create a shared link
 
@@ -206,7 +206,7 @@ Complete operation contract:
 
 `POST /api/shared-links/login`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L70).
 
 Shared link login
 
@@ -308,7 +308,7 @@ Complete operation contract:
 
 `GET /api/shared-links/me`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L93).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L93).
 
 Retrieve current shared link
 
@@ -403,7 +403,7 @@ Complete operation contract:
 
 `DELETE /api/shared-links/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L141).
 
 Delete a shared link
 
@@ -485,7 +485,7 @@ Complete operation contract:
 
 `GET /api/shared-links/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L104).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L104).
 
 Retrieve a shared link
 
@@ -575,7 +575,7 @@ Complete operation contract:
 
 `PATCH /api/shared-links/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L126).
 
 Update a shared link
 
@@ -675,7 +675,7 @@ Complete operation contract:
 
 `DELETE /api/shared-links/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L169).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L169).
 
 Remove assets from a shared link
 
@@ -779,7 +779,7 @@ Complete operation contract:
 
 `PUT /api/shared-links/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/shared-link.controller.ts#L153).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-link.controller.ts#L153).
 
 Add assets to a shared link
 

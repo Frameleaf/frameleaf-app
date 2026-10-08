@@ -1,6 +1,34 @@
 # Server API models 10
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## CreateProfileImageDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "ID of the photo the image was copied from, if any. A Locked photo is refused.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "file": {
+      "description": "Profile image file",
+      "format": "binary",
+      "type": "string"
+    },
+    "keepSource": {
+      "description": "The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+}
+```
 
 ## CreateProfileImageResponseDto
 
@@ -1905,36 +1933,6 @@ Related models: [AssetResponseDto](models-06.md#assetresponsedto).
   },
   "required": [
     "assetIds"
-  ],
-  "type": "object"
-}
-```
-
-## DownloadArchiveInfo
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "description": "Asset IDs in this archive",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "size": {
-      "description": "Archive size in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetIds",
-    "size"
   ],
   "type": "object"
 }

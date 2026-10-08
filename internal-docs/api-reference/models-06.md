@@ -1,10 +1,10 @@
 # Server API models 6
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -263,7 +263,7 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
 
 ## AssetRestorationDestinationDto
 
-Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlDestinationHealth](models-17.md#mldestinationhealth), [MlDestinationKind](models-17.md#mldestinationkind).
+Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind).
 
 ```json
 {
@@ -479,7 +479,7 @@ Related models: [AssetRestorationResponseDto](models-06.md#assetrestorationrespo
 
 ## AssetRestorationOptionsDto
 
-Related models: [AssetRestorationDestinationDto](models-06.md#assetrestorationdestinationdto), [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationRoute](models-06.md#assetrestorationroute), [AssetRestorationSourceType](models-06.md#assetrestorationsourcetype), [MlWorkload](models-17.md#mlworkload).
+Related models: [AssetRestorationDestinationDto](models-06.md#assetrestorationdestinationdto), [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationRoute](models-06.md#assetrestorationroute), [AssetRestorationSourceType](models-06.md#assetrestorationsourcetype), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -717,7 +717,7 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Asse
 
 ## AssetRestorationResponseDto
 
-Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationRegionDto](models-06.md#assetrestorationregiondto), [AssetRestorationSourceType](models-06.md#assetrestorationsourcetype), [AssetRestorationStatus](models-06.md#assetrestorationstatus), [MlDestinationKind](models-17.md#mldestinationkind), [MlWorkload](models-17.md#mlworkload).
+Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationRegionDto](models-06.md#assetrestorationregiondto), [AssetRestorationSourceType](models-06.md#assetrestorationsourcetype), [AssetRestorationStatus](models-06.md#assetrestorationstatus), [MlDestinationKind](models-18.md#mldestinationkind), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1579,7 +1579,7 @@ Related models: [BackupDeviceDto](models-06.md#backupdevicedto).
 
 ## BestPhotoAssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-13.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-18.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {

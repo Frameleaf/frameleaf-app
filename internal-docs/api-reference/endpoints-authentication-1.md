@@ -1,12 +1,12 @@
 # Server API — Authentication 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## signUpAdmin
 
 `POST /api/auth/admin-sign-up`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L56).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L56).
 
 Register admin
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `POST /api/auth/change-password`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L80).
 
 Change password
 
@@ -174,13 +174,13 @@ Complete operation contract:
 
 `POST /api/auth/login`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L31).
 
 Login
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginCredentialDto](models-14.md#logincredentialdto), [LoginResponseDto](models-14.md#loginresponsedto).
+Models: [LoginCredentialDto](models-15.md#logincredentialdto), [LoginResponseDto](models-15.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -252,13 +252,13 @@ Complete operation contract:
 
 `POST /api/auth/logout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L92).
 
 Logout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LogoutResponseDto](models-14.md#logoutresponsedto).
+Models: [LogoutResponseDto](models-15.md#logoutresponsedto).
 
 Controller access declarations:
 
@@ -332,7 +332,7 @@ Complete operation contract:
 
 `DELETE /api/auth/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L154).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L154).
 
 Reset pin code
 
@@ -415,7 +415,7 @@ Complete operation contract:
 
 `POST /api/auth/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L130).
 
 Setup pin code
 
@@ -498,7 +498,7 @@ Complete operation contract:
 
 `PUT /api/auth/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L142).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L142).
 
 Change pin code
 
@@ -581,7 +581,7 @@ Complete operation contract:
 
 `POST /api/auth/session/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L178).
 
 Lock auth session
 
@@ -651,7 +651,7 @@ Complete operation contract:
 
 `POST /api/auth/session/unlock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L166).
 
 Unlock auth session
 
@@ -733,7 +733,7 @@ Complete operation contract:
 
 `GET /api/auth/status`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L117).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L117).
 
 Retrieve auth status
 
@@ -812,7 +812,7 @@ Complete operation contract:
 
 `POST /api/auth/validateToken`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/auth.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L68).
 
 Validate access token
 
@@ -891,7 +891,7 @@ Complete operation contract:
 
 `POST /api/oauth/authorize`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/oauth.controller.ts#L57).
 
 Start OAuth
 
@@ -968,7 +968,7 @@ Complete operation contract:
 
 `POST /api/oauth/backchannel-logout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L140).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/oauth.controller.ts#L140).
 
 Backchannel OAuth logout
 
@@ -1032,13 +1032,13 @@ Complete operation contract:
 
 `POST /api/oauth/callback`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/oauth.controller.ts#L83).
 
 Finish OAuth
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginResponseDto](models-14.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
+Models: [LoginResponseDto](models-15.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
 
 Controller access declarations:
 
@@ -1110,7 +1110,7 @@ Complete operation contract:
 
 `GET /api/oauth/frameleaf-mobile-redirect`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/oauth.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/oauth.controller.ts#L41).
 
 Redirect OAuth to the Frameleaf mobile app
 
@@ -1161,7 +1161,7 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/authorize`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L34).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L34).
 
 Start Sign in with Frameleaf
 
@@ -1237,13 +1237,13 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/callback`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L63).
 
 Finish Sign in with Frameleaf
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginResponseDto](models-14.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
+Models: [LoginResponseDto](models-15.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
 
 Controller access declarations:
 
@@ -1313,13 +1313,13 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/exchange`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L85).
 
 Sign in with a Frameleaf account token
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafTokenExchangeDto](models-12.md#frameleaftokenexchangedto), [FrameleafTokenExchangeErrorDto](models-12.md#frameleaftokenexchangeerrordto), [LoginResponseDto](models-14.md#loginresponsedto).
+Models: [FrameleafTokenExchangeDto](models-12.md#frameleaftokenexchangedto), [FrameleafTokenExchangeErrorDto](models-12.md#frameleaftokenexchangeerrordto), [LoginResponseDto](models-15.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -1436,7 +1436,7 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/handoff`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L121).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L121).
 
 Hand a Sign in with Frameleaf session to another address
 
@@ -1523,13 +1523,13 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/handoff/redeem`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L135).
 
 Sign in with a handoff code
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafHandoffRedeemDto](models-11.md#frameleafhandoffredeemdto), [LoginResponseDto](models-14.md#loginresponsedto).
+Models: [FrameleafHandoffRedeemDto](models-11.md#frameleafhandoffredeemdto), [LoginResponseDto](models-15.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -1598,7 +1598,7 @@ Complete operation contract:
 
 `DELETE /api/oauth/frameleaf/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L200).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L200).
 
 Unlink your Frameleaf account
 
@@ -1668,7 +1668,7 @@ Complete operation contract:
 
 `GET /api/oauth/frameleaf/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L153).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L153).
 
 Get your Frameleaf account link
 
@@ -1745,7 +1745,7 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/link`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L166).
 
 Link your Frameleaf account
 
@@ -1834,7 +1834,7 @@ Complete operation contract:
 
 `POST /api/oauth/frameleaf/link/confirm`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/frameleaf-auth.controller.ts#L185).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/frameleaf-auth.controller.ts#L185).
 
 Confirm linking your Frameleaf account
 

@@ -1,10 +1,10 @@
 # Server API models 30
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## SearchFacetsDto
 
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchFacetField](models-29.md#searchfacetfield), [SearchFilter](models-30.md#searchfilter).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFacetField](models-29.md#searchfacetfield), [SearchFilter](models-30.md#searchfilter).
 
 ```json
 {
@@ -727,7 +727,7 @@ Related models: [SearchFacetResponseDto](models-29.md#searchfacetresponsedto).
 
 ## SearchFilter
 
-Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-13.md#idfilter), [IdFilterNullable](models-13.md#idfilternullable), [IdsFilter](models-13.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [SearchFilterBranch](models-30.md#searchfilterbranch), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
+Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [SearchFilterBranch](models-30.md#searchfilterbranch), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
 
 ```json
 {
@@ -849,7 +849,7 @@ Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md
 
 ## SearchFilterBranch
 
-Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-13.md#idfilter), [IdFilterNullable](models-13.md#idfilternullable), [IdsFilter](models-13.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
+Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
 
 ```json
 {
@@ -989,7 +989,7 @@ Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md
 
 ## SearchHistogramDto
 
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-13.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchHistogramGranularity](models-30.md#searchhistogramgranularity).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchHistogramGranularity](models-30.md#searchhistogramgranularity).
 
 ```json
 {

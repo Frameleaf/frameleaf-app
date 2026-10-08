@@ -1,12 +1,12 @@
 # Server API — Assets 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAssetUploadResourceOffset
 
 `HEAD /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L180).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L180).
 
 Get durable upload offset
 
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `PATCH /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L197).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L197).
 
 Append immutable upload bytes
 
@@ -272,7 +272,7 @@ Complete operation contract:
 
 `GET /api/assets/uploads/{id}/result`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-upload-resource.controller.ts#L243).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L243).
 
 Recover a completed upload result
 
@@ -361,7 +361,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L132).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L132).
 
 Retrieve an asset
 
@@ -467,7 +467,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L210).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L210).
 
 Update an asset
 
@@ -578,7 +578,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L51).
 
 List develop versions of an asset
 
@@ -665,7 +665,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L63).
 
 Save a develop recipe as a new version
 
@@ -762,7 +762,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/artifacts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L178).
 
 Upload a develop artifact
 
@@ -865,7 +865,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L133).
 
 List exports of an original for editing elsewhere
 
@@ -954,7 +954,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L144).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L144).
 
 Export an original for editing elsewhere
 
@@ -1041,7 +1041,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/photo-tools.controller.ts#L156).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L156).
 
 Bring back a file developed elsewhere
 
@@ -1144,7 +1144,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/masks/propose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L126).
 
 Suggest a subject or sky mask locally
 
@@ -1235,7 +1235,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L79).
 
 Render a develop preview
 
@@ -1351,7 +1351,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revert`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L146).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L146).
 
 Revert to the original or an earlier develop version
 
@@ -1449,7 +1449,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/revisions/{revisionId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L194).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L194).
 
 View a rendered develop file
 
@@ -1586,7 +1586,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/develop/revisions/{revisionId}/render`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L178).
 
 Cancel a develop render
 
@@ -1686,7 +1686,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revisions/{revisionId}/render`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset-develop.controller.ts#L163).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L163).
 
 Render a develop version
 
@@ -1785,7 +1785,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/edit-versions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L341).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L341).
 
 List saved video versions
 
@@ -1869,7 +1869,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/edit-versions/export`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/asset.controller.ts#L348).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L348).
 
 Export the current video version
 

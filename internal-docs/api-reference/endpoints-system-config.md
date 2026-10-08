@@ -1,12 +1,12 @@
 # Server API — System config
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getConfig
 
 `GET /api/system-config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L30).
 
 Get system configuration
 
@@ -97,7 +97,7 @@ Complete operation contract:
 
 `PUT /api/system-config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L72).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L96).
 
 Update system configuration
 
@@ -194,11 +194,171 @@ Complete operation contract:
 }
 ```
 
+## getConfigFileActivation
+
+`GET /api/system-config/config-file/activation`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L45).
+
+Get activated file configuration epoch
+
+Permission: `systemConfig.read`. Admin only: `true`.
+
+Models: [ConfigFileActivationResponseDto](models-09.md#configfileactivationresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.SystemConfig)
+@Controller('system-config')
+@Get('config-file/activation')
+@Header('Cache-Control', 'private, no-store')
+@Authenticated({ permission: Permission.SystemConfigRead, admin: true, refreshElevation: false })
+@Endpoint({
+    summary: 'Get activated file configuration epoch',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "getConfigFileActivation",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ConfigFileActivationResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get activated file configuration epoch",
+  "tags": [
+    "System config"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "systemConfig.read",
+  "x-immich-state": "Alpha"
+}
+```
+
+## reloadConfigFile
+
+`POST /api/system-config/config-file/reload`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L56).
+
+Activate the configured server file
+
+Permission: `systemConfig.update`. Admin only: `true`.
+
+Models: [ConfigFileActivationResponseDto](models-09.md#configfileactivationresponsedto), [ConfigFileReloadDto](models-09.md#configfilereloaddto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.SystemConfig)
+@Controller('system-config')
+@Post('config-file/reload')
+@Header('Cache-Control', 'private, no-store')
+@Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+@Endpoint({
+    summary: 'Activate the configured server file',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "reloadConfigFile",
+  "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/ConfigFileReloadDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ConfigFileActivationResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Activate the configured server file",
+  "tags": [
+    "System config"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "systemConfig.update",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## getConfigDefaults
 
 `GET /api/system-config/defaults`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L43).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L67).
 
 Get system configuration defaults
 
@@ -289,7 +449,7 @@ Complete operation contract:
 
 `POST /api/system-config/image-description/defer-requeue`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L147).
 
 Defer image description re-queue
 
@@ -362,13 +522,13 @@ Complete operation contract:
 
 `POST /api/system-config/image-description/requeue`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L134).
 
 Trigger image description re-queue
 
 Permission: `systemConfig.update`. Admin only: `true`.
 
-Models: [ImageDescriptionRequeueResponseDto](models-13.md#imagedescriptionrequeueresponsedto).
+Models: [ImageDescriptionRequeueResponseDto](models-14.md#imagedescriptionrequeueresponsedto).
 
 Controller access declarations:
 
@@ -443,13 +603,13 @@ Complete operation contract:
 
 `GET /api/system-config/image-description/requeue-estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L122).
 
 Estimate image description re-queue cost
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [ImageDescriptionRequeueEstimateDto](models-13.md#imagedescriptionrequeueestimatedto).
+Models: [ImageDescriptionRequeueEstimateDto](models-14.md#imagedescriptionrequeueestimatedto).
 
 Controller access declarations:
 
@@ -520,13 +680,13 @@ Complete operation contract:
 
 `GET /api/system-config/machine-learning/hardware`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L82).
 
 Get machine learning hardware
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [MachineLearningHardwareResponseDto](models-14.md#machinelearninghardwareresponsedto).
+Models: [MachineLearningHardwareResponseDto](models-15.md#machinelearninghardwareresponsedto).
 
 Controller access declarations:
 
@@ -613,7 +773,7 @@ Complete operation contract:
 
 `POST /api/system-config/smart-albums/reevaluate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L149).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L173).
 
 Trigger smart-album re-evaluate
 
@@ -705,7 +865,7 @@ Complete operation contract:
 
 `GET /api/system-config/smart-albums/reevaluate-estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L161).
 
 Estimate smart-album re-evaluate cost
 
@@ -782,7 +942,7 @@ Complete operation contract:
 
 `GET /api/system-config/storage-template-options`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/system-config.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L111).
 
 Get storage template options
 

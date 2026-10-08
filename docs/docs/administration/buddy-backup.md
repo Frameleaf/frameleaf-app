@@ -97,8 +97,9 @@ substitute directory without changing mounts or remapping recovered database pat
 An intentional remount or directory replacement that changes these identities
 requires a freshly approved local profile before ordinary startup.
 
-The prospective effective media location must explicitly equal the original
-`storageRoot`; unset/default-path discovery is refused. Keep retains a local
+Normal startup discovery resolves the prospective effective media location,
+including when its variable is unset. That resolved location must equal the
+original `storageRoot`; discovery alone never admits a mount. Keep retains a local
 canonical value or alias only when it names that same original root. Replace
 applies the declared root and removes its legacy alias. The prospective identity
 location and key must still identify the replacement server. A changed, incomplete

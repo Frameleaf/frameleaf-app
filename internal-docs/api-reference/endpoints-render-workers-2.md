@@ -1,12 +1,12 @@
 # Server API — Render workers 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getRenderStreamSignal
 
 `POST /api/render-workers/operations/{id}/stream`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L420).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L420).
 
 Read the signalling of a claimed preview stream
 
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/stream/offer`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L438).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L438).
 
 Offer a claimed preview stream
 
@@ -200,7 +200,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/validate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L351).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L351).
 
 Begin validating a claimed operation
 
@@ -296,7 +296,7 @@ Complete operation contract:
 
 `GET /api/render-workers/remote-references`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L456).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L456).
 
 List what this worker must stop or delete
 
@@ -375,7 +375,7 @@ Complete operation contract:
 
 `POST /api/render-workers/remote-references/{id}/acknowledge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/render-worker.controller.ts#L471).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L471).
 
 Acknowledge a remote reference
 

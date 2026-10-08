@@ -1,12 +1,12 @@
 # Server API — People
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deletePeople
 
 `DELETE /api/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L90).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L90).
 
 Delete people
 
@@ -89,7 +89,7 @@ Complete operation contract:
 
 `GET /api/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L57).
 
 Get all people
 
@@ -224,13 +224,13 @@ Complete operation contract:
 
 `POST /api/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L68).
 
 Create a person
 
 Permission: `person.create`. Admin only: `false`.
 
-Models: [PersonCreateDto](models-18.md#personcreatedto), [PersonResponseDto](models-18.md#personresponsedto).
+Models: [PersonCreateDto](models-19.md#personcreatedto), [PersonResponseDto](models-19.md#personresponsedto).
 
 Controller access declarations:
 
@@ -313,7 +313,7 @@ Complete operation contract:
 
 `PUT /api/people`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L79).
 
 Update people
 
@@ -405,13 +405,13 @@ Complete operation contract:
 
 `POST /api/people/corrections/{id}/undo`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L145).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L145).
 
 Undo a face correction
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [PersonCorrectionDto](models-18.md#personcorrectiondto).
+Models: [PersonCorrectionDto](models-19.md#personcorrectiondto).
 
 Controller access declarations:
 
@@ -494,13 +494,13 @@ Complete operation contract:
 
 `POST /api/people/merge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L275).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L275).
 
 Merge people
 
 Permission: `person.merge`. Admin only: `false`.
 
-Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [MergePersonDto](models-16.md#mergepersondto).
+Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [MergePersonDto](models-17.md#mergepersondto).
 
 Controller access declarations:
 
@@ -584,13 +584,13 @@ Complete operation contract:
 
 `GET /api/people/merge-suggestions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L105).
 
 Get merge suggestions
 
 Permission: `person.read`. Admin only: `false`.
 
-Models: [MergeSuggestionsResponseDto](models-16.md#mergesuggestionsresponsedto).
+Models: [MergeSuggestionsResponseDto](models-17.md#mergesuggestionsresponsedto).
 
 Controller access declarations:
 
@@ -660,13 +660,13 @@ Complete operation contract:
 
 `DELETE /api/people/merge-suggestions/verdicts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L132).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L132).
 
 Undo a merge suggestion verdict
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [PersonMergeVerdictDeleteDto](models-18.md#personmergeverdictdeletedto).
+Models: [PersonMergeVerdictDeleteDto](models-19.md#personmergeverdictdeletedto).
 
 Controller access declarations:
 
@@ -740,13 +740,13 @@ Complete operation contract:
 
 `PUT /api/people/merge-suggestions/verdicts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L117).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L117).
 
 Record a merge suggestion verdict
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [PersonMergeVerdictCreateDto](models-18.md#personmergeverdictcreatedto), [PersonMergeVerdictResponseDto](models-18.md#personmergeverdictresponsedto).
+Models: [PersonMergeVerdictCreateDto](models-19.md#personmergeverdictcreatedto), [PersonMergeVerdictResponseDto](models-19.md#personmergeverdictresponsedto).
 
 Controller access declarations:
 
@@ -826,7 +826,7 @@ Complete operation contract:
 
 `DELETE /api/people/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L200).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L200).
 
 Delete person
 
@@ -908,13 +908,13 @@ Complete operation contract:
 
 `GET /api/people/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L159).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L159).
 
 Get a person
 
 Permission: `person.read`. Admin only: `false`.
 
-Models: [PersonResponseDto](models-18.md#personresponsedto).
+Models: [PersonResponseDto](models-19.md#personresponsedto).
 
 Controller access declarations:
 
@@ -998,13 +998,13 @@ Complete operation contract:
 
 `PUT /api/people/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L170).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L170).
 
 Update person
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [PersonResponseDto](models-18.md#personresponsedto), [PersonUpdateDto](models-18.md#personupdatedto).
+Models: [PersonResponseDto](models-19.md#personresponsedto), [PersonUpdateDto](models-19.md#personupdatedto).
 
 Controller access declarations:
 
@@ -1109,13 +1109,13 @@ Complete operation contract:
 
 `GET /api/people/{id}/corrections`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L212).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L212).
 
 Get correction history
 
 Permission: `person.read`. Admin only: `false`.
 
-Models: [PersonCorrectionsResponseDto](models-18.md#personcorrectionsresponsedto).
+Models: [PersonCorrectionsResponseDto](models-19.md#personcorrectionsresponsedto).
 
 Controller access declarations:
 
@@ -1222,13 +1222,13 @@ Complete operation contract:
 
 `POST /api/people/{id}/merge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L288).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L288).
 
 Merge people
 
 Permission: `person.merge`. Admin only: `false`.
 
-Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [MergePersonDto](models-16.md#mergepersondto).
+Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [MergePersonDto](models-17.md#mergepersondto).
 
 Controller access declarations:
 
@@ -1337,13 +1337,13 @@ Complete operation contract:
 
 `PUT /api/people/{id}/reassign`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L260).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L260).
 
 Reassign faces
 
 Permission: `person.reassign`. Admin only: `false`.
 
-Models: [AssetFaceUpdateDto](models-05.md#assetfaceupdatedto), [PersonResponseDto](models-18.md#personresponsedto).
+Models: [AssetFaceUpdateDto](models-05.md#assetfaceupdatedto), [PersonResponseDto](models-19.md#personresponsedto).
 
 Controller access declarations:
 
@@ -1440,13 +1440,13 @@ Complete operation contract:
 
 `GET /api/people/{id}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L230).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L230).
 
 Get person statistics
 
 Permission: `person.statistics`. Admin only: `false`.
 
-Models: [PersonStatisticsResponseDto](models-18.md#personstatisticsresponsedto).
+Models: [PersonStatisticsResponseDto](models-19.md#personstatisticsresponsedto).
 
 Controller access declarations:
 
@@ -1530,7 +1530,7 @@ Complete operation contract:
 
 `GET /api/people/{id}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/person.controller.ts#L241).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/person.controller.ts#L241).
 
 Get person thumbnail
 

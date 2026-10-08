@@ -1,18 +1,18 @@
 # Server API — Live Photo
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getLivePhotoCandidates
 
 `GET /api/live-photo/candidates`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/live-photo.controller.ts#L19).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/live-photo.controller.ts#L19).
 
 List live photo relink candidates
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LivePhotoCandidatesResponseDto](models-14.md#livephotocandidatesresponsedto).
+Models: [LivePhotoCandidatesResponseDto](models-15.md#livephotocandidatesresponsedto).
 
 Controller access declarations:
 
@@ -81,13 +81,13 @@ Complete operation contract:
 
 `POST /api/live-photo/relink`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/live-photo.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/live-photo.controller.ts#L31).
 
 Relink live photos
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LivePhotoRelinkDto](models-14.md#livephotorelinkdto), [LivePhotoRelinkResponseDto](models-14.md#livephotorelinkresponsedto).
+Models: [LivePhotoRelinkDto](models-15.md#livephotorelinkdto), [LivePhotoRelinkResponseDto](models-15.md#livephotorelinkresponsedto).
 
 Controller access declarations:
 

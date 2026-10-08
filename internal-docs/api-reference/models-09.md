@@ -1,6 +1,6 @@
 # Server API models 9
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## CloudMlDescriptionEstimateResponseDto
 
@@ -174,7 +174,7 @@ Related models: [CloudMlDescriptionGuidanceDto](models-09.md#cloudmldescriptiong
 
 ## CloudMlDestinationCreateDto
 
-Related models: [MlWorkload](models-17.md#mlworkload).
+Related models: [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -537,7 +537,7 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Asse
 
 ## CloudMlJobEstimateResponseDto
 
-Related models: [CloudMlJobConsentDto](models-09.md#cloudmljobconsentdto), [CloudMlJobModelDto](models-09.md#cloudmljobmodeldto), [CloudMlJobPerUnitDto](models-09.md#cloudmljobperunitdto), [CloudMlJobPermissionDto](models-09.md#cloudmljobpermissiondto), [CloudMlJobRefusalDto](models-09.md#cloudmljobrefusaldto), [CloudMlJobUpscaleDto](models-09.md#cloudmljobupscaledto), [MlWorkload](models-17.md#mlworkload).
+Related models: [CloudMlJobConsentDto](models-09.md#cloudmljobconsentdto), [CloudMlJobModelDto](models-09.md#cloudmljobmodeldto), [CloudMlJobPerUnitDto](models-09.md#cloudmljobperunitdto), [CloudMlJobPermissionDto](models-09.md#cloudmljobpermissiondto), [CloudMlJobRefusalDto](models-09.md#cloudmljobrefusaldto), [CloudMlJobUpscaleDto](models-09.md#cloudmljobupscaledto), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1020,7 +1020,7 @@ Related models: [CloudMlModelChoiceDto](models-09.md#cloudmlmodelchoicedto).
 
 ## CloudMlModelDto
 
-Related models: [CloudMlModelGroup](models-09.md#cloudmlmodelgroup), [MlWorkload](models-17.md#mlworkload).
+Related models: [CloudMlModelGroup](models-09.md#cloudmlmodelgroup), [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1114,7 +1114,7 @@ Related models: [CloudMlModelGroup](models-09.md#cloudmlmodelgroup), [MlWorkload
 
 ## CloudMlSettlementDto
 
-Related models: [MlWorkload](models-17.md#mlworkload).
+Related models: [MlWorkload](models-18.md#mlworkload).
 
 ```json
 {
@@ -1221,7 +1221,7 @@ Related models: [CloudMlSettlementDto](models-09.md#cloudmlsettlementdto).
 
 ## CloudMlStatusResponseDto
 
-Related models: [CloudMlConnection](models-08.md#cloudmlconnection), [CloudMlConsentStateDto](models-08.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-17.md#mldestinationresponsedto).
+Related models: [CloudMlConnection](models-08.md#cloudmlconnection), [CloudMlConsentStateDto](models-08.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-18.md#mldestinationresponsedto).
 
 ```json
 {
@@ -1968,6 +1968,53 @@ Related models: [ConfigCredential](models-09.md#configcredential).
 }
 ```
 
+## ConfigFileActivationResponseDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "epoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "sourceKind": {
+      "enum": [
+        "file"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "epoch",
+    "sourceKind"
+  ],
+  "type": "object"
+}
+```
+
+## ConfigFileReloadDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedEpoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "expectedEpoch"
+  ],
+  "type": "object"
+}
+```
+
 ## ContributorCountResponseDto
 
 
@@ -2101,34 +2148,6 @@ Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserCreateDto](models
   },
   "required": [
     "ownerId"
-  ],
-  "type": "object"
-}
-```
-
-## CreateProfileImageDto
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "ID of the photo the image was copied from, if any. A Locked photo is refused.",
-      "format": "uuid",
-      "type": "string"
-    },
-    "file": {
-      "description": "Profile image file",
-      "format": "binary",
-      "type": "string"
-    },
-    "keepSource": {
-      "description": "The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set.",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "file"
   ],
   "type": "object"
 }

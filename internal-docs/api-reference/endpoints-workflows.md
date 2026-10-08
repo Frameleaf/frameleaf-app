@@ -1,12 +1,12 @@
 # Server API — Workflows
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchWorkflows
 
 `GET /api/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L37).
 
 List all workflows
 
@@ -136,7 +136,7 @@ Complete operation contract:
 
 `POST /api/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L26).
 
 Create a workflow
 
@@ -216,7 +216,7 @@ Complete operation contract:
 
 `GET /api/workflows/triggers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L48).
 
 List all workflow triggers
 
@@ -288,7 +288,7 @@ Complete operation contract:
 
 `DELETE /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L108).
 
 Delete a workflow
 
@@ -361,7 +361,7 @@ Complete operation contract:
 
 `GET /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L59).
 
 Retrieve a workflow
 
@@ -442,7 +442,7 @@ Complete operation contract:
 
 `PUT /api/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L81).
 
 Update a workflow
 
@@ -542,7 +542,7 @@ Complete operation contract:
 
 `GET /api/workflows/{id}/logs`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L133).
 
 Retrieve workflow logs
 
@@ -660,7 +660,7 @@ Complete operation contract:
 
 `POST /api/workflows/{id}/runs/{runId}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L120).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L120).
 
 Retry a workflow run
 
@@ -751,7 +751,7 @@ Complete operation contract:
 
 `GET /api/workflows/{id}/share`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/workflow.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/workflow.controller.ts#L70).
 
 Retrieve a workflow
 

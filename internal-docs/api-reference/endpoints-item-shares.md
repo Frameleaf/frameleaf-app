@@ -1,18 +1,18 @@
 # Server API — Item shares
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## unshareItems
 
 `DELETE /api/item-shares`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/item-share.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/item-share.controller.ts#L47).
 
 Stop sharing items with people
 
 Permission: `asset.share`. Admin only: `false`.
 
-Models: [ItemShareChangeDto](models-13.md#itemsharechangedto), [ItemShareChangeResponseDto](models-13.md#itemsharechangeresponsedto).
+Models: [ItemShareChangeDto](models-14.md#itemsharechangedto), [ItemShareChangeResponseDto](models-14.md#itemsharechangeresponsedto).
 
 Controller access declarations:
 
@@ -86,13 +86,13 @@ Complete operation contract:
 
 `POST /api/item-shares`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/item-share.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/item-share.controller.ts#L31).
 
 Share items with people
 
 Permission: `asset.share`. Admin only: `false`.
 
-Models: [ItemShareChangeDto](models-13.md#itemsharechangedto), [ItemShareChangeResponseDto](models-13.md#itemsharechangeresponsedto).
+Models: [ItemShareChangeDto](models-14.md#itemsharechangedto), [ItemShareChangeResponseDto](models-14.md#itemsharechangeresponsedto).
 
 Controller access declarations:
 
@@ -167,13 +167,13 @@ Complete operation contract:
 
 `PUT /api/item-shares/query`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/item-share.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/item-share.controller.ts#L62).
 
 List who items are shared with
 
 Permission: `asset.share`. Admin only: `false`.
 
-Models: [ItemShareQueryDto](models-13.md#itemsharequerydto), [ItemShareResponseDto](models-13.md#itemshareresponsedto).
+Models: [ItemShareQueryDto](models-14.md#itemsharequerydto), [ItemShareResponseDto](models-14.md#itemshareresponsedto).
 
 Controller access declarations:
 
@@ -251,13 +251,13 @@ Complete operation contract:
 
 `GET /api/item-shares/received`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/server/src/controllers/item-share.controller.ts#L74).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/item-share.controller.ts#L74).
 
 Items shared with you
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ItemShareReceivedResponseDto](models-13.md#itemsharereceivedresponsedto).
+Models: [ItemShareReceivedResponseDto](models-14.md#itemsharereceivedresponsedto).
 
 Controller access declarations:
 

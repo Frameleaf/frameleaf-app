@@ -1,6 +1,6 @@
 # Server API models 27
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/0a503215fa351aafbeea57c6d19899a9e943fa88/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## PreservationItemState
 
@@ -173,7 +173,7 @@ Related models: [PreservationItemDto](models-26.md#preservationitemdto).
 
 ## PreservationPackageDto
 
-Related models: [MediaOperationDto](models-15.md#mediaoperationdto), [PreservationManifestSummaryDto](models-27.md#preservationmanifestsummarydto), [PreservationPackageCountsDto](models-27.md#preservationpackagecountsdto), [PreservationPackageFormat](models-27.md#preservationpackageformat), [PreservationPackageOrigin](models-27.md#preservationpackageorigin), [PreservationPackageStatus](models-27.md#preservationpackagestatus), [PreservationSupportDto](models-27.md#preservationsupportdto), [PreservationVerificationDto](models-27.md#preservationverificationdto).
+Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [PreservationManifestSummaryDto](models-27.md#preservationmanifestsummarydto), [PreservationPackageCountsDto](models-27.md#preservationpackagecountsdto), [PreservationPackageFormat](models-27.md#preservationpackageformat), [PreservationPackageOrigin](models-27.md#preservationpackageorigin), [PreservationPackageStatus](models-27.md#preservationpackagestatus), [PreservationSupportDto](models-27.md#preservationsupportdto), [PreservationVerificationDto](models-27.md#preservationverificationdto).
 
 ```json
 {
@@ -568,7 +568,7 @@ Related models: [PreservationDecision](models-26.md#preservationdecision).
 
 ## PreservationRestoreDto
 
-Related models: [MediaOperationDto](models-15.md#mediaoperationdto), [PreservationDecision](models-26.md#preservationdecision), [PreservationRestoreCountsDto](models-27.md#preservationrestorecountsdto), [PreservationRestoreStatus](models-27.md#preservationrestorestatus), [PreservationSupportDto](models-27.md#preservationsupportdto).
+Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [PreservationDecision](models-26.md#preservationdecision), [PreservationRestoreCountsDto](models-27.md#preservationrestorecountsdto), [PreservationRestoreStatus](models-27.md#preservationrestorestatus), [PreservationSupportDto](models-27.md#preservationsupportdto).
 
 ```json
 {
@@ -1882,7 +1882,7 @@ Related models: [QueueCommand](models-27.md#queuecommand).
 
 ## QueueJobResponseDto
 
-Related models: [JobName](models-13.md#jobname), [QueueJobAccountDto](models-27.md#queuejobaccountdto), [QueueJobWorkerDto](models-27.md#queuejobworkerdto).
+Related models: [JobName](models-14.md#jobname), [QueueJobAccountDto](models-27.md#queuejobaccountdto), [QueueJobWorkerDto](models-27.md#queuejobworkerdto).
 
 ```json
 {
