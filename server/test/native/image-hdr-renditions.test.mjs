@@ -473,3 +473,44 @@ for (const [fixture, peak] of [
       }
     },
   );
+
+test('explicit SDR export remains available when primary ICC blocks HDR reconstruction', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-profile-'));
+  const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+  const sharp = createRequire(import.meta.url)('sharp');
+  try {
+    const pixels = new Float32Array(16 * 8 * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([2, 2, 2, 1], i);
+    const encoded = codec.encode(Buffer.from(pixels.buffer), 16, 8, 0, ...limits);
+    for (const invalid of ['missing', 'corrupt']) {
+      const source = join(folder, `${invalid}.jpg`),
+        output = join(folder, `${invalid}-sdr.jpg`);
+      const bytes = Buffer.from(encoded);
+      const at = bytes.indexOf(invalid === 'missing' ? 'ICC_PROFILE\0' : 'acsp');
+      assert.ok(at >= 0);
+      bytes.write(invalid === 'missing' ? 'ICC_MISSING' : 'xxxx', at);
+      await writeFile(source, bytes);
+      const checksum = createHash('sha256').update(bytes).digest();
+      await pool.run('exportPhotoStill', [source, output, 'sdr-jpeg', checksum]);
+      const result = await readFile(output),
+        metadata = await sharp(result).metadata();
+      assert.deepEqual([metadata.width, metadata.height], [16, 8]);
+      assert.ok(metadata.icc);
+      assert.equal(metadata.exif, undefined);
+      assert.equal(metadata.xmp, undefined);
+      assert.equal(codec.inspect(result, ...limits).dynamicRange, 'sdr');
+      for (const format of ['hdr-jpeg', 'hdr-heic']) {
+        const refused = join(folder, `${invalid}-${format}.out`);
+        await assert.rejects(
+          pool.run('exportPhotoStill', [source, refused, format, checksum]),
+          /HDR_RECONSTRUCTION_UNAVAILABLE/,
+        );
+        await assert.rejects(stat(refused), { code: 'ENOENT' });
+      }
+      assert.deepEqual(await readFile(source), bytes);
+    }
+  } finally {
+    await pool.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});

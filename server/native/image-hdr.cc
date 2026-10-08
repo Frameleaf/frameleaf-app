@@ -158,6 +158,20 @@ bool hasGainMap(Input& input) {
   if (status.error_code == UHDR_CODEC_MEM_ERROR) check(status);
   return status.error_code == UHDR_CODEC_OK;
 }
+// Ultra HDR requires a primary ICC; an absent/invalid profile cannot inherit the codec's HDR-only sRGB guess.
+bool jpegHdrProfileValid(const Input& input, const Decoder& dec) {
+  const auto* bytes = static_cast<const uint8_t*>(input.data);
+  if (input.size < 2 || bytes[0] != 255 || bytes[1] != 216) return true;
+  const auto* icc = uhdr_dec_get_icc(dec.get());
+  if (!icc || !icc->data || icc->data_sz <= 14 || icc->data_sz > 1048576
+      || std::memcmp(icc->data, "ICC_PROFILE\0", 12) != 0) return false;
+  // libultrahdr retains the 12-byte JPEG ICC identifier and two chunk bytes.
+  auto profile = cmsOpenProfileFromMem(static_cast<const uint8_t*>(icc->data) + 14, cmsUInt32Number(icc->data_sz - 14));
+  if (!profile) return false;
+  const bool valid = cmsGetColorSpace(profile) == cmsSigRgbData && cmsIsMatrixShaper(profile);
+  cmsCloseProfile(profile);
+  return valid;
+}
 Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
   auto dec = preparedDecoder(input);
   if (linear || sdr) {
@@ -172,6 +186,7 @@ Decoder decoder(Input& input, bool linear = false, bool sdr = false) {
     if (rotation) check(uhdr_add_effect_rotate(dec.get(), rotation));
   }
   check(uhdr_dec_probe(dec.get()));
+  if ((linear || sdr) && !jpegHdrProfileValid(input, dec)) throw std::runtime_error("HDR_PROFILE_UNSUPPORTED");
   input.dimensions(uhdr_dec_get_image_width(dec.get()), uhdr_dec_get_image_height(dec.get()),
     uhdr_dec_get_gainmap_width(dec.get()), uhdr_dec_get_gainmap_height(dec.get()));
   auto* metadata = uhdr_dec_get_gainmap_metadata(dec.get());
@@ -737,7 +752,10 @@ napi_value inspect(napi_env env, napi_callback_info info) {
       const bool swapped = jpegOrientation(input) >= 5;
       field(env, result, "width", double(swapped ? uhdr_dec_get_image_height(dec.get()) : uhdr_dec_get_image_width(dec.get())));
       field(env, result, "height", double(swapped ? uhdr_dec_get_image_width(dec.get()) : uhdr_dec_get_image_height(dec.get())));
-      field(env, result, "reconstructionAvailable", true); return result;
+      const bool profileValid = jpegHdrProfileValid(input, dec);
+      field(env, result, "reconstructionAvailable", profileValid);
+      if (!profileValid) field(env, result, "fallbackReason", "hdr-profile-unsupported");
+      return result;
     }
     const auto type = heif_check_filetype(static_cast<uint8_t*>(input.data), int(input.size));
     if (type == heif_filetype_yes_supported || type == heif_filetype_yes_unsupported) {
