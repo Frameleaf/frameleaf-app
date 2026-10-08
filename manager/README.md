@@ -12,10 +12,10 @@ The folder must be outside Docker's data root and backed by a supported disk fil
 
 ## Launcher
 
-Use `launch.sh`, `cosign.pub` and a Manager image digest from a verified release. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host. Create the state, library, backup and appdata folders on the intended storage first.
+Use `launch.sh` and `cosign.pub` from the Frameleaf release. The launcher resolves the `latest` Manager image to its immutable digest and verifies its signature before running it. The launcher requires Docker, Compose v2, Cosign, `findmnt` and `realpath` on a Linux host. Create the state, library, backup and appdata folders on the intended storage first.
 
 ```sh
-sh launch.sh "$VERIFIED_MANAGER_IMAGE" "$STATE_FOLDER" "$LIBRARY_FOLDER" \
+sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRARY_FOLDER" \
   "$DATABASE_BACKUP_FOLDER" "https://server.example:9443" auto "$LAN_ADDRESS"
 ```
 

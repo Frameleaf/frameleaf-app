@@ -438,7 +438,7 @@ Recommended minimums:
 
 ## Next Steps
 
-- Read the [architecture overview](/developer/architecture)
-- Learn about [database migrations](/developer/database-migrations)
+- Read the [architecture overview](./architecture)
+- Learn about [database migrations](./database-migrations)
 - Explore the [API documentation](/api.md)
 - Ask questions in [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions)

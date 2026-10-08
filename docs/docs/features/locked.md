@@ -6,7 +6,7 @@ Locked keeps photos and videos private without moving them anywhere. A locked it
 
 Every locked item has exactly one lock, and the lock records why it was locked:
 
-- **Moved from old Locked folder**: it was in the upstream Locked folder when the library was upgraded (see below).
+- **Moved from old Locked folder**: it was already in a Locked folder when the library was imported.
 - **Marked**: you locked it with **Mark Sensitive** in the selection bar or the viewer, a sensitive review in the information panel, an upload into Locked, or an older client's "Move to Locked folder".
 - **Detected**: sensitive-content detection flagged it while **Hide detected NSFW assets** is on.
 
@@ -26,11 +26,11 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 
 A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock. It also stops you from sharing them item by item: a matching item cannot be shared with a person, and a person you already shared it with stops seeing it, and cannot preview or export it in their Studio projects, for as long as the rule applies.
 
-A Locked rule does not take back what you shared on purpose (owner decision, September 29, 2026). An item you put in a shared album or space, share with a partner, or include in a shared link stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, stop partner sharing, or lock the item itself: a locked item never reaches anybody else.
+A Locked rule does not take back what you shared on purpose. An item you put in a shared album or space, share with a partner, or include in a shared link stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, stop partner sharing, or lock the item itself: a locked item never reaches anybody else.
 
 ### Partner devices and tag names
 
-Two more owner decisions (September 29, 2026) settle what others still learn about your items:
+Sharing also affects what connected devices and recipients can learn:
 
 - **Partner devices.** The sync your partners' apps use keeps a locked item in the stream, marked locked, so a device that already holds it hides it instead of keeping a stale copy. Its file name, thumbnail preview, location and other photo details, and its live-photo link are blanked. The item's id, checksum, capture date and time, media type, duration, size in pixels and stack are still sent, also to a device that never had it, and a locked stack still appears as a stack. The web app shows none of it.
 - **Tag names.** Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it, including a tag you use in a Locked rule. People's names work differently: everyone sees only the names they gave.
@@ -70,25 +70,10 @@ Open **Locked** after unlocking. It lists every locked item, newest first, toget
 
 Select items and choose **Unmark Sensitive** to unlock them. A rule match has no lock to remove: it leaves Locked when you change your Locked rules. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
 
-## Upgrading from an upstream library
+## Imported libraries
 
-The upgrade moves everything in the upstream Locked folder into the lock, so nothing that was private becomes visible and nothing disappears:
+The [one-time import](/administration/import-library) preserves supported source Locked content. Review the imported library from both a locked and unlocked session before enabling sharing or phone backup. Keep source recovery copies and never downgrade the application image against a changed database.
 
-1. Every item in the Locked folder gets a lock with the reason **Moved from old Locked folder** and returns to the timeline as its place (the video part of a live photo stays hidden). It stays hidden until you unlock, and it is listed in Locked.
-2. Every item you had marked sensitive gets a **Marked** lock.
-3. Items flagged by detection get a **Detected** lock only if **Hide detected NSFW assets** was on; with it off they were never hidden, so they stay where they are. Turning the setting on later locks the unreviewed detections at that moment.
-4. Stacks that were partly locked are locked as a whole, and the covers the locked photos held are replaced.
+## Automation
 
-The migration (`2100000000320-AddAssetLock`) is safe to run again and changes nothing the second time. It reads **Hide detected NSFW assets** from the saved settings; when the setting is on only in a configuration file, the server locks the existing unreviewed detections once when it first starts, and again whenever it starts to find the setting newly switched on.
-
-Going back to a release without lock records restores the upstream Locked folder: every locked item is set to `visibility = locked`, so it stays hidden there.
-
-## For API clients
-
-- `POST /assets/lock` and `POST /assets/unlock` (body `{ "ids": [...] }`) lock and unlock. Unlock needs a PIN-unlocked session; lock does not, since it only hides.
-- `visibility: locked` is never stored. In requests it still means "lock" (`PUT /assets`, uploads), and asking for `visibility: locked` in timeline and search requests lists the Locked view. Responses report `visibility: locked` for a locked item.
-- Time bucket requests with `visibility: locked` and no `lockReason` also list the caller's Locked-rule matches; those keep their stored visibility (`timeline` or `archive`) and have no `lockReason`.
-- Time bucket requests with `visibility: locked` accept `lockReason` (`marked`, `detected` or `immich-locked-folder`). The `lockReason` array comes back with them, and with every other time bucket request of a PIN-unlocked session, which reveals your marked and detected items.
-- In a PIN-unlocked session, any other requested visibility (`timeline`, `archive`, in time buckets, search bodies and structured `filter`s alike) also matches your own marked and detected items with that stored visibility, reported as `visibility: locked`. Nobody else's locked items ever match.
-- Setting any other visibility never unlocks: the item stays locked and only its stored visibility changes. Only `POST /assets/unlock` unlocks.
-- Partner sync keeps sending a partner's locked item with `visibility: locked` and its details blanked, so a device that already had it hides it.
+See the [public API reference](/api) for integrations. Locking an item hides it; changing its timeline or archive placement does not unlock it. Unlocking requires the owner's elevated PIN session.

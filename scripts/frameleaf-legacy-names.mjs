@@ -68,7 +68,7 @@ export const LEGACY_ALLOWLIST = [
     reason:
       "Help links: the IMMICH_THIRD_PARTY_* names keep their existing fallback behind FRAMELEAF_DOCS_URL and the other help-link variables",
     files:
-      /^(?:server\/src\/utils\/app-releases\.ts|server\/src\/utils\/environment-schema\.ts|docs\/docs\/install\/environment-variables\.md)$/,
+      /^(?:server\/src\/utils\/app-releases\.ts|server\/src\/utils\/environment-schema\.ts)$/,
     allow: variables("THIRD_PARTY_[A-Z_]+"),
   },
   {
@@ -94,40 +94,22 @@ export const LEGACY_ALLOWLIST = [
     reason:
       "Compose files keep IMMICH_VERSION as the fallback of FRAMELEAF_VERSION, so an unchanged Immich .env still selects its image tag",
     files:
-      /^(?:docker\/docker-compose(?:\.rootless)?\.yml|docs\/docs\/.+\.mdx?)$/,
+      /^docker\/docker-compose(?:\.rootless)?\.yml$/,
     allow: /\$\{FRAMELEAF_VERSION:-\$\{IMMICH_VERSION:-[^}]*\}\}/g,
   },
-  {
-    reason:
-      "The deprecated-names reference: the environment variables page and the CLI page list every old name with its new one",
-    files:
-      /^docs\/docs\/(?:install\/environment-variables\.md|features\/command-line-interface\.md)$/,
-    allow: ANY_VARIABLE,
-  },
+
   {
     reason:
       "Internal identifier for Frameleaf's canonical offline-import journal SQL; never a source schema restore or operator environment variable",
     files: /^server\/src\/immich-import\/state\.ts$/,
     allow: /\bIMMICH_IMPORT_SCHEMA_SQL\b/g,
   },
+
   {
     reason:
-      "The offline source-import runbook documents the existing admin alias only for its five import-immich operations",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
-    allow:
-      /^immich-admin import-immich (?:status|(?:preflight|run|resume|verify) --config \/path\/config\.json)$/g,
-  },
-  {
-    reason:
-      "The canonical admin reference names the current compatibility alias beside frameleaf-admin import-immich",
-    files: /^docs\/docs\/administration\/server-commands\.md$/,
-    allow: /\(also available through the current `immich-admin` alias\)/g,
-  },
-  {
-    reason:
-      "Sentences that say an old name is a deprecated alias (docs, README, docker/README.md, example.env)",
+      "Sentences that say an old name is a deprecated alias (README, docker/README.md, example.env)",
     files:
-      /^(?:docs\/docs\/.+\.mdx?|README\.md|docker\/README\.md|docker\/example\.env)$/,
+      /^(?:README\.md|docker\/README\.md|docker\/example\.env)$/,
     allow: DEPRECATED_SENTENCE,
   },
 ];

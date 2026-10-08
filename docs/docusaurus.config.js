@@ -56,7 +56,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          showLastUpdateAuthor: true,
+          showLastUpdateAuthor: false,
           showLastUpdateTime: true,
           routeBasePath: '/',
 
@@ -101,7 +101,7 @@ const config = {
             type: 'html',
             position: 'right',
             value:
-              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-immich-primary dark:bg-immich-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
+              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-frameleaf-primary dark:bg-frameleaf-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
           },
         ],
       },
@@ -147,7 +147,7 @@ const config = {
         darkTheme: prism.themes.dracula,
         additionalLanguages: ['sql', 'diff', 'bash', 'powershell', 'nginx'],
       },
-      image: 'img/feature-panel.png',
+      image: 'img/frameleaf-logo-inline-light.svg',
     }),
 };
 

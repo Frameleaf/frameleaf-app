@@ -1,49 +1,39 @@
 ---
-sidebar_position: 90
+sidebar_position: 80
 ---
 
+# After installation
+
+## Create or sign in to the administrator account
+
 import RegisterAdminUser from '/docs/partials/_register-admin.md';
-import UserCreate from '/docs/partials/_user-create.md';
-import StorageTemplate from '/docs/partials/_storage-template.md';
-import MobileAppDownload from '/docs/partials/_mobile-app-download.md';
-import MobileAppLogin from '/docs/partials/_mobile-app-login.md';
-import MobileAppBackup from '/docs/partials/_mobile-app-backup.md';
-import ServerBackup from '/docs/partials/_server-backup.md';
-
-# Post installation steps
-
-A list of common steps to take after installing Frameleaf include:
-
-## Step 1 - Register the admin user
 
 <RegisterAdminUser />
 
-## Step 2 - Create a new user (optional)
+## Upload a small test library
 
-<UserCreate />
+Use **Upload** to choose files or a folder. Leave the tab open until it finishes. Confirm that you can open a photo, play a video and download an original. See [Uploads and downloads](/features/uploads-and-downloads).
 
-## Step 3 - Update the storage template
+## Choose processing settings
 
-<StorageTemplate />
+Open **Settings** from the sidebar. The Command Center includes **Compute & jobs**, where you can review processing destinations and jobs. Start with local processing and enable only the features you want. Search, faces, text recognition and descriptions need their models and background jobs before results appear.
 
-## Step 4 - Download the Mobile App
+Review [machine-learning settings](/administration/system-settings), [workers and endpoints](/administration/workers-and-endpoints) and [image enrichment](/features/image-enrichment). Try a few representative items before backfilling the whole library.
 
-<MobileAppDownload />
+## Set up accounts and privacy
 
-## Step 5 - Login to the Mobile App
+Create separate accounts for household members in [User management](/administration/user-management). Use [albums and sharing](/features/sharing) or [partner sharing](/features/partner-sharing) deliberately. Set your [Locked PIN and rules](/features/locked) before putting private items into shared collections.
 
-<MobileAppLogin />
+## Protect the library
 
-## Step 6 - Upload Your Library
+Set up [database and media backups](/administration/backup-and-restore), export Manager's recovery configuration if you use it, and test a recovery copy. Use [Library Care](/features/library-care) to scan for missing or damaged originals.
 
-<MobileAppBackup />
+Storage templates are optional. Read [Storage templates](/administration/storage-template) before enabling or changing one, because applying a template can move files within managed storage.
 
-## Step 7 - Setup Server Backups
+## Add optional features
 
-<ServerBackup />
-
-## Setting up optional features
-
-- [External Libraries](/features/libraries.md): Adding your existing photo library to Frameleaf
-- [Hardware Transcoding](/features/hardware-transcoding.md): Speeding up video transcoding
-- [Hardware-Accelerated Machine Learning](/features/ml-hardware-acceleration.md): Speeding up various machine learning tasks in Frameleaf
+- [External libraries](/features/libraries) for folders you already manage.
+- [Google Photos import](/features/google-photos-import) or [iCloud Photos import](/guides/icloud-photos-sync).
+- [Hardware video transcoding](/features/hardware-transcoding) and [machine-learning acceleration](/features/ml-hardware-acceleration).
+- [Remote access](/guides/remote-access) with a trusted HTTPS address.
+- [Frameleaf apps](/features/mobile-app) when available for your platform.

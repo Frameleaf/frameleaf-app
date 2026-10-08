@@ -2,38 +2,63 @@
 sidebar_position: 30
 ---
 
-# Docker Compose [Recommended]
+# Manual Docker Compose
 
-Docker Compose is the recommended method to run Frameleaf. Use the files attached to a published [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases); they select the Frameleaf server and machine-learning images.
+:::warning Release availability
 
-Start with a fresh canonical PostgreSQL 19 database and data volume. Import a supported source library through the [one-time offline importer](/administration/import-immich.md), using independent verified media copies.
+The Manager-based release described in this handbook has not been published yet. The currently published `:latest` application images belong to the preceding release. To install that release, use its supplied Compose file and matching instructions. Do not combine the PostgreSQL 19 storage layout below with an older application image or database.
 
-When updating an existing canonical Frameleaf installation, retain its Compose project name, `.env`, storage paths and volume names. The displayed container names are `frameleaf_*`; service identifiers and the [deprecated environment aliases](/install/environment-variables#deprecated-names) remain available. Review the [container installation notes](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md) before upgrading; do not create a second stack against the same database directory.
+:::
 
-import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+Use this path when you want to operate Frameleaf's containers yourself. [Frameleaf Manager](/install/manager) provides the guided setup, update and recovery workflow.
+
+The release described here runs the Frameleaf server, its optional machine-learning service and the release's PostgreSQL database. Job queues use PostgreSQL; a separate Redis or Valkey service is not required. Download that Frameleaf release's deployment files and use `FRAMELEAF_VERSION=latest` for the application images. If you pin an older version, use that version's matching deployment files.
+
+## Before you start
+
+- Install Docker Engine and **Compose v2** (`docker compose`). Check [Requirements](/install/requirements).
+- Choose persistent host storage for media and a **fresh, empty PostgreSQL 19 directory**. Keep database storage on a local disk with Unix ownership and permissions.
+- Create a new directory for this stack's Compose file and `.env`. Keep both for upgrades and recovery.
+- A source application's database is not a Frameleaf database. Use [library import](/administration/import-library) instead of changing its container image.
+
 import DockerComposeSteps from '/docs/partials/_docker-compose-install-steps.mdx';
-
-<ComposeBuilder />
 
 <DockerComposeSteps />
 
-:::info Docker version
-If you get an error such as `unknown shorthand flag: 'd' in -d` or `open <location of your .env file>: permission denied`, you are probably running the wrong Docker version. (This happens, for example, with the docker.io package in Ubuntu 22.04.3 LTS.) You can correct the problem by following the complete [Docker Engine install](https://docs.docker.com/engine/install/) procedure for your distribution, crucially the "Uninstall old versions" and "Install using the apt/rpm repository" sections. These replace the distro's Docker packages with Docker's official ones.
+## Verify the installation
 
-Note that the correct command really is `docker compose`, not `docker-compose`. If you try the latter on vanilla Ubuntu 22.04, it will fail in a different way:
-
-```
-The Compose file './docker-compose.yml' is invalid because:
-'name' does not match any of the regexes: '^x-'
+```sh
+docker compose ps
+docker logs --tail 100 frameleaf_server
+docker logs --tail 100 frameleaf_postgres
 ```
 
-See the previous paragraph about installing from the official Docker repository.
-:::
+Wait for the database and application health checks, then open `http://YOUR-SERVER:2283`. Complete the [first administrator setup](/install/post-install). An accessible sign-in page is a starting check: upload and download a sample original, and check processing before importing your full library.
 
-:::info Health check start interval
-If you get an error `can't set healthcheck.start_interval as feature require Docker Engine v25 or later`, it helps to comment out the line for `start_interval` in the `database` section of the `docker-compose.yml` file.
-:::
+The release publishes application HTTP on port **2283**. Port **2443** belongs to the optional configured direct HTTPS listener; publishing it alone does not enable remote access. For public access, follow [Remote access](/guides/remote-access) or [Reverse proxy](/administration/reverse-proxy).
 
-## Next Steps
+## Configure the containers
 
-Read the [Post Installation](/install/post-install.mdx) steps and [upgrade instructions](/install/upgrading.md).
+Put supported values in `.env`; the [environment reference](/install/environment-variables) distinguishes Compose variables from application variables. Use `FRAMELEAF_*` names for new configuration. Host paths belong in `UPLOAD_LOCATION` and `DB_DATA_LOCATION`; keep the container's media location at its default unless you are deliberately managing custom mounts.
+
+To change the public HTTP port, edit the left side of `"2283:2283"` in Compose. Changing `FRAMELEAF_PORT` changes the listener inside the container and requires matching port mappings and health checks.
+
+After configuration changes, recreate the affected containers:
+
+```sh
+docker compose up -d
+```
+
+If they did not pick up a changed environment, use `docker compose up -d --force-recreate`. A restart alone does not replace the environment.
+
+## Operate this stack
+
+Run Compose commands in the directory holding this installation's files. Preserve the Compose project name, volumes, secrets and paths when updating an existing stack. Keep the release's service keys intact: examples that add mounts or acceleration refer to those keys even though displayed container names use `frameleaf_*`.
+
+- [Update Frameleaf](/install/upgrading)
+- [Back up and restore](/administration/backup-and-restore)
+- [Mount an external library](/guides/external-library)
+- [Hardware-accelerated video](/features/hardware-transcoding) and [machine learning](/features/ml-hardware-acceleration)
+- [Standalone PostgreSQL](/administration/postgres-standalone)
+
+Use the Docker and Compose versions required by your release. Resolve startup errors before proceeding; removing health checks hides failures rather than fixing them.

@@ -1,45 +1,45 @@
-import CodeBlock from '@theme/CodeBlock';
-import ExampleEnv from '!!raw-loader!../../../docker/example.env';
+### 1. Download matching release files
 
-### Step 1 - Download the required files
+Create a new folder for this installation:
 
-Create a directory of your choice (e.g. `./frameleaf-app`) to hold the `docker-compose.yml` and `.env` files.
-
-```bash title="Move to the directory you created"
-mkdir ./frameleaf-app
-cd ./frameleaf-app
+```sh
+mkdir frameleaf-app
+cd frameleaf-app
 ```
 
-Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) by running the following commands:
+From one [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases), download `docker-compose.yml` and `example.env`. Rename `example.env` to `.env`. Also download `hwaccel.ml.yml` or `hwaccel.transcoding.yml` from that release if you intend to use hardware acceleration. Follow its signature and checksum verification instructions.
 
-```bash title="Get docker-compose.yml file"
-wget -O docker-compose.yml https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml
+Existing installations must keep their own `.env`, project name, secrets and storage locations. Do not replace them with defaults during an update.
+
+### 2. Configure storage and credentials
+
+Edit `.env`. This example shows the normal required values; replace the paths and password before starting:
+
+```dotenv
+UPLOAD_LOCATION=/srv/frameleaf/library
+DB_DATA_LOCATION=/srv/frameleaf/postgres19
+FRAMELEAF_VERSION=latest
+DB_PASSWORD=YOUR_RANDOM_ALPHANUMERIC_PASSWORD
+DB_USERNAME=postgres
+DB_DATABASE_NAME=frameleaf
+TZ=Etc/UTC
 ```
 
-```bash title="Get .env file"
-wget -O .env https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env
-```
+- `UPLOAD_LOCATION` holds the live media library and generated files. It is **not a backup**. Create it on storage with enough free space.
+- `DB_DATA_LOCATION` must be a new empty directory on a local disk. The PostgreSQL 19 image mounts its parent at `/var/lib/postgresql`; never reuse a directory from another PostgreSQL major version or application.
+- Use `FRAMELEAF_VERSION=latest` for the current application images. Advanced deployments can pin a specific compatible release version; preserve the database image supplied in the release Compose file.
+- Replace the example database password with a strong random value. Alphanumeric characters avoid Compose interpolation and quoting problems. Keep `.env` private.
+- Set `TZ` to your timezone if desired, for example `America/Edmonton`.
 
-You can alternatively download these two files from your browser and move them to the directory that you created, in which case ensure that you rename `example.env` to `.env`.
+See [Environment variables](/install/environment-variables) for advanced options. A manually configured external database must meet the [PostgreSQL requirements](/administration/postgres-standalone).
 
-For hardware acceleration, download `hwaccel.ml.yml` and `hwaccel.transcoding.yml` from the same release before enabling their Compose references. Existing canonical Frameleaf installations should retain their current `.env` and storage paths instead of replacing them with the example. New installations require a fresh PostgreSQL 19 database and data volume; supported source libraries use the [one-time offline importer](/administration/import-immich.md) and independent verified media copies.
+### 3. Start Frameleaf
 
-### Step 2 - Populate the .env file with custom values
+From the directory containing `docker-compose.yml` and `.env`:
 
-<CodeBlock language="bash" title="Default environmental variable content">
-  {ExampleEnv}
-</CodeBlock>
-
-- Populate `UPLOAD_LOCATION` with your preferred location for storing backup assets. It should be a new directory on the server with enough free space.
-- Consider changing `DB_PASSWORD` to a custom value. Postgres is not publicly exposed, so this password is only used for local authentication.
-  To avoid issues with Docker parsing this value, it is best to use only the characters `A-Za-z0-9`. `pwgen` is a handy utility for this.
-- Set your timezone by uncommenting the `TZ=` line.
-- Populate custom database information if necessary.
-
-### Step 3 - Start the containers
-
-From the directory you created in Step 1 (which should now contain your customized `docker-compose.yml` and `.env` files), run the following command to start Frameleaf as a background service:
-
-```bash title="Start the containers"
+```sh
+docker compose pull
 docker compose up -d
 ```
+
+The release defines the container names `frameleaf_server`, `frameleaf_machine_learning` and `frameleaf_postgres`. Open `http://YOUR-SERVER:2283` when the application is healthy.

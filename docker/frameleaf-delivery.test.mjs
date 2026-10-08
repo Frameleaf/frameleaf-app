@@ -273,7 +273,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
       "'http://immich-machine-learning:3003'",
     ),
   );
-  assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=release$/m);
+  assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=latest$/m);
   assert.doesNotMatch(read("docker/example.env"), /^IMMICH_/m);
   // FL-294: both command names are on the image's PATH (server/bin), the old ones as aliases
   for (const name of [
@@ -595,10 +595,10 @@ const upstreamRegistry = ["ghcr.io", "immich-app"].join("/");
 const historicalRecords = new Set([
   ".superpowers/sdd/task-3-report.md",
   ".superpowers/sdd/task-6-report.md",
-  "docs/docs/developer/evidence/fl25-toolchain-baseline.jsonl",
-  "docs/superpowers/plans/2026-07-15-upstream-reversion-compatible-fork-schema.md",
-  "docs/superpowers/plans/2026-07-16-fork-handoff-return-prerequisite.md",
-  "docs/superpowers/plans/2026-07-16-task-6-certification-corrections.md",
+  "developer-documentation/evidence/fl25-toolchain-baseline.jsonl",
+  "design/frameleaf/documentation-history/superpowers/plans/2026-07-15-upstream-reversion-compatible-fork-schema.md",
+  "design/frameleaf/documentation-history/superpowers/plans/2026-07-16-fork-handoff-return-prerequisite.md",
+  "design/frameleaf/documentation-history/superpowers/plans/2026-07-16-task-6-certification-corrections.md",
 ]);
 // Branding guard needles (FL-190): these files define the upstream strings their own guard rejects.
 const guardNeedleFiles = new Set([
@@ -937,4 +937,17 @@ test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
   assert.equal(probe.env.EXPECTED_PG_MAJOR, "19");
   assert.equal(probe.env.EXPECTED_PGVECTOR, "0.8.7");
   assert.match(probe.run, /USING hnsw/);
+});
+
+
+test("Postgres latest aliases the attested image only from the current release branch", () => {
+  const steps = load(read(".github/workflows/postgres.yml")).jobs.publish.steps;
+  const promote = steps.at(-1);
+  assert.equal(promote.name, "Update latest after successful release publication");
+  assert.match(promote.if, /github.ref == 'refs\/heads\/fork\/main'/);
+  assert.ok(steps.slice(0, -1).some((step) => step.uses?.startsWith("actions/attest-build-provenance@")));
+  assert.equal(promote.env.DIGEST, "${{ steps.publish.outputs.digest }}");
+  assert.ok(promote.run.indexOf('git rev-parse FETCH_HEAD') < promote.run.indexOf('imagetools create'));
+  assert.ok(promote.run.includes('--tag "$IMAGE:latest" "$IMAGE@$DIGEST"'));
+  assert.ok(promote.run.includes('"$published" == "$DIGEST"'));
 });

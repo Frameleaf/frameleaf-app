@@ -1,6 +1,6 @@
 /**
  * A reference implementation of parts 2, 3 and 4 of the Studio graph protocol v1 (FL-307, FL-308,
- * FL-309), written from sections 12 to 14 of `docs/docs/developer/studio-graph-protocol-v1.md` and
+ * FL-309), written from sections 12 to 14 of `developer-documentation/studio-graph-protocol-v1.md` and
  * the parameter catalogue `studio/graph-parameters-v1.json` alone, without the engine.
  *
  * `graph-protocol.test.mjs` replays the conformance fixtures of the three parts through it: if the

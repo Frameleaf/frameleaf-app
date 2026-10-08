@@ -48,7 +48,7 @@ import {
  * Renderer v3 (FL-233) adds Brilliance to the per-pixel pass, brush masks and bitmap masks
  * (subject, sky, background) in original-image coordinates, and Clean Up operations on the original
  * before every other step (`develop-cleanup.ts`). A recipe that uses none of them renders to the
- * same bytes as under v2. The definitions are in docs/docs/features/develop-recipe-protocol.md and
+ * same bytes as under v2. The definitions are in developer-documentation/develop-recipe-protocol.md and
  * are shared by the native renderers.
  */
 export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/3';

@@ -1,36 +1,25 @@
 ---
-sidebar_position: 20
+sidebar_position: 75
 ---
 
-# Install script [Experimental]
+# Convenience install script
 
-:::caution
-This method is experimental and not currently recommended for production use. For production, install with [Docker Compose](/install/docker-compose.mdx).
+:::warning Match the published release
+
+This guide describes the upcoming release. Before installing, read the [release availability notice](/install/docker-compose). Use the published release's matching deployment files; its current `:latest` images must not be combined with the PostgreSQL 19 layout described here.
+
 :::
 
-## Requirements
+Use [Frameleaf Manager](/install/manager) for guided installation and recovery, or [Manual Docker Compose](/install/docker-compose) to choose storage and configuration explicitly.
 
-Follow the [requirements page](/install/requirements) to get started.
+The repository's `install.sh` is a convenience script for a **fresh** Compose installation. It requires Docker with Compose v2 and `curl`. Download and inspect the script from the same release or source revision you intend to use, then run it from an empty parent directory:
 
-The install script only supports Linux operating systems and requires Docker to be already installed on the system.
-
-## Steps
-
-In the shell, from a directory of your choice, run the following command:
-
-```bash
-curl -o- https://raw.githubusercontent.com/Frameleaf/frameleaf-app/refs/heads/fork/main/install.sh | bash
+```sh
+bash install.sh
 ```
 
-The script will perform the following actions:
+It creates `./frameleaf-app`, downloads the latest release's Compose and example environment files, generates a database password, and starts the containers. It refuses to overwrite an existing `frameleaf-app` folder. The live library and PostgreSQL paths come from the downloaded `.env`; these are not media backups.
 
-1. Download [docker-compose.yml](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and the [.env](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) file from the latest [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases).
-2. Start the containers.
+If installation fails, preserve the created files and inspect the error. Do not delete a retained library or database directory to make the script run again. Complete configuration using the [manual guide](/install/docker-compose).
 
-The web application and mobile app will be available at `http://<machine-ip-address>:2283`
-
-The directory which is used to store the library files is `./frameleaf-app` relative to the current directory.
-
-:::tip
-For common next steps, see [Post Install Steps](/install/post-install.mdx).
-:::
+After startup, open `http://YOUR-SERVER:2283` and follow [After installation](/install/post-install). This script does not install Frameleaf Manager.

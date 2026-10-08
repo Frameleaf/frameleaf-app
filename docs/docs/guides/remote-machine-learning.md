@@ -1,68 +1,48 @@
-# Remote Machine Learning
+# Machine learning on another computer
 
-import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+A separate Frameleaf machine-learning worker can use a more powerful CPU or GPU on your trusted network. The server sends the previews and requests needed for the selected tasks to that worker. Keep it private and use authentication; it is not a public photo-sharing endpoint.
 
-To alleviate [performance issues on low-memory systems](/FAQ.mdx#why-is-frameleaf-slow-on-low-memory-systems-like-the-raspberry-pi) like the Raspberry Pi, you may also host Frameleaf's machine learning container on a more powerful system, such as your laptop or desktop computer. The server container will send requests containing the image preview to the remote machine learning container for processing. The machine learning container does not persist this data or associate it with a particular user.
+## Start a worker
 
-:::info
-Smart Search and Face Detection will use this feature, but Facial Recognition will not. This is because Facial Recognition uses the _outputs_ of these models that have already been saved to the database. As such, its processing is between the server container and the database.
-:::
-
-:::danger
-Image previews are sent to the remote machine learning container. Use this option carefully when running this on a public computer or a paid processing cloud. Additionally, as an internal service, the machine learning container has no security measures whatsoever. Please be mindful of where it's deployed and who can access it.
-:::
-
-1. Ensure the remote server has Docker installed
-2. Copy the following `docker-compose.yml` to the remote server
-
-:::info
-If using hardware acceleration, the [hwaccel.ml.yml](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.ml.yml) file also needs to be added and the `docker-compose.yml` needs to be configured as described in the [hardware acceleration documentation](/features/ml-hardware-acceleration)
-:::
+Use the current `latest` machine-learning image with a current server, or match your deliberately pinned server version and, when needed, that release's [hardware-acceleration configuration](/features/ml-hardware-acceleration). On the remote host, this standalone Compose example uses its own service name:
 
 ```yaml
-name: frameleaf_remote_ml
-
+name: frameleaf-remote-ml
 services:
-  immich-machine-learning:
+  machine-learning:
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-latest}
     container_name: frameleaf_machine_learning
-    # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
-    # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
-    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
-    # extends:
-    #   file: hwaccel.ml.yml
-    #   service: # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
+    env_file: .env
     volumes:
       - model-cache:/cache
-    restart: always
     ports:
-      - 3003:3003
-
+      - '3003:3003'
+    restart: unless-stopped
 volumes:
   model-cache:
 ```
 
-3. Start the remote machine learning container by running `docker compose up -d`
+Create a private `.env` containing the image tag and a private worker token:
 
-:::info
-Version mismatches between both hosts may cause bugs and instability, so remember to update this container as well when updating the local Frameleaf instance.
-:::
+```dotenv
+FRAMELEAF_VERSION=latest
+FRAMELEAF_ML_AUTH_TOKEN=YOUR_RANDOM_WORKER_TOKEN
+```
 
-4. Navigate to **Administration → Settings → Machine Learning Settings**
-5. Click _Add URL_
-6. Fill the new field with the URL to the remote machine learning container, e.g. `http://ip:port`
+Start with `docker compose up -d`. Limit port `3003` to your trusted network; use a trusted HTTPS proxy if the network requires TLS. Without `FRAMELEAF_ML_AUTH_TOKEN`, inference is unauthenticated.
 
-## Forcing remote processing
+## Add and route the worker
 
-Adding a new URL to the settings is recommended over replacing the existing URL (http://immich-machine-learning:3003). This is because it will allow machine learning tasks to be processed successfully when the remote server is down by falling back to the local machine learning container. If you do not want machine learning tasks to be processed locally when the remote server is not available, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `immich-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
+1. Open the server's **Workers & endpoints** / **Processing destinations** settings under **Compute & jobs**.
+2. Add the worker's base URL, without a path, embedded password, query or fragment. Save its bearer token in the destination's credential field.
+3. Allow only library-analysis tasks on this destination. Restoration uses a separate worker.
+4. Select **Check capabilities** and review the reported models and acceleration.
+5. Route the intended task types to this destination, then run a small sample and inspect progress.
 
-<ComposeBuilder query="machineLearning.external=true" />
+See [Workers and endpoints](/administration/workers-and-endpoints) for the complete inventory and routing rules. Facial clustering uses stored face-detection output in PostgreSQL; moving inference does not move the database.
 
-Do note that this will mean that Smart Search and Face Detection jobs will fail to be processed when the remote instance is not available. This in turn means that tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for affected assets. If this occurs, you must manually click the _Missing_ button next to Smart Search and Face Detection on the **Administration → Job queues** page for the jobs to be retried.
+## If a worker is unavailable
 
-## Load balancing
+A routed job stays associated with its chosen destination. A missing, disabled or unreachable destination causes refusal; work is not silently sent elsewhere. Correct the destination or deliberately reroute the task, then retry as offered in the job interface.
 
-While several URLs can be provided in the settings, they are tried sequentially; there is no attempt to distribute load across multiple containers. It is recommended to use a dedicated load balancer for such use-cases and specify it as the only URL. Among other things, it may enable the use of different APIs on the same server by running multiple containers with different configurations. For example, one might run an OpenVINO container in addition to a CUDA container, or run a standard release container to maximize both CPU and GPU utilization.
-
-:::tip
-The machine learning container can be shared among several Frameleaf instances regardless of the models a particular instance uses. However, using different models will lead to higher peak memory usage.
-:::
+Removing a URL disables that destination; it does not stop the remote container or migrate its routes. Update remote workers with the server's matching release and retain their model cache to avoid downloading the same models again.

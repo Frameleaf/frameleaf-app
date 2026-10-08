@@ -8,7 +8,7 @@
 Telemetry is hard-disabled at package initialization for every ML entry point. Deployment
 variables cannot opt back into Hugging Face, ONNX Runtime, or OpenVINO reporting. Downloads
 remain online and Transformers loads the downloaded files locally. See the
-[fork telemetry policy](../docs/docs/features/fork-privacy-suite.md#telemetry-and-automatic-reporting)
+[fork telemetry policy](../docs/docs/features/privacy.md#network-requests)
 for coverage, tests, and remaining functional network requests.
 
 # Setup

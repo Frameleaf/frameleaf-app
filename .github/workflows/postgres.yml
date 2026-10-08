@@ -293,3 +293,16 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
+      - name: Update latest after successful release publication
+        if: ${{ github.ref == 'refs/heads/fork/main' }}
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |-
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/fork/main
+          [[ "$(git rev-parse FETCH_HEAD)" == "$SOURCE_SHA" ]] || { echo "::error::The release branch advanced; latest was not changed."; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+          published=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | jq -r .digest)
+          [[ "$published" == "$DIGEST" ]] || { echo "::error::Latest does not match the published image."; exit 1; }

@@ -1,6 +1,6 @@
 # Image Enrichment
 
-Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. These jobs are disabled by default and can be enabled independently in `Administration > Settings > Machine Learning Settings`.
+Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. Description generation is enabled by default; sensitive-content detection is disabled by default. Review and configure them independently in `Settings → Compute & jobs → Machine learning`.
 
 Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while `Hide detected NSFW assets` is enabled; see [Locked](./locked.md).
 
@@ -11,7 +11,7 @@ To try a model or prompt on a few samples before it reaches the library, and to 
 For an existing library, enable and backfill one task at a time:
 
 1. Enable `Detect NSFW images` first and run `Administration > Jobs > NSFW Detection > All`.
-2. Review the generated `nsfw` tags and tune the threshold if needed.
+2. Review the private classifier result in the information panel and tune the threshold if needed. Visible tags do not control access.
 3. Enable `Generate AI descriptions and tags` and run `Administration > Jobs > Image descriptions and tags > All`.
 4. Enable `Hide detected NSFW assets` only after the classifier results look acceptable for your library.
 
@@ -34,24 +34,6 @@ Review overrides are stored in private enrichment metadata and become the effect
 
 Admins can also use the search filter modal to find enrichment review sets, including NSFW assets, assets needing NSFW review, reviewed or overridden NSFW assets, failed enrichment jobs, and image assets missing description or NSFW results. If `Hide detected NSFW assets` is enabled, unlock the locked folder PIN session before searching hidden NSFW review sets.
 
-## QA Checklist
-
-Use this checklist when validating image enrichment against a real library or local ML service:
-
-1. Enable `Generate AI descriptions and tags` only, upload a new image, and confirm an `ImageDescription` job is queued after thumbnail generation.
-2. Enable `Detect NSFW images` only, upload a new image, and confirm an `NsfwDetection` job is queued after thumbnail generation.
-3. Enable both settings, upload a new image, and confirm only `ImageDescription` is queued directly after thumbnail generation. The description job runs NSFW detection first and passes that result to the description model.
-4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, deleted, and already-successful images are skipped unless the run is forced.
-5. Open an enriched image's detail panel and verify the private status, model name, labels, score, review state, and errors are visible to admins.
-6. Use the search filter modal to review `NSFW`, `NSFW review`, `NSFW reviewed`, `NSFW overridden`, failed, and missing-result states.
-7. Confirm generated descriptions append only one `AI description:` block and never remove user-written text.
-8. Confirm generated tags are lowercase, deduplicated, searchable, and removable through the repair action without deleting tag definitions.
-9. For NSFW assets, confirm the private effective NSFW flag drives hiding behavior while tags remain visible metadata only.
-10. With `Hide detected NSFW assets` enabled, confirm non-elevated sync streams exclude private NSFW assets, album asset relations, person face thumbnails, partner assets, stacks, and generic asset metadata.
-11. Unlock the locked-folder PIN session and confirm the same assets and album memberships are returned again without changing album membership.
-12. Confirm people views hide people who only appear in private NSFW assets, person statistics count only visible non-NSFW assets, and person thumbnails are not served when the feature face comes from a private NSFW asset.
-13. Confirm derived views such as duplicate groups, memories, stacks, and album activity do not expose hidden NSFW asset IDs, counts, thumbnails, or grouped assets.
-
 ## Descriptions and Tags
 
 When description and tag generation is enabled, Frameleaf sends the asset preview image to the machine learning service and stores the model result as private enrichment metadata. Frameleaf then applies visible metadata according to the admin settings:
@@ -61,7 +43,7 @@ When description and tag generation is enabled, Frameleaf sends the asset previe
 - Tags are plain searchable tags, deduplicated against existing tags.
 - Sidecar write jobs are queued after visible description or tag changes.
 
-The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and local fallback behavior.
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. On OpenVINO, that model is mapped to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and local fallback behavior.
 
 ## NSFW Detection
 

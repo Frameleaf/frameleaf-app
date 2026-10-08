@@ -1,6 +1,22 @@
+---
+slug: /administration/import-library
+---
+
 # One-time offline Immich import
 
 The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database. Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected. This is a one-way data import. Keep the original source database and media as a recovery point.
+
+## Use Manager for guided import
+
+[Frameleaf Manager](/install/manager) detects supported source installations, reviews their mounts and recovery checkpoint, stops source writers, and imports into a fresh PostgreSQL directory. It preserves the existing media locations, so create an independent media backup before cutover. Source database recovery does not roll back later changes to those media files.
+
+After verification, sign in with the imported administrator and review processing settings. Manager releases background regeneration when first setup is ready; check its progress separately from application startup.
+
+[![Manager library and settings review showing preserved media paths and access modes, settings needing attention and the import summary.](/img/screenshots/manager-import-review.jpg)](/img/screenshots/manager-import-review.jpg)
+
+*Review the media paths and folder access, then check any settings marked **Review needed** before reviewing the cutover. Select the image to enlarge it.*
+
+The remaining instructions are for administrators running the importer directly. They require independent verified media copies and explicit read-only source credentials.
 
 ## Prepare the source and destination
 
@@ -45,14 +61,14 @@ A configuration file identifies the immutable source version, operator source ID
 The current admin CLI exposes:
 
 ```sh
-immich-admin import-immich preflight --config /path/config.json
-immich-admin import-immich run --config /path/config.json
-immich-admin import-immich status
-immich-admin import-immich resume --config /path/config.json
-immich-admin import-immich verify --config /path/config.json
+frameleaf-admin import-immich preflight --config /path/config.json
+frameleaf-admin import-immich run --config /path/config.json
+frameleaf-admin import-immich status
+frameleaf-admin import-immich resume --config /path/config.json
+frameleaf-admin import-immich verify --config /path/config.json
 ```
 
-The command name is an existing admin CLI compatibility alias. Import-changing commands must run with the same destination URL, read-only source URL and configuration. `status` reads the destination journal without source access. `run` refuses an existing journal; `resume` requires the exact original source identity and configuration. Batch rows and checkpoints commit in the same transaction, so interruption does not justify clearing the journal or overwriting destination rows.
+Import-changing commands must run with the same destination URL, read-only source URL and configuration. `status` reads the destination journal without source access. `run` refuses an existing journal; `resume` requires the exact original source identity and configuration. Batch rows and checkpoints commit in the same transaction, so interruption does not justify clearing the journal or overwriting destination rows.
 
 The importer preserves source IDs, ownership, password/PIN hashes, locked/hidden and soft-deleted state, albums and roles, partners, shared links, tags, memories, edits and media relationships. It does not copy source migration history, extension indexes, sessions, API keys, server configuration, plugin credentials, temporary streams or job queues. Workflow/plugin definitions, audit/sync history and notifications are outside this content import.
 

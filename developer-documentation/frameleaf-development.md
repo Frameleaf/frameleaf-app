@@ -1,6 +1,6 @@
 # Frameleaf development and delivery
 
-Frameleaf owns its application schema, PostgreSQL job processing, database image, schema tooling and releases. Start with [setup](./setup.md), the [canonical database migration rules](./database-migrations.md) and [job recovery behavior](../administration/jobs-workers.md). The [offline importer](../administration/import-immich.md) is a one-way entry point into a fresh database. Source attribution and frozen import fixtures remain; ongoing upstream tracking and database switch-back are outside the architecture.
+Frameleaf owns its application schema, PostgreSQL job processing, database image, schema tooling and releases. Start with [setup](./setup.md), the [canonical database migration rules](./database-migrations.md) and [job recovery behavior](../docs/docs/administration/jobs-workers.md). The [offline importer](../docs/docs/administration/import-library.md) is a one-way entry point into a fresh database. Source attribution and frozen import fixtures remain; ongoing upstream tracking and database switch-back are outside the architecture.
 
 ## Baseline and worktree
 

@@ -124,9 +124,9 @@ You can choose to disable a certain type of machine learning, for example smart 
 
 ### URL
 
-The built in (`http://immich-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers.
+The release configures its local machine-learning service by default. You can add other endpoints and route work explicitly through [Workers and endpoints](./workers-and-endpoints.md).
 
-Hosting the `immich-machine-learning` container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
+Hosting the machine-learning container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
 
 If more than one URL is provided, each server will be attempted one-at-a-time until one responds successfully, in order from first to last. Servers that don't respond will be temporarily ignored until they come back online.
 
@@ -230,7 +230,7 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 A new server has no administrator. Until it has one, it shows a **setup code** (eight letters and digits, shown as `XXXX-XXXX`) on its console and in its log every time it starts, with a QR code of the same value for the Frameleaf app to scan. The code is the proof that you control the server. Whoever reaches the server first can't claim it without the code, from the app or from the web page.
 
 - **Where to find it:**
-  - With Docker Compose: `docker compose logs immich-server` (or `docker logs frameleaf_server`), or print it again with `docker compose exec immich-server frameleaf-admin setup-code`.
+  - With Docker Compose: `docker logs frameleaf_server`, or print it again with `docker exec -it frameleaf_server frameleaf-admin setup-code`.
   - On Unraid, TrueNAS or Synology: the container's log.
 - **When it changes:** a new code is made every time the server starts. After five wrong tries a new code is shown and the old one stops working.
 - **Pinning the code:** for automated installs and tests, set `FRAMELEAF_SETUP_CODE`. A pinned code is not replaced after wrong tries; it locks until the next start instead, so anyone on the network can lock it. Don't pin it on a server people use.
@@ -286,7 +286,7 @@ The system administrator can choose to delete users through the administration p
 
 ## Version Check
 
-When this option is enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No upstream service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
+When this option is enabled the server asks Frameleaf's release feed for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No upstream service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
 
 Checking never installs anything. An administrator can also check at any time with **Check for updates** in About Frameleaf or on the Versions & compatibility page, even when automatic checks are off. Other accounts see the result of the last check in About Frameleaf.
 

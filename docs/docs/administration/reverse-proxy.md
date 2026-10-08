@@ -100,21 +100,17 @@ entryPoints:
         idleTimeout: 600s
 ```
 
-The second part is in the `docker-compose.yml` file Frameleaf runs from. Add the Traefik specific labels like in the example.
+In the release Compose file, add these labels inside the service whose `container_name` is `frameleaf_server`:
 
 `docker-compose.yml`
 
 ```yaml
-services:
-  immich-server:
-    [...]
-    labels:
-      traefik.enable: true
-      # increase readingTimeouts for the entrypoint used here
-      traefik.http.routers.frameleaf.entrypoints: websecure
-      traefik.http.routers.frameleaf.rule: Host(`photos.example.com`)
-      traefik.http.services.frameleaf.loadbalancer.server.port: 2283
+labels:
+  traefik.enable: true
+  traefik.http.routers.frameleaf.entrypoints: websecure
+  traefik.http.routers.frameleaf.rule: Host(`photos.example.com`)
+  traefik.http.services.frameleaf.loadbalancer.server.port: 2283
 ```
 
 Keep in mind, that Traefik needs to communicate with the network Frameleaf runs in, usually done
-by adding the Traefik network to the `immich-server`.
+by adding the Traefik network to the server service.

@@ -5,7 +5,7 @@ description: Use when preparing Frameleaf work that will ship through a pull req
 
 # Frameleaf delivery and release
 
-Announce that you are using this skill. Read [AGENTS.md](../../../AGENTS.md) and the relevant sections of the [delivery guide](../../../docs/docs/developer/frameleaf-development.md). This skill adapts HeroNet's delivery discipline to Frameleaf; the repository guide defines Frameleaf's runtime, review and authorization rules.
+Announce that you are using this skill. Read [AGENTS.md](../../../AGENTS.md) and the relevant sections of the [delivery guide](../../../developer-documentation/frameleaf-development.md). This skill adapts HeroNet's delivery discipline to Frameleaf; the repository guide defines Frameleaf's runtime, review and authorization rules.
 
 ## Establish the work
 
@@ -54,7 +54,7 @@ Supply an explicit, reviewed squash message instead of replaying command history
 
 A request to prepare/update a PR does not authorize merge or publication. Reuse explicit session authorization within its scope. Merging to `fork/main` can automatically publish containers and promote stable tags, so resolve that authorization before invoking merge. Never merge solely to satisfy this skill's completion checklist.
 
-For an authorized release, follow the [build/release flow](../../../docs/docs/developer/frameleaf-development.md#build-and-release-flow): exact-SHA integration and fresh-install checks, owned `ghcr.io/frameleaf` images, candidate manifests/platforms/source revisions, stable promotion and matching release assets. CLI publication is separately opt-in. Preserve originals and Frameleaf's API/storage contracts. Fresh installations use one PostgreSQL 19 database and a new data volume; the frozen one-time source importer is a separate entry point. Release manifests carry build identity and artifact provenance without certification or qualification fields. Local/Compose/Unraid and local/LAN workers remain supported; RunPod is explicit. Do not import HeroNet's Kubernetes endpoint, Jira-Version-before-tag format, secrets or deployment workflow.
+For an authorized release, follow the [build/release flow](../../../developer-documentation/frameleaf-development.md#build-and-release-flow): exact-SHA integration and fresh-install checks, owned `ghcr.io/frameleaf` images, candidate manifests/platforms/source revisions, stable promotion and matching release assets. CLI publication is separately opt-in. Preserve originals and Frameleaf's API/storage contracts. Fresh installations use one PostgreSQL 19 database and a new data volume; the frozen one-time source importer is a separate entry point. Release manifests carry build identity and artifact provenance without certification or qualification fields. Local/Compose/Unraid and local/LAN workers remain supported; RunPod is explicit. Do not import HeroNet's Kubernetes endpoint, Jira-Version-before-tag format, secrets or deployment workflow.
 
 After authorized merge, verify GitHub reports MERGED, record the merge SHA, verify issue acceptance, then transition eligible issues to Done and read back the result. Container publication, deployed health and application/media qualification are distinct evidence. Clean up only owned, clean worktrees and branches.
 

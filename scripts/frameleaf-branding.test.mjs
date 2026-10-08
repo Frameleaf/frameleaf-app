@@ -217,7 +217,7 @@ test("the allowlist covers only the attribution and its named exceptions", () =>
     "git remote add upstream https://github.com/immich-app/immich.git";
   assert.deepEqual(
     scanText(upstreamRemote, [NAME, SITES], {
-      file: "docs/docs/developer/setup.md",
+      file: "developer-documentation/setup.md",
     }),
     [],
   );
@@ -248,7 +248,7 @@ test("the upstream logo list is present and not what Frameleaf ships", () => {
 test("offline source-import wording is permitted only in its named context", () => {
   const passages = [
     [
-      "docs/docs/administration/import-immich.md",
+      "docs/docs/administration/import-library.md",
       "The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database.",
     ],
     [
@@ -256,8 +256,8 @@ test("offline source-import wording is permitted only in its named context", () 
       "Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database.",
     ],
     [
-      "docs/docs/developer/fork-integration.md",
-      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+      "developer-documentation/fork-integration.md",
+      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-library.md).",
     ],
     [
       "server/src/immich-import/types.ts",
@@ -306,7 +306,7 @@ test("offline source-import wording is permitted only in its named context", () 
       "Supported sources are stable Immich 3.x through 3.2.5; prereleases and later versions are rejected.",
       [NAME],
       {
-        file: "docs/docs/administration/import-immich.md",
+        file: "docs/docs/administration/import-library.md",
       },
     ).length,
     1,
@@ -316,9 +316,9 @@ test("offline source-import wording is permitted only in its named context", () 
 
 test("source provenance does not authorize arbitrary developer links or deleted migrations", () => {
   for (const file of [
-    "docs/docs/developer/setup.md",
-    "docs/docs/developer/fork-integration.md",
-    "docs/docs/developer/architecture.mdx",
+    "developer-documentation/setup.md",
+    "developer-documentation/fork-integration.md",
+    "developer-documentation/architecture.mdx",
   ]) {
     assert.equal(
       scanText(

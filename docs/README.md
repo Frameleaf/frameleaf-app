@@ -1,41 +1,12 @@
-# Website
+# Frameleaf handbook
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+User and administrator documentation for the self-hosted Frameleaf application.
 
-### Installation
+- [Start with Frameleaf Manager](docs/install/manager.md)
+- [Manual Docker Compose installation](docs/install/docker-compose.mdx)
+- [Environment variables](docs/install/environment-variables.md)
+- [Using your library](docs/overview/quick-start.mdx)
+- [Backup and restore](docs/administration/backup-and-restore.md)
+- [Public application API](docs/api.md)
 
-```
-$ pnpm install
-```
-
-### Local Development
-
-```
-$ pnpm run start
-```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-### Build
-
-```
-$ pnpm run build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-### Deployment
-
-Using SSH:
-
-```
-$ USE_SSH=true pnpm run deploy
-```
-
-Not using SSH:
-
-```
-$ GIT_USER=<Your GitHub username> pnpm run deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+The published handbook is at [help.frameleaf.app](https://help.frameleaf.app). Contributor instructions and technical protocols are maintained separately in [developer-documentation](../developer-documentation/documentation-maintenance.md).

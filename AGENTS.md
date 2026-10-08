@@ -17,7 +17,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 
 - Work only in `Frameleaf/frameleaf-app`. Never push, open PRs, or merge against upstream repositories, including `immich-app/immich`.
 - The default branch is literally `fork/main`, not remote `fork` plus branch `main`. Verify repository metadata and remote URLs before every remote write. Never push to a remote named `origin`; use an explicitly verified `frameleaf` remote. Historical `fork` URLs may still point to the former owner.
-- Before creating a task branch/worktree, claim the Jira issue, fetch the verified Frameleaf default branch, and start from that exact fetched SHA. See the [baseline procedure](docs/docs/developer/frameleaf-development.md#baseline-and-worktree). Continuing an explicitly assigned existing PR/worktree and read-only audits are exceptions to creating a new worktree.
+- Before creating a task branch/worktree, claim the Jira issue, fetch the verified Frameleaf default branch, and start from that exact fetched SHA. See the [baseline procedure](developer-documentation/frameleaf-development.md#baseline-and-worktree). Continuing an explicitly assigned existing PR/worktree and read-only audits are exceptions to creating a new worktree.
 - Preserve uncommitted work. Do not reset, clean, stash, or overwrite another task's changes. A worktree contains committed state only; it must not silently omit an uncommitted dependency. Establish a reviewed baseline before delegating dependent implementation.
 - Use author and committer `AJ Taylor <aj@ajtaylor.net>` for every created commit. Verify both identities; never add co-author trailers.
 
@@ -28,7 +28,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 - Use `codex/FL-123-description` branches, include the real issue key in commit subjects and PR titles, and target `fork/main`. Batch closely related assigned issues only when scope and ownership remain clear.
 - Discover transitions on the actual issue. Frameleaf currently has **To Do**, **In Progress**, and **Done**; it has no review transition. Keep a ready PR's issue In Progress until acceptance and authorized merge are verified. Do not copy transition IDs from another project.
 - One owner coordinates implementation, PR checks, issue state and closeout. Give subagents bounded file ownership, acceptance criteria, baseline/head, dependencies and review scope; a reviewer is not a second CI monitor.
-- Follow the [delivery lifecycle](docs/docs/developer/frameleaf-development.md#issue-ownership-and-lifecycle). A PR, a linked key, a mock control or generated SDK does not establish completion.
+- Follow the [delivery lifecycle](developer-documentation/frameleaf-development.md#issue-ownership-and-lifecycle). A PR, a linked key, a mock control or generated SDK does not establish completion.
 
 ## Review and CI
 
@@ -36,7 +36,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 - When removing or narrowing an API, permission, handler, enum or configuration identity, search its callers and deployment references with `rg`. Do not limit review to changed lines.
 - Read existing bot feedback and act on valid findings; do not wait for optional bot output or treat silence as approval. Discover actual installed checks rather than assuming HeroNet's bots/tools exist here.
 - Do not run builds, full test suites, bundlers or parallel Node processes on the operator's Mac (7 GB RAM); it crashes the session. Push a branch and let GitHub Actions run every check. Local verification is limited to reading code, single-file syntax checks and one light dev server for previews.
-- GitHub Actions is authoritative for merge gates on the current candidate. Focused local checks remain available under the [validation policy](docs/docs/developer/frameleaf-development.md#validation-policy); they never replace hosted checks, media qualification or physical-device evidence. Do not run duplicate full suites across agents.
+- GitHub Actions is authoritative for merge gates on the current candidate. Focused local checks remain available under the [validation policy](developer-documentation/frameleaf-development.md#validation-policy); they never replace hosted checks, media qualification or physical-device evidence. Do not run duplicate full suites across agents.
 - Open ready PRs for reviewable completed slices; use drafts for explicitly requested drafts or genuinely unfinished work and state the missing gates. Own CI failures and report exact-head evidence. Never weaken required tests or branch protection to obtain green checks.
 
 ## Documentation and implementation contracts
@@ -52,5 +52,5 @@ This file routes repository work. Read the linked detail relevant to the task ra
 
 - Do not merge, publish, dispatch publishing workflows, deploy, or submit mobile applications unless the user has authorized that operation. Existing session authorization remains valid within its scope; do not ask twice. Prepare a concrete reviewed candidate before seeking any missing approval.
 - Merging into `fork/main` can trigger automatic Docker publication and stable promotion. Account for that consequence before merge. A ready PR does not authorize publication, and a published image does not prove a deployed or qualified application.
-- Use the [Frameleaf release flow](docs/docs/developer/frameleaf-development.md#build-and-release-flow), owned GHCR destinations and exact-SHA provenance gates. Do not import HeroNet's Kubernetes, Ubicloud, secret-store or versioning assumptions; Compose/Unraid and local/LAN workers remain supported here.
+- Use the [Frameleaf release flow](developer-documentation/frameleaf-development.md#build-and-release-flow), owned GHCR destinations and exact-SHA provenance gates. Do not import HeroNet's Kubernetes, Ubicloud, secret-store or versioning assumptions; Compose/Unraid and local/LAN workers remain supported here.
 - After an authorized merge, verify GitHub reports **MERGED**, confirm the issue's own acceptance evidence, synchronize documentation and only then mark the corresponding issue Done. Keep release/deployment acceptance open when still unqualified. Clean up only owned, clean branches/worktrees; preserve unrelated work.

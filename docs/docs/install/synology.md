@@ -1,166 +1,40 @@
 ---
-sidebar_position: 85
+sidebar_position: 50
 ---
 
-# Synology [Community]
+# Synology
 
-:::note
-This is a community contribution and not officially supported by Frameleaf, but included here for convenience.
+:::warning Match the published release
 
-Community support should be directed to Synology-specific support platforms.
+This guide describes the upcoming release. Before installing, read the [release availability notice](/install/docker-compose). Use the published release's matching deployment files; its current `:latest` images must not be combined with the PostgreSQL 19 layout described here.
+
 :::
 
-Frameleaf can easily be installed on a Synology NAS using Container Manager within DSM. If you have not installed Container Manager already, you can install it in the Packages Center. Refer to the [Container Manager docs](https://kb.synology.com/en-us/DSM/help/ContainerManager/docker_desc?version=7) for more information on using Container Manager.
+Use a compatible 64-bit Synology NAS with Docker support through DSM **Container Manager**. This guide installs the [manual Compose stack](/install/docker-compose). A native package should be used only when a Frameleaf release explicitly supplies and supports it for your platform.
 
-## Step 1 - Download the required files
+## Prepare folders and release files
 
-Create a directory of your choice (e.g. `./frameleaf`) to house Frameleaf. In general, it's best practice to have all Docker-based applications running under the `./docker` directory, so in this case, your directory structure will look like `./docker/frameleaf`.
+1. Create a folder for the installation, for example `/volume1/docker/frameleaf`.
+2. Create separate `library` and fresh `postgres19` folders on persistent local storage. The database needs Unix ownership and permissions and must not be an existing PostgreSQL cluster.
+3. Download `docker-compose.yml` and `example.env` from one verified Frameleaf release. Put them in the installation folder and rename `example.env` to `.env`.
+4. Follow [Configure storage and credentials](/install/docker-compose#2-configure-storage-and-credentials). Use absolute host paths, a private random database password and `FRAMELEAF_VERSION=latest` for current application images. Keep the database image and `/var/lib/postgresql` mount from the release.
 
-Now create a `./postgres19` and `./library` directory as sub-directories of the `./docker/frameleaf`.
+## Create the project
 
-When you're all done, you should have the following:
+In **Container Manager → Project → Create**, choose a memorable project name and the installation folder. Use the existing Compose file, review it, then start the project.
 
-- `./docker/frameleaf/postgres19`
-- `./docker/frameleaf/library`
+Check the database and server container health and logs. Open `http://YOUR-NAS:2283` when the server is healthy, then complete [After installation](/install/post-install). A Web Station portal is not required for this direct application address.
 
-Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/frameleaf` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
+## Network access
 
-## Step 2 - Populate the .env file with custom values
+If the DSM firewall is enabled, allow the application port from the networks you intend to use and allow the required private Docker-network traffic. Review the actual project network in Container Manager before adding rules; container addresses can change after recreation. Do not expose PostgreSQL or machine-learning ports publicly.
 
-Follow [Step 2 in Docker Compose](/install/docker-compose#step-2---populate-the-env-file-with-custom-values) for instructions on customizing the `.env` file, and then return back to this guide to continue.
+For a fixed Docker subnet, choose an unused range that does not overlap your LAN, VPN or another Docker network. Configure it on the project network and attach every related service to that same network. Check DSM firewall rules after any network change.
 
-## Step 3 - Create a new project in Container Manager
+For access away from home, follow [Remote access](/guides/remote-access) and [Reverse proxy](/administration/reverse-proxy).
 
-Open Container Manager, and select the "**Project**" action on the left navigation bar and then click "**Create**".
-![Create project](../../static/img/synology-container-manager-create-project.png)
+## Update or recover
 
-In the settings of your new project, set "**Project name**" to a name you'll remember, such as _frameleaf_. When setting the "**Path**", select the `./docker/frameleaf` directory you created earlier. Doing so will prompt a message to use the existing `docker-compose.yml` already present in the directory for your project. Click "**OK**" to continue.
+Read the [upgrade guide](/install/upgrading), make a matched database and media backup, and update the project using the new release's compatible files. Preserve the project name, `.env`, host folders and volume mappings. Recreating containers does not require deleting library or database folders.
 
-![Set path](../../static/img/synology-container-manager-set-path.png)
-
-The following screen will give you the option to further customize your `docker-compose.yml` file. Keep the canonical PostgreSQL 19 image and parent data mount from the release bundle.
-
-Skip the section asking to set-up a portal for Web Station, and then complete the wizard which will build and start the containers for your project.
-
-Once your containers are running, navigate to the "**Container**" section of Container Manager, right-click on the server container ("**frameleaf_server**"), and choose the "**Details**".
-
-Scroll to the bottom of the "**Details**" section and find the `IP Address` listed in the `Network` section. Take note of the container's IP address as you will need it for **Step 4**.
-
-## Step 4 - Configure Firewall Settings
-
-Once your project completes the build process, your containers will start. In order to be able to access Frameleaf from your browser, you need to configure the firewall settings for your Synology NAS to allow communication between the Frameleaf containers.
-
-Open "**Control Panel**" on your Synology NAS, and select "**Security**". Navigate to "**Firewall**"
-
-![Firewall rules](../../static/img/synology-firewall-rules.png)
-
-Click "**Edit Rules**" and add the following firewall rules:
-
-- Add a "**Source IP**" rule for the IP address of your container that you obtained in Step 3 above
-
-![IP address rule](../../static/img/synology-ipaddress-firewall-rule.png)
-
-- Add a "**Ports**" rule for the port specified in the `docker-compose.yml`, which should be `2283`
-
-![Custom port rule](../../static/img/synology-custom-port-firewall-rule.png)
-
-## Next Steps
-
-Read the [Post Installation](/install/post-install.mdx) steps and [upgrade instructions](/install/upgrading.md).
-
-<details>
-  <summary>Updating Frameleaf using Container Manager</summary>
-
-Check the post installation and upgrade instructions at the links above before proceeding with this section.
-
-## Step 1. Backup
-
-Ensure your photos and videos are backed up. Your `.env` settings will define where they are stored. There is no need to delete any files or folders within the `docker` folder when doing a release upgrade unless instructed in the release notes.
-
-## Step 2. Check release notes
-
-Always check the [release notes](https://github.com/Frameleaf/frameleaf-app/releases) before proceeding with an update!
-
-## Step 3. Stop containers & clean up
-
-1. Open **Container Manager**, select **Project** in the left navigation bar, then select your Frameleaf project in the list.
-2. Select **Stop** at the top right of the project page and wait for all containers to stop.
-3. Select **Action**, then **Clean**. This removes the containers.
-4. Select **Image** in the left navigation bar, then select **Remove Unused Images**.
-
-## Step 4. Build
-
-Go to **Project**, select your Frameleaf project, then select **Action** and **Build**. This will download, unpack, install and start the containers.
-
-## Step 5. Update firewall rule
-
-Without a fixed subnet, the default behavior is to automatically start the containers once installed. If `frameleaf_server` runs for a few seconds and then stops, it may be because the firewall rule no longer matches the server IP address.
-
-Go to the **Container** section. Click on `frameleaf_server`, stay on the **General** tab, and scroll down to the **Network** section to find the **IP address**.
-
-Go to Synology **Control Panel**. Select **Security** and **Firewall**.
-
-![Firewall](../../static/img/synology-fw-rules.png)
-
-In this example, the IP addresses mismatch and the firewall rule needs to be edited to match above.
-
-![Edit IP](../../static/img/synology-fw-ipedit.png)
-
-To prevent future firewall issues, you may set a fixed subnet. [See Set Fixed Subnet](#set-fixed-subnet) for instructions.
-
-</details>
-
-<details id="set-fixed-subnet">
-  <summary>Set Fixed Subnet</summary>
-
-Docker by default assigns dynamic subnets to bridge networks which can change when rebuilding containers and can cause firewall rules to break. To avoid this, define a fixed subnet in your `docker-compose.yml`:
-
-## Step 1. Determine current subnet
-
-Go to the **Container** section. Click on `frameleaf_server`, stay on the **General** tab, and scroll down to the **Network** section. The **IP address** and **Gateway** show the subnet the container currently uses.
-
-## Step 2. Add network configuration
-
-Add the following network configuration at the end of your `docker-compose.yml` file:
-
-```yaml
-networks:
-  frameleaf-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-          gateway: 172.20.0.1
-```
-
-If your docker container is running on a different subnet then update accordingly.
-
-## Step 3. Add network to each service
-
-Add the network to each service (immich-server, immich-machine-learning, database):
-
-```yaml
-services:
-  immich-server:
-    # other config options
-    networks:
-      - frameleaf-network
-
-  immich-machine-learning:
-    # other config options
-    networks:
-      - frameleaf-network
-
-  database:
-    # other config options
-    networks:
-      - frameleaf-network
-```
-
-Save your changes. Synology will ask if you want to save changes only or rebuild containers. Select rebuild containers.
-
-## Step 4. Update Firewall Rules, if necessary
-
-If your firewall rules were not already set for this subnet, the firewall rules will need to be updated. See [Step 4 - Configure Firewall Settings](#step-4---configure-firewall-settings).
-
-</details>
+Check health, sign-in and representative originals after updating. If startup fails, keep the old recovery point and logs; use [Backup and restore](/administration/backup-and-restore) rather than changing PostgreSQL's image against an old data directory.

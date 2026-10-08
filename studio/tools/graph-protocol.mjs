@@ -1,6 +1,6 @@
 /**
  * The computable rules of the Studio graph protocol v1 (FL-306, FL-307), implemented from
- * `docs/docs/developer/studio-graph-protocol-v1.md` alone, without the engine.
+ * `developer-documentation/studio-graph-protocol-v1.md` alone, without the engine.
  *
  * `graph-protocol.test.mjs` checks this implementation against the engine-generated fixtures in
  * `studio/graph-conformance-v1.json`: if the prose and the engine disagree, one of them is wrong.

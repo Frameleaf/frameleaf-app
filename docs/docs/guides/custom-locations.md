@@ -1,56 +1,28 @@
-# Files Custom Locations
+# Separate media storage locations
 
-import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+Most installations should keep the complete media tree together. For a manual Compose deployment, you can place generated media or backups on separate disks by mounting the corresponding container subdirectories. Manager installations should retain their reviewed mappings and recovery configuration.
 
-This guide explains how to store generated and raw files with docker's volume mount in different locations.
+## Prepare a consistent move
 
-<ComposeBuilder query="storage.customFolders=true" />
+1. Make a verified database and media backup.
+2. Stop all application and job writers. Keep them stopped while copying files and changing mounts.
+3. Create the destination folders with the required ownership and permissions.
+4. Copy the **complete** existing folder contents, including hidden mount markers and edit artifacts. Verify the copy before changing the live mapping; preserve the old copy until the installation is checked.
+5. Add the chosen mounts to the server's existing `volumes` list, and to every worker that needs the same files.
 
-:::caution Backup
-It is important to remember to update the backup settings after following the guide to back up the new backup paths if using automatic backup tools, especially `profile/`.
-:::
+For example, these entries place thumbnails and database backup files on separate host folders:
 
-In our `.env` file, we will define the paths we want to use. Note that you don't have to define all of these: UPLOAD_LOCATION will be the base folder that files are stored in by default, with the other paths acting as overrides.
-
-```diff title=".env"
-# You can find documentation for all the supported environment variables [here](/install/environment-variables)
-
-# Custom location where your uploaded, thumbnails, and transcoded video files are stored
-- UPLOAD_LOCATION=./library
-+ UPLOAD_LOCATION=/custom/path/frameleaf/library
-+ THUMB_LOCATION=/custom/path/frameleaf/thumbs
-+ ENCODED_VIDEO_LOCATION=/custom/path/frameleaf/encoded-video
-+ PROFILE_LOCATION=/custom/path/frameleaf/profile
-+ BACKUP_LOCATION=/custom/path/frameleaf/backups
-...
+```yaml
+- /srv/frameleaf/thumbs:/data/thumbs
+- /srv/frameleaf/backups:/data/backups
 ```
 
-After defining the locations of these files, we will edit the `docker-compose.yml` file accordingly and add the new variables to the `immich-server` container. These paths are where the mount attaches inside of the container, so don't change those.
+Keep the parent library mount at `/data`. The paths above are examples to add to your existing service, not a complete Compose file. Container paths must match the release's media layout.
 
-```diff title="docker-compose.yml"
-services:
-  immich-server:
-      volumes:
-      - ${UPLOAD_LOCATION}:/data
-+     - ${THUMB_LOCATION}:/data/thumbs
-+     - ${ENCODED_VIDEO_LOCATION}:/data/encoded-video
-+     - ${PROFILE_LOCATION}:/data/profile
-+     - ${BACKUP_LOCATION}:/data/backups
-      - /etc/localtime:/etc/localtime:ro
-```
+## Restart and verify
 
-After making this change, you have to move the files over to the new folders to make sure Frameleaf can find everything it needs. If you haven't uploaded anything important yet, you can also reset Frameleaf entirely by deleting the database folder.
-Then restart Frameleaf to register the changes:
+Recreate the affected containers with `docker compose up -d`, check startup mount checks, and open representative originals and edited versions. Run [Library Care](/features/library-care) if anything is missing.
 
-```
-docker compose up -d
-```
+Do not reset or delete the database to resolve a path error. Restore the correct mount or use the supported [media-location command](/administration/server-commands) when the container's actual media root must change.
 
-:::note
-Because of the underlying properties of docker bind mounts, it is not recommended to mount the `upload/` and `library/` folders as separate bind mounts if they are on the same device.
-For this reason, we mount the HDD or the network storage (NAS) to `/data` and then mount the folders we want to access under that folder.
-
-The `thumbs/` folder contains both the small thumbnails displayed in the timeline and the larger previews shown when clicking into an image. These cannot be separated.
-
-The storage metrics of the Frameleaf server will track available storage at `UPLOAD_LOCATION`, so the administrator must set up some sort of monitoring to ensure the storage does not run out of space. The `profile/` folder is much smaller, usually less than 1 MB.
-:::
+The thumbnails folder contains previews and some non-regenerable edit artifacts. Back it up completely. A capacity reading for the parent library does not establish that a separately mounted disk has free space; monitor each disk.

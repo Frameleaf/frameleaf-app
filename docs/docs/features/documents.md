@@ -36,16 +36,6 @@ A suggestion is only what the text says. It shows where it was read and how conf
 
 Every change names the version of the text and of your decision it was made against. If the photo was read again, or you changed the same line on another device in the meantime, the change is refused, the panel reloads, and nothing is overwritten.
 
-## API
+## Automation
 
-| Endpoint                                | Purpose                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------------- |
-| `GET /documents`                        | Your photos with visible text, newest first; `query` searches text.        |
-| `GET /documents/{id}`                   | A photo's lines, their regions and, for the owner, suggested details.      |
-| `PUT /documents/{id}/lines`             | Correct or dismiss one recognized line (`revision`, `recognizedText`).     |
-| `DELETE /documents/{id}/lines/{editId}` | Restore a line (`revision`).                                               |
-| `PUT /documents/{id}/fields/{field}`    | Confirm, correct or dismiss a suggested detail (`revision`).               |
-| `DELETE /documents/{id}/fields/{field}` | Reset a decision about a detail (`revision`).                              |
-| `POST /assets/jobs` with `refresh-ocr`  | Read a photo's text again through the routed text recognition destination. |
-
-Reading needs `asset.read` and follows the photo's own sharing; changes need `asset.update` and the photo's owner. Shared links cannot use these endpoints.
+For application integrations, see the [public API reference](/api). Document reads follow the photo's access rules; corrections require ownership and update permission.

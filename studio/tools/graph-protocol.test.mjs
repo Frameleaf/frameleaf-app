@@ -53,7 +53,7 @@ const schema = read('graph-schema-v1.json');
 const catalogue = read('frameleaf-studio-commands.json');
 const build = read('engine-build.json');
 const parameters = read('graph-parameters-v1.json');
-const page = readFileSync(new URL('../../docs/docs/developer/studio-graph-protocol-v1.md', import.meta.url), 'utf8');
+const page = readFileSync(new URL('../../developer-documentation/studio-graph-protocol-v1.md', import.meta.url), 'utf8');
 
 const graphs = () => [
   ...Object.entries(fixtures.bases).map(([name, base]) => [`base ${name}`, base.graph, base.digest]),

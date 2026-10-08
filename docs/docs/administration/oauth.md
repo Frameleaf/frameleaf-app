@@ -3,15 +3,15 @@
 This page contains details about using OAuth in Frameleaf.
 
 :::tip
-Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
+Unable to set `frameleaf-auth:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
 :::
 
 ## Overview
 
 Frameleaf supports 3rd party authentication via [OpenID Connect][oidc] (OIDC), an identity layer built on top of OAuth2. OIDC is supported by most identity providers, including:
 
-- [Authentik](https://integrations.goauthentik.io/media/immich/)
-- [Authelia](https://www.authelia.com/integration/openid-connect/immich/)
+- [Authentik](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/)
+- [Authelia](https://www.authelia.com/integration/openid-connect/introduction/)
 - [Okta](https://www.okta.com/openid-connect/)
 - [Google](https://developers.google.com/identity/openid-connect/openid-connect)
 - [Keycloak](https://www.keycloak.org)
@@ -29,14 +29,14 @@ Before enabling OAuth in Frameleaf, a new client application needs to be configu
 2. Configure Redirect URIs/Origins
 
    The **Sign-in redirect URIs** should include:
-   - `app.immich:///oauth-callback` - for logging in with OAuth from the [Mobile App](/features/mobile-app.mdx)
+   - `frameleaf-auth:///oauth-callback` - for logging in with OAuth from the [Mobile App](/features/mobile-app.mdx)
    - `http://DOMAIN:PORT/auth/login` - for logging in with OAuth from the Web Client
    - `http://DOMAIN:PORT/user-settings` - for manually linking OAuth in the Web Client
 
    Redirect URIs should contain all the domains you will be using to access Frameleaf. Some examples include:
 
    Mobile
-   - `app.immich:///oauth-callback` (You **MUST** include this for iOS and Android mobile apps to work properly)
+   - `frameleaf-auth:///oauth-callback` (You **MUST** include this for iOS and Android mobile apps to work properly)
 
    Localhost
    - `http://localhost:2283/auth/login`
@@ -72,11 +72,13 @@ A sign-in only finishes in the browser (or app) that started it, within the prov
 
 The provider's own error text is never shown, since anyone can put it in the address. The sign-in page offers the provider button again, and a `continue` address is only ever followed on this server. A callback that opens in another tab of the same browser (for example from an email link) still finishes, for 15 minutes.
 
+The examples below use the custom claims `frameleaf_role` and `frameleaf_quota`. Set **Role Claim** and **Storage Quota Claim** to those names in Frameleaf and configure matching claims in the provider. An existing installation may use different names; keep both sides consistent.
+
 ## Enable OAuth
 
 Once you have a new OAuth client application configured, Frameleaf can be configured using the Administration Settings page, available on the web (Administration -> Settings).
 
-| Setting                                              | Type    | Default              | Description                                                                                                                                                 |
+| Setting                                              | Type    | Example              | Description                                                                                                                                                 |
 | ---------------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enabled                                              | boolean | false                | Enable/disable OAuth                                                                                                                                        |
 | `issuer_url`                                         | URL     | (required)           | Required. Self-discovery URL for client (from previous step)                                                                                                |
@@ -89,8 +91,8 @@ Once you have a new OAuth client application configured, Frameleaf can be config
 | `end_session_endpoint`                               | URL     | (empty)              | Http(s) alternative end session endpoint (logout URI)                                                                                                       |
 | Request timeout                                      | string  | 30,000 (30 seconds)  | Number of milliseconds to wait for http requests to complete before giving up                                                                               |
 | Storage Label Claim                                  | string  | preferred_username   | Claim mapping for the user's storage label**¹**                                                                                                             |
-| Role Claim                                           | string  | immich_role          | Claim mapping for the user's role. (should return "user" or "admin")**¹**                                                                                   |
-| Storage Quota Claim                                  | string  | immich_quota         | Claim mapping for the user's storage**¹**                                                                                                                   |
+| Role Claim                                           | string  | frameleaf_role       | Claim mapping for the user's role. (should return "user" or "admin")**¹**                                                                                   |
+| Storage Quota Claim                                  | string  | frameleaf_quota      | Claim mapping for the user's storage**¹**                                                                                                                   |
 | Default Storage Quota (GiB)                          | number  | 0                    | Default quota for user without storage quota claim (empty for unlimited quota)                                                                              |
 | Button Text                                          | string  | Login with OAuth     | Text for the OAuth button on the web                                                                                                                        |
 | Auto Register                                        | boolean | true                 | When true, will automatically register a user the first time they sign in                                                                                   |
@@ -115,32 +117,19 @@ The `.well-known/openid-configuration` part of the url is optional and will be a
 ## Auto Launch
 
 When Auto Launch is enabled, the login page will automatically redirect the user to the OAuth authorization url, to login with OAuth. To access the login screen again, use the browser's back button, or navigate directly to `/auth/login?autoLaunch=0`.
-Auto Launch can also be enabled on a per-request basis by navigating to `/auth/login?autoLaunch=1`, this can be useful in situations where Frameleaf is called from e.g. Nextcloud using the _External sites_ app and the _oidc_ app so as to enable users to directly interact with a logged-in instance of Frameleaf.
+Auto Launch can also be enabled for a link by navigating to `/auth/login?autoLaunch=1`.
 
 ## Mobile Redirect URI
 
-The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is a [Custom Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app). If this custom scheme is an invalid redirect URI for your OAuth Provider, you can work around this by doing the following:
-
-1. Configure an http(s) endpoint to forwards requests to `app.immich:///oauth-callback`
-2. Whitelist the new endpoint as a valid redirect URI with your provider.
-3. Specify the new endpoint as the `Mobile Redirect URI Override`, in the OAuth settings.
-
-With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
-
-:::info
-Frameleaf has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
-:::
-
 ### Frameleaf mobile app
 
-The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the upstream mobile app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
+Register `frameleaf-auth:///oauth-callback` with your provider for a compatible Frameleaf app. If the provider does not accept custom schemes, use the server's mobile redirect override:
 
-When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to `/api/oauth/frameleaf-mobile-redirect` on the same server, which forwards to `frameleaf-auth:///oauth-callback`. In that case:
+1. Set **Mobile Redirect URI Override** to this server's `/api/oauth/mobile-redirect` address, for example `https://photos.example.com/api/oauth/mobile-redirect`.
+2. Register `https://photos.example.com/api/oauth/frameleaf-mobile-redirect` with the identity provider. The server selects that Frameleaf callback for the app and forwards it to `frameleaf-auth:///oauth-callback`.
+3. Use the addresses displayed under **Mobile app callbacks** in the server's Authentication settings to verify your configuration. An arbitrary override address cannot be mapped safely and Frameleaf app sign-in is refused.
 
-1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://photos.example.com/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
-2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`).
-
-Administration → Settings → Authentication lists both apps' callbacks for the current configuration under **Mobile app callbacks**. For what does and does not carry over between the two apps, see [Moving to the Frameleaf app](./frameleaf-app-transition.md).
+See [Frameleaf apps](/features/mobile-app) for availability and [Moving to Frameleaf](./frameleaf-app-transition.md) for import and sign-in guidance.
 
 ## Example Configuration
 
@@ -162,7 +151,7 @@ authentication_backend:
     attributes:
       extra:
         frameleafquota: # The attribute name from LDAP
-          name: 'immich_quota'
+          name: 'frameleaf_quota'
           multi_valued: false
           value_type: 'integer'
 identity_providers:
@@ -172,12 +161,12 @@ identity_providers:
     claims_policies:
       frameleaf_policy:
         custom_claims:
-          immich_quota:
-            attribute: 'immich_quota'
+          frameleaf_quota:
+            attribute: 'frameleaf_quota'
     scopes:
       frameleaf_scope:
         claims:
-          - 'immich_quota'
+          - 'frameleaf_quota'
 
     clients:
       - client_id: 'frameleaf'
@@ -190,7 +179,7 @@ identity_providers:
         redirect_uris:
           - 'https://photos.example.com/auth/login'
           - 'https://photos.example.com/user-settings'
-          - 'app.immich:///oauth-callback'
+          - 'frameleaf-auth:///oauth-callback'
         scopes:
           - 'openid'
           - 'profile'
@@ -219,7 +208,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Userinfo Signed Response Algorithm | RS256                                                               |
 | End Session Endpoint               | https://auth.example.com/logout?rd=https://photos.example.com/      |
 | Storage Label Claim                | uid                                                                 |
-| Storage Quota Claim                | immich_quota                                                        |
+| Storage Quota Claim                | frameleaf_quota                                                     |
 | Default Storage Quota (GiB)        | 0 (empty for unlimited quota)                                       |
 | Button Text                        | Sign in with Authelia (optional)                                    |
 | Auto Register                      | Enabled (optional)                                                  |
@@ -252,7 +241,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                                |
 | Signing Algorithm            | RS256                                                               |
 | Storage Label Claim          | preferred_username                                                  |
-| Storage Quota Claim          | immich_quota                                                        |
+| Storage Quota Claim          | frameleaf_quota                                                     |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                                       |
 | Button Text                  | Sign in with Authentik (optional)                                   |
 | Auto Register                | Enabled (optional)                                                  |
@@ -289,7 +278,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                                         |
 | Signing Algorithm            | RS256                                                                        |
 | Storage Label Claim          | preferred_username                                                           |
-| Storage Quota Claim          | immich_quota                                                                 |
+| Storage Quota Claim          | frameleaf_quota                                                              |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                                                |
 | Button Text                  | Sign in with Google (optional)                                               |
 | Auto Register                | Enabled (optional)                                                           |
@@ -324,8 +313,8 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                     |
 | Signing Algorithm            | RS256                                                    |
 | Storage Label Claim          | preferred_username                                       |
-| Role Claim                   | immich_role                                              |
-| Storage Quota Claim          | immich_quota                                             |
+| Role Claim                   | frameleaf_role                                           |
+| Storage Quota Claim          | frameleaf_quota                                          |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                            |
 | Button Text                  | Sign in with Keycloak (recommended)                      |
 | Auto Register                | Enabled (optional)                                       |
@@ -333,7 +322,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Mobile Redirect URI Override | Disabled                                                 |
 | Mobile Redirect URI          |                                                          |
 
-Role Claim can be managed via Client Role. Remember to create a mapper with claim name `immich_role`.
+Role Claim can be managed via Client Role. Remember to create a mapper with claim name `frameleaf_role`.
 
 </details>
 

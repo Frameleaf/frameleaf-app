@@ -114,7 +114,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
 
 #### OpenVINO-WSL
 
-- Ensure your container can access the /dev/dri directory, you can verify this by doing `docker compose exec -T immich-machine-learning ls -la /dev/dri` from your Compose directory. If this is not the case execute `getent group render` and `getent group video` on the WSL host, then add those groups to hwaccel.ml.yaml
+- Ensure your container can access the /dev/dri directory, you can verify this by doing `docker exec frameleaf_machine_learning ls -la /dev/dri` from your Compose directory. If this is not the case execute `getent group render` and `getent group video` on the WSL host, then add those groups to hwaccel.ml.yaml
   ```yaml
   openvino-wsl:
     devices:
@@ -143,19 +143,19 @@ The check names the set-up problems it finds, each with the fix and, where docke
 <ComposeBuilder />
 
 1. If you do not already have it, download the latest [`hwaccel.ml.yml`][hw-file] file and ensure it's in the same folder as the `docker-compose.yml`.
-2. In `immich-machine-learning`, add one of -[armnn, cuda, rocm, openvino, rknn] to the `image` section's tag at the end of the line.
-3. Still in the `docker-compose.yml` under `immich-machine-learning`, uncomment the `extends` section and change `cpu` to the appropriate backend.
-4. Redeploy the `immich-machine-learning` container with these updated settings.
+2. In the service with `container_name: frameleaf_machine_learning`, add one of -[armnn, cuda, rocm, openvino, rknn] to the `image` section's tag at the end of the line.
+3. Still in the `docker-compose.yml` inside that machine-learning service, uncomment the `extends` section and change `cpu` to the appropriate backend.
+4. Redeploy the `frameleaf_machine_learning` container with these updated settings.
 
 ### Confirming Device Usage
 
 You can confirm the device is being recognized and used by checking its utilization. There are many tools to display this, such as `nvtop` for NVIDIA or Intel, `intel_gpu_top` for Intel, and `radeontop` for AMD.
 
-You can also check the logs of the `immich-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Frameleaf, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
+You can also check the logs of the `frameleaf_machine_learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Frameleaf, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
 
 #### Single Compose File
 
-Some platforms, including Unraid and Portainer, do not support multiple Compose files as of writing. As an alternative, you can "inline" the relevant contents of the [`hwaccel.ml.yml`][hw-file] file into the `immich-machine-learning` service directly.
+Some platforms, including Unraid and Portainer, do not support multiple Compose files as of writing. As an alternative, you can "inline" the relevant contents of the [`hwaccel.ml.yml`][hw-file] file into the existing machine-learning service directly.
 
 For example, the `cuda` section in this file is:
 
@@ -170,30 +170,30 @@ deploy:
             - gpu
 ```
 
-You can add this to the `immich-machine-learning` service instead of extending from `hwaccel.ml.yml`:
+You can add this to the existing machine-learning service instead of extending from `hwaccel.ml.yml`:
 
 ```yaml
-immich-machine-learning:
-  container_name: frameleaf_machine_learning
-  # Note the `-cuda` at the end
-  image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
-  # Note the lack of an `extends` section
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: 1
-            capabilities:
-              - gpu
-  volumes:
-    - model-cache:/cache
-  env_file:
-    - .env
-  restart: always
+# Existing machine-learning service contents:
+container_name: frameleaf_machine_learning
+# Note the `-cuda` at the end
+image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION}-cuda
+# Note the lack of an `extends` section
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities:
+            - gpu
+volumes:
+  - model-cache:/cache
+env_file:
+  - .env
+restart: always
 ```
 
-Once this is done, you can redeploy the `immich-machine-learning` container.
+Once this is done, you can redeploy the `frameleaf_machine_learning` container.
 
 #### Multi-GPU
 

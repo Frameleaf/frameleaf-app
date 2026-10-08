@@ -1,5 +1,9 @@
-The first user to register will be the admin user. The admin user will be able to add other users to the application.
+Open the photo application's address in your browser. On a new installation, follow **Get started** to create the first administrator account. Manager has a separate administrator account; use **Open Frameleaf setup** there to reach the photo application.
 
-To register for the admin user, access the web application at `http://<machine-ip-address>:2283` and click on the **Getting Started** button.
+First setup requires the server's setup code. For a manual container installation, read it from the server log or display it with:
 
-Follow the prompts to register as the admin user and log in to the application.
+```sh
+docker exec frameleaf_server frameleaf-admin setup-code
+```
+
+Enter the code and follow the name, email and password prompts. An imported library may already have an administrator: sign in with that account instead of creating another one. After sign-in, review the onboarding and processing settings before starting a large import.

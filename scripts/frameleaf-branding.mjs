@@ -81,34 +81,34 @@ export const ALLOWLIST = [
   {
     reason:
       "Developer source provenance: the explicit frozen-source remote command",
-    files: /^docs\/docs\/developer\/setup\.md$/,
+    files: /^developer-documentation\/setup\.md$/,
     allow:
       /^git remote add upstream https:\/\/github\.com\/immich-app\/immich\.git$/g,
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    files: /^docs\/docs\/administration\/import-library\.md$/,
     allow: "# One-time offline Immich import",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    files: /^docs\/docs\/administration\/import-library\.md$/,
     allow:
       "The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    files: /^docs\/docs\/administration\/import-library\.md$/,
     allow:
       "Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    files: /^docs\/docs\/administration\/import-library\.md$/,
     allow:
       "- `FRAMELEAF_IMPORT_SOURCE_URL`: stopped Immich source using the read-only role.",
   },
@@ -136,14 +136,14 @@ export const ALLOWLIST = [
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/postgres-standalone\.md$/,
     allow:
-      "Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-immich.md) to copy supported source content into a fresh destination.",
+      "Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-library.md) to copy supported source content into a fresh destination.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/server-migration\.md$/,
     allow:
-      "A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-immich.md).",
+      "A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-library.md).",
   },
   {
     reason:
@@ -162,23 +162,23 @@ export const ALLOWLIST = [
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    files: /^docs\/docs\/features\/privacy\.md$/,
     allow:
       "Supported Immich installations are a frozen, read-only source for a one-time offline content import into a fresh Frameleaf database.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    files: /^docs\/docs\/features\/privacy\.md$/,
     allow:
-      "If you have an existing Immich library, follow the [offline import](../administration/import-immich.md), then open `Administration > Settings > Machine Learning Settings`.",
+      "If you have an existing Immich library, follow the [offline import](../administration/import-library.md), then open `Administration > Settings > Machine Learning Settings`.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    files: /^docs\/docs\/features\/privacy\.md$/,
     allow:
-      "[One-time offline Immich import](../administration/import-immich.md)",
+      "[One-time offline Immich import](../administration/import-library.md)",
   },
   {
     reason:
@@ -190,23 +190,23 @@ export const ALLOWLIST = [
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/developer\/database-migrations\.md$/,
+    files: /^developer-documentation\/database-migrations\.md$/,
     allow:
       "Source import copies selected data; it does not copy an Immich migration history or indexes.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/developer\/architecture\.mdx$/,
+    files: /^developer-documentation\/architecture\.mdx$/,
     allow:
       "A source Immich database is only read by the separate offline importer and never becomes the destination schema.",
   },
   {
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
-    files: /^docs\/docs\/developer\/fork-integration\.md$/,
+    files: /^developer-documentation\/fork-integration\.md$/,
     allow:
-      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-library.md).",
   },
   {
     reason:

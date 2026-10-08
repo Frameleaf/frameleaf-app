@@ -14,6 +14,10 @@ The queues count what is waiting, read with your own privacy: another account's 
 
 Missing media and Damaged media are administrator tools.
 
+[![Library care settings showing health checks and tools for missing and damaged media.](/img/screenshots/library-care.jpg)](/img/screenshots/library-care.jpg)
+
+*You can also reach health checks and repair tools from **Settings → Library care**. Open a tool to review its findings before changing files. Select the image to enlarge it.*
+
 ## Scans
 
 **Scan again** checks every item of your library: whether its original is there, and whether it reads back intact. The scan is a background job listed in Activity and in the notifications panel. It records where it has got to after every small batch, so you can pause it, resume it, cancel it, close the browser or restart the server, and it carries on from where it stopped. A scan that fails is retried once automatically before the failure is reported; the scan bar shows the last scan, a running one and a failure.

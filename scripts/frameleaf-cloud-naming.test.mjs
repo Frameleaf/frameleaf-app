@@ -10,14 +10,14 @@ import test from "node:test";
  * provider or its destination kinds.
  *
  * Scope: the translation catalogue and every documentation page. Dated evidence and design specs
- * remain historical records under `docs/docs/developer/evidence` and `docs/superpowers`.
+ * remain historical records under `developer-documentation/evidence` and `design/frameleaf/documentation-history/superpowers`.
  */
 const root = resolve(import.meta.dirname, "..");
 const PROVIDER = /run\s*-?\s*pod/i;
 const OLD_KINDS = /["'`](?:runpod|runpod-video)["'`]/;
 const HISTORY = [
-  "docs/docs/developer/evidence/",
-  "docs/superpowers/",
+  "developer-documentation/evidence/",
+  "design/frameleaf/documentation-history/superpowers/",
 ];
 
 const trackedDocs = () =>

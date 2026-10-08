@@ -6,14 +6,26 @@ Frameleaf keeps media files on your storage and their identity, ownership, album
 
 - The complete Frameleaf database, including `public.frameleaf_migrations`, import journals, configuration and feature tables.
 - Original and external-library media, with a consistent recovery point for database references. Preserve paths and access permissions.
-- Generated media if you want to avoid regenerating thumbnails or transcodes after recovery.
+- The complete generated-media tree, including edit artifacts and retained project dependencies. Some artifacts stored beside thumbnails cannot be regenerated.
 - Deployment configuration and file-backed secrets, especially encryption keys. Keep secret material out of support bundles.
 
 Database backups do not contain your media. A filesystem copy taken while uploads, moves or deletions continue can disagree with the database snapshot. Stop writers or use a storage snapshot procedure that gives you a consistent recovery point. Keep a second copy outside the server being backed up.
 
+## Manager backups and recovery
+
+In [Frameleaf Manager](/install/manager), open **Backups** and select **Back up database**. Manager stores encrypted Restic snapshots of the database and recovery configuration. Select **Export recovery configuration** and keep the exported key and configuration privately, away from the server. Back up the media separately.
+
+[![Manager Backups page with the backup destination, Back up database action and verified recovery points with Restore controls.](/img/screenshots/manager-backups.jpg)](/img/screenshots/manager-backups.jpg)
+
+*Create a database checkpoint or choose a recovery point to restore. Photos, videos and external-library files need a separate backup. Select the image to enlarge it.*
+
+To restore on an empty Manager installation, choose **Restore a Manager backup**, unlock the repository with the recovery key, select a canonical Frameleaf snapshot and review the preserved library paths. Those media paths must already be available. Choose the host's PostgreSQL appdata folder; Manager allocates a fresh database directory and retains earlier directories.
+
+Manager's source-import recovery checkpoints are for the original source software, not for canonical Frameleaf restore. A database snapshot cannot undo media changes made after cutover. For an interrupted operation, review the recorded step and use **Resume safely**; do not start a second restore against the same files.
+
 ## Database backups
 
-Frameleaf's database backup runtime uses PostgreSQL 19 `pg_dump` to write plain SQL compressed with gzip. Backup filenames begin with `frameleaf-db-backup`. Configure and inspect scheduled backups under **Administration > Settings > Backup** and keep the matching files from your backup storage with your media recovery point.
+Frameleaf's database backup runtime uses PostgreSQL 19 `pg_dump` to write plain SQL compressed with gzip. Backup filenames begin with `frameleaf-db-backup`. Configure and inspect scheduled backups under **Settings → Import & protection** and keep the matching files from your backup storage with your media recovery point.
 
 For an operator-managed backup, use a PostgreSQL 19 client, the configured database user and the database named in `DB_URL` or `DB_DATABASE_NAME`. With the release Compose service names and defaults:
 
@@ -47,4 +59,4 @@ Start the matching Frameleaf release, check database health and migrations, sign
 
 ## Immich sources
 
-An Immich dump or PostgreSQL volume is not a canonical Frameleaf backup. Use the [offline importer](./import-immich.md) against a stopped, read-only supported source with a fresh Frameleaf database and distinct verified media copies. The source database and media remain unchanged.
+An Immich dump or PostgreSQL volume is not a canonical Frameleaf backup. Use the [offline importer](./import-library.md) against a stopped, read-only supported source with a fresh Frameleaf database and distinct verified media copies. The source database and media remain unchanged.

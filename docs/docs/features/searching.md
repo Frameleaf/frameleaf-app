@@ -9,6 +9,10 @@ Contextual CLIP search is powered by the pgvector extension with HNSW indexes, u
 
 ## Advanced Search Filters
 
+[![Smart search for lake showing photo matches, refinement controls and matching dates.](/img/screenshots/search-library.jpg)](/img/screenshots/search-library.jpg)
+
+*Type what you remember, then refine the matches in the search panel. Select the image to enlarge it.*
+
 In addition, Frameleaf offers advanced search functionality, allowing you to find specific content using customizable search filters. These filters include location, one or more faces, specific albums, and more. Open the filter panel from the search bar to try them.
 
 You can search the following types of content:
@@ -57,7 +61,7 @@ Example: for /John/Projects/3D_Printing/2026-07-01/IMG_0001.jpg, searches like P
 
 ## Configuration
 
-Navigating to `Administration > Settings > Machine Learning Settings > Smart Search` will show the options available.
+Navigating to `Settings → Compute & jobs → Machine learning > Smart Search` will show the options available.
 
 ### CLIP models
 
@@ -79,7 +83,7 @@ For more details, check the tables below to see how they compare in memory usage
 Once you've chosen a model, follow these steps:
 
 1. Copy the name of the model (e.g. `ViT-B-16-SigLIP__webli`)
-2. Go to the Smart Search settings (**Administration > Settings > Machine Learning Settings > Smart Search**)
+2. Go to the Smart Search settings (**Settings → Compute & jobs → Machine learning > Smart Search**)
 3. Paste the model name into the Model Name section
 4. Save the settings
 5. Go to the Job Status page (**Administration > Job Queues**)

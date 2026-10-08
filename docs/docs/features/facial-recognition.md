@@ -57,7 +57,7 @@ If you didn't import your assets at once or if the server was able to process jo
 
 ## Configuration
 
-Navigating to Administration > Settings > Machine Learning Settings > Facial Recognition will show the options available.
+Navigating to Settings → Compute & jobs → Machine learning > Facial Recognition will show the options available.
 
 :::tip
 It's better to only tweak the parameters here than to set them to something very different unless you're ready to test a variety of options. If you do need to set a parameter to a strict setting, relaxing other settings can be a good option to compensate, and vice versa.

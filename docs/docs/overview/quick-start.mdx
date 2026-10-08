@@ -1,89 +1,46 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 ---
 
-# Quick start
+# Welcome to Frameleaf
 
-Here is a quick, no-choices path to install Frameleaf and take it for a test drive.
-Once you've tried it, you might use one of the many other ways
-to install and use it.
+:::warning Release availability
 
-## Requirements
+The Manager-based release described in this handbook has not been published yet. The currently published `:latest` application images belong to the preceding release. To install that release, use its supplied Compose file and matching instructions. Do not combine the PostgreSQL 19 storage layout below with an older application image or database.
 
-- A system with at least 6GB of RAM and 2 CPU cores.
-- [Docker](https://docs.docker.com/engine/install/)
+:::
 
-> For a more detailed list of requirements, see the [requirements page](/install/requirements).
+Frameleaf keeps your photos and videos on your own server. Browse your library, organize albums, search by people, places or content, edit without replacing originals, and share the items you choose.
 
----
+## Set up your server
 
-## Set up the server
+Start with [Frameleaf Manager](/install/manager). It guides you through a new library, importing a supported existing installation, or restoring a Manager backup. You need a Linux Docker host, persistent storage and a verified release. Check the [requirements](/install/requirements) first.
 
-import DockerComposeSteps from '/docs/partials/_docker-compose-install-steps.mdx';
+If you already administer containers, follow [Manual Docker Compose](/install/docker-compose) and the [environment variable reference](/install/environment-variables). The photo application normally opens at `http://YOUR-SERVER:2283`; Manager uses its separate HTTPS address on port `9443`.
 
-<DockerComposeSteps />
-
----
-
-## Try the web app
+## Open your library
 
 import RegisterAdminUser from '/docs/partials/_register-admin.md';
 
 <RegisterAdminUser />
 
-Try uploading a picture from your browser: select **Upload** and choose a file.
+1. Select **Upload** and add a few photos or a folder. Keep the tab open until the upload finishes.
+2. Open a photo to see its details, favorite it, or add it to an album.
+3. Open **Settings** in the sidebar. Review processing destinations before enabling optional remote features. Local machine learning can prepare search, faces, text and descriptions; initial processing takes time.
+4. Check **Compute & jobs** for processing progress and **Library Care** for missing or damaged files.
 
----
+See [Uploads and downloads](/features/uploads-and-downloads), [Searching](/features/searching), and [Sharing](/features/sharing) for the next steps.
 
-## Try the mobile app
+## Bring in the rest of your library
 
-### Download the Mobile App
+- [External libraries](/features/libraries) index a folder you already manage.
+- [Google Photos import](/features/google-photos-import) imports a downloaded Takeout export.
+- [iCloud Photos](/guides/icloud-photos-sync) connects a configured iCloud importer.
+- The [command-line client](/features/command-line-interface) uploads larger local archives.
+- [Frameleaf apps](/features/mobile-app) explains app availability and connecting a phone.
 
-import MobileAppDownload from '/docs/partials/_mobile-app-download.md';
+## Protect your collection
 
-<MobileAppDownload />
+Set up [database and media backups](/administration/backup-and-restore) before adding your only copy of anything. A database backup does not contain your photos or videos. Keep a separate recovery copy and check that you can restore it.
 
-### Login to the Mobile App
-
-import MobileAppLogin from '/docs/partials/_mobile-app-login.md';
-
-<MobileAppLogin />
-
-In the mobile app, you should see the photo you uploaded from the web UI.
-
-### Transfer Photos from Your Mobile Device
-
-import MobileAppBackup from '/docs/partials/_mobile-app-backup.md';
-
-<MobileAppBackup />
-
-The backup time differs depending on how many photos are on your mobile device. Large uploads may
-take quite a while.
-To quickly get going, you can selectively upload few photos first, by following this [guide](/features/mobile-app#sync-only-selected-photos).
-
-To see Frameleaf processing your photos, select **Settings** in the sidebar to open the Command Center, then open **Compute & jobs**.
-
----
-
-## Review the database backup and restore process
-
-Frameleaf has built-in database backups. You can refer to the
-[database backup](/administration/backup-and-restore) for more information.
-
-:::danger
-The database only contains metadata and user information. You must setup manual backups of the images and videos stored in `UPLOAD_LOCATION`.
-:::
-
----
-
-## Where to go from here?
-
-You may decide you'd like to install the server a different way; the Install category on the left menu provides many options.
-
-You may decide you'd like to add the _rest_ of your photos from Google Photos, even those not on your mobile device, via Google Takeout. Use [Import Google Photos](/features/google-photos-import) for this.
-
-You may want to [upload photos from your own archive](/features/command-line-interface).
-
-You may want to incorporate a pre-existing archive of photos from an [External Library](/features/libraries); there's a [guide](/guides/external-library) for that.
-
-You may want your mobile device to [back photos up to your server automatically](/features/mobile-backup).
+[Post-installation setup](/install/post-install) covers accounts, sharing, processing and storage. For help, start with the [FAQ](/FAQ) or [troubleshooting](/overview/help).

@@ -4,7 +4,7 @@
 
 ### Architecture
 
-The `immich-server` container contains multiple workers:
+The `frameleaf_server` container contains multiple workers:
 
 - `api`: responds to API requests for data and files for the web and mobile app.
 - `microservices`: handles most other work, such as thumbnail generation and video encoding, in the form of _jobs_. Simply put, a job is a request to process data in the background.
@@ -41,36 +41,26 @@ Generated media is prepared in an attempt-specific directory. Bounded maintenanc
 
 ## Split workers
 
-If you prefer to throttle or distribute the workers, you can do this using the [environment variables](/install/environment-variables) to specify which container should pick up which tasks.
+A manual deployment can separate API requests from background jobs. Both services must use the same Frameleaf image, database, configuration and media mounts.
 
-For example, for a simple setup with one container for the Web/API and one for all other microservices, you can do the following:
+1. Copy the complete server service block in your release Compose file.
+2. Give the copy a unique service key, such as `frameleaf-microservices`, and a unique `container_name`.
+3. Remove the copy's published ports so the two containers do not compete for them.
+4. In the original server service, add this environment entry:
 
-Copy the entire `immich-server` block as a new service and make the following changes to the **copy**:
-
-```diff
-- immich-server:
--   container_name: frameleaf_server
-...
--   ports:
--     - 2283:2283
-+ frameleaf-microservices:
-+   container_name: frameleaf_microservices
+```yaml
+environment:
+  FRAMELEAF_WORKERS_INCLUDE: api
 ```
 
-Once you have two copies of the `immich-server` service, make the following changes to each one. This will allow one container to only serve the web UI and API, and the other one to handle all other tasks.
+5. In the new background service, add:
 
-```diff
-services:
-  immich-server:
-    ...
-+   environment:
-+     FRAMELEAF_WORKERS_INCLUDE: 'api'
-
-  frameleaf-microservices:
-    ...
-+   environment:
-+     FRAMELEAF_WORKERS_EXCLUDE: 'api'
+```yaml
+environment:
+  FRAMELEAF_WORKERS_EXCLUDE: api
 ```
+
+Recreate the stack and check both services' logs. Keep an API worker running for browser access. The optional edge listener is not automatically enabled on a container that excludes the API; configure it explicitly if your deployment needs a separate edge worker.
 
 ## Machine-learning and restoration workers
 
@@ -78,7 +68,11 @@ Machine learning runs outside the server container, on the destinations listed u
 
 ## Jobs
 
-When a new asset is uploaded it kicks off a series of jobs, which include metadata extraction, thumbnail generation, machine learning tasks, image enrichment, and storage template migration, if enabled. To view the status of a job navigate to the Administration -> Jobs page.
+When a new asset is uploaded it kicks off a series of jobs, which include metadata extraction, thumbnail generation, machine learning tasks, image enrichment, and storage template migration, if enabled. To view the status of a job, open **Settings → Compute & jobs → Job manager**. The classic **Administration → Jobs** page also lists the queues.
+
+[![Job manager with processing totals, filters and per-queue counts.](/img/screenshots/jobs-and-queues.jpg)](/img/screenshots/jobs-and-queues.jpg)
+
+*Filter the list to find work that needs attention, then open its queue for details. Queue controls affect the server even when you filter the list by account. Select the image to enlarge it.*
 
 Additionally, some jobs (such as memories generation) run on a schedule, which is every night at midnight by default. To change when they run or enable/disable a job navigate to System Settings -> Nightly Tasks Settings. That section has:
 

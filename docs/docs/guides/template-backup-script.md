@@ -4,7 +4,7 @@
 
 This script assumes you have a second hard drive connected to your server for on-site backup and ssh access to a remote machine for your third off-site copy. [BorgBase](https://www.borgbase.com/) is an alternative option for off-site backups with a competitive pricing structure. You may choose to skip off-site backups entirely by removing the relevant lines from the template script.
 
-The database is saved to your Frameleaf upload folder in the `database-backup` subdirectory, then archived with your assets by Borg. Stop all API, job and upload writers before the database dump and keep them stopped until both archives finish, or use a tested consistent snapshot procedure. Taking the dump and filesystem backup at similar times does not make them consistent while writers are active. Include every external-library media root in both `borg create` commands below.
+The database is saved to your Frameleaf upload folder in the `database-backup` subdirectory, then archived with your assets by Borg. Stop all API, job and upload writers before the database dump and keep them stopped until both archives finish, or use a tested consistent snapshot procedure. Taking the dump and filesystem backup at similar times does not make them consistent while writers are active. Include every external-library media root, deployment configuration and encryption key in both `borg create` commands below. Keep the complete media tree: edit artifacts stored beside thumbnails cannot be regenerated.
 
 :::info
 Frameleaf's [scheduled database backups](/administration/backup-and-restore#database-backups) cover the database. This template also archives media and versions the resulting recovery points with Borg.
@@ -65,13 +65,13 @@ mv "$backup_tmp" "$UPLOAD_LOCATION/database-backup/frameleaf-database.sql"
 # adapt the same temporary-file/rename sequence and retain pipeline failure handling.
 
 ### Append to local Borg repository
-borg create "$BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
+borg create "$BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION"
 borg prune --keep-weekly=4 --keep-monthly=3 "$BACKUP_PATH"/frameleaf-borg
 borg compact "$BACKUP_PATH"/frameleaf-borg
 
 
 ### Append to remote Borg repository
-borg create "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
+borg create "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION"
 borg prune --keep-weekly=4 --keep-monthly=3 "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/frameleaf-borg
 borg compact "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/frameleaf-borg
 ```

@@ -77,13 +77,13 @@ test("the allowlist is narrow: an exception in one file does not cover another",
       .length,
     1,
   );
-  // a deprecated-alias sentence on the commands page is allowed, a new example there is not
-  assert.deepEqual(
+  // public documentation does not teach deprecated aliases, including explanatory sentences
+  assert.equal(
     scanLegacyText(
       "The old names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases.",
       { file: "docs/docs/administration/server-commands.md" },
-    ),
-    [],
+    ).length,
+    2,
   );
   assert.equal(
     scanLegacyText("docker exec -it frameleaf_server immich-admin list-users", {
@@ -127,7 +127,7 @@ test("the importer journal identifier is internal and allowed only in its defini
   );
   for (const other of [
     "server/src/immich-import/importer.ts",
-    "docs/docs/administration/import-immich.md",
+    "docs/docs/administration/import-library.md",
   ]) {
     assert.equal(
       scanLegacyText("IMMICH_IMPORT_SCHEMA_SQL", { file: other }).length,
@@ -142,8 +142,8 @@ test("the importer journal identifier is internal and allowed only in its defini
   );
 });
 
-test("the offline import alias allowance does not excuse other commands, variables or documentation", () => {
-  const file = "docs/docs/administration/import-immich.md";
+test("the import and admin guides do not allow deprecated command names or variables", () => {
+  const file = "docs/docs/administration/import-library.md";
   for (const command of [
     "immich-admin import-immich preflight --config /path/config.json",
     "immich-admin import-immich run --config /path/config.json",
@@ -151,7 +151,7 @@ test("the offline import alias allowance does not excuse other commands, variabl
     "immich-admin import-immich resume --config /path/config.json",
     "immich-admin import-immich verify --config /path/config.json",
   ]) {
-    assert.deepEqual(scanLegacyText(command, { file }), []);
+    assert.equal(scanLegacyText(command, { file }).length, 1);
     assert.equal(
       scanLegacyText(command, { file: "docs/docs/example.md" }).length,
       1,
@@ -167,11 +167,11 @@ test("the offline import alias allowance does not excuse other commands, variabl
   }
   const alias =
     "`frameleaf-admin import-immich` (also available through the current `immich-admin` alias)";
-  assert.deepEqual(
+  assert.equal(
     scanLegacyText(alias, {
       file: "docs/docs/administration/server-commands.md",
-    }),
-    [],
+    }).length,
+    1,
   );
   assert.equal(
     scanLegacyText(alias, { file: "docs/docs/example.md" }).length,
@@ -181,6 +181,6 @@ test("the offline import alias allowance does not excuse other commands, variabl
     scanLegacyText(`${alias} IMMICH_PORT=2283`, {
       file: "docs/docs/administration/server-commands.md",
     }).length,
-    1,
+    2,
   );
 });

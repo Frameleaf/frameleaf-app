@@ -7,8 +7,6 @@ Frameleaf has a command line interface (CLI) that allows you to perform certain 
 - Upload photos and videos to Frameleaf
 - Check server version
 
-More features are planned for the future.
-
 :::tip Google Photos Takeout
 To import a Google Photos Takeout export, use [Import Google Photos](/features/google-photos-import) in Frameleaf.
 :::
@@ -31,28 +29,22 @@ pnpm --filter @frameleaf/cli build
 node packages/cli/bin/frameleaf --help
 ```
 
-The `@frameleaf/cli` package provides the `frameleaf` command. The old command names (`immich`, and `immich-admin` and `immich-healthcheck` in the server image) still work as deprecated aliases of `frameleaf`, `frameleaf-admin` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release. The same rule applies to the [deprecated variable names](#deprecated-variable-names).
-
-NOTE: if you previously installed the legacy CLI, you will need to uninstall it first:
-
-```bash
-npm uninstall -g immich
-```
+The `@frameleaf/cli` package provides the `frameleaf` command. Use the CLI version compatible with your Frameleaf server release.
 
 ## Installation (Docker)
 
 If npm is not available on your system you can try the Docker version
 
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api -e FRAMELEAF_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest
+docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api --env-file /path/to/private-cli.env ghcr.io/frameleaf/frameleaf-cli:latest
 ```
 
-Please modify the `FRAMELEAF_INSTANCE_URL` and `FRAMELEAF_API_KEY` environment variables as suitable. You can also use a Docker env file to store your sensitive API key.
+The example uses the current `latest` CLI image. For a deliberately pinned server, choose its compatible CLI version. Set the server URL and put `FRAMELEAF_API_KEY` in a private environment file; do not include a real key in shell history. The `/import` mount is read-only.
 
 This `docker run` command will directly run the command `frameleaf` inside the container. You can directly append the desired parameters (see under "usage") to the commandline like this:
 
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api -e FRAMELEAF_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest upload -a -c 5 --recursive directory/
+docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api --env-file /path/to/private-cli.env ghcr.io/frameleaf/frameleaf-cli:latest upload -a -c 5 --recursive /import/directory/
 ```
 
 ## Usage
@@ -121,20 +113,16 @@ Options:
 
 Note that the above options can read from environment variables as well.
 
-### Deprecated variable names
-
-Each `FRAMELEAF_` variable the CLI reads also accepts its older `IMMICH_` name as a deprecated alias, so existing scripts keep working: `IMMICH_INSTANCE_URL`, `IMMICH_API_KEY`, `IMMICH_CONFIG_DIR`, `IMMICH_RECURSIVE`, `IMMICH_IGNORE_PATHS`, `IMMICH_SKIP_HASH`, `IMMICH_INCLUDE_HIDDEN`, `IMMICH_AUTO_CREATE_ALBUM`, `IMMICH_ALBUM_NAME`, `IMMICH_VISIBILITY`, `IMMICH_DRY_RUN`, `IMMICH_UPLOAD_CONCURRENCY`, `IMMICH_JSON_OUTPUT`, `IMMICH_DELETE_ASSETS`, `IMMICH_DELETE_DUPLICATES`, `IMMICH_PROGRESS_BAR`, `IMMICH_WATCH_CHANGES`, `IMMICH_FROM_URL`, `IMMICH_FROM_KEY`, `IMMICH_TO_URL`, `IMMICH_TO_KEY`, `IMMICH_MIGRATE_LEDGER`, `IMMICH_MIGRATE_CONCURRENCY` and `IMMICH_MIGRATE_PORT`. The new name is always `FRAMELEAF_` followed by the same suffix. If both names are set to different values, the CLI refuses to start and names the pair; an empty value counts as unset. See [Deprecated names](/install/environment-variables#deprecated-names) for the server variables.
-
 ## Quick Start
 
 You begin by authenticating to your Frameleaf server. For instance:
 
 ```bash
 # frameleaf login [url] [key]
-frameleaf login http://192.168.1.216:2283/api HFEJ38DNSDUEG
+frameleaf login https://photos.example.com/api YOUR_API_KEY
 ```
 
-This will store your credentials in a `auth.yml` file in the configuration directory which defaults to `~/.config/frameleaf/`. An existing `~/.config/immich/` directory is still used as long as `~/.config/frameleaf/` does not exist. The directory can be set with the `-d` option or the environment variable `FRAMELEAF_CONFIG_DIR`. Please keep the file secure, either by performing the logout command after you are done, or deleting it manually.
+This will store your credentials in a `auth.yml` file in the configuration directory which defaults to `~/.config/frameleaf/`. The directory can be set with the `-d` option or the environment variable `FRAMELEAF_CONFIG_DIR`. Please keep the file secure, either by performing the logout command after you are done, or deleting it manually.
 
 Once you are authenticated, you can upload assets to your Frameleaf server.
 
@@ -172,7 +160,7 @@ You can also choose to upload all assets to a specific album with the `--album-n
 frameleaf upload --album-name "My summer holiday" --recursive directory/
 ```
 
-It is possible to skip assets matching a glob pattern by passing the `--ignore` option. See [the library documentation](docs/features/libraries.md) on how to use glob patterns. You can add several exclusion patterns if needed.
+It is possible to skip assets matching a glob pattern by passing the `--ignore` option. See [the library documentation](/features/libraries) on how to use glob patterns. You can add several exclusion patterns if needed.
 
 ```bash
 frameleaf upload --ignore **/Raw/** --recursive directory/

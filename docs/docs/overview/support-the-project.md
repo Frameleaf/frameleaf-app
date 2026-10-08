@@ -10,11 +10,11 @@ By far the easiest way to help make Frameleaf better is to use it and report iss
 
 ## Translations
 
-Help translate Frameleaf by opening a pull request with changes to the language files in the [Frameleaf repository][github-repo]. For more information, see the [Translations](/developer/translations) section.
+Help translate Frameleaf by opening a pull request with changes to the language files in the [Frameleaf repository][github-repo]. For more information, see the [Translations](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/developer-documentation/translations.md) section.
 
 ## Development
 
-If you are a programmer or developer, take a look at the [technology stack](/developer/architecture.mdx) and consider fixing bugs or building new features. For information about how to contribute as a developer, see the [Developer](/developer/architecture.mdx) section.
+If you are a programmer or developer, take a look at the [technology stack](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/developer-documentation/architecture.mdx) and consider fixing bugs or building new features. For information about how to contribute as a developer, see the [Developer](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/developer-documentation/architecture.mdx) section.
 
 ## Supporter key
 

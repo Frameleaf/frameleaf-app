@@ -4,79 +4,35 @@ sidebar_position: 10
 
 # Requirements
 
-Hardware and software requirements for Frameleaf:
+Frameleaf needs a Docker host, persistent storage and enough memory for the processing features you enable. Check the requirements attached to your chosen release before installing.
 
 ## Hardware
 
-- **OS**: Recommended Linux or \*nix 64-bit operating system (Ubuntu, Debian, etc).
-  - Non-Linux OSes tend to provide a poor Docker experience and are strongly discouraged.
-    Our ability to assist with setup or troubleshooting on non-Linux OSes will be severely reduced.
-    If you still want to try to use a non-Linux OS, you can set it up as follows:
-    - Windows: [Docker Desktop on Windows](https://docs.docker.com/desktop/install/windows-install/) or [WSL 2](https://docs.docker.com/desktop/wsl/).
-    - macOS: [Docker Desktop on Mac](https://docs.docker.com/desktop/install/mac-install/).
-  - Frameleaf runs well in a virtualized environment when running in a full virtual machine.
-    The use of Docker in LXC containers is [not recommended](https://pve.proxmox.com/wiki/Linux_Container), but may be possible for advanced users.
-    If you have issues, we recommend that you switch to a supported VM deployment.
-- **RAM**: Minimum 6GB, recommended 8GB.
-- **CPU**: Minimum 2 cores, recommended 4 cores.
-  - Frameleaf runs on the `amd64` and `arm64` platforms.
-    Since `v3`, the machine learning container on `amd64` requires the `>= x86-64-v2` [microarchitecture level](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels).
-    Most CPUs released since ~2012 support this microarchitecture.
-    If you are using a virtual machine, ensure you have selected a [supported microarchitecture](https://pve.proxmox.com/pve-docs/chapter-qm.html#_qemu_cpu_types).
-    If you are unable to support this instruction set, the last version to support `x86-64-v1` is `v2.7.5`.
-    Note that this release is no longer supported, and you must run a matching Frameleaf server version.
-- **Storage**: Recommended Unix-compatible filesystem (EXT4, ZFS, APFS, etc.) with support for user/group ownership and permissions.
-  - The generation of thumbnails and transcoded video can increase the size of the photo library by 10-20% on average.
+| Resource      | Starting point                                                       |
+| ------------- | -------------------------------------------------------------------- |
+| Host          | 64-bit Linux, on `amd64` or `arm64` supported by the release         |
+| CPU           | At least 2 cores; 4 or more for background processing                |
+| Memory        | At least 6 GB; 8 GB or more recommended, with more for larger models |
+| Media storage | Enough for originals, previews, edited versions and working files    |
+| Database      | Local disk, preferably SSD, with Unix ownership and permissions      |
+| Backups       | Separate storage for both media and database recovery copies         |
 
-:::note RAM requirements
-For a smooth experience, especially during asset upload, Frameleaf requires at least 6GB of RAM.
-For systems with only 4GB of RAM, Frameleaf can be run with machine learning features disabled.
-:::
+Large models, video jobs and several concurrent workers can require substantially more memory. Start with low concurrency and increase it after observing your system. GPU acceleration is optional; check the specific [video](/features/hardware-transcoding) or [machine-learning](/features/ml-hardware-acceleration) backend before choosing hardware.
 
-:::tip Postgres setup
-Good performance and a stable connection to the Postgres database is critical to a smooth Frameleaf experience.
-The Postgres database files are typically between 1-3 GB in size.
-For this reason, the Postgres database (`DB_DATA_LOCATION`) should ideally use local SSD storage, and never a network share of any kind.
-Additionally, if Docker resource limits are used, the Postgres database requires at least 2GB of RAM.
-Windows users may run into issues with non-Unix-compatible filesystems, see below for more details.
-:::
+## Docker and database
 
-## Software
+Use Docker Engine with **Compose v2** (`docker compose`). Use the server, PostgreSQL and optional worker images from the same verified Frameleaf release.
 
-Frameleaf requires [**Docker**](https://docs.docker.com/get-started/get-docker/) with the **Docker Compose plugin**:
+Frameleaf uses PostgreSQL 19 with pgvector. The release database image mounts `/var/lib/postgresql`; older PostgreSQL directories cannot be reused by changing the image tag. Manual deployments can use a [dedicated external database](/administration/postgres-standalone) meeting the same requirements.
 
-- **Docker Engine**: This CLI variant is designed for Linux servers (or Windows via WSL2).
-- **Docker Desktop**: This GUI variant is **not recommended** for Linux, but is available for Windows or macOS.
+[Manager](/install/manager) requires a Linux host with Cosign, `findmnt` and `realpath`. It allocates a fresh PostgreSQL directory on ext4, XFS, Btrfs, ZFS or supported Unraid host storage. Database folders on network filesystems, loopback images, RAM disks or Docker named volumes are rejected by Manager. It also requires host mount information and the Docker socket.
 
-The Compose plugin will be installed by both Docker Engine and Desktop by following the linked installation guides; it can also be [separately installed](https://docs.docker.com/compose/install/).
+## Virtual machines and desktop hosts
 
-:::note
-Frameleaf requires the command `docker compose`; the similarly named `docker-compose` is [deprecated](https://docs.docker.com/retired/#docker-compose-v1-replaced-by-compose-v2) and is no longer supported by Frameleaf.
-:::
+A Linux virtual machine can provide the supported host environment. Make its disks persistent and expose the CPU features required by the chosen images. Docker Desktop or other custom environments require the [manual container path](/install/docker-compose); Manager's host-storage checks are designed for Linux server deployments.
 
-### Special requirements for Windows users
+Keep database storage off SMB/NFS shares and Windows-mounted folders without Unix ownership semantics. Do not use the container writable layer for your library or database.
 
-<details>
-<summary>Database storage on Windows systems</summary>
+## Network access
 
-The Frameleaf Postgres database (`DB_DATA_LOCATION`) must be located on a filesystem that supports user/group
-ownership and permissions (EXT2/3/4, ZFS, APFS, BTRFS, XFS, etc.). It will not work on any filesystem formatted in NTFS or ex/FAT/32.
-It will not work in WSL (Windows Subsystem for Linux) when using a mounted host directory (commonly under `/mnt`).
-If this is an issue, you can change the bind mount to a Docker volume instead as follows:
-
-Make the following change to `.env`:
-
-```diff
-- DB_DATA_LOCATION=./postgres
-+ DB_DATA_LOCATION=pgdata
-```
-
-Add the following line to the bottom of `docker-compose.yml`:
-
-```diff
-volumes:
-  model-cache:
-+ pgdata:
-```
-
-</details>
+Installation pulls images and optional models. Some features use additional services only when configured, including remote processing, OAuth, email and casting. See [Privacy and connections](/features/privacy) before choosing those features. Use a trusted HTTPS address for remote access and shared-browser use.

@@ -1,63 +1,31 @@
-# Remote Access
+# Remote access
 
-This page gives a few pointers on how to access your Frameleaf instance from outside your LAN.
-You can read the [full discussion in Discord](https://discord.com/channels/979116623879368755/1122615710846308484)
+Choose how people reach the photo application away from home. Use a trusted HTTPS address or a private encrypted network, and test sign-in, large uploads, original downloads and video playback from outside your LAN.
 
-:::danger
-Never forward port 2283 directly to the internet without additional configuration. This will expose the web interface via http to the internet, making you susceptible to [man in the middle](https://en.wikipedia.org/wiki/Man-in-the-middle_attack) attacks.
-:::
+## Private network
 
-## Option 1: VPN to home network
+A VPN or private mesh network can make the server reachable only to enrolled devices. Install and configure the network software on the server and each client, then use an address reachable through it. Follow that product's current documentation for authentication, routing and device access.
 
-You may use a VPN service to open an encrypted connection to your Frameleaf instance. OpenVPN and Wireguard are two popular VPN solutions. Here is a guide on setting up VPN access to your server - [Pihole documentation](https://docs.pi-hole.net/guides/vpn/wireguard/overview/)
+Private networking reduces public exposure; it does not remove the need for application updates, strong account credentials and backups.
 
-### Pros
+## Public HTTPS address
 
-- Simple to set up and very secure.
-- Single point of potential failure, i.e., the VPN software itself. Even if there is a zero-day vulnerability on Frameleaf, you will not be at risk.
-- Both Wireguard and OpenVPN are independently security-audited, so the risk of serious zero-day exploits are minimal.
+A [reverse proxy](/administration/reverse-proxy) can terminate HTTPS for your domain and forward requests to Frameleaf's application port. Configure a valid certificate, WebSocket support, request-size limits and timeouts suitable for large videos. Use a dedicated hostname; Frameleaf must be served at its root path.
 
-### Cons
+Forward the application through your chosen HTTPS endpoint. Do not expose its plain HTTP port directly to the Internet. Keep PostgreSQL, machine-learning workers and Manager's administration port on trusted networks.
 
-- If you don't have a static IP address, you would need to set up a [Dynamic DNS](https://www.cloudflare.com/learning/dns/glossary/dynamic-dns/). [DuckDNS](https://www.duckdns.org/) is a free DDNS provider.
-- VPN software needs to be installed and active on both server-side and client-side.
-- Requires you to open a port on your router to your server.
+A hosted tunnel or proxy may impose request-size, timeout or bandwidth limits. Check those limits before depending on it for large originals. Authentication layers outside Frameleaf must also work with the clients you use.
 
-## Option 2: Tailscale
+## Frameleaf account connection
 
-If you are unable to open a port on your router for Wireguard or OpenVPN to your server, [Tailscale](https://tailscale.com/) is a good option. Tailscale mediates a peer-to-peer wireguard tunnel between your server and remote device, even if one or both of them are behind a [NAT firewall](https://en.wikipedia.org/wiki/Network_address_translation).
+When your installation has the optional account and remote-access connection configured, use the controls in **Settings** to link the server and review availability. Publishing port `2443` alone does not configure that connection or create a trusted certificate. See the [deployment variables](/install/environment-variables#optional-account-and-remote-access-connection).
 
-:::tip Video tutorial
-You can learn how to set up Tailscale together with Frameleaf with the [tutorial video](https://www.youtube.com/watch?v=Vt4PDUXB_fg) they created.
-:::
+## Verify access
 
-### Pros
+1. Open the exact external address in a browser and check the certificate.
+2. Sign in with a normal user account.
+3. Upload a small photo and a representative large video, then download an original.
+4. Test playback, shared links and any app you plan to use.
+5. If a request fails, compare the application and proxy logs without posting credentials or private media URLs.
 
-- Minimal configuration needed on server and client sides.
-- You are protected against zero-day vulnerabilities on Frameleaf.
-
-### Cons
-
-- The Tailscale client usually needs to run as root on your devices and it increases the attack surface slightly compared to a minimal Wireguard server. e.g., an [RCE vulnerability](https://github.com/tailscale/tailscale/security/advisories/GHSA-vqp6-rc3h-83cp) was discovered in the Windows Tailscale client in November 2022.
-- Tailscale is a paid service. However, there is a generous [free tier](https://tailscale.com/pricing/) suitable for personal use.
-- Tailscale needs to be installed and running on both server-side and client-side.
-
-## Option 3: Reverse Proxy
-
-A reverse proxy is a service that sits between web servers and clients. A reverse proxy can either be hosted on the server itself or remotely. Clients can connect to the reverse proxy via https, and the proxy relays data to Frameleaf. This setup makes most sense if you have your own domain and want to access your Frameleaf instance just like any other website, from outside your LAN. You can also use a DDNS provider like DuckDNS or no-ip if you don't have a domain. This configuration allows the Frameleaf Android and iphone apps to connect to your server without a VPN or tailscale app on the client side.
-
-If you're hosting your own reverse proxy, [Nginx](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/) is a great option. An example configuration for Nginx is provided [here](/administration/reverse-proxy.md).
-
-You'll also need your own certificate to authenticate https connections. If you're making Frameleaf publicly accessible, [Let's Encrypt](https://letsencrypt.org/) can provide a free certificate for your domain and is the recommended option. Alternatively, a [self-signed certificate](https://en.wikipedia.org/wiki/Self-signed_certificate) allows you to encrypt your connection to Frameleaf, but it raises a security warning on the client's browser.
-
-A remote reverse proxy like [Cloudflare](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/) increases security by hiding the server IP address, which makes targeted attacks like [DDoS](https://www.cloudflare.com/learning/ddos/what-is-a-ddos-attack/) harder.
-
-### Pros
-
-- No additional software needs to be installed client-side
-- If you only need access to the web interface remotely, it is possible to set up access controls that shield you from zero-day vulnerabilities on Frameleaf. [Cloudflare Access](https://www.cloudflare.com/zero-trust/products/access/) has a generous free tier.
-
-### Cons
-
-- Complex configuration
-- Depending on your configuration, both the Frameleaf web interface and API may be exposed to the internet. Frameleaf is under very active development and the existence of severe security vulnerabilities cannot be ruled out.
+Set the application's **Public server URL** to the address recipients should use for email and share links. Keep a local administration route available for recovery.

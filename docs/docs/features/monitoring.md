@@ -1,16 +1,17 @@
-# Monitoring
+# Logs and health
 
-Telemetry is permanently disabled in Frameleaf. The server contains no OpenTelemetry SDK,
-exporters, instrumentation, metrics listener, or user/job metric collectors. The old
-`IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, and metrics-port variables cannot
-re-enable reporting. The bundled Compose configurations no longer start Prometheus or Grafana.
+Frameleaf keeps local logs, health checks and job progress. It does not collect usage telemetry or expose a Prometheus metrics listener. See [Privacy and connections](./privacy.md) for optional network requests.
 
-Version checks never contact an upstream service. When they are turned on, the server asks
-only Frameleaf's own GitHub releases for a newer version. Local version history, health checks,
-job progress, and logs remain available.
+Manager's **Overview** shows container health and a **Logs** action for each service. In a manual installation:
 
-See [Telemetry and automatic reporting](./fork-privacy-suite.md#telemetry-and-automatic-reporting)
-for the machine-learning policy and the network functions that remain available.
+```sh
+docker compose ps
+docker logs --tail 100 frameleaf_server
+docker logs --tail 100 frameleaf_machine_learning
+docker logs --tail 100 frameleaf_postgres
+```
+
+Use **Compute & jobs** to inspect processing and **Library Care** to check your originals. Container health alone does not establish that every photo or backup is readable.
 
 ## Structured Logging
 
@@ -35,7 +36,7 @@ When enabled, logs are output in structured JSON format:
 ```json
 {"level":"log","pid":36,"timestamp":1766533331507,"message":"Initialized websocket server","context":"WebsocketRepository"}
 {"level":"warn","pid":48,"timestamp":1766533331629,"message":"Unable to open /build/www/index.html, skipping SSR.","context":"ApiService"}
-{"level":"error","pid":36,"timestamp":1766533331690,"message":"Failed to load plugin immich-core:","context":"Error"}
+{"level":"error","pid":36,"timestamp":1766533331690,"message":"Unable to read media file","context":"StorageService"}
 ```
 
 This format includes:

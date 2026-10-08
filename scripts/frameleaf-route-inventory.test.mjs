@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 const routesRoot = resolve(root, "web/src/routes");
 const inventory = JSON.parse(
   readFileSync(
-    resolve(root, "docs/docs/developer/frameleaf-route-inventory.json"),
+    resolve(root, "developer-documentation/frameleaf-route-inventory.json"),
     "utf8",
   ),
 );

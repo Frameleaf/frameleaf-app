@@ -1,3 +1,7 @@
+---
+slug: /guides/scaling-frameleaf
+---
+
 # Scaling Frameleaf
 
 Frameleaf is built with modern deployment practices in mind, and the backend is designed to be able to run multiple instances in parallel. When doing this, the only requirement you need to be aware of is that every instance needs to be connected to the shared infrastructure. That means they should all have access to the same canonical PostgreSQL 19 database, and have the same files mounted into the containers.

@@ -2,15 +2,22 @@
 
 Frameleaf supports non-destructive editing of photos. This means that any edits you make to an asset do not modify the original file, but instead create a new version of the asset with the edits applied. You can always revert back to the original asset if needed.
 
-## Supported Edits
+## Edit a photo
 
-Currently, Frameleaf supports the following types of edits:
+Open a photo and select **Edit**. The editor offers:
 
-- Cropping
-- Rotation
-- Mirroring
+- **Adjust** for exposure, contrast, highlights, shadows, color and detail. Selective masks let you adjust part of an image.
+- **Crop** for aspect ratio, cropping, rotation and mirroring.
+- **Enhance** for restoration and upscaling when a compatible processing destination is available. Review its destination and consent before starting work.
+- **Presets** for saved looks and your own settings.
 
-To edit a photo, open it and select **Edit** in the viewer. Use the **Crop** tools to crop, rotate or mirror it, then save your changes.
+Compare the result with the original, then use **Save version**. **Versions** lets you review saved results and return to another version or the original. Saving preserves an edit recipe as well as the generated output. If a recipe needs a newer renderer, the app can keep the edit without claiming it produced a new preview.
+
+Back up the complete media tree. Some edits use stored mask or clean-up artifacts beside thumbnails; those files cannot be regenerated from the original alone.
+
+## Video and Studio
+
+The video editor provides the controls supported by that source and release. For a project combining clips, audio and other media, use [Studio](/features/studio). An original remains intact when a new edited version or project export is created.
 
 ## Originals, edited masters and playback copies
 

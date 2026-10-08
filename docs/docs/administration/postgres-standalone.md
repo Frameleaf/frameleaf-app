@@ -1,10 +1,10 @@
 # Standalone PostgreSQL
 
-Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d`. Use the digest in the Frameleaf release manifest for deployment. PostgreSQL 19 beta 4 is the current development baseline; an image build or source review does not establish production readiness.
+The upcoming release uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. Read the [release availability notice](/install/docker-compose) before deploying it. Use the database image supplied in the matching Compose bundle; application `:latest` images from the preceding release are not compatible with this layout.
 
-The PostgreSQL image is public and supports AMD64 and ARM64. Pulling this image does not require a GitHub account or registry credentials.
+The manual Compose deployment includes the compatible database. Use an external PostgreSQL service only if you administer its extensions, access, updates and recovery yourself.
 
-All Frameleaf content, configuration, jobs, import journals and shared coordination tables live in the canonical `public` schema. Every API and job worker must connect to this same database. There is no separate cache or queue service to configure. Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-immich.md) to copy supported source content into a fresh destination.
+All Frameleaf content, configuration, jobs, import journals and shared coordination tables live in the canonical `public` schema. Every API and job worker must connect to this same database. There is no separate cache or queue service to configure. Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-library.md) to copy supported source content into a fresh destination.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ The release Compose file mounts the database parent directory at `/var/lib/postg
 
 ## Schema ownership
 
-Frameleaf creates its own baseline and records subsequent changes in `public.frameleaf_migrations`, with `public.frameleaf_migrations_lock` coordinating migration execution. Do not copy source migration rows, extension indexes or operational queues into this database. See [Database migrations](../developer/database-migrations.md).
+Frameleaf manages its own database schema and records applied migrations. Let the server complete its migrations during startup. Do not copy migration records, extension indexes or operational queues from a different application, or change these records to force an upgrade.
 
 ## Backup and recovery
 

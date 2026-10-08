@@ -4,7 +4,7 @@ import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
 
 ## Commercial Guidelines
 
-Frameleaf is available as open source under the terms of the GNU AGPL v3 License, like the upstream project it is built on. See the [acknowledgements](/overview/acknowledgements) for details.
+Frameleaf is available as open source under the terms of the GNU AGPL v3 License, with source and dependency notices preserved. See the [acknowledgements](/overview/acknowledgements) for details.
 
 ---
 
@@ -24,56 +24,19 @@ View a single photo, press the three dots in the top-right to show context menu,
 
 ---
 
-## Mobile App
+## Phone access
 
-### What is the difference between the cloud icons on the mobile app?
+### Where do I get a Frameleaf app?
 
-| Icon                               | Description                                                                                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ![cloud](/img/cloud.svg)           | Asset is only available on the server and was uploaded from some other device (like the web client) or was deleted from this device after upload |
-| ![cloud-cross](/img/cloud-off.svg) | Asset is only available locally and has not yet been backed up                                                                                   |
-| ![cloud-done](/img/cloud-done.svg) | Asset was uploaded from this device and is now backed up to the server; the original file is still on the device                                 |
+See [Frameleaf apps](/features/mobile-app) for current official download paths. The web application is available from a phone browser even when a signed native release is unavailable.
 
-### I cannot log into the application after an update. What can I do?
+### What address should I use?
 
-Verify that the mobile app and server are both running the same version (major and minor).
+Use the photo application's address, normally `http://YOUR-SERVER:2283` on your home network, or your configured trusted HTTPS address. Manager's `9443` address is a separate administration interface.
 
-If you still cannot log in to the app, try the following:
+### How do I check a phone backup?
 
-- Check the mobile logs
-- Make sure login credentials are correct by logging in on the web app
-
-### Why does foreground backup stop when I navigate away from the app? Shouldn't it transfer the job to background backup?
-
-Foreground backup and background backup are two separate mechanisms. They don't communicate or interact with each other.
-
-Foreground backup is controlled by the user's action, while background backup is controlled by your device's operating system. When the app is put in the background, the invocation of background tasks is delegated to the device's operating system scheduler. It decides when the background task can run and how long it can run.
-
-The behaviors differ based on your device manufacturer and operating system, but most are related to battery-saving policies.
-
-### Why is background backup on iOS not working?
-
-On iOS (iPhone and iPad), the operating system determines if a particular app can invoke background tasks based on multiple factors, most of which the mobile app has no control over. To increase the likelihood that the background backup task is run, follow the steps below:
-
-- Enable Background App Refresh for the mobile app in the iOS settings at `Settings > General > Background App Refresh`.
-- Disable **Low Power Mode** when not needed, as this can prevent apps from running in the background.
-- Disable Background App Refresh for apps that don't need background tasks to run. This will reduce the competition for background task invocation for the mobile app.
-- Use the mobile app more often.
-
-### Why are features in the mobile app not working with a self-signed certificate, Basic Auth, custom headers, or mutual TLS?
-
-These network features are experimental. They often do not work with video playback, asset upload or download, and other features.
-Many of these limitations are known issues in the upstream project.
-Instead of these experimental features, we recommend using the URL switching feature, a VPN, or a [free trusted SSL certificate](https://letsencrypt.org/) for your domain.
-
-We are not actively developing these features and will not be able to provide support, but welcome contributions to improve them.
-Please discuss any large PRs with our dev team to ensure your time is not wasted.
-
-### Why isn't the mobile app updated yet?
-
-Frameleaf mobile apps are coming; for now use the web app.
-
----
+Verify the uploaded originals in the web application and download a sample before removing local copies. See [Phone backup](/features/mobile-backup) and keep separate server backups.
 
 ## Assets
 
@@ -104,9 +67,7 @@ Make sure to [set your reverse proxy](/administration/reverse-proxy/) to allow l
 Also, check the disk space of your reverse proxy.
 In some cases, proxies cache requests to disk before passing them on, and if disk space runs out, the request fails.
 
-If you are using Cloudflare Tunnel, please know that they set a maximum filesize of 100 MB that cannot be changed.
-At times, files larger than this may work, potentially up to 1 GB. However, the official limit is 100 MB.
-If you are having issues, we recommend switching to a different network deployment.
+If you use a tunnel or hosted proxy, check its current request-size and timeout limits. A successful small upload does not establish that larger videos will pass through it.
 
 ### Why are some photos stored in the file system with the wrong date?
 
@@ -182,9 +143,7 @@ For example you could change `originals:` to `Photos:`, and change `- originals:
 
 ```diff
 ...
-services:
-  immich-server:
-...
+# Inside the existing server service:
     volumes:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/data
@@ -255,9 +214,9 @@ See [How Facial Recognition Works](/features/facial-recognition#how-facial-recog
 Disabling machine learning will result in a poor experience for searching and the 'Explore' page, as these are reliant on it to work as intended.
 :::
 
-Machine learning can be disabled under Administration > Settings > Machine Learning Settings, either entirely or by model type. For instance, you can choose to disable smart search with CLIP, but keep facial recognition enabled. This means that the machine learning service will only process the enabled jobs.
+Machine learning can be disabled under Settings → Compute & jobs → Machine learning, either entirely or by model type. For instance, you can choose to disable smart search with CLIP, but keep facial recognition enabled. This means that the machine learning service will only process the enabled jobs.
 
-However, disabling all jobs will not disable the machine learning service itself. To prevent it from starting up at all in this case, you can comment out the `immich-machine-learning` section of the docker-compose.yml.
+However, disabling all jobs will not disable the machine learning service itself. To prevent it from starting up at all in this case, you can disable its service in your manually managed Compose file after disabling or rerouting its tasks.
 
 ### I'm getting errors about models being corrupt or failing to download. What do I do?
 
@@ -288,23 +247,11 @@ You can use [Smart Search](/features/searching.md) for this to some extent. For 
 You can increase the MIN DETECTION SCORE to 0.8 to help prevent bad thumbnails. Setting the score too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can adjust the 'MIN FACES DETECTED' setting in the administration panel  
 to increase the bar for what the algorithm considers a "core face" for that person, reducing the chance of bad thumbnails being chosen.
 
-### The immich_model-cache volume takes up a lot of space, what could be the problem?
+### The model cache takes up a lot of space. How do I review it?
 
-If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in immich_model-cache. To do this you can mount the model cache and remove the undesired models.
+Each downloaded model occupies persistent cache storage. Review which models are configured before deleting anything. Stop the machine-learning container before maintaining its cache, inspect that container's actual volume mapping, and remove only a model you no longer use. The release's Compose project name determines the volume name; Manager installations may use a different project.
 
-<details>
-<summary>Steps</summary>
-
-```bash
-docker run -it --rm -v immich_model-cache:/mnt-models alpine sh
-cd /mnt-models
-ls clip/ facial-recognition/
-# rm -r clip/ABC facial-recognition/DEF # delete unused models
-```
-
-</details>
-
----
+A missing required model must be downloaded again before its jobs can run. Do not remove cache files to work around a checksum error without first checking the configured model source and the server logs.
 
 ## Performance
 
@@ -385,7 +332,7 @@ You can change the user in the container by setting the `user` argument in `dock
 The non-root user/group needs read/write access to the volume mounts, including `UPLOAD_LOCATION` and `/cache` for machine-learning.
 
 :::note Docker Compose Volumes
-The Docker Compose top level volume element does not support non-root access, all of the above volumes must be local volume mounts.
+Every bind mount or named volume must have ownership and permissions compatible with the chosen container identity. Use the rootless configuration supplied by your release; do not change the PostgreSQL user arbitrarily.
 :::
 
 For a further hardened system, you can add the following block to every container.
@@ -404,30 +351,11 @@ cap_drop:
 
 </details>
 
-### How can I purge data from Frameleaf?
+### Does removing containers erase my library?
 
-Data for Frameleaf comes in two forms:
+No. The release stores the database and media in host bind mounts. Removing containers does not remove those folders, and removing Docker named volumes does not erase bind-mounted data. Keep those folders and your recovery configuration when repairing or replacing an installation.
 
-1. **Metadata** stored in a Postgres database, stored in the `DB_DATA_LOCATION` folder (previously `pg_data` Docker volume).
-2. **Files** (originals, thumbs, profile, etc.), stored in the `UPLOAD_LOCATION` folder. Include external-library media roots in your backup as well; see [what to preserve](/administration/backup-and-restore#what-to-preserve).
-
-:::warning
-This will destroy your database and reset your instance, meaning that you start from scratch.
-:::
-
-```bash title="Remove Frameleaf (containers and volumes)"
-docker compose down -v
-```
-
-After removing the containers and volumes, there are a few directories that need to be deleted to reset Frameleaf to a new installation. Once they are deleted, Frameleaf can be started back up and will be a fresh installation.
-
-- `DB_DATA_LOCATION` contains the database, media info, and settings.
-- `UPLOAD_LOCATION` contains all the media uploaded to Frameleaf.
-
-:::note Portainer
-If you use portainer, bring down the stack in portainer. Go into the volumes section  
-and remove all the volumes related to Frameleaf, then restart the stack.
-:::
+For routine photo deletion, use [Trash](/features/trash). Before intentionally retiring a complete installation, make and verify your recovery copies, stop writers, and identify its exact storage mappings. Never delete another stack's database or library as part of container cleanup.
 
 ### Why does the machine learning service report workers crashing?
 
@@ -444,88 +372,16 @@ If it mentions SIGILL (note the lack of a K) or error code 132, it most likely m
 
 ## Database
 
-### Why am I getting database ownership errors?
+### Can I reuse another application's database or an older PostgreSQL directory?
 
-If you get database errors such as `FATAL:  data directory "/var/lib/postgresql/19/docker" has wrong ownership` upon database startup, this is likely due to an issue with your filesystem.
-NTFS and ex/FAT/32 filesystems are not supported. See [here](/install/requirements#special-requirements-for-windows-users) for more details.
+No. Use a fresh PostgreSQL 19 directory for Frameleaf and follow [library import](/administration/import-library) for supported sources. Updating only the database image does not convert its on-disk format.
 
-### How can I verify the integrity of my database?
+### Where should I begin with a database error?
 
-Database checksums are enabled by default for new installations since v1.104.0. You can check if they are enabled by running the following command.
-A result of `on` means that checksums are enabled.
+Keep the current database directory and recovery copies. Check the database container's logs, configured credentials, disk space and storage permissions. See [Database inspection](/guides/database-queries) and [Backup and restore](/administration/backup-and-restore). Do not delete migration records or reset a live schema to bypass a startup error.
 
-<details>
-<summary>Check if checksums are enabled</summary>
+## Getting help
 
-```bash
-docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="show data_checksums"
- data_checksums
-----------------
- on
-(1 row)
-```
-
-</details>
-
-If checksums are enabled, you can check the status of the database with the following command. A normal result is all `0`s.
-
-<details>
-<summary>Check for database corruption</summary>
-
-```bash
-docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="SELECT datname, checksum_failures, checksum_last_failure FROM pg_stat_database WHERE datname IS NOT NULL"
-  datname  | checksum_failures | checksum_last_failure
------------+-------------------+-----------------------
- postgres  |                 0 |
- immich    |                 0 |
- template1 |                 0 |
- template0 |                 0 |
-(4 rows)
-```
-
-</details>
-
-You can also scan the Postgres database file structure for errors:
-
-<details>
-<summary>Scan for file structure errors</summary>
-```bash
-docker exec -it frameleaf_postgres pg_amcheck --username=<DB_USERNAME> --heapallindexed --parent-check --rootdescend --progress --all --install-missing
-```
-
-A normal result will end something like this and return with an exit code of `0`:
-
-```bash
-7470/8832 relations (84%), 730829/734735 pages (99%)
-8425/8832 relations (95%), 734367/734735 pages (99%)
-8832/8832 relations (100%), 734735/734735 pages (100%)
-```
-
-</details>
-
-If corruption is detected, you should immediately make a backup before performing any other work in the database.
-To do so, you may need to set the `zero_damaged_pages=on` flag for the database server to allow `pg_dumpall` to succeed.
-After taking a backup, the recommended next step is to restore the database from a healthy backup before corruption was detected.
-The damaged database dump can be used to manually recover any changes made since the last backup, if needed.
-
-The causes of possible corruption are many, but can include unexpected poweroffs or unmounts, use of a network share for Postgres data, or a poor storage medium such an SD card or failing HDD/SSD.
-
-### Should I upgrade the database to a newer major version?
-
-We recommend using the same version of PostgreSQL as in our default docker-compose.yml, however newer versions are also supported. Do note that the major upgrade process is not as simple as just changing the version of the container image. See [the PostgreSQL documentation](https://www.postgresql.org/docs/current/upgrading.html) for more detail.
-
-## Other
-
-### Will Frameleaf save me money?
-
-Probably not. At first glance, it seems like it might: compared to cloud-hosted commercial services, there are no monthly fees to run Frameleaf on your own server, and a supporter key is optional. However, there are many other costs like hardware, storage for backups, and your own time. There are many good reasons for self-hosting, but saving money is rarely one of them.
-
-### I really want a particular feature. Can I sponsor development of it?
-
-No, we have no feature sponsorship scheme. Frameleaf is funded by the people who use it: you can [support Frameleaf](/overview/support-the-project#supporter-key) with a supporter key. We do not sell development priorities.
-
-A common alternative suggestion is to offer bounties that can be collected by anyone who submits a pull request, but we don't want those either; the Zig project has [explained the reason well](https://ziglang.org/news/bounties-damage-open-source-projects/).
-
-If you really want to pay someone to build a feature you like, you're welcome to hire somebody directly and pay them for their time, but please note that we provide no guarantee that we'll merge the resulting work so we recommend that you check in with us first.
+Use the [help guide](/overview/help) to collect the installed version, error and relevant sanitized logs. Feature availability and compatibility are described by the release you installed.
 
 [model-source]: https://models.frameleaf.cloud

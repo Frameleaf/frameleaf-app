@@ -21,7 +21,15 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 
 ## How to run a command
 
-From your Compose directory, run `docker compose exec immich-server frameleaf-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `frameleaf-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename. The old command names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases of `frameleaf-admin`, `frameleaf` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release.
+For the manual release container, run:
+
+```sh
+docker exec -it frameleaf_server frameleaf-admin COMMAND
+```
+
+Replace `COMMAND` with the desired command. Use `help` or `COMMAND --help` to see the installed release's syntax. Manager generates installation-specific container names; find the server in its Overview before using a host command.
+
+For first registration, `frameleaf-admin setup-code` prints the current setup code. Keep setup and maintenance tokens private.
 
 ## Examples
 
@@ -158,4 +166,4 @@ No schema drift detected
 
 ## Offline Immich import
 
-`frameleaf-admin import-immich` (also available through the current `immich-admin` alias) supports `preflight`, `run`, `status`, `resume` and `verify` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-immich.md) before starting; ordinary API-based server migration is a separate feature.
+`frameleaf-admin import-immich` supports `preflight`, `run`, `status`, `resume` and `verify` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-library.md) before starting; ordinary API-based server migration is a separate feature.

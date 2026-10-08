@@ -1,6 +1,6 @@
 # Frameleaf integration and validation
 
-Frameleaf maintains its server, schema, SQL tooling, deployment images and release assets independently. Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md). Source attribution and pinned dependency checksums remain in the repository; there is no ongoing upstream merge, database handoff or return procedure.
+Frameleaf maintains its server, schema, SQL tooling, deployment images and release assets independently. Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../docs/docs/administration/import-library.md). Source attribution and pinned dependency checksums remain in the repository; there is no ongoing upstream merge, database handoff or return procedure.
 
 ## Ordinary checks
 

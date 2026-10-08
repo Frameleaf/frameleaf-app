@@ -1,6 +1,6 @@
 # Server-to-server migration
 
-This page covers API-based media transfer between Frameleaf servers. Both endpoints must identify as Frameleaf; this command does not support other server implementations. A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-immich.md).
+This page covers API-based media transfer between Frameleaf servers. Both endpoints must identify as Frameleaf; this command does not support other server implementations. A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-library.md).
 
 Moving a person's library from one server to another is done with the
 resumable migration command of the command-line tool. It runs on a computer

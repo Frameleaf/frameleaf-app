@@ -1,101 +1,33 @@
 ---
-sidebar_position: 70
+sidebar_position: 40
 ---
 
-# Unraid [ Community ]
+# Unraid
 
-:::note
-This is a community contribution and not officially supported by Frameleaf, but included here for convenience.
-:::
+:::warning Match the published release
 
-Frameleaf installs on Unraid with the [Docker Compose Manager](https://forums.unraid.net/topic/114415-plugin-docker-compose-manager/) plugin from the Unraid Community Apps.
-
-:::info
-The Unraid Community Apps templates use community images of other software, not Frameleaf. Use the Docker Compose method below.
-:::
-
-## Docker-Compose Method
-
-:::info
-
-- Guide was written using Unraid v6.12.10.
-- Requires you to have installed the plugin: [Docker Compose Manager](https://forums.unraid.net/topic/114415-plugin-docker-compose-manager/)
-- An Unraid share created for your images
-- There has been a [report](https://forums.unraid.net/topic/130006-errortraps-traps-node27707-trap-invalid-opcode-ip14fcfc8d03c0-sp7fff32889dd8-more/#comment-1189395) of this not working if your Unraid server doesn't support AVX _(e.g. using a T610)_
+This guide describes the upcoming release. Before installing, read the [release availability notice](/install/docker-compose). Use the published release's matching deployment files; its current `:latest` images must not be combined with the PostgreSQL 19 layout described here.
 
 :::
 
-Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases), with a fresh canonical PostgreSQL 19 database and data volume. A supported source library enters through the [one-time offline importer](/administration/import-immich.md), using independent verified media copies. When updating an existing canonical Frameleaf installation, retain its stack name, `.env`, database directory and media paths. Container display names are `frameleaf_*`; service identifiers and the [deprecated environment aliases](/install/environment-variables#deprecated-names) remain available.
+[Frameleaf Manager](/install/manager) is the primary setup path on an Unraid Docker host. It detects **Settings → Docker → Default appdata storage location**, honors a custom share or pool, and shows the selected database location before setup. It creates a new database directory outside Docker's virtual disk.
 
-## Installation Steps
+## Prepare storage
 
-1. Go to "**Plugins**" and click on "**Compose.Manager**"
-2. Click "**Add New Stack**" and when prompted for a label enter "**Frameleaf**", then click "**OK**"
-3. Select the cogwheel ⚙️ next to Frameleaf and click "**Edit Stack**"
-4. Click "**Compose File**" and then paste the entire contents of the [Frameleaf Docker Compose](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) file into the Unraid editor. Remove any text that may be in the text area by default. Note that Unraid v6.12.10 uses version 24.0.9 of the Docker Engine, which does not support healthcheck `start_interval` as defined in the `database` service of the Docker compose file (version 25 or higher is needed). This parameter defines an initial waiting period before starting health checks, to give the container time to start up. Commenting out the `start_interval` and `start_period` parameters will allow the containers to start up normally. The only downside to this is that the database container will not receive an initial health check until `interval` time has passed.
+Create separate persistent folders for Manager state, the library and database backups. Use your configured appdata location for PostgreSQL, or select another supported mounted disk folder. Do not point it at another application's database. Choose storage with enough free space and include the library in your independent media backup plan.
 
-   <details >
-       <summary>Using a separate PostgreSQL 19 server? Otherwise proceed to step 5.</summary>
-       <p>Follow the <a href="/administration/postgres-standalone">standalone PostgreSQL requirements</a>, including pgvector and a fresh dedicated Frameleaf database. A source application database or older PostgreSQL cluster cannot be reused as this destination.</p>
-       <ul>
-           <li>Comment out the whole <code>database</code> service, from the <code>database:</code> line to its <code>restart:</code> line</li>
-           <li>Comment out the <code>- database</code> entry under <code>depends_on:</code> for <b>each service</b> that lists it. If <code>database</code> is the only entry, comment out the <code>depends_on:</code> line as well</li>
-           <li>Comment out the volumes</li>
-           <img
-               src={require('./img/unraid04.webp').default}
-               width="20%"
-               alt="Comment out database volume"
-           />
-       </ul>
-   </details>
+Follow the [Manager launcher and setup steps](/install/manager). Pass `auto` for its appdata argument to use Unraid's configured default. Manager needs its reviewed folders mounted at the same absolute host paths; it does not need access to every share on the server.
 
-5. Click "**Save Changes**", you will be prompted to edit stack UI labels, just leave this blank and click "**Ok**"
-6. Select the cog ⚙️ next to Frameleaf, click "**Edit Stack**", then click "**Env File**"
-7. Paste the entire contents of the [Frameleaf example.env](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) file into the Unraid editor, then **before saving** edit the following:
-   - `UPLOAD_LOCATION`: Create a folder in your Images Unraid share and place the **absolute** location here > For example my _"images"_ share has a folder within it called _"frameleaf"_. If I browse to this directory in the terminal and type `pwd` the output is `/mnt/user/images/frameleaf`. This is the exact value I need to enter as my `UPLOAD_LOCATION`
-   - `DB_DATA_LOCATION`: Change this to use an Unraid share (preferably a cache pool, e.g. `/mnt/user/appdata/postgresql/data`). This uses the `appdata` share. Do also create the `postgresql` folder, by running `mkdir /mnt/user/{share_location}/postgresql/data`. If left at default it will try to use Unraid's `/boot/config/plugins/compose.manager/projects/[stack_name]/postgres` folder which it doesn't have permissions to, resulting in this container continuously restarting.
+For imports, disable any additional scheduler that could recreate or restart the source containers. Review Manager's source mounts and recovery plan before confirming cutover. See [Import an existing library](/administration/import-library).
 
-   <details >
-       <summary>Using a separate PostgreSQL 19 server? Otherwise proceed to step 8.</summary>
-       <p>Update these variables to reach the dedicated canonical database configured under the <a href="/administration/postgres-standalone">standalone PostgreSQL requirements</a>:</p>
-       <ul>
-           <li><code>DB_HOSTNAME</code></li>
-           <li><code>DB_USERNAME</code></li>
-           <li><code>DB_PASSWORD</code></li>
-           <li><code>DB_DATABASE_NAME</code></li>
-           <li><code>DB_PORT</code></li>
-       </ul>
-   </details>
+## Manual Compose alternative
 
-8. Click "**Save Changes**" followed by "**Compose Up**" and Unraid will begin to create the Frameleaf containers in a popup window. Once complete you will see a message on the popup window stating _"Connection Closed"_. Click "**Done**" and go to the Unraid "**Docker**" page
+If you already use Unraid's Compose Manager plugin, you can manage a manual Frameleaf stack:
 
-   > Note: This can take several minutes depending on your Internet speed and Unraid hardware
+1. Create a new stack and paste `docker-compose.yml` from one verified [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases).
+2. Paste that release's `example.env` into the stack's environment editor.
+3. Set `UPLOAD_LOCATION` and `DB_DATA_LOCATION` to absolute persistent host paths. Use a fresh database directory and a private random `DB_PASSWORD`; set `FRAMELEAF_VERSION=latest` for the current application images.
+4. Keep matching acceleration files with the stack if you enable them. Check the [manual Compose instructions](/install/docker-compose) before changing service definitions.
+5. Start the stack, review container health and logs, then open `http://YOUR-UNRAID-HOST:2283` for [first setup](/install/post-install).
 
-9. Once on the Docker page you will see several Frameleaf containers, one of them will be labelled `frameleaf_server` and will have a port mapping. Visit the `IP:PORT` displayed in your web browser and you should see the Frameleaf admin setup page.
-   For example, if the port mapping for `frameleaf_server` reads `172.18.0.7:2283/TCP ↔ 192.168.0.25:2283`, open `http://192.168.0.25:2283`.
-
-<details >
-    <summary>Using the FolderView plugin for organizing your Docker containers? Click me! Otherwise you're complete!</summary>
-    <p>If you are using the FolderView plugin go the Docker tab and select "<b>New Folder</b>".<br />Label it <i>"Frameleaf"</i> and use this URL as the logo: https://raw.githubusercontent.com/Frameleaf/frameleaf-app/refs/heads/fork/main/web/static/favicon.png<br/>Then turn on the toggle for each Frameleaf related container before clicking "<b>Submit</b>". The Docker page then groups them under a single collapsible Frameleaf folder.</p>
-
-</details>
-
-:::tip
-For more information on how to use the application once installed, see the [Post Install](/install/post-install.mdx) guide.
-:::
-
-## Updating Steps
-
-:::danger
-Make sure to read the general [upgrade instructions](/install/upgrading.md).
-:::
-
-Updating is extremely easy however it's important to be aware that containers managed via the Docker Compose Manager plugin do not integrate with Unraid's native dockerman UI, the label "_update ready_" will always be present on containers installed via the Docker Compose Manager.
-
-You should ignore the "_update ready_" on the Unraid WebUI and update when Frameleaf tells you a new version is available. Read the release notes for that version before you update.
-
-1. Go to the "**Docker**" tab and scroll to the Compose section
-2. Next to Frameleaf click the "**Update Stack**" button and Unraid will begin to update all Frameleaf related containers
-   > Note: **Do not** select Compose Down first, it is unnecessary.
-3. The "**Update Stack**" window lists each container as it is pulled and restarted. Once complete you will see a "_Connection Closed_" message, select "**Done**".
-4. Return to the Frameleaf WebUI and confirm that the server version it reports is the version you updated to.
+Use one management method for a stack. An installation created by Frameleaf Manager should be updated through Manager. For manual stacks, review the [upgrade guide](/install/upgrading), preserve the stack name and storage paths, and update all matching release files together.

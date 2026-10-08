@@ -4,7 +4,7 @@ Buddy Backup stores an encrypted copy of your library on another Frameleaf serve
 
 Buddy Backup is solely a backup and restore destination. Hosting a buddy's vault never adds their photos, thumbnails, albums or people to your Frameleaf library, timeline or search. Your restore browser opens only your own server's backup; it cannot browse or restore the buddy's library. The hosting panel shows encrypted storage usage and transfer status.
 
-Buddy Backup is initially disabled while beta qualification is completed. Enabling `FRAMELEAF_BUDDY_BACKUP=true` on a compatible server permits new backups when Cloud also enables the feature. Setting it back to `false` stops new backups and keeps recovery available. Production enabling requires the security, data-integrity and two-network beta checks.
+Buddy Backup is initially disabled while beta qualification is completed. Enabling `FRAMELEAF_BUDDY_BACKUP=true` on a compatible server permits new backups when Cloud also enables the feature. Setting it back to `false` stops new backups and keeps recovery available. Only enable it for a release whose supported backup and recovery paths meet your needs. Keep an independent backup while the feature is disabled or unavailable.
 
 ## Set up a buddy
 
@@ -38,49 +38,9 @@ Restore points are retained for at least 30 days, with 12 monthly points and the
 
 ## Restore and recover
 
-### Replacement-local boot configuration
+### Replacement server configuration
 
-Declared boot configuration is encrypted in snapshots and staged privately during
-recovery. A staged artifact does not change the running server. Legacy raw snapshot
-environment values are never replayed automatically.
-
-An installation can configure `FRAMELEAF_BUDDY_BOOT_BINDING_FILE` to a private
-local binding file directly inside its replacement identity directory. The binding
-and identity key must be regular files owned by the server process, mode 0600,
-inside mode-0700 directories with no symlink ancestors. The binding selects exact
-declared keys, keep/replace and a recovery directory; it binds the replacement's
-public-key identity, recovery/snapshot/vault identifiers, scope and private hashes
-of the staged artifact and prepared plan. It must not be supplied by a historical
-manifest or published through ordinary status responses.
-
-Version 1 local requests use `state: "request"`. Actual maintenance recovery
-finalizes that same file to `state: "ready"` only after verified publication has
-completed while the live maintenance fence is held. A complete-state retry verifies
-and finalizes it idempotently before maintenance can end. An extraction-only
-snapshot without a database cannot authorize full-server recovery. A valid active
-maintenance marker retains replacement boot values to resume recovery; malformed,
-foreign or incomplete authority blocks ordinary startup.
-
-On the next ordinary process start, the published `dist/main.js` validates this
-authority before importing the supervisor, caching configuration or constructing
-workers. Keep retains current effective canonical or legacy values and fills only
-missing selected values. Replace changes only selected permitted keys and removes
-their legacy aliases, including explicit unset, before validating the complete
-prospective environment. Undeclared environment and the replacement identity remain
-unchanged. Administrative commands retain their existing dispatch; offline Buddy
-commands load their existing utility without importing the supervisor.
-
-This bounded activation registry covers server port/host, logging, paired shutdown
-grace/deadline, help links and color output. All other declared canonical values
-remain privately recoverable but require further replacement-local activation
-adapters. Identity/link/entitlement, security and feature enabling inputs, historical
-mount/configuration paths and database credentials are not activated by this
-registry. Existing database credential-file sources remain unchanged; a matching
-local service adapter must establish and verify credential changes before those
-inputs can become effective. The owner-facing binding controls, deployment
-adapters, actual dependency connectivity, complete database replacement/restart and
-real two-network acceptance remain required. This source bridge does not establish
-full replacement readiness or enable Buddy Backup by default.
+Recovered settings and secrets are staged privately. They do not automatically make a replacement server ready. Review the replacement host's storage mappings, database connection, identity and configured services before enabling it. Keep recovery configuration and keys private, and verify the restored library before allowing new writes. Full replacement recovery depends on the adapters available in the installed release.
 
 Unlock with your PIN and choose a dated restore point. Owners can restore their own permitted images, videos and albums. Administrators can also restore the library, settings or a complete server. Preview the selection and conflicts before starting. The default fills missing items and preserves current changes; replacement keeps a rollback copy. Partial restoration does not reinstate historical sharing grants.
 

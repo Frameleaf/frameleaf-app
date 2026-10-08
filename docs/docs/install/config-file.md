@@ -2,276 +2,44 @@
 sidebar_position: 100
 ---
 
-# Config File
+# Configuration file
 
-A config file can be provided as an alternative to the UI configuration.
+Most administrators should use **Settings** in the web application. A JSON or YAML configuration file is available for deployments that manage application settings as files.
 
-:::note Interaction with the web UI
-While the config file does not need to include all keys from the below example, specifying `FRAMELEAF_CONFIG_FILE` will disable the ability to edit other properties from the Frameleaf web UI.
-:::
+Setting `FRAMELEAF_CONFIG_FILE` makes the file authoritative and disables editing the application configuration in the web UI. It is different from `.env`: environment variables configure deployment details such as database access, while the configuration file holds application settings.
 
-### Step 1 - Create a new config file
+## Prepare a configuration
 
-In JSON format, create a new config file (e.g. `frameleaf-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.
-YAML-formatted config files are also supported.
-The default configuration looks like this:
-
-<details>
-<summary>frameleaf-config.json</summary>
+Start from the current configuration shown in Settings for your installed release, or use a small file containing only the settings you intend to override. Unspecified settings use that release's defaults. This example sets database-backup retention:
 
 ```json
 {
   "backup": {
     "database": {
-      "cronExpression": "0 02 * * *",
       "enabled": true,
+      "cronExpression": "0 2 * * *",
       "keepLastAmount": 14
     }
-  },
-  "ffmpeg": {
-    "accel": "disabled",
-    "accelDecode": true,
-    "acceptedAudioCodecs": ["aac", "mp3", "opus"],
-    "acceptedContainers": ["mov", "ogg", "webm"],
-    "acceptedVideoCodecs": ["h264"],
-    "bframes": -1,
-    "cqMode": "auto",
-    "crf": 23,
-    "gopSize": 0,
-    "maxBitrate": "0",
-    "preferredHwDevice": "auto",
-    "preset": "ultrafast",
-    "refs": 0,
-    "targetAudioCodec": "aac",
-    "targetResolution": "720",
-    "targetVideoCodec": "h264",
-    "temporalAQ": false,
-    "threads": 0,
-    "tonemap": "hable",
-    "transcode": "required",
-    "twoPass": false
-  },
-  "image": {
-    "colorspace": "p3",
-    "extractEmbedded": false,
-    "fullsize": {
-      "enabled": false,
-      "format": "jpeg",
-      "quality": 80
-    },
-    "preview": {
-      "format": "jpeg",
-      "quality": 80,
-      "size": 1440
-    },
-    "thumbnail": {
-      "format": "webp",
-      "quality": 80,
-      "size": 250
-    }
-  },
-  "job": {
-    "backgroundTask": {
-      "concurrency": 5
-    },
-    "faceDetection": {
-      "concurrency": 2
-    },
-    "library": {
-      "concurrency": 5
-    },
-    "metadataExtraction": {
-      "concurrency": 5
-    },
-    "migration": {
-      "concurrency": 5
-    },
-    "notifications": {
-      "concurrency": 5
-    },
-    "ocr": {
-      "concurrency": 1
-    },
-    "search": {
-      "concurrency": 5
-    },
-    "sidecar": {
-      "concurrency": 5
-    },
-    "smartSearch": {
-      "concurrency": 2
-    },
-    "thumbnailGeneration": {
-      "concurrency": 3
-    },
-    "videoConversion": {
-      "concurrency": 1
-    }
-  },
-  "library": {
-    "scan": {
-      "cronExpression": "0 0 * * *",
-      "enabled": true
-    },
-    "watch": {
-      "enabled": false
-    }
-  },
-  "logging": {
-    "enabled": true,
-    "level": "log"
-  },
-  "machineLearning": {
-    "availabilityChecks": {
-      "enabled": true,
-      "interval": 30000,
-      "timeout": 2000
-    },
-    "clip": {
-      "enabled": true,
-      "modelName": "ViT-B-16-SigLIP-384__webli"
-    },
-    "duplicateDetection": {
-      "enabled": true,
-      "maxDistance": 0.01
-    },
-    "enabled": true,
-    "facialRecognition": {
-      "enabled": true,
-      "maxDistance": 0.5,
-      "minFaces": 3,
-      "minScore": 0.7,
-      "modelName": "buffalo_l"
-    },
-    "ocr": {
-      "documentFields": false,
-      "enabled": true,
-      "maxResolution": 736,
-      "minDetectionScore": 0.5,
-      "minRecognitionScore": 0.8,
-      "modelName": "PP-OCRv5_mobile"
-    },
-    "urls": ["http://immich-machine-learning:3003"]
-  },
-  "map": {
-    "darkStyle": "https://tiles.frameleaf.cloud/v1/style/dark.json",
-    "enabled": true,
-    "lightStyle": "https://tiles.frameleaf.cloud/v1/style/light.json"
-  },
-  "metadata": {
-    "faces": {
-      "import": false
-    }
-  },
-  "newVersionCheck": {
-    "enabled": false,
-    "channel": "stable"
-  },
-  "nightlyTasks": {
-    "clusterNewFaces": true,
-    "databaseCleanup": true,
-    "generateMemories": true,
-    "missingThumbnails": true,
-    "startTime": "00:00",
-    "syncQuotaUsage": true
-  },
-  "notifications": {
-    "smtp": {
-      "enabled": false,
-      "from": "",
-      "replyTo": "",
-      "transport": {
-        "host": "",
-        "ignoreCert": false,
-        "password": "",
-        "port": 587,
-        "secure": false,
-        "username": ""
-      }
-    }
-  },
-  "oauth": {
-    "autoLaunch": false,
-    "autoRegister": true,
-    "buttonText": "Login with OAuth",
-    "clientId": "",
-    "clientSecret": "",
-    "defaultStorageQuota": null,
-    "enabled": false,
-    "issuerUrl": "",
-    "endSessionEndpoint": "",
-    "mobileOverrideEnabled": false,
-    "mobileRedirectUri": "",
-    "profileSigningAlgorithm": "none",
-    "roleClaim": "immich_role",
-    "scope": "openid email profile",
-    "signingAlgorithm": "RS256",
-    "storageLabelClaim": "preferred_username",
-    "storageQuotaClaim": "immich_quota",
-    "timeout": 30000,
-    "tokenEndpointAuthMethod": "client_secret_post"
-  },
-  "passwordLogin": {
-    "enabled": true
-  },
-  "reverseGeocoding": {
-    "enabled": true
-  },
-  "server": {
-    "externalDomain": "",
-    "loginPageMessage": "",
-    "publicUsers": true
-  },
-  "storageTemplate": {
-    "enabled": false,
-    "hashVerificationEnabled": true,
-    "template": "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}"
-  },
-  "templates": {
-    "email": {
-      "albumInviteTemplate": "",
-      "albumUpdateTemplate": "",
-      "welcomeTemplate": ""
-    }
-  },
-  "theme": {
-    "customCss": ""
-  },
-  "trash": {
-    "days": 30,
-    "enabled": true
-  },
-  "user": {
-    "deleteDelay": 7
   }
 }
 ```
 
-</details>
+Configuration copied or exported from the web UI redacts secrets. Restore required SMTP, OAuth and other configured secrets from your private deployment records; a copied settings view is not a complete secrets backup. Keep the finished file private.
 
-:::tip
-In Administration > Settings is a button to copy the current configuration to your clipboard.
-So you can just grab it from there, paste it into a file and you're pretty much good to go.
-:::
+## Mount the file
 
-### Step 2 - Specify the file location
-
-:::note
-If you have any `microservices` workers, they will also need to have the config file mounted to their container.
-:::
-
-In your `.env` file, set the variable `FRAMELEAF_CONFIG_FILE` to the path of your config.
-For more information, refer to the [Environment Variables](/install/environment-variables.md) section.
-
-:::info Docker Compose
-In your `.env` file, the variables `UPLOAD_LOCATION` and `DB_DATA_LOCATION` concern the location on the host.
-However, the variable `FRAMELEAF_CONFIG_FILE` concerns the location inside the container, and informs the server container that a configuration file is present.
-
-It is recommended to reuse this variable in your `docker-compose.yml`:
+For a manual Compose installation, add a read-only mount to the server's existing `volumes` list:
 
 ```yaml
-volumes:
-  - ./frameleaf-config.json:${FRAMELEAF_CONFIG_FILE}
+- ./frameleaf-config.json:/etc/frameleaf/config.json:ro
 ```
 
-:::
+Set the container path in `.env`:
+
+```dotenv
+FRAMELEAF_CONFIG_FILE=/etc/frameleaf/config.json
+```
+
+Mount the same configuration in every API and job-worker container. Recreate the affected containers with `docker compose up -d`, then check startup logs and the displayed settings. Invalid configuration must be corrected before the server can start.
+
+To return to UI-managed settings, remove `FRAMELEAF_CONFIG_FILE` and recreate the containers. Review the settings that then become effective before starting library-wide work.

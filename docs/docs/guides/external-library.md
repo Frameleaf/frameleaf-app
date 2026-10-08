@@ -10,11 +10,11 @@ in a directory on the same machine.
 
 <ComposeBuilder query="storage.externalLibraries.0.path=&storage.externalLibraries.0.readOnly=true" />
 
-Edit `docker-compose.yml` to add one or more new mount points in the section `immich-server:` under `volumes:`.
+Edit `docker-compose.yml` to add one or more new mount points under `volumes:` in the existing server service (identified by `container_name: frameleaf_server`).
 If you want Frameleaf to be able to delete the images in the external library or add metadata ([XMP sidecars](/features/xmp-sidecars)), remove `:ro` from the end of the mount point.
 
 ```diff
-immich-server:
+# Inside the existing server service:
     volumes:
         - ${UPLOAD_LOCATION}:/data
 +       - /home/user/photos1:/home/user/photos1:ro

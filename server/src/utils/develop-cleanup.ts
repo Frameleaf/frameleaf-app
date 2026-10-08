@@ -11,7 +11,7 @@ import {
  * coordinates: Clean Up operations, brush strokes and stored bitmaps (subject, sky and background
  * masks, generated fills). Everything here is deterministic integer-friendly maths so a revision
  * re-renders to the same bytes on every server, and so the native renderers can implement the same
- * definitions (docs/docs/features/develop-recipe-protocol.md).
+ * definitions (developer-documentation/develop-recipe-protocol.md).
  *
  * Original-image coordinates are fractions of the decoded original (EXIF orientation applied, before
  * the recipe's quarter turns, flips, straighten and crop). A preview decodes a smaller original; the
