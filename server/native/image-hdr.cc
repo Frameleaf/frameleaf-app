@@ -732,7 +732,8 @@ napi_value inspect(napi_env env, napi_callback_info info) {
       }
       field(env, result, "transfer", "adaptive");
       const auto* gain = uhdr_dec_get_gainmap_metadata(dec.get());
-      field(env, result, "contentHeadroom", double(*std::max_element(gain->max_content_boost, gain->max_content_boost + 3)));
+      // Gain ratios can differ per channel and are not the authored HDR rendition headroom.
+      field(env, result, "contentHeadroom", double(gain->hdr_capacity_max));
       const bool swapped = jpegOrientation(input) >= 5;
       field(env, result, "width", double(swapped ? uhdr_dec_get_image_height(dec.get()) : uhdr_dec_get_image_width(dec.get())));
       field(env, result, "height", double(swapped ? uhdr_dec_get_image_width(dec.get()) : uhdr_dec_get_image_height(dec.get())));
@@ -1025,7 +1026,10 @@ napi_value capabilities(napi_env env, napi_callback_info info) {
   field(env, result, "heicDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "appleGainMapDecoder", heif_have_decoder_for_format(heif_compression_HEVC) != 0);
   field(env, result, "avifDecoder", heif_have_decoder_for_format(heif_compression_AV1) != 0);
-#ifdef UHDR_FRAMELEAF_RESOURCE_LIMITS_API
+#ifdef UHDR_FRAMELEAF_ISO_HDR_BASE_API
+  field(env, result, "renderer", "frameleaf-develop-hdr/4");
+  field(env, result, "isoGainMapDecoder", uhdr_is_heif_supported() != 0);
+#elif defined(UHDR_FRAMELEAF_RESOURCE_LIMITS_API)
   field(env, result, "renderer", "frameleaf-develop-hdr/3");
   field(env, result, "isoGainMapDecoder", uhdr_is_heif_supported() != 0);
 #else

@@ -2,7 +2,8 @@
 from pathlib import Path
 import json
 import struct
-p = Path(__file__).resolve().parent
+import sys
+p = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent
 
 def boxes(data):
     offset = 0
@@ -16,6 +17,9 @@ def box(kind, payload):
     return struct.pack('>I4s', len(payload) + 8, kind) + payload
 
 source = (p / 'source.heic').read_bytes()
+meta = dict(boxes(dict(boxes(source))[b'meta'][4:]))
+property_count = len(list(boxes(dict(boxes(meta[b'iprp']))[b'ipco'])))
+assert property_count in (10, 11)
 crop = ['crop', 257, 9, 512, 16]
 cases = [[crop], [crop, ['rotate', 90]], [crop, ['rotate', 180]], [crop, ['rotate', 270]],
          [crop, ['mirror', 'horizontal']], [crop, ['mirror', 'vertical']],
@@ -41,7 +45,7 @@ for number, operations in enumerate(cases):
             if kind == b'meta': payload = payload[:4] + rewrite(payload[4:], delta)
             elif kind == b'iprp': payload = rewrite(payload, delta)
             elif kind == b'ipco':
-                assert len(list(boxes(payload))) == 11
+                assert len(list(boxes(payload))) == property_count
                 payload += properties
             elif kind == b'ipma':
                 assert payload[:4] == bytes(4)
@@ -51,7 +55,7 @@ for number, operations in enumerate(cases):
                     offset += 3
                     props = payload[offset:offset + length]
                     offset += length
-                    if item in (3, 7): props += bytes(128 + 12 + i for i in range(len(operations)))
+                    if item in (3, 7): props += bytes(128 + property_count + 1 + i for i in range(len(operations)))
                     updated += struct.pack('>HB', item, len(props)) + props
                 assert offset == len(payload)
                 payload = updated

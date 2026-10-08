@@ -533,7 +533,7 @@ const VersionFourHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema
     error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
   })
   .meta({ id: 'HdrAssetDevelopRecipeV4' });
-const CurrentHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+const VersionFiveHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
   version: z.literal(5).meta({ type: 'integer', format: 'int32' }),
   renderer: z.literal('frameleaf-develop-hdr/3').default('frameleaf-develop-hdr/3'),
   hdr: z
@@ -549,9 +549,26 @@ const CurrentHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.ext
     error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
   })
   .meta({ id: 'HdrAssetDevelopRecipeV5' });
+const CurrentHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
+  version: z.literal(6).meta({ type: 'integer', format: 'int32' }),
+  renderer: z.literal('frameleaf-develop-hdr/4').default('frameleaf-develop-hdr/4'),
+  hdr: z
+    .strictObject({
+      version: z.literal(4).meta({ type: 'integer', format: 'int32' }).default(4),
+      intent: z.literal('preserve').default('preserve'),
+      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+      sdrToneMapper: z.literal('libultrahdr/2.0.2-frameleaf.4').default('libultrahdr/2.0.2-frameleaf.4'),
+    })
+    .prefault({}),
+})
+  .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all`,
+  })
+  .meta({ id: 'HdrAssetDevelopRecipeV6' });
 export const HdrAssetDevelopRecipeSchema = z.union([
   LegacyHdrAssetDevelopRecipeSchema.refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS),
   VersionFourHdrAssetDevelopRecipeSchema,
+  VersionFiveHdrAssetDevelopRecipeSchema,
   CurrentHdrAssetDevelopRecipeSchema,
 ]);
 export type HdrAssetDevelopRecipe = z.infer<typeof HdrAssetDevelopRecipeSchema>;
@@ -817,7 +834,9 @@ export class HdrAssetDevelopRecipeDto extends createZodDto(LegacyHdrAssetDevelop
 @ExtraModel()
 export class HdrAssetDevelopRecipeV4Dto extends createZodDto(VersionFourHdrAssetDevelopRecipeSchema) {}
 @ExtraModel()
-export class HdrAssetDevelopRecipeV5Dto extends createZodDto(CurrentHdrAssetDevelopRecipeSchema) {}
+export class HdrAssetDevelopRecipeV5Dto extends createZodDto(VersionFiveHdrAssetDevelopRecipeSchema) {}
+@ExtraModel()
+export class HdrAssetDevelopRecipeV6Dto extends createZodDto(CurrentHdrAssetDevelopRecipeSchema) {}
 @ExtraModel()
 export class KnownAssetDevelopRecipeDto extends createZodDto(KnownAssetDevelopRecipeSchema) {}
 export class AssetDevelopSaveDto extends createZodDto(AssetDevelopSaveSchema) {}

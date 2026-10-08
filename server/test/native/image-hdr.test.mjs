@@ -593,7 +593,7 @@ test(
     skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
   },
   () => {
-    assert.equal(codec.capabilities().renderer, 'frameleaf-develop-hdr/3');
+    assert.equal(codec.capabilities().renderer, 'frameleaf-develop-hdr/4');
     assert.equal(codec.capabilities().isoGainMapDecoder, true);
     const pixels = new Float32Array(64 * 64 * 4);
     for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
@@ -656,100 +656,102 @@ test(
   },
 );
 
-test(
-  'ISO reduced maps preserve fractional geometry and account for retained HDR pixels',
-  {
-    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
-  },
-  () => {
-    const input = readFileSync(new URL('./fixtures/iso-quarter/source.heic', import.meta.url));
-    const source = codec.decodePaired(input, ...limits),
-      cases = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/geometry.json', import.meta.url))),
-      checksums = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/checksums.json', import.meta.url)));
-    assert.equal(createHash('sha256').update(input).digest('hex'), checksums['source.heic']);
-    const pixels = (image) => new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
-    for (let i = 0; i < cases.length; ++i) {
-      let width = source.width,
-        height = source.height;
-      let indices = Array.from({ length: width * height }, (_, x) => x);
-      for (const [op, ...args] of cases[i]) {
-        if (op === 'crop') {
-          const [left, top, w, h] = args;
-          indices = Array.from(
-            { length: w * h },
-            (_, j) => indices[(Math.floor(j / w) + top) * width + (j % w) + left],
-          );
-          width = w;
-          height = h;
-        } else if (op === 'rotate') {
-          for (let turns = 0; turns < args[0] / 90; ++turns) {
-            const oldWidth = width,
-              oldHeight = height,
-              original = indices;
-            width = oldHeight;
-            height = oldWidth;
+for (const corpus of ['iso-quarter', 'iso-hdr-base/geometry'])
+  test(
+    `ISO ${corpus} geometry keeps authored HDR/SDR aligned and enforces resource limits`,
+    {
+      skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+    },
+    () => {
+      const input = readFileSync(new URL(`./fixtures/${corpus}/source.heic`, import.meta.url));
+      const source = codec.decodePaired(input, ...limits),
+        cases = JSON.parse(readFileSync(new URL(`./fixtures/${corpus}/geometry.json`, import.meta.url))),
+        checksums = JSON.parse(readFileSync(new URL(`./fixtures/${corpus}/checksums.json`, import.meta.url)));
+      assert.equal(createHash('sha256').update(input).digest('hex'), checksums['source.heic']);
+      const pixels = (image) => new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+      for (let i = 0; i < cases.length; ++i) {
+        let width = source.width,
+          height = source.height;
+        let indices = Array.from({ length: width * height }, (_, x) => x);
+        for (const [op, ...args] of cases[i]) {
+          if (op === 'crop') {
+            const [left, top, w, h] = args;
+            indices = Array.from(
+              { length: w * h },
+              (_, j) => indices[(Math.floor(j / w) + top) * width + (j % w) + left],
+            );
+            width = w;
+            height = h;
+          } else if (op === 'rotate') {
+            for (let turns = 0; turns < args[0] / 90; ++turns) {
+              const oldWidth = width,
+                oldHeight = height,
+                original = indices;
+              width = oldHeight;
+              height = oldWidth;
+              indices = Array.from(
+                { length: width * height },
+                (_, j) => original[(j % width) * oldWidth + oldWidth - 1 - Math.floor(j / width)],
+              );
+            }
+          } else {
+            const original = indices;
             indices = Array.from(
               { length: width * height },
-              (_, j) => original[(j % width) * oldWidth + oldWidth - 1 - Math.floor(j / width)],
+              (_, j) =>
+                original[
+                  args[0] === 'horizontal'
+                    ? Math.floor(j / width) * width + width - 1 - (j % width)
+                    : (height - 1 - Math.floor(j / width)) * width + (j % width)
+                ],
             );
           }
-        } else {
-          const original = indices;
-          indices = Array.from(
-            { length: width * height },
-            (_, j) =>
-              original[
-                args[0] === 'horizontal'
-                  ? Math.floor(j / width) * width + width - 1 - (j % width)
-                  : (height - 1 - Math.floor(j / width)) * width + (j % width)
-              ],
-          );
         }
+        const encoded = readFileSync(new URL(`./fixtures/${corpus}/geometry-${i}.heic`, import.meta.url));
+        assert.equal(createHash('sha256').update(encoded).digest('hex'), checksums[`geometry-${i}.heic`]);
+        const decoded = codec.decodePaired(encoded, ...limits),
+          actual = pixels(decoded),
+          expected = pixels(source);
+        assert.deepEqual([decoded.width, decoded.height], [width, height]);
+        for (let j = 0; j < indices.length; ++j)
+          for (let ch = 0; ch < 4; ++ch) {
+            assert.equal(actual[j * 4 + ch], expected[indices[j] * 4 + ch], `HDR case ${i} pixel ${j} channel ${ch}`);
+            assert.equal(
+              decoded.sdr[j * 4 + ch],
+              source.sdr[indices[j] * 4 + ch],
+              `SDR case ${i} pixel ${j} channel ${ch}`,
+            );
+          }
+        for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
+          assert.throws(() => operation(encoded, width * height, limits[1]), { code: 'RESOURCE_LIMIT' });
       }
-      const encoded = readFileSync(new URL(`./fixtures/iso-quarter/geometry-${i}.heic`, import.meta.url));
-      assert.equal(createHash('sha256').update(encoded).digest('hex'), checksums[`geometry-${i}.heic`]);
-      const decoded = codec.decodePaired(encoded, ...limits),
-        actual = pixels(decoded),
-        expected = pixels(source);
-      assert.deepEqual([decoded.width, decoded.height], [width, height]);
-      for (let j = 0; j < indices.length; ++j)
-        for (let ch = 0; ch < 4; ++ch) {
-          assert.equal(actual[j * 4 + ch], expected[indices[j] * 4 + ch], `HDR case ${i} pixel ${j} channel ${ch}`);
-          assert.equal(
-            decoded.sdr[j * 4 + ch],
-            source.sdr[indices[j] * 4 + ch],
-            `SDR case ${i} pixel ${j} channel ${ch}`,
-          );
-        }
-      for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
-        assert.throws(() => operation(encoded, width * height, limits[1]), { code: 'RESOURCE_LIMIT' });
-    }
 
-    const cropped = readFileSync(new URL('./fixtures/iso-quarter/geometry-0.heic', import.meta.url));
-    const admitted = 65536 * 64 + 16384 * 16 + cropped.length * 2 + 512 * 16 * 16;
-    assert.doesNotThrow(() => codec.decode(cropped, limits[0], admitted - 1));
-    assert.throws(() => codec.decodePaired(cropped, limits[0], admitted - 1), { code: 'RESOURCE_LIMIT' });
-    assert.doesNotThrow(() => codec.decodePaired(cropped, limits[0], admitted + 1));
-    const reference = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/reference.json', import.meta.url)));
-    assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
-    const values = pixels(source);
-    let maximum = 0,
-      squared = 0,
-      count = 0;
-    for (let row = 0; row < reference.rgb.length; ++row)
-      for (let x = 0; x < reference.rgb[row].length; ++x)
-        for (let ch = 0; ch < 3; ++ch) {
-          const at =
-            (reference.sampleY[row] * source.width + x * reference.sampleStep + reference.sampleOffset) * 4 + ch;
-          const error = values[at] - reference.rgb[row][x][ch];
-          maximum = Math.max(maximum, Math.abs(error));
-          squared += error * error;
-          ++count;
-        }
-    assert.ok(maximum < 0.1, `ISO quarter-map reference maximum ${maximum}`);
-    assert.ok(Math.sqrt(squared / count) < 0.02, `ISO quarter-map reference RMS ${Math.sqrt(squared / count)}`);
-  },
-);
+      if (corpus !== 'iso-quarter') return;
+      const cropped = readFileSync(new URL('./fixtures/iso-quarter/geometry-0.heic', import.meta.url));
+      const admitted = 65536 * 64 + 16384 * 16 + cropped.length * 2 + 512 * 16 * 16;
+      assert.doesNotThrow(() => codec.decode(cropped, limits[0], admitted - 1));
+      assert.throws(() => codec.decodePaired(cropped, limits[0], admitted - 1), { code: 'RESOURCE_LIMIT' });
+      assert.doesNotThrow(() => codec.decodePaired(cropped, limits[0], admitted + 1));
+      const reference = JSON.parse(readFileSync(new URL('./fixtures/iso-quarter/reference.json', import.meta.url)));
+      assert.equal(createHash('sha256').update(input).digest('hex'), reference.sourceSha256);
+      const values = pixels(source);
+      let maximum = 0,
+        squared = 0,
+        count = 0;
+      for (let row = 0; row < reference.rgb.length; ++row)
+        for (let x = 0; x < reference.rgb[row].length; ++x)
+          for (let ch = 0; ch < 3; ++ch) {
+            const at =
+              (reference.sampleY[row] * source.width + x * reference.sampleStep + reference.sampleOffset) * 4 + ch;
+            const error = values[at] - reference.rgb[row][x][ch];
+            maximum = Math.max(maximum, Math.abs(error));
+            squared += error * error;
+            ++count;
+          }
+      assert.ok(maximum < 0.1, `ISO quarter-map reference maximum ${maximum}`);
+      assert.ok(Math.sqrt(squared / count) < 0.02, `ISO quarter-map reference RMS ${Math.sqrt(squared / count)}`);
+    },
+  );
 
 test(
   'ISO 12-bit primary preserves low bits against independent HEVC and gain-map reconstruction',
@@ -790,5 +792,121 @@ test(
     }
     for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
       assert.throws(() => operation(input, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+  },
+);
+
+for (const [name, headroom, gamut, maximumBound, rmsBound] of [
+  ['pq-candidate', 8, 2, 0.004, 0.0015],
+  ['pq-colors', 8, 1, 0.08, 0.015],
+  ['pq-alternate', 8, 1, 0.08, 0.015],
+  ['hlg-candidate', 4, 2, 0.002, 0.0007],
+]) {
+  const input = readFileSync(new URL(`./fixtures/iso-hdr-base/${name}.heic`, import.meta.url));
+  const reference = JSON.parse(
+    readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-reference.json`, import.meta.url)),
+  );
+  const sdrReference =
+    name === 'pq-colors' || name === 'pq-alternate'
+      ? JSON.parse(readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-sdr-reference.json`, import.meta.url)))
+      : null;
+  test(
+    `HDR-base ${name} retains the primary and reconstructs authored SDR rather than flattening it`,
+    { skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1' },
+    () => {
+      const checksum = createHash('sha256').update(input).digest('hex');
+      assert.equal(checksum, reference.sourceSha256);
+      const info = codec.inspect(input, ...limits);
+      assert.equal(info.reconstructionAvailable, true);
+      assert.equal(info.contentHeadroom, headroom);
+      const image = codec.decodePaired(input, ...limits);
+      assert.deepEqual([image.width, image.height, image.gamut, image.sdrGamut], [1024, 32, gamut, 2]);
+      const pixels = new Float32Array(image.data.buffer, image.data.byteOffset, image.data.length / 4);
+      let maximum = 0,
+        squared = 0,
+        count = 0,
+        sdrMaximum = 0;
+      for (let row = 0; row < reference.rgb.length; row++)
+        for (let x = 0; x < reference.rgb[row].length; x++)
+          for (let c = 0; c < 3; c++) {
+            const at = (reference.sampleY[row] * image.width + x * 4 + 2) * 4 + c;
+            const light = reference.rgb[row][x][c];
+            const error = pixels[at] - light;
+            maximum = Math.max(maximum, Math.abs(error));
+            squared += error * error;
+            count++;
+            const sdr = Math.max(
+              0,
+              Math.min(1, sdrReference ? sdrReference.rgb[row][x][c] : (light + 0.00002) / headroom - 0.00001),
+            );
+            const gamma = sdr <= 0.0031308 ? sdr * 12.92 : 1.055 * sdr ** (1 / 2.4) - 0.055;
+            sdrMaximum = Math.max(sdrMaximum, Math.abs(image.sdr[at] - Math.round(gamma * 255)));
+          }
+      assert.ok(maximum < maximumBound, `HDR maximum ${maximum}`);
+      assert.ok(Math.sqrt(squared / count) < rmsBound, `HDR RMS ${Math.sqrt(squared / count)}`);
+      assert.ok(sdrMaximum <= 1, `SDR maximum code error ${sdrMaximum}`);
+      const exported = codec.encodePaired(
+        image.data,
+        image.width,
+        image.height,
+        image.gamut,
+        ...limits,
+        image.sdr,
+        image.sdrGamut,
+      );
+      assert.equal(codec.inspect(exported, ...limits).reconstructionAvailable, true);
+      if (name !== 'pq-alternate') {
+        const encoded = readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-export.jpg`, import.meta.url));
+        const independent = JSON.parse(
+          readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-export-reference.json`, import.meta.url)),
+        );
+        assert.equal(createHash('sha256').update(encoded).digest('hex'), independent.sourceSha256);
+        for (const bytes of [encoded, exported]) {
+          const reconstructed = codec.decode(bytes, ...limits);
+          assert.equal(reconstructed.gamut, 2);
+          const values = new Float32Array(
+            reconstructed.data.buffer,
+            reconstructed.data.byteOffset,
+            reconstructed.data.length / 4,
+          );
+          let maximum = 0,
+            squared = 0,
+            count = 0;
+          for (let row = 0; row < independent.rgb.length; ++row)
+            for (let x = 0; x < independent.rgb[row].length; ++x)
+              for (let c = 0; c < 3; ++c) {
+                const at =
+                  (independent.sampleY[row] * reconstructed.width +
+                    x * independent.sampleStep +
+                    independent.sampleOffset) *
+                    4 +
+                  c;
+                const error = values[at] - independent.rgb[row][x][c];
+                maximum = Math.max(maximum, Math.abs(error));
+                squared += error * error;
+                ++count;
+              }
+          assert.ok(maximum < 0.08, `independent export maximum ${maximum}`);
+          assert.ok(Math.sqrt(squared / count) < 0.015, `independent export RMS ${Math.sqrt(squared / count)}`);
+        }
+      }
+
+      assert.equal(createHash('sha256').update(input).digest('hex'), checksum);
+    },
+  );
+}
+const inverseInput = readFileSync(new URL('./fixtures/iso-hdr-base/pq-candidate.heic', import.meta.url));
+test(
+  'invalid inverse metadata and budgets cannot advertise reconstruction',
+  { skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1' },
+  () => {
+    for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
+      assert.throws(() => operation(inverseInput, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
+    for (const offset of [38 + 16, 38 + 40 + 16, 38 + 80 + 16]) {
+      const invalid = Buffer.from(inverseInput);
+      const metadata = invalid.indexOf(Buffer.from('idat')) + 4;
+      invalid.writeUInt32BE(0, metadata + offset);
+      assert.equal(codec.inspect(invalid, ...limits).reconstructionAvailable, false);
+      assert.throws(() => codec.decodePaired(invalid, ...limits));
+    }
   },
 );

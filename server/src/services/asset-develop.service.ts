@@ -219,7 +219,7 @@ export class AssetDevelopService {
     const recipe = developEnvelope(dto.recipe);
     if (recipe.version === 2 && recipe.sensorCanvas)
       throw new BadRequestException('The mask drawing canvas is for previews only');
-    if (dto.render && [3, 4, 5].includes(recipe.version))
+    if (dto.render && [3, 4, 5, 6].includes(recipe.version))
       await this.requireHdrRenderer(renderHdrDevelopProjection(recipe));
     if (dto.render && !dto.sourceRevisionId) {
       assertRenderableDevelopRecipe(recipe);
@@ -317,9 +317,9 @@ export class AssetDevelopService {
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
-    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5)
+    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
       return this.renderHdrPreview(source, recipe, dto, signal);
-    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3, 4 or 5');
+    if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3, 4, 5 or 6');
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
@@ -518,7 +518,9 @@ export class AssetDevelopService {
             ? 'frameleaf-develop-hdr/2'
             : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 5
               ? 'frameleaf-develop-hdr/3'
-              : DEVELOP_RENDERER_VERSION,
+              : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 6
+                ? 'frameleaf-develop-hdr/4'
+                : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
@@ -544,7 +546,7 @@ export class AssetDevelopService {
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
       if (run && !(await run.validate())) {
-        if ([3, 4, 5].includes(revision.recipeVersion))
+        if ([3, 4, 5, 6].includes(revision.recipeVersion))
           await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
         return JobStatus.Skipped;
       }
@@ -554,7 +556,7 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         await this.assetDevelopRepository.update(revision.id, publication);
         await this.assetDevelopRepository.setCurrent(revision.assetId, id);
-        if ([3, 4, 5].includes(revision.recipeVersion)) {
+        if ([3, 4, 5, 6].includes(revision.recipeVersion)) {
           const accepted = new Set([
             publication.masterPath,
             publication.previewPath,
@@ -572,7 +574,7 @@ export class AssetDevelopService {
       await this.discard(
         external
           ? [tmp.preview]
-          : [3, 4, 5].includes(revision.recipeVersion)
+          : [3, 4, 5, 6].includes(revision.recipeVersion)
             ? [...Object.values(tmp), ...Object.values(outputs)]
             : [tmp.master, tmp.preview],
       );
@@ -1010,7 +1012,8 @@ export class AssetDevelopService {
     const parsed = assertRenderableDevelopRecipe(recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
-    if (parsed.version === 3 || parsed.version === 4 || parsed.version === 5) await this.requireHdrRenderer(parsed);
+    if (parsed.version === 3 || parsed.version === 4 || parsed.version === 5 || parsed.version === 6)
+      await this.requireHdrRenderer(parsed);
     const needed =
       parsed.version === 2
         ? {
@@ -1152,7 +1155,7 @@ export class AssetDevelopService {
     image: SystemConfig['image'],
   ) {
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id);
-    const hdr = [3, 4, 5].includes(revision.recipeVersion);
+    const hdr = [3, 4, 5, 6].includes(revision.recipeVersion);
     const renditionId = hdr ? `${revision.id}_${randomUUID()}` : revision.id;
     return {
       hdrMaster: attemptOutputPath(path.join(base, `${source.id}_develop_${renditionId}_master_hdr.jpg`)),
@@ -1358,8 +1361,8 @@ export class AssetDevelopService {
     image: SystemConfig['image'],
   ) {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
-    if (recipe.version !== 3 && recipe.version !== 4 && recipe.version !== 5)
-      throw new BadRequestException('HDR revisions require recipe version 3, 4 or 5');
+    if (recipe.version !== 3 && recipe.version !== 4 && recipe.version !== 5 && recipe.version !== 6)
+      throw new BadRequestException('HDR revisions require recipe version 3, 4, 5 or 6');
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
     const result = await this.hdrRender(
       source,
@@ -1432,7 +1435,7 @@ export class AssetDevelopService {
     const recipe = assertRenderableDevelopRecipe(revision.recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
-    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5)
+    if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
       return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
     const decoded = native ?? (await this.decodeSource(source, image));
@@ -1644,7 +1647,7 @@ export class AssetDevelopService {
               revision.status === AssetDevelopRevisionStatus.Rendered
             ? 'sdr'
             : 'unknown',
-      hdrRenderStatus: [3, 4, 5].includes(revision.recipeVersion)
+      hdrRenderStatus: [3, 4, 5, 6].includes(revision.recipeVersion)
         ? hasPublishedDevelopRendition(revision) && revision.hdrMasterPath
           ? 'rendered'
           : process.env.FRAMELEAF_HDR_IMAGES === 'experimental'

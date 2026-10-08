@@ -13,7 +13,7 @@ import {
 /** Route only explicitly supported native recipes; opaque future/imported recipes remain saveable. */
 export function assertRenderableDevelopRecipe(value: unknown) {
   const envelope = developEnvelope(value);
-  if ([3, 4, 5].includes(envelope.version)) return renderHdrDevelopProjection(envelope);
+  if ([3, 4, 5, 6].includes(envelope.version)) return renderHdrDevelopProjection(envelope);
   if (envelope.version !== 2) {
     return renderDevelopProjection(envelope);
   }
@@ -58,7 +58,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
   if (Array.isArray(incoming.masks) && Array.isArray(source.masks)) {
     const sourceMasks = source.masks as Record<string, unknown>[];
     const incomingMasks = incoming.masks as Record<string, unknown>[];
-    if ([1, 3, 4, 5].includes(source.version)) {
+    if ([1, 3, 4, 5, 6].includes(source.version)) {
       for (const masks of [sourceMasks, incomingMasks]) {
         const ids = masks.map((mask) => (mask && typeof mask.id === 'string' ? mask.id.trim() : undefined));
         if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
@@ -82,7 +82,7 @@ export function preserveDevelopEnvelope(source: AssetDevelopRecipe, incoming: As
       );
       return merge(old, mask);
     });
-    if ([1, 3, 4, 5].includes(source.version)) {
+    if ([1, 3, 4, 5, 6].includes(source.version)) {
       const ids = new Set(incomingMasks.map((mask) => (mask.id as string).trim()));
       for (const mask of sourceMasks) {
         if (
