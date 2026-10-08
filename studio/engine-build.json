@@ -434,7 +434,12 @@
       "path": "patches/0090-track-gain-automation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c35bb781740d188b051a833530d86160203059102d6e8d943192cf99b2221eba"
+    },
+    {
+      "path": "patches/0091-strict-lottie-resource-admission.patch",
+      "sha256": "064e6b1a6c0a40aac5aef49637a64e754962792b57e1287aaa43ff60961ee247",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "b70a2799ba381ceab831c4fb2c80143227c93bd31369fd63085a9b77596a3299"
+  "sourceSha256": "f76f8aa8c41007eac151fb45176d3e135bc0d758263ec871b448545e8f6a191d"
 }

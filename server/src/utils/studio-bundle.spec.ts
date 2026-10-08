@@ -648,6 +648,24 @@ describe('checkStudioBundleProject', () => {
 });
 
 describe('relinkStudioGraph', () => {
+  it('relinks only explicitly declared library dependency identities without rewriting parent identity or location', () => {
+    const target = '33333333-3333-4333-8333-333333333333';
+    const binding = {
+      parent: { kind: 'project-import', id: assetA, checksum: 'a'.repeat(64) },
+      location: { format: 'lottie-json', entry: null, pointer: '/assets/0/p', role: 'image' },
+      child: { kind: 'library-asset', id: assetB, checksum: 'b'.repeat(64) },
+    };
+    const graph = { studioVectorDependencies: { version: 1, bindings: [binding] } };
+    const before = JSON.stringify(graph);
+    const result = relinkStudioGraph(graph, new Map([[`library-asset:${assetB}`, target]]));
+    expect((result.graph as typeof graph).studioVectorDependencies.bindings[0]).toEqual({
+      ...binding,
+      child: { ...binding.child, id: target },
+    });
+    expect(JSON.stringify(graph)).toBe(before);
+    expect(result.replaced).toBe(1);
+  });
+
   const graph = {
     sequences: [
       {
@@ -995,5 +1013,22 @@ describe('snapshots and results', () => {
     expect(sources.filter((item) => isStudioBundleImportAlias(item, imports)).map((item) => item.key)).toEqual([
       'library-asset:take',
     ]);
+    const sameId = '11111111-1111-4111-8111-111111111111';
+    const library = source(StudioResourceKind.LibraryAsset, sameId, 'reference');
+    const carried = studioBundleImportSources([source(StudioResourceKind.ProjectImport, sameId, 'embedded')]);
+    const graph = {
+      studioVectorDependencies: {
+        version: 1,
+        bindings: [
+          {
+            parent: { kind: 'project-import', id: assetA, checksum: 'a'.repeat(64) },
+            location: { format: 'lottie-json', entry: null, pointer: '/assets/0/p', role: 'image' },
+            child: { kind: 'library-asset', id: sameId, checksum: 'b'.repeat(64) },
+          },
+        ],
+      },
+    };
+    expect(isStudioBundleImportAlias(library, carried)).toBe(true);
+    expect(isStudioBundleImportAlias(library, carried, graph)).toBe(false);
   });
 });

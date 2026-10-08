@@ -1034,7 +1034,7 @@ export class StudioBundleService {
     const relinkable = manifest.sources.filter(
       (source) =>
         source.kind !== StudioResourceKind.ProjectImport &&
-        (!isStudioBundleImportAlias(source, carried) || source.key in snapshot.mapping),
+        (!isStudioBundleImportAlias(source, carried, envelope.graph) || source.key in snapshot.mapping),
     );
     const byKey = new Map(relinkable.map((source) => [source.key, source]));
     const chosen = Object.entries(snapshot.mapping).filter(
@@ -1491,8 +1491,15 @@ export class StudioBundleService {
     // Files kept with the project come with the bundle or not at all: never matched to library
     // items, and not listed a second time under the media id a clip places them by.
     const carried = studioBundleImportSources(manifest.sources);
+    const dependencyGraph = manifest.sources.some(
+      (source) => source.kind === StudioResourceKind.LibraryAsset && carried.has(source.id),
+    )
+      ? await this.withArchive(upload.path, async (source) => (await this.readBundle(source)).envelope.graph)
+      : undefined;
     const relinkable = manifest.sources.filter(
-      (source) => source.kind !== StudioResourceKind.ProjectImport && !isStudioBundleImportAlias(source, carried),
+      (source) =>
+        source.kind !== StudioResourceKind.ProjectImport &&
+        !isStudioBundleImportAlias(source, carried, dependencyGraph),
     );
     const kept = await this.authorizedKeys(auth, upload.id, relinkable);
     for (const source of carried.values()) {

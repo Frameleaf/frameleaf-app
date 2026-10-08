@@ -29,6 +29,8 @@
  * failure mode rather than a silent fetch.
  */
 import { createHash } from 'node:crypto';
+// eslint-disable-next-line no-restricted-imports -- Shared with the independently verified worker via tsImport without server aliases.
+import { readStudioVectorBindings } from './studio-vector-dependencies.js';
 
 /* ------------------------------------------------------------------ */
 /* Vocabulary                                                           */
@@ -627,6 +629,8 @@ export type StudioAudioSource = 'asset' | 'import' | 'catalog' | 'generated';
 
 export type StudioResourceReference = {
   kind: StudioResourceKind;
+  /** Explicit dependency kinds never use legacy media-id import inference. */
+  vectorDependency?: boolean;
   /** The identifier as written in the graph. */
   id: string;
   /** JSON-pointer-like path of the referencing object, for the refusal detail. */
@@ -1084,7 +1088,11 @@ const walk = (
   }
 
   for (const [key, value] of Object.entries(node)) {
-    if (key === '$resource' || (value !== null && typeof value !== 'object')) {
+    if (
+      key === '$resource' ||
+      (graphPath === '' && key === 'studioVectorDependencies') ||
+      (value !== null && typeof value !== 'object')
+    ) {
       continue;
     }
     walk(value, `${graphPath}/${key}`, depth + 1, state, seen, sequence, definitions, captionProvenance);
@@ -1135,6 +1143,39 @@ export const extractStudioResourceReferences = (graph: unknown): StudioReference
     }
   }
   walk(graph, '', 0, state, new Set(), null, definitions, new Set());
+  try {
+    const bindings = readStudioVectorBindings(graph);
+    const reachable = new Set(state.references.map((reference) => studioReferenceKey(reference)));
+    const pending = [...bindings];
+    const seen = new Set(reachable);
+    let progressed = true;
+    while (pending.length > 0 && progressed) {
+      progressed = false;
+      for (let index = pending.length - 1; index >= 0; index--) {
+        const binding = pending[index];
+        if (!reachable.has(`${binding.parent.kind}:${binding.parent.id}`)) continue;
+        const key = `${binding.child.kind}:${binding.child.id}`;
+        reachable.add(key);
+        const existing = state.references.find((reference) => studioReferenceKey(reference) === key);
+        if (existing) existing.vectorDependency = true;
+        pushReference(state, seen, {
+          kind: binding.child.kind as StudioResourceKind,
+          id: binding.child.id,
+          graphPath: `/studioVectorDependencies/bindings/${bindings.indexOf(binding)}/child`,
+          vectorDependency: true,
+        });
+        pending.splice(index, 1);
+        progressed = true;
+      }
+    }
+    if (pending.length > 0) throw new Error('Unbound vector dependency parent');
+  } catch {
+    state.violations.push({
+      reason: StudioRefusalReason.InvalidId,
+      graphPath: '/studioVectorDependencies',
+      detail: 'Invalid vector dependency declarations.',
+    });
+  }
   return state;
 };
 

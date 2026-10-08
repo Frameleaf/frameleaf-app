@@ -53,7 +53,7 @@ import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.
 import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
-import { studioImportKind } from 'src/utils/studio-imports.js';
+import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   STUDIO_MAX_REFERENCES,
@@ -81,6 +81,7 @@ import {
   studioRightsId,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
+import { readStudioVectorBindings, validateStudioVectorClosure } from 'src/utils/studio-vector-dependencies.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */
@@ -395,10 +396,14 @@ export class StudioResourceService extends BaseService {
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
     const { references, violations, sequences } = extractStudioResourceReferences(context.graph);
+    const vectorBindings = violations.some((item) => item.graphPath === '/studioVectorDependencies')
+      ? []
+      : readStudioVectorBindings(context.graph);
+    const vectorParents = new Set(vectorBindings.map((binding) => `${binding.parent.kind}:${binding.parent.id}`));
     // FL-103 / FL-105: the editor places a project import by its own media id, the way it places a
     // library asset, so a media id the project declares as an import is that import, never an asset.
     for (const reference of references) {
-      if (!imports.has(reference.id)) {
+      if (reference.vectorDependency || !imports.has(reference.id)) {
         continue;
       }
       if (reference.kind === StudioResourceKind.LibraryAsset) {
@@ -582,7 +587,11 @@ export class StudioResourceService extends BaseService {
       }
       // FL-105: an SVG or Lottie import is a vector graphic however the graph names it (an audio
       // source, captions, a LUT), so its external subresources are refused on every path.
-      if (vectorContentTypes.has(item.contentType) && item.externalReferences !== 0) {
+      if (
+        vectorContentTypes.has(item.contentType) &&
+        item.externalReferences !== 0 &&
+        !vectorParents.has(studioReferenceKey(reference))
+      ) {
         return {
           ok: false,
           reason: StudioRefusalReason.RemoteSubresource,
@@ -1026,6 +1035,36 @@ export class StudioResourceService extends BaseService {
       );
     }
 
+    if (vectorBindings.length > 0 && refused.length === 0) {
+      const snapshots: Uint8Array[] = [];
+      try {
+        await validateStudioVectorClosure(context.graph, entries, async (entry, maximum) => {
+          if (!entry.path) throw new Error('Missing vector input');
+          const file = await this.storageRepository.openForRandomRead(entry.path);
+          try {
+            if (file.size === 0 || file.size > Math.min(maximum, STUDIO_IMPORT_VECTOR_MAX_BYTES))
+              throw new Error('Vector input limit');
+            const bytes = await file.read(0, file.size);
+            snapshots.push(bytes);
+            if (bytes.length !== file.size) throw new Error('Vector input changed');
+            return bytes;
+          } finally {
+            await file.close();
+          }
+        });
+      } catch {
+        refused.push({
+          key: 'graph:vector-dependencies',
+          kind: null,
+          id: '',
+          graphPath: '/studioVectorDependencies',
+          reason: StudioRefusalReason.RemoteSubresource,
+          detail: 'Vector dependencies did not match authorized immutable bytes.',
+        });
+      } finally {
+        for (const bytes of snapshots) bytes.fill(0);
+      }
+    }
     return this.finish(auth, context, entries, refused);
   }
 
