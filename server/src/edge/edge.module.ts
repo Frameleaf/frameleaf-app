@@ -21,6 +21,7 @@ import { NotificationRepository } from 'src/repositories/notification.repository
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { discoverMediaLocation } from 'src/utils/media-location.js';
 
 const { cls, database } = new ConfigRepository().getEnv();
 
@@ -29,12 +30,7 @@ const { cls, database } = new ConfigRepository().getEnv();
  * existing default folder), so the identity directory is the same one the API and jobs use.
  */
 export const detectMediaLocation = (configRepository: ConfigRepository): string => {
-  const { mediaLocation } = configRepository.getEnv().storage;
-  if (mediaLocation) {
-    return mediaLocation;
-  }
-  const found = ['/data', '/usr/src/app/upload'].filter((candidate) => existsSync(candidate));
-  return found.length === 1 ? found[0] : '/usr/src/app/upload';
+  return discoverMediaLocation(configRepository.getEnv().storage.mediaLocation, existsSync);
 };
 
 /**
