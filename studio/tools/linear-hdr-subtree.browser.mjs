@@ -193,6 +193,13 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       finally {renderer.dispose();}
     };
     const background=[.2,.2,.2].map(decode);const graphic=[.4,.6,.8].map(decode);
+    const vibrate=amount=>[{id:'vibrance',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-vibrance',params:{amount}}}];
+    // Signed linear colour: chroma weight uses magnitude, never a potentially zero signed maximum.
+    const vibrant=(rgb,amount)=>{const hi=Math.max(...rgb),lo=Math.min(...rgb),scale=Math.max(...rgb.map(Math.abs),1e-6);const weight=1-Math.min(1,Math.max(0,(hi-lo)/scale));const gray=dot([.299,.587,.114],rgb);return rgb.map(v=>Math.max(-65504,Math.min(65504,gray+(v-gray)*(1+amount*weight))));};
+    for(const amount of [-1,0,.5,1]) {
+      for(const opacity of [0,.5,1]) await render(`vibrance graphic ${amount} alpha ${opacity}`,comp([track(shape('vibrance-alpha','#6699cc',opacity,{effects:vibrate(amount)}),0)]),over(background,vibrant(graphic,amount),opacity));
+      for(const transfer of ['pq','hlg']) await render(`vibrance ${transfer} signed headroom ${amount}`,comp([track({...image(transfer,.6),effects:vibrate(amount)},0)]),over(background,vibrant(linear[transfer],amount),.6));
+    }
     const temperature=(temperature,tint)=>[{id:'temperature',enabled:true,effect:{type:'gpu-effect',gpuEffectType:'gpu-temperature',params:{temperature,tint}}}];
     const tempered=(rgb,T,Q)=>rgb.map((v,c)=>v+[.1*T+.05*Q,-.1*Q,-.1*T+.05*Q][c]);
     for (const opacity of [0,.25,.5,1]) await render(`temperature before straight alpha ${opacity}`,comp([track(shape('temperature-alpha','#6699cc',opacity,{effects:temperature(1,-1)}),0)]),over(background,tempered(graphic,1,-1),opacity));
@@ -524,7 +531,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       }
       finally { encodedOutput.destroy(); }
       refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
-      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
+      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
       for(const id of GPU_TRANSITION_REGISTRY.keys())refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
     }finally{gateInput.destroy();gateOutput.destroy();transition.destroy();}

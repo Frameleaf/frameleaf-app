@@ -424,7 +424,12 @@
       "path": "patches/0088-source-monitor-linked-partitions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "a3825c6f063230e0403d3e91f6d83302ee6729adc5fc229e048b291920c28a73"
+    },
+    {
+      "path": "patches/0089-linear-hdr-vibrance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8399344be7f803ecda59eb150cf177616b0597bfdb9209c6685f5ebaa203df1d"
     }
   ],
-  "sourceSha256": "a9778e71a22f0969c6a5271bdd49ef693cd78772524a5b99e800d8e38a6e186a"
+  "sourceSha256": "c90d3267e27e5eb53f011ca29691b0f8889e172ead6292b0f2f25f5ec555cdb8"
 }

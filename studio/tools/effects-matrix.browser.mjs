@@ -71,7 +71,7 @@ const source = await testedSource(new URL(import.meta.url));
 // digest (unrelated approved runtime policy changes may alter that digest).
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
-  'effects/color.ts': 'f0529681c7f739d1a420f835c9dea9a4236fa7ae4ef9f93f54d7015732215bd7',
+  'effects/color.ts': '3db983b8869e446d3a5b3037e8a1a0efcf146927f1f65cade0bd01c280695e90',
   'common.ts': '5cfea24579d6e76b145ac88d9d20dc31334a62fd88d5cf56f16a0b1f13df8c62',
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
@@ -215,7 +215,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     for (const definition of GPU_EFFECT_REGISTRY.values()) {
       const entry = { id: definition.id, category: definition.category, cases: [] };
       if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
-      if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
+      if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
       if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) {
         const packedDefault = definition.packUniforms(getGpuEffectDefaultParams(definition.id));
         // Classic WebDriver cannot serialize typed arrays across Firefox's boundary.
@@ -296,7 +296,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       entry.stack = { stacked, sequential };
       if (entry.hdr) {
         pipeline.setWorkingRange('hdr');
-        const chain = [instance(definition.id, definition.id === 'gpu-temperature' ? {temperature:1,tint:-.5} : definition.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : { amount: definition.id !== 'gpu-brightness' ? 1.5 : .125 }, 'a'), ['gpu-saturation','gpu-temperature'].includes(definition.id) ? instance('gpu-exposure',{exposure:1,offset:.125,gamma:2},'b') : instance('gpu-brightness', { amount: definition.id === 'gpu-brightness' ? -.25 : .125 }, 'b')];
+        const chain = [instance(definition.id, definition.id === 'gpu-temperature' ? {temperature:1,tint:-.5} : definition.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : { amount: definition.id === 'gpu-vibrance' ? 1 : definition.id !== 'gpu-brightness' ? 1.5 : .125 }, 'a'), ['gpu-saturation','gpu-temperature','gpu-vibrance'].includes(definition.id) ? instance('gpu-exposure',{exposure:1,offset:.125,gamma:2},'b') : instance('gpu-brightness', { amount: definition.id === 'gpu-brightness' ? -.25 : .125 }, 'b')];
         const stacked = await render(inputs.rgba16float, chain);
         const first = await render(inputs.rgba16float, [chain[0]]);
         if (!first.pixels) throw new Error(`linear ${definition.id} first pass failed`);
@@ -305,7 +305,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         if (definition.id !== 'gpu-brightness') {
           const limitInput = device.createTexture({ size: [W,H], format: 'rgba16float', usage });
           device.queue.writeTexture({texture:limitInput},new Float16Array(Array.from({length:W*H},(_,i)=>[65504,-65504,.5,i%2 ? .5 : 0]).flat()),{bytesPerRow:W*8},[W,H]);
-          try { entry.hdr.rangeLimit=await render(limitInput,[instance(definition.id,definition.id === 'gpu-temperature' ? {temperature:1,tint:-1} : definition.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:3})]); }
+          try { entry.hdr.rangeLimit=await render(limitInput,[instance(definition.id,definition.id === 'gpu-temperature' ? {temperature:1,tint:-1} : definition.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:definition.id === 'gpu-vibrance' ? 1 : 3})]); }
           finally { limitInput.destroy(); }
         }
         try { entry.hdr.stack = { stacked, sequential: await render(intermediate, [chain[1]]) };
@@ -480,11 +480,12 @@ for (const effect of report.effects) {
         verify(entry[route],expected(values,entry.params.amount,clamp),`SDR ${effect.id} ${entry.name}/${route}`,values,entry.params.amount);
       verify(entry.sdr,expected(sdrInput,entry.params.amount,v=>Math.max(0,Math.min(1,v))),`SDR ${effect.id} ${entry.name}/rgba8`,sdrInput,entry.params.amount,[],true);
     }
-  } else if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(effect.id)) {
+  } else if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance'].includes(effect.id)) {
     check(rule.hdr === 'linear-display-bt709-v1', `${effect.id} must declare the measured linear domain`);
     const input = Array.from(new Float16Array(floatInput));
     const transform = (v, p, i, values) => {
       if (effect.id === 'gpu-temperature') return v + [.1*p.temperature+.05*p.tint,-.1*p.tint,-.1*p.temperature+.05*p.tint][i%4];
+      if (effect.id === 'gpu-vibrance') {const at=i-i%4,rgb=values.slice(at,at+3),scale=Math.max(...rgb.map(Math.abs),1e-6),weight=1-Math.min(1,Math.max(0,(Math.max(...rgb)-Math.min(...rgb))/scale)),gray=.299*rgb[0]+.587*rgb[1]+.114*rgb[2];return gray+(v-gray)*(1+p.amount*weight);}
       if (effect.id === 'gpu-saturation') {const at=i-i%4;const gray=.299*values[at]+.587*values[at+1]+.114*values[at+2];return gray+(v-gray)*p.amount;}
       if (effect.id === 'gpu-exposure') {const x=v*2**p.exposure+p.offset;return Math.sign(x)*Math.abs(x)**(1/p.gamma);}
       return effect.id === 'gpu-contrast' ? (v-.5)*p.amount+.5 : v+p.amount;
@@ -503,23 +504,23 @@ for (const effect of report.effects) {
     for (const entry of effect.hdr.cases) pixels(entry, expected(entry.params), `HDR ${effect.id} ${entry.name}`);
     for (const frame of [0,5,10]) {
       const entry = effect.hdr.animation.frames[frame];
-      check(entry.value === (effect.id === 'gpu-temperature' ? [-1,0,1] : effect.id === 'gpu-exposure' ? [-3,0,3] : effect.id !== 'gpu-brightness' ? [0,1.5,3] : [-1,0,1])[frame/5], `HDR ${effect.id} animation ${frame}: resolver`);
+      check(entry.value === (effect.id === 'gpu-temperature' ? [-1,0,1] : effect.id === 'gpu-exposure' ? [-3,0,3] : effect.id === 'gpu-vibrance' ? [-1,0,1] : effect.id !== 'gpu-brightness' ? [0,1.5,3] : [-1,0,1])[frame/5], `HDR ${effect.id} animation ${frame}: resolver`);
       pixels(entry, expected(effect.id === 'gpu-temperature' ? {temperature:entry.value,tint:0} : effect.id === 'gpu-exposure' ? {exposure:entry.value,offset:0,gamma:1} : {amount:entry.value}), `HDR ${effect.id} animation ${frame}`);
     }
-    const firstParams=effect.id === 'gpu-temperature' ? {temperature:1,tint:-.5} : effect.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : {amount:effect.id !== 'gpu-brightness' ? 1.5 : .125};
+    const firstParams=effect.id === 'gpu-temperature' ? {temperature:1,tint:-.5} : effect.id === 'gpu-exposure' ? {exposure:1,offset:.125,gamma:2} : {amount:effect.id === 'gpu-vibrance' ? 1 : effect.id !== 'gpu-brightness' ? 1.5 : .125};
     const first = Array.from(new Float16Array(expected(firstParams)));
-    const stackWant = first.map((v,i) => i % 4 === 3 ? v : ['gpu-saturation','gpu-temperature'].includes(effect.id) ? Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5 : v+(effect.id === 'gpu-brightness' ? -.25 : .125));
+    const stackWant = first.map((v,i) => i % 4 === 3 ? v : ['gpu-saturation','gpu-temperature','gpu-vibrance'].includes(effect.id) ? Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5 : v+(effect.id === 'gpu-brightness' ? -.25 : .125));
     // Each GPU pass stores binary16; propagate its ULP through the next independent equation.
     const expose = v => Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5;
     const stackError = effect.id === 'gpu-temperature' ? first.map((v,i) => i%4 === 3 ? 0 :
       Math.max(Math.abs(expose(v-halfUlp(v))-expose(v)),Math.abs(expose(v+halfUlp(v))-expose(v)))) : [];
     for (const route of ['stacked','sequential']) pixels(effect.hdr.stack[route],stackWant,`HDR ${effect.id} ${route}`,stackError);
     if (effect.id !== 'gpu-brightness') {
-      const lifted = Array.from(new Float16Array(input.map((v,i) => i%4 === 3 ? v : ['gpu-saturation','gpu-temperature'].includes(effect.id) ? Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5 : v+.125)));
+      const lifted = Array.from(new Float16Array(input.map((v,i) => i%4 === 3 ? v : ['gpu-saturation','gpu-temperature','gpu-vibrance'].includes(effect.id) ? Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5 : v+.125)));
       const reverseWant = expected(firstParams,lifted);
       pixels(effect.hdr.stack.reverse,reverseWant,`HDR ${effect.id} reverse mixed stack`,effect.id === 'gpu-temperature' ? lifted.map((v,i) => i%4 === 3 ? 0 : halfUlp(v)) : []);
       const limits=Array.from({length:W*H},(_,i)=>[65504,-65504,.5,i%2 ? .5 : 0]).flat();
-      pixels(effect.hdr.rangeLimit,expected(effect.id === 'gpu-temperature' ? {temperature:1,tint:-1} : effect.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:3},limits),`HDR ${effect.id} binary16 signed limit and hidden RGB`);
+      pixels(effect.hdr.rangeLimit,expected(effect.id === 'gpu-temperature' ? {temperature:1,tint:-1} : effect.id === 'gpu-exposure' ? {exposure:3,offset:.5,gamma:.2} : {amount:effect.id === 'gpu-vibrance' ? 1 : 3},limits),`HDR ${effect.id} binary16 signed limit and hidden RGB`);
       check(stackWant.some((v,i) => i%4 !== 3 && Math.abs(v-reverseWant[i])>.05),'mixed HDR stack must discriminate order');
     }
     check(effect.hdr.invalid.length === 4, `${effect.id} requires all HDR invalid-number contracts`);

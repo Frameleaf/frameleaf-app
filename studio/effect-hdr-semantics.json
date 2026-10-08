@@ -308,8 +308,8 @@
     "gpu-vibrance": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "SDR retains pinned vibrance. HDR weights linear BT.709 chroma by bounded saturation using absolute channel magnitude, with a 1e-6 black floor. Preserve signed channels, alpha and headroom; clamp only to binary16 storage range."
     },
     "gpu-vignette": {
       "sdrParity": true,
