@@ -3,6 +3,7 @@ import { Kysely } from 'kysely';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -24,7 +25,7 @@ afterAll(async () => {
 const setup = async () => {
   const { sut: resources, ctx } = newMediumService(StudioResourceService, {
     database,
-    real: [AccessRepository, AssetRepository, CryptoRepository],
+    real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
     mock: [LoggingRepository],
   });
   const repository = new StudioProjectRepository(database);
