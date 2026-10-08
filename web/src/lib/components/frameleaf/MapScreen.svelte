@@ -10,6 +10,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
   import {
     markerCardLine,
@@ -655,13 +656,15 @@
     {/if}
 
     {#if loadFailed}
-      <div class="offline" role="alert">
-        <Icon icon={mdiMapMarkerOffOutline} size="24" />
-        <strong>{$t('frameleaf_map_load_failed_title')}</strong>
-        <p>{$t('frameleaf_map_load_failed_help')}</p>
-        <div class="offline-actions">
-          <Button onclick={retryMarkers}>{$t('frameleaf_map_try_again')}</Button>
-        </div>
+      <!-- The legend, tools and list stay; only the located items say they could not load. -->
+      <div class="load-failed">
+        <InlineError
+          compact
+          title={$t('frameleaf_map_load_failed_title')}
+          message={$t('frameleaf_map_load_failed_help')}
+          retryLabel={$t('frameleaf_map_try_again')}
+          onRetry={retryMarkers}
+        />
       </div>
     {/if}
 
@@ -954,9 +957,20 @@
     text-align: center;
     color: var(--fl-muted);
   }
+  .load-failed {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    z-index: 3;
+    width: min(360px, calc(100% - 32px));
+    transform: translateX(-50%);
+    box-shadow: var(--fl-shadow-2);
+    border-radius: var(--fl-radius-card);
+  }
   /* On a phone the card is as wide as the map, so it sits below the control column, not under it. */
   @media (max-width: 640px) {
-    .offline {
+    .offline,
+    .load-failed {
       top: auto;
       bottom: 72px;
     }

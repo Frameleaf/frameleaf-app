@@ -7,6 +7,7 @@
    * in the Frameleaf confirmation (`handleDeleteDatabaseBackup`).
    */
   import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
+  import { backupTime } from '$lib/components/frameleaf/settings/backup-time';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { BackupFileStatus } from '$lib/constants';
   import { backupFileVersion } from '$lib/frameleaf/maintenance-page';
@@ -15,7 +16,6 @@
   import { getBytesWithUnit } from '$lib/utils/byte-units';
   import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore, mdiDatabaseOutline, mdiDeleteOutline, mdiDownload } from '@mdi/js';
-  import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -30,16 +30,10 @@
   const filesizeText = $derived(getBytesWithUnit(filesize, 1));
   const size = $derived(`${filesizeText[0]} ${filesizeText[1]}`);
 
-  const backupDateTime = $derived.by(() => {
-    const dateMatch = filename.match(/\d+T\d+/);
-    if (dateMatch) {
-      return DateTime.fromFormat(dateMatch[0], "yyyyMMdd'T'HHmmss", { zone: timezone }).toLocal();
-    }
-    return null;
-  });
-
-  const when = $derived(backupDateTime?.toLocaleString(DateTime.DATETIME_MED) ?? $t('unknown_date'));
-  const relativeTime = $derived(backupDateTime?.toRelative({ locale: $locale }));
+  // The same reading of the stamp as the Overview tile, so the two pages agree.
+  const made = $derived(backupTime(filename, { timezone, locale: $locale }));
+  const when = $derived(made?.label ?? $t('unknown_date'));
+  const relativeTime = $derived(made?.at.toRelative({ locale: $locale }));
 
   const version = $derived(backupFileVersion(filename));
 
@@ -116,7 +110,7 @@
 
 <MaintenanceRestoreConfirmDialog
   {filename}
-  date={backupDateTime?.toLocaleString(DateTime.DATETIME_MED)}
+  date={made?.label}
   {size}
   {version}
   {expectedVersion}

@@ -599,14 +599,9 @@
    * danger button. One per surface, never the first focus. `fl-danger` rather than `danger`,
    * which components already use for danger-coloured text.
    */
-  /*
-   * The label colour is !important on purpose: an important declaration in a layer outranks any
-   * unlayered rule, and a component that uses `fl-danger` as a text-colour class globally would
-   * otherwise paint the label in the fill colour and make the destructive action unreadable.
-   */
   :where(.frameleaf .button.fl-danger, .fl-scope .button.fl-danger) {
     background: var(--fl-danger);
-    color: var(--fl-danger-text) !important;
+    color: var(--fl-danger-text);
     border-color: transparent;
     font-weight: 600;
   }

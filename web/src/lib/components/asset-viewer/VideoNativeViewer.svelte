@@ -827,7 +827,27 @@
   }
 
   media-time-display {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
+  }
+
+  /* Touch: the playback buttons and the scrubber are 44px targets (apple-style.css control height). */
+  @media (pointer: coarse) {
+    media-control-bar {
+      height: var(--fl-control-height);
+    }
+
+    media-play-button,
+    media-mute-button,
+    media-fullscreen-button,
+    media-settings-menu-button,
+    .video-editor-button {
+      min-width: var(--fl-control-height);
+      min-height: var(--fl-control-height);
+    }
+
+    immich-time-range {
+      height: var(--fl-control-height);
+    }
   }
 
   immich-time-range,

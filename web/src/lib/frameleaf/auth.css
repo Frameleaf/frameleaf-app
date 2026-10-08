@@ -362,6 +362,13 @@
   text-align: center;
   justify-items: center;
 }
+/* One state of the PIN card (entry, reset, unlocked): a group that can arrive as a whole. */
+.auth-screen .pin-stage {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  width: 100%;
+}
 .auth-screen .pin-mark {
   display: grid;
   place-items: center;

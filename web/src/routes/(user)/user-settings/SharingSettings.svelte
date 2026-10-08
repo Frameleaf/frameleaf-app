@@ -14,6 +14,7 @@
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { backfillProgress, PARTNER_SHARED_ITEMS } from '$lib/frameleaf/partner-sharing';
@@ -473,13 +474,18 @@
           : $t('frameleaf_people_sharing.invite_body')}
       </p>
     {:else if dialog.kind === 'review'}
-      <p>
-        {dialog.members
-          ? $t('frameleaf_people_sharing.review_body', {
-              values: { members: dialog.members.map((user) => user.name).join(', ') },
-            })
-          : $t('loading')}
-      </p>
+      {#if dialog.members}
+        <p>
+          {$t('frameleaf_people_sharing.review_body', {
+            values: { members: dialog.members.map((user) => user.name).join(', ') },
+          })}
+        </p>
+      {:else}
+        <div role="status" aria-busy="true">
+          <span class="sr-only">{$t('loading')}</span>
+          <Skeleton lines={2} />
+        </div>
+      {/if}
     {/if}
     {#snippet actions()}
       <button type="button" class="button" onclick={() => (dialogOpen = false)}>{$t('cancel')}</button>

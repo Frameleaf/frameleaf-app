@@ -132,7 +132,7 @@
   });
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={false}>
+<UserPageLayout scrollbar={false}>
   <section class="frameleaf pet-photos m-4 mb-12">
     <ResultsView
       assets={timelineAssets}

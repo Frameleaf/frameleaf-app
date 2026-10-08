@@ -5,6 +5,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import PersonHero from '$lib/components/frameleaf/people/PersonHero.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
@@ -114,48 +115,48 @@
   onAssetsUnarchive={updateAssetCount}
 />
 
-<main
-  class="relative z-0 h-dvh overflow-hidden px-2 pt-(--navbar-height) md:px-6 md:pt-(--navbar-height-md)"
-  use:scrollMemoryClearer={{ routeStartsWith: Route.people() }}
->
-  {#key `${person.id}:${refresh}`}
-    <LibraryView
-      enableRouting
-      selectAll="loaded"
-      bind:timelineManager
-      {options}
-      destination={{ kind: 'person', id: person.id }}
-      downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
-      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-      onShortcut={(shortcut) => {
-        // Escape with nothing open and nothing selected leaves the person, as it did before.
-        if (shortcut.id === 'close') {
-          void handleEscape();
-        }
-      }}
-    >
-      <PersonHero
-        {person}
-        {statistics}
-        onBack={() => goto(previousRoute)}
-        onPersonChange={(updated) => (person = updated)}
-        onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
-        onFacesChanged={async () => {
-          // Photos whose only face of this person moved away leave the timeline: re-read both.
-          await updateAssetCount();
-          refresh++;
+<!-- The same shell as Photos and an album: top bar, rail, and the hero straight under the bar. -->
+<UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.people() }]]}>
+  <div class="relative h-full overflow-hidden md:px-4">
+    {#key `${person.id}:${refresh}`}
+      <LibraryView
+        enableRouting
+        selectAll="loaded"
+        bind:timelineManager
+        {options}
+        destination={{ kind: 'person', id: person.id }}
+        downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
+        onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+        onShortcut={(shortcut) => {
+          // Escape with nothing open and nothing selected leaves the person, as it did before.
+          if (shortcut.id === 'close') {
+            void handleEscape();
+          }
         }}
-        onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
-        onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
-      />
+      >
+        <PersonHero
+          {person}
+          {statistics}
+          onBack={() => goto(previousRoute)}
+          onPersonChange={(updated) => (person = updated)}
+          onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
+          onFacesChanged={async () => {
+            // Photos whose only face of this person moved away leave the timeline: re-read both.
+            await updateAssetCount();
+            refresh++;
+          }}
+          onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
+          onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
+        />
 
-      {#snippet viewer()}
-        <Portal target="body">
-          {#if assetViewerManager.isViewing}
-            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {person} />
-          {/if}
-        </Portal>
-      {/snippet}
-    </LibraryView>
-  {/key}
-</main>
+        {#snippet viewer()}
+          <Portal target="body">
+            {#if assetViewerManager.isViewing}
+              <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {person} />
+            {/if}
+          </Portal>
+        {/snippet}
+      </LibraryView>
+    {/key}
+  </div>
+</UserPageLayout>

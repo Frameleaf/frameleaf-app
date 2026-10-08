@@ -556,16 +556,17 @@
     background: var(--fl-teal);
     transition: width var(--fl-motion) linear;
   }
-  :global(.fl-success) {
+  /* The row's status icons only: `.fl-danger` is also the foundation's filled danger button. */
+  .fl-state :global(.fl-success) {
     color: var(--fl-teal);
   }
-  :global(.fl-warning) {
+  .fl-state :global(.fl-warning) {
     color: var(--fl-warning);
   }
-  :global(.fl-danger) {
+  .fl-state :global(.fl-danger) {
     color: var(--fl-danger);
   }
-  :global(.fl-muted-icon) {
+  .fl-state :global(.fl-muted-icon) {
     color: var(--fl-muted);
   }
   .fl-sr-only {

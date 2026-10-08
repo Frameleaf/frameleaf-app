@@ -285,7 +285,7 @@
     min-width: 58px;
     color: var(--fl-on-material-muted);
     font-size: var(--fl-font-small);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     text-align: center;
   }
 
@@ -310,7 +310,7 @@
     color: inherit;
     font: inherit;
     font-size: var(--fl-font-micro);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
     cursor: pointer;
   }
 
@@ -368,6 +368,28 @@
 
     .fl-segment button {
       min-height: 36px;
+    }
+  }
+
+  /* Touch: every footer control, the video source segment included, is a 44px target. */
+  @media (pointer: coarse) {
+    .fl-tool {
+      min-width: var(--fl-control-height);
+      height: var(--fl-control-height);
+    }
+
+    .fl-fit {
+      height: var(--fl-control-height);
+    }
+
+    .fl-segment {
+      padding: 0;
+    }
+
+    .fl-segment button {
+      min-height: var(--fl-control-height);
+      padding-inline: 12px;
+      border-radius: var(--fl-radius-control);
     }
   }
 

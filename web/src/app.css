@@ -34,7 +34,7 @@
    * (src/lib/frameleaf/tokens.css --fl-family-ui).
    */
   --font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'GoogleSansCode', monospace;
+  --font-mono: var(--fl-family-mono);
 
   /*
    * Neutrals: Tailwind's gray and neutral ramps become the Frameleaf neutrals
@@ -301,6 +301,39 @@
   --immich-ui-muted: var(--fl-muted);
   --immich-ui-gray: var(--fl-panel);
   --immich-ui-default-border: var(--fl-border);
+}
+
+/*
+ * Kit buttons take the prototype's `.button` (styles.css:83-112): the control corner instead of
+ * the kit's pill or 12px, and in the dark theme a filled `secondary` is the raised neutral fill
+ * with a hairline, not a white block. Text buttons only; a round icon button stays a circle. The
+ * kit's `outline-offset-2 transition-colors` pair with a text padding marks them; `:where` keeps
+ * the rules at element weight, so a component's own corner still wins.
+ */
+:where(button, a):where([class~='outline-offset-2'][class~='transition-colors']):where(
+    .px-3,
+    .px-4,
+    .px-5,
+    .px-8,
+    .px-10
+  ) {
+  border-radius: var(--fl-radius-control);
+}
+
+.dark
+  :where(button, a):where(
+    [class~='outline-offset-2'][class~='transition-colors'][class~='bg-dark'][class~='text-light']
+  ) {
+  border: 1px solid var(--fl-border);
+  background: var(--fl-raised);
+  color: var(--fl-text);
+}
+
+.dark
+  :where(button, a):where(
+    [class~='outline-offset-2'][class~='transition-colors'][class~='bg-dark'][class~='text-light']
+  ):hover:not(:disabled, [aria-disabled='true']) {
+  background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
 }
 
 /*

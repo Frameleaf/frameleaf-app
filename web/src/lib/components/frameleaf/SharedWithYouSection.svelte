@@ -1,11 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
@@ -61,10 +61,10 @@
         items = response.items.filter((item) => !hiddenDuringLoad.has(item.asset.id));
         loadFailed = false;
       }
-    } catch (error) {
+    } catch {
+      // Said once, inline, with Try again; no toast on top of it.
       if (request === loadId) {
         loadFailed = true;
-        handleError(error, $t('frameleaf_sharing.shared_with_you_load_failed'));
       }
     } finally {
       if (request === loadId) {
@@ -146,10 +146,14 @@
   </header>
 
   {#if loadFailed}
-    <p class="swy-empty" role="alert">{$t('frameleaf_sharing.shared_with_you_load_failed')}</p>
-    <button type="button" class="button" disabled={loading} onclick={() => void load()}>
-      {$t('frameleaf_error_retry')}
-    </button>
+    <div class="swy-error">
+      <InlineError
+        compact
+        message={$t('frameleaf_sharing.shared_with_you_load_failed')}
+        onRetry={load}
+        retrying={loading}
+      />
+    </div>
   {:else if loaded && items.length === 0}
     <p class="swy-empty" role="status">{$t('frameleaf_sharing.shared_with_you_empty')}</p>
   {/if}
@@ -214,6 +218,9 @@
     margin: 0.25rem 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
+  }
+  .swy-error {
+    margin-top: 1rem;
   }
   .swy-group {
     margin-top: 1.25rem;

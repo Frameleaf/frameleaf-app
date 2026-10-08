@@ -10,6 +10,7 @@
     trackSessionUnlock,
   } from '$lib/frameleaf/session-access.svelte';
   import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
+  import { reveal, sheet } from '$lib/frameleaf/motion';
   import { DURATION } from '$lib/frameleaf/tokens';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
@@ -317,23 +318,30 @@
       <h1>{heading}</h1>
       <p>{copy}</p>
     </div>
+    <!-- Each state arrives on the quiet sheet (a fade under Reduce Motion), never a cut. -->
     {#if relockFailed}
-      <p class="auth-error" role="alert"><Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span></p>
-      <button type="button" class="button primary auth-submit" disabled={working} onclick={retryLock}
-        >{$t('frameleaf_pin_retry_lock')}</button
-      >
+      <div class="pin-stage" in:reveal>
+        <p class="auth-error" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
+        </p>
+        <button type="button" class="button primary auth-submit" disabled={working} onclick={retryLock}
+          >{$t('frameleaf_pin_retry_lock')}</button
+        >
+      </div>
     {:else if leaveDestination || resetRequested}
-      <p class="auth-info" role="status">
+      <p class="auth-info" role="status" in:reveal>
         <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_securing')}</span>
       </p>
     {/if}
     {#if isVerified}
-      <PinCells value="" success disabled label={heading} softKeyboard={false} />
-      <p class="auth-info auth-success" role="status">
-        <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_pin_unlocked')}</span>
-      </p>
+      <div class="pin-stage" in:sheet>
+        <PinCells value="" success disabled label={heading} softKeyboard={false} />
+        <p class="auth-info auth-success" role="status">
+          <Icon icon={mdiCheckCircleOutline} size="16" /><span>{$t('frameleaf_pin_unlocked')}</span>
+        </p>
+      </div>
     {:else if resetting}
-      <form class="auth-form" onsubmit={reset} novalidate>
+      <form class="auth-form" onsubmit={reset} novalidate in:sheet>
         <p class="auth-info">
           <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_reset_help')}</span>
         </p>
@@ -363,66 +371,68 @@
         >
       </form>
     {:else}
-      <PinCells
-        bind:value={pinCode}
-        autofocus
-        error={!!errorMessage}
-        disabled={working || relockFailed}
-        label={heading}
-        describedBy={errorMessage && !relockFailed ? 'pin-prompt-hint pin-prompt-error' : 'pin-prompt-hint'}
-        softKeyboard={!keypadVisible}
-        oncomplete={complete}
-      />
-      <p id="pin-prompt-hint" class="sr-only">{$t('frameleaf_pin_hint')}</p>
-      {#if errorMessage && !relockFailed}<p id="pin-prompt-error" class="auth-error" role="alert">
-          <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
-        </p>
-      {:else}<p class="auth-field-hint">
-          {stage === 'confirm' && !hasPinCode ? $t('frameleaf_pin_hint_confirm') : $t('frameleaf_pin_hint_auto')}
-        </p>{/if}
-      <div class="pin-keypad" bind:this={keypad}>
-        {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as digit (digit)}
+      <div class="pin-stage" in:sheet>
+        <PinCells
+          bind:value={pinCode}
+          autofocus
+          error={!!errorMessage}
+          disabled={working || relockFailed}
+          label={heading}
+          describedBy={errorMessage && !relockFailed ? 'pin-prompt-hint pin-prompt-error' : 'pin-prompt-hint'}
+          softKeyboard={!keypadVisible}
+          oncomplete={complete}
+        />
+        <p id="pin-prompt-hint" class="sr-only">{$t('frameleaf_pin_hint')}</p>
+        {#if errorMessage && !relockFailed}<p id="pin-prompt-error" class="auth-error" role="alert" in:reveal>
+            <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
+          </p>
+        {:else}<p class="auth-field-hint">
+            {stage === 'confirm' && !hasPinCode ? $t('frameleaf_pin_hint_confirm') : $t('frameleaf_pin_hint_auto')}
+          </p>{/if}
+        <div class="pin-keypad" bind:this={keypad}>
+          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as digit (digit)}
+            <button
+              type="button"
+              aria-label={$t('frameleaf_pin_digit', { values: { digit } })}
+              disabled={working || relockFailed}
+              onclick={() => press(String(digit))}>{digit}</button
+            >
+          {/each}
+          <button type="button" class="pin-key-soft" onclick={cancel}>{$t('cancel')}</button>
           <button
             type="button"
-            aria-label={$t('frameleaf_pin_digit', { values: { digit } })}
+            aria-label={$t('frameleaf_pin_digit', { values: { digit: 0 } })}
             disabled={working || relockFailed}
-            onclick={() => press(String(digit))}>{digit}</button
+            onclick={() => press('0')}>0</button
           >
-        {/each}
-        <button type="button" class="pin-key-soft" onclick={cancel}>{$t('cancel')}</button>
-        <button
-          type="button"
-          aria-label={$t('frameleaf_pin_digit', { values: { digit: 0 } })}
-          disabled={working || relockFailed}
-          onclick={() => press('0')}>0</button
-        >
-        <button
-          type="button"
-          class="pin-key-soft"
-          aria-label={$t('frameleaf_pin_delete_digit')}
-          disabled={working || relockFailed}
-          onclick={() => press('back')}><Icon icon={mdiBackspaceOutline} size="20" /></button
-        >
-      </div>
-      <div class="pin-actions">
-        <!-- Hidden while the keypad shows: it has its own Cancel (auth.css). -->
-        <button type="button" class="button pin-cancel" onclick={cancel}>{$t('cancel')}</button>
-        {#if hasPinCode && data.hasPassword}<button
+          <button
             type="button"
-            class="auth-link"
-            disabled={resetRequested}
-            onclick={requestReset}>{$t('frameleaf_pin_reset')}</button
-          >{/if}
-        {#if !hasPinCode && stage === 'confirm'}<button
-            type="button"
-            class="auth-link"
-            disabled={working}
-            onclick={restart}>{$t('frameleaf_pin_start_over')}</button
-          >{/if}
+            class="pin-key-soft"
+            aria-label={$t('frameleaf_pin_delete_digit')}
+            disabled={working || relockFailed}
+            onclick={() => press('back')}><Icon icon={mdiBackspaceOutline} size="20" /></button
+          >
+        </div>
+        <div class="pin-actions">
+          <!-- Hidden while the keypad shows: it has its own Cancel (auth.css). -->
+          <button type="button" class="button pin-cancel" onclick={cancel}>{$t('cancel')}</button>
+          {#if hasPinCode && data.hasPassword}<button
+              type="button"
+              class="auth-link"
+              disabled={resetRequested}
+              onclick={requestReset}>{$t('frameleaf_pin_reset')}</button
+            >{/if}
+          {#if !hasPinCode && stage === 'confirm'}<button
+              type="button"
+              class="auth-link"
+              disabled={working}
+              onclick={restart}>{$t('frameleaf_pin_start_over')}</button
+            >{/if}
+        </div>
+        {#if hasPinCode && !data.hasPassword}
+          <p class="auth-field-hint">{$t('frameleaf_pin_ask_admin')}</p>
+        {/if}
       </div>
-      {#if hasPinCode && !data.hasPassword}
-        <p class="auth-field-hint">{$t('frameleaf_pin_ask_admin')}</p>
-      {/if}
     {/if}
   </div>
 </AuthShell>

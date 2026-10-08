@@ -414,18 +414,21 @@
             </div>
           {/if}
         </div>
-        <div class="buy-packs" role="group" aria-label={$t('frameleaf_buy_credit_add')}>
-          {#each credits as pack (pack.id)}
-            <button
-              type="button"
-              disabled={!pack.storeUrl}
-              onclick={() => (checkout = { product: pack, title: $t('frameleaf_buy_credit_title') })}
-            >
-              <strong>{formatUsd(pack.priceUsd)}</strong>
-              <small>{$t('frameleaf_buy_credit_title')}</small>
-            </button>
-          {/each}
-        </div>
+        <!-- Only when there are packs to show: an empty group would leave a gap in the card. -->
+        {#if credits.length > 0}
+          <div class="buy-packs" role="group" aria-label={$t('frameleaf_buy_credit_add')}>
+            {#each credits as pack (pack.id)}
+              <button
+                type="button"
+                disabled={!pack.storeUrl}
+                onclick={() => (checkout = { product: pack, title: $t('frameleaf_buy_credit_title') })}
+              >
+                <strong>{formatUsd(pack.priceUsd)}</strong>
+                <small>{$t('frameleaf_buy_credit_title')}</small>
+              </button>
+            {/each}
+          </div>
+        {/if}
         <p class="buy-note">
           {#if products.storeUrl}
             {$t('frameleaf_buy_credit_range', {

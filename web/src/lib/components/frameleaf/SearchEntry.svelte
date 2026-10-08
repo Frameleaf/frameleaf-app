@@ -311,6 +311,11 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-xs);
   }
+  @media (pointer: coarse) {
+    .search-entry {
+      min-height: var(--fl-control-height);
+    }
+  }
   @media (max-width: 48rem) {
     kbd {
       display: none;

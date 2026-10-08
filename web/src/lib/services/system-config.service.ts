@@ -75,7 +75,9 @@ export const handleSystemConfigSave = async (update: Partial<AdminConfigDto>) =>
     eventManager.emit('SystemConfigUpdate', newConfig);
     toastManager.primary($t('settings_saved'));
   } catch (error) {
+    // The toast reports it; the caller gets the failure too, so a flow does not carry on unsaved.
     handleError(error, $t('errors.unable_to_save_settings'));
+    throw error;
   }
 };
 

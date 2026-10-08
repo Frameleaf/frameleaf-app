@@ -1067,10 +1067,13 @@
     background: var(--fl-raised);
     color: var(--fl-text);
   }
+  /* The list scrolls under the footer; the footer never shrinks into it (design review). */
   .cc-nav nav {
     flex: 1;
     min-height: 0;
+    padding-bottom: var(--fl-space-2);
     overflow-y: auto;
+    overscroll-behavior: contain;
     scrollbar-width: thin;
   }
   .cc-nav-group {
@@ -1187,6 +1190,7 @@
   }
   .cc-nav-foot {
     display: flex;
+    flex-shrink: 0;
     gap: 10px;
     padding: 14px 22px;
     color: var(--fl-muted);
