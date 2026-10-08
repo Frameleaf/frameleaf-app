@@ -1,6 +1,6 @@
 // FL111 task-owned LOCAL native CDP preflight. No external bypass or model payload.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
@@ -113,6 +113,19 @@ export function nativeChannelDisposition(outcome, guardedRegistration = false) {
   return 'measured-guarded-registration';
 }
 
+// Error text and unknown URLs may contain signed capabilities or header values.
+// Keep only a fixed error category and URL digest at the diagnostic boundary.
+export function nativeDiagnosticError(error) {
+  const name=error instanceof Unsupported?'Unsupported':error?.name==='AssertionError'?'AssertionError':'Error';
+  return `${name}: details withheld`;
+}
+
+export function nativeDiagnosticURL(value) {
+  const url=new URL(value);
+  if(url.hostname==='127.0.0.1' && !url.username && !url.password && !url.search && !url.hash)return url.href;
+  return `${url.origin}#sha256=${hash(value)}`;
+}
+
 async function waitUntil(predicate, failure, label) {
   const until = Date.now() + deadline;
   while (!predicate()) {
@@ -148,14 +161,14 @@ export async function runNativeInterceptionPreflight(reportPath) {
   assert.ok(!process.env.FREECUT_CHROME_ARGS && !process.env.FREECUT_CHROME_ARGS_REPLACE, 'No unreviewed launch overrides');
   const studio = path.resolve(import.meta.dirname, '..'), engine = path.join(studio, 'engine');
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-raw-cdp-'));
-  const report = { kind: 'local-raw-flattened-cdp-preflight', status: 'failed', observations: [], gates: Object.fromEntries(['window','dedicated-worker','nested-worker','request-response-pauses','relative-redirect-chain','wss','webtransport','serviceworker','browser-process','unowned-target','guard-disconnect'].map(name=>[name,{disposition:'not-executed'}])),
+  const report = { kind: 'local-browser-fetch-preflight', status: 'failed', observations: [], gates: Object.fromEntries(['window','dedicated-worker','nested-worker','request-response-pauses','relative-redirect-chain','https','sockets','webtransport','serviceworker','browser-process','unowned-target','guard-disconnect'].map(name=>[name,{disposition:'not-executed'}])),
 
     modelDownloads: 0, externalBypass: false, directHuggingFaceTLS: 'unmeasured',
-    ownedFixture: { requests: [], tcpConnections: 0, tlsConnections: 0, upgrades: 0, udpPackets: 0 } };
-  let fixture, secure, udp, harness, controller, child, childExit, firstFailure, shutdownFailure, shutdownPromise, shuttingDown = false, contextId;
-  const sockets = new Set(), targets = new Map(), requests = new Map(), admissions = new Map();
+    ownedFixture: { requests: [], tcpConnections: 0, upgrades: 0, udpPackets: 0 }, foreignFixture:{requests:[],tcpConnections:0}, tlsFixture:{trustedRequests:0,untrustedRequests:0,trustedConnections:0,untrustedConnections:0,requests:[]} };
+  let fixture, secure, untrusted, foreign, udp, harness, tlsHarness, untrustedHarness, controller, child, childExit, firstFailure, shutdownFailure, shutdownPromise, shuttingDown = false, contextId, rootFetchReady=false;
+  const sockets = new Set(), targets = new Map(), requests = new Map(), admissions = new Map(), ownedContexts=new Set(), closingTargets=new Map();
   let seq = 0;
-  const observe = entry => report.observations.push(Object.fromEntries(Object.entries({ sequence: ++seq, ...entry }).filter(([,value])=>value!==undefined)));
+  const observe = entry => report.observations.push(Object.fromEntries(Object.entries({ sequence: ++seq, ...entry }).filter(([,value])=>value!==undefined).map(([key,value])=>[key,['url','parentUrl'].includes(key)?nativeDiagnosticURL(value):key==='reason' && entry.event==='command-rejected'?nativeDiagnosticError(new Error(value)):key==='errorText'?nativeDiagnosticError(new Error(value)):value])));
   const fail = error => {
     if(firstFailure || shuttingDown)return;
     firstFailure=error; controller?.abortPending(error);
@@ -204,29 +217,44 @@ export async function runNativeInterceptionPreflight(reportPath) {
     const executable = path.join(os.homedir(), 'Library/Caches/ms-playwright', `chromium_headless_shell-${pinned.revision}`, 'chrome-headless-shell-mac-arm64/chrome-headless-shell');
     report.binarySha256 = hash(await readFile(executable));
     assert.equal(report.binarySha256, 'aa25f2e795c02d5cb5ef5d6987745cc5bbe7d8bea58827390c7a4c81c8d2dd7b');
-    const workerSource = `onmessage=async e=>{try{if(e.data.nested){const w=new Worker('/worker.js');w.onmessage=e=>postMessage(e.data);w.postMessage({});return}const ok=await fetch('/worker-get');let denied;try{await fetch('/denied',{method:'POST',body:'private-fixture'})}catch(e){denied=e.name}postMessage({ok:await ok.text(),denied})}catch(e){postMessage({error:e.name})}}`;
+    // Each realm executes the same native actions; labels identify authored fixtures,
+    // not production request target ownership (root Fetch does not report a worker ID).
+    foreign=http.createServer((request,response)=>{report.foreignFixture.requests.push({method:request.method,url:request.url});response.end();});
+    foreign.on('connection',socket=>{report.foreignFixture.tcpConnections++;sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});
+    foreign.listen(0,'127.0.0.1');await once(foreign,'listening');
+    report.foreignOrigin=`http://127.0.0.1:${foreign.address().port}`;
+    const actions=`async function run(realm){const g=await fetch('/get/'+realm);const h=await fetch('/head/'+realm,{method:'HEAD'});const redirectStatuses=[];for(const status of [301,302,303,307,308]){const r=await fetch('/redirect/'+realm+'/'+status);if(await r.text()!=='authored tiny local fixture')throw Error('redirect body');redirectStatuses.push(status)}let denied,preflight;try{await fetch('/denied/'+realm,{method:'POST',body:'tiny-authored-body'})}catch(e){denied=e.name}try{await fetch('${report.foreignOrigin}/cors/'+realm,{headers:{'x-fixture':'authored'}})}catch(e){preflight=e.name}const ws=await new Promise(resolve=>{const s=new WebSocket(location.origin.replace('http:','ws:')+'/socket/'+realm);s.onerror=()=>resolve('native-error');s.onopen=()=>resolve('unexpected-open')});return{get:await g.text(),head:h.status,redirectStatuses,denied,preflight,ws}}`;
+    const workerSource = actions+`;onmessage=async e=>{try{if(e.data.nested){const w=new Worker('/worker.js');w.onmessage=e=>postMessage(e.data);w.postMessage({realm:'nested-worker'});return}postMessage(await run(e.data.realm))}catch(e){postMessage({error:e.name})}}`;
     fixture = http.createServer((request, response) => {
       const entry = { method: request.method, url: request.url, bodyBytes: 0 };
       report.ownedFixture.requests.push(entry);
       request.on('data', data => { entry.bodyBytes += data.length; });
       response.setHeader('cache-control','no-store');
-      if (request.url === '/nested/start') { response.writeHead(302,{location:'../get?via=redirect'}); response.end(); }
-      else if (request.url === '/external-start') { response.writeHead(302,{location:report.foreignOrigin+'/denied'}); response.end(); }
+      const redirect=/^\/redirect\/(window|dedicated-worker|nested-worker)\/(301|302|303|307|308)$/.exec(request.url);
+      const negative=/^\/negative\/(foreign|wrong-file|query|host-alias|credentials|loop)$/.exec(request.url);
+      if(redirect){response.writeHead(Number(redirect[2]),{location:'../../final/'+redirect[1]+'/'+redirect[2]});response.end();}
+      else if(negative){const location={foreign:report.foreignOrigin+'/forbidden/foreign','wrong-file':'/forbidden/wrong-file',query:'/get/window?capability=authored','host-alias':'http://localhost:'+fixture.address().port+'/forbidden/host-alias',credentials:'http://authored:private@127.0.0.1:'+fixture.address().port+'/forbidden/credentials',loop:'/negative/loop'}[negative[1]];response.writeHead(302,{location});response.end();}
       else if (request.url === '/worker.js') { response.writeHead(200,{'content-type':'text/javascript'}); response.end(workerSource); }
-      else if (request.url === '/sw.js') { response.writeHead(200,{'content-type':'text/javascript'}); response.end("self.addEventListener('install', e=>e.waitUntil(fetch('/denied').catch(()=>{})));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));"); }
+      else if (request.url === '/sw.js') { response.writeHead(200,{'content-type':'text/javascript'}); response.end("self.addEventListener('install', e=>e.waitUntil(fetch('/denied/service-worker').catch(()=>{})));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));"); }
       else if (request.url === '/entry') { response.writeHead(200,{'content-type':'text/html'}); response.end('<!doctype html><title>Owned native fixture</title>'); }
       else { response.writeHead(200,{'content-type':'text/plain'}); response.end('authored tiny local fixture'); }
     });
     fixture.on('connection', socket => { report.ownedFixture.tcpConnections++; sockets.add(socket); socket.on('close',()=>sockets.delete(socket)); });
+    fixture.on('upgrade',(_,socket)=>{report.ownedFixture.upgrades++;socket.destroy();});
     fixture.listen(0,'127.0.0.1'); await once(fixture,'listening');
     const origin = `http://127.0.0.1:${fixture.address().port}`;
     report.fixtureOrigin = origin;
-    execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(scratch,'key.pem'),'-out',path.join(scratch,'cert.pem'),'-subj','/CN=localhost','-days','1'],{stdio:'ignore'});
-    secure = https.createServer({key:await readFile(path.join(scratch,'key.pem')),cert:await readFile(path.join(scratch,'cert.pem'))},(_,res)=>res.end());
-    secure.on('connection',socket=>{report.ownedFixture.tlsConnections++;sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});
-    secure.on('upgrade',(_,socket)=>{report.ownedFixture.upgrades++;socket.destroy();});
-    secure.listen(0,'127.0.0.1'); await once(secure,'listening');
-    report.foreignOrigin=`https://127.0.0.1:${secure.address().port}`;
+    for(const name of ['trusted','untrusted'])execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(scratch,name+'-key.pem'),'-out',path.join(scratch,name+'-cert.pem'),'-subj','/CN=localhost','-days','1'],{stdio:'ignore'});
+    const trustedCertificate=await readFile(path.join(scratch,'trusted-cert.pem'));
+    const trustedSPKI=createHash('sha256').update(new X509Certificate(trustedCertificate).publicKey.export({type:'spki',format:'der'})).digest('base64');
+    secure = https.createServer({key:await readFile(path.join(scratch,'trusted-key.pem')),cert:trustedCertificate},(req,res)=>{report.tlsFixture.trustedRequests++;report.tlsFixture.requests.push({method:req.method,url:req.url});const redirect=/^\/tls-redirect\/(301|302|303|307|308)$/.exec(req.url);if(redirect){res.writeHead(Number(redirect[1]),{location:'/tls-final/'+redirect[1]});res.end();}else if(req.url==='/tls-downgrade'){res.writeHead(302,{location:origin+'/get/window'});res.end();}else res.end('authored tiny TLS fixture');});
+    untrusted=https.createServer({key:await readFile(path.join(scratch,'untrusted-key.pem')),cert:await readFile(path.join(scratch,'untrusted-cert.pem'))},(_,res)=>{report.tlsFixture.untrustedRequests++;res.end('must not reach HTTP');});
+    for(const [server,key]of [[secure,'trustedConnections'],[untrusted,'untrustedConnections']]){server.on('connection',socket=>{report.tlsFixture[key]++;sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});server.listen(0,'127.0.0.1');await once(server,'listening');}
+    const tlsOrigin=`https://127.0.0.1:${secure.address().port}`,untrustedOrigin=`https://127.0.0.1:${untrusted.address().port}`;
+    // These exact LOCAL TLS upstreams are the only opaque CONNECT exceptions.
+    // They are synthetic certificate fixtures, never external egress plumbing.
+    tlsHarness=createHarness({upstream:tlsOrigin});untrustedHarness=createHarness({upstream:untrustedOrigin});
+    const tlsProxy=await tlsHarness.listen(),untrustedProxy=await untrustedHarness.listen();
     udp = dgram.createSocket('udp4'); udp.on('message',()=>report.ownedFixture.udpPackets++);
     udp.bind(0,'127.0.0.1'); await once(udp,'listening');
     harness = createHarness({upstream:origin,inspectConnect:true,overrides:[{
@@ -243,7 +271,7 @@ export async function runNativeInterceptionPreflight(reportPath) {
       respond(){return {status:403,body:''};}
     }]}); const proxy=await harness.listen();
     const {chromeLaunchArgs}=await import(pathToFileURL(path.join(engine,'headless/lib/cli.mjs')));
-    const args=nativeArguments(proxy,scratch,chromeLaunchArgs()); report.argumentsSha256=hash(JSON.stringify(args));
+    const args=nativeArguments(proxy,scratch,chromeLaunchArgs()).concat(`--ignore-certificate-errors-spki-list=${trustedSPKI}`); report.argumentsSha256=hash(JSON.stringify(args));
     report.launchFlags=args.map(arg=>arg.startsWith('--user-data-dir=')?'--user-data-dir=<owned>':arg.startsWith('--proxy-server=')?'--proxy-server=<owned>':arg);
     child=spawn(executable,args,{stdio:['ignore','ignore','pipe']});
     childExit=once(child,'exit'); child.on('error',fail);
@@ -260,7 +288,8 @@ export async function runNativeInterceptionPreflight(reportPath) {
     assert.match(active[0],/^[0-9]+$/); assert.match(active[1],/^\/devtools\/browser\/[a-zA-Z0-9-]+$/);
     controller=await connectNativeController(`ws://127.0.0.1:${active[0]}${active[1]}`,observe,fail);
     // Handler is installed before any attachment command, context, or target creation.
-    const allowed=new Set(['/entry','/get','/get?via=redirect','/head','/nested/start','/external-start','/worker.js','/worker-get','/sw.js']);
+    const allowed=new Set(['/entry','/worker.js',...['window','dedicated-worker','nested-worker'].flatMap(realm=>['/get/'+realm,'/head/'+realm,...[301,302,303,307,308].flatMap(status=>['/redirect/'+realm+'/'+status,'/final/'+realm+'/'+status])]),...['foreign','wrong-file','query','host-alias','credentials','loop'].map(name=>'/negative/'+name)]);
+    const approvedURL=url=>(url.origin===origin && allowed.has(url.pathname+url.search)) || ([tlsOrigin,untrustedOrigin].includes(url.origin) && (/^\/tls$/.test(url.pathname) || (url.origin===tlsOrigin && /^\/tls-(?:downgrade|(?:redirect|final)\/(?:301|302|303|307|308))$/.test(url.pathname))) && !url.search);
     controller.setHandler(async message=>{
       if(shuttingDown)return;
       const {method,params={},sessionId:parentSession}=message;
@@ -268,18 +297,19 @@ export async function runNativeInterceptionPreflight(reportPath) {
       if(method==='Target.attachedToTarget') {
         const {sessionId,targetInfo,waitingForDebugger}=params;
         assert.ok(sessionId && !targets.has(sessionId),'Unique attached session required');
-        const state={sessionId,parentSession,targetId:targetInfo.targetId,type:targetInfo.type,waitingForDebugger,ready:false,owned:contextId && targetInfo.browserContextId===contextId};
+        const state={sessionId,parentSession,targetId:targetInfo.targetId,type:targetInfo.type,waitingForDebugger,ready:false,owned:ownedContexts.has(targetInfo.browserContextId)};
         targets.set(sessionId,state); observe({event:'target-attached',...state});
-        if(!state.owned || !['page','worker','service_worker'].includes(state.type)) {
+        if(!state.owned || !['page','worker'].includes(state.type)) {
           assert.equal(waitingForDebugger,true,'Unowned target must remain paused');
           state.expectedDetach=true;
-          await controller.send('Target.closeTarget',{targetId:state.targetId});
-          observe({event:'unowned-target-closed-paused',sessionId,type:state.type}); return;
+          if(!closingTargets.has(state.targetId))closingTargets.set(state.targetId,controller.send('Target.closeTarget',{targetId:state.targetId}));
+          const closed=await closingTargets.get(state.targetId);assert.equal(closed.success,true,'Paused target close acknowledged');
+          state.closedPaused=true;observe({event:state.owned?'unsupported-target-closed-paused':'unowned-target-closed-paused',sessionId,targetId:state.targetId,type:state.type}); return;
         }
         assert.equal(waitingForDebugger,true,'Owned target ran before guard');
         await installNativeTargetGate(controller,observe,sessionId);
         await controller.send('Network.enable',{},sessionId);
-        await controller.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'},{urlPattern:'*',requestStage:'Response'}]},sessionId);
+        assert.ok(rootFetchReady,'Browser Fetch acknowledged before target resume');
         state.guardsAcknowledged=true; observe({event:'guards-acknowledged',sessionId});
         await controller.send('Runtime.runIfWaitingForDebugger',{},sessionId);
         state.ready=true; observe({event:'target-resumed',sessionId});
@@ -288,20 +318,23 @@ export async function runNativeInterceptionPreflight(reportPath) {
         if(!shuttingDown && !state?.expectedDetach)throw new Error('Unexpected target detach');
         if(state)state.detached=true;
       } else if(method==='Fetch.requestPaused') {
-        const state=targets.get(parentSession); assert.ok(state?.owned && state.guardsAcknowledged,'Pause belongs to guarded owned session');
-        const key=`${parentSession}:${params.requestId}`,request=params.request;
+        assert.equal(parentSession,undefined,'Fetch pause belongs to root guard');assert.ok(rootFetchReady);
+        const key=params.requestId,request=params.request;
         const responseStage=Object.hasOwn(params,'responseStatusCode') || Object.hasOwn(params,'responseErrorReason');
         const url=new URL(request.url); const relative=url.pathname+url.search;
-        observe({event:'native-fetch-pause',stage:responseStage?'Response':'Request',sessionId:parentSession,requestId:params.requestId,url:request.url});
+        observe({event:'native-fetch-pause',stage:responseStage?'Response':'Request',sessionId:parentSession,requestId:params.requestId,url:request.url,method:request.method,requestAttribution:'UNKNOWN'});
         const previous=requests.get(key);
         if(responseStage) {
-          assert.ok(previous && previous.url===request.url,'Response pause matches session-bound request');
+          assert.ok(previous && previous.url===request.url,'Response pause matches root request ID');
           const location=params.responseHeaders?.find(header=>header.name.toLowerCase()==='location')?.value;
           if(location && params.responseStatusCode>=300 && params.responseStatusCode<400) {
             const resolved=new URL(location,previous.url).href;
             previous.redirect=resolved;
-            observe({event:'redirect-response',sessionId:parentSession,requestId:params.requestId,parentUrl:previous.url,location,resolved});
-            if(new URL(resolved).origin!==origin || !allowed.has(new URL(resolved).pathname+new URL(resolved).search)) {
+            observe({event:'redirect-response',requestId:params.requestId,parentUrl:previous.url,status:params.responseStatusCode,locationSha256:hash(location),resolvedSha256:hash(resolved)});
+            const destination=new URL(resolved);
+            const sourceURL=new URL(previous.url);
+            const expectedFinal=sourceURL.pathname.replace(/^\/redirect\//,'/final/').replace(/^\/tls-redirect\//,'/tls-final/');
+            if(!approvedURL(destination) || destination.username || destination.password || destination.hash || (sourceURL.protocol==='https:' && destination.protocol!=='https:') || destination.pathname!==expectedFinal || resolved===request.url || previous.hops>=5) {
               observe({event:'guard-deny',stage:'Response',sessionId:parentSession,requestId:params.requestId,url:request.url,reason:'unapproved redirect'});
               await controller.send('Fetch.failRequest',{requestId:params.requestId,errorReason:'BlockedByClient'},parentSession); return;
             }
@@ -309,19 +342,21 @@ export async function runNativeInterceptionPreflight(reportPath) {
           await controller.send('Fetch.continueRequest',{requestId:params.requestId},parentSession); return;
         }
         if(params.redirectedRequestId) {
-          const prior=requests.get(`${parentSession}:${params.redirectedRequestId}`);
-          assert.ok(prior?.redirect && prior.redirect===request.url,'Exact session-scoped redirected request chain');
+          const prior=requests.get(params.redirectedRequestId);
+          assert.ok(prior?.redirect && prior.redirect===request.url,'Exact root request-ID redirected chain');
           observe({event:'redirect-chain-verified',sessionId:parentSession,requestId:params.requestId,redirectedRequestId:params.redirectedRequestId,url:request.url});
         }
-        const reason= !['GET','HEAD'].includes(request.method)?'method':request.hasPostData || request.postData || request.postDataEntries?.length?'body':
-          url.username || url.password || url.hash?'credentials or fragment':url.origin!==origin || !allowed.has(relative)?'URL':null;
-        requests.set(key,{url:request.url,networkId:params.networkId});
-        observe({event:reason?'guard-deny':'guard-allow',stage:'Request',sessionId:parentSession,requestId:params.requestId,url:request.url,method:request.method,reason});
-        if(relative==='/hold-denied') { observe({event:'request-held-for-disconnect',sessionId:parentSession,requestId:params.requestId}); return; }
+        const forbiddenHeader=Object.entries(request.headers??{}).some(([name,value])=>/^(cookie|authorization|proxy-authorization|transfer-encoding)$/i.test(name) || (name.toLowerCase()==='content-length' && value!=='0'));
+        const reason= !['GET','HEAD'].includes(request.method)?'method':request.hasPostData || request.postData || request.postDataEntries?.length?'body':forbiddenHeader?'private header':
+          !params.redirectedRequestId && /^\/(final|tls-final)\//.test(url.pathname)?'missing redirect parent':
+          url.username || url.password || url.hash?'credentials or fragment':!approvedURL(url)?'URL':null;
+        requests.set(key,{url:request.url,networkId:params.networkId,hops:params.redirectedRequestId?(requests.get(params.redirectedRequestId).hops+1):0});
+        if(relative==='/hold-denied') { observe({event:'request-held-for-disconnect',requestId:params.requestId,url:request.url}); return; }
+        observe({event:reason?'guard-deny':'guard-allow',stage:'Request',sessionId:parentSession,requestId:params.requestId,url:request.url,method:request.method,reason,requestAttribution:'UNKNOWN'});
         if(!reason) {
           const admissionKey=`${request.method}:${request.url}`;
           const tickets=admissions.get(admissionKey)??[];
-          tickets.push({sessionId:parentSession,requestId:params.requestId});admissions.set(admissionKey,tickets);
+          tickets.push({requestId:params.requestId,requestAttribution:'UNKNOWN'});admissions.set(admissionKey,tickets);
         }
         await controller.send(reason?'Fetch.failRequest':'Fetch.continueRequest',reason?{requestId:params.requestId,errorReason:'BlockedByClient'}:{requestId:params.requestId},parentSession);
       } else if(method==='Network.loadingFailed' || method==='Network.webSocketCreated' || method==='Network.webSocketClosed') {
@@ -330,8 +365,10 @@ export async function runNativeInterceptionPreflight(reportPath) {
     });
     const version=await controller.send('Browser.getVersion'); report.browserVersion=version.product;
     assert.equal(version.product,`HeadlessChrome/${pinned.browserVersion}`);
+    await controller.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'},{urlPattern:'*',requestStage:'Response'}]});
+    rootFetchReady=true;observe({event:'root-fetch-ready',requestAttribution:'UNKNOWN'});
     await installNativeTargetGate(controller,observe);
-    contextId=(await controller.send('Target.createBrowserContext')).browserContextId;
+    contextId=(await controller.send('Target.createBrowserContext')).browserContextId;ownedContexts.add(contextId);
     const pageId=(await controller.send('Target.createTarget',{url:'about:blank',browserContextId:contextId})).targetId;
     await waitUntil(()=>[...targets.values()].some(s=>s.targetId===pageId && s.ready),failure,'guarded page');
     const page=[...targets.values()].find(s=>s.targetId===pageId);
@@ -339,30 +376,47 @@ export async function runNativeInterceptionPreflight(reportPath) {
     await controller.send('Page.navigate',{url:origin+'/entry'},page.sessionId);
     await waitUntil(()=>report.ownedFixture.requests.some(r=>r.url==='/entry'),failure,'native fixture entry');
     await evaluate(page.sessionId,`new Promise(r=>document.readyState==='complete'?r(true):addEventListener('load',()=>r(true),{once:true}))`);
-    const window=await evaluate(page.sessionId,`(async()=>{const g=await fetch('/get');const h=await fetch('/head',{method:'HEAD'});let denied;try{await fetch('/denied',{method:'POST',body:'private-fixture'})}catch(e){denied=e.name}let forbidden;try{await fetch('/denied',{method:'GET',body:'private-fixture'})}catch(e){forbidden=e.name}return {get:await g.text(),head:h.status,denied,forbidden}})()`);
-    assert.equal(window.get,'authored tiny local fixture'); assert.equal(window.head,200);assert.equal(window.denied,'TypeError');assert.equal(window.forbidden,'TypeError');
-    assert.ok(!report.ownedFixture.requests.some(r=>r.url==='/denied')); report.gates.window={disposition:'measured',result:window};
-    report.gates['request-response-pauses']={disposition:'measured-page-only',workerCoverage:'unproven',requestPauses:report.observations.filter(o=>o.event==='native-fetch-pause' && o.stage==='Request').length,responsePauses:report.observations.filter(o=>o.event==='native-fetch-pause' && o.stage==='Response').length};
-    const runWorker=nested=>evaluate(page.sessionId,`new Promise((resolve,reject)=>{const w=new Worker('/worker.js');(window.ownedWorkers??=[]).push(w);w.onmessage=e=>resolve(e.data);w.onerror=()=>reject(new Error('worker'));w.postMessage({nested:${nested}})})`);
+    const window=await evaluate(page.sessionId,actions+";run('window')");
+    report.gates.window={disposition:'measured-local-fixture',requestAttribution:'UNKNOWN',result:window};
+    const runWorker=nested=>evaluate(page.sessionId,`new Promise((resolve,reject)=>{const w=new Worker('/worker.js');(window.ownedWorkers??=[]).push(w);w.onmessage=e=>resolve(e.data);w.onerror=()=>reject(new Error('worker'));w.postMessage({nested:${nested},realm:'dedicated-worker'})})`);
     for(const [name,nested] of [['dedicated-worker',false],['nested-worker',true]]) {
-      const result=await runWorker(nested);assert.equal(result.ok,'authored tiny local fixture');assert.equal(result.denied,'TypeError');
-      report.gates[name]={disposition:'measured',result};
+      const result=await runWorker(nested);assert.equal(result.get,'authored tiny local fixture');assert.equal(result.denied,'TypeError');assert.equal(result.preflight,'TypeError');
+      report.gates[name]={disposition:'measured-local-fixture',requestAttribution:'UNKNOWN',result};
     }
-    const redirect=await evaluate(page.sessionId,`fetch('/nested/start').then(r=>r.text())`);assert.equal(redirect,'authored tiny local fixture');
-    assert.ok(report.observations.some(o=>o.event==='redirect-chain-verified' && o.url===origin+'/get?via=redirect'));
-    const externalRedirect=await evaluate(page.sessionId,`fetch('/external-start').then(()=>false,()=>true)`);assert.equal(externalRedirect,true);
-    report.gates['relative-redirect-chain']={disposition:'measured',externalResponseDenied:true};
-    const beforeProxy=harness.observations.length;
-    const wss=await evaluate(page.sessionId,`new Promise(resolve=>{const s=new WebSocket(${JSON.stringify(report.foreignOrigin.replace('https:','wss:')+'/socket')});s.onerror=()=>resolve('native-error');s.onopen=()=>resolve('unexpected-open')})`);
-    assert.equal(wss,'native-error'); assert.ok(harness.observations.slice(beforeProxy).some(o=>o.method==='CONNECT' && o.kind==='blocked'));
-    assert.equal(report.ownedFixture.tlsConnections,0);assert.equal(report.ownedFixture.upgrades,0);
-    report.gates.wss={disposition:'proxy-fallback-refusal',nativeOutcome:wss,interceptionCoverage:'unproven'};
-    const wt=await evaluate(page.sessionId,`(async()=>{if(typeof WebTransport!=='function')return {unsupported:'missing native API'};try{const t=new WebTransport('https://127.0.0.1:${udp.address().port}/transport');try{await t.ready;return {unexpected:'ready'}}catch(e){return {rejected:e.name}}finally{t.close()}}catch(e){return {rejected:e.name}}})()`);
-    assert.equal(report.ownedFixture.udpPackets,0);report.gates.webtransport={disposition:nativeChannelDisposition(wt),nativeOutcome:wt,interceptionCoverage:'unproven'};
-    const sw=await evaluate(page.sessionId,`(async()=>{try{const registration=await navigator.serviceWorker.register('/sw.js');window.ownedSW=registration;await navigator.serviceWorker.ready;return {registered:true}}catch(e){return {rejected:e.name}}})()`);
-    const swTarget=[...targets.values()].find(s=>s.type==='service_worker');
-    report.gates.serviceworker={disposition:nativeChannelDisposition(sw,swTarget?.ready===true),nativeOutcome:sw};
-    assert.ok(!report.ownedFixture.requests.some(r=>r.url==='/denied'));
+    const negativeCases=[];
+    for(const name of ['foreign','wrong-file','query','host-alias','credentials','loop']){const denied=await evaluate(page.sessionId,`fetch('/negative/${name}').then(()=>false,()=>true)`);assert.equal(denied,true);negativeCases.push({name,denied});}
+    const copiedFinalDenied=await evaluate(page.sessionId,`fetch('/final/window/302').then(()=>false,()=>true)`);assert.equal(copiedFinalDenied,true);
+    report.gates['relative-redirect-chain']={disposition:'measured-local-fixture',statuses:[301,302,303,307,308],negativeCases,copiedFinalDenied};
+    report.gates.sockets=Object.fromEntries(['window','dedicated-worker','nested-worker'].map(realm=>{
+      assert.equal(report.gates[realm].result.ws,'native-error');
+      assert.ok(harness.observations.some(o=>o.url===origin+'/socket/'+realm && o.kind==='error'));
+      assert.ok(!report.observations.some(o=>o.event==='native-fetch-pause' && o.url===origin+'/socket/'+realm));
+      return [realm,{disposition:'proxy-fallback-refusal',interceptionCoverage:'unproven'}];
+    }));
+    assert.equal(report.ownedFixture.upgrades,0);assert.equal(report.foreignFixture.tcpConnections,0);assert.equal(report.foreignFixture.requests.length,0);
+    const tlsResults=[];
+    for(const [proxy,url,shouldTrust]of [[tlsProxy,tlsOrigin+'/tls',true],[untrustedProxy,untrustedOrigin+'/tls',false]]){
+      const {browserContextId}=await controller.send('Target.createBrowserContext',{proxyServer:proxy,proxyBypassList:'<-loopback>'});ownedContexts.add(browserContextId);
+      const {targetId}=await controller.send('Target.createTarget',{url:'about:blank',browserContextId});
+      await waitUntil(()=>[...targets.values()].some(s=>s.targetId===targetId && s.ready),failure,'guarded TLS fixture page');
+      const tlsPage=[...targets.values()].find(s=>s.targetId===targetId);
+      await controller.send('Page.enable',{},tlsPage.sessionId);
+      const result=await controller.send('Page.navigate',{url},tlsPage.sessionId);
+      if(shouldTrust){assert.ok(!result.errorText);await waitUntil(()=>report.tlsFixture.trustedRequests===1,failure,'trusted native TLS request');await evaluate(tlsPage.sessionId,`new Promise(r=>document.readyState==='complete'?r(true):addEventListener('load',()=>r(true),{once:true}))`);tlsResults.push(await evaluate(tlsPage.sessionId,'document.body.innerText'));
+        const redirects=await evaluate(tlsPage.sessionId,`(async()=>{const statuses=[];for(const status of [301,302,303,307,308]){const r=await fetch('/tls-redirect/'+status);if(await r.text()!=='authored tiny TLS fixture')throw Error('TLS redirect body');statuses.push(status)}return statuses})()`);
+        report.gates.https={redirectStatuses:redirects,downgradeDenied:await evaluate(tlsPage.sessionId,`fetch('/tls-downgrade').then(()=>false,()=>true)`)};assert.equal(report.gates.https.downgradeDenied,true);}
+      else{assert.match(result.errorText,/ERR_CERT_/);tlsResults.push(true);}
+    }
+    assert.equal(report.tlsFixture.untrustedRequests,0);
+    report.gates.https={...report.gates.https,disposition:'measured-local-native-TLS',trustedBody:tlsResults[0],certificateRejection:tlsResults[1],trust:'task-only certificate SPKI; second certificate remains rejected',externalTLS:'unmeasured'};
+    report.gates.webtransport={disposition:'not-executed',interceptionCoverage:'unproven'};
+    // Closing a new paused SW target can leave its registration promise unsettled.
+    // Observe that actual target refusal without awaiting or claiming activation.
+    await evaluate(page.sessionId,`window.ownedSWOutcome={registration:'unsettled'};void navigator.serviceWorker.register('/sw.js').then(()=>{window.ownedSWOutcome={registration:'registered'}},e=>{window.ownedSWOutcome={registration:'rejected',name:e.name}});true`);
+    await waitUntil(()=>[...targets.values()].some(s=>s.type==='service_worker' && s.closedPaused),failure,'paused service worker target refusal');
+    const sw=await evaluate(page.sessionId,'window.ownedSWOutcome');
+    report.gates.serviceworker={disposition:'closed-paused-target-refusal',nativeOutcome:sw,activation:'unqualified',interceptionCoverage:'unproven'};
+    assert.ok(!report.ownedFixture.requests.some(r=>r.url.startsWith('/denied/')));
     const otherContext=(await controller.send('Target.createBrowserContext')).browserContextId;
     await controller.send('Target.createTarget',{url:'about:blank',browserContextId:otherContext});
     await waitUntil(()=>report.observations.some(o=>o.event==='unowned-target-closed-paused'),failure,'unowned paused refusal');
@@ -372,25 +426,24 @@ export async function runNativeInterceptionPreflight(reportPath) {
     await waitUntil(()=>report.observations.some(o=>o.event==='request-held-for-disconnect'),failure,'held native request');
     report.intentionalDisconnect=true;controller.close();
     await stopBrowser();assert.ok(!report.ownedFixture.requests.some(r=>r.url==='/hold-denied'));
-    report.gates['guard-disconnect']={disposition:'measured-owned-browser-shutdown',browserExited:report.browserExited};
-    report.gates['request-response-pauses']={disposition:'measured',responsePauses:report.observations.filter(o=>o.event==='command-sent' && o.method==='Fetch.continueRequest').length};
+    report.gates['guard-disconnect']={disposition:'measured-owned-browser-shutdown',browserExited:report.browserExited,containment:'task-local proxy; external native denial unqualified'};
+    report.gates['request-response-pauses']={disposition:'measured',requestAttribution:'UNKNOWN',requestPauses:report.observations.filter(o=>o.event==='native-fetch-pause' && o.stage==='Request').length,responsePauses:report.observations.filter(o=>o.event==='native-fetch-pause' && o.stage==='Response').length};
     if(firstFailure)throw firstFailure;
     report.status='partial-local-preflight';
-    report.remainingGates=['browser-process attribution','WSS interception under future bypass','WebTransport interception under future bypass','external native HTTPS/redirect transport'];
+    report.remainingGates=['production request-to-target attribution','browser-process attribution','external all-channel native denial under host bypass','WSS interception under future bypass','WebTransport interception under future bypass','external native HTTPS/redirect transport','full production negative matrix and sanitizer qualification'];
   } catch(error) {
-    firstFailure??=error;report.error=String(firstFailure);report.status=firstFailure instanceof Unsupported?'unsupported':'failed';
+    firstFailure??=error;report.error=nativeDiagnosticError(firstFailure);report.status=firstFailure instanceof Unsupported?'unsupported':'failed';
     const rejected=report.observations.find(o=>o.event==='command-rejected' && o.method==='Fetch.enable');
     if(rejected) {
-      const state=targets.get(rejected.sessionId);
-      report.unsupported={primitive:'per-target Request/Response Fetch enable',targetType:state?.type,sessionId:rejected.sessionId,reason:rejected.reason};
-      report.gates['dedicated-worker']={disposition:'unsupported',reason:rejected.reason};
+      report.unsupported={primitive:'browser-target Request/Response Fetch enable',targetType:'browser',sessionId:rejected.sessionId,reason:rejected.reason};
+      report.gates['request-response-pauses']={disposition:'unsupported',reason:rejected.reason};
     }
   } finally {
-    if(harness)report.harness=harness.observations;
-    await cleanupWhisperRun(report,[async()=>{await stopBrowser();if(shutdownFailure)throw shutdownFailure;},()=>controller?.close(),async()=>{await harness?.close();observe({event:'owned-proxy-closed'});},
-      async()=>{for(const socket of sockets)socket.destroy();await Promise.all([fixture,secure].filter(Boolean).map(server=>new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))));},
+    if(harness)report.harness=harness.observations;report.tlsProxies=[tlsHarness?.observations??[],untrustedHarness?.observations??[]];
+    await cleanupWhisperRun(report,[async()=>{await stopBrowser();if(shutdownFailure)throw shutdownFailure;},()=>controller?.close(),async()=>{await harness?.close();observe({event:'owned-proxy-closed'});},()=>tlsHarness?.close(),()=>untrustedHarness?.close(),
+      async()=>{for(const socket of sockets)socket.destroy();await Promise.all([fixture,secure,untrusted,foreign].filter(Boolean).map(server=>new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))));},
       ()=>udp && new Promise(resolve=>udp.close(resolve))],()=>rm(scratch,{recursive:true,force:true}),
-      ()=>writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'}));
+      ()=>{report.harness=JSON.parse(JSON.stringify(harness?.observations??[]));if(report.gates.serviceworker.disposition==='closed-paused-target-refusal')report.gates.serviceworker.fixtureProxyFallbackDenials=report.observations.filter(o=>o.event==='fixture-proxy-fallback-deny' && o.url===report.fixtureOrigin+'/sw.js').length;return writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx'});});
   }
   return report;
 }

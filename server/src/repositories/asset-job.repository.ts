@@ -165,6 +165,7 @@ export class AssetJobRepository {
           'asset.type',
           // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
           'asset.checksum',
+          'asset.checksumAlgorithm',
         ])
         .select((eb) =>
           jsonArrayFrom(

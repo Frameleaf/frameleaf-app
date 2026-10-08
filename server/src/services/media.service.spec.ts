@@ -20,6 +20,7 @@ import {
   AssetType,
   AssetVisibility,
   AudioCodec,
+  ChecksumAlgorithm,
   Colorspace,
   DvProfile,
   ExifOrientation,
@@ -352,7 +353,12 @@ describe(MediaService.name, () => {
     it('publishes HDR and SDR renditions together while feeding thumbhash from the authored SDR base', async () => {
       vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
       try {
-        const asset = AssetFactory.from({ checksum: Buffer.alloc(32, 1) })
+        const contentChecksum = Buffer.alloc(32, 2);
+        mocks.crypto.hashFile.mockResolvedValue(contentChecksum);
+        const asset = AssetFactory.from({
+          checksum: Buffer.alloc(20, 1),
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        })
           .exif({
             imageEncoding: {
               dynamicRange: 'hdr',
@@ -380,6 +386,13 @@ describe(MediaService.name, () => {
         });
         await sut.handleGenerateThumbnails({ id: asset.id });
         expect(mocks.media.generateHdrRenditions).toHaveBeenCalledOnce();
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+          asset.originalPath,
+          expect.any(Array),
+          undefined,
+          undefined,
+          contentChecksum,
+        );
         expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
           expect.stringContaining('hdr_fullsize'),
           expect.anything(),
@@ -404,6 +417,36 @@ describe(MediaService.name, () => {
         vi.unstubAllEnvs();
       }
     });
+
+    it.each([ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])(
+      'uses the stored %s content checksum rather than accepting changed original bytes',
+      async (checksumAlgorithm) => {
+        vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        try {
+          const checksum = Buffer.alloc(checksumAlgorithm === ChecksumAlgorithm.sha1File ? 20 : 32, 1);
+          const asset = AssetFactory.from({ checksum, checksumAlgorithm })
+            .exif({
+              imageEncoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+            })
+            .build();
+          mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+          mocks.media.generateHdrRenditions.mockRejectedValue(new Error('IMAGE_SOURCE_CHANGED'));
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('IMAGE_SOURCE_CHANGED');
+          expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+            asset.originalPath,
+            expect.any(Array),
+            undefined,
+            undefined,
+            checksum,
+          );
+          expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+          expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+          expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
 
     it('retains the previous rendition set when required HDR generation fails', async () => {
       vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');

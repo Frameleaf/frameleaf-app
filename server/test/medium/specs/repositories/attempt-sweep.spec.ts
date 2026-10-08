@@ -67,6 +67,43 @@ describe('attempt output retention and cleanup', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('recovers stopped HDR staging after restart while retaining active, unknown and referenced staged outputs', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const settled = await claim();
+    const orphan = await file(settled, '.sharp-abc123/preview.jpg');
+    const referenced = await file(settled, '.sharp-def456/profile.jpg');
+    const pinned = await file(settled, '.sharp-ghi789/pinned.jpg');
+    const recent = await file(settled, '.sharp-jkl012/recent.jpg');
+    await utimes(recent, new Date(), new Date());
+    await db.updateTable('user').set({ profileImagePath: referenced }).where('id', '=', user.id).execute();
+    await sql`INSERT INTO buddy_backup_reference ("runId",path) VALUES (${randomUUID()}::uuid,${pinned})`.execute(db);
+    const active = await claim(false);
+    const inFlight = await file(active, '.sharp-mno345/active.jpg');
+    await sql`UPDATE job SET "leaseExpiresAt"=clock_timestamp()-interval '1 day' WHERE id=${active.id}::uuid`.execute(
+      db,
+    );
+    const unknown = await file({ id: randomUUID(), token: randomUUID() }, '.sharp-pqr678/unknown.jpg');
+    // Retain the positive stopped proof while SQL history is pruned, then restart the scanner.
+    await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(db);
+    await pruneQueueHistory(db);
+    await closeAttemptSweep();
+    const restarted = new PhysicalFileRepository(db);
+    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(1);
+    await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const path of [referenced, pinned, recent, inFlight, unknown])
+      expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    expect(
+      (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db))
+        .rows,
+    ).toHaveLength(1);
+    await db.updateTable('user').set({ profileImagePath: '' }).where('id', '=', user.id).execute();
+    await sql`UPDATE buddy_backup_reference SET released=true WHERE path=${pinned}`.execute(db);
+    await restarted.sweepAttempts([root]);
+    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(2);
+    for (const path of [recent, inFlight, unknown]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
+  });
+
   it('keeps profile references, Buddy pins, active expired claims and unknown history; removes a settled orphan', async () => {
     const { ctx, files } = setup();
     const { user } = await ctx.newUser();
@@ -100,38 +137,44 @@ describe('attempt output retention and cleanup', () => {
     expect((await files.sweepAttempts([root]))?.deleted).toBe(2);
   });
 
-  it('continues from persisted bounded slices after a repository restart and honors another live owner', async () => {
-    const { files } = setup();
-    const settled = await claim();
-    for (let index = 0; index < 120; index++) await file(settled, `${index}.jpeg`);
-    await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(db);
-    await pruneQueueHistory(db);
-    let deleted = 0;
-    let done = false;
-    for (let slice = 0; slice < 20 && !done; slice++) {
-      await closeAttemptSweep(); // discard process-local directory streams, preserve only the SQL cursor
-      const restarted = slice === 0 ? files : new PhysicalFileRepository(db);
-      const result = await restarted.sweepAttempts([root]);
-      expect(result).toBeDefined();
-      expect(result!.examined).toBeLessThanOrEqual(100);
-      expect(result!.visited).toBeLessThanOrEqual(1000);
-      deleted += result!.deleted;
-      done = result!.done;
-    }
-    expect(done).toBe(true);
-    expect(deleted).toBe(120);
-    await sql`UPDATE system_metadata SET value=jsonb_set(jsonb_set(value,'{owner}',to_jsonb(${randomUUID()}::text)),
-      '{expires}',to_jsonb(extract(epoch FROM clock_timestamp())*1000+60000)) WHERE key='frameleaf-attempt-cleanup-v1'`.execute(
-      db,
-    );
-    try {
-      expect(await files.sweepAttempts([root])).toBeUndefined();
-    } finally {
-      await sql`UPDATE system_metadata SET value=jsonb_set(value,'{expires}','0'::jsonb) WHERE key='frameleaf-attempt-cleanup-v1'`.execute(
+  it.each(['', '.sharp-abc123'])(
+    'continues from persisted bounded slices under %s after a repository restart and honors another live owner',
+    async (prefix) => {
+      const { files } = setup();
+      const settled = await claim();
+      for (let index = 0; index < 120; index++) await file(settled, join(prefix, `${index}.jpeg`));
+      await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(
         db,
       );
-    }
-  }, 30_000);
+      await pruneQueueHistory(db);
+      let deleted = 0;
+      let done = false;
+      for (let slice = 0; slice < 20 && !done; slice++) {
+        await closeAttemptSweep(); // discard process-local directory streams, preserve only the SQL cursor
+        const restarted = slice === 0 ? files : new PhysicalFileRepository(db);
+        const result = await restarted.sweepAttempts([root]);
+        expect(result).toBeDefined();
+        expect(result!.examined).toBeLessThanOrEqual(100);
+        expect(result!.visited).toBeLessThanOrEqual(1000);
+        deleted += result!.deleted;
+        done = result!.done;
+      }
+      expect(done).toBe(true);
+      expect(deleted).toBe(120);
+      await sql`UPDATE system_metadata SET value=jsonb_set(jsonb_set(value,'{owner}',to_jsonb(${randomUUID()}::text)),
+      '{expires}',to_jsonb(extract(epoch FROM clock_timestamp())*1000+60000)) WHERE key='frameleaf-attempt-cleanup-v1'`.execute(
+        db,
+      );
+      try {
+        expect(await files.sweepAttempts([root])).toBeUndefined();
+      } finally {
+        await sql`UPDATE system_metadata SET value=jsonb_set(value,'{expires}','0'::jsonb) WHERE key='frameleaf-attempt-cleanup-v1'`.execute(
+          db,
+        );
+      }
+    },
+    30_000,
+  );
 
   it('never races a job publication, and a path-locked reference writer wins against deletion', async () => {
     const { ctx, files } = setup();

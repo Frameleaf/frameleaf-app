@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { type ChildProcess, fork } from 'node:child_process';
 import { channel } from 'node:diagnostics_channel';
 import { existsSync } from 'node:fs';
+import { link, lstat, mkdtemp, rm, unlink } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { SharpArguments, SharpOperation, SharpResponse, SharpResult } from 'src/queue/sharp-protocol.js';
 import { trackQueueChild } from 'src/queue/child-process.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -29,6 +31,9 @@ type Task = {
   operation: SharpOperation;
   args: unknown[];
   bytes: number;
+  originalOutputs?: string[];
+  published?: { destination: string; dev: number; ino: number }[];
+  outputs?: { root: string; staged: string; destination: string }[];
   signal?: AbortSignal;
   deadline: number;
   startedAt?: number;
@@ -49,6 +54,9 @@ type Slot = {
   completed: number;
   idle?: ReturnType<typeof setTimeout>;
   closed: Promise<void>;
+  work?: Promise<void>;
+  sending?: boolean;
+  finishing?: boolean;
 };
 type PoolOptions = ReturnType<typeof sharpConfiguration> & {
   deadlineMs: number;
@@ -271,6 +279,9 @@ export class SharpProcessPool {
       task.startedAt = performance.now();
       slot.task = task;
       slot.completed = 0;
+      slot.sending = false;
+      slot.finishing = false;
+      slot.work = undefined;
       clearTimeout(slot.idle);
       slot.child.ref();
       slot.child.channel?.ref();
@@ -303,21 +314,44 @@ export class SharpProcessPool {
     child.on('message', (message: SharpResponse) => this.message(slot, message));
     child.on('error', (error) => this.retire(slot, error));
     child.once('close', (code, signal) => {
-      clearTimeout(slot.idle);
-      slot.task?.reject(slot.lifetime?.error() ?? new Error(`Sharp child closed (${code ?? signal})`));
-      slot.lifetime?.release();
-      this.slots.delete(slot);
-      markClosed();
-      this.dispatch();
+      void (async () => {
+        slot.retiring = true;
+        clearTimeout(slot.idle);
+        await slot.work;
+        let error = slot.lifetime?.error() ?? new Error(`Sharp child closed (${code ?? signal})`);
+        try {
+          await this.cleanupOutputs(slot.task, true);
+        } catch (cleanupError) {
+          // Fail closed: capacity cannot be reused while owned temporary data remains.
+          this.stopped = true;
+          error = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+          while (this.pending.length > 0) this.cancelPending(this.pending[0], error);
+        }
+        slot.task?.reject(error);
+        slot.lifetime?.release();
+        this.slots.delete(slot);
+        markClosed();
+        this.dispatch();
+      })();
     });
     return slot;
   }
 
   private send(slot: Slot) {
     const task = slot.task;
-    if (!task || slot.retiring || slot.lifetime?.error()) {
+    if (!task || slot.retiring || slot.lifetime?.error() || slot.sending) {
       return;
     }
+    slot.sending = true;
+    slot.work = this.prepareOutputs(task)
+      .then(() => {
+        if (slot.retiring || slot.lifetime?.error()) return;
+        this.sendPrepared(slot, task);
+      })
+      .catch((error) => this.retire(slot, error instanceof Error ? error : new Error(String(error))));
+  }
+
+  private sendPrepared(slot: Slot, task: Task) {
     try {
       slot.child.send(
         {
@@ -364,6 +398,31 @@ export class SharpProcessPool {
     if (Number.isSafeInteger(message.workerLifetimePeakRssBytes) && message.workerLifetimePeakRssBytes! >= 0) {
       task.workerLifetimePeakRssBytes = message.workerLifetimePeakRssBytes;
     }
+    if (task.outputs) {
+      if (slot.finishing) return;
+      if (
+        message.type === 'result' &&
+        task.operation === 'generateHdrRenditions' &&
+        (!Array.isArray(message.value) ||
+          message.value.length !== task.outputs.length ||
+          message.value.some((output, index) => output?.path !== task.outputs![index].staged))
+      )
+        return this.retire(slot, new Error('INVALID_HDR_OUTPUT_RESULT'));
+      slot.finishing = true;
+      slot.work = this.finishOutputs(slot, task, message.type === 'result')
+        .then(() => {
+          if (message.type === 'result' && task.operation === 'generateHdrRenditions') {
+            message.value = (message.value as { path: string }[]).map((output, index) => ({
+              ...output,
+              path: task.originalOutputs![index],
+            }));
+          }
+          slot.finishing = false;
+          this.message(slot, message);
+        })
+        .catch((error) => this.retire(slot, error instanceof Error ? error : new Error(String(error))));
+      return;
+    }
     slot.lifetime?.release();
     slot.lifetime = undefined;
     slot.task = undefined;
@@ -382,6 +441,75 @@ export class SharpProcessPool {
     slot.idle = setTimeout(() => this.retire(slot, new Error('Sharp idle child retired')), this.options.idleChildMs);
     slot.idle.unref();
     this.dispatch();
+  }
+
+  private async prepareOutputs(task: Task) {
+    if (task.operation !== 'generateHdrRenditions' && task.operation !== 'exportPhotoStill') return;
+    const outputs =
+      task.operation === 'generateHdrRenditions'
+        ? (task.args[1] as SharpArguments<'generateHdrRenditions'>[1])
+        : [{ path: task.args[1] as string }];
+    if (
+      !Array.isArray(outputs) ||
+      outputs.length === 0 ||
+      outputs.length > (task.args[2] && task.operation === 'generateHdrRenditions' ? 4 : 2)
+    )
+      throw new Error('INVALID_HDR_OUTPUTS');
+    const destinations = outputs.map(({ path }) => resolve(path));
+    if (new Set(destinations).size !== destinations.length) throw new Error('INVALID_HDR_OUTPUTS');
+    if (typeof task.args[0] === 'string' && destinations.includes(resolve(task.args[0])))
+      throw new Error('Cannot overwrite original media');
+    task.originalOutputs = outputs.map(({ path }) => path);
+    task.outputs = [];
+    for (const destination of destinations) {
+      const root = await mkdtemp(join(dirname(destination), '.sharp-'));
+      task.outputs.push({ root, staged: join(root, basename(destination)), destination });
+    }
+    task.args = [...task.args];
+    task.args[1] =
+      task.operation === 'generateHdrRenditions'
+        ? outputs.map((output, index) => ({ ...output, path: task.outputs![index].staged }))
+        : task.outputs[0].staged;
+  }
+
+  private async cleanupOutputs(task?: Task, rollback = false) {
+    if (rollback) {
+      for (const output of task?.published ?? []) {
+        const identity = await lstat(output.destination).catch((error_: NodeJS.ErrnoException) => {
+          if (error_.code !== 'ENOENT') throw error_;
+        });
+        if (identity?.dev === output.dev && identity.ino === output.ino) await unlink(output.destination);
+      }
+    }
+    for (const output of task?.outputs ?? []) await rm(output.root, { recursive: true, force: true });
+  }
+
+  private async finishOutputs(slot: Slot, task: Task, publish: boolean) {
+    const published: NonNullable<Task['published']> = (task.published = []);
+    const check = () => {
+      const error = slot.lifetime?.error();
+      if (error) throw error;
+      if (slot.retiring) throw new Error('Sharp child closed before output publication');
+    };
+    try {
+      if (publish) {
+        for (const output of task.outputs!) {
+          check();
+          const identity = await lstat(output.staged);
+          if (!identity.isFile()) throw new Error('INVALID_HDR_OUTPUT_RESULT');
+          // Same-directory staging permits an atomic exclusive link, never an overwrite.
+          await link(output.staged, output.destination);
+          published.push({ destination: output.destination, dev: identity.dev, ino: identity.ino });
+        }
+      }
+      await this.cleanupOutputs(task);
+      check();
+      task.outputs = undefined;
+      task.published = undefined;
+    } catch (error) {
+      await this.cleanupOutputs(task, true);
+      throw error;
+    }
   }
 
   private retire(slot: Slot, reason: Error) {

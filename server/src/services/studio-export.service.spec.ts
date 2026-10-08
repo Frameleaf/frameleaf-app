@@ -1194,9 +1194,13 @@ describe(StudioExportService.name, () => {
           );
           expect(media.generateHdrRenditions).not.toHaveBeenCalled();
         } else
-          expect(media.generateHdrRenditions).toHaveBeenCalledWith(staged, [
-            expect.objectContaining({ dynamicRange: 'hdr', format: format === 'hdr-heic' ? 'heic' : 'jpeg' }),
-          ]);
+          expect(media.generateHdrRenditions).toHaveBeenCalledWith(
+            staged,
+            [expect.objectContaining({ dynamicRange: 'hdr', format: format === 'hdr-heic' ? 'heic' : 'jpeg' })],
+            undefined,
+            undefined,
+            Buffer.from('ab'.repeat(32), 'hex'),
+          );
         expect(operations.fail).not.toHaveBeenCalled();
       },
     );
