@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { load } = require('js-yaml');
+const { execFileSync } = require('node:child_process');
 const { buildManager } = require('./build-manager.cjs');
 const { TYPE, IMAGE } = require('../../.github/verify-manager-release.cjs');
 
@@ -41,6 +42,32 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     assert(xml.includes('Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw"'));
     assert(xml.includes('Target="MANAGER_UNRAID_AUTOSTART" Default=""'));
     assert(!xml.includes('latest'));
+    assert.equal(await fs.readFile(path.join(output, 'unraid/LICENSE'), 'utf8'),
+      await fs.readFile(path.join(__dirname, '../../LICENSE'), 'utf8'));
+    assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('claim-key'));
+    assert(xml.includes('For DNS, also set Advanced View WebUI to this exact origin.'));
+    execFileSync('python3', ['-c', `
+import pathlib, re, sys, xml.etree.ElementTree as ET
+root = pathlib.Path(sys.argv[1])
+profile = ET.parse(root / 'ca_profile.xml').getroot()
+assert profile.tag == 'CommunityApplications'
+assert 'Manager' in profile.findtext('Profile', '')
+assert profile.findtext('Forum') == 'https://github.com/Frameleaf/frameleaf-app/issues'
+templates = list((root / 'templates').glob('*.xml'))
+assert len(templates) == 1
+for template in templates:
+    text = template.read_text()
+    assert not re.search(r'@[A-Z_]+@', text)
+    app = ET.fromstring(text)
+    assert app.tag == 'Container' and app.get('version') == '2'
+    for field in ['Name', 'Repository', 'Overview', 'Project', 'Support', 'Icon', 'TemplateURL']:
+        assert app.findtext(field, '').strip(), field
+    assert app.findtext('TemplateURL') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/' + template.name
+    assert re.fullmatch(r'ghcr.io/frameleaf/frameleaf-manager@sha256:[a-f0-9]{64}', app.findtext('Repository'))
+    assert app.findtext('Privileged') == 'false'
+    for config in app.findall('Config'):
+        assert config.get('Description', '').strip(), config.get('Name')
+`, path.join(output, 'unraid')]);
     const compose = load(await fs.readFile(path.join(output, 'truenas/frameleaf-manager.compose.yaml'), 'utf8'));
     assert.deepEqual(Object.keys(compose.services), ['manager']);
     assert.equal(compose.services.manager.image, manifest.image);
