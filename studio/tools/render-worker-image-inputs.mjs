@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inventory } from './engine.mjs';
-import { inspectVerifiedVideo, reconcileVideoTiming } from './render-worker-video-inputs.mjs';
+import { inspectVerifiedVideo, reconcileVideoTiming, timelineViews } from './render-worker-video-inputs.mjs';
 import { decodeHdrRaster } from './hdr-raster-input.mjs';
 
 const studio = fileURLToPath(new URL('../', import.meta.url));
@@ -105,6 +105,43 @@ export function validateClaimResourceClosure(prepared, extraction) {
   assert.equal(prepared.inputs.size, readable, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
 }
 
+/** Admit immutable inline RGBA8 LUT bytes before the renderer can fall back to identity. */
+export function validateInlineLuts(project) {
+  let allocated = 0;
+  const pending = [project];
+  while (pending.length) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') continue;
+    if (node.type === 'gpu-effect' && node.gpuEffectType === 'gpu-lut') {
+      const params = node.params;
+      assert.ok(params && typeof params === 'object', 'INVALID_INLINE_LUT');
+      if (params.lutSize === '0' && params.lutData === '' && params.lutName === '') continue;
+      const size =
+        typeof params.lutSize === 'string' || typeof params.lutSize === 'number' ? Number(params.lutSize) : NaN;
+      assert.ok(
+        Number.isInteger(size) &&
+          size >= 2 &&
+          size <= 129 &&
+          typeof params.lutName === 'string' &&
+          typeof params.lutData === 'string',
+        'INVALID_INLINE_LUT',
+      );
+      const length = size ** 3 * 4;
+      assert.equal(params.lutData.length, 4 * Math.ceil(length / 3), 'INVALID_INLINE_LUT');
+      allocated += length;
+      assert.ok(allocated <= 8 * 1024 * 1024, 'INLINE_LUT_ALLOCATION_LIMIT');
+      const bytes = Buffer.from(params.lutData, 'base64');
+      try {
+        assert.equal(bytes.length, length, 'INVALID_INLINE_LUT');
+        assert.equal(bytes.toString('base64'), params.lutData, 'INVALID_INLINE_LUT');
+      } finally {
+        bytes.fill(0);
+      }
+    }
+    pending.push(...Object.values(node));
+  }
+}
+
 /**
  * Consumes the claim adapter's verified in-memory inputs. The caller owns the lease and must
  * dispose before releasing it. No worker credential, grant URL or host path enters the engine.
@@ -118,15 +155,14 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   for (const key of ['width', 'height', 'fps']) {
     assert.ok(Number.isFinite(project.metadata[key]) && project.metadata[key] > 0, 'PROJECT_CADENCE_REQUIRED');
   }
-  // Video/audio need measured metadata for codec selection and source cadence. Generated media,
-  // fonts, models, LUTs and nested compositions need their own resource adapters; never ignore them.
-  assert.ok(!project.timeline.compositions?.length, 'NESTED_COMPOSITION_ADAPTER_UNAVAILABLE');
-  for (const item of project.timeline.items) {
+  const views = timelineViews(project);
+  const items = views.flatMap((view) => view.items);
+  for (const item of items) {
     assert.ok(
-      ((['image', 'video'].includes(item.type) && typeof item.mediaId === 'string') || (item.type === 'shape' && !item.mediaId)) &&
-        !item.generatedId &&
-        !item.src &&
-        !item.audioSrc,
+      ((['image', 'video'].includes(item.type) && typeof item.mediaId === 'string') ||
+        (item.type === 'shape' && !item.mediaId) ||
+        (item.type === 'composition' && typeof item.compositionId === 'string' && !item.mediaId)) &&
+        !item.generatedId && !item.src && !item.audioSrc,
       'IMAGE_SOURCE_ADAPTER_ONLY',
     );
   }
@@ -141,18 +177,26 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   assert.equal(sha256(JSON.stringify(source)), configuration.sourceSha256, 'PREPARED_ENGINE_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
   const { tsImport } = require('tsx/esm/api');
-  const { extractStudioResourceReferences, measureStudioGraph, STUDIO_MAX_GRAPH_BYTES } = await tsImport(
+  const { extractStudioResourceReferences, checkNestedSequences, measureStudioGraph, STUDIO_MAX_GRAPH_BYTES } = await tsImport(
     path.join(studio, '../server/src/utils/studio-resources.ts'),
     { parentURL: import.meta.url, tsconfig: false },
   );
   assert.ok(measureStudioGraph(project) <= STUDIO_MAX_GRAPH_BYTES, 'GRAPH_RESOURCE_LIMIT');
   const extraction = extractStudioResourceReferences(project);
   validateClaimResourceClosure(prepared, extraction);
+  assert.equal(checkNestedSequences(extraction.sequences).refused.length, 0, 'INVALID_GRAPH_RESOURCE');
+  validateInlineLuts(project);
   const { collectMediaIds } = await import(pathToFileURL(path.join(engine, 'headless/lib/workspace.mjs')).href);
   const { createMediaServer } = await import(pathToFileURL(path.join(engine, 'headless/media-server.mjs')).href);
-  const ids = collectMediaIds(project);
+  // Include unused definitions as well as every reachable/off-range occurrence. The same
+  // existing collector discovers the bytes; the server extraction remains grant authority.
+  const ids = [...new Set(views.flatMap((view) => collectMediaIds({
+    ...project, timeline: { ...project.timeline, items: view.items },
+  })))];
   assert.ok(
-    extraction.references.every((reference) => reference.kind === 'library-asset' && ids.includes(reference.id)),
+    extraction.references.every((reference) =>
+      (reference.kind === 'library-asset' && ids.includes(reference.id)) ||
+      (reference.kind === 'nested-sequence' && extraction.sequences.has(reference.id))),
     'UNSUPPORTED_GRAPH_RESOURCE',
   );
   assert.equal(prepared.inputs.size, ids.length, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
@@ -163,7 +207,9 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       'AUTHORIZED_IMAGE_INPUT_REQUIRED',
     );
     assert.equal(sha256(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
-    return { id, bytes: input.bytes, sha256: input.sha256, declaredChecksum: input.declaredChecksum, key: randomUUID(), video: project.timeline.items.some(item => item.type === 'video' && item.mediaId === id) };
+    const uses = new Set(items.filter((item) => item.mediaId === id).map((item) => item.type));
+    assert.equal(uses.size, 1, 'MIXED_RESOURCE_USE_UNAVAILABLE');
+    return { id, bytes: input.bytes, sha256: input.sha256, declaredChecksum: input.declaredChecksum, key: randomUUID(), video: uses.has('video') };
   });
   assert.ok(sources.reduce((total, source) => total + source.bytes.length, 0) <= 32 * 1024 * 1024, 'IMAGE_BYTE_LIMIT');
   const sharp = require('sharp');

@@ -360,3 +360,109 @@ test("genuinely variable packet durations are refused rather than assigned a gue
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+function nestedVideoFixture() {
+  const claim = fixture();
+  const graph = claim.snapshot.studio.graph;
+  const video = { ...graph.timeline.items[0], durationInFrames: 30 };
+  graph.timeline.compositions = [
+    {
+      id: "child",
+      fps: 30,
+      width: 64,
+      height: 48,
+      durationInFrames: 30,
+      tracks: graph.timeline.tracks,
+      items: [video],
+      transitions: [],
+      keyframes: [],
+    },
+  ];
+  graph.timeline.items = [
+    {
+      id: "nest",
+      type: "composition",
+      compositionId: "child",
+      trackId: "v1",
+      from: 0,
+      durationInFrames: 24,
+      sourceFps: 30,
+      sourceStart: 0,
+      compositionWidth: 64,
+      compositionHeight: 48,
+    },
+  ];
+  claim.snapshot.studio.resources[0].graphPath =
+    "/timeline/compositions/0/items/0";
+  claim.snapshot.studio.resources.push({
+    key: "nested-sequence:child",
+    kind: "nested-sequence",
+    id: "child",
+    graphPath: "/timeline/items/0",
+    grant: "none",
+    checksum: null,
+  });
+  return claim;
+}
+
+test("nested video is probed from signed bytes at containing cadence with exact parent source mapping", async () => {
+  const claim = nestedVideoFixture();
+  const graph = structuredClone(claim.snapshot.studio.graph);
+  const adapter = await createClaimImageInputs(claim, () => true);
+  try {
+    assert.deepEqual(adapter.input.project, graph);
+    assert.equal(adapter.input.media[0].metadata.fps, 24);
+  } finally {
+    await adapter.dispose();
+  }
+});
+for (const [name, modify, expected] of [
+  [
+    "nested fallback cadence",
+    (f) => {
+      delete f.snapshot.studio.graph.timeline.compositions[0].items[0]
+        .sourceFps;
+    },
+    /SOURCE_CADENCE_CHANGED/,
+  ],
+  [
+    "unused video cadence",
+    (f) => {
+      const unused = structuredClone(
+        f.snapshot.studio.graph.timeline.compositions[0],
+      );
+      unused.id = "unused";
+      unused.items[0].sourceFps = 30;
+      f.snapshot.studio.graph.timeline.compositions.push(unused);
+    },
+    /SOURCE_CADENCE_CHANGED/,
+  ],
+  [
+    "shared off-range placement",
+    (f) => {
+      const graph = f.snapshot.studio.graph;
+      graph.timeline.items.push({
+        ...graph.timeline.items[0],
+        id: "offrange",
+        from: 100,
+        sourceFps: 24,
+      });
+    },
+    /COMPOSITION_CADENCE_CHANGED/,
+  ],
+  [
+    "parent source overrun",
+    (f) => {
+      f.snapshot.studio.graph.timeline.items[0].sourceStart = 1;
+    },
+    /COMPOSITION_SOURCE_RANGE_EXCEEDED/,
+  ],
+])
+  test(`nested byte-bound timing refuses ${name}`, async () => {
+    const claim = nestedVideoFixture();
+    modify(claim);
+    await assert.rejects(async () => {
+      const adapter = await createClaimImageInputs(claim, () => true);
+      await adapter.dispose();
+    }, expected);
+  });
