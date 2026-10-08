@@ -1,4 +1,4 @@
-// Independent reference for capture-metadata-stripped synthetic HDR JPEG exports.
+// Independent reference for synthetic HDR JPEG exports and licensed camera samples.
 // Core Image URL loading adjusts an adaptive JPEG's SDR baseline even with expandToHDR:false.
 // Keep the original JPEG pixels/ICC, omit its adaptive routing metadata, then apply the original map.
 import Foundation
@@ -34,7 +34,7 @@ let base = CIImage(data: primary, options: [.expandToHDR: false])!
 let map = CIImage(data: encoded, options: [.auxiliaryHDRGainMap: true])!
 let image = base.applyingGainMap(map, headroom: headroom)
 let width = Int(image.extent.width), height = Int(image.extent.height)
-precondition(width > 0 && height > 0 && width * height <= 4_000_000)
+precondition(width > 0 && height > 0 && width * height <= 48_000_000)
 let p3 = CommandLine.arguments.contains("--display-p3")
 let space = CGColorSpace(name: p3 ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.extendedLinearITUR_2020)!
 let context = CIContext(options: [.workingColorSpace: space, .outputColorSpace: space])
