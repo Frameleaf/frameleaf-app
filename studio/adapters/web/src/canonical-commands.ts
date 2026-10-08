@@ -2434,13 +2434,25 @@ const handlers: Record<string, Handler> = {
     }
   },
 
-  'track.setAudio'(payload) {
+  'track.setAudio'(payload, context) {
     const track = requireTrack(stringField(payload, 'trackId'))
     if (track.isGroup) invalid('track.setAudio applies to media tracks, not organizational groups')
     for (const key of Object.keys(payload)) {
-      if (!['trackId', 'gainDb', 'pan', 'eq'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`)
+      if (!['trackId', 'gainDb', 'pan', 'eq', 'gainEnvelope'].includes(key)) invalid(`track.setAudio: unknown field "${key}"`)
     }
     const updates: Partial<TimelineTrack> = {}
+    if (payload.gainEnvelope !== undefined) {
+      if (!Array.isArray(payload.gainEnvelope)) invalid('Invalid track gainEnvelope')
+      const points = (payload.gainEnvelope as unknown[]).map(point => {
+        if (!point || typeof point !== 'object' || Array.isArray(point)) invalid('Invalid track gain point')
+        const p=point as Record<string,unknown>
+        if (Object.keys(p).some(key=>!['id','at','gainDb'].includes(key))) invalid('Unsupported track gain point field')
+        const frame=timeField(p,'at',context.cadence),at=p.at as Rational
+        if(at.num<0 || (BigInt(at.num)*BigInt(context.cadence.num))%(BigInt(at.den)*BigInt(context.cadence.den))!==0n) invalid('Track gain point must be on an exact frame')
+        return {id:p.id,frame,gainDb:p.gainDb}
+      })
+      try {updates.gainEnvelope=validateMasterGainEnvelope(points)} catch {invalid('Invalid track gainEnvelope')}
+    }
     const gain = optionalNumber(payload, 'gainDb')
     if (gain !== undefined) {
       if (gain < -60 || gain > 12) invalid('gainDb must be in -60..12 dB')
@@ -2721,7 +2733,7 @@ export async function applyCanonicalCommands(
     }
   }
   const { project } = migrateProject(structuredClone(graph))
-  try { validateMasterGainEnvelope(project.timeline?.masterGainEnvelope ?? []) } catch {
+  try { validateMasterGainEnvelope(project.timeline?.masterGainEnvelope ?? []); for(const owner of [project.timeline,...(project.timeline?.compositions??[])]) for(const track of owner?.tracks??[]) validateMasterGainEnvelope((track as TimelineTrack).gainEnvelope??[]) } catch {
     return { status: 'rejected', index: 0, reason: 'invalid', detail: 'Invalid master gain envelope' }
   }
   projectCanvas = {
