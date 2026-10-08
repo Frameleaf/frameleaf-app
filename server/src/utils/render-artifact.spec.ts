@@ -28,6 +28,28 @@ describe('server-owned render artifacts', () => {
     commit: (artifact: RenderArtifact) => Promise<boolean> = () => Promise.resolve(true),
   ) => receiveRenderArtifact(folder, input, expected, check, commit);
 
+  it('accepts a required server-sealed zero-cue sibling but retains the positive media-size boundary', async () => {
+    const empty = { checksum: createHash('sha256').update('').digest('hex'), sizeInBytes: '0' };
+    let recorded: RenderArtifact | undefined;
+    await expect(
+      receiveRenderArtifact(
+        folder,
+        Readable.from([]),
+        empty,
+        check,
+        (artifact) => {
+          recorded = artifact;
+          return Promise.resolve(true);
+        },
+        { allowEmpty: true },
+      ),
+    ).resolves.toBe(true);
+    expect(await readFile(recorded!.outputPath)).toEqual(Buffer.alloc(0));
+    await expect(
+      receiveRenderArtifact(folder, Readable.from([]), empty, check, () => Promise.resolve(true)),
+    ).rejects.toThrow();
+  });
+
   it('streams, hashes and durably records actual bytes with a private server filename', async () => {
     let recorded: RenderArtifact | undefined;
     await expect(

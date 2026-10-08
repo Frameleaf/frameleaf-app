@@ -48,7 +48,9 @@ const StudioExportQualitySchema = z
 
 const StudioExportSubtitleModeSchema = z
   .enum(STUDIO_EXPORT_SUBTITLE_MODES)
-  .describe('Burn subtitle captions into the picture or omit them; ordinary titles are preserved')
+  .describe(
+    'Burn subtitle captions, omit captions, or publish an owner-private SRT sibling; ordinary titles are preserved',
+  )
   .meta({ id: 'StudioExportSubtitleMode' });
 
 const StudioExportRangeSchema = z
@@ -106,6 +108,7 @@ const StudioExportCreateSchema = z
       )
       .meta({ id: 'StudioExportSmoothMotionDto' }),
   })
+  .strict()
   .meta({ id: 'StudioExportCreateDto' });
 
 const StudioExportSettingsSchema = z
@@ -142,6 +145,18 @@ const StudioExportVersionSchema = z
     sourceCount: z.int().min(0).describe('Library sources the result was made from'),
     sizeInBytes: z.string().nullable(),
     contentType: z.string().nullable(),
+    subtitle: z
+      .object({
+        codec: z.literal('srt'),
+        required: z.literal(true),
+        cueCount: z.int().nonnegative(),
+        sizeInBytes: z.string(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        available: z.boolean(),
+      })
+      .nullable()
+      .optional()
+      .describe('Owner-private sibling. Never contains text, server paths or a public grant'),
     errorCode: z.string().nullable(),
     error: z.string().nullable(),
     createdAt: z.string().meta({ format: 'date-time' }),

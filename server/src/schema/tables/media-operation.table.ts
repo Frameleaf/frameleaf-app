@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -268,6 +269,11 @@ export class MediaOperationTable {
  */
 @Index({ columns: ['operationId', 'chunkKey'] })
 @Unique({ columns: ['operationId', 'sequence'] })
+@Check({
+  name: 'media_operation_checkpoint_subtitle_identity_check',
+  expression:
+    '("subtitlePath" IS NULL AND "subtitleChecksum" IS NULL AND "subtitleSizeInBytes" IS NULL) OR ("subtitlePath" IS NOT NULL AND "subtitleChecksum" IS NOT NULL AND "subtitleSizeInBytes" IS NOT NULL AND octet_length("subtitleChecksum")=32 AND "subtitleSizeInBytes">=0)',
+})
 @Table('media_operation_checkpoint')
 @UpdatedAtTrigger('media_operation_checkpoint_updatedAt')
 export class MediaOperationCheckpointTable {
@@ -321,6 +327,16 @@ export class MediaOperationCheckpointTable {
   /** True when a filter in this chunk carries serialized state; a render may not start here. */
   @Column({ type: 'boolean', default: false })
   requiresSequentialContext!: Generated<boolean>;
+
+  /** Independently verified required SRT sibling; NULL means a legacy/non-Sidecar output. */
+  @Column({ nullable: true })
+  subtitlePath!: string | null;
+
+  @Column({ type: 'bytea', nullable: true })
+  subtitleChecksum!: Buffer | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  subtitleSizeInBytes!: Int8Writable | null;
 
   @Column({ nullable: true })
   outputPath!: string | null;

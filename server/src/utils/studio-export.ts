@@ -74,7 +74,7 @@ export const STUDIO_EXPORT_FORMATS = [
 export const STUDIO_EXPORT_COLORS = ['preserve', 'hdr10', 'dolby-vision'] as const;
 export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p', 'original'] as const;
 export const STUDIO_EXPORT_QUALITIES = ['low', 'medium', 'high', 'ultra'] as const;
-export const STUDIO_EXPORT_SUBTITLE_MODES = ['burn', 'off'] as const;
+export const STUDIO_EXPORT_SUBTITLE_MODES = ['burn', 'off', 'sidecar'] as const;
 
 /** A readable file name for a result: the project's name, without anything a path could use. */
 export const studioExportFileName = (projectName: string, extension: string): string => {
@@ -101,6 +101,7 @@ export type StudioExportPublishSnapshot = {
   contract?: StudioExportContract | null;
   /** FL-162: Smooth motion of the published video, its own job after publication. */
   smoothMotion?: StudioExportSmoothMotion | null;
+  sourceEpochs?: unknown;
 };
 
 /**

@@ -186,8 +186,16 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
       if (beat.cancelRequested) {
         const cancelled = new Error("CANCELLED");
         authority.terminate(cancelled); // Wake/destroy readers BEFORE release can await server.close.
-        await releaseExecutor();
+        let releaseFailure;
+        for (const action of [releaseExecutor, () => engineInputs?.dispose()]) {
+          try {
+            await action();
+          } catch (error) {
+            releaseFailure ??= error;
+          }
+        }
         clearInputs();
+        if (releaseFailure) throw releaseFailure;
         const ack = await request(`${operationPath}/cancel-ack`, {
           ...binding,
           released: true,
@@ -211,6 +219,7 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
   let prepared;
   let engineInputs;
   let releaseExecutor = async () => {};
+  let attemptFailure;
   const startedAt = performance.now();
   try {
     await heartbeat();
@@ -313,16 +322,20 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
         leaseAuthority: authority,
         elapsedMs: () => performance.now() - startedAt,
         registerRelease: (release) => {
-          releaseExecutor = async () => {
-            const results = await Promise.allSettled([
-              release(),
-              engineInputs?.dispose(),
-            ]);
-            const failed = results.find(
-              (result) => result.status === "rejected",
-            );
-            if (failed) throw failed.reason;
-          };
+          let settlement;
+          releaseExecutor = () =>
+            (settlement ??= (async () => {
+              let failure;
+              // Invoke every callback inside its own guard, including synchronous failures.
+              for (const action of [release, () => engineInputs?.dispose()]) {
+                try {
+                  await action();
+                } catch (error) {
+                  failure ??= error;
+                }
+              }
+              if (failure) throw failure;
+            })());
         },
         upload: async (file, metadata, signal) => {
           await heartbeat();
@@ -366,7 +379,8 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
       assert.equal(result?.accepted, true, "COMPLETION_REFUSED");
       status = "completed";
     } else errorCode = "worker_executor_unavailable";
-  } catch {
+  } catch (error) {
+    attemptFailure = error;
     // URLs contain signed grants. Never echo an HTTP error, graph or credential into logs.
     if (
       !authority.isActive() &&
@@ -397,10 +411,17 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
     }
     // Terminal private readers BEFORE disposal; server close never awaits shared renewal.
     authority.terminate(new Error("CLAIM_FINISHED"));
-    await Promise.allSettled([releaseExecutor(), engineInputs?.dispose()]);
+    let cleanupFailure;
+    for (const action of [releaseExecutor, () => engineInputs?.dispose()]) {
+      try {
+        await action();
+      } catch (error) {
+        cleanupFailure ??= error;
+      }
+    }
     clearInputs();
     prepared = undefined;
-    if (reportFailure) {
+    if (reportFailure && !cleanupFailure) {
       const result = await request(
         `${operationPath}/fail`,
         {
@@ -409,12 +430,15 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
           error:
             errorCode === "worker_executor_unavailable"
               ? "Authorized inputs prepared; render execution is not implemented."
-              : "Worker attempt refused; no completion accepted.",
+              : "Worker attempt refused; consult durable server status before retry.",
         },
         Math.max(1, Math.min(10_000, Math.floor(deadline - performance.now()))),
       );
       assert.equal(result?.accepted, true, "FAILURE_REPORT_REFUSED");
     }
+    // A server acknowledgement does not attest local cleanup. Preserve it on the server; refuse
+    // execution acceptance here without claiming that an already committed completion rolled back.
+    if (cleanupFailure) throw attemptFailure ?? cleanupFailure;
   }
   authority.terminate(new Error("CLAIM_FINISHED"));
   return {

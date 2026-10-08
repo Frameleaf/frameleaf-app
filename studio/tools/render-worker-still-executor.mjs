@@ -18,6 +18,34 @@ const digest = (value) => createHash('sha256').update(value).digest('hex');
 const only = (object, keys) =>
   assert.ok(object && Object.keys(object).every((key) => keys.includes(key)), 'UNSUPPORTED_RECIPE_FIELD');
 
+/** Every owned cleanup callback settles, including synchronous rejection. Preserve the primary failure. */
+export async function settleStillCleanup(actions, primaryFailure) {
+  const results = await Promise.allSettled(actions.map((action) => Promise.resolve().then(action)));
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed) throw primaryFailure ?? failed.reason;
+}
+
+/** An early stop must also release resources whose acquisition completes after that stop. */
+export function createStillRelease(context, abort, getBrowser, getPool) {
+  const closing = new WeakMap();
+  const close = (resource) => {
+    if (!resource) return;
+    if (!closing.has(resource))
+      closing.set(
+        resource,
+        Promise.resolve().then(() => resource.close()),
+      );
+    return closing.get(resource);
+  };
+  return () =>
+    settleStillCleanup([
+      () => context.leaseAuthority?.terminate(new Error('ADAPTER_DISPOSED')),
+      () => abort.abort(),
+      () => close(getBrowser()),
+      () => close(getPool()),
+    ]);
+}
+
 /** Count this export's private files, including one-level image-worker staging. */
 export async function ownedOutputBytes(folder) {
   let total = 0;
@@ -49,7 +77,7 @@ export async function ownedOutputBytes(folder) {
 
 /** Immutable visual timeline planning; runtime resource/build/strict-render admission is separate. */
 export function stillRecipe(claim) {
-  const { quality = 'high', range, subtitleMode, ...settings } = claim.settings ?? {};
+  const { quality = 'high', range, subtitleMode, subtitleSeal, ...settings } = claim.settings ?? {};
   const ceiling = (value, cap) => {
     assert.ok(value === null || value === undefined || /^[1-9][0-9]*$/.test(value), 'INVALID_RESOURCE_CEILING');
     return value == null ? cap : Number(BigInt(value) < BigInt(cap) ? BigInt(value) : BigInt(cap));
@@ -58,10 +86,18 @@ export function stillRecipe(claim) {
   if (['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(settings.format)) {
     assert.deepEqual(
       settings,
-      { format: settings.format, color: 'preserve', resolution: 'original', audio: 'preserve' },
+      {
+        format: settings.format,
+        color: 'preserve',
+        resolution: 'original',
+        audio: 'preserve',
+      },
       'UNSUPPORTED_STILL_EXPORT_SETTINGS',
     );
-    assert.ok(quality === 'high' && subtitleMode === undefined, 'UNSUPPORTED_STILL_EXPORT_SETTINGS');
+    assert.ok(
+      quality === 'high' && subtitleMode === undefined && subtitleSeal === undefined,
+      'UNSUPPORTED_STILL_EXPORT_SETTINGS',
+    );
     assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
     const require = createRequire(import.meta.url);
     const { StudioExportImageContractSchema } = require('../../server/dist/utils/studio-export-contract.js');
@@ -104,48 +140,95 @@ export function stillRecipe(claim) {
       endTicks: String(endTicks),
       maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
       maxMs: ceiling(claim.limits?.maxWallClockMs, 180_000),
-      settings: { quality, resolution: { width: photo.width, height: photo.height } },
+      settings: {
+        quality,
+        resolution: { width: photo.width, height: photo.height },
+      },
     };
   }
   // Same four bitrate presets as the pinned engine's headless render core.
-  const bitrates = { low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 };
+  const bitrates = {
+    low: 2_500_000,
+    medium: 5_000_000,
+    high: 10_000_000,
+    ultra: 20_000_000,
+  };
   assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
   assert.ok(
-    subtitleMode === undefined || subtitleMode === 'burn' || subtitleMode === 'off',
+    subtitleMode === undefined || subtitleMode === 'burn' || subtitleMode === 'off' || subtitleMode === 'sidecar',
     'UNSUPPORTED_SUBTITLE_MODE',
   );
   assert.deepEqual(
     settings,
-    { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
+    {
+      format: 'mp4-h264',
+      color: 'preserve',
+      resolution: '720p',
+      audio: 'preserve',
+    },
     'UNSUPPORTED_EXPORT_SETTINGS',
   );
-  assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
-  assert.ok(graph?.metadata && Array.isArray(graph.timeline?.tracks) && Array.isArray(graph.timeline?.items), 'PROJECT_REQUIRED');
+  // A paired whole-export retry may re-render and let the server revalidate/reuse the
+  // exact immutable checkpoint. No checkpoint state or path grants authority here.
+  assert.ok(
+    (claim.checkpoints?.length ?? 0) === 0 ||
+      (subtitleMode === 'sidecar' &&
+        claim.checkpoints.length === 1 &&
+        claim.checkpoints[0].sequence === 0 &&
+        typeof claim.checkpoints[0].chunkKey === 'string' &&
+        ['pending', 'complete'].includes(claim.checkpoints[0].state)),
+    'RECOVERY_RECIPE_UNAVAILABLE',
+  );
+  assert.ok(
+    graph?.metadata && Array.isArray(graph.timeline?.tracks) && Array.isArray(graph.timeline?.items),
+    'PROJECT_REQUIRED',
+  );
   // The immutable graph is passed intact to the real migration/composition/strict renderer below.
   // Bounds and output timing come from the same server contract helpers, never CLI seconds.
   const require = createRequire(import.meta.url);
   const { projectCadenceOf, timelineFrameTicks } = require('../../server/dist/utils/studio-timing.js');
   const { tryParseRational, formatRational } = require('../../server/dist/utils/rational-time.js');
   const { resolveStudioExportRange } = require('../../server/dist/utils/studio-export-contract.js');
+  const {
+    sidecarSealOf,
+    sealStudioSidecar,
+    buildStudioSidecarSemanticPlan,
+  } = require('../../server/dist/utils/studio-subtitle-sidecar.js');
+  const { canonicalJson } = require('../../server/dist/utils/studio-project.js');
   const cadence = tryParseRational(claim.snapshot.timing?.cadence);
   const timeBase = tryParseRational(claim.snapshot.timing?.timeBase);
   assert.ok(cadence && cadence.num > 0 && timeBase && timeBase.num > 0, 'INVALID_TIMELINE_TIMING');
   assert.deepEqual(cadence, projectCadenceOf(graph.metadata), 'PROJECT_CADENCE_CHANGED');
   for (const dimension of ['width', 'height'])
-    assert.ok(Number.isSafeInteger(graph.metadata[dimension]) && graph.metadata[dimension] > 0 && graph.metadata[dimension] <= 16384, 'INVALID_CANVAS');
+    assert.ok(
+      Number.isSafeInteger(graph.metadata[dimension]) &&
+        graph.metadata[dimension] > 0 &&
+        graph.metadata[dimension] <= 16384,
+      'INVALID_CANVAS',
+    );
   let end = 0;
-  assert.ok(graph.timeline.tracks.every(({ id }) => typeof id === 'string' && id.length > 0), 'INVALID_TRACK');
+  assert.ok(
+    graph.timeline.tracks.every(({ id }) => typeof id === 'string' && id.length > 0),
+    'INVALID_TRACK',
+  );
   const tracks = new Set(graph.timeline.tracks.map(({ id }) => id));
   assert.equal(tracks.size, graph.timeline.tracks.length, 'DUPLICATE_TRACK');
   const items = new Set();
   for (const item of graph.timeline.items) {
     assert.ok(typeof item.id === 'string' && !items.has(item.id) && tracks.has(item.trackId), 'INVALID_TIMELINE_ITEM');
     items.add(item.id);
-    assert.ok(Number.isSafeInteger(item.from) && item.from >= 0 && Number.isSafeInteger(item.durationInFrames) && item.durationInFrames > 0 && Number.isSafeInteger(item.from + item.durationInFrames), 'INVALID_FRAME_BOUNDS');
+    assert.ok(
+      Number.isSafeInteger(item.from) &&
+        item.from >= 0 &&
+        Number.isSafeInteger(item.durationInFrames) &&
+        item.durationInFrames > 0 &&
+        Number.isSafeInteger(item.from + item.durationInFrames),
+      'INVALID_FRAME_BOUNDS',
+    );
     end = Math.max(end, item.from + item.durationInFrames);
   }
   assert.ok(end > 0, 'EMPTY_TIMELINE');
-  assert.equal(graph.duration, end * cadence.den / cadence.num, 'INCONSISTENT_DURATION');
+  assert.equal(graph.duration, (end * cadence.den) / cadence.num, 'INCONSISTENT_DURATION');
   if (range !== undefined) only(range, ['inPoint', 'outPoint']);
   const declaredRange = range === undefined ? null : resolveStudioExportRange(graph, range);
   const frames = declaredRange ? declaredRange.outPoint - declaredRange.inPoint : end;
@@ -154,18 +237,50 @@ export function stillRecipe(claim) {
   assert.equal(claim.snapshot.contract?.video?.minBitDepth, 8, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.video.transfer, null, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.audio, null, 'AUDIO_UNSUPPORTED');
-  assert.ok(Array.isArray(claim.snapshot.timing.sources) && claim.snapshot.timing.sources.every(source =>
-    typeof source.key === 'string' && typeof source.assetId === 'string' && tryParseRational(source.timeBase) &&
-    tryParseRational(source.cadence) && source.variableFrameRate === false && source.originTicks === 0), 'SOURCE_TIMING_ADAPTER_UNAVAILABLE');
+  assert.ok(
+    Array.isArray(claim.snapshot.timing.sources) &&
+      claim.snapshot.timing.sources.every(
+        (source) =>
+          typeof source.key === 'string' &&
+          typeof source.assetId === 'string' &&
+          tryParseRational(source.timeBase) &&
+          tryParseRational(source.cadence) &&
+          source.variableFrameRate === false &&
+          source.originTicks === 0,
+      ),
+    'SOURCE_TIMING_ADAPTER_UNAVAILABLE',
+  );
   assert.deepEqual(claim.snapshot.contract.range ?? null, declaredRange, 'RANGE_CONTRACT_CHANGED');
   assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
+  const seal = sidecarSealOf(claim.settings);
+  let subtitle;
+  if (seal) {
+    const derived = sealStudioSidecar(
+      graph,
+      {
+        revisionDigest: claim.revisionId,
+        manifestDigest: claim.snapshot.manifestDigest,
+        engineDigest: claim.snapshot.engineDigest,
+      },
+      range,
+    );
+    assert.equal(canonicalJson(seal), canonicalJson(derived), 'SUBTITLE_SEAL_CHANGED');
+    assert.equal(canonicalJson(claim.snapshot.contract.subtitles), canonicalJson(seal), 'SUBTITLE_CONTRACT_CHANGED');
+    const plan = buildStudioSidecarSemanticPlan(graph, range);
+    assert.equal(digest(plan.content), seal.expectedSrtSha256, 'SUBTITLE_BYTES_CHANGED');
+    assert.equal(String(Buffer.byteLength(plan.content)), seal.sizeInBytes, 'SUBTITLE_BYTES_CHANGED');
+    subtitle = { seal, content: plan.content };
+  }
   return {
     frames,
     cadence: formatRational(cadence),
     timebase: formatRational(timeBase),
     endTicks: String(endTicks),
     range: range ?? null,
-    frameBounds: declaredRange ? { inPoint: declaredRange.inPoint, outPoint: declaredRange.outPoint } : { inPoint: 0, outPoint: end },
+    ...(subtitle && { subtitle }),
+    frameBounds: declaredRange
+      ? { inPoint: declaredRange.inPoint, outPoint: declaredRange.outPoint }
+      : { inPoint: 0, outPoint: end },
     maxBytes: ceiling(claim.limits?.maxOutputBytes, 32 * 1024 * 1024),
     maxMs: ceiling(claim.limits?.maxWallClockMs, 60_000),
     settings: {
@@ -186,10 +301,14 @@ export function stillRecipe(claim) {
 export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
   const { frames, cadence = '24/1' } = typeof plan === 'number' ? { frames: plan } : plan;
   const result = JSON.parse(
-    execFileSync(ffprobe, ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-show_packets', '-of', 'json', file], {
-      timeout: 10_000,
-      maxBuffer: 4 * 1024 * 1024,
-    }).toString(),
+    execFileSync(
+      ffprobe,
+      ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-show_packets', '-of', 'json', file],
+      {
+        timeout: 10_000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    ).toString(),
   );
   assert.equal(result.streams.length, 1, 'UNEXPECTED_AUDIO_OR_STREAM');
   const video = result.streams[0];
@@ -215,16 +334,30 @@ export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
   const { timelineFrameTicks } = require('../../server/dist/utils/studio-timing.js');
   const timeBase = tryParseRational(video.time_base);
   const rate = tryParseRational(cadence);
-  assert.ok(timeBase && rate && video.start_pts === 0 && video.duration_ts === timelineFrameTicks(frames, rate, timeBase), 'OUTPUT_TIMING_MISMATCH');
+  assert.ok(
+    timeBase && rate && video.start_pts === 0 && video.duration_ts === timelineFrameTicks(frames, rate, timeBase),
+    'OUTPUT_TIMING_MISMATCH',
+  );
   const packets = result.packets;
   const frameTicks = timelineFrameTicks(1, rate, timeBase);
-  assert.ok(Array.isArray(packets) && packets.length === frames && Number.isSafeInteger(frameTicks) && frameTicks > 0, 'OUTPUT_PACKET_TIMING_MISMATCH');
-  const presentation = packets.map((packet) => {
-    assert.equal(packet.stream_index, video.index, 'UNEXPECTED_PACKET_STREAM');
-    assert.ok(Number.isSafeInteger(packet.pts) && Number.isSafeInteger(packet.duration) && packet.duration === frameTicks, 'OUTPUT_PACKET_TIMING_MISMATCH');
-    return packet.pts;
-  }).sort((left, right) => left - right);
-  assert.ok(presentation.every((pts, index) => pts === timelineFrameTicks(index, rate, timeBase)), 'OUTPUT_PACKET_TIMING_MISMATCH');
+  assert.ok(
+    Array.isArray(packets) && packets.length === frames && Number.isSafeInteger(frameTicks) && frameTicks > 0,
+    'OUTPUT_PACKET_TIMING_MISMATCH',
+  );
+  const presentation = packets
+    .map((packet) => {
+      assert.equal(packet.stream_index, video.index, 'UNEXPECTED_PACKET_STREAM');
+      assert.ok(
+        Number.isSafeInteger(packet.pts) && Number.isSafeInteger(packet.duration) && packet.duration === frameTicks,
+        'OUTPUT_PACKET_TIMING_MISMATCH',
+      );
+      return packet.pts;
+    })
+    .sort((left, right) => left - right);
+  assert.ok(
+    presentation.every((pts, index) => pts === timelineFrameTicks(index, rate, timeBase)),
+    'OUTPUT_PACKET_TIMING_MISMATCH',
+  );
   assert.ok(result.format.format_name.split(',').includes('mp4'), 'CONTAINER_MISMATCH');
   return result;
 }
@@ -236,14 +369,19 @@ export async function renderStillImage(context, consume) {
   let abort;
   const assertLive = async () => {
     if (context.leaseAuthority) {
-      do { await context.leaseAuthority.wait(abort?.signal); } while (context.leaseAuthority.isPending());
+      do {
+        await context.leaseAuthority.wait(abort?.signal);
+      } while (context.leaseAuthority.isPending());
       context.leaseAuthority.assertActive();
     }
     assert.ok(isLeaseActive(), 'LEASE_LOST');
     assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
   };
   await assertLive();
-  assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
+  assert.ok(
+    typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest),
+    'INPUT_DIGEST_REQUIRED',
+  );
   assert.equal(context.prepared?.artifactInputDigest, claim.artifactInputDigest, 'INPUT_DIGEST_CHANGED');
   const build = JSON.parse(await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'));
   await assertLive();
@@ -262,24 +400,38 @@ export async function renderStillImage(context, consume) {
   assert.equal(digest(JSON.stringify(files)), report.artifactSha256, 'BUILT_ARTIFACT_CHANGED');
   const require = createRequire(path.join(engine, 'package.json'));
   assert.deepEqual(engineInputs.input.project, claim.snapshot.studio.graph, 'IMMUTABLE_GRAPH_CHANGED');
-  assert.deepEqual(engineInputs.binding, {
-    operationId: claim.operationId, claimToken: claim.claimToken, revisionId: claim.revisionId,
-  }, 'INPUT_CLAIM_BINDING_CHANGED');
+  assert.deepEqual(
+    engineInputs.binding,
+    {
+      operationId: claim.operationId,
+      claimToken: claim.claimToken,
+      revisionId: claim.revisionId,
+    },
+    'INPUT_CLAIM_BINDING_CHANGED',
+  );
   let executionProject = engineInputs.input.project;
   if (engineInputs.fileLuts) {
     assert.deepEqual(context.prepared.snapshot.studio, claim.snapshot.studio, 'INPUT_SNAPSHOT_CHANGED');
     executionProject = await verifyClaimFileLuts(context.prepared, engineInputs.fileLuts, isLeaseActive, assertLive);
-  } else assert.ok(!claim.snapshot.studio.resources?.some(resource => resource.kind === 'lut'), 'FILE_LUT_EXECUTION_REQUIRED');
+  } else
+    assert.ok(
+      !claim.snapshot.studio.resources?.some((resource) => resource.kind === 'lut'),
+      'FILE_LUT_EXECUTION_REQUIRED',
+    );
   const vectors = await deriveClaimVectors(context.prepared, isLeaseActive, assertLive);
   try {
     assert.equal(engineInputs.vectors?.digest ?? null, vectors.digest, 'VECTOR_EXECUTION_CHANGED');
     assert.deepEqual(engineInputs.vectors?.resources ?? [], vectors.resources, 'VECTOR_RESOURCE_CLOSURE_CHANGED');
-  } finally { for (const source of vectors.sources) source.bytes.fill(0); }
+  } finally {
+    for (const source of vectors.sources) source.bytes.fill(0);
+  }
   if (!recipe.photo) {
     assert.ok(context.prepared?.inputs instanceof Map, 'VERIFIED_INPUTS_REQUIRED');
     const consumed = new Set([
-      ...engineInputs.input.media.filter(media => !engineInputs.vectors?.sources.some(source => source.id === media.mediaId)).map(media => `library-asset:${media.mediaId}`),
-      ...(engineInputs.fileLuts?.binding.resources.map(resource => resource.key) ?? []),
+      ...engineInputs.input.media
+        .filter((media) => !engineInputs.vectors?.sources.some((source) => source.id === media.mediaId))
+        .map((media) => `library-asset:${media.mediaId}`),
+      ...(engineInputs.fileLuts?.binding.resources.map((resource) => resource.key) ?? []),
       ...(engineInputs.vectors?.resources ?? []),
     ]);
     assert.equal(context.prepared.inputs.size, consumed.size, 'VERIFIED_INPUT_CLOSURE_CHANGED');
@@ -293,7 +445,7 @@ export async function renderStillImage(context, consume) {
     assert.equal(digest(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
     if (input.kind === 'lut') continue; // Recomputed checksum-bound materialization above; never treat LUT bytes as media.
     if (vectors.resources.includes(`${input.kind}:${input.resourceId}`)) continue;
-    const video = engineInputs.videoInputs?.find(source => source.facts.assetId === input.resourceId);
+    const video = engineInputs.videoInputs?.find((source) => source.facts.assetId === input.resourceId);
     if (video) {
       assert.equal(video.sha256, input.sha256, 'VERIFIED_VIDEO_CHANGED');
       assert.equal(video.key, `library-asset:${input.resourceId}`, 'VERIFIED_VIDEO_CHANGED');
@@ -335,18 +487,22 @@ export async function renderStillImage(context, consume) {
   let monitoringDone = Promise.resolve();
   let wallTimer;
   let failure;
+  let primaryFailure;
   let lastBeat = performance.now();
-  const release = async () => {
-    context.leaseAuthority?.terminate(new Error('ADAPTER_DISPOSED'));
-    abort.abort();
-    await Promise.allSettled([browser?.close(), pool?.close()]);
-  };
+  const release = createStillRelease(
+    context,
+    abort,
+    () => browser,
+    () => pool,
+  );
   registerRelease(release);
   try {
     wallTimer = setTimeout(
       () => {
         failure = new Error('WALL_CLOCK_LIMIT');
-        void release();
+        void release().catch((error) => {
+          failure ??= error;
+        });
       },
       Math.max(1, recipe.maxMs - elapsedMs()),
     );
@@ -386,7 +542,9 @@ export async function renderStillImage(context, consume) {
         );
       } catch (error) {
         failure = error;
-        await release();
+        await release().catch((error) => {
+          failure ??= error;
+        });
       } finally {
         monitoring = false;
         finish();
@@ -394,7 +552,9 @@ export async function renderStillImage(context, consume) {
     }, 100);
     await page.goto(harness.harnessUrl);
     await assertLive();
-    await page.waitForFunction(() => Boolean(window.freecut?.ready), { timeout: 10_000 });
+    await page.waitForFunction(() => Boolean(window.freecut?.ready), {
+      timeout: 10_000,
+    });
     await assertLive();
     const gpu = await page.evaluate(async () => {
       const adapter = await navigator.gpu?.requestAdapter();
@@ -413,7 +573,12 @@ export async function renderStillImage(context, consume) {
     let result;
     if (recipe.photo) {
       const { SharpProcessPool } = await import(new URL('../../server/dist/queue/sharp-pool.js', import.meta.url));
-      pool = new SharpProcessPool({ workers: 1, pending: 0, maxPixels: 48_000_000, maxBytes: 6 * 1024 ** 3 });
+      pool = new SharpProcessPool({
+        workers: 1,
+        pending: 0,
+        maxPixels: 48_000_000,
+        maxBytes: 6 * 1024 ** 3,
+      });
       const download = page.waitForEvent('download', { timeout: recipe.maxMs });
       // Attach a handler while evaluation runs so a failed render cannot leave an unhandled timeout.
       download.catch(() => {});
@@ -504,8 +669,17 @@ export async function renderStillImage(context, consume) {
             'encodeDevelopOutput',
             [
               sdr,
-              { width: recipe.photo.width, height: recipe.photo.height, channels: 3 },
-              { detail: { median: 0 }, colorspace: 'srgb', format: 'jpeg', quality: 95 },
+              {
+                width: recipe.photo.width,
+                height: recipe.photo.height,
+                channels: 3,
+              },
+              {
+                detail: { median: 0 },
+                colorspace: 'srgb',
+                format: 'jpeg',
+                quality: 95,
+              },
             ],
             abort.signal,
           );
@@ -513,7 +687,13 @@ export async function renderStillImage(context, consume) {
           encoded = await pool.run(
             'encodeHdrImage',
             [
-              { data: raw, width: recipe.photo.width, height: recipe.photo.height, gamut: 2, referenceWhite: 203 },
+              {
+                data: raw,
+                width: recipe.photo.width,
+                height: recipe.photo.height,
+                gamut: 2,
+                referenceWhite: 203,
+              },
               recipe.photo.format === 'hdr-heic' ? 'heic' : 'jpeg',
             ],
             abort.signal,
@@ -577,9 +757,26 @@ export async function renderStillImage(context, consume) {
       assert.equal(result.effectiveSettings.subtitleMode, recipe.settings.subtitleMode, 'SUBTITLE_MODE_CHANGED');
       assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
     }
+    let subtitle;
+    if (recipe.subtitle) {
+      const outputPath = path.join(folder, 'subtitles.srt');
+      await writeFile(outputPath, recipe.subtitle.content, {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      await assertLive();
+      subtitle = {
+        outputPath,
+        checksum: recipe.subtitle.seal.expectedSrtSha256,
+        sizeInBytes: recipe.subtitle.seal.sizeInBytes,
+      };
+    }
     const file = await stat(result.outputPath);
     await assertLive();
-    assert.ok(file.isFile() && file.size > 0 && file.size <= recipe.maxBytes, 'OUTPUT_BYTE_LIMIT');
+    assert.ok(
+      file.isFile() && file.size > 0 && file.size + Number(subtitle?.sizeInBytes ?? 0) <= recipe.maxBytes,
+      'OUTPUT_BYTE_LIMIT',
+    );
     const probe = recipe.photo ? result.encoding : probeStillOutput(result.outputPath, recipe);
     const bytes = await readFile(result.outputPath);
     let checksum;
@@ -603,7 +800,9 @@ export async function renderStillImage(context, consume) {
         await assertLive();
       } catch (error) {
         failure = error;
-        await release();
+        await release().catch((error) => {
+          failure ??= error;
+        });
       } finally {
         monitoring = false;
         finish();
@@ -620,20 +819,23 @@ export async function renderStillImage(context, consume) {
       artifactSha256: report.artifactSha256,
       signal: abort.signal,
       recipe,
+      subtitle,
     });
   } catch (error) {
-    throw failure ?? error;
+    primaryFailure = failure ?? error;
+    throw primaryFailure;
   } finally {
     clearInterval(timer);
     clearTimeout(wallTimer);
-    await release();
-    await monitoringDone;
-    await rm(folder, { recursive: true, force: true });
+    await settleStillCleanup(
+      [release, () => monitoringDone, () => rm(folder, { recursive: true, force: true })],
+      primaryFailure,
+    );
   }
 }
 
 export async function executeStillClaim(context) {
-  return renderStillImage(context, async ({ outputPath, checksum, sizeInBytes, signal, recipe }) => {
+  return renderStillImage(context, async ({ outputPath, checksum, sizeInBytes, signal, recipe, subtitle }) => {
     const { claim, request, heartbeat, upload, isLeaseActive } = context;
     const post = (pathname, body) =>
       request(pathname, body, Math.max(1, Math.min(10_000, recipe.maxMs - context.elapsedMs())), signal);
@@ -648,7 +850,10 @@ export async function executeStillClaim(context) {
       }),
     );
     const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
-    assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
+    assert.ok(
+      typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest),
+      'INPUT_DIGEST_REQUIRED',
+    );
     assert.equal(context.prepared.artifactInputDigest, claim.artifactInputDigest, 'INPUT_DIGEST_CHANGED');
     const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
     await heartbeat();
@@ -672,6 +877,25 @@ export async function executeStillClaim(context) {
       true,
       'ARTIFACT_REFUSED',
     );
+    if (subtitle) {
+      await heartbeat();
+      assert.equal(
+        (
+          await upload(
+            subtitle.outputPath,
+            {
+              chunkKey,
+              role: 'subtitle',
+              checksum: subtitle.checksum,
+              sizeInBytes: subtitle.sizeInBytes,
+            },
+            signal,
+          )
+        )?.accepted,
+        true,
+        'SUBTITLE_ARTIFACT_REFUSED',
+      );
+    }
     await heartbeat();
     const complete = { ...binding, artifactSequence: 0, resultAssetId: null };
     assert.equal((await post(`${root}/validate`, complete))?.accepted, true, 'VALIDATION_REFUSED');
@@ -690,7 +914,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     console.log(JSON.stringify(result));
     if (!['idle', 'completed'].includes(result.status)) process.exitCode = 1;
   } catch {
-    console.error('Still export refused; no completion accepted.');
+    console.error('Still export execution or cleanup refused; consult durable server status before retry.');
     process.exitCode = 1;
   }
 }

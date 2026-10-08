@@ -10,6 +10,7 @@ import {
   AssetFileType,
   AssetStatus,
   DatabaseLock,
+  MediaOperationCheckpointState,
   PhysicalFileType,
   StudioExportScope,
   StudioExportVersionState,
@@ -111,6 +112,9 @@ export const countPathReferences = async (
           SELECT 1 FROM jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
           WHERE output->>'approvalPreviewPath'=${path} OR output->>'finalPath'=${path}))
     UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
+    UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."subtitlePath" = ${path}
+    UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."outputPath" = ${path}
+    UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."subtitlePath" = ${path}
     UNION ALL SELECT 1 FROM public.studio_project_import imported WHERE imported.path = ${path}
     UNION ALL SELECT 1 FROM public.studio_generated_resource generated WHERE generated.path = ${path}
     UNION ALL SELECT 1 FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
@@ -1039,6 +1043,9 @@ export class PhysicalFileRepository {
       UNION ALL SELECT 1 FROM public.studio_export_version exported
       WHERE exported."outputPath"=${path} AND exported."projectId"=${projectId}::uuid
         AND exported."ownerId"=${ownerId}::uuid AND exported."outputChecksum"=${Buffer.from(sha256, 'hex')}
+      UNION ALL SELECT 1 FROM public.studio_export_version exported
+      WHERE exported."subtitlePath"=${path} AND exported."projectId"=${projectId}::uuid
+        AND exported."ownerId"=${ownerId}::uuid AND exported."subtitleChecksum"=${Buffer.from(sha256, 'hex')}
     ) owned`.execute(trx);
     if (physical || references !== Number(rows[0].count))
       throw new Error('Studio restore destination is shared or pinned');
@@ -1139,6 +1146,7 @@ export class PhysicalFileRepository {
         ownerId: string;
         checksum: Buffer | null;
         sizeBytes: number | null;
+        role?: 'media' | 'subtitle';
       };
       /**
        * Moves an unreferenced original into the file trash instead of unlinking it. An original is a path
@@ -1190,15 +1198,20 @@ export class PhysicalFileRepository {
         if (orphan.rows.length === 0) return { deleted: false, references: 1 };
       }
       if (exported) {
+        const subtitle = exported.role === 'subtitle';
         const retired = await trx
           .selectFrom('studio_export_version')
-          .select('id')
+          .select(['id', 'renderOperationId'])
           .where('id', '=', exported.id)
           .where('ownerId', '=', exported.ownerId)
-          .where('outputPath', '=', path)
-          .where('outputRemovedAt', 'is', null)
-          .where(sql<boolean>`"outputChecksum" IS NOT DISTINCT FROM ${exported.checksum}::bytea`)
-          .where(sql<boolean>`"outputSizeInBytes" IS NOT DISTINCT FROM ${exported.sizeBytes}::bigint`)
+          .where(subtitle ? 'subtitlePath' : 'outputPath', '=', path)
+          .where(subtitle ? 'subtitleRemovedAt' : 'outputRemovedAt', 'is', null)
+          .where(
+            sql<boolean>`${sql.ref(subtitle ? 'subtitleChecksum' : 'outputChecksum')} IS NOT DISTINCT FROM ${exported.checksum}::bytea`,
+          )
+          .where(
+            sql<boolean>`${sql.ref(subtitle ? 'subtitleSizeInBytes' : 'outputSizeInBytes')} IS NOT DISTINCT FROM ${exported.sizeBytes}::bigint`,
+          )
           .where((eb) =>
             eb.or([
               eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
@@ -1207,11 +1220,50 @@ export class PhysicalFileRepository {
                 eb('scope', '=', StudioExportScope.Project),
                 eb('projectId', 'is', null),
               ]),
+              ...(subtitle
+                ? [
+                    eb.and([
+                      eb('state', '=', StudioExportVersionState.Published),
+                      eb('scope', '=', StudioExportScope.Library),
+                      eb('resultAssetId', 'is', null),
+                    ]),
+                  ]
+                : []),
             ]),
           )
           .forUpdate()
           .executeTakeFirst();
         if (!retired) return { deleted: false, references: 1 };
+        // The terminal version may share its exact staging inode with its own retained seq0 receipt.
+        // Release only that matching role; other operations, attempts and Buddy pins still count.
+        if (retired.renderOperationId)
+          await trx
+            .updateTable('media_operation_checkpoint')
+            .set(
+              subtitle
+                ? {
+                    subtitlePath: null,
+                    subtitleChecksum: null,
+                    subtitleSizeInBytes: null,
+                    state: MediaOperationCheckpointState.Invalid,
+                  }
+                : {
+                    outputPath: null,
+                    outputChecksum: null,
+                    sizeInBytes: null,
+                    state: MediaOperationCheckpointState.Invalid,
+                  },
+            )
+            .where('operationId', '=', retired.renderOperationId)
+            .where('sequence', '=', 0)
+            .where(subtitle ? 'subtitlePath' : 'outputPath', '=', path)
+            .where(
+              sql<boolean>`${sql.ref(subtitle ? 'subtitleChecksum' : 'outputChecksum')} IS NOT DISTINCT FROM ${exported.checksum}::bytea`,
+            )
+            .where(
+              sql<boolean>`${sql.ref(subtitle ? 'subtitleSizeInBytes' : 'sizeInBytes')} IS NOT DISTINCT FROM ${exported.sizeBytes}::bigint`,
+            )
+            .execute();
       }
       const physicalFile = await trx
         .selectFrom('physical_file')
@@ -1266,8 +1318,14 @@ export class PhysicalFileRepository {
         await trx
           .updateTable('studio_export_version')
           .set({
-            outputPath: null,
-            outputRemovedAt: sql<Date>`clock_timestamp()`,
+            ...(exported.role === 'subtitle'
+              ? {
+                  subtitlePath: null,
+                  subtitleChecksum: null,
+                  subtitleSizeInBytes: null,
+                  subtitleRemovedAt: sql<Date>`clock_timestamp()`,
+                }
+              : { outputPath: null, outputRemovedAt: sql<Date>`clock_timestamp()` }),
             updatedAt: sql<Date>`clock_timestamp()`,
           })
           .where('id', '=', exported.id)

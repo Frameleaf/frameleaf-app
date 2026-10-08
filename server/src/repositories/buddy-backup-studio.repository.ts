@@ -52,7 +52,9 @@ const jsonColumns = new Set(['envelope', 'summary', 'derivedFrom', 'settings', '
 const recordJson = (table: Table) =>
   table === tables.comment
     ? sql`to_jsonb(item) || jsonb_build_object('timeNum', item."timeNum"::text, 'timeDen', item."timeDen"::text)`
-    : sql`to_jsonb(item)`;
+    : table === tables.source
+      ? sql`to_jsonb(item) || jsonb_build_object('sourceEpoch',item."sourceEpoch"::text)`
+      : sql`to_jsonb(item)`;
 /** Buddy-only typed archive adapter. Historical grants, worker state and operation IDs are deliberately absent. */
 export class BuddyBackupStudioRepository {
   constructor(private db: Kysely<DB>) {}
@@ -222,7 +224,7 @@ export class BuddyBackupStudioRepository {
       ...observedExports.rows.map((row) => row.record),
     ];
     const previousPaths = previousFiles.flatMap((row) =>
-      [row.path, row.outputPath].filter((path): path is string => typeof path === 'string'),
+      [row.path, row.outputPath, row.subtitlePath].filter((path): path is string => typeof path === 'string'),
     );
     const lockedPaths = new Set([...options.paths.values(), ...previousPaths]);
     for (const path of [...lockedPaths].sort()) await lockFilePath(trx, path);
@@ -235,8 +237,8 @@ export class BuddyBackupStudioRepository {
     // A concurrent promotion may introduce another path. Refuse it without waiting for a
     // new path while holding the row; a cleanup-cleared path needs no additional lock.
     if (
-      previousExports.rows.some(
-        ({ record }) => typeof record.outputPath === 'string' && !lockedPaths.has(record.outputPath),
+      previousExports.rows.some(({ record }) =>
+        [record.outputPath, record.subtitlePath].some((path) => typeof path === 'string' && !lockedPaths.has(path)),
       )
     )
       throw new Error('Buddy Studio previous file changed');
@@ -398,6 +400,7 @@ export class BuddyBackupStudioRepository {
           scope,
           resultAssetId,
           outputPath: promoted ? promoted.outputPath : record.outputPath ? target(record.outputPath) : null,
+          subtitlePath: record.subtitlePath ? target(record.subtitlePath) : null,
           outputRemovedAt: promoted ? (previous?.outputRemovedAt ?? null) : null,
           privacy: { ...inherited, scope },
         },
@@ -412,6 +415,11 @@ export class BuddyBackupStudioRepository {
           'outputChecksum',
           'outputSizeInBytes',
           'outputContentType',
+          'settings',
+          'engineDigest',
+          'subtitleChecksum',
+          'subtitleSizeInBytes',
+          'subtitleRemovedAt',
           'resultAssetId',
           'createdAt',
         ],
@@ -422,7 +430,7 @@ export class BuddyBackupStudioRepository {
             resultAssetId: row.resultAssetId ?? exported.resultAssetId,
             sources: [],
           }),
-        ['projectId', 'resultAssetId', 'outputPath', 'outputRemovedAt', 'privacy'],
+        ['projectId', 'resultAssetId', 'outputPath', 'outputRemovedAt', 'subtitlePath', 'privacy'],
         retireFile,
       );
       for (const source of capturedSources) {
@@ -448,7 +456,7 @@ export class BuddyBackupStudioRepository {
           tables.source,
           row,
           ['versionId', 'key'],
-          ['kind', 'resourceId', 'assetId', 'ownerId', 'sourceAccess', 'checksum'],
+          ['kind', 'resourceId', 'assetId', 'ownerId', 'sourceAccess', 'checksum', 'sourceEpoch'],
           (row) => ({
             ...buddyStudioSourceSchema.parse(row),
             checksum: checksum(buddyStudioSourceSchema.parse(row).checksum),
@@ -578,7 +586,7 @@ export class BuddyBackupStudioRepository {
     const value = (column: string) =>
       jsonColumns.has(column)
         ? sql`${JSON.stringify(row[column])}::text::jsonb`
-        : column === 'outputChecksum' && row[column] !== null
+        : ['outputChecksum', 'subtitleChecksum'].includes(column) && row[column] !== null
           ? sql`${Buffer.from(String(row[column]), 'hex')}`
           : sql`${row[column]}`;
     const where = sql.join(
@@ -597,21 +605,30 @@ export class BuddyBackupStudioRepository {
     const current = normalize(stored.rows[0].record);
     if (immutable.some((key) => canonicalJson(current[key]) !== canonicalJson(row[key])))
       throw new Error('Buddy Studio immutable identity changed');
-    const pathColumn = table === tables.exported ? 'outputPath' : 'path';
-    if (retireFile && typeof current[pathColumn] === 'string' && current[pathColumn] !== row[pathColumn]) {
-      // Queue acceptance precedes the rebind while old+new paths are locked. A queue failure
-      // rolls back the row, and a consumer cannot unlink before this transaction finishes.
-      await retireFile({
-        path: current[pathColumn] as string,
-        checksum: String(current[table === tables.exported ? 'outputChecksum' : 'checksum']),
-        size:
-          table === tables.imported
-            ? Number(current.sizeBytes)
-            : table === tables.exported
-              ? Number(current.outputSizeInBytes)
-              : null,
-        ...(table === tables.imported && { importId: String(current.id) }),
-      });
+    for (const pathColumn of table === tables.exported ? ['outputPath', 'subtitlePath'] : ['path']) {
+      if (retireFile && typeof current[pathColumn] === 'string' && current[pathColumn] !== row[pathColumn]) {
+        // Queue acceptance precedes the rebind while old+new paths are locked. A queue failure
+        // rolls back the row, and a consumer cannot unlink before this transaction finishes.
+        await retireFile({
+          path: current[pathColumn] as string,
+          checksum: String(
+            current[
+              table === tables.exported
+                ? pathColumn === 'subtitlePath'
+                  ? 'subtitleChecksum'
+                  : 'outputChecksum'
+                : 'checksum'
+            ],
+          ),
+          size:
+            table === tables.imported
+              ? Number(current.sizeBytes)
+              : table === tables.exported
+                ? Number(current[pathColumn === 'subtitlePath' ? 'subtitleSizeInBytes' : 'outputSizeInBytes'])
+                : null,
+          ...(table === tables.imported && { importId: String(current.id) }),
+        });
+      }
     }
     if (update.length > 0)
       await sql`UPDATE ${sql.table(table)} SET

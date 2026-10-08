@@ -33808,6 +33808,18 @@
             }
           },
           {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "media",
+                "subtitle"
+              ]
+            }
+          },
+          {
             "name": "sequence",
             "required": true,
             "in": "path",
@@ -33894,6 +33906,18 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "media",
+                "subtitle"
+              ]
             }
           },
           {
@@ -40723,6 +40747,63 @@
           }
         ],
         "summary": "Download a Studio export kept with its project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/exports/{id}/subtitle": {
+      "get": {
+        "description": "Available only for a published sealed pair with current source access, source epochs and session privacy. Supports one byte range. No public subtitle grant.",
+        "operationId": "downloadStudioExportSubtitle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the owner-private SRT sibling",
         "tags": [
           "Studio projects"
         ],
@@ -111356,6 +111437,7 @@
         "type": "string"
       },
       "StudioExportCreateDto": {
+        "additionalProperties": false,
         "properties": {
           "audio": {
             "$ref": "#/components/schemas/StudioExportAudio",
@@ -111641,10 +111723,11 @@
         "type": "object"
       },
       "StudioExportSubtitleMode": {
-        "description": "Burn subtitle captions into the picture or omit them; ordinary titles are preserved",
+        "description": "Burn subtitle captions, omit captions, or publish an owner-private SRT sibling; ordinary titles are preserved",
         "enum": [
           "burn",
-          "off"
+          "off",
+          "sidecar"
         ],
         "type": "string"
       },
@@ -111753,6 +111836,48 @@
           },
           "state": {
             "$ref": "#/components/schemas/StudioExportVersionState"
+          },
+          "subtitle": {
+            "description": "Owner-private sibling. Never contains text, server paths or a public grant",
+            "nullable": true,
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "codec": {
+                "enum": [
+                  "srt"
+                ],
+                "type": "string"
+              },
+              "cueCount": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "required": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "sha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "sizeInBytes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "codec",
+              "required",
+              "cueCount",
+              "sizeInBytes",
+              "sha256",
+              "available"
+            ],
+            "type": "object"
           },
           "version": {
             "description": "The version number, once published",
