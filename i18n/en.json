@@ -5925,6 +5925,7 @@
   "frameleaf_jobs_name_pet_recognition": "Find pets in a photo",
   "frameleaf_jobs_name_pet_recognition_nearest": "Look for a pet in similar photos",
   "frameleaf_jobs_name_pet_recognition_queue_all": "Find pets in libraries",
+  "frameleaf_jobs_name_photography_workflow_render": "Render photography workflow",
   "frameleaf_jobs_name_physical_deduplication_migration_apply": "Apply physical deduplication",
   "frameleaf_jobs_name_physical_deduplication_migration_dry_run": "Review physical deduplication",
   "frameleaf_jobs_name_profile_image_repair": "Replace profile pictures from Locked photos",
