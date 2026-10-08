@@ -13,6 +13,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -73,11 +74,12 @@ const retryInput = (operation: MediaOperation) => ({
 const setup = async () => {
   const { sut: resources, ctx } = newMediumService(StudioResourceService, {
     database,
-    real: [AccessRepository, AssetRepository, CryptoRepository],
+    real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
     mock: [LoggingRepository],
   });
   const { user } = await ctx.newUser();
-  const auth = factory.auth({ user, session: { id: randomUUID() } });
+  const { session } = await ctx.newSession({ userId: user.id });
+  const auth = factory.auth({ user, session });
   const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
   const graph = { id: 'sequence', tracks: [{ id: 'video', kind: 'video', clips: [{ assetId: asset.id }] }] };
   const projects = new StudioProjectRepository(database);
@@ -145,6 +147,7 @@ const setup = async () => {
     return claimed ? { ...claimed.operation, claimToken: claimed.claimToken } : undefined;
   };
   return {
+    ctx,
     auth,
     user,
     asset,
@@ -195,7 +198,8 @@ it('isolates consumers and sessions, preserves same-request identity, and refuse
   await expect(
     f.sut.cancel(f.auth, a.id, { consumerRequestId: b.consumerRequestId, expectedOperationId: a.operationId! }),
   ).rejects.toThrow('Preview frame not found');
-  const otherSession = factory.auth({ user: f.user, session: { id: randomUUID() } });
+  const { session } = await f.ctx.newSession({ userId: f.user.id });
+  const otherSession = factory.auth({ user: f.user, session });
   await expect(f.sut.get(otherSession, a.id, { consumerRequestId: a.consumerRequestId })).rejects.toThrow(
     'Preview frame not found',
   );
