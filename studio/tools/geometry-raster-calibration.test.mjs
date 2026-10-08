@@ -20,9 +20,13 @@ const args = {
     '--use-angle=metal',
   ],
 }
-const binding = (backend) => ({
+const source97 = '614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711'
+const binding = (
+  backend,
+  sourceSha256 = 'e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689',
+) => ({
   browser: '148.0.7778.96',
-  sourceSha256: 'e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689',
+  sourceSha256,
   quadSha256: envelope.receipts[0].quadSha256,
   backendArgs: args[backend],
 })
@@ -70,6 +74,25 @@ test('all fixed local shapes/backends admit exact source/state/pixel/triangle/UV
       validateBaseRaster(fixture(f), envelope, binding(f.backend)).components.length,
       f.components.length,
     )
+})
+test('exact source97 admits all fixed validator fixtures without changing bounds', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const { binding: observedBinding, ...observed } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend, source97),
+    )
+    const { binding: previousBinding, ...previous } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend),
+    )
+    assert.deepEqual(observedBinding, binding(f.backend, source97))
+    assert.deepEqual(previousBinding, binding(f.backend))
+    assert.deepEqual(observed, previous)
+  }
+  assert.equal(JSON.stringify(envelope), original)
 })
 test('both U and V endpoints refuse at every pixel and preserve immutable tables', () => {
   const original = JSON.stringify(envelope)
@@ -195,9 +218,11 @@ for (const [name, mutate] of [
   ],
 ])
   test(`raster admission refuses ${name}`, () => {
-    const f = envelope.envelopes[0],
-      r = fixture(f),
-      b = binding(f.backend)
-    mutate(r, b)
-    assert.throws(() => validateBaseRaster(r, envelope, b))
+    for (const source of [binding('swift').sourceSha256, source97]) {
+      const f = envelope.envelopes[0],
+        r = fixture(f),
+        b = binding(f.backend, source)
+      mutate(r, b)
+      assert.throws(() => validateBaseRaster(r, envelope, b))
+    }
   })
