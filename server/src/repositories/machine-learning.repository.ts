@@ -387,10 +387,10 @@ export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
  * `unreachable` when the request never got an answer, or `protocol-error` when the answer
  * could not be trusted (missing or mismatched result, or a file that failed its hash).
  */
-/** The inpainting model the Clean Up Remove fill asks for; which model it is stays the owner's decision. */
+/** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
-/** No local worker can fill an area today: ML is off, remote-only, or its worker has no inpainting model. */
+/** No local worker can fill an area: ML is off, remote-only, or its worker cannot get the inpainting model. */
 export class InpaintUnavailableError extends Error {}
 
 export class RestorationWorkerError extends Error {
@@ -518,8 +518,9 @@ export class MachineLearningRepository implements RestorationInference {
    * Clean Up Remove (native API): ask the instance-local ML worker to fill the masked part of `image`.
    * `image` is an RGB PNG of the area with surrounding context; `mask` a greyscale PNG of the same size,
    * white where content is removed. The worker answers `{ inpaint: { png, width, height } }` with an RGB
-   * PNG of the same size. No inpainting model ships today (its choice is owner-gated); a worker without
-   * one refuses the task, which surfaces as `InpaintUnavailableError`.
+   * PNG of the same size. The worker serves it with LaMa (big-lama), fetched from the model source on first
+   * use; a worker that cannot get the model answers 503 and an older one 422, which surface as
+   * `InpaintUnavailableError`.
    */
   async inpaintLocal(image: Buffer, mask: Buffer, signal?: AbortSignal): Promise<Buffer> {
     if (!this.config.enabled) throw new InpaintUnavailableError('Local machine learning is disabled');
