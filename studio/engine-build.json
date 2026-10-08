@@ -479,7 +479,12 @@
       "path": "patches/0099-native-linked-chain-join.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "93e70f7de8b71dd62e1f5ac434a257f6dbc49b78f97b39a7c651bc9a4be43233"
+    },
+    {
+      "path": "patches/0100-preserve-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6773faccb20c02e5dabba33a9387eb7199b033548ad04979dc6a9040d48ab0d"
     }
   ],
-  "sourceSha256": "01d20907319c1b3228e215fe741a32a497ec41b06a1c676c1e5cfbab28f2e43d"
+  "sourceSha256": "e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689"
 }
