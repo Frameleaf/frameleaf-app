@@ -18,6 +18,9 @@ async function buildManager(file, output, verification = {}) {
     assert(!/@[A-Z_]+@/.test(body), 'Unresolved Manager package placeholder');
     write(destination, body);
   }
+  for (const name of ['ca_profile.xml', 'README.md'])
+    write(`unraid/${name}`, fs.readFileSync(path.join(__dirname, 'unraid', name), 'utf8'));
+  write('unraid/LICENSE', fs.readFileSync(path.join(__dirname, '../../LICENSE'), 'utf8'));
   write('manager-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 }
 module.exports = { buildManager };

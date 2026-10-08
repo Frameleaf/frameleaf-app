@@ -50,6 +50,8 @@ async function build(directory, expectedTag, output, verification = {}) {
     write(`unraid/templates/${name}.xml`, render(source(`unraid/${name}.xml.in`)));
   }
   write('unraid/ca_profile.xml', source('unraid/ca_profile.xml'));
+  write('unraid/README.md', source('unraid/README.md'));
+  write('unraid/LICENSE', fs.readFileSync(path.join(root, '../../LICENSE'), 'utf8'));
   for (const name of ['app.yaml', 'ix_values.yaml', 'questions.yaml', 'templates/docker-compose.yaml', 'templates/test_values/basic-values.yaml']) {
     write(`truenas/ix-dev/community/frameleaf/${name}`, render(source(`truenas/${name}`)));
   }
