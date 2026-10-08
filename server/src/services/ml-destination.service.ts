@@ -163,6 +163,8 @@ export class MlDestinationService extends BaseService {
    * is turned on again; one an administrator turned off stays off.
    */
   private async ensureLocalDestinations(urls: string[]) {
+    // Recovery installs explicit bindings itself. Bootstrap must not lift quarantine or invent routes.
+    if (await this.mlDestinationRepository.recoveryRegistry()) return;
     let first: MlDestinationRow | undefined;
     for (const url of urls) {
       let row = await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url);
@@ -275,7 +277,7 @@ export class MlDestinationService extends BaseService {
     return this.toDto(row);
   }
 
-  async update(id: string, dto: MlDestinationUpdateDto): Promise<MlDestinationResponseDto> {
+  async update(id: string, dto: MlDestinationUpdateDto, auth?: AuthDto): Promise<MlDestinationResponseDto> {
     const current = await this.require(id);
     if (current.kind === MlDestinationKind.FrameleafCloud && (dto.url || dto.authToken)) {
       throw new BadRequestException('Frameleaf Cloud takes no URL or credential; it uses the link to this server');
@@ -294,7 +296,7 @@ export class MlDestinationService extends BaseService {
       );
     }
 
-    const row = await this.mlDestinationRepository.update(id, {
+    const patch = {
       name: dto.name,
       url: dto.url === undefined ? undefined : dto.url,
       authToken: dto.authToken === undefined ? undefined : dto.authToken,
@@ -304,7 +306,11 @@ export class MlDestinationService extends BaseService {
       maxRuntimeMinutes: dto.maxRuntimeMinutes,
       maxUploadBytes: dto.maxUploadBytes,
       sharesLibraryHardware: dto.sharesLibraryHardware,
-    });
+    };
+    const registry = await this.mlDestinationRepository.recoveryRegistry();
+    const row = registry?.quarantine[id]
+      ? await this.mlDestinationRepository.updateRecoveryBinding(auth!, current, patch)
+      : await this.mlDestinationRepository.update(id, patch);
     return this.toDto(row);
   }
 
@@ -464,6 +470,7 @@ export class MlDestinationService extends BaseService {
   }
 
   private async probeRow(row: MlDestinationRow): Promise<MlDestinationHealthStateDto> {
+    await this.mlDestinationRepository.assertRecoveryAuthority(row);
     const endpoint = resolveEndpoint(row);
     const probedAt = new Date();
     if (!endpoint) {
@@ -504,15 +511,19 @@ export class MlDestinationService extends BaseService {
         this.logger.debug(`Could not read restoration GPUs from ${row.name}: ${error}`);
       }
     }
-    await this.mlDestinationRepository.recordProbe(row.id, {
-      health,
-      summary,
-      workloads: servedWorkloads,
-      probedAt: probe.probedAt,
-      hardware: hardwareFromProbe(probe, gpus),
-      latencyMs: probe.reachable ? probe.latencyMs : null,
-      ...(probe.cloud !== undefined && { cloud: probe.cloud }),
-    });
+    await this.mlDestinationRepository.recordProbe(
+      row.id,
+      {
+        health,
+        summary,
+        workloads: servedWorkloads,
+        probedAt: probe.probedAt,
+        hardware: hardwareFromProbe(probe, gpus),
+        latencyMs: probe.reachable ? probe.latencyMs : null,
+        ...(probe.cloud !== undefined && { cloud: probe.cloud }),
+      },
+      row,
+    );
     return { status: health, probedAt: probe.probedAt.toISOString(), summary, servedWorkloads };
   }
 
@@ -533,6 +544,7 @@ export class MlDestinationService extends BaseService {
    */
   async getRestorationModels(id: string): Promise<MlRestorationModelsResponseDto> {
     const row = await this.require(id);
+    await this.mlDestinationRepository.assertRecoveryAuthority(row);
     const unreachable = (error: string): MlRestorationModelsResponseDto => ({
       destinationId: row.id,
       reachable: false,
@@ -554,6 +566,7 @@ export class MlDestinationService extends BaseService {
 
     try {
       const report = await this.machineLearningRepository.getRestorationModels(endpoint);
+      await this.mlDestinationRepository.assertRecoveryAuthority(row);
       return {
         destinationId: row.id,
         reachable: true,

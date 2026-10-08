@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, SqlBool, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { MlEndpoint } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { MlDestinationHealth, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   MlCloudModelChoiceTable,
@@ -12,6 +16,14 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import {
+  recoveryAuthorityDigest,
+  recoveryMlAdmissionIdentity,
+  recoveryMlBindingSchema,
+  recoveryMlEndpointIdentity,
+  recoveryMlRefusal,
+  recoveryMlRegistrySchema,
+} from 'src/utils/recovery-ml-authority.js';
 
 export type MlDestinationRow = Selectable<MlDestinationTable>;
 export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
@@ -101,6 +113,126 @@ const toJson = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`;
 export class MlDestinationRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** Common consumer fence; disabled state and cached probes cannot grant replacement authority. */
+  async assertRecoveryAuthority(expected: MlDestinationRow): Promise<void> {
+    const metadata = new SystemMetadataRepository(this.db);
+    const input = await metadata.get(SystemMetadataKey.FrameleafRecoveryMlAuthority);
+    const epoch = await metadata.getEffectiveConfigEpoch();
+    if (!input && !epoch?.recoveryMlBinding) return;
+    const registry = recoveryMlRegistrySchema.safeParse(input);
+    if (!registry.success) throw recoveryMlRefusal();
+    const binding = epoch?.recoveryMlBinding;
+    if (binding && !recoveryMlBindingSchema.safeParse(binding).success) throw recoveryMlRefusal();
+    if (
+      binding &&
+      (binding.recoveryId !== registry.data.recoveryId ||
+        binding.preparedPlanDigest !== registry.data.preparedPlanDigest ||
+        binding.replacementIdentity !== registry.data.replacementIdentity)
+    )
+      throw recoveryMlRefusal();
+    if (registry.data.quarantine[expected.id]) throw recoveryMlRefusal();
+    const current = await this.getById(expected.id);
+    if (!current || recoveryMlAdmissionIdentity(current) !== recoveryMlAdmissionIdentity(expected))
+      throw recoveryMlRefusal();
+  }
+
+  /** Direct endpoint callers also pass this fence; a token must match an admitted current row. */
+  async assertEndpointAuthority(endpoint: MlEndpoint): Promise<string> {
+    const metadata = new SystemMetadataRepository(this.db);
+    const input = await metadata.get(SystemMetadataKey.FrameleafRecoveryMlAuthority);
+    const epoch = await metadata.getEffectiveConfigEpoch();
+    const rows = await this.getAll();
+    const matches = rows.filter((row) =>
+      endpoint.cloud
+        ? row.kind === MlDestinationKind.FrameleafCloud
+        : row.url === endpoint.url && (row.authToken ?? null) === (endpoint.authToken ?? null),
+    );
+    const parsed = input || epoch?.recoveryMlBinding ? recoveryMlRegistrySchema.safeParse(input) : null;
+    if (parsed && !parsed.success) throw recoveryMlRefusal();
+    const registry = parsed?.data ?? null;
+    const admitted = matches.filter((row) => row.enabled && !registry?.quarantine[row.id]);
+    if (registry) {
+      if (admitted.length === 0) throw recoveryMlRefusal();
+      for (const row of admitted) await this.assertRecoveryAuthority(row);
+    }
+    // Probe receipts belong to the current policy and recovery binding, not just URL/token.
+    return recoveryAuthorityDigest({
+      epoch,
+      registry,
+      admitted: admitted.map((row) => recoveryMlAdmissionIdentity(row)).sort(),
+    });
+  }
+
+  async recoveryRegistry() {
+    const input = await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafRecoveryMlAuthority);
+    if (!input) return null;
+    const parsed = recoveryMlRegistrySchema.safeParse(input);
+    if (!parsed.success) throw recoveryMlRefusal();
+    return parsed.data;
+  }
+
+  /** Only explicit admin update clears quarantine, after waits and under C1-before-row order. */
+  async updateRecoveryBinding(auth: AuthDto, expected: MlDestinationRow, patch: MlDestinationPatch) {
+    if (
+      !auth?.session ||
+      !auth.user.isAdmin ||
+      auth.apiKey ||
+      auth.sharedLink ||
+      patch.enabled !== true ||
+      (!!expected.authToken && patch.authToken === undefined) ||
+      (expected.kind !== MlDestinationKind.FrameleafCloud && typeof patch.url !== 'string')
+    )
+      throw recoveryMlRefusal();
+    return new SystemMetadataRepository(this.db).withConfigTransaction(async (metadata, tx) => {
+      if (!(await currentAuth(tx, auth.user.id, auth.session!.id, true))) throw recoveryMlRefusal();
+      const actor = await tx
+        .selectFrom('user')
+        .select('isAdmin')
+        .where('id', '=', auth.user.id)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!actor?.isAdmin) throw recoveryMlRefusal();
+      const current = await tx
+        .selectFrom('ml_destination')
+        .selectAll()
+        .where('id', '=', expected.id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || recoveryMlEndpointIdentity(current) !== recoveryMlEndpointIdentity(expected))
+        throw recoveryMlRefusal();
+      const registry = recoveryMlRegistrySchema.safeParse(
+        await metadata.get(SystemMetadataKey.FrameleafRecoveryMlAuthority),
+      );
+      if (
+        !registry.success ||
+        !registry.data.quarantine[current.id] ||
+        registry.data.quarantine[current.id] !== recoveryMlEndpointIdentity(current)
+      )
+        throw recoveryMlRefusal();
+      const repository = new MlDestinationRepository(tx);
+      const row = await repository.update(current.id, { ...patch });
+      await tx
+        .updateTable('ml_destination')
+        .set({ consentAcknowledgedAt: null, consentAcknowledgedBy: null, consentVersion: null })
+        .where('id', '=', row.id)
+        .execute();
+      await repository.recordProbe(current.id, {
+        health: MlDestinationHealth.Unknown,
+        summary: null,
+        workloads: null,
+        probedAt: new Date(),
+        hardware: null,
+        latencyMs: null,
+        cloud: null,
+      });
+      delete registry.data.quarantine[current.id];
+      await metadata.set(SystemMetadataKey.FrameleafRecoveryMlAuthority, registry.data);
+      if (!(await currentAuth(tx, auth.user.id, auth.session!.id, true))) throw recoveryMlRefusal();
+      return (await repository.getById(row.id))!;
+    });
+  }
+
   @GenerateSql()
   getAll(): Promise<MlDestinationRow[]> {
     return this.db.selectFrom('ml_destination').selectAll().orderBy('kind', 'asc').orderBy('name', 'asc').execute();
@@ -148,7 +280,8 @@ export class MlDestinationRepository {
     await this.db.deleteFrom('ml_destination').where('id', '=', id).execute();
   }
 
-  async recordProbe(id: string, probe: MlProbeRecord): Promise<void> {
+  async recordProbe(id: string, probe: MlProbeRecord, expected?: MlDestinationRow): Promise<void> {
+    if (expected) await this.assertRecoveryAuthority(expected);
     const diagnostics = {
       ...(probe.hardware !== undefined && {
         lastProbeHardware: probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
@@ -168,6 +301,14 @@ export class MlDestinationRepository {
         ...diagnostics,
       })
       .where('id', '=', id)
+      .$if(!!expected, (query) =>
+        query
+          .where('kind', '=', expected!.kind)
+          .where('enabled', '=', expected!.enabled)
+          .where('updatedAt', '=', expected!.updatedAt)
+          .where(sql<boolean>`url IS NOT DISTINCT FROM ${expected!.url}`)
+          .where(sql<boolean>`"authToken" IS NOT DISTINCT FROM ${expected!.authToken}`),
+      )
       // Concurrent admissions may have read the row before this observation was persisted.
       .where((eb) =>
         eb.or([

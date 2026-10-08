@@ -56,7 +56,7 @@ import {
   clearConfigCache,
   getConfigRevision,
   initializeEffectiveConfig,
-  prepareFileConfig,
+  prepareFileActivation,
   publishFileConfig,
   withEffectiveConfigWrite,
 } from 'src/utils/config.js';
@@ -171,8 +171,25 @@ export class SystemConfigService extends BaseService {
   async reloadConfigFile(auth: AuthDto, dto: ConfigFileReloadDto): Promise<ConfigFileActivationResponseDto> {
     if (!auth.session || auth.apiKey || auth.sharedLink || !auth.user.isAdmin)
       throw new ForbiddenException('effective_config_admin_session_required');
-    const candidate = await prepareFileConfig(this.configRepos);
+    const observed = await prepareFileActivation(this.configRepos);
+    const candidate = observed.candidate;
     const oldConfig = await this.getConfig({ withCache: false });
+    // Validators can send credentials. Admit the observed candidate under current C1/auth first,
+    // then release locks for I/O; the commit below repeats the same CAS after validator waits.
+    await withEffectiveConfigWrite(this.configRepos, async (repos, tx) => {
+      const user = await tx
+        .selectFrom('user')
+        .select('isAdmin')
+        .where('id', '=', auth.user.id)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!user?.isAdmin || !(await currentAuth(tx, auth.user.id, auth.session!.id, true)))
+        throw new ForbiddenException('effective_config_admin_session_required');
+      const current = await prepareFileActivation(repos);
+      if (JSON.stringify(current) !== JSON.stringify(observed) || current.epoch.epoch !== dto.expectedEpoch)
+        throw new ConflictException('effective_config_epoch_changed');
+    });
     // Validators may use SMTP/provider I/O. No DB lock is held during preparation.
     try {
       await this.eventRepository.emit('ConfigValidate', { newConfig: candidate, oldConfig });
@@ -190,7 +207,7 @@ export class SystemConfigService extends BaseService {
           .executeTakeFirst();
         const live = await currentAuth(tx, auth.user.id, auth.session!.id, true);
         if (!live || !user?.isAdmin) throw new ForbiddenException('effective_config_admin_session_required');
-        const result = await activateFileConfig(repos, candidate, dto.expectedEpoch);
+        const result = await activateFileConfig(repos, candidate, dto.expectedEpoch, observed);
         if (!(await currentAuth(tx, auth.user.id, auth.session!.id, true)))
           throw new ForbiddenException('effective_config_admin_session_required');
         return result;
@@ -319,7 +336,11 @@ export class SystemConfigService extends BaseService {
     if (!endpoint) {
       return defaultMachineLearningHardware;
     }
-    return this.machineLearningRepository.getHardware(endpoint);
+    await this.mlDestinationRepository.assertRecoveryAuthority(destination);
+    return this.machineLearningRepository.getHardware({
+      ...endpoint,
+      assertAuthority: () => this.mlDestinationRepository.assertRecoveryAuthority(destination),
+    });
   }
 
   @OnEvent({ name: 'ConfigInit', priority: -100 })

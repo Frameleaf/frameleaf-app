@@ -486,6 +486,9 @@ export const getMocks = () => {
   mocks.mlDestination.getSpend.mockResolvedValue(0);
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
+  mocks.mlDestination.assertRecoveryAuthority.mockResolvedValue();
+  mocks.mlDestination.assertEndpointAuthority.mockResolvedValue('test-authority');
+  mocks.mlDestination.recoveryRegistry.mockResolvedValue(null);
   mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
 
   return mocks;

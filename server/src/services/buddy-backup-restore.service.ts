@@ -200,7 +200,22 @@ export class BuddyBackupRestoreService {
     const job = operation!.snapshot as unknown as RestoreJob;
     await this.binding(job);
     if (!job.admin || !['server', 'settings'].includes(job.request.scope)) throw new ForbiddenException();
-    const filename = job.request.scope === 'server' ? await this.recovery.prepare(id) : undefined;
+    const filename =
+      job.request.scope === 'server'
+        ? await this.recovery.prepare(id, async () => {
+            await this.administrator(auth);
+            await this.binding(job);
+            const latest = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
+            if (
+              !latest ||
+              latest.ownerId !== auth.user.id ||
+              latest.status !== MediaOperationStatus.Completed ||
+              latest.result?.recoveryId !== id ||
+              latest.result?.phase !== 'ready-to-apply'
+            )
+              throw new ForbiddenException();
+          })
+        : undefined;
     return this.maintenance.startMaintenance(
       {
         action: MaintenanceAction.RestoreDatabase,

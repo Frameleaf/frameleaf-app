@@ -649,6 +649,7 @@ export const evaluateAdmission = ({
   if (!destination) {
     return refuse(MlAdmissionRefusal.DestinationMissing, 'the destination does not exist');
   }
+
   if (!destination.enabled) {
     return refuse(MlAdmissionRefusal.DestinationDisabled, `${destination.name} is disabled`);
   }
@@ -758,6 +759,20 @@ export const selectMlDestination = async (
   if (!destination) {
     throw new MlDestinationNotFoundError(request.workload, request.destinationId);
   }
+  const assertAuthority = async () => {
+    try {
+      await mlDestinationRepository.assertRecoveryAuthority(destination);
+    } catch {
+      // Created cloud jobs recognize this existing revocation class before another upload.
+      throw new MlDestinationRefusedError(
+        MlAdmissionRefusal.DestinationDisabled,
+        request.workload,
+        destination.id,
+        'replacement-local destination authority is unavailable',
+      );
+    }
+  };
+  await assertAuthority();
 
   if (destination.kind === MlDestinationKind.FrameleafCloud && cloudMlSettings) {
     const settings = await cloudMlSettings();
@@ -779,7 +794,8 @@ export const selectMlDestination = async (
     }
   }
 
-  const endpoint = resolveEndpoint(destination);
+  const resolved = resolveEndpoint(destination);
+  const endpoint = resolved ? { ...resolved, assertAuthority } : null;
   const spentUsd =
     destination.budgetLimitUsd === null
       ? 0
@@ -812,13 +828,17 @@ export const selectMlDestination = async (
     !destination.lastProbeAt ||
     probe.probedAt.getTime() > new Date(destination.lastProbeAt).getTime()
   ) {
-    await mlDestinationRepository.recordProbe(destination.id, {
-      health: healthFromProbe(probe),
-      summary: summarizeProbe(probe),
-      workloads: probe.reachable ? probe.workloads : null,
-      probedAt: probe.probedAt,
-      ...(probe.cloud !== undefined && { cloud: probe.cloud }),
-    });
+    await mlDestinationRepository.recordProbe(
+      destination.id,
+      {
+        health: healthFromProbe(probe),
+        summary: summarizeProbe(probe),
+        workloads: probe.reachable ? probe.workloads : null,
+        probedAt: probe.probedAt,
+        ...(probe.cloud !== undefined && { cloud: probe.cloud }),
+      },
+      destination,
+    );
   }
 
   // FL-186: the Frameleaf Cloud model an administrator chose for this job's model group, whatever the
@@ -851,6 +871,7 @@ export const selectMlDestination = async (
   }
 
   const startedAt = new Date();
+  await assertAuthority();
   return {
     destinationId: destination.id,
     kind: destination.kind,

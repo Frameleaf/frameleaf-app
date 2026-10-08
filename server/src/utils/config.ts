@@ -14,6 +14,17 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { getKeysDeep, unsetDeep } from 'src/utils/misc.js';
 import { canonicalJson } from 'src/utils/object.js';
+import {
+  type RecoveryMlBinding,
+  type RecoveryMlConfig,
+  applyRecoveryMlOverlay,
+  recoveryAuthorityDigest,
+  recoveryMlBindingSchema,
+  recoveryMlConfigOf,
+  recoveryMlOverlaySchema,
+  recoveryMlRefusal,
+  recoveryMlRegistrySchema,
+} from 'src/utils/recovery-ml-authority.js';
 
 export type RepoDeps = {
   configRepo: ConfigRepository;
@@ -35,6 +46,7 @@ export const clearConfigCache = () => {
 export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boolean }): Promise<SystemConfig> => {
   // A missed ConfigUpdate must not keep a previous activated file epoch authoritative.
   if (repos.configRepo.getEnv().configFile) return readConfig(repos);
+  if ((await repos.metadataRepo.getEffectiveConfigEpoch())?.recoveryMlBinding) return readConfig(repos);
   if (!withCache || !config) {
     const timestamp = lastUpdated;
     await asyncLock.acquire(DatabaseLock[DatabaseLock.GetSystemConfig], async () => {
@@ -59,7 +71,11 @@ export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
   if (!repos.configRepo.getEnv().configFile) {
     const epoch = await repos.metadataRepo.getEffectiveConfigEpoch();
     if (epoch && epoch.sourceKind !== 'database') throw new ConflictException('effective_config_source_changed');
-    return buildConfig(repos);
+    const raw = await buildConfig(repos, !!epoch?.recoveryMl);
+    if (!epoch) return raw;
+    assertEpoch(epoch);
+    await assertRecoveryRegistry(repos, epoch);
+    return epoch.recoveryMl ? applyRecoveryMlOverlay(raw, epoch.recoveryMl) : raw;
   }
   let epoch = await repos.metadataRepo.getEffectiveConfigEpoch();
   if (!epoch) {
@@ -76,10 +92,12 @@ export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
     }
   }
   assertEpoch(epoch);
+  await assertRecoveryRegistry(repos, epoch);
   if (epoch.sourceKind !== 'file') throw new ConflictException('effective_config_source_changed');
   const cached = fileSnapshots.get(repos.configRepo);
   if (cached?.epoch === epoch.epoch && cached.digest === epoch.digest) return cloneDeep(cached.config);
-  const candidate = await prepareFileConfig(repos);
+  const raw = await prepareFileConfig(repos);
+  const candidate = epoch.recoveryMl ? applyRecoveryMlOverlay(raw, epoch.recoveryMl) : raw;
   if (configDigest(candidate) !== epoch.digest) throw new ConflictException('effective_config_activation_required');
   fileSnapshots.set(repos.configRepo, { epoch: epoch.epoch, digest: epoch.digest, config: candidate });
   return cloneDeep(candidate);
@@ -101,7 +119,7 @@ export async function initializeEffectiveConfig(repos: RepoDeps): Promise<void> 
     return;
   }
   await withEffectiveConfigWrite(repos, async (bound) => {
-    const candidate = await buildConfig(bound, true);
+    const candidate = await readConfig(bound);
     const current = await bound.metadataRepo.getEffectiveConfigEpoch();
     if (current) {
       assertEpoch(current);
@@ -123,6 +141,25 @@ function assertEpoch(epoch: Epoch) {
     typeof epoch.trashEnabled !== 'boolean'
   )
     throw new ConflictException('effective_config_unavailable');
+  if (epoch.recoveryMl && !recoveryMlOverlaySchema.safeParse(epoch.recoveryMl).success) throw recoveryMlRefusal();
+  if (epoch.recoveryMlBinding && !recoveryMlBindingSchema.safeParse(epoch.recoveryMlBinding).success)
+    throw recoveryMlRefusal();
+}
+
+async function assertRecoveryRegistry(repos: RepoDeps, epoch: Epoch) {
+  if (!epoch.recoveryMlBinding && !epoch.recoveryMl) return;
+  const registry = recoveryMlRegistrySchema.safeParse(
+    await repos.metadataRepo.get(SystemMetadataKey.FrameleafRecoveryMlAuthority),
+  );
+  const binding = epoch.recoveryMlBinding ?? epoch.recoveryMl;
+  if (
+    !registry.success ||
+    !binding ||
+    registry.data.recoveryId !== binding.recoveryId ||
+    registry.data.preparedPlanDigest !== binding.preparedPlanDigest ||
+    registry.data.replacementIdentity !== binding.replacementIdentity
+  )
+    throw recoveryMlRefusal();
 }
 
 function freezeConfigSnapshot<T extends object>(value: T): Readonly<T> {
@@ -141,7 +178,7 @@ export async function withEffectiveConfigRead<T>(
   const epoch = await bound.metadataRepo.getEffectiveConfigEpoch();
   if (!epoch) throw new ConflictException('effective_config_unavailable');
   assertEpoch(epoch);
-  const snapshot = epoch.sourceKind === 'file' ? await readConfig(bound) : await buildConfig(bound, true);
+  const snapshot = await readConfig(bound);
   const sourceKind = repos.configRepo.getEnv().configFile ? 'file' : 'database';
   if (
     sourceKind !== epoch.sourceKind ||
@@ -182,11 +219,18 @@ export async function activateFileConfig(
   repos: RepoDeps,
   candidate: SystemConfig,
   expectedEpoch: number,
+  observed?: Awaited<ReturnType<typeof prepareFileActivation>>,
 ): Promise<Epoch> {
   const current = await repos.metadataRepo.getEffectiveConfigEpoch();
   if (!current || current.format !== 1 || current.sourceKind !== 'file' || current.epoch !== expectedEpoch)
     throw new ConflictException('effective_config_epoch_changed');
   const next = epochFor(candidate, 'file', current.epoch + 1);
+  if (observed) {
+    const fresh = await prepareFileActivation(repos);
+    if (canonicalJson(fresh) !== canonicalJson(observed)) throw new ConflictException('effective_config_epoch_changed');
+    if (observed.overlay) next.recoveryMl = observed.overlay;
+  }
+  if (current.recoveryMlBinding) next.recoveryMlBinding = current.recoveryMlBinding;
   if (!Number.isSafeInteger(next.epoch)) throw new ConflictException('effective_config_epoch_exhausted');
   await repos.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, next);
   return next;
@@ -195,14 +239,34 @@ export async function activateFileConfig(
 /** Maintenance recovery only: caller holds its verified recovery lease and this write TX.
  * Its already-published validated recovery files and restored DB settings establish a new epoch.
  */
-export async function recoverEffectiveConfig(repos: RepoDeps): Promise<{ config: SystemConfig; epoch: Epoch }> {
-  const candidate = repos.configRepo.getEnv().configFile
-    ? await prepareFileConfig(repos)
-    : await buildConfig(repos, true);
+export async function recoverEffectiveConfig(
+  repos: RepoDeps,
+  authority?: { binding: RecoveryMlBinding; config: RecoveryMlConfig; epoch?: number },
+): Promise<{ config: SystemConfig; epoch: Epoch }> {
+  const raw = repos.configRepo.getEnv().configFile ? await prepareFileConfig(repos) : await buildConfig(repos, true);
+  const overlay = authority
+    ? recoveryMlOverlaySchema.parse({
+        ...authority.binding,
+        rawDigest: recoveryAuthorityDigest(raw),
+        rawAuthorityDigest: recoveryAuthorityDigest(recoveryMlConfigOf(raw)),
+        authority: authority.config,
+      })
+    : undefined;
+  const candidate = overlay ? applyRecoveryMlOverlay(raw, overlay) : raw;
   const current = await repos.metadataRepo.getEffectiveConfigEpoch();
   const sourceKind = repos.configRepo.getEnv().configFile ? 'file' : 'database';
-  const same = current?.sourceKind === sourceKind && current.digest === configDigest(candidate);
-  const epoch = epochFor(candidate, sourceKind, same ? current.epoch : (current?.epoch ?? 0) + 1);
+  const own =
+    !authority ||
+    (current?.recoveryMl?.recoveryId === authority.binding.recoveryId &&
+      current.recoveryMl.preparedPlanDigest === authority.binding.preparedPlanDigest &&
+      current.recoveryMl.replacementIdentity === authority.binding.replacementIdentity);
+  const same = own && current?.sourceKind === sourceKind && current.digest === configDigest(candidate);
+  const previous = own ? (current?.epoch ?? 0) : (authority?.epoch ?? 0);
+  const epoch = epochFor(candidate, sourceKind, same ? current!.epoch : previous + 1);
+  if (overlay) {
+    epoch.recoveryMl = overlay;
+    epoch.recoveryMlBinding = authority!.binding;
+  }
   assertEpoch(epoch);
   await repos.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, epoch);
   return { config: candidate, epoch };
@@ -283,10 +347,34 @@ export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Pr
       ? current.epoch
       : (current?.epoch ?? 0) + 1,
   );
+  if (current?.recoveryMlBinding) next.recoveryMlBinding = current.recoveryMlBinding;
   if (!Number.isSafeInteger(next.epoch)) throw new ConflictException('effective_config_epoch_exhausted');
   await metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, next);
   return saved;
 };
+
+/** Outbound validators see the overlaid candidate. Activation compares all preparation inputs under C1. */
+export async function prepareFileActivation(repos: RepoDeps) {
+  const raw = await prepareFileConfig(repos);
+  const epoch = await repos.metadataRepo.getEffectiveConfigEpoch();
+  if (!epoch) throw new ConflictException('effective_config_unavailable');
+  assertEpoch(epoch);
+  await assertRecoveryRegistry(repos, epoch);
+  const previous = epoch.recoveryMl;
+  const overlay =
+    previous && recoveryAuthorityDigest(recoveryMlConfigOf(raw)) === previous.rawAuthorityDigest
+      ? { ...previous, rawDigest: recoveryAuthorityDigest(raw) }
+      : undefined;
+  return {
+    epoch,
+    rawDigest: recoveryAuthorityDigest(raw),
+    overlay,
+    candidate: overlay ? applyRecoveryMlOverlay(raw, overlay) : raw,
+  };
+}
+
+/** Strict historical input, deliberately independent of a source-imported epoch/profile. */
+export const readRawRecoveryConfig = (repos: RepoDeps) => buildConfig(repos, true);
 
 const loadFromFile = async ({ metadataRepo, logger }: RepoDeps, filepath: string, privateErrors = false) => {
   try {
