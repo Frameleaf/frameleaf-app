@@ -38248,6 +38248,411 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "asset_local_effect_stream",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_local_effect_stream",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "nextSequence",
+          "tableName": "asset_local_effect_stream",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "1",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "streamEpoch",
+          "tableName": "asset_local_effect_stream",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_local_effect_stream_sequence_check",
+          "definition": "CHECK ((\"nextSequence\" > 0))",
+          "tableName": "asset_local_effect_stream",
+          "expression": "((\"nextSequence\" > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_local_effect_stream_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\")",
+          "tableName": "asset_local_effect_stream",
+          "columnNames": [
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_local_effect_stream_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_local_effect_stream",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_local_effect",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "bundleSha256",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "bundle",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "effectId",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "sequence",
+          "tableName": "asset_local_effect",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_local_effect_sequence_check",
+          "definition": "CHECK ((sequence > 0))",
+          "tableName": "asset_local_effect",
+          "expression": "((sequence > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_local_effect_digest_check",
+          "definition": "CHECK ((octet_length(\"bundleSha256\") = 32))",
+          "tableName": "asset_local_effect",
+          "expression": "((octet_length(\"bundleSha256\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_local_effect_bundle_check",
+          "definition": "CHECK (((jsonb_typeof(bundle) = 'object'::text) AND ((bundle ->> 'formatVersion'::text) = '1'::text)))",
+          "tableName": "asset_local_effect",
+          "expression": "(((jsonb_typeof(bundle) = 'object'::text) AND ((bundle ->> 'formatVersion'::text) = '1'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_local_effect_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", sequence)",
+          "tableName": "asset_local_effect",
+          "columnNames": [
+            "ownerId",
+            "sequence"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "asset_local_effect_id_uq",
+          "definition": "UNIQUE (\"effectId\")",
+          "tableName": "asset_local_effect",
+          "columnNames": [
+            "effectId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_local_effect_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES asset_local_effect_stream(\"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_local_effect",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "asset_local_effect_stream",
+          "referenceColumnNames": [
+            "ownerId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_local_effect_cursor",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_local_effect_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "acknowledgedSequence",
+          "tableName": "asset_local_effect_cursor",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_local_effect_cursor_sequence_check",
+          "definition": "CHECK (((\"acknowledgedSequence\" IS NULL) OR (\"acknowledgedSequence\" > 0)))",
+          "tableName": "asset_local_effect_cursor",
+          "expression": "(((\"acknowledgedSequence\" IS NULL) OR (\"acknowledgedSequence\" > 0)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_local_effect_cursor_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\")",
+          "tableName": "asset_local_effect_cursor",
+          "columnNames": [
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_local_effect_cursor_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES asset_local_effect_stream(\"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_local_effect_cursor",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "asset_local_effect_stream",
+          "referenceColumnNames": [
+            "ownerId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_local_effect_cursor_ownerId_acknowledgedSequence_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\", \"acknowledgedSequence\") REFERENCES asset_local_effect(\"ownerId\", sequence)",
+          "tableName": "asset_local_effect_cursor",
+          "columnNames": [
+            "ownerId",
+            "acknowledgedSequence"
+          ],
+          "referenceTableName": "asset_local_effect",
+          "referenceColumnNames": [
+            "ownerId",
+            "sequence"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_source_epoch",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_source_epoch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_source_epoch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "lastTrashSequence",
+          "tableName": "asset_source_epoch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_source_epoch_owner_sequence_idx",
+          "definition": "CREATE INDEX asset_source_epoch_owner_sequence_idx ON public.asset_source_epoch USING btree (\"ownerId\", \"lastTrashSequence\", \"assetId\")",
+          "tableName": "asset_source_epoch",
+          "columnNames": [
+            "ownerId",
+            "lastTrashSequence",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_source_epoch_sequence_check",
+          "definition": "CHECK ((\"lastTrashSequence\" > 0))",
+          "tableName": "asset_source_epoch",
+          "expression": "((\"lastTrashSequence\" > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_source_epoch_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_source_epoch",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_source_epoch_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_source_epoch",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_source_epoch_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES asset_local_effect_stream(\"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_source_epoch",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "asset_local_effect_stream",
+          "referenceColumnNames": [
+            "ownerId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_source_epoch_ownerId_lastTrashSequence_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\", \"lastTrashSequence\") REFERENCES asset_local_effect(\"ownerId\", sequence)",
+          "tableName": "asset_source_epoch",
+          "columnNames": [
+            "ownerId",
+            "lastTrashSequence"
+          ],
+          "referenceTableName": "asset_local_effect",
+          "referenceColumnNames": [
+            "ownerId",
+            "sequence"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
