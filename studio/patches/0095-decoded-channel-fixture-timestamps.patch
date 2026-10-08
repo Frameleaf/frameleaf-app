@@ -1,0 +1,11 @@
+diff --git a/src/features/export/utils/canvas-audio-channel-preservation.test.ts b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+--- a/src/features/export/utils/canvas-audio-channel-preservation.test.ts
++++ b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+@@ -40,6 +40,7 @@
+       const numberOfFrames = endSample - startSample
+       if (numberOfFrames <= 0) throw new Error('Empty decoded range')
+       yield {
++        timestamp: startSample / sampleRate,
+         numberOfFrames,
+         numberOfChannels: fixture.channels,
+         sampleRate,
