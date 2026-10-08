@@ -76,6 +76,50 @@ describe('generated media admission', () => {
     denied.dispose();
   });
 
+  it('C2 RED: targets pending old admission without revoking a new operation', async () => {
+    const oldId = '0195e2a0-0000-7000-8000-000000000099';
+    const listen = vi.spyOn(websocketEvents, 'on');
+    listen.mockClear();
+    const notify = (id: string) => {
+      const receiver = listen.mock.calls.find(([event]) => event === 'AssetLocalEffectsV1')![1] as (data: {
+        streamEpoch: string;
+        sequence: string;
+        effectId: string;
+        assetIds: string[];
+        revokedOperationIds: string[];
+      }) => void;
+      receiver({
+        streamEpoch: 'actual-local-stream',
+        sequence: '1',
+        effectId: 'effect-1',
+        assetIds: [],
+        revokedOperationIds: [id],
+      });
+    };
+    const revoked = vi.fn();
+    const response = deferredResponse();
+    const access = createStudioGeneratedAccess(revoked, vi.fn(() => response.promise) as typeof fetch);
+    const pending = access.admit(projectId, graph, 1);
+    await Promise.resolve();
+    notify(oldId);
+    expect(revoked).not.toHaveBeenCalled();
+    notify(operationId);
+    expect(revoked).toHaveBeenCalledTimes(1);
+    response.resolve(Response.json(result));
+    await expect(pending).rejects.toThrow('revoked');
+    access.dispose();
+
+    listen.mockClear();
+    const freshRevoked = vi.fn();
+    const fresh = createStudioGeneratedAccess(freshRevoked, vi.fn(async () => Response.json(result)) as typeof fetch);
+    await fresh.admit(projectId, graph, 1);
+    notify(oldId);
+    expect(freshRevoked).not.toHaveBeenCalled();
+    expect(await fresh.recheck()).toBe(true);
+    fresh.dispose();
+    listen.mockRestore();
+  });
+
   it('does not publish an admission whose request completes after revocation', async () => {
     let resolve!: (response: Response) => void;
     const request = vi.fn((_: RequestInfo | URL, init?: RequestInit) => {
@@ -228,6 +272,7 @@ describe('overlapping generated admission and focus checks', () => {
   it.each([projectId, null])('revokes pending admission for project invalidation %s', async (invalidated) => {
     const pending = deferredResponse();
     const listen = vi.spyOn(websocketEvents, 'on');
+    listen.mockClear();
     const revoked = vi.fn();
     const request = vi.fn(async () => pending.promise);
     const access = createStudioGeneratedAccess(revoked, request);

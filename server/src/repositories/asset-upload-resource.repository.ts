@@ -11,9 +11,10 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
-import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
+import { hasEditConfiguration, withICloudPublicationTransaction } from 'src/repositories/icloud-edit-transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
@@ -34,6 +35,10 @@ export class AssetUploadResourceRepository {
     if (!result.rows[0]?.ready) {
       throw new ServiceUnavailableException('Resumable uploads require the upload-resource migration');
     }
+  }
+  /** Post-commit wake only; the durable owner stream is recovered again at bootstrap. */
+  async enqueueLocalEffects() {
+    return new AssetLocalEffectRepository(this.db).enqueuePending();
   }
   async create(
     id: string,
@@ -121,70 +126,68 @@ export class AssetUploadResourceRepository {
     if (ids.length === 0 || new Set(ids).size !== ids.length) {
       throw new ConflictException('Distinct upload resources are required');
     }
-    return this.db.transaction().execute(async (tx) => {
-      await this.ready(tx);
-      const editAuthority = new ICloudEditAuthorityRepository(tx);
-      const items = await Promise.all(ids.map((id) => editAuthority.itemHint(tx, ownerId, 'device', id)));
-      await lockICloudItemClaims(
-        tx,
-        ownerId,
-        items.filter((item): item is string => item !== null),
-      );
-      const rows: AssetUploadResource[] = [];
-      for (const id of [...ids].sort()) {
-        const row = await tx
-          .selectFrom('asset_upload_resource')
-          .selectAll()
-          .where('id', '=', id)
-          .where('ownerId', '=', ownerId)
-          .where((eb) =>
-            allowExpiredPublished
-              ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
-              : eb('expiresAt', '>', new Date()),
-          )
-          .where('state', '!=', 'cancelled')
+    return withICloudPublicationTransaction(
+      this.db,
+      ownerId,
+      ids.map((id) => ({ channel: 'device', id })),
+      async (tx) => {
+        await this.ready(tx);
+        const rows: AssetUploadResource[] = [];
+        for (const id of [...ids].sort()) {
+          const row = await tx
+            .selectFrom('asset_upload_resource')
+            .selectAll()
+            .where('id', '=', id)
+            .where('ownerId', '=', ownerId)
+            .where((eb) =>
+              allowExpiredPublished
+                ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
+                : eb('expiresAt', '>', new Date()),
+            )
+            .where('state', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (!row) {
+            throw new NotFoundException('Upload unavailable');
+          }
+          // A losing writer is refused immediately rather than consuming a second pooled connection.
+          const lock = await sql<{
+            acquired: boolean;
+          }>`SELECT pg_try_advisory_xact_lock(-225, hashtext(${id})::int) AS acquired`.execute(tx);
+          if (!lock.rows[0]?.acquired) {
+            throw new ConflictException('Upload has an active request');
+          }
+          const current = await tx
+            .selectFrom('asset_upload_resource')
+            .selectAll()
+            .where('id', '=', id)
+            .where('ownerId', '=', ownerId)
+            .where((eb) =>
+              allowExpiredPublished
+                ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
+                : eb('expiresAt', '>', new Date()),
+            )
+            .where('state', '!=', 'cancelled')
+            .forUpdate()
+            .executeTakeFirst();
+          if (!current) {
+            throw new NotFoundException('Upload unavailable');
+          }
+          rows.push(current);
+        }
+        const owner = await tx
+          .selectFrom('user')
+          .select('id')
+          .where('id', '=', ownerId)
+          .where('deletedAt', 'is', null)
+          .$if(ids.length > 1 || hasEditConfiguration(tx), (qb) => qb.forUpdate())
+          .$if(ids.length === 1 && !hasEditConfiguration(tx), (qb) => qb.forShare())
           .executeTakeFirst();
-        if (!row) {
-          throw new NotFoundException('Upload unavailable');
+        if (!owner) {
+          throw new NotFoundException('Upload owner unavailable');
         }
-        // A losing writer is refused immediately rather than consuming a second pooled connection.
-        const lock = await sql<{
-          acquired: boolean;
-        }>`SELECT pg_try_advisory_xact_lock(-225, hashtext(${id})::int) AS acquired`.execute(tx);
-        if (!lock.rows[0]?.acquired) {
-          throw new ConflictException('Upload has an active request');
-        }
-        const current = await tx
-          .selectFrom('asset_upload_resource')
-          .selectAll()
-          .where('id', '=', id)
-          .where('ownerId', '=', ownerId)
-          .where((eb) =>
-            allowExpiredPublished
-              ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
-              : eb('expiresAt', '>', new Date()),
-          )
-          .where('state', '!=', 'cancelled')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!current) {
-          throw new NotFoundException('Upload unavailable');
-        }
-        rows.push(current);
-      }
-      const owner = await tx
-        .selectFrom('user')
-        .select('id')
-        .where('id', '=', ownerId)
-        .where('deletedAt', 'is', null)
-        .$if(ids.length > 1, (qb) => qb.forUpdate())
-        .$if(ids.length === 1, (qb) => qb.forShare())
-        .executeTakeFirst();
-      if (!owner) {
-        throw new NotFoundException('Upload owner unavailable');
-      }
-      return callback(tx, rows);
-    });
+        return callback(tx, rows);
+      },
+    );
   }
   parts(tx: Transaction<DB> | undefined, id: string) {
     return (tx ?? this.db)

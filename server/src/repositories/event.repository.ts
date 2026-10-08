@@ -3,6 +3,7 @@ import { ModuleRef, Reflector } from '@nestjs/core';
 import { orderBy } from 'lodash-es';
 import { Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AssetLocalEffectBundle } from 'src/repositories/asset-local-effect.repository.js';
 import type { JobItem, JobSource, UploadFile } from 'src/types.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
@@ -77,6 +78,7 @@ type EventMap = {
   ];
 
   // asset events
+  AssetLocalEffects: [AssetLocalEffectBundle];
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
   AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];

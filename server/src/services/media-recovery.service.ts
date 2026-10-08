@@ -85,13 +85,22 @@ export class MediaRecoveryService {
       if (verified.status !== 'healthy') {
         return { outcome: verified.status === 'unsupported' ? 'needs-review' : 'retry', reason: verified.reason };
       }
-      return await this.repository.commitVerifiedReuse({
+      const committed = await this.repository.commitVerifiedReuse({
         ...input,
         weeklyReuse: reuse.context,
         candidate,
         verified,
         verifyFinal: validate,
       });
+      if (
+        committed.assetId &&
+        ['reused', 'imported', 'repaired-missing', 'repaired-corrupt'].includes(committed.outcome) &&
+        resource.auditRequestId === null &&
+        ['edited-image', 'edited-video'].includes(resource.role)
+      ) {
+        await this.repository.enqueueLocalEffects();
+      }
+      return committed;
     } catch (error) {
       const reason = editAuthorityReviewReason(error);
       return reason ? { outcome: 'needs-review', reason } : { outcome: 'retry', reason: 'reuse_not_committed' };
@@ -270,7 +279,7 @@ export class MediaRecoveryService {
           }
         }
       }
-      return await this.repository.commit({
+      const committed = await this.repository.commit({
         ...input,
         originalFileName: basename(input.originalFileName),
         reservation,
@@ -286,6 +295,15 @@ export class MediaRecoveryService {
                 deep: true,
               }),
       });
+      if (
+        committed.assetId &&
+        ['reused', 'imported', 'repaired-missing', 'repaired-corrupt'].includes(committed.outcome) &&
+        resource.auditRequestId === null &&
+        ['edited-image', 'edited-video'].includes(resource.role)
+      ) {
+        await this.repository.enqueueLocalEffects();
+      }
+      return committed;
     } catch (error) {
       const reason = editAuthorityReviewReason(error);
       if (reason) {

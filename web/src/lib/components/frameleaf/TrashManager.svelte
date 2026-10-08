@@ -43,7 +43,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
-  import { websocketEvents } from '$lib/stores/websocket';
+  import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
     applyTrashReview,
@@ -106,6 +106,7 @@
 
   /** Discards answers to requests a newer one has replaced. */
   let generation = 0;
+  const localSequences = new Map<string, bigint>();
   let queryTimer: ReturnType<typeof setTimeout> | undefined;
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -255,6 +256,20 @@
     reloadTimer = setTimeout(() => void refresh(), 600);
   };
 
+  const onLocalEffects = (bundle: AssetLocalEffectsV1) => {
+    if (!/^[1-9][0-9]{0,18}$/.test(bundle.sequence)) {
+      return;
+    }
+    const sequence = BigInt(bundle.sequence);
+    if ((localSequences.get(bundle.streamEpoch) ?? 0n) >= sequence) {
+      return;
+    }
+    localSequences.set(bundle.streamEpoch, sequence);
+    // Fence every currently awaited page/action before the debounce, then reconcile actual current state.
+    generation++;
+    scheduleRefresh();
+  };
+
   const failureMessage = (cause: unknown) =>
     isStaleReview(cause) ? $t('frameleaf_trash_error_changed') : $t('frameleaf_trash_error_unavailable');
 
@@ -268,11 +283,18 @@
     }
     busy = true;
     error = '';
+    const run = generation;
     try {
       const action = targets === null ? TrashReviewAction.RestoreAll : TrashReviewAction.Restore;
       const ids = targets ?? undefined;
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
+      if (run !== generation) {
+        return;
+      }
       const { count } = await applyTrashReview({ trashApplyDto: { action, ids, token: reviewed.token } });
+      if (run !== generation) {
+        return;
+      }
       items = targets === null ? [] : withoutIds(items, targets);
       selected = targets === null ? [] : selected.filter((id) => !targets.includes(id));
       inspectOpen = false;
@@ -298,8 +320,12 @@
     }
     busy = true;
     error = '';
+    const run = generation;
     try {
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
+      if (run !== generation) {
+        return;
+      }
       review = { ...reviewed, ids };
       confirmation = '';
       reviewError = '';
@@ -317,12 +343,16 @@
       return;
     }
     const current = review;
+    const run = generation;
     busy = true;
     reviewError = '';
     try {
       const { count } = await applyTrashReview({
         trashApplyDto: { action: current.action, ids: current.ids, token: current.token },
       });
+      if (run !== generation) {
+        return;
+      }
       const removed = current.ids;
       items = removed ? withoutIds(items, removed) : [];
       selected = removed ? selected.filter((id) => !removed.includes(id)) : [];
@@ -356,6 +386,7 @@
   onMount(() => {
     void refresh({ keep: false });
     const unsubscribers = [
+      websocketEvents.on('AssetLocalEffectsV1', onLocalEffects),
       // the viewer's own delete, and the server's trash and delete events (another tab, a job)
       eventManager.on({
         AssetsDelete: (ids) => {

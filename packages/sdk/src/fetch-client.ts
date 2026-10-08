@@ -6550,6 +6550,12 @@ export type ICloudEditBaselineDto = {
         kind: ICloudEditSyncHolderKind;
         id: string;
     };
+    /** Explicit local original-primary policy transition, separate from administrative baseline acceptance; binds the current immutable publication and explicit retention choice */
+    intent?: {
+        kind: ICloudEditOriginalRevertKind;
+        expectedPublicationId: string;
+        retention: ICloudEditRetentionPolicy;
+    };
     nativeVersion: string;
     /** An accessible owned stored source identity with verified current asset digest */
     receiptId: string;
@@ -6570,6 +6576,8 @@ export type ICloudEditEvidenceResponseDto = {
     items: {
         authority: {
             assetId: string;
+            /** Current immutable Frameleaf local publication decision for explicit policy CAS; never provider revision or admission guarantee */
+            currentPublicationId: string | null;
             evidenceType: EvidenceType;
             generation: number;
             holder: string;
@@ -29501,6 +29509,13 @@ export enum ICloudEditDeviceHolderKind {
 export enum ICloudEditSyncHolderKind {
     IcloudSync = "icloud-sync"
 }
+export enum ICloudEditOriginalRevertKind {
+    OriginalRevert = "original-revert"
+}
+export enum ICloudEditRetentionPolicy {
+    Keep = "keep",
+    Supersede = "supersede"
+}
 export enum EvidenceType {
     Administrative = "administrative"
 }
@@ -29511,10 +29526,6 @@ export enum ICloudEditPublicationChannel {
 export enum ICloudEditReceiptRole {
     Original = "original",
     EditRender = "edit-render"
-}
-export enum ICloudEditRetentionPolicy {
-    Keep = "keep",
-    Supersede = "supersede"
 }
 export enum ICloudIdentityRole {
     Original = "original",

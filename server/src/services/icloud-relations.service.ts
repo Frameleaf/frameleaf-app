@@ -56,6 +56,20 @@ export class ICloudRelationsService {
 
   @OnJob({ name: JobName.ICloudRelations, queue: QueueName.BackgroundTask })
   async handleLocalRelations(data: { id: string; ownerId: string }): Promise<JobStatus> {
+    if (queueExecution.getStore()) {
+      const ownerId = await this.repository.resolveEffectOwner();
+      if (ownerId) {
+        // Only the accepted actual queue claim determines this private target, never the payload hint.
+        for (let count = 0; count < 25; count++)
+          if (
+            !(await this.repository.dispatchOwnerEffects(ownerId, (bundle) =>
+              this.events.emit('AssetLocalEffects', bundle),
+            ))
+          )
+            return JobStatus.Success;
+        return JobStatus.Failed;
+      }
+    }
     const target = queueExecution.getStore() ? await this.repository.resolveLocalTarget() : data;
     for (let count = 0; count < 25; count++)
       if (await this.reconcile(target.id, target.ownerId)) return JobStatus.Success;

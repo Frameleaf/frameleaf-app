@@ -146,6 +146,7 @@ export class TrashService extends BaseService {
   async apply(auth: AuthDto, dto: TrashApplyDto): Promise<TrashResponseDto> {
     await this.requireTrashFor(dto.action);
     const ids = await this.chosenIds(auth, dto.action, dto.ids);
+    let sequenced: string[] = [];
     const changed = await this.trashRepository.applyReviewed(
       auth.user.id,
       dto.action,
@@ -155,13 +156,17 @@ export class TrashService extends BaseService {
         rows.length > 0 &&
         (!ids || rows.length === ids.length) &&
         trashReviewToken(auth.user.id, dto.action, rows) === dto.token,
+      auth,
+      (ids) => {
+        sequenced = ids;
+      },
     );
 
     if (changed === null) {
       throw new ConflictException(CHANGED_MESSAGE);
     }
 
-    await this.afterChange(auth, dto.action, changed);
+    await this.afterChange(auth, dto.action, changed, sequenced);
     await this.recordUtilityActivity(auth, dto, changed);
     return { count: changed.length };
   }
@@ -223,7 +228,10 @@ export class TrashService extends BaseService {
   }
 
   /** Tell every open tab, and queue the removal of files for permanent deletions. */
-  private async afterChange(auth: AuthDto, action: TrashReviewAction, assetIds: string[]) {
+  private async afterChange(auth: AuthDto, action: TrashReviewAction, assetIds: string[], sequenced: string[] = []) {
+    if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
+    // Only committed ordered transitions suppress the old broad event. Unassociated assets retain it.
+    assetIds = assetIds.filter((id) => !sequenced.includes(id));
     if (assetIds.length === 0) {
       return;
     }
@@ -263,11 +271,11 @@ export class TrashService extends BaseService {
     }
 
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
-    const restored = await this.trashRepository.restoreAll(ids);
-    if (restored.length > 0) {
-      await this.eventRepository.emit('AssetRestoreAll', { assetIds: restored, userId: auth.user.id });
-      this.logger.log(`Restored ${restored.length} asset(s) from trash`);
-    }
+    let sequenced: string[] = [];
+    const restored = await this.trashRepository.restoreAll(ids, auth, (ids) => {
+      sequenced = ids;
+    });
+    await this.afterChange(auth, TrashReviewAction.Restore, restored, sequenced);
 
     return { count: restored.length };
   }
@@ -287,9 +295,22 @@ export class TrashService extends BaseService {
 
   /** The whole-trash actions of the original API, over the same scope as a review, without one. */
   private async applyUnreviewed(auth: AuthDto, action: TrashReviewAction.RestoreAll | TrashReviewAction.Empty) {
+    let sequenced: string[] = [];
     const changed =
-      (await this.trashRepository.applyReviewed(auth.user.id, action, undefined, this.scopeOf(auth), () => true)) ?? [];
-    await this.afterChange(auth, action, changed);
+      (await (action === TrashReviewAction.Empty
+        ? this.trashRepository.applyReviewed(auth.user.id, action, undefined, this.scopeOf(auth), () => true)
+        : this.trashRepository.applyReviewed(
+            auth.user.id,
+            action,
+            undefined,
+            this.scopeOf(auth),
+            () => true,
+            auth,
+            (ids) => {
+              sequenced = ids;
+            },
+          ))) ?? [];
+    await this.afterChange(auth, action, changed, sequenced);
     return { count: changed.length };
   }
 

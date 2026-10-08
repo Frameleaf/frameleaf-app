@@ -73,6 +73,7 @@ describe('resumable asset byte commit boundaries', () => {
           locked = false;
         }
       }),
+      enqueueLocalEffects: vi.fn().mockResolvedValue(0),
       parts: vi.fn(),
       lockedMany: vi.fn(),
       publishLivePhoto: vi.fn(),
@@ -152,6 +153,53 @@ describe('resumable asset byte commit boundaries', () => {
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
 
+  it('awaits the durable local-effect wake after an edit publication before acknowledging it', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'published',
+      ingested: true,
+      metadata: {
+        ...harness.row().metadata,
+        sourceIdentity: { kind: 'icloud', cloudIdentifier: 'fixture', role: 'edit-render', editVersion: 'opaque' },
+      },
+    });
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    harness.uploads.enqueueLocalEffects.mockImplementation(async () => {
+      expect(harness.isLocked()).toBe(false);
+      entered.resolve();
+      await release.promise;
+      return 1;
+    });
+    let complete = false;
+    const pending = harness.service['finalize'](auth, harness.row().id, () => Promise.resolve()).then(() => {
+      complete = true;
+    });
+    await entered.promise;
+    expect(complete).toBe(false);
+    release.resolve();
+    await pending;
+    expect(harness.uploads.enqueueLocalEffects).toHaveBeenCalledOnce();
+  });
+  it('propagates a failed postcommit edit wake and repeats it without publishing again', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'published',
+      ingested: true,
+      metadata: {
+        ...harness.row().metadata,
+        sourceIdentity: { kind: 'icloud', cloudIdentifier: 'fixture', role: 'edit-render', editVersion: 'opaque' },
+      },
+    });
+    harness.uploads.enqueueLocalEffects.mockRejectedValueOnce(new Error('queue unavailable'));
+    await expect(harness.service['finalize'](auth, harness.row().id, () => Promise.resolve())).rejects.toThrow(
+      'queue unavailable',
+    );
+    expect(harness.row().state).toBe('published');
+    await harness.service['finalize'](auth, harness.row().id, () => Promise.resolve());
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.uploads.enqueueLocalEffects).toHaveBeenCalledTimes(2);
+  });
   it.runIf(process.env.FL285_VOLUME_FOLDER)(
     'retains the acknowledged prefix when a real constrained volume runs out of space',
     async () => {

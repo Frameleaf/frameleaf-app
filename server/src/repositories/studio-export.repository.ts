@@ -17,6 +17,7 @@ import {
 import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/derivative-privacy.repository.js';
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioExportRemoteReferenceTable,
@@ -289,6 +290,7 @@ export class StudioExportRepository {
     version: StudioExportVersion;
   }> {
     return this.db.transaction().execute(async (tx) => {
+      await holdSourceAdmission(tx, operation.snapshot);
       const created = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       const row = await tx
         .insertInto('studio_export_version')

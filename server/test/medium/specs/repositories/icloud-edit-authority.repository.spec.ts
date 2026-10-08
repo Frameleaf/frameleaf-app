@@ -8,26 +8,46 @@ import { ICloudIdentityController } from 'src/controllers/icloud-identity.contro
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudEditBaselineSchema, ICloudEditSuccessorSchema } from 'src/dtos/icloud-identity.dto.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, Permission, SharedLinkType } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  MediaOperationDestination,
+  MediaOperationKind,
+  Permission,
+  SharedLinkType,
+} from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import {
   AssetUploadResource,
   AssetUploadResourceRepository,
 } from 'src/repositories/asset-upload-resource.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -35,6 +55,11 @@ import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { initializeEffectiveConfig } from 'src/utils/config.js';
+import { StudioDestination } from 'src/utils/studio-resources.js';
+import { TrashReviewAction } from 'src/utils/trash-review.js';
 import { canonicalTestContext, expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
@@ -51,6 +76,11 @@ describe('administrative iCloud edit authority', () => {
   let uploads: AssetUploadResourceRepository;
   beforeAll(async () => {
     db = await getKyselyDB();
+    await initializeEffectiveConfig({
+      configRepo: new ConfigRepository(),
+      metadataRepo: new SystemMetadataRepository(db),
+      logger: LoggingRepository.create(),
+    });
     await expectCanonicalTables(db, [
       'icloud_edit_authority',
       'icloud_edit_version',
@@ -143,6 +173,209 @@ describe('administrative iCloud edit authority', () => {
     await db.updateTable('asset').set({ status: AssetStatus.Trashed }).where('id', '=', f.asset.id).execute();
     await expect(edits.discover(f.auth, f.asset.id)).rejects.toThrow('edit_evidence_unavailable');
   });
+  it('C2 explicit original-revert uses actual authenticated HTTP discovery and strict policy intent', async () => {
+    const f = await fixture(),
+      row = await resource(f, 'before-original-revert');
+    await edits.successor(f.auth, decision(f, row));
+    const prior = await publish(row);
+    const authService = newMediumService(AuthService, {
+      database: db,
+      real: [CryptoRepository, SessionRepository, UserRepository, ApiKeyRepository, SharedLinkRepository],
+      mock: [LoggingRepository],
+    }).sut;
+    const relations = new ICloudRelationsService(new ICloudRelationsRepository(db), {
+      emit: async () => {},
+    } as unknown as EventRepository);
+    const identityService = new ICloudIdentityService(
+      identities,
+      new IntegrityRepository(db),
+      LoggingRepository.create(),
+      relations,
+    );
+    const http = await controllerSetup(ICloudIdentityController, [
+      { provide: ICloudIdentityService, useValue: identityService },
+      { provide: ICloudAuditService, useValue: {} },
+      { provide: AuthService, useValue: authService },
+    ]);
+    try {
+      const token = f.auth.session!.id;
+      const found = await request(http.getHttpServer())
+        .get('/icloud-sync/edits/evidence')
+        .set('Authorization', 'Bearer ' + token)
+        .query({ assetId: f.asset.id })
+        .expect(200);
+      expect(found.headers['cache-control']).toBe('private, no-store');
+      const publicationId = found.body.items[0].authority.currentPublicationId;
+      expect(publicationId).toBeDefined();
+      const body = {
+        ...f.baseline,
+        requestId: randomUUID(),
+        expectedGeneration: f.authority.generation,
+        nativeVersion: 'explicit-local-original-revert',
+        intent: { kind: 'original-revert', expectedPublicationId: publicationId, retention: 'keep' },
+      };
+      await request(http.getHttpServer()).post('/icloud-sync/edits/baseline').send(body).expect(401);
+      await request(http.getHttpServer())
+        .post('/icloud-sync/edits/baseline')
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ...body, intent: { ...body.intent, providerRevision: 1 } })
+        .expect(400);
+      await request(http.getHttpServer())
+        .post('/icloud-sync/edits/baseline')
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ...body, requestId: randomUUID(), intent: { ...body.intent, expectedPublicationId: randomUUID() } })
+        .expect(409);
+      const result = await request(http.getHttpServer())
+        .post('/icloud-sync/edits/baseline')
+        .set('Authorization', 'Bearer ' + token)
+        .send(body)
+        .expect(200);
+      expect(result.body.versionId).toBe(f.authority.versionId);
+      expect(result.body.evidenceType).toBe('administrative');
+      await request(http.getHttpServer())
+        .post('/icloud-sync/edits/baseline')
+        .set('Authorization', 'Bearer ' + token)
+        .send(body)
+        .expect(200, result.body);
+      const asset = await db
+        .selectFrom('asset')
+        .select('stackId')
+        .where('id', '=', prior.resultAssetId!)
+        .executeTakeFirstOrThrow();
+      expect(
+        (
+          await db
+            .selectFrom('stack')
+            .select('primaryAssetId')
+            .where('id', '=', asset.stackId!)
+            .executeTakeFirstOrThrow()
+        ).primaryAssetId,
+      ).toBe(f.asset.id);
+      expect(
+        await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', f.user.id).execute(),
+      ).toHaveLength(2);
+      expect(JSON.stringify(result.body)).not.toMatch(/"(?:originalPath|metadata|token|fileName)"\s*:/);
+    } finally {
+      await http.close();
+    }
+  });
+  it.each(['pin-expiry', 'locked'] as const)(
+    'C2 original-revert refuses after %s during sorted asset wait and rolls back the whole policy',
+    async (change) => {
+      const f = await fixture(),
+        row = await resource(f, 'before-revert-wait');
+      const accepted = await edits.successor(f.auth, decision(f, row)),
+        published = await publish(row);
+      const policy = (await edits.discover(f.auth, f.asset.id)).items[0].authority!.currentPublicationId!;
+      if (change === 'pin-expiry') await new AssetRepository(db).lock([f.asset.id], AssetLockReason.Marked, f.user.id);
+      let blockerPid = 0;
+      const entered = Promise.withResolvers<void>(),
+        release = Promise.withResolvers<void>();
+      const blocker = db.connection().execute((connection) =>
+        connection.transaction().execute(async (tx) => {
+          const original = await tx
+            .selectFrom('asset')
+            .select('stackId')
+            .where('id', '=', f.asset.id)
+            .executeTakeFirstOrThrow();
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('stackId', '=', original.stackId!)
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+          blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid;
+          entered.resolve();
+          await release.promise;
+          if (change === 'locked')
+            await new AssetRepository(db).lock([f.asset.id], AssetLockReason.Marked, f.user.id, tx);
+        }),
+      );
+      await entered.promise;
+      if (change === 'pin-expiry')
+        await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '2 seconds' WHERE id=${f.auth.session!.id}::uuid`.execute(
+          db,
+        );
+      else if (change === 'locked')
+        await sql`UPDATE session SET "pinExpiresAt"=NULL WHERE id=${f.auth.session!.id}::uuid`.execute(db);
+      const requestBody = ICloudEditBaselineSchema.parse({
+        ...f.baseline,
+        requestId: randomUUID(),
+        expectedGeneration: f.authority.generation,
+        nativeVersion: 'explicit-revert-wait',
+        intent: { kind: 'original-revert', expectedPublicationId: policy, retention: 'keep' },
+      });
+      const pending = edits
+        .baseline(f.auth, requestBody)
+        .then(() => ({ success: true, error: undefined }))
+        .catch((error) => ({ success: false, error }));
+      try {
+        await expect
+          .poll(
+            async () => {
+              const { rows } = await sql<{
+                waiting: boolean;
+              }>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE ${blockerPid}=ANY(pg_blocking_pids(pid))) AS waiting`.execute(
+                db,
+              );
+              return rows[0].waiting;
+            },
+            { timeout: 4000, interval: 25 },
+          )
+          .toBe(true);
+        if (change === 'pin-expiry') {
+          await expect
+            .poll(
+              async () => {
+                const { rows } = await sql<{
+                  expired: boolean;
+                }>`SELECT "pinExpiresAt"<clock_timestamp() AS expired FROM session WHERE id=${f.auth.session!.id}::uuid`.execute(
+                  db,
+                );
+                return rows[0].expired;
+              },
+              { timeout: 4000, interval: 25 },
+            )
+            .toBe(true);
+        }
+      } finally {
+        release.resolve();
+        await blocker;
+      }
+      const result = await pending;
+      expect(result.success).toBe(false);
+      expect(result.error.message).toBe('edit_evidence_unavailable');
+      const authority = await db
+        .selectFrom('icloud_edit_authority')
+        .selectAll()
+        .where('ownerId', '=', f.user.id)
+        .where('item', '=', ITEM)
+        .executeTakeFirstOrThrow();
+      expect(authority.generation).toBe(f.authority.generation);
+      expect(authority.currentVersionId).toBe(accepted.versionId);
+      const current = await db
+        .selectFrom('asset')
+        .select('stackId')
+        .where('id', '=', published.resultAssetId!)
+        .executeTakeFirstOrThrow();
+      expect(
+        (
+          await db
+            .selectFrom('stack')
+            .select('primaryAssetId')
+            .where('id', '=', current.stackId!)
+            .executeTakeFirstOrThrow()
+        ).primaryAssetId,
+      ).toBe(published.resultAssetId);
+      expect(
+        await db.selectFrom('icloud_edit_decision').select('id').where('id', '=', requestBody.requestId).execute(),
+      ).toHaveLength(0);
+      expect(
+        await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', f.user.id).execute(),
+      ).toHaveLength(1);
+    },
+  );
   it('refuses oversized discovery instead of returning a silently truncated receipt set', async () => {
     const f = await fixture();
     for (let count = 0; count < 100; count++) {
@@ -670,6 +903,67 @@ describe('administrative iCloud edit authority', () => {
       ).currentVersionId,
     ).toBe(next.versionId);
   });
+  it('preserves committed stack provenance across an explicit administrative rebaseline', async () => {
+    const f = await fixture();
+    const first = await resource(f, 'first-managed');
+    await edits.successor(f.auth, decision(f, first));
+    const committed = await publish(first);
+    const next = await edits.baseline(f.auth, { ...f.baseline, requestId: randomUUID(), expectedGeneration: 1 });
+    const row = await resource(f, 'after-rebaseline');
+    const updated = { ...f, authority: next };
+    await edits.successor(f.auth, decision(updated, row));
+    const current = await publish(row);
+    const stack = await db.selectFrom('stack').selectAll().where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
+    expect(stack.primaryAssetId).toBe(current.resultAssetId);
+    expect(
+      (await db.selectFrom('asset').select('id').where('stackId', '=', stack.id).execute()).map((a) => a.id).sort(),
+    ).toEqual([f.asset.id, committed.resultAssetId!, current.resultAssetId!].sort());
+    const receipts = await db
+      .selectFrom('asset_local_effect')
+      .select([sql<string>`sequence::text`.as('sequence'), 'bundle'])
+      .where('ownerId', '=', f.user.id)
+      .orderBy('sequence')
+      .execute();
+    expect(receipts.map((r) => r.sequence)).toEqual(['1', '2']);
+    expect(receipts[0].bundle.stacks).toEqual([
+      {
+        stackId: stack.id,
+        primaryAssetId: committed.resultAssetId,
+        memberAssetIds: [f.asset.id, committed.resultAssetId!].sort(),
+      },
+    ]);
+  });
+  it('preserves an intervening manual primary instead of borrowing a prior policy receipt', async () => {
+    const f = await fixture(),
+      first = await resource(f, 'managed-before-manual');
+    const accepted = await edits.successor(f.auth, decision(f, first));
+    const committed = await publish(first);
+    const stack = await db.selectFrom('stack').selectAll().where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
+    await new StackRepository(db).update(stack.id, { primaryAssetId: f.asset.id }, {}, f.auth);
+    const row = await resource(f, 'after-manual');
+    await edits.successor(f.auth, decision(f, row, accepted.versionId));
+    await expect(publish(row)).rejects.toThrow('edit_manual_stack_conflict');
+    expect((await uploads.get(row.id, f.user.id)).state).toBe('verified');
+    expect(
+      (await db.selectFrom('stack').select('primaryAssetId').where('id', '=', stack.id).executeTakeFirstOrThrow())
+        .primaryAssetId,
+    ).toBe(f.asset.id);
+    expect(
+      (
+        await db
+          .selectFrom('icloud_edit_authority')
+          .select('currentVersionId')
+          .where('ownerId', '=', f.user.id)
+          .executeTakeFirstOrThrow()
+      ).currentVersionId,
+    ).toBe(accepted.versionId);
+    expect(
+      (await db.selectFrom('asset').select('id').where('stackId', '=', stack.id).execute()).map((a) => a.id).sort(),
+    ).toEqual([f.asset.id, committed.resultAssetId!].sort());
+    expect(
+      await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', f.user.id).execute(),
+    ).toHaveLength(2);
+  });
   it('holds the same item fence through first publication while a baseline decision waits', async () => {
     const f = await fixture();
     const row = await resource(f, 'held');
@@ -768,15 +1062,20 @@ describe('administrative iCloud edit authority', () => {
     const f = await fixture();
     let current = f.authority.versionId;
     let last!: AssetUploadResource;
-    for (let index = 0; index < 20; index++) {
-      const row = await resource(f, `edit-${index}`);
-      last = row;
-      const accepted = await edits.successor(f.auth, decision(f, row, current));
-      await publish(row);
-      const token = randomUUID();
-      await uploads.claimIngestion(row.id, f.user.id, token);
-      await uploads.completeIngestion(row.id, f.user.id, token);
-      current = accepted.versionId;
+    // Prepare through the actual upload API up to its genuine four-active-resource
+    // limit. Every decision/publication/ingestion stays sequential, and the next
+    // preparation wave starts only after this entire wave has settled.
+    for (let start = 0; start < 20; start += 4) {
+      const rows = await Promise.all(Array.from({ length: 4 }, (_, offset) => resource(f, `edit-${start + offset}`)));
+      for (const row of rows) {
+        last = row;
+        const accepted = await edits.successor(f.auth, decision(f, row, current));
+        await publish(row);
+        const token = randomUUID();
+        await uploads.claimIngestion(row.id, f.user.id, token);
+        await uploads.completeIngestion(row.id, f.user.id, token);
+        current = accepted.versionId;
+      }
     }
     const excess = await resource(f, 'edit-21');
     await edits.successor(f.auth, decision(f, excess, current));
@@ -865,6 +1164,266 @@ describe('administrative iCloud edit authority', () => {
     expect(
       (await db.selectFrom('asset').select('status').where('id', '=', f.asset.id).executeTakeFirstOrThrow()).status,
     ).toBe('active');
+  });
+  it('C2 RED: an associated Locked cascade captures old interactive admissions and preserves background work', async () => {
+    const f = await fixture(),
+      assets = new AssetRepository(db),
+      operations = new MediaOperationRepository(db);
+    const { asset: other } = await f.ctx.newAsset({ ownerId: f.user.id, type: AssetType.Image });
+    const { sut: resources } = newMediumService(StudioResourceService, {
+      database: db,
+      real: [AccessRepository, AssetRepository, CryptoRepository, IntegrityRepository],
+      mock: [LoggingRepository],
+    });
+    const context = {
+      projectId: randomUUID(),
+      ownerId: f.user.id,
+      revision: 1,
+      graph: { tracks: [{ clips: [{ assetId: other.id }] }] },
+      destination: StudioDestination.Local,
+    };
+    const before = (await resources.resolveProjectResources(f.auth, context)).manifest;
+    expect(before.complete).toBe(true);
+    const oldStream = await operations.create({
+      ownerId: f.user.id,
+      kind: MediaOperationKind.StudioPreviewStream,
+      destination: MediaOperationDestination.Local,
+      label: 'actual old interactive admission',
+      snapshot: {
+        kind: 'studio-preview-stream',
+        sourceEpochs: before.sourceEpochs,
+        interactiveAdmissionView: before.interactiveAdmissionView,
+      },
+      settings: {},
+    });
+    const background = await operations.create({
+      ownerId: f.user.id,
+      kind: MediaOperationKind.StudioExport,
+      destination: MediaOperationDestination.Local,
+      label: 'actual owner background admission',
+      snapshot: { kind: 'studio-export', sourceEpochs: before.sourceEpochs },
+      settings: {},
+    });
+    await assets.lock([f.asset.id], AssetLockReason.Marked, f.user.id);
+    await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '2 minutes' WHERE id=${f.auth.session!.id}::uuid`.execute(
+      db,
+    );
+    const stack = await new StackRepository(db).create({ ownerId: f.user.id }, [f.asset.id, other.id], f.auth);
+    expect(stack.lockedAssetIds).toContain(other.id);
+    const effect = await db
+      .selectFrom('asset_local_effect')
+      .select('bundle')
+      .where('ownerId', '=', f.user.id)
+      .executeTakeFirstOrThrow();
+    expect(effect.bundle.lockedCascade).toEqual({
+      assetIds: [other.id],
+      interactiveAdmissions: [
+        { id: oldStream.id, ownerId: f.user.id, kind: MediaOperationKind.StudioPreviewStream, projectId: null },
+      ],
+    });
+    expect((await operations.getForOwner(background.id, f.user.id))!.cancelRequestedAt).toBeNull();
+    expect((await AssetLocalEffectRepository.sourceEpochs(db, [other.id]))[0].epoch).toBe('0');
+    const actualAuth = await currentAuth(db, f.user.id, f.auth.session!.id, false);
+    expect(actualAuth).toBeDefined();
+    const fresh = (await resources.resolveProjectResources(actualAuth!, context)).manifest;
+    expect(fresh.complete).toBe(true);
+    const newStream = await operations.create({
+      ownerId: f.user.id,
+      kind: MediaOperationKind.StudioPreviewStream,
+      destination: MediaOperationDestination.Local,
+      label: 'new revealed Locked admission',
+      snapshot: {
+        kind: 'studio-preview-stream',
+        sourceEpochs: fresh.sourceEpochs,
+        interactiveAdmissionView: fresh.interactiveAdmissionView,
+      },
+      settings: {},
+    });
+    expect(
+      (effect.bundle.lockedCascade as { interactiveAdmissions: { id: string }[] }).interactiveAdmissions.map(
+        (row) => row.id,
+      ),
+    ).not.toContain(newStream.id);
+    // Delay only the receiver's asynchronous frame-cleanup boundary. Security facts,
+    // bundle membership and actual operation cancellation remain real PostgreSQL state.
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const revocations = new StudioRevocationService(
+      LoggingRepository.create(),
+      new StudioProjectRepository(db),
+      { forgetInteractiveAdmissions: () => {}, forgetSourceAdmissions: () => {} } as never,
+      {
+        revokeAdmissions: async (ids: string[]) => {
+          expect(ids).toEqual([oldStream.id]);
+          entered.resolve();
+          await release.promise;
+        },
+      } as never,
+      { revokeAdmissions: async () => {} } as never,
+      operations,
+    );
+    const delivery = revocations.onAssetLocalEffects(effect.bundle as never);
+    await entered.promise;
+    const newest = await operations.create({
+      ownerId: f.user.id,
+      kind: MediaOperationKind.StudioPreviewStream,
+      destination: MediaOperationDestination.Local,
+      label: 'actual admission during delayed old effect',
+      snapshot: {
+        kind: 'studio-preview-stream',
+        sourceEpochs: fresh.sourceEpochs,
+        interactiveAdmissionView: fresh.interactiveAdmissionView,
+      },
+      settings: {},
+    });
+    release.resolve();
+    await delivery;
+    expect((await operations.getForOwner(oldStream.id, f.user.id))!.cancelRequestedAt).not.toBeNull();
+    for (const id of [newStream.id, newest.id, background.id])
+      expect((await operations.getForOwner(id, f.user.id))!.cancelRequestedAt).toBeNull();
+    // Duplicate immutable delivery still targets the old operation exclusively.
+    await revocations.onAssetLocalEffects(effect.bundle as never);
+    expect((await operations.getForOwner(newest.id, f.user.id))!.cancelRequestedAt).toBeNull();
+  });
+
+  it('C2 RED: ordinary stack writes cannot attach a foreign asset outside the accepted item family', async () => {
+    const f = await fixture(),
+      { user: other } = await f.ctx.newUser(),
+      { asset: foreign } = await f.ctx.newAsset({ ownerId: other.id });
+    await expect(new StackRepository(db).create({ ownerId: f.user.id }, [foreign.id], f.auth)).rejects.toThrow(
+      'edit_evidence_unavailable',
+    );
+    expect(
+      (await db.selectFrom('asset').select('stackId').where('id', '=', foreign.id).executeTakeFirstOrThrow()).stackId,
+    ).toBeNull();
+    expect(await db.selectFrom('stack').select('id').where('ownerId', '=', f.user.id).execute()).toEqual([]);
+  });
+
+  it('C2 RED: associated manual stack create/primary/delete commit in the same owner-local order', async () => {
+    const f = await fixture();
+    const { asset: other } = await f.ctx.newAsset({ ownerId: f.user.id });
+    const stacks = new StackRepository(db);
+    const before = await db.selectFrom('icloud_edit_authority').selectAll().where('ownerId', '=', f.user.id).execute();
+    const sequenced: boolean[] = [];
+    const stack = await stacks.create({ ownerId: f.user.id }, [other.id, f.asset.id], f.auth, (value) => {
+      sequenced.push(value);
+    });
+    expect(stack.primaryAssetId).toBe(other.id);
+    await stacks.update(stack.id, { primaryAssetId: f.asset.id }, {}, f.auth, (value) => {
+      sequenced.push(value);
+    });
+    expect((await stacks.getById(stack.id))!.primaryAssetId).toBe(f.asset.id);
+    await stacks.delete(stack.id, f.auth, (value) => {
+      sequenced.push(value);
+    });
+    expect(await stacks.getById(stack.id)).toBeUndefined();
+    const effects = await db
+      .selectFrom('asset_local_effect')
+      .select('bundle')
+      .where('ownerId', '=', f.user.id)
+      .orderBy('sequence')
+      .execute();
+    expect(effects.map((row) => row.bundle.origin)).toEqual([{ kind: 'stack' }, { kind: 'stack' }, { kind: 'stack' }]);
+    expect(sequenced).toEqual([true, true, true]);
+    expect(await db.selectFrom('icloud_edit_authority').selectAll().where('ownerId', '=', f.user.id).execute()).toEqual(
+      before,
+    );
+    expect(
+      (await db.selectFrom('asset').select('stackId').where('id', '=', f.asset.id).executeTakeFirstOrThrow()).stackId,
+    ).toBeNull();
+  });
+
+  it('C2 RED: ordinary associated Trash and restore commit distinct ordered intents without changing authority or primary', async () => {
+    const f = await fixture();
+    const trash = new TrashRepository(db);
+    const before = await db.selectFrom('icloud_edit_authority').selectAll().where('ownerId', '=', f.user.id).execute();
+    const sequenced: string[][] = [];
+    expect(
+      await trash.applyReviewed(
+        f.user.id,
+        TrashReviewAction.Trash,
+        [f.asset.id],
+        {},
+        (rows) => rows.length === 1,
+        f.auth,
+        (ids) => {
+          sequenced.push(ids);
+        },
+      ),
+    ).toEqual([f.asset.id]);
+    expect(
+      await trash.restoreAll([f.asset.id], f.auth, (ids) => {
+        sequenced.push(ids);
+      }),
+    ).toEqual([f.asset.id]);
+    const effects = await db
+      .selectFrom('asset_local_effect')
+      .select([sql<string>`sequence::text`.as('sequence'), 'bundle'])
+      .where('ownerId', '=', f.user.id)
+      .orderBy('sequence')
+      .execute();
+    expect(effects.map((row) => row.bundle.origin)).toEqual([{ kind: 'trash' }, { kind: 'restore' }]);
+    expect(sequenced).toEqual([[f.asset.id], [f.asset.id]]);
+    expect(await db.selectFrom('icloud_edit_authority').selectAll().where('ownerId', '=', f.user.id).execute()).toEqual(
+      before,
+    );
+    expect(
+      await db
+        .selectFrom('asset')
+        .select(['status', 'deletedAt', 'stackId'])
+        .where('id', '=', f.asset.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ status: AssetStatus.Active, deletedAt: null, stackId: null });
+  });
+
+  it('C2 RED: accepted device supersede publishes once and moves only the prior render to reversible Trash', async () => {
+    const f = await fixture();
+    const first = await resource(f, 'accepted-first');
+    const firstDecision = await edits.successor(f.auth, decision(f, first));
+    const prior = await publish(first);
+    expect(prior.state).toBe('published');
+    const next = await resource(f, 'accepted-successor');
+    const successor = await edits.successor(f.auth, decision(f, next, firstDecision.versionId, 'supersede'));
+
+    const committed = await publish(next);
+
+    expect(committed.state).toBe('published');
+    expect(committed.resultAssetId).not.toBe(prior.resultAssetId);
+    const assets = await db
+      .selectFrom('asset')
+      .select(['id', 'status', 'deletedAt', 'stackId'])
+      .where('id', 'in', [f.asset.id, prior.resultAssetId!, committed.resultAssetId!])
+      .execute();
+    expect(assets.find((asset) => asset.id === prior.resultAssetId)).toMatchObject({
+      status: AssetStatus.Trashed,
+      deletedAt: expect.any(Date),
+    });
+    expect(assets.find((asset) => asset.id === f.asset.id)).toMatchObject({
+      status: AssetStatus.Active,
+      deletedAt: null,
+    });
+    const current = assets.find((asset) => asset.id === committed.resultAssetId)!;
+    expect(current).toMatchObject({ status: AssetStatus.Active, deletedAt: null });
+    expect(current.stackId).not.toBeNull();
+    expect(new Set(assets.map((asset) => asset.stackId))).toEqual(new Set([current.stackId]));
+    expect(
+      await db
+        .selectFrom('stack')
+        .select('primaryAssetId')
+        .where('id', '=', current.stackId!)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ primaryAssetId: committed.resultAssetId });
+    expect(
+      await db.selectFrom('icloud_edit_version').select('id').where('ownerId', '=', f.user.id).execute(),
+    ).toHaveLength(3);
+    expect(
+      await db
+        .selectFrom('icloud_edit_authority')
+        .select('currentVersionId')
+        .where('ownerId', '=', f.user.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ currentVersionId: successor.versionId });
+    expect((await publish(next)).resultAssetId).toBe(committed.resultAssetId);
   });
   it('uses real sync recovery commit and file digests, with decision refusal and post-takeover settlement', async () => {
     const f = await fixture();

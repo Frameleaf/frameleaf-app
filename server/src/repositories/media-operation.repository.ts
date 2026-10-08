@@ -12,6 +12,7 @@ import {
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -233,9 +234,12 @@ export class MediaOperationRepository {
     }
   }
   async create(operation: MediaOperationCreate): Promise<MediaOperation> {
-    const row = await this.write((db) =>
-      db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow(),
-    );
+    const row = await this.write(async (db) => {
+      await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
+      const created = await db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+      await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
+      return created;
+    });
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
@@ -287,6 +291,7 @@ export class MediaOperationRepository {
       if (!held) {
         throw new ConflictException('The reverse-conform revision or edit lease changed');
       }
+      await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
       return tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
     });
     this.changed(row as unknown as MediaOperationChange);
@@ -1349,6 +1354,26 @@ export class MediaOperationRepository {
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .execute();
   }
+  /** Exact immutable source admissions only: a late effect cannot select current work by project. */
+  async listRevokedSourceAdmissions(
+    revocations: readonly { assetId: string; priorEpoch: string }[],
+  ): Promise<Array<{ id: string; ownerId: string; kind: string; projectId: string | null }>> {
+    if (revocations.length === 0) return [];
+    const { rows } = await sql<{ id: string; ownerId: string; kind: string; projectId: string | null }>`
+      SELECT operation.id,operation."ownerId",operation.kind,operation."projectId" FROM media_operation operation
+      WHERE operation.kind IN (${sql.join([MediaOperationKind.StudioExport, MediaOperationKind.StudioReverseConform, MediaOperationKind.StudioPreview, MediaOperationKind.StudioPreviewStream])})
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(operation.snapshot->'sourceEpochs')='array'
+        THEN operation.snapshot->'sourceEpochs' ELSE '[]'::jsonb END) admission
+        JOIN jsonb_to_recordset(${revocations}::jsonb) AS revoked("assetId" text,"priorEpoch" text)
+          ON admission->>'assetId'=revoked."assetId"
+        JOIN asset source ON source.id::text=revoked."assetId" AND source."ownerId"::text=admission->>'ownerId'
+        WHERE CASE WHEN admission->>'epoch' ~ '^(0|[1-9][0-9]*)$' AND revoked."priorEpoch" ~ '^(0|[1-9][0-9]*)$'
+          THEN (admission->>'epoch')::numeric <= revoked."priorEpoch"::numeric ELSE false END)
+      ORDER BY operation.id LIMIT 10001`.execute(this.db);
+    if (rows.length > 10_000) throw new ConflictException('studio_source_revocation_too_large');
+    return rows;
+  }
+
   /**
    * Merge into an open preview stream's signalling record (FL-96). Guarded in the WHERE clause:
    * only an unfinished `studio_preview_stream`, and with `negotiation` only while the record is
@@ -1792,12 +1817,14 @@ export class MediaOperationRepository {
   }> {
     const done = await this.db.transaction().execute(async (trx) => {
       const { operation, value } = await bind(trx);
+      await holdSourceAdmission(trx, operation.snapshot, operation.ownerId);
       const created = (await trx
         .insertInto('media_operation')
         .values(operation)
         .returningAll()
         .executeTakeFirstOrThrow()) as unknown as MediaOperation;
       await after(trx, created, value);
+      await holdSourceAdmission(trx, operation.snapshot, operation.ownerId);
       return { operation: created, value };
     });
     this.changed(done.operation as unknown as MediaOperationChange);

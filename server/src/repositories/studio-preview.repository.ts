@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
@@ -64,12 +65,27 @@ export class StudioPreviewRepository {
    * the second condition is so that a mistake in the key could never hand one account's row to
    * another.
    */
-  async upsert(frame: StudioPreviewFrameCreate): Promise<{
+  async upsert(
+    frame: StudioPreviewFrameCreate,
+    admission?: Record<string, unknown>,
+  ): Promise<{ frame: StudioPreviewFrame; created: boolean }> {
+    return this.db.transaction().execute(async (tx) => {
+      if (admission) await holdSourceAdmission(tx, admission, frame.ownerId);
+      const result = await this.upsertWithin(tx, frame);
+      if (admission) await holdSourceAdmission(tx, admission, frame.ownerId);
+      return result;
+    });
+  }
+  private async upsertWithin(
+    db: Kysely<DB>,
+    frame: StudioPreviewFrameCreate,
+  ): Promise<{
     frame: StudioPreviewFrame;
     created: boolean;
   }> {
     if (isConsumerPreview(frame.cacheKey)) {
-      return this.db.transaction().execute(async (tx) => {
+      {
+        const tx = db;
         const inserted = await tx
           .insertInto('studio_preview_frame')
           .values(frame)
@@ -90,9 +106,9 @@ export class StudioPreviewRepository {
           throw new ConflictException('Preview admission changed; retry the request');
         }
         return { frame: existing as unknown as StudioPreviewFrame, created: false };
-      });
+      }
     }
-    const inserted = await this.db
+    const inserted = await db
       .insertInto('studio_preview_frame')
       .values(frame)
       .onConflict((builder) => builder.column('cacheKey').doNothing())
@@ -101,7 +117,7 @@ export class StudioPreviewRepository {
     if (inserted) {
       return { frame: inserted as unknown as StudioPreviewFrame, created: true };
     }
-    const revived = await this.db
+    const revived = await db
       .updateTable('studio_preview_frame')
       .set({
         status: StudioPreviewStatus.Pending,
@@ -137,7 +153,7 @@ export class StudioPreviewRepository {
      * shorter-lived than frame retention, so a frame re-requested after its first grant expired
      * must carry the new one, or it would be refused as unauthorized while still current.
      */
-    const refreshed = await this.db
+    const refreshed = await db
       .updateTable('studio_preview_frame')
       .set({
         seekGeneration: frame.seekGeneration,
@@ -175,18 +191,27 @@ export class StudioPreviewRepository {
     }
   }
   async attachAdmissionOperation(tx: Transaction<DB>, frame: StudioPreviewFrame, operationId: string): Promise<void> {
+    const operation = await tx
+      .selectFrom('media_operation')
+      .select(['ownerId', 'snapshot'])
+      .where('id', '=', operationId)
+      .executeTakeFirstOrThrow();
+    if (operation.ownerId !== frame.ownerId) throw new ConflictException('Preview admission changed');
+    await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
     const attached = await tx
       .updateTable('studio_preview_frame')
       .set({ operationId, status: StudioPreviewStatus.Rendering })
       .where('id', '=', frame.id)
       .where('cacheKey', '=', frame.cacheKey)
       .where('ownerId', '=', frame.ownerId)
+      .where('updateId', '=', frame.updateId)
       .where('status', '=', StudioPreviewStatus.Pending)
       .where('operationId', 'is', null)
       .executeTakeFirst();
     if (Number(attached.numUpdatedRows) !== 1) {
       throw new ConflictException('Preview admission was retired before attachment');
     }
+    await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
   }
   /** Fence and actual cancellation share a commit; a failed cancellation keeps a durable fence. */
   async retireConsumer(
@@ -389,14 +414,30 @@ export class StudioPreviewRepository {
       .executeTakeFirst();
     return !!admitted;
   }
-  async markRendering(id: string, operationId: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('studio_preview_frame')
-      .set({ status: StudioPreviewStatus.Rendering, operationId })
-      .where('id', '=', id)
-      .where('status', '=', StudioPreviewStatus.Pending)
-      .executeTakeFirst();
-    return Number(result.numUpdatedRows) > 0;
+  async markRendering(id: string, operationId: string, observed?: StudioPreviewFrame): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const operation = await tx
+        .selectFrom('media_operation')
+        .select(['ownerId', 'snapshot'])
+        .where('id', '=', operationId)
+        .executeTakeFirstOrThrow();
+      await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+      const result = await tx
+        .updateTable('studio_preview_frame')
+        .set({ status: StudioPreviewStatus.Rendering, operationId })
+        .where('id', '=', id)
+        .where('ownerId', '=', operation.ownerId)
+        .where('status', '=', StudioPreviewStatus.Pending)
+        .$if(!!observed, (qb) =>
+          qb
+            .where('cacheKey', '=', observed!.cacheKey)
+            .where('updateId', '=', observed!.updateId)
+            .where('operationId', 'is', null),
+        )
+        .executeTakeFirst();
+      await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+      return Number(result.numUpdatedRows) > 0;
+    });
   }
   /**
    * Publish a validated frame.
@@ -630,6 +671,16 @@ export class StudioPreviewRepository {
    * FL-90: frames of these projects that can still be delivered or are still being made, for
    * revocation. With `ownerId`, only that account's frames.
    */
+  async listLiveForAdmissions(operationIds: readonly string[]): Promise<StudioPreviewFrame[]> {
+    if (operationIds.length === 0) return [];
+    return (await this.db
+      .selectFrom('studio_preview_frame')
+      .selectAll()
+      .where('operationId', 'in', [...operationIds])
+      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering, StudioPreviewStatus.Ready])
+      .execute()) as unknown as StudioPreviewFrame[];
+  }
+
   async listLiveForProjects(projectIds: readonly string[], ownerId?: string): Promise<StudioPreviewFrame[]> {
     if (projectIds.length === 0) {
       return [];
