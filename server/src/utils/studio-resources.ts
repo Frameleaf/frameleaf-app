@@ -1127,7 +1127,7 @@ export const extractStudioResourceReferences = (graph: unknown): StudioReference
           register(composition, `/timeline/compositions/${index}`, isRecord(composition) ? composition.id : undefined);
         }
       }
-    } else if (Array.isArray(graph.tracks)) register(graph, '', graph.id);
+    } else if (Array.isArray(graph.tracks) && 'id' in graph) register(graph, '', graph.id);
     if (Array.isArray(graph.sequences)) {
       for (const [index, definition] of graph.sequences.entries()) {
         register(definition, `/sequences/${index}`, isRecord(definition) ? definition.id : undefined);

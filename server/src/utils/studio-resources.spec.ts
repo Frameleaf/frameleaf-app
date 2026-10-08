@@ -188,6 +188,46 @@ describe(isExternalLocator.name, () => {
 });
 
 describe(extractStudioResourceReferences.name, () => {
+  it('retains id-less legacy resource graphs without inventing an authoritative sequence', () => {
+    expect(extractStudioResourceReferences({ title: 'Captured cut', tracks: [] })).toEqual({
+      references: [],
+      violations: [],
+      sequences: new Map(),
+    });
+    const result = extractStudioResourceReferences({
+      title: 'Captured cut',
+      tracks: [{ clips: [{ kind: 'video', assetId }] }],
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.sequences.size).toBe(0);
+    expect(result.references).toEqual([
+      expect.objectContaining({ kind: StudioResourceKind.LibraryAsset, id: assetId, graphPath: '/tracks/0/clips/0' }),
+    ]);
+  });
+
+  it('id-less legacy graphs still refuse unbound nested placements', () => {
+    const result = extractStudioResourceReferences({
+      title: 'Captured cut',
+      tracks: [{ clips: [{ kind: 'sequence', sequenceId: 'child' }] }],
+      sequences: [{ id: 'child', tracks: [] }],
+    });
+    expect(result.sequences.keys().toArray()).toEqual(['child']);
+    expect(result.violations).toContainEqual(
+      expect.objectContaining({ reason: StudioRefusalReason.InvalidId, graphPath: '/tracks/0/clips/0' }),
+    );
+  });
+
+  it.each([null, '', 42, 'https://evil.test', undefined])(
+    'explicit malformed legacy sequence id remains invalid: %j',
+    (id) => {
+      const result = extractStudioResourceReferences({ id, tracks: [] });
+      expect(result.violations).toContainEqual(
+        expect.objectContaining({ reason: StudioRefusalReason.InvalidId, graphPath: '' }),
+      );
+      expect(result.sequences.size).toBe(0);
+    },
+  );
+
   it('registers canonical containers only and scans unused definitions', () => {
     const graph = {
       id: 'main',
