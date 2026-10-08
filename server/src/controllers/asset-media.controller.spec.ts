@@ -1,10 +1,14 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetMetadataKey, Permission } from 'src/enum.js';
+import { AssetMetadataKey, CacheControl, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -196,6 +200,40 @@ describe(AssetMediaController.name, () => {
       it('should redirect if size=original is requested', async () => {
         const { status } = await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/thumbnail?size=original`);
         expect(status).toBe(302);
+      });
+
+      it.each(['preview', 'fullsize'])('refuses explicit HDR for a selected SDR restoration (%s)', async (size) => {
+        const folder = await mkdtemp(join(tmpdir(), 'frameleaf-restoration-hdr-'));
+        try {
+          const path = join(folder, 'restored.jpg');
+          const bytes = Buffer.from('authored SDR restoration fixture');
+          await writeFile(path, bytes);
+          restorationService.getPlaybackChoice.mockResolvedValue({
+            file: new ImmichFileResponse({
+              path,
+              contentType: 'image/jpeg',
+              cacheControl: CacheControl.PrivateWithoutCache,
+            }),
+            revalidate: true,
+          });
+          const id = factory.uuid();
+          for (const dynamicRange of ['auto', 'sdr', undefined]) {
+            const response = await request(ctx.getHttpServer()).get(
+              `/assets/${id}/thumbnail?size=${size}${dynamicRange ? `&dynamicRange=${dynamicRange}` : ''}`,
+            );
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual(bytes);
+          }
+          const response = await request(ctx.getHttpServer()).get(
+            `/assets/${id}/thumbnail?size=${size}&dynamicRange=hdr`,
+          );
+          expect(response.status).toBe(404);
+          expect(response.body.message).toBe('The selected restored photo has no HDR rendition');
+          expect(service.viewThumbnail).not.toHaveBeenCalled();
+        } finally {
+          restorationService.getPlaybackChoice.mockResolvedValue({ file: null, revalidate: false });
+          await rm(folder, { recursive: true, force: true });
+        }
       });
 
       it('serves the ordinary edited face preview even when a restoration is selected', async () => {

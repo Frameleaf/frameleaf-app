@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Next,
+  NotFoundException,
   Param,
   ParseFilePipe,
   Post,
@@ -65,11 +66,14 @@ export class AssetMediaController {
     view: 'video' | 'preview' | 'fullsize',
     ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
     via: FrameleafVia | null = null,
+    dynamicRange?: AssetMediaOptionsDto['dynamicRange'],
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
     // FL-161: through the relay a full-size restored result is refused like an original
     const fullSizeAllowed = view === 'fullsize' ? await this.service.fullSizeAllowed(via) : true;
     const choice = await this.restorationService.getPlaybackChoice(auth, id, view, fullSizeAllowed);
     if (choice.file) {
+      // Restoration stills currently have SDR output only; never substitute one for an explicit HDR request.
+      if (dynamicRange === 'hdr') throw new NotFoundException('The selected restored photo has no HDR rendition');
       return choice.file;
     }
     const response = await ordinary();
@@ -207,7 +211,14 @@ export class AssetMediaController {
     }
     const viewThumbnailRes =
       view && !faceSource
-        ? await this.withPlaybackChoice(auth, id, view, () => this.service.viewThumbnail(auth, id, dto, via), via)
+        ? await this.withPlaybackChoice(
+            auth,
+            id,
+            view,
+            () => this.service.viewThumbnail(auth, id, dto, via),
+            via,
+            dto.dynamicRange,
+          )
         : await this.service.viewThumbnail(auth, id, dto, via);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
