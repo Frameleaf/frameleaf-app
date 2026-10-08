@@ -35,6 +35,7 @@ import {
   AssetType,
   AssetVisibility,
   AudioCodec,
+  ChecksumAlgorithm,
   Colorspace,
   ImageFormat,
   ImmichWorker,
@@ -647,14 +648,21 @@ export class MediaService extends BaseService {
         }),
       );
       for (const file of hdrFiles) assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
-      const outputs = await this.mediaRepository.generateHdrRenditions(asset.originalPath, [
-        { path: hdrFiles[0].path, size: image.preview.size },
-        { path: hdrFiles[1].path },
-      ]);
+      const contentChecksum =
+        asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path
+          ? await this.cryptoRepository.hashFile(asset.originalPath, 'sha256')
+          : asset.checksum;
+      const outputs = await this.mediaRepository.generateHdrRenditions(
+        asset.originalPath,
+        [{ path: hdrFiles[0].path, size: image.preview.size }, { path: hdrFiles[1].path }],
+        undefined,
+        undefined,
+        contentChecksum,
+      );
       for (let index = 0; index < hdrFiles.length; index++) {
         const output = outputs[index];
         hdrFiles[index].renditionIdentity = imageRenditionIdentity({
-          sourceChecksum: asset.checksum,
+          sourceChecksum: contentChecksum,
           editRevision: 0,
           rendererVersion: HDR_RENDITION_RENDERER_VERSION,
           width: output.width,

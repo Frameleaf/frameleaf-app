@@ -403,6 +403,7 @@ export class AssetDevelopService {
             [{ path: output, format: 'heic' }],
             undefined,
             signal,
+            revision.hdrRenditionChecksum ?? (await this.cryptoRepository.hashFile(filePath, 'sha256')),
           );
         } else {
           await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
@@ -1299,6 +1300,7 @@ export class AssetDevelopService {
     revisionId?: string,
     seed = 1,
     signal?: AbortSignal,
+    checksum?: Buffer,
   ) {
     await this.requireHdrRenderer(recipe);
     if (mimeTypes.isRaw(source.originalFileName))
@@ -1306,6 +1308,7 @@ export class AssetDevelopService {
     const needed = developRenderArtifacts(recipe);
     const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, true);
     const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, true);
+    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id));
     const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = recipe;
     return this.withRenderCancellation(revisionId, signal, (abort) =>
       this.mediaRepository.generateHdrRenditions(
@@ -1313,6 +1316,7 @@ export class AssetDevelopService {
         outputs,
         { recipe: { ...fields, version: 1 }, seed, masks: Object.fromEntries(masks), fills: Object.fromEntries(fills) },
         abort,
+        contentChecksum,
       ),
     );
   }
@@ -1376,6 +1380,8 @@ export class AssetDevelopService {
       ],
       revision.id,
       revision.revision + 1,
+      undefined,
+      sourceChecksum,
     );
     await this.progress(revision.id, 95);
     const renditionChecksum = await this.cryptoRepository.hashFile(tmp.master, 'sha256');

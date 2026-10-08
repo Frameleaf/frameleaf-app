@@ -1,9 +1,10 @@
 import { lstat, rmdir, unlink } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { AttemptDirectoryWindows } from 'src/utils/attempt-directory.js';
 
 export const ATTEMPT_GRACE_MS = 24 * 60 * 60 * 1000;
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const SHARP_STAGING = /^\.sharp-[a-zA-Z0-9]{6}$/;
 export type AttemptIdentity = { jobId: string; token: string };
 export type AttemptCursor = { root: number; stack: { path: string; after: string }[] };
 export const emptyAttemptCursor = (): AttemptCursor => ({ root: 0, stack: [] });
@@ -11,7 +12,12 @@ export const emptyAttemptCursor = (): AttemptCursor => ({ root: 0, stack: [] });
 export function attemptIdentity(path: string): AttemptIdentity | undefined {
   const parts = resolve(path).split(sep);
   const index = parts.lastIndexOf('.attempts');
-  if (index === -1 || parts.length !== index + 4 || !UUID.test(parts[index + 1]) || !UUID.test(parts[index + 2]))
+  if (
+    index === -1 ||
+    !(parts.length === index + 4 || (parts.length === index + 5 && SHARP_STAGING.test(parts[index + 3]))) ||
+    !UUID.test(parts[index + 1]) ||
+    !UUID.test(parts[index + 2])
+  )
     return;
   return { jobId: parts[index + 1], token: parts[index + 2] };
 }
@@ -54,7 +60,8 @@ async function removeEmptyAttempt(path: string, cutoff: number, identity: { dev:
     await rmdir(path);
     // The caller still holds this job's stop proof and lock. Its now-empty parent
     // job directory is safe to release too; never recurse or remove .attempts itself.
-    if ((await realAttemptEntry(dirname(path)))?.isDirectory()) {
+    // A staging directory's parent is the claim directory and needs its own age check.
+    if (!SHARP_STAGING.test(basename(path)) && (await realAttemptEntry(dirname(path)))?.isDirectory()) {
       await rmdir(dirname(path)).catch((error: NodeJS.ErrnoException) => {
         if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code ?? '')) throw error;
       });
@@ -148,8 +155,13 @@ export async function sweepAttemptTree(options: {
       }
       frame.after = name;
       visited++;
-      if (name.startsWith('.') && name !== '.attempts') continue;
       const path = join(frame.path, name);
+      if (
+        name.startsWith('.') &&
+        name !== '.attempts' &&
+        !(SHARP_STAGING.test(name) && attemptIdentity(join(path, '_empty')))
+      )
+        continue;
       const entry = await realAttemptEntry(path);
       if (!entry || (entry.isDirectory() && cursor.stack.length >= 16)) incomplete = true;
       if (entry?.isDirectory() && cursor.stack.length < 16) {

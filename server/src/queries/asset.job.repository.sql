@@ -230,6 +230,7 @@ select
   "asset"."thumbhash",
   "asset"."type",
   "asset"."checksum",
+  "asset"."checksumAlgorithm",
   (
     select
       coalesce(json_agg(agg), '[]')

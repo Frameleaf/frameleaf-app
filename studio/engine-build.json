@@ -409,7 +409,12 @@
       "path": "patches/0085-file-lut-float-admission.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "299c8adad9da408a7f4e92963f111f63d90b391f931a66c8fb5fd6c60f7b39f9"
+    },
+    {
+      "path": "patches/0086-scope-capture-retry.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "037f7ea5361557b097eff755d3a4fcad3cd0da3d9d6a5bef5dd980ef9551e5ef"
     }
   ],
-  "sourceSha256": "5b1d0f323c6e711162008f6816f0c5479ee9a67618a6cefb8790d665f20eb57c"
+  "sourceSha256": "645a7ab96525f8bc039996cfe720ef55b8882221b0747644a391580eb676e79d"
 }

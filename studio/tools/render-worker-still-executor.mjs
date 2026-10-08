@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,6 +16,35 @@ const engine = fileURLToPath(new URL('../engine/', import.meta.url));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const only = (object, keys) =>
   assert.ok(object && Object.keys(object).every((key) => keys.includes(key)), 'UNSUPPORTED_RECIPE_FIELD');
+
+/** Count this export's private files, including one-level image-worker staging. */
+export async function ownedOutputBytes(folder) {
+  let total = 0;
+  let directories = 0;
+  const seen = new Set();
+  const optional = (error) => { if (error.code !== 'ENOENT') throw error; return null; };
+  const count = async (file) => {
+    const entry = await lstat(file).catch(optional);
+    if (!entry) return;
+    assert.ok(entry.isFile(), 'UNEXPECTED_DOWNLOAD_ENTRY');
+    const inode = `${entry.dev}:${entry.ino}`;
+    if (!seen.has(inode)) total += entry.size;
+    seen.add(inode);
+  };
+  for (const name of await readdir(folder)) {
+    const file = path.join(folder, name);
+    const entry = await lstat(file).catch(optional);
+    if (!entry) continue;
+    if (entry.isDirectory()) {
+      assert.ok(/^\.sharp-[a-zA-Z0-9]{6}$/.test(name) && ++directories <= 4, 'UNEXPECTED_DOWNLOAD_ENTRY');
+      const children = await readdir(file).catch(optional);
+      if (!children) continue;
+      assert.ok(children.length <= 1, 'UNEXPECTED_DOWNLOAD_ENTRY');
+      for (const child of children) await count(path.join(file, child));
+    } else await count(file);
+  }
+  return total;
+}
 
 /** Immutable visual timeline planning; runtime resource/build/strict-render admission is separate. */
 export function stillRecipe(claim) {
@@ -322,16 +351,7 @@ export async function renderStillImage(context, consume) {
           lastBeat = performance.now();
         }
         assertLive();
-        let total = 0;
-        for (const name of await readdir(folder)) {
-          const entry = await stat(path.join(folder, name)).catch((error) => {
-            if (error.code === 'ENOENT') return null;
-            throw error;
-          });
-          if (!entry) continue;
-          assert.ok(entry.isFile(), 'UNEXPECTED_DOWNLOAD_ENTRY');
-          total += entry.size;
-        }
+        const total = await ownedOutputBytes(folder);
         assert.ok(
           total <= recipe.maxBytes + (recipe.photo ? recipe.photo.width * recipe.photo.height * 16 : 0),
           'OUTPUT_BYTE_LIMIT',
