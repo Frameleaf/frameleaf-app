@@ -442,8 +442,11 @@ export class MediaRepository {
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
-  probePackets(input: string, streamIndex: number): Promise<VideoPacketInfo | null> {
-    jobSignal()?.throwIfAborted();
+  probePackets(input: string, streamIndex: number, options?: { maxPackets?: number }): Promise<VideoPacketInfo | null> {
+    if (options?.maxPackets !== undefined && (!Number.isSafeInteger(options.maxPackets) || options.maxPackets <= 0)) {
+      throw new Error('Invalid media packet probe limit');
+    }
+    executionSignal()?.throwIfAborted();
     const ffprobe = spawn(
       'ffprobe',
       [
@@ -459,8 +462,9 @@ export class MediaRepository {
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
-    const lifetime = superviseMediaProcess(ffprobe);
+    const lifetime = superviseMediaProcess(ffprobe, { signal: executionSignal() });
 
+    let scannedPackets = 0;
     let totalDuration = 0;
     const keyframePts: number[] = [];
     const keyframeAccDuration: number[] = [];
@@ -477,6 +481,10 @@ export class MediaRepository {
     let presentationValid = true;
     const parseLine = (line: string) => {
       if (!line) {
+        return;
+      }
+      if (++scannedPackets > (options?.maxPackets ?? Infinity)) {
+        lifetime.stop(new Error('Media packet probe exceeds its resource limit'));
         return;
       }
       const [ptsStr, durationStr, flags] = line.split(',', 3);

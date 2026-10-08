@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inventory } from './engine.mjs';
+import { inspectVerifiedVideo, reconcileVideoTiming } from './render-worker-video-inputs.mjs';
 import { decodeHdrRaster } from './hdr-raster-input.mjs';
 
 const studio = fileURLToPath(new URL('../', import.meta.url));
@@ -122,7 +123,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   assert.ok(!project.timeline.compositions?.length, 'NESTED_COMPOSITION_ADAPTER_UNAVAILABLE');
   for (const item of project.timeline.items) {
     assert.ok(
-      ((item.type === 'image' && typeof item.mediaId === 'string') || (item.type === 'shape' && !item.mediaId)) &&
+      ((['image', 'video'].includes(item.type) && typeof item.mediaId === 'string') || (item.type === 'shape' && !item.mediaId)) &&
         !item.generatedId &&
         !item.src &&
         !item.audioSrc,
@@ -162,7 +163,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       'AUTHORIZED_IMAGE_INPUT_REQUIRED',
     );
     assert.equal(sha256(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
-    return { id, bytes: input.bytes, key: randomUUID() };
+    return { id, bytes: input.bytes, sha256: input.sha256, declaredChecksum: input.declaredChecksum, key: randomUUID(), video: project.timeline.items.some(item => item.type === 'video' && item.mediaId === id) };
   });
   assert.ok(sources.reduce((total, source) => total + source.bytes.length, 0) <= 32 * 1024 * 1024, 'IMAGE_BYTE_LIMIT');
   const sharp = require('sharp');
@@ -175,6 +176,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   const abort = new AbortController();
   const hdrRasters = {};
   const hdrRasterFiles = [];
+  const videoInputs = [];
   let retainedPixels = 0;
   let disposed = false;
   const dispose = async () => {
@@ -204,6 +206,18 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     for (const source of sources) source.bytes = Buffer.from(source.bytes);
     for (const source of sources) {
       assert.ok(isLeaseActive(), 'LEASE_LOST');
+      if (source.video) {
+        source.format = 'mp4';
+        const file = path.join(folder, `${source.key}.mp4`);
+        const observed = await inspectVerifiedVideo(source, file, AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]));
+        assert.ok(isLeaseActive(), 'LEASE_LOST');
+        retainedPixels += observed.metadata.width * observed.metadata.height;
+        assert.ok(retainedPixels <= 64_000_000, 'IMAGE_RASTER_RESOURCE_LIMIT');
+        source.metadata = observed.metadata;
+        videoInputs.push(observed);
+        paths.set(source.key, file);
+        continue;
+      }
       const validated = await validateStillImage(source.bytes, sharp);
       source.format = validated.format;
       source.metadata = {
@@ -305,6 +319,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       paths.set(key, file);
       hdrRasterFiles.push({ id, key, ...metadata, byteLength: bytes.length, sha256: sha256(bytes) });
     }
+    const videoTiming = reconcileVideoTiming(project, prepared.snapshot.timing, videoInputs);
     clearInterval(leaseTimer);
     await pool?.close();
     server = await createMediaServer((key) => (!disposed && isLeaseActive() ? (paths.get(key) ?? null) : null));
@@ -312,6 +327,8 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     return {
       binding: { operationId: prepared.operationId, claimToken: prepared.claimToken, revisionId: prepared.revisionId },
       sourceSha256: configuration.sourceSha256,
+      videoTiming,
+      videoInputs,
       // This is the existing headless payload fragment. The graph is preserved without migration
       // or guessed settings. Each opaque local URL serves only a verified, grant-bound input.
       input: {

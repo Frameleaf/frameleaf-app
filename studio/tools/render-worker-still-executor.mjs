@@ -123,7 +123,9 @@ export function stillRecipe(claim) {
   assert.equal(claim.snapshot.contract?.video?.minBitDepth, 8, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.video.transfer, null, 'HDR_UNSUPPORTED');
   assert.equal(claim.snapshot.contract.audio, null, 'AUDIO_UNSUPPORTED');
-  assert.equal(claim.snapshot.timing.sources?.length ?? 0, 0, 'SOURCE_TIMING_ADAPTER_UNAVAILABLE');
+  assert.ok(Array.isArray(claim.snapshot.timing.sources) && claim.snapshot.timing.sources.every(source =>
+    typeof source.key === 'string' && typeof source.assetId === 'string' && tryParseRational(source.timeBase) &&
+    tryParseRational(source.cadence) && source.variableFrameRate === false && source.originTicks === 0), 'SOURCE_TIMING_ADAPTER_UNAVAILABLE');
   assert.deepEqual(claim.snapshot.contract.range ?? null, declaredRange, 'RANGE_CONTRACT_CHANGED');
   assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
   return {
@@ -225,11 +227,20 @@ export async function renderStillImage(context, consume) {
   if (!recipe.photo) {
     assert.ok(context.prepared?.inputs instanceof Map, 'VERIFIED_INPUTS_REQUIRED');
     assert.equal(context.prepared.inputs.size, engineInputs.input.media.length, 'VERIFIED_INPUT_CLOSURE_CHANGED');
+    if (claim.snapshot.timing.sources.length)
+      assert.deepEqual(engineInputs.videoTiming, claim.snapshot.timing, 'SOURCE_TIMING_CHANGED');
+    else assert.equal(engineInputs.videoInputs?.length ?? 0, 0, 'SOURCE_TIMING_CHANGED');
   }
   const sharp = require('sharp');
   for (const input of recipe.photo ? [] : context.prepared.inputs.values()) {
     assertLive();
     assert.equal(digest(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
+    const video = engineInputs.videoInputs?.find(source => source.facts.assetId === input.resourceId);
+    if (video) {
+      assert.equal(video.sha256, input.sha256, 'VERIFIED_VIDEO_CHANGED');
+      assert.equal(video.key, `library-asset:${input.resourceId}`, 'VERIFIED_VIDEO_CHANGED');
+      continue; // The same byte snapshot passed native packet and explicit SDR admission.
+    }
     const metadata = await sharp(input.bytes).metadata();
     assert.ok(
       metadata.format === 'png' &&
