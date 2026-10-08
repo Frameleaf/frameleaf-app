@@ -2175,6 +2175,7 @@ export const QueueJobWorkerKindSchema = z
 
 export enum JobName {
   ICloudSync = 'ICloudSync',
+  ICloudRelations = 'ICloudRelations',
   /** FL-79: the nightly local analytics collector, with its retention and downsampling. */
   AnalyticsCollect = 'AnalyticsCollect',
 

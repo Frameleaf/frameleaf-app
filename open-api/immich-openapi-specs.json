@@ -20316,6 +20316,175 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/edits/baseline": {
+      "post": {
+        "description": "Owner session only. Explicitly accepts a stored owned digest receipt as a handover watermark. This is an administrative decision, not Apple revision ordering or byte-equivalence proof. Healthy sync authority and live competing item claims remain protected; takeOver only bypasses the wait for an unhealthy source. Locked and hidden evidence requires current access.",
+        "operationId": "acceptICloudEditBaseline",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudEditBaselineDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudEditDecisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept an administrative edit-owner baseline",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/edits/evidence": {
+      "get": {
+        "description": "Complete bounded owner-session snapshot. Receipts are current owned bytes; administrative authority is not provider chronology. Incoming eligibility is a snapshot, never admission permission. Oversized or inaccessible evidence requires review.",
+        "operationId": "discoverICloudEditEvidence",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudEditEvidenceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover owned edit evidence and administrative authority",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/edits/successor": {
+      "post": {
+        "description": "Owner session only. Accepts one existing verified device or sync resource at the current owner generation and canonical version. No timestamp/hash ordering is inferred. First publication rechecks the decision, digest, live holder claim, item capacity and access; an already committed result remains eligible for settlement after takeover. Keep is the default. Unsupported or unsafe supersede decisions require review.",
+        "operationId": "acceptICloudEditSuccessor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudEditSuccessorDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudEditDecisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept verified bytes as an administrative edit successor",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/identities/attach": {
       "post": {
         "description": "Up to 500 resources from one of the caller's registered backup devices. Each attachment requires the device SHA-256 to equal the current original of an active asset the caller owns, with the safety lookup's Locked and hidden rules. Unknown, inaccessible and mismatched assets all answer unavailable. Identifiers remain hints until corroborated; attachment never marks an audit verified or changes media.",
@@ -73469,10 +73638,442 @@
         ],
         "type": "string"
       },
+      "ICloudEditBaselineDto": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedGeneration": {
+            "maximum": 2147483646,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "holder": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "$ref": "#/components/schemas/ICloudEditDeviceHolderKind"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "$ref": "#/components/schemas/ICloudEditSyncHolderKind"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "nativeVersion": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "receiptId": {
+            "description": "An accessible owned stored source identity with verified current asset digest",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sourceIncarnation": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "takeOver": {
+            "default": false,
+            "description": "Only bypasses the 72-hour wait for an unhealthy source",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedGeneration",
+          "holder",
+          "nativeVersion",
+          "receiptId",
+          "requestId",
+          "sourceIncarnation"
+        ],
+        "type": "object"
+      },
+      "ICloudEditDecisionResponseDto": {
+        "properties": {
+          "decisionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "evidenceType": {
+            "enum": [
+              "administrative"
+            ],
+            "type": "string"
+          },
+          "generation": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "versionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decisionId",
+          "evidenceType",
+          "generation",
+          "versionId"
+        ],
+        "type": "object"
+      },
+      "ICloudEditDeviceHolderKind": {
+        "enum": [
+          "device"
+        ],
+        "type": "string"
+      },
+      "ICloudEditEvidenceResponseDto": {
+        "properties": {
+          "admissionGuaranteed": {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          },
+          "complete": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "authority": {
+                  "nullable": true,
+                  "properties": {
+                    "assetId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "evidenceType": {
+                      "enum": [
+                        "administrative"
+                      ],
+                      "type": "string"
+                    },
+                    "generation": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "holder": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "pattern": "^[\\dA-Fa-f]{64}$",
+                      "type": "string"
+                    },
+                    "sourceIncarnation": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "versionId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "evidenceType",
+                    "generation",
+                    "versionId",
+                    "assetId",
+                    "sha256",
+                    "holder",
+                    "sourceIncarnation"
+                  ],
+                  "type": "object"
+                },
+                "claims": {
+                  "items": {
+                    "properties": {
+                      "claimId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "holder": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "claimId",
+                      "holder",
+                      "expiresAt"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "holders": {
+                  "items": {
+                    "properties": {
+                      "automaticTakeoverEligible": {
+                        "type": "boolean"
+                      },
+                      "holder": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "unhealthySince": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "holder",
+                      "state",
+                      "unhealthySince",
+                      "automaticTakeoverEligible"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "incoming": {
+                  "items": {
+                    "properties": {
+                      "administrativeDecisionRequired": {
+                        "enum": [
+                          true
+                        ],
+                        "type": "boolean"
+                      },
+                      "channel": {
+                        "$ref": "#/components/schemas/ICloudEditPublicationChannel"
+                      },
+                      "claimLive": {
+                        "type": "boolean"
+                      },
+                      "holder": {
+                        "type": "string"
+                      },
+                      "nativeVersion": {
+                        "type": "string"
+                      },
+                      "resourceId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "pattern": "^[\\dA-Fa-f]{64}$",
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "channel",
+                      "resourceId",
+                      "holder",
+                      "nativeVersion",
+                      "sha256",
+                      "state",
+                      "claimLive",
+                      "administrativeDecisionRequired"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "item": {
+                  "type": "string"
+                },
+                "receipts": {
+                  "items": {
+                    "properties": {
+                      "assetId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "deliveredBy": {
+                        "type": "string"
+                      },
+                      "nativeVersion": {
+                        "type": "string"
+                      },
+                      "receiptId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "$ref": "#/components/schemas/ICloudEditReceiptRole"
+                      },
+                      "sha256": {
+                        "pattern": "^[\\dA-Fa-f]{64}$",
+                        "type": "string"
+                      },
+                      "suggestedAdministrativeLabel": {
+                        "const": "administrative-original",
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "receiptId",
+                      "assetId",
+                      "sha256",
+                      "role",
+                      "nativeVersion",
+                      "suggestedAdministrativeLabel",
+                      "deliveredBy"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "item",
+                "receipts",
+                "authority",
+                "holders",
+                "claims",
+                "incoming"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "admissionGuaranteed",
+          "complete",
+          "items"
+        ],
+        "type": "object"
+      },
       "ICloudEditOwnerKind": {
         "enum": [
           "icloud-sync",
           "device"
+        ],
+        "type": "string"
+      },
+      "ICloudEditPublicationChannel": {
+        "enum": [
+          "device",
+          "icloud-sync"
+        ],
+        "type": "string"
+      },
+      "ICloudEditReceiptRole": {
+        "enum": [
+          "original",
+          "edit-render"
+        ],
+        "type": "string"
+      },
+      "ICloudEditRetentionPolicy": {
+        "enum": [
+          "keep",
+          "supersede"
+        ],
+        "type": "string"
+      },
+      "ICloudEditSuccessorDto": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/ICloudEditPublicationChannel"
+          },
+          "expectedGeneration": {
+            "maximum": 2147483646,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expectedVersionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/ICloudEditRetentionPolicy",
+            "default": "keep"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "resourceId": {
+            "description": "Existing verified bytes; accepting this is an explicit owner successor decision",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "reuseVersionId": {
+            "description": "Explicit administrative binding to a known canonical version with identical verified render bytes; never inferred provider equivalence",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "expectedGeneration",
+          "expectedVersionId",
+          "requestId",
+          "resourceId"
+        ],
+        "type": "object"
+      },
+      "ICloudEditSyncHolderKind": {
+        "enum": [
+          "icloud-sync"
         ],
         "type": "string"
       },
@@ -74872,6 +75473,7 @@
         "description": "Job name",
         "enum": [
           "ICloudSync",
+          "ICloudRelations",
           "AnalyticsCollect",
           "AssetDelete",
           "AssetDeleteCheck",

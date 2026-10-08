@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -12,6 +12,8 @@ import {
   ICloudClaimResponseDto,
   ICloudCoverageDto,
   ICloudCoverageResponseDto,
+  ICloudEditBaselineDto,
+  ICloudEditSuccessorDto,
   ICloudLookupDto,
   ICloudLookupResponseDto,
 } from 'src/dtos/icloud-identity.dto.js';
@@ -23,6 +25,7 @@ import {
 } from 'src/repositories/icloud-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import {
   ItemMetadata,
   MatchStrength,
@@ -110,6 +113,7 @@ export class ICloudIdentityService {
     private repository: ICloudIdentityRepository,
     private integrity: IntegrityRepository,
     private logger: LoggingRepository,
+    @Optional() private relations?: ICloudRelationsService,
   ) {
     this.logger.setContext(ICloudIdentityService.name);
   }
@@ -131,6 +135,20 @@ export class ICloudIdentityService {
     } catch (error) {
       this.logger.warn(`iCloud identity upkeep deferred: ${error}`);
     }
+  }
+
+  discoverEditEvidence(auth: AuthDto, assetId: string) {
+    return this.repository.discoverEditEvidence(auth, assetId);
+  }
+  async acceptEditBaseline(auth: AuthDto, dto: ICloudEditBaselineDto) {
+    const decision = await this.repository.acceptEditBaseline(auth, dto);
+    await this.relations?.enqueue();
+    return decision;
+  }
+  async acceptEditSuccessor(auth: AuthDto, dto: ICloudEditSuccessorDto) {
+    const decision = await this.repository.acceptEditSuccessor(auth, dto);
+    await this.relations?.enqueue();
+    return decision;
   }
 
   async coverage(auth: AuthDto, dto: ICloudCoverageDto): Promise<ICloudCoverageResponseDto> {

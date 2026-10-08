@@ -17,6 +17,11 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import {
+  ICloudEditAuthorityRepository,
+  editAuthorityReviewReason,
+} from 'src/repositories/icloud-edit-authority.repository.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
 import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
@@ -286,6 +291,11 @@ export class MediaRecoveryRepository {
       return { outcome: 'retry', reason: 'mapping_changed' };
     }
     return this.db.transaction().execute(async (trx) => {
+      const editAuthority = new ICloudEditAuthorityRepository(trx);
+      const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
+      if (editItem) {
+        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
+      }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const reuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
       if (reuse.required && (!input.weeklyReuse || !reuse.context)) {
@@ -303,6 +313,22 @@ export class MediaRecoveryRepository {
         !resource.sha1?.equals(input.verified.sha1)
       ) {
         return { outcome: 'retry', reason: 'mapping_changed' };
+      }
+      let edit;
+      try {
+        edit =
+          editItem && !['committed', 'finalized'].includes(resource.status)
+            ? await editAuthority.publication(trx, input.ownerId, 'icloud-sync', input.resourceId)
+            : undefined;
+      } catch (error) {
+        const reason = editAuthorityReviewReason(error);
+        if (reason) {
+          return { outcome: 'needs-review', reason };
+        }
+        throw error;
+      }
+      if (edit && edit.existingAssetId !== input.candidate.id) {
+        return { outcome: 'needs-review', reason: 'edit_bound_asset_required' };
       }
       const target: RecoveryTarget = {
         assetId: input.candidate.id,
@@ -355,6 +381,9 @@ export class MediaRecoveryRepository {
       if (updated.rows.length !== 1) {
         return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
       }
+      if (edit) {
+        await editAuthority.published(trx, input.ownerId, edit, candidate.id, false);
+      }
       return { outcome: 'reused', assetId: candidate.id };
     });
   }
@@ -368,6 +397,11 @@ export class MediaRecoveryRepository {
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      const editAuthority = new ICloudEditAuthorityRepository(trx);
+      const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
+      if (editItem) {
+        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
+      }
       if (input.audit?.purpose === 'scheduled-weekly' && input.outcome !== 'reused') {
         await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(trx);
       }
@@ -503,6 +537,11 @@ export class MediaRecoveryRepository {
       }
     }
     return this.db.transaction().execute(async (trx) => {
+      const editAuthority = new ICloudEditAuthorityRepository(trx);
+      const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
+      if (editItem) {
+        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
+      }
       if (
         scheduledAuthority &&
         !(await guardScheduledAudit(trx as Transaction<DB>, scheduledAuthority, input.ownerId, {
@@ -558,6 +597,25 @@ export class MediaRecoveryRepository {
           return { outcome: 'retry', reason: 'final_verification_failed' };
         }
         return { outcome: 'reused', assetId: current.id, reason: 'already_committed' };
+      }
+      let edit;
+      try {
+        edit = editItem
+          ? await editAuthority.publication(trx, input.ownerId, 'icloud-sync', input.resourceId)
+          : undefined;
+      } catch (error) {
+        const reason = editAuthorityReviewReason(error);
+        if (reason) {
+          return { outcome: 'needs-review', reason };
+        }
+        throw error;
+      }
+      if (
+        edit &&
+        (target.updateId || target.outcome === 'reused' || edit.existingAssetId) &&
+        edit.existingAssetId !== target.assetId
+      ) {
+        return { outcome: 'needs-review', reason: 'edit_bound_asset_required' };
       }
       if (
         resource.promotedPath !== promotedPath ||
@@ -711,6 +769,9 @@ export class MediaRecoveryRepository {
           resolution = c.resolution || '{"autoRelinkable":false,"invalidatedBy":"icloud-recovery"}'::jsonb
           FROM public.asset_health h WHERE c."healthId" = h.id AND h."assetId" = ${assetId}::uuid
             AND h.category IN ('missing', 'corrupt')`.execute(trx);
+      if (edit) {
+        await editAuthority.published(trx, input.ownerId, edit, assetId, !target.updateId);
+      }
       const pendingJobs = reused
         ? []
         : [

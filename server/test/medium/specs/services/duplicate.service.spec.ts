@@ -1,8 +1,10 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
@@ -15,6 +17,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -27,6 +30,7 @@ const setup = (db?: Kysely<DB>) => {
     real: [
       AccessRepository,
       AlbumRepository,
+      AssetDevelopRepository,
       AssetRepository,
       ConfigRepository,
       DuplicateRepository,
@@ -38,6 +42,8 @@ const setup = (db?: Kysely<DB>) => {
 
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  ctx.getMock(JobRepository).queueInTransaction.mockResolvedValue();
+  ctx.getMock(JobRepository).removeJob.mockResolvedValue();
   ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
 
   return { sut, ctx };
@@ -49,10 +55,17 @@ const newDuplicateAsset = async (
     ownerId,
     duplicateId,
     ...dto
-  }: { ownerId: string; duplicateId?: string; isFavorite?: boolean; visibility?: AssetVisibility },
+  }: {
+    ownerId: string;
+    duplicateId?: string;
+    isFavorite?: boolean;
+    visibility?: AssetVisibility;
+    originalFileName?: string;
+  },
   exif: { rating?: number; description?: string; latitude?: number; longitude?: number; fileSizeInByte?: number } = {},
 ) => {
-  const { asset } = await ctx.newAsset({ ownerId, duplicateId, ...dto });
+  // These are copies of one capture; distinct nearby capture times describe a burst.
+  const { asset } = await ctx.newAsset({ ownerId, duplicateId, localDateTime: new Date('2026-01-01'), ...dto });
   await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1000, ...exif });
   return asset;
 };
@@ -99,6 +112,147 @@ describe(DuplicateService.name, () => {
       expect(duplicates[0].assets.map(({ id }) => id).sort()).toEqual([small.id, large.id].sort());
       // largest file size wins
       expect(duplicates[0].suggestedKeepAssetIds).toEqual([large.id]);
+    });
+
+    it.each(['HEIC', 'HEIF', 'HIF'])(
+      'retains a smaller %s with the legacy format setting disabled',
+      async (extension) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const duplicateId = factory.uuid();
+        const heic = await newDuplicateAsset(
+          ctx,
+          { ownerId: user.id, duplicateId, originalFileName: `capture.${extension}` },
+          { fileSizeInByte: 1000 },
+        );
+        const jpeg = await newDuplicateAsset(
+          ctx,
+          { ownerId: user.id, duplicateId, originalFileName: 'capture.JPG' },
+          { fileSizeInByte: 10_000 },
+        );
+        const config = await ctx.getConfig();
+        await ctx.updateConfig({
+          ...config,
+          machineLearning: {
+            ...config.machineLearning,
+            duplicateDetection: { ...config.machineLearning.duplicateDetection, preferOriginalFormat: false },
+          },
+        });
+        clearConfigCache();
+        const auth = factory.auth({ user: { id: user.id } });
+        const [group] = await sut.getDuplicates(auth);
+        expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+        expect(group.reviewRequiredReasons).toBeUndefined();
+        expectSuccess(
+          await sut.resolve(auth, {
+            groups: [{ duplicateId, keepAssetIds: group.suggestedKeepAssetIds, trashAssetIds: [jpeg.id] }],
+          }),
+          duplicateId,
+        );
+        await expect(ctx.get(AssetRepository).getById(heic.id)).resolves.toMatchObject({ deletedAt: null });
+        await expect(ctx.get(AssetRepository).getById(jpeg.id)).resolves.toMatchObject({
+          deletedAt: expect.any(Date),
+        });
+      },
+    );
+
+    it.each(['edited-copy', 'develop-history', 'distinct-motion'])(
+      'retains a disposable copy with %s',
+      async (reason) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const duplicateId = factory.uuid();
+        const heic = await newDuplicateAsset(ctx, {
+          ownerId: user.id,
+          duplicateId,
+          originalFileName: 'capture.HEIC',
+        });
+        const jpeg = await newDuplicateAsset(ctx, {
+          ownerId: user.id,
+          duplicateId,
+          originalFileName: 'capture.jpg',
+        });
+        const assets = ctx.get(AssetRepository);
+        switch (reason) {
+          case 'edited-copy': {
+            await assets.update({ id: jpeg.id, isEdited: true });
+            break;
+          }
+          case 'develop-history': {
+            const develop = ctx.get(AssetDevelopRepository);
+            const revision = await develop.create({
+              assetId: jpeg.id,
+              ownerId: user.id,
+              recipe: defaultDevelopRecipe(),
+              recipeVersion: 1,
+              label: null,
+              status: AssetDevelopRevisionStatus.Saved,
+            });
+            await develop.requestCancel(revision.id);
+            await develop.update(revision.id, { status: AssetDevelopRevisionStatus.Cancelled });
+            await develop.setCurrent(jpeg.id, null);
+            break;
+          }
+          case 'distinct-motion': {
+            const { asset: motion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+            await assets.update({ id: jpeg.id, livePhotoVideoId: motion.id });
+            break;
+          }
+        }
+        const before = await assets.getById(jpeg.id);
+        const auth = factory.auth({ user: { id: user.id } });
+        const [group] = await sut.getDuplicates(auth);
+        expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+        expect(group.reviewRequiredReasons).toContain(reason);
+        await expect(
+          sut.resolve(auth, { groups: [{ duplicateId, keepAssetIds: [heic.id], trashAssetIds: [jpeg.id] }] }),
+        ).resolves.toEqual([
+          expect.objectContaining({ id: duplicateId, success: false, error: BulkIdErrorReason.VALIDATION }),
+        ]);
+        await expect(assets.getById(jpeg.id)).resolves.toMatchObject({
+          duplicateId,
+          deletedAt: null,
+          checksum: before!.checksum,
+          livePhotoVideoId: before!.livePhotoVideoId,
+        });
+        expect(ctx.getMock(JobRepository).queueInTransaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not suggest disposing distinct burst frames even when one is HEIC', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const duplicateId = factory.uuid();
+      await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId, originalFileName: 'frame-1.HEIC' });
+      const frame = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId, originalFileName: 'frame-2.JPG' });
+      await ctx.get(AssetRepository).update({ id: frame.id, localDateTime: new Date('2026-01-01T00:00:01Z') });
+      const [group] = await sut.getDuplicates(factory.auth({ user: { id: user.id } }));
+      expect(group.suggestedKeepAssetIds).toEqual([]);
+    });
+
+    it('keeps recommendations visible but refuses disposal when Develop evidence is unavailable', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const duplicateId = factory.uuid();
+      const heic = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId, originalFileName: 'capture.HEIC' });
+      const jpeg = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId, originalFileName: 'capture.JPG' });
+      await sql`ALTER TABLE asset_develop_revision RENAME TO unavailable_develop_evidence`.execute(defaultDatabase);
+      try {
+        const auth = factory.auth({ user: { id: user.id } });
+        const [group] = await sut.getDuplicates(auth);
+        expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+        expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+        await expect(
+          sut.resolve(auth, { groups: [{ duplicateId, keepAssetIds: [heic.id], trashAssetIds: [jpeg.id] }] }),
+        ).resolves.toEqual([expect.objectContaining({ id: duplicateId, success: false })]);
+        await expect(ctx.get(AssetRepository).getById(jpeg.id)).resolves.toMatchObject({
+          duplicateId,
+          deletedAt: null,
+        });
+        expect(ctx.getMock(JobRepository).queueInTransaction).not.toHaveBeenCalled();
+      } finally {
+        await sql`ALTER TABLE unavailable_develop_evidence RENAME TO asset_develop_revision`.execute(defaultDatabase);
+      }
     });
 
     it('should not return duplicates owned by someone else', async () => {

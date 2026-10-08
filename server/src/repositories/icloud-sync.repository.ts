@@ -1,11 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { recordSyncIdentity, releaseSyncClaim } from 'src/repositories/icloud-identity.repository.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
@@ -1060,7 +1061,9 @@ export class ICloudSyncRepository {
   }
   async finalize(resource: ICloudResource, cleanup: () => Promise<void>): Promise<boolean> {
     return this.active(async (db) => {
+      await lockICloudItemClaims(db as Transaction<DB>, resource.ownerId, [resource.sourceAssetId]);
       const { rows } = await sql`SELECT id FROM public.icloud_resource WHERE id=${resource.id}::uuid
+        AND "ownerId"=${resource.ownerId}::uuid AND "sourceAssetId"=${resource.sourceAssetId}
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">now() AND status='committed'
         AND "auditRequestId" IS NULL AND "pendingJobs"='[]'::jsonb FOR UPDATE`.execute(db);
       if (rows.length === 0) {

@@ -77,6 +77,12 @@ import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import {
+  ICloudEditAliasTable,
+  ICloudEditAuthorityTable,
+  ICloudEditDecisionTable,
+  ICloudEditVersionTable,
+} from 'src/schema/tables/icloud-edit-authority.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
@@ -199,6 +205,10 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    ICloudEditAuthorityTable,
+    ICloudEditVersionTable,
+    ICloudEditAliasTable,
+    ICloudEditDecisionTable,
     AssetUploadResourceTable,
     AssetUploadPartTable,
     BackupDeviceTable,
@@ -388,6 +398,10 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  icloud_edit_authority: ICloudEditAuthorityTable;
+  icloud_edit_version: ICloudEditVersionTable;
+  icloud_edit_alias: ICloudEditAliasTable;
+  icloud_edit_decision: ICloudEditDecisionTable;
   backup_device: BackupDeviceTable;
   asset_backup_deletion: AssetBackupDeletionTable;
   backup_reconciliation: BackupReconciliationTable;
