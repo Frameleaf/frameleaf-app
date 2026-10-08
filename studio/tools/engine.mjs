@@ -103,6 +103,8 @@ async function writeSourceRecoveryReceipt(provenance, configuration, observation
     'studio/tools/engine.mjs', 'studio/tools/resource-policy.mjs', 'scripts/frameleaf-studio-contracts.mjs',
     'scripts/frameleaf-studio-rights.mjs', 'studio/dependency-attribution.json', 'studio/rights-approval.json',
     'studio/runtime/resource-admission.mjs', 'studio/runtime/resource-admission.d.mts',
+    'studio/runtime/subtitle-sidecar.mjs', 'studio/runtime/subtitle-sidecar.d.mts',
+    'studio/tools/owned-subtitle-runtime.mjs',
     ...configuration.patches.map((patch) => `studio/${patch.path}`),
   ];
   const inputFiles = [];

@@ -66,3 +66,6 @@ FORK_FOLLOWUPS.md
 
 # Reviewed public product guide, not an agent handoff.
 !/docs/docs/administration/upstream-handoff.md
+
+# Exact owned Studio pure runtime emitted by normal server preparation.
+/server/resources/studio/

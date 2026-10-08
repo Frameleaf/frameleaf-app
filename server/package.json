@@ -13,23 +13,23 @@
     "resources"
   ],
   "scripts": {
-    "build": "nest build",
+    "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest build",
     "format": "prettier --cache --check .",
     "format:fix": "prettier --cache --write --list-different .",
     "start": "pnpm run start:dev",
     "nest": "nest",
-    "start:dev": "nest start --watch --",
-    "start:debug": "nest start --debug 0.0.0.0:9230 --watch --",
+    "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --watch --",
+    "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0",
     "lint:fix": "pnpm run lint --fix",
-    "check": "pnpm --filter @frameleaf/plugin-sdk build && tsc --noEmit",
+    "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && tsc --noEmit",
     "check:code": "pnpm run format && pnpm run lint && pnpm run check",
     "check:all": "pnpm run check:code && pnpm run test:cov",
-    "test": "vitest --config test/vitest.config.mjs",
-    "test:cov": "vitest --config test/vitest.config.mjs --coverage",
+    "test": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.mjs",
+    "test:cov": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.mjs --coverage",
     "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
-    "test:medium": "vitest --config test/vitest.config.medium.mjs",
-    "test:model-mirror": "vitest run --config test/vitest.config.model-mirror.mjs",
+    "test:medium": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.medium.mjs",
+    "test:model-mirror": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest run --config test/vitest.config.model-mirror.mjs",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate --debug",
     "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate",
     "migrations:create": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations create",
@@ -169,5 +169,8 @@
   },
   "overrides": {
     "sharp": "^0.35.3"
+  },
+  "imports": {
+    "#studio-subtitle-sidecar": "./resources/studio/subtitle-sidecar.mjs"
   }
 }

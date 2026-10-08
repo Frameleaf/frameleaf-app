@@ -1,3 +1,4 @@
+import { copySubtitleSidecarRuntime } from './owned-subtitle-runtime.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, cp } from 'node:fs/promises';
 import path from 'node:path';
@@ -88,6 +89,7 @@ export async function writeResourcePolicy(studio, engine) {
       revision: typeof resource.revision === 'string' ? resource.revision : null,
     };
   }
+  await copySubtitleSidecarRuntime(studio, path.join(engine, 'src/shared/utils'), engine);
   for (const relative of ['src/shared/utils', 'public/moss-tts']) {
     const destination = path.join(engine, relative);
     await mkdir(destination, { recursive: true });
