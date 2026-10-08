@@ -164,6 +164,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
         Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
       );
       mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // Synthetic healthy destinations have no restored authority; fence tests override this mock.
+      mlDestination.assertRecoveryAuthority.mockResolvedValue();
       mlDestination.getRoutes.mockResolvedValue([]);
       mlDestination.getSpend.mockResolvedValue(0);
       mlDestination.recordProbe.mockResolvedValue();
