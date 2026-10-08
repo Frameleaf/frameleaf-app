@@ -32,7 +32,8 @@ read_file_and_export() {
 	if [[ -n $fname ]]; then
 		content="$(< "$fname")"
 		export "$2"="${content}"
-		unset "$1"
+		# Recovery must retain the effective local credential-file source, including systemd fallback.
+		export "$1"="$fname"
 	fi
 }
 read_file_and_export "DB_URL_FILE" "DB_URL"

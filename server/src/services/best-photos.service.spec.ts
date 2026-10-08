@@ -3,6 +3,7 @@ import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
+import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 
 describe(BestPhotosService.name, () => {
@@ -19,7 +20,7 @@ describe(BestPhotosService.name, () => {
   const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
   const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
   const configRepository = { getEnv: vitest.fn() };
-  const systemMetadataRepository = { get: vitest.fn(), readFile: vitest.fn() };
+  const systemMetadataRepository = newSystemMetadataRepositoryMock();
 
   let sut: BestPhotosService;
 
