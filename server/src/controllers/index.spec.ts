@@ -136,6 +136,8 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET assets/:id/edit-versions/:versionId/download',
   'GET studio/bundles/exports/:id/download',
   'GET studio/exports/:id/download',
+  // the owner-private subtitle sibling shares the export's relay refusal
+  'GET studio/exports/:id/subtitle',
   'GET memories/exports/:id/download',
   // the flagged file itself, usually an original
   'GET admin/integrity/report/:id/file',
