@@ -919,3 +919,22 @@ test(
     }
   },
 );
+
+test('Ultra HDR JPEG without a valid primary ICC cannot advertise or render reconstructed HDR', () => {
+  const original = readFileSync(new URL('./fixtures/android-ultrahdr/cityscape.jpg', import.meta.url));
+  const checksum = createHash('sha256').update(original).digest('hex');
+  for (const invalid of ['missing', 'corrupt']) {
+    const input = Buffer.from(original);
+    const at = input.indexOf(invalid === 'missing' ? 'ICC_PROFILE\0' : 'acsp');
+    assert.ok(at >= 0);
+    // Keep segment lengths and MPF offsets intact: only remove routing or corrupt the profile signature.
+    input.write(invalid === 'missing' ? 'ICC_MISSING' : 'xxxx', at);
+    const info = codec.inspect(input, ...limits);
+    assert.equal(info.dynamicRange, 'hdr');
+    assert.equal(info.reconstructionAvailable, false, invalid);
+    assert.equal(info.fallbackReason, 'hdr-profile-unsupported');
+    for (const operation of [codec.decode, codec.decodePaired])
+      assert.throws(() => operation(input, ...limits), { code: 'HDR_PROFILE_UNSUPPORTED' });
+  }
+  assert.equal(createHash('sha256').update(original).digest('hex'), checksum);
+});

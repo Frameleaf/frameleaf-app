@@ -126,7 +126,15 @@ export class SharpOperations {
         .digest();
       if (!digest.equals(checksum)) throw new Error('IMAGE_SOURCE_CHANGED');
       const encoding = await this.inspectImageEncoding(bytes);
-      if (encoding.dynamicRange === 'hdr' && !encoding.reconstructionAvailable)
+      if (
+        encoding.dynamicRange === 'hdr' &&
+        !encoding.reconstructionAvailable &&
+        !(
+          format === 'sdr-jpeg' &&
+          encoding.container === 'jpeg' &&
+          encoding.fallbackReason === 'hdr-profile-unsupported'
+        )
+      )
         throw new Error('HDR_RECONSTRUCTION_UNAVAILABLE');
       const metadata = await sharp(bytes, {
         limitInputPixels: this.maxPixels,
