@@ -767,18 +767,21 @@ test('linear tone and spatial blur HDR coverage is bound only to its actual migr
     { id:'gpu-saturation',cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),hdr:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
     ...['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].map(id=>({id,cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),hdrSpatial:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()}})),
     { id:'gpu-levels',cases:cases(),hdrRefusal:{outcome:'refused',errorType:'HdrRenderUnavailableError'} },
+    { id:'gpu-pixelate',cases:cases(),animation:pixels(),stack:pixels(),invalid:cases(),hdrSpatial:{cases:cases(),animation:pixels(),stack:pixels(),invalid:cases()} },
   ];
   report.observations = domainObservations(report);
-  const args = [{engineRevision:'e',rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-levels'].map(id=>overlayRow(`effect.${id}`))},
-    {rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-levels'].map(id=>fixture(`effect.${id}`))},manifest(),build(),'effect','chromium'];
+  const args = [{engineRevision:'e',rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-levels','gpu-pixelate'].map(id=>overlayRow(`effect.${id}`))},
+    {rows:['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-levels','gpu-pixelate'].map(id=>fixture(`effect.${id}`))},manifest(),build(),'effect','chromium'];
   const overlay = structuredClone(args);
-  assert.equal((await applyFamilyCoverage(...overlay,report)).pendingArtifact,7);
+  assert.equal((await applyFamilyCoverage(...overlay,report)).pendingArtifact,8);
   assert.equal(overlay[0].rows[0].axes.chromium.status,'blocked');
   assert.equal(overlay[0].rows[1].axes.chromium.status,'blocked');
   assert.equal(overlay[0].rows[2].axes.chromium.status,'blocked');
   assert.equal(overlay[0].rows[3].axes.chromium.status,'blocked');
   assert.match(overlay[0].rows[7].axes.chromium.reason,/typed-refused/);
+  assert.match(overlay[0].rows[8].axes.chromium.reason,/awaiting/);
   for (const change of [
+    r => {r.observations.find(e=>e.fixtureId==='effect.gpu-pixelate/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.8.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-contrast/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.1.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/extreme' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.cases';},
     r => {r.observations.find(e=>e.fixtureId==='effect.gpu-brightness/apply/animated' && e.workingDomain.id===WORKING_DOMAINS.hdr.id).witness='effects.0.hdr.stack';},

@@ -154,7 +154,7 @@ jobs:
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
-        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Build shared server contracts for render-worker tests
         run: |
           mise run //server:install
@@ -182,6 +182,7 @@ jobs:
             sleep 1
           done
           node studio/tools/linear-hdr-subtree.browser.mjs
+          STUDIO_MEASUREMENT_REPORT="$RUNNER_TEMP/hdr-pixelate-report.json" node studio/tools/hdr-pixelate.browser.mjs
           node studio/tools/graphics-float.browser.mjs
           node studio/tools/compositor-float.browser.mjs
           node studio/tools/transition-float.browser.mjs
@@ -330,6 +331,7 @@ jobs:
             ${{ runner.temp }}/hdr-master-browser-report.json.artifacts-*/
             ${{ runner.temp }}/mask-path-keyframes-report.json
             ${{ runner.temp }}/effects-matrix-report.json
+            ${{ runner.temp }}/hdr-pixelate-report.json
             ${{ runner.temp }}/blend-matrix-report.json
             ${{ runner.temp }}/transition-matrix-report.json
             ${{ runner.temp }}/hdr-signal-browser-report.json
