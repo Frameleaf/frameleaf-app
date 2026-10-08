@@ -20,6 +20,7 @@ const args = {
     '--use-angle=metal',
   ],
 }
+const source99 = 'a90bde5db2117561f3cbce4e23e7b118660741eb7adb6a39ea12eb5bbeab559f'
 const source97 = '614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711'
 const binding = (
   backend,
@@ -89,6 +90,25 @@ test('exact source97 admits all fixed validator fixtures without changing bounds
       binding(f.backend),
     )
     assert.deepEqual(observedBinding, binding(f.backend, source97))
+    assert.deepEqual(previousBinding, binding(f.backend))
+    assert.deepEqual(observed, previous)
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+test('synthetic exact source99 fixtures admit all fixed shapes without changing bounds', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const { binding: observedBinding, ...observed } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend, source99),
+    )
+    const { binding: previousBinding, ...previous } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend),
+    )
+    assert.deepEqual(observedBinding, binding(f.backend, source99))
     assert.deepEqual(previousBinding, binding(f.backend))
     assert.deepEqual(observed, previous)
   }
@@ -218,7 +238,7 @@ for (const [name, mutate] of [
   ],
 ])
   test(`raster admission refuses ${name}`, () => {
-    for (const source of [binding('swift').sourceSha256, source97]) {
+    for (const source of [binding('swift').sourceSha256, source97, source99]) {
       const f = envelope.envelopes[0],
         r = fixture(f),
         b = binding(f.backend, source)
@@ -226,3 +246,21 @@ for (const [name, mutate] of [
       assert.throws(() => validateBaseRaster(r, envelope, b))
     }
   })
+
+test('source99 near-match, unknown sources and wrong browser refuse', () => {
+  for (const f of envelope.envelopes) {
+    for (const source of [source99.slice(0, -1) + 'e', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source99),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+})
