@@ -484,7 +484,12 @@
       "path": "patches/0100-preserve-half-subnormal-coverage.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e6773faccb20c02e5dabba33a9387eb7199b033548ad04979dc6a9040d48ab0d"
+    },
+    {
+      "path": "patches/0101-recorded-audio-decoded-duration.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "95adf0bb31c891b2232fc502424994b1d2d6814f6b3377b4ba1c739079a94923"
     }
   ],
-  "sourceSha256": "e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689"
+  "sourceSha256": "614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711"
 }
