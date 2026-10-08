@@ -384,7 +384,12 @@
       "path": "patches/0080-upstream-audio-contract-tests.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6d70a73fc70c3f68441540a6ca8e59b20f61ebfda2ec472389c624f13ffaf49a"
+    },
+    {
+      "path": "patches/0082-video-byte-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ebf6668bde64e3fee0e8c16818901dbeeee68f11d1f3af891bacfb78356031da"
     }
   ],
-  "sourceSha256": "2b637d5dbad817076cb0aa2fdff7c9df255e4dcd3054f430f3fd50e8c2e80b44"
+  "sourceSha256": "2c2271bcf16a7f0c53472b29508496e25bb14ce7dafea934f9f391b49f253824"
 }
