@@ -1,5 +1,7 @@
 import { Kysely, sql } from 'kysely';
+import { ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { AssetFileType, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -113,6 +115,7 @@ describe(AssetJobRepository.name, () => {
 
   it('resumes a frozen HDR backfill in bounded pages without changing originals, SDR files or motion links', async () => {
     const db = await getKyselyDB();
+    let child: ChildProcess | undefined;
     try {
       const { ctx, sut } = setup(db);
       const { user } = await ctx.newUser();
@@ -147,7 +150,7 @@ describe(AssetJobRepository.name, () => {
       const queue = `hdr-backfill-${randomUUID()}`;
       const worker = randomUUID();
       const store = new SqlQueueStore(db);
-      await store.initialize([queue], worker);
+
       const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
       repository['handlers'][JobName.AssetGenerateThumbnails] = {
         queueName: queue as QueueName,
@@ -155,10 +158,23 @@ describe(AssetJobRepository.name, () => {
         label: 'HDR backfill fixture',
         handler: vi.fn(),
       };
-      await store.enqueue([
-        { queue, name: 'enumerate-hdr', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000 },
-      ]);
-      const [first] = await store.claim(queue, worker);
+      const [{ name }] = (await sql<{ name: string }>`select current_database() as name`.execute(db)).rows;
+      const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+      url.pathname = name;
+      child = fork(new URL('../../../fixtures/hdr-backfill-worker.ts', import.meta.url), [], {
+        serialization: 'advanced',
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        execArgv: ['--import', 'tsx'],
+      });
+      const response = new Promise<{ claim: QueueClaim }>((resolve, reject) => {
+        child!.once('message', (value: { claim?: QueueClaim; error?: string }) =>
+          value.claim ? resolve({ claim: value.claim }) : reject(new Error(value.error)),
+        );
+        child!.once('error', reject);
+        child!.once('exit', () => reject(new Error('HDR backfill fixture exited before freezing')));
+      });
+      child.send({ url: url.href, queue, worker, ownerId: user.id });
+      const { claim: first } = await response;
       const freeze = (claim: QueueClaim) =>
         queueExecution.run(
           {
@@ -179,11 +195,16 @@ describe(AssetJobRepository.name, () => {
                 .where('asset.isEdited', '=', false),
             ),
         );
-      await freeze(first);
       expect(await store.feedManifest(queue)).toBe(0);
-      // Simulate the durable evidence a stopped worker leaves, then recover through a fresh coordinator.
-      await recordStoppedAttempt(db, first.id, first.token);
       await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${first.id}::uuid`.execute(db);
+      await store.recoverExpired();
+      expect(await store.claim(queue, worker)).toEqual([]);
+      const closed = once(child, 'close');
+      expect(child.kill('SIGKILL')).toBe(true);
+      expect(await closed).toEqual([null, 'SIGKILL']);
+      expect(() => process.kill(child!.pid!, 0)).toThrow();
+      // Stop proof is written only after observing the real worker's terminal process state.
+      await recordStoppedAttempt(db, first.id, first.token);
       const resumed = new SqlQueueStore(db);
       await resumed.recoverExpired();
       await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
@@ -210,6 +231,11 @@ describe(AssetJobRepository.name, () => {
       expect(await originalFiles()).toEqual(filesBefore);
       expect((await originalState()).filter(({ id }) => id !== later)).toEqual(before);
     } finally {
+      if (child && child.exitCode === null && child.signalCode === null) {
+        const closed = once(child, 'close');
+        child.kill('SIGKILL');
+        await closed;
+      }
       await db.destroy();
     }
   }, 60_000);
