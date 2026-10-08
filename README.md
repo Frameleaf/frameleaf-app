@@ -113,7 +113,7 @@ Edit `.env` first if you want your photos (`UPLOAD_LOCATION`) or database (`DB_D
 
 ### Switching from another service?
 
-- [Switch from Immich](https://frameleaf.app/docs/migrate/from-immich/)
+- [Switch from your existing photo server](https://frameleaf.app/docs/migrate/from-immich/)
 - [Import from iCloud Photos](https://frameleaf.app/docs/migrate/icloud-photos/)
 - [Import from Google Photos](https://frameleaf.app/docs/migrate/google-photos/)
 - [Import from a folder or another app](https://frameleaf.app/docs/migrate/from-a-folder/)

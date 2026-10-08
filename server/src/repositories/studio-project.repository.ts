@@ -687,7 +687,7 @@ export class StudioProjectRepository {
           ("projectId", id, "ownerId", "contentType", checksum, "sizeBytes", path, "fileName", "externalReferences")
         SELECT ${item.projectId}::uuid, ${item.id}::uuid, ${item.ownerId}::uuid, ${item.contentType}, ${item.checksum},
           ${item.sizeBytes}::bigint, ${item.path}, ${item.fileName}, ${item.externalReferences}::int
-        WHERE ${counted[0].count} < ${STUDIO_IMPORT_MAX_PER_PROJECT}
+        WHERE ${counted[0].count}::int < ${STUDIO_IMPORT_MAX_PER_PROJECT}::int
         ON CONFLICT ("projectId", id) DO NOTHING
       `.execute(tx);
       const stored = await this.readImport(tx, item.projectId, item.id);
