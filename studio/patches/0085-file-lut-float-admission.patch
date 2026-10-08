@@ -1,0 +1,254 @@
+diff --git a/src/infrastructure/gpu-effects/effects/lut.ts b/src/infrastructure/gpu-effects/effects/lut.ts
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -1,5 +1,6 @@
+ import type { GpuEffectDefinition } from '../types'
+ import { createIdentityLutData, decodeLutData } from '../lut/cube-lut'
++import { readFileLut } from '../lut/file-lut'
+ 
+ const IDENTITY_LUT_SIZE = 2
+ 
+@@ -82,3 +83,61 @@
+   if (!Number.isFinite(parsed) || parsed < 2 || parsed > 129) return IDENTITY_LUT_SIZE
+   return Math.floor(parsed)
+ }
++
++/** Execution-only Cube table. IEEE754 bytes use an rgba8 texture as lossless storage;
++ * interpolation happens AFTER unpacking the original signed floating outputs. */
++export const fileLut3d: GpuEffectDefinition = {
++  id: 'gpu-file-lut-v1',
++  name: 'Verified file LUT',
++  category: 'color',
++  entryPoint: 'fileLutFragment',
++  uniformSize: 48,
++  shader: /* wgsl */ `
++struct FileLutParams { intensity: f32, size: f32, _p2: f32, _p3: f32, domainMin: vec4f, domainMax: vec4f };
++@group(0) @binding(0) var texSampler: sampler;
++@group(0) @binding(1) var inputTex: texture_2d<f32>;
++@group(0) @binding(2) var<uniform> params: FileLutParams;
++@group(0) @binding(3) var lutTex: texture_3d<f32>;
++fn unpackFileChannel(p: vec3i, channel: i32) -> f32 {
++  let bytes = vec4u(round(textureLoad(lutTex, vec3i(p.x * 4 + channel, p.y, p.z), 0) * 255.0));
++  return bitcast<f32>(bytes.x | (bytes.y << 8u) | (bytes.z << 16u) | (bytes.w << 24u));
++}
++fn fileEntry(p: vec3i) -> vec3f {
++  return vec3f(unpackFileChannel(p, 0), unpackFileChannel(p, 1), unpackFileChannel(p, 2));
++}
++@fragment fn fileLutFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureSample(inputTex, texSampler, input.uv);
++  let u = clamp((color.rgb - params.domainMin.xyz) / (params.domainMax.xyz - params.domainMin.xyz), vec3f(0), vec3f(1));
++  let position = u * (params.size - 1.0);
++  let lo = vec3i(floor(position));
++  let hi = min(lo + vec3i(1), vec3i(i32(params.size) - 1));
++  let f = fract(position);
++  let z0 = mix(mix(fileEntry(lo), fileEntry(vec3i(hi.x, lo.y, lo.z)), f.x),
++               mix(fileEntry(vec3i(lo.x, hi.y, lo.z)), fileEntry(vec3i(hi.x, hi.y, lo.z)), f.x), f.y);
++  let z1 = mix(mix(fileEntry(vec3i(lo.x, lo.y, hi.z)), fileEntry(vec3i(hi.x, lo.y, hi.z)), f.x),
++               mix(fileEntry(vec3i(lo.x, hi.y, hi.z)), fileEntry(hi), f.x), f.y);
++  return vec4f(mix(color.rgb, mix(z0, z1, f.z), clamp(params.intensity, 0.0, 1.0)), color.a);
++}`,
++  params: { intensity: lut3d.params.intensity! },
++  packUniforms: (p) => {
++    const table = readFileLut(p)
++    return new Float32Array([
++      typeof p.intensity === 'number' ? p.intensity : 1,
++      table.size,
++      0,
++      0,
++      ...table.domainMin,
++      0,
++      ...table.domainMax,
++      0,
++    ])
++  },
++  dataTexture: {
++    dimension: '3d',
++    key: (p) => JSON.stringify(p),
++    build: (p) => {
++      const { size, data } = readFileLut(p)
++      return { width: size * 4, height: size, depth: size, data }
++    },
++  },
++}
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -32,7 +32,7 @@
+ 
+ function registerEffects(effects: Record<string, unknown>) {
+   Object.values(effects).forEach((effect) => {
+-    if (isEffectDefinition(effect)) {
++    if (isEffectDefinition(effect) && effect.id !== 'gpu-file-lut-v1') {
+       GPU_EFFECT_REGISTRY.set(effect.id, effect)
+       GPU_EFFECT_CATEGORIES[effect.category]?.push(effect)
+     }
+@@ -47,7 +47,7 @@
+ registerEffects(keyingEffects)
+ 
+ export function getGpuEffect(id: string): GpuEffectDefinition | undefined {
+-  return GPU_EFFECT_REGISTRY.get(id)
++  return id === 'gpu-file-lut-v1' ? lutEffects.fileLut3d : GPU_EFFECT_REGISTRY.get(id)
+ }
+ 
+ export function getGpuEffectDefaultParams(id: string): Record<string, number | boolean | string> {
+@@ -68,7 +68,7 @@
+ 
+ /** True when the gpu effect type belongs to the color category (a "grade" effect). */
+ export function isColorGradeEffectType(gpuEffectType: string): boolean {
+-  return GPU_EFFECT_REGISTRY.get(gpuEffectType)?.category === 'color'
++  return getGpuEffect(gpuEffectType)?.category === 'color'
+ }
+ 
+ export function getGpuEffectsByCategory(category: GpuEffectCategory): GpuEffectDefinition[] {
+diff --git a/src/infrastructure/gpu-effects/effects-pipeline.ts b/src/infrastructure/gpu-effects/effects-pipeline.ts
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -456,6 +456,7 @@
+     try {
+       payload = spec.build(effect.params)
+     } catch (e) {
++      if (effect.type === 'gpu-file-lut-v1') throw e
+       getLogger().warn(`Failed to build data texture for ${effect.type}`, e)
+       return cached?.view ?? null
+     }
+diff --git a/src/infrastructure/gpu-effects/lut/file-lut.ts b/src/infrastructure/gpu-effects/lut/file-lut.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/file-lut.ts
+@@ -0,0 +1,93 @@
++/** Private, versioned execution representation. Table values are raw IEEE754 outputs,
++ * not inline RGBA8 colors. DOMAIN coordinates describe the INPUT to the table. */
++type Params = Record<string, number | boolean | string>
++interface Domain {
++  size: number
++  domainMin: number[]
++  domainMax: number[]
++}
++const MAX_BYTES = 8 * 1024 * 1024
++
++function domain(value: unknown): number[] {
++  if (
++    !Array.isArray(value) ||
++    value.length !== 3 ||
++    value.some((v) => typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e37)
++  )
++    throw new Error('INVALID_FILE_LUT_DOMAIN')
++  return value
++}
++function dimensions(value: Domain): Domain {
++  const { size } = value
++  if (!Number.isInteger(size) || size < 2 || size > 65 || size ** 3 * 16 > MAX_BYTES)
++    throw new Error('FILE_LUT_ALLOCATION_LIMIT')
++  const domainMin = domain(value.domainMin)
++  const domainMax = domain(value.domainMax)
++  for (let i = 0; i < 3; i++) {
++    const span = Math.fround(domainMax[i]!) - Math.fround(domainMin[i]!)
++    if (!(span > 0) || !Number.isFinite(Math.fround(1 / span)))
++      throw new Error('INVALID_FILE_LUT_DOMAIN')
++  }
++  return { size, domainMin, domainMax }
++}
++
++/** Caller must first apply the strict Cube grammar validator to these exact UTF-8 bytes. */
++export function materializeCubeFileLut(text: string, descriptor: Domain): Params {
++  const { size, domainMin, domainMax } = dimensions(descriptor)
++  const rows = text
++    .split(/\r\n|\r|\n/)
++    .map((line) => line.trim())
++    .filter((line) => /^[+\-.\d]/.test(line))
++  if (rows.length !== size ** 3) throw new Error('INVALID_FILE_LUT_TABLE')
++  // Budget the complete table before allocation. Four packed texels preserve each float4.
++  const data = new Uint8Array(size ** 3 * 16)
++  const view = new DataView(data.buffer)
++  for (let i = 0; i < rows.length; i++) {
++    const values = rows[i]!.split(/\s+/).map(Number)
++    if (values.length !== 3 || values.some((v) => !Number.isFinite(v) || Math.abs(v) > 1e37))
++      throw new Error('INVALID_FILE_LUT_TABLE')
++    for (let c = 0; c < 3; c++) view.setFloat32(i * 16 + c * 4, values[c]!, true)
++    view.setFloat32(i * 16 + 12, 1, true)
++  }
++  let binary = ''
++  for (let i = 0; i < data.length; i += 8192)
++    binary += String.fromCharCode(...data.subarray(i, i + 8192))
++  return {
++    fileLutVersion: 1,
++    fileLutSize: size,
++    fileLutData: btoa(binary),
++    fileLutDomainMin: JSON.stringify(domainMin),
++    fileLutDomainMax: JSON.stringify(domainMax),
++  }
++}
++
++/** Validate before uniform packing and texture upload; malformed execution data never becomes identity. */
++export function readFileLut(params: Params): Domain & { data: Uint8Array } {
++  if (
++    params.fileLutVersion !== 1 ||
++    typeof params.fileLutSize !== 'number' ||
++    typeof params.fileLutData !== 'string' ||
++    typeof params.fileLutDomainMin !== 'string' ||
++    typeof params.fileLutDomainMax !== 'string'
++  )
++    throw new Error('INVALID_FILE_LUT_VERSION')
++  const bounds = dimensions({
++    size: params.fileLutSize,
++    domainMin: JSON.parse(params.fileLutDomainMin),
++    domainMax: JSON.parse(params.fileLutDomainMax),
++  })
++  const length = bounds.size ** 3 * 16
++  if (params.fileLutData.length !== 4 * Math.ceil(length / 3))
++    throw new Error('FILE_LUT_ALLOCATION_LIMIT')
++  const binary = atob(params.fileLutData)
++  if (binary.length !== length || btoa(binary) !== params.fileLutData)
++    throw new Error('INVALID_FILE_LUT_ENCODING')
++  const data = Uint8Array.from(binary, (c) => c.charCodeAt(0))
++  const view = new DataView(data.buffer)
++  for (let i = 0; i < length; i += 4) {
++    const value = view.getFloat32(i, true)
++    if (!Number.isFinite(value) || Math.abs(value) > 1e37 || (i % 16 === 12 && value !== 1))
++      throw new Error('INVALID_FILE_LUT_TABLE')
++  }
++  return { ...bounds, data }
++}
+diff --git a/src/infrastructure/gpu-effects/lut/file-lut.test.ts b/src/infrastructure/gpu-effects/lut/file-lut.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/file-lut.test.ts
+@@ -0,0 +1,38 @@
++import { describe, expect, it } from 'vitest'
++import { materializeCubeFileLut, readFileLut } from './file-lut'
++
++const descriptor = { size: 2, domainMin: [-1, 2, 10], domainMax: [1, 4, 14] }
++const cube = `LUT_3D_SIZE 2\n${Array.from({ length: 8 }, (_, i) => `${i & 1 ? 1 : -1} ${i & 2 ? 2 : -2} ${i & 4 ? 3 : -3}`).join('\n')}`
++describe('versioned file LUT materialization', () => {
++  it('keeps raw signed outputs and per-axis input domains, unlike inline RGBA8', () => {
++    const params = materializeCubeFileLut(cube, descriptor)
++    const decoded = readFileLut(params)
++    expect(decoded.domainMin).toEqual([-1, 2, 10])
++    expect(decoded.domainMax).toEqual([1, 4, 14])
++    const view = new DataView(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength)
++    expect(view.getFloat32(0, true)).toBe(-1)
++    expect(view.getFloat32(16, true)).toBe(1)
++    // Independent midpoint oracle: interpolating RAW outputs gives zero; clipping first gives .5.
++    expect((view.getFloat32(0, true) + view.getFloat32(16, true)) / 2).toBe(0)
++  })
++  it('refuses malformed or nonrepresentable outputs rather than falling back to identity', () => {
++    expect(() =>
++      materializeCubeFileLut(cube.replace('-1 -2 -3', '1e38 -2 -3'), descriptor),
++    ).toThrow()
++    expect(() =>
++      materializeCubeFileLut(cube.replace('-1 -2 -3', 'NaN -2 -3'), descriptor),
++    ).toThrow()
++    expect(() => materializeCubeFileLut(cube, { ...descriptor, size: 65 })).toThrow()
++  })
++  it('bounds encoded allocation and refuses noncanonical encoding/domain/version changes', () => {
++    const params = materializeCubeFileLut(cube, descriptor)
++    const patches: Record<string, number | string>[] = [
++      { fileLutVersion: 2 },
++      { fileLutData: params.fileLutData + '\n' },
++      { fileLutDomainMax: '[1,2,14]' },
++      { fileLutSize: 129 },
++      { fileLutDomainMin: '[-1,2,1e40]' },
++    ]
++    for (const patch of patches) expect(() => readFileLut({ ...params, ...patch })).toThrow()
++  })
++})

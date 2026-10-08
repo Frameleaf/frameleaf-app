@@ -76,7 +76,8 @@ for (const [file, expected] of Object.entries({
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
   // Pinned SDR colour and spatial branches remain unchanged; HDR sampling is independently measured.
-  'effects-pipeline.ts': '9e40a07734722195000eaeba6cb44f407ed91daac56f33d38ea3f416b6590fec',
+  // Execution-only file tables propagate validation failures; photometric math is retained.
+  'effects-pipeline.ts': '25a213b66f9d64da566de1d0a50cd860947bf6a36e260733b4b85381bf8dee1d',
 })) {
   const observed = createHash('sha256').update(await readFile(new URL(`../engine/src/infrastructure/gpu-effects/${file}`, import.meta.url))).digest('hex');
   assert.equal(observed, expected, `photometric source contract changed: ${file}; numerical qualification requires source review`);

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepareOneClaim } from './render-worker-claim.mjs';
+import { verifyClaimFileLuts } from './render-worker-lut-inputs.mjs';
 import { inventory } from './engine.mjs';
 import { pqDecode } from './hdr-master.mjs';
 const engine = fileURLToPath(new URL('../engine/', import.meta.url));
@@ -224,9 +225,14 @@ export async function renderStillImage(context, consume) {
   assert.deepEqual(engineInputs.binding, {
     operationId: claim.operationId, claimToken: claim.claimToken, revisionId: claim.revisionId,
   }, 'INPUT_CLAIM_BINDING_CHANGED');
+  let executionProject = engineInputs.input.project;
+  if (engineInputs.fileLuts) {
+    assert.deepEqual(context.prepared.snapshot.studio, claim.snapshot.studio, 'INPUT_SNAPSHOT_CHANGED');
+    executionProject = await verifyClaimFileLuts(context.prepared, engineInputs.fileLuts, isLeaseActive);
+  } else assert.ok(!claim.snapshot.studio.resources?.some(resource => resource.kind === 'lut'), 'FILE_LUT_EXECUTION_REQUIRED');
   if (!recipe.photo) {
     assert.ok(context.prepared?.inputs instanceof Map, 'VERIFIED_INPUTS_REQUIRED');
-    assert.equal(context.prepared.inputs.size, engineInputs.input.media.length, 'VERIFIED_INPUT_CLOSURE_CHANGED');
+    assert.equal(context.prepared.inputs.size, engineInputs.input.media.length + (engineInputs.fileLuts?.binding.resources.length ?? 0), 'VERIFIED_INPUT_CLOSURE_CHANGED');
     if (claim.snapshot.timing.sources.length)
       assert.deepEqual(engineInputs.videoTiming, claim.snapshot.timing, 'SOURCE_TIMING_CHANGED');
     else assert.equal(engineInputs.videoInputs?.length ?? 0, 0, 'SOURCE_TIMING_CHANGED');
@@ -235,6 +241,7 @@ export async function renderStillImage(context, consume) {
   for (const input of recipe.photo ? [] : context.prepared.inputs.values()) {
     assertLive();
     assert.equal(digest(input.bytes), input.sha256, 'VERIFIED_INPUT_CHANGED');
+    if (input.kind === 'lut') continue; // Recomputed checksum-bound materialization above; never treat LUT bytes as media.
     const video = engineInputs.videoInputs?.find(source => source.facts.assetId === input.resourceId);
     if (video) {
       assert.equal(video.sha256, input.sha256, 'VERIFIED_VIDEO_CHANGED');
@@ -406,7 +413,7 @@ export async function renderStillImage(context, consume) {
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         },
         {
-          project: engineInputs.input.project,
+          project: executionProject,
           media: harness.media,
           resources: harness.hdrRasterResources ?? [],
           photo: recipe.photo,
@@ -495,7 +502,7 @@ export async function renderStillImage(context, consume) {
       result = await renderJob(
         page,
         {
-          project: engineInputs.input.project,
+          project: executionProject,
           media: harness.media,
           settings: recipe.settings,
           // Explicit integer frame bounds also prevent the engine's one-second empty-tail floor.

@@ -404,7 +404,12 @@
       "path": "patches/0084-linear-hdr-affine-color.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1842f24e0ca4479a4419a8422bef7fb7528d5bc02b5825eac29e58ee1ecb035d"
+    },
+    {
+      "path": "patches/0085-file-lut-float-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "299c8adad9da408a7f4e92963f111f63d90b391f931a66c8fb5fd6c60f7b39f9"
     }
   ],
-  "sourceSha256": "4ae5672594630e0be3935fbf491386e4a4f2c8add2e001d844e638866917f494"
+  "sourceSha256": "5b1d0f323c6e711162008f6816f0c5479ee9a67618a6cefb8790d665f20eb57c"
 }
