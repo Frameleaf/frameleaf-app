@@ -641,6 +641,8 @@ export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecip
   ...recipe,
   crop: { ...(recipe.crop && typeof recipe.crop === 'object' && recipe.crop), ...FULL_RECT },
   straighten: 0,
+  // the stage shows the keystone correction itself, like the other geometry
+  perspective: undefined,
   rotation: 0,
   flipHorizontal: false,
   flipVertical: false,

@@ -82,6 +82,7 @@
     requestDevelopPreview,
     type PreviewResult,
   } from '$lib/frameleaf/develop-api';
+  import { perspectiveTransform } from '$lib/frameleaf/perspective';
   import {
     anyRevisionBusy,
     changeDraft,
@@ -539,9 +540,11 @@
     const width = frame.rotated ? frame.fh : frame.fw;
     const height = frame.rotated ? frame.fw : frame.fh;
     const filter = plain || previewMatches || hdrEditing ? 'none' : filterInfo.filter;
+    // the keystone correction applies to the turned and mirrored frame, before the straighten
+    const keystone = perspectiveTransform(recipe.perspective, frame.fw, frame.fh);
     const transform = showingOriginal
       ? 'translate(-50%, -50%) scale(1, 1) rotate(0deg)'
-      : `translate(-50%, -50%) scale(${recipe.flipHorizontal ? -1 : 1}, ${recipe.flipVertical ? -1 : 1}) rotate(${recipe.rotation}deg)`;
+      : `translate(-50%, -50%) ${keystone} scale(${recipe.flipHorizontal ? -1 : 1}, ${recipe.flipVertical ? -1 : 1}) rotate(${recipe.rotation}deg)`;
     return `width:${width}px;height:${height}px;transform:${transform};filter:${filter}`;
   };
   const straightenStyle = $derived.by(() => {
@@ -1582,6 +1585,29 @@
                   ondblclick={() => change({ straighten: 0 })}
                 />
               </div>
+              <h3>{$t('frameleaf_editor_perspective')}</h3>
+              {#each [{ axis: 'vertical', label: $t('frameleaf_editor_perspective_vertical') }, { axis: 'horizontal', label: $t('frameleaf_editor_perspective_horizontal') }] as const as item (item.axis)}
+                <div class="ed-dial" style="--dial-x: {recipe.perspective[item.axis] * 3}px">
+                  <output aria-hidden="true"
+                    >{item.label}
+                    {recipe.perspective[item.axis] > 0 ? '+' : ''}{recipe.perspective[item.axis]}</output
+                  >
+                  <input
+                    type="range"
+                    aria-label={item.label}
+                    title={$t('frameleaf_editor_double_click_reset')}
+                    min="-100"
+                    max="100"
+                    step="1"
+                    value={recipe.perspective[item.axis]}
+                    oninput={(event) =>
+                      change({
+                        perspective: { ...recipe.perspective, [item.axis]: Number(event.currentTarget.value) },
+                      })}
+                    ondblclick={() => change({ perspective: { ...recipe.perspective, [item.axis]: 0 } })}
+                  />
+                </div>
+              {/each}
               <h3>{$t('editor_orientation')}</h3>
               <div class="ed-grid-2">
                 <button type="button" class="ed-button" onclick={() => rotate(false)}>

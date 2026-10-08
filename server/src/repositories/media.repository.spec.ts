@@ -462,6 +462,34 @@ describe(MediaRepository.name, () => {
       const red = Array.from({ length: 6 }, (_, index) => data[index * info.channels] / 40);
       expect(red).toEqual([0, 3, 1, 4, 2, 5]);
     });
+
+    it('applies the keystone correction to the oriented frame, keeping its size (renderer v4)', async () => {
+      const width = 20;
+      const height = 20;
+      // a white column at x = 0 on black
+      const input = Buffer.alloc(width * height * 3);
+      for (let y = 0; y < height; y += 1) input.fill(255, y * width * 3, y * width * 3 + 3);
+      const plan = {
+        rotation: 0 as const,
+        flipHorizontal: false,
+        flipVertical: false,
+        oriented: { width, height },
+        straighten: 0,
+        extract: { left: 0, top: 0, width, height },
+        output: { width, height },
+      };
+      const flat = await sut.renderDevelopGeometry(input, { width, height, channels: 3 }, plan);
+      const keystone = await sut.renderDevelopGeometry(
+        input,
+        { width, height, channels: 3 },
+        { ...plan, perspective: { vertical: 100, horizontal: 0 } },
+      );
+      expect({ width: keystone.info.width, height: keystone.info.height }).toEqual({ width, height });
+      // the widened top samples inside the frame, off the column; the bottom row still shows it
+      expect(flat.data[0]).toBe(255);
+      expect(keystone.data[0]).toBeLessThan(64);
+      expect(keystone.data[(height - 1) * width * 3]).toBeGreaterThan(200);
+    });
   });
 
   describe('develop artifacts (FL-233)', () => {
