@@ -19,6 +19,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from immich_ml.models.semantic_mask import SemanticMaskModel
 
         return SemanticMaskModel
+    if model_task == ModelTask.INPAINT and model_type == ModelType.VISUAL:
+        from immich_ml.models.inpaint import InpaintModel
+
+        return InpaintModel
     source = get_model_source(model_name)
     match source, model_type, model_task:
         case ModelSource.OPENCLIP | ModelSource.MCLIP, ModelType.VISUAL, ModelTask.SEARCH:

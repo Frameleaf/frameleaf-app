@@ -91,7 +91,7 @@ test('an uncredited model, a changed licence text or a retyped Freecut licence f
 
 test('library model ids come from the machine learning service and the server defaults', async () => {
   const ids = libraryModelIds({
-    constants: '_OPENCLIP_MODELS = {\n    "ViT-B-32__openai",\n}\n_MCLIP_MODELS = {\n    "LABSE-Vit-L-14",\n}\n_INSIGHTFACE_MODELS = {\n    "buffalo_l",\n}\n_PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {\n    "PP-OCRv5_mobile": (_OCR_DET_MOBILE, _OCR_REC_MOBILE),\n    "EN__PP-OCRv5_mobile": _ocr_lang("EN", "c346"),\n}\n',
+    constants: '_OPENCLIP_MODELS = {\n    "ViT-B-32__openai",\n}\n_MCLIP_MODELS = {\n    "LABSE-Vit-L-14",\n}\n_INSIGHTFACE_MODELS = {\n    "buffalo_l",\n}\n_PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {\n    "PP-OCRv5_mobile": (_OCR_DET_MOBILE, _OCR_REC_MOBILE),\n    "EN__PP-OCRv5_mobile": _ocr_lang("EN", "c346"),\n}\n_INPAINT_MODELS: dict[str, InpaintModelFile] = {\n    "frameleaf-inpaint": InpaintModelFile(\n        "frameleaf-inpaint",\n        "1fae",\n        "Carve/LaMa-ONNX@c3c0:lama_fp32.onnx",\n    ),\n}\n',
     description:
       'OPENVINO_MODEL_ALIASES = {\n    "Qwen/Qwen2.5-VL-3B-Instruct": "llmware/qwen2.5-vl-3b-ov",\n}\nFLORENCE_MODEL_NAMES = {\n    "microsoft/Florence-2-base",\n}\n',
     serverConfig:
@@ -102,6 +102,7 @@ test('library model ids come from the machine learning service and the server de
     'ml:description:Qwen/Qwen2.5-VL-3B-Instruct',
     'ml:description:microsoft/Florence-2-base',
     'ml:description:microsoft/Florence-2-base-ft',
+    'ml:inpaint:frameleaf-inpaint',
     'ml:insightface:buffalo_l',
     'ml:mclip:LABSE-Vit-L-14',
     'ml:nsfw:onnx-community/nsfw_image_detection-ONNX',
