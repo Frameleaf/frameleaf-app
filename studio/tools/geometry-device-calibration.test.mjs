@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { validateGeometryCalibration } from './geometry-device-calibration.mjs'
+import { validateGeometryCalibration as validate } from './geometry-device-calibration.mjs'
+import { readFileSync } from 'node:fs'
+const envelope = JSON.parse(
+  readFileSync(new URL('./geometry-raster-envelopes.json', import.meta.url)),
+)
+function validateGeometryCalibration(row, w, h, entry, index) {
+  const fixed = envelope.envelopes.find((e) => e.backend === 'swift' && e.W === w && e.H === h)
+  return validate(row, w, h, entry, index, {
+    width: w,
+    height: h,
+    components: fixed.components,
+    state: { ...fixed.state, alphaToCoverageEnabled: false },
+  })
+}
 
 const cases = [
   ...[1, -10, 10].map((amount) => ({
@@ -34,6 +47,9 @@ function fixture(entry, caseIndex) {
       v = (Math.floor(i / 2) + 0.5) / 2
     r.splice(0, 7, i, caseIndex, type, 2, 2, u, v)
     r.splice(21, 4, ...packed)
+    r[27] = (i % 2) + 0.5
+    r[28] = Math.floor(i / 2) + 0.5
+    r[29] = Math.floor(i / 2) > i % 2 ? 0 : 1
     if (type === 1) {
       const [ax, ay, fx, fy] = packed
       r[7] = 1
@@ -76,6 +92,11 @@ function fixture(entry, caseIndex) {
     return r
   }).flat()
   return {
+    stage: 'fragment',
+    rasterState: {
+      ...envelope.envelopes.find((e) => e.backend === 'swift' && e.W === 2 && e.H === 2).state,
+      alphaToCoverageEnabled: false,
+    },
     type: entry.type,
     params: { ...p },
     width: 2,

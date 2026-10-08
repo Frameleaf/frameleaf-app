@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { probeBaseRaster, validateBaseRaster } from './geometry-raster-calibration.mjs';
 import { probeGeometryCoordinates, validateGeometryCalibration } from './geometry-device-calibration.mjs';
 import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
 import { testedSource } from './lib/working-domain-report.mjs';
@@ -9,6 +11,12 @@ import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 const { chromium } = createRequire(new URL('../engine/package.json', import.meta.url))('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 const source = await testedSource(new URL(import.meta.url));
+const envelopeBytes=await readFile(new URL('./geometry-raster-envelopes.json',import.meta.url));
+assert.equal(createHash('sha256').update(envelopeBytes).digest('hex'),'2489f7711756e8c30f7b98dd94475f881fdb460a0cfb373206ef1f8fceeb5382');
+const envelopes=JSON.parse(envelopeBytes);
+const quadText=await readFile(new URL('../engine/src/infrastructure/gpu-shared/fullscreen-quad.ts',import.meta.url),'utf8');
+const quad=quadText.slice(quadText.indexOf('`',quadText.indexOf('export const FULLSCREEN_QUAD_WGSL'))+1,quadText.lastIndexOf('`'));
+const quadSha256=createHash('sha256').update(quadText).digest('hex');
 const W = 8, H = 6;
 const input = Array.from({ length: W * H }, (_, i) => {
   const x = i % W, y = Math.floor(i / W), alpha = [0,.25,.5,1][(x+y)%4];
@@ -27,13 +35,15 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
 </script>` }));
   await page.goto(origin + '/hdr-geometry');
   await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__);
-  const report = await page.evaluate(async ({ W, H, input, cases, probeSource }) => {
+  const report = await page.evaluate(async ({ W, H, input, cases, probeSource, baseProbeSource, baseValidateSource, quad, envelopes, binding }) => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/index.ts');
     const { createCompositionRenderer } = await import('/src/features/export/utils/client-render-engine.ts');
     const pipeline = await EffectsPipeline.create();
     if (!pipeline) throw new Error('WebGPU unavailable');
     pipeline.setWorkingRange('hdr');
     const device = pipeline.getDevice();
+    const rasterCapture=await (0,eval)('('+baseProbeSource+')')(device,W,H,quad);
+    const raster=(0,eval)('('+baseValidateSource+')')(rasterCapture,envelopes,binding);
     const probe = (0,eval)('(' + probeSource + ')');
     const calibration = await probe(device,W,H,cases);
     const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
@@ -105,14 +115,14 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
           compositions.push({ ...entry, width: frame.width, height: frame.height, pixels, repeatedSeek: true });
         } finally { renderer.dispose(); }
       }
-      return { adapter: device.adapterInfo, calibration, rows, compositions, halfCoverage, compositionUsesCalibratedDevice:true };
+      return { adapter: device.adapterInfo, rasterCapture, raster, calibration, rows, compositions, halfCoverage, compositionUsesCalibratedDevice:true };
     } finally {
       original.destroy(); output.destroy(); buffer.destroy(); pipeline.destroy();
     }
-  }, { W, H, input, cases, probeSource:probeGeometryCoordinates.toString() });
+  }, { W, H, input, cases, probeSource:probeGeometryCoordinates.toString(),baseProbeSource:probeBaseRaster.toString(),baseValidateSource:validateBaseRaster.toString(),quad,envelopes,binding:{quadSha256,browser:browser.version(),sourceSha256:source.sourceSha256,backendArgs:chromeLaunchArgs()} });
   if (process.env.STUDIO_MEASUREMENT_REPORT) await writeFile(process.env.STUDIO_MEASUREMENT_REPORT + '.raw.json', JSON.stringify({source, ...report, browser:browser.version(), backendArgs:chromeLaunchArgs(), qualification:'pending assertions'},null,2));
   try {
-  const validated = report.calibration.map((row,i) => validateGeometryCalibration(row,W,H,cases[i],i));
+  const validated = report.calibration.map((row,i) => validateGeometryCalibration(row,W,H,cases[i],i,report.raster));
   assert.equal(validated.length,cases.length);
   report.validatedCalibration=validated;
   const checkPixels = (pixels,expected,label) => {
@@ -142,7 +152,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       ['parameter',r=>{r.values[21]+=.01;}],['case',r=>{r.caseIndex=(index+1)%cases.length;}],
     ]) {
       const forged=structuredClone(report.calibration[index]);mutate(forged);
-      assert.throws(()=>validateGeometryCalibration(forged,W,H,cases[index],index));
+      assert.throws(()=>validateGeometryCalibration(forged,W,H,cases[index],index,report.raster));
       report.negativeControls.push({index,control:'forged-'+name,refused:true});
     }
   }
