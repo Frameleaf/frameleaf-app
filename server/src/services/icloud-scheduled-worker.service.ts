@@ -158,7 +158,7 @@ export class ICloudScheduledWorkerService {
               throw new Error('scheduled_audit_unavailable');
             }
           } finally {
-            void files.release();
+            await files.release();
           }
         } else {
           const type = resource.source.type;
@@ -205,9 +205,12 @@ export class ICloudScheduledWorkerService {
               throw new Error('scheduled_audit_unavailable');
             }
           } finally {
-            for (const files of heldFiles) {
-              void files.release();
-            }
+            await Promise.allSettled(heldFiles.map((files) => Promise.try(() => files.release()))).then((releases) => {
+              const failures = releases
+                .filter((release) => release.status === 'rejected')
+                .map((release) => release.reason);
+              if (failures.length > 0) throw new AggregateError(failures, 'scheduled_audit_release_failed');
+            });
           }
         }
       } catch {

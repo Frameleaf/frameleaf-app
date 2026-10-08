@@ -2,7 +2,6 @@ import { Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import type { AuditAuthority, ICloudAuditRow } from 'src/repositories/icloud-audit.repository.js';
 import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
-import { lockAuditOwner } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
@@ -167,11 +166,12 @@ export async function guardScheduledAudit(
   for (const key of contentKeys) {
     await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
   }
-  await lockAuditOwner(db, ownerId, hint.expectedSha256, true);
+  // Content keys are already held; read owner authority under the same owner row lock.
   const owner = await db
     .selectFrom('user')
     .select(['pinCode', 'deletedAt'])
     .where('id', '=', ownerId)
+    .forUpdate()
     .executeTakeFirst();
   if (!owner || owner.deletedAt) {
     return;

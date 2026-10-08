@@ -2335,6 +2335,33 @@ describe('iCloud exact identity adoption', () => {
         },
       );
 
+      it('acquires content serialization once before locking and reading the scheduled owner', async () => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        const queries: CompiledQuery[] = [];
+        captureCompiledQuery = (query) => {
+          queries.push(query);
+        };
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeDefined();
+        });
+        captureCompiledQuery = undefined;
+        const contentKey = createHash('sha1')
+          .update(`icloud-content:${f.user.id}:${f.sha256.toString('hex')}`)
+          .digest()
+          .readBigInt64BE(0)
+          .toString();
+        const contentLocks = queries.filter(
+          (query) => /SELECT pg_advisory_xact_lock\(/i.test(query.sql) && query.parameters.includes(contentKey),
+        );
+        expect(contentLocks).toHaveLength(1);
+        const ownerReads = queries.filter(
+          (query) => /from "user"/i.test(query.sql) && query.parameters.includes(f.user.id),
+        );
+        expect(ownerReads).toHaveLength(1);
+        expect(ownerReads[0].sql).toMatch(/"pinCode".*"deletedAt".*for update/i);
+        expect(queries.indexOf(contentLocks[0])).toBeLessThan(queries.indexOf(ownerReads[0]));
+      });
+
       it('uses persisted purpose and refuses a session-style caller or nontransactional scheduled admission', async () => {
         const { f, authority, resource } = await scheduledAuthorityFixture();
         expect(await guardAuditAuthority(db, authority, f.user.id, true, resource)).toBeUndefined();
