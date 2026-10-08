@@ -1,5 +1,6 @@
 // FL-145: the still-image subset of Freecut's HeadlessProjectInput/HeadlessFrameInput.
 import assert from 'node:assert/strict';
+import { deriveClaimVectors } from './render-worker-vector-inputs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -160,7 +161,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   const items = views.flatMap((view) => view.items);
   for (const item of items) {
     assert.ok(
-      ((['image', 'video'].includes(item.type) && typeof item.mediaId === 'string') ||
+      ((['image', 'video', 'lottie'].includes(item.type) && typeof item.mediaId === 'string') ||
         (item.type === 'shape' && !item.mediaId) ||
         (item.type === 'composition' && typeof item.compositionId === 'string' && !item.mediaId)) &&
         !item.generatedId && !item.src && !item.audioSrc,
@@ -184,10 +185,18 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   );
   assert.ok(measureStudioGraph(project) <= STUDIO_MAX_GRAPH_BYTES, 'GRAPH_RESOURCE_LIMIT');
   const extraction = extractStudioResourceReferences(project);
+  // Match the existing server's legacy clip import mapping, never an explicit dependency kind.
+  for (const reference of extraction.references) {
+    if (!reference.vectorDependency && reference.kind === 'library-asset' &&
+        prepared.snapshot.studio.resources.some(entry => entry.kind === 'project-import' && entry.id === reference.id)) reference.kind = 'project-import';
+  }
+  extraction.references = extraction.references.filter((reference, index, list) =>
+    list.findIndex(other => other.kind === reference.kind && other.id === reference.id && other.family === reference.family) === index);
   validateClaimResourceClosure(prepared, extraction);
   assert.equal(checkNestedSequences(extraction.sequences).refused.length, 0, 'INVALID_GRAPH_RESOURCE');
   validateInlineLuts(project);
   const fileLuts = await deriveClaimFileLuts(prepared, isLeaseActive);
+  const vectors = await deriveClaimVectors(prepared, isLeaseActive);
   const { collectMediaIds } = await import(pathToFileURL(path.join(engine, 'headless/lib/workspace.mjs')).href);
   const { createMediaServer } = await import(pathToFileURL(path.join(engine, 'headless/media-server.mjs')).href);
   // Include unused definitions as well as every reachable/off-range occurrence. The same
@@ -199,11 +208,14 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     extraction.references.every((reference) =>
       (reference.kind === 'library-asset' && ids.includes(reference.id)) ||
       (reference.kind === 'nested-sequence' && extraction.sequences.has(reference.id)) ||
-      (reference.kind === 'lut' && fileLuts.binding.resources.some(resource => resource.key === `lut:${reference.id}`))),
+      (reference.kind === 'lut' && fileLuts.binding.resources.some(resource => resource.key === `lut:${reference.id}`)) ||
+      vectors.resources.includes(`${reference.kind}:${reference.id}`)),
     'UNSUPPORTED_GRAPH_RESOURCE',
   );
-  assert.equal(prepared.inputs.size, ids.length + fileLuts.binding.resources.length, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
-  const sources = ids.map((id) => {
+  const rasterIds = ids.filter(id => !vectors.sources.some(source => source.id === id));
+  const consumed = new Set([...rasterIds.map(id => `library-asset:${id}`), ...fileLuts.binding.resources.map(resource => resource.key), ...vectors.resources]);
+  assert.equal(prepared.inputs.size, consumed.size, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
+  const sources = rasterIds.map((id) => {
     const input = prepared.inputs.get(`library-asset:${id}`);
     assert.ok(
       input?.kind === 'library-asset' && input.resourceId === id && Buffer.isBuffer(input.bytes),
@@ -214,6 +226,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     assert.equal(uses.size, 1, 'MIXED_RESOURCE_USE_UNAVAILABLE');
     return { id, bytes: input.bytes, sha256: input.sha256, declaredChecksum: input.declaredChecksum, key: randomUUID(), video: uses.has('video') };
   });
+  sources.push(...vectors.sources.map(source => ({ ...source, key: randomUUID(), vector: true })));
   assert.ok(sources.reduce((total, source) => total + source.bytes.length, 0) <= 32 * 1024 * 1024, 'IMAGE_BYTE_LIMIT');
   const sharp = require('sharp');
   const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-claim-images-'));
@@ -237,6 +250,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     try {
       await pool?.close();
       for (const source of sources) source.bytes.fill(0);
+      for (const source of vectors.sources) source.bytes.fill(0);
       for (const raster of Object.values(hdrRasters)) {
         raster.rgba?.fill(0);
         raster.rgb?.fill(0);
@@ -255,6 +269,12 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
     for (const source of sources) source.bytes = Buffer.from(source.bytes);
     for (const source of sources) {
       assert.ok(isLeaseActive(), 'LEASE_LOST');
+      if (source.vector) {
+        const file = path.join(folder, `${source.key}.json`);
+        await writeFile(file, source.bytes, { mode: 0o600, flag: 'wx' });
+        paths.set(source.key, file);
+        continue;
+      }
       if (source.video) {
         source.format = 'mp4';
         const file = path.join(folder, `${source.key}.mp4`);
@@ -379,6 +399,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       videoTiming,
       videoInputs,
       fileLuts,
+      vectors,
       // This is the existing headless payload fragment. The graph is preserved without migration
       // or guessed settings. Each opaque local URL serves only a verified, grant-bound input.
       input: {

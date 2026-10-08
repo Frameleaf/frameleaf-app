@@ -41,6 +41,7 @@ import {
   isStudioResourceKind,
   studioReferenceKey,
 } from 'src/utils/studio-resources.js';
+import { readStudioVectorBindings } from 'src/utils/studio-vector-dependencies.js';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                            */
@@ -125,7 +126,13 @@ export const studioBundleImportSources = (sources: readonly StudioBundleSource[]
 export const isStudioBundleImportAlias = (
   source: Pick<StudioBundleSource, 'kind' | 'id'>,
   imports: ReadonlyMap<string, unknown>,
-): boolean => source.kind === StudioResourceKind.LibraryAsset && imports.has(source.id);
+  graph?: unknown,
+): boolean =>
+  source.kind === StudioResourceKind.LibraryAsset &&
+  imports.has(source.id) &&
+  readStudioVectorBindings(graph).every(
+    (binding) => !(binding.child.kind === 'library-asset' && binding.child.id === source.id),
+  );
 
 /* ------------------------------------------------------------------ */
 /* Manifest                                                             */
@@ -1074,7 +1081,7 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
     return next;
   };
 
-  const walk = (node: unknown): unknown => {
+  const walk = (node: unknown, root = false): unknown => {
     if (Array.isArray(node)) {
       return node.map((item) => walk(item));
     }
@@ -1084,7 +1091,18 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
 
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node)) {
-      if ((libraryIdKeys as readonly string[]).includes(key)) {
+      if (root && key === 'studioVectorDependencies') {
+        out[key] = {
+          version: 1,
+          bindings: readStudioVectorBindings(node).map((binding) => ({
+            ...binding,
+            child:
+              binding.child.kind === 'library-asset'
+                ? { ...binding.child, id: mapId(StudioResourceKind.LibraryAsset, binding.child.id) }
+                : binding.child,
+          })),
+        };
+      } else if ((libraryIdKeys as readonly string[]).includes(key)) {
         out[key] = mapId(StudioResourceKind.LibraryAsset, value);
       } else if (key === 'editedMasterOf') {
         out[key] = mapId(StudioResourceKind.EditedMaster, value);
@@ -1105,7 +1123,7 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
     return out;
   };
 
-  const result = walk(graph);
+  const result = walk(graph, true);
   const unused = mapping
     .keys()
     .filter((key) => !used.has(key))
