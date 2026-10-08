@@ -1,0 +1,30 @@
+CARE-10 · Import Google Photos
+Target 2:45 · 305 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Import Google Photos brings a Google Takeout export into your library. In Settings, open Import and protection, then Google Photos and server imports, and choose Preview import workflow. Frameleaf still labels this workflow a preview.
+
+The wizard has three stages: Stage, Scan and Reconcile. Name the import and choose Continue. Administrators can instead read an export from a permitted folder on the server.
+
+In Stage, choose every ZIP file from one Takeout export, and keep the page open while they upload. If an upload stops, choose the same files again and it carries on where it stopped.
+
+Scan runs on the server. It reads each archive and matches every photo with its metadata, even when Google shortened a sidecar name or put it in another archive. You can close the page.
+
+The summary counts new photos, originals you already have, and anything to review. Unsafe or damaged entries are refused, never staged.
+
+Reconcile has five tabs. In Review, where sidecars disagree, choose one or import without it. Live Photos lists photos and videos that share a name; link only the ones that belong together.
+
+Albums chooses which folders become albums; Google's year folders start off. Import options chooses what comes over, including Fill in missing details on photos already in your library.
+
+[pause]
+
+Choose Import. Each file is copied in and checked against the scan, and your export is never changed. A photo you already have is matched by checksum, not copied again. Failed steps are retried once.
+
+Photos from Google's Locked Folder go straight into Locked.
+
+Report shows what was imported, matched, skipped, unresolved and failed, and downloads the full reconciliation report as JSON or CSV.
+
+When you are done, Delete import removes its staged copies. Everything it brought in stays, and running an import again never creates a second copy.
+
+[pause]
+
+Next up: Preservation packages.

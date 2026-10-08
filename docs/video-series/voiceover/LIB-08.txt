@@ -1,0 +1,24 @@
+LIB-08 · The search palette
+Target 2:45 · 356 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Every search starts in one place, the search palette. Choose Search your library in the top bar, or press slash, or Command K on a Mac and Control K elsewhere.
+
+Before you type, it gives you a head start. Recent searches holds your last few, Saved searches holds the ones you kept, and People, When and Places start a search with one click.
+
+Type naturally. Smart search is the default mode. It looks for what a photo shows, not only its name. Matches appear as you type, and Show results opens the full set.
+
+The mode button changes what your words match. Text in photos finds words inside a picture, like this trail sign. Filename and Full path match how a file is named and where it is stored. Description searches captions, and All text searches all of them at once.
+
+Filters can be typed. Write person, a colon and a name, and it turns into a chip when you press space. Place, tag, type, camera, year, month, after and before work the same way. The question mark lists them all, and a click adds one.
+
+To leave something out, put a minus in front of the filter. Minus person Emma becomes Not Emma, and those photos drop out.
+
+Opened from an album, the palette searches that album first. The scope bar shows the count there and in your entire library, so you can widen the search with one click.
+
+When a search is worth keeping, choose Save search and name it. Then pick one of three. A Smart album updates as new photos match. An Album snapshot makes an ordinary album of what matches now. A Saved search runs the search again whenever you want.
+
+Saved searches sit in the sidebar, under your albums, and in the palette. A smart album needs a search by people, tags, media type, dates or smart search, so a file name search can be a snapshot or a saved search instead.
+
+Press slash to start. Add chips to narrow, a minus to exclude, and choose Save search to keep what you found.
+
+Next up: Filters, bulk actions and Compare.

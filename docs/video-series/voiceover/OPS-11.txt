@@ -1,0 +1,36 @@
+OPS-11 · Restore and Maintenance
+Target 2:45 · 359 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Open Settings, then Maintenance. It has three sections: Maintenance mode, Database backups and Integrity checks.
+
+Maintenance mode pauses the library for everyone but administrators. Others see a maintenance page and are signed out, and uploads, mobile backups and shared links pause. Choose Start maintenance and, if you like, add a reason for the page.
+
+The maintenance page shows your reason. Administrators sign in there and choose End maintenance when the work is done.
+
+Signed out by accident? The server log prints a maintenance sign-in link, valid for four hours, and the server command line can turn maintenance mode on or off.
+
+[pause]
+
+Database backups lists every dump, newest first, with its version and size. You can download or delete one, or upload a backup file from another server with Select from computer.
+
+Choose Restore on the backup you want. The dialog says what changes: metadata, albums, people, edits and settings return to that moment, later changes are lost, original files are not touched, and everyone is signed out. It also compares the backup's version with this server.
+
+Tick Create a safety backup of the current database first to keep a copy of today's database. Type RESTORE to confirm, then choose Restore backup. Either way, Frameleaf takes a restore point and rolls back if anything fails.
+
+The server enters maintenance mode, restores, runs migrations and verifies the library. When it finishes, check your library, then end maintenance.
+
+[pause]
+
+Integrity checks read the library and never change files. They look for untracked files, missing files and checksum mismatches, nightly by default. Run one check or all of them, then open a report.
+
+A report lists each finding by path. Filter it, download it, or recheck only those findings. Untracked leftovers are often old thumbnails that can be regenerated; missing files and checksum mismatches need a closer look.
+
+[pause]
+
+On a new server, first copy the old upload location's folders into the new one. On the welcome screen, choose Restore From Backup. Frameleaf checks each folder; then pick a backup, or upload one, and restore.
+
+Keep external library mounts the same, so every path still points at a file.
+
+[pause]
+
+Next up: Users, quotas and accounts.

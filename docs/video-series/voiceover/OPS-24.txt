@@ -1,0 +1,36 @@
+OPS-24 · Logs and troubleshooting
+Target 2:30 · 300 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+When something goes wrong, start with the logs. Everything in this episode stays on your own server; Frameleaf does not send its logs anywhere.
+
+[pause]
+
+From the folder with your compose file, list the containers and check that all four are up and healthy. A container that keeps restarting shows it here.
+
+Then read the server's log, and follow it live while you repeat the problem. The machine-learning container has its own log. Use the service names; they work whatever the containers are called.
+
+For more detail, open Settings, then Server & updates, then Logs & diagnostics. Raise Level from Log to Debug while you reproduce the issue, then set it back.
+
+[beat]
+
+If the log level variable is set, it wins, and this page cannot change it. The log format variable switches to one JSON object per line for log tools.
+
+[pause]
+
+The server image also carries an admin command line. Run it inside the server container to list its commands.
+
+It can reset the administrator's password, turn password login back on, list users, print the version, check the database schema, and switch maintenance mode on or off. Password login is the one to remember if single sign-on locks you out.
+
+[pause]
+
+One symptom is worth knowing. If pages load but the installed build channel reads Unknown, your reverse proxy is not passing WebSockets. Add the upgrade headers from the reverse proxy episode.
+
+[beat]
+
+Before you ask for help, choose Download diagnostics. It saves this server's version, features, storage totals, job queues and settings, without photos or credentials.
+
+Then open Support & Feedback from the account menu. Documentation, Community chat and Report a problem appear when your installation provides them. Attach the diagnostics file and the log lines around the error, and leave out any keys or passwords.
+
+[pause]
+
+Next up: What Frameleaf Cloud is.

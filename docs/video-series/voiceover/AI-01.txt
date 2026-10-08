@@ -1,0 +1,18 @@
+AI-01 · How Frameleaf's AI works
+Target 2:45 · 302 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf's AI runs where you decide. This episode explains where the work goes, what stays at home and how to watch it. [pause]
+
+Every server ships with one machine-learning container. It finds faces, builds search, reads text and writes descriptions. [beat] You can add another computer on your home network as a worker. A GPU there takes the heavy jobs, and the server keeps the rest. [beat] Frameleaf Cloud is optional. Nothing is contacted until an administrator links the server and turns cloud processing on. [pause]
+
+Some work never leaves. Faces never run on Frameleaf Cloud. Search and text recognition always stay on your own workers. [pause]
+
+Open Settings, then Compute & jobs, then Workers & endpoints. Every worker is listed with its state, such as Model ready, CPU only, Unreachable or Turned off. [beat] Processing destinations is where you choose where each kind of work runs. Descriptions and tags can go to this server, a home-network worker or Frameleaf Cloud. [beat] Nothing falls back. A job whose destination is off, unreachable or over budget is refused, and Frameleaf says why. [pause]
+
+Hardware & GPU runs the GPU check. It reports GPU ready, Processor only or Needs attention, and lists what this hardware can run. [beat] Descriptions come from a vision-language model in a curated list. Qwen2.5-VL 3B is the default. Florence-2 is a caption-only fallback that ignores your prompt. [pause]
+
+Durable jobs appear in Activity. Filter by All, Running, Done or Failed. Each job names its destination: This server, a computer on your network, or Frameleaf Cloud. [beat] Background queues such as Face detection, Face recognition and Descriptions & tags live in Job manager, also under Compute & jobs. [pause]
+
+Before you switch everything on, confirm the model, run facial recognition and name your people, then preview a description. The next episodes take each step in turn. [pause]
+
+The written guide is linked below.

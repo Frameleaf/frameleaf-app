@@ -1,0 +1,38 @@
+OPS-20 · Server migration
+Target 2:45 · 348 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+To move a person's library from one server to another, Frameleaf uses a resumable migration command. It runs on a computer you control, copies everything over the API, and finishes with an audit you can check.
+
+[pause]
+
+Open Settings, then Storage & originals, then Move or export your library, and choose Prepare migration checklist. It walks through Source, Preflight and Review with the exact commands. The page never runs anything or deletes anything.
+
+Migrate one person at a time. Sign in as that person on each server and create an API key with the permissions the guide lists. An administrator's key would copy everything into the administrator's own account.
+
+[beat]
+
+On your computer, build the command-line tool from the Frameleaf source. Set the two server addresses, then type each key when the terminal waits. Nothing is shown, and nothing lands in your shell history.
+
+Preflight checks both connections, the key permissions and the owner on each side, and changes nothing. A dry run then lists what would move and what the destination already has.
+
+Now run it. The serve option adds a progress page on your computer where you can pause, resume or stop. Closing that page does not stop the migration.
+
+[beat]
+
+If anything interrupts it, run the same command again. The ledger file skips everything already done, so keep it until the old server is retired.
+
+Retry failed items once you have fixed the cause. Then verify: every original is checked on the destination by checksum, and a full pass ends with the PASS line.
+
+[pause]
+
+Back in the checklist, go to Review and choose Open audit report. The file is read in your browser only. Look for the Pass verdict, originals verified by checksum, and no unresolved items.
+
+Retire the old server only after a pass, with every unresolved item resolved or accepted, a backup of the new server, and the ledger and report kept as your record.
+
+[beat]
+
+Album sharing, comments and activity do not move. Thumbnails, faces, search and places are rebuilt by the new server's own jobs.
+
+[pause]
+
+Next up: Running the official Immich image and coming back.

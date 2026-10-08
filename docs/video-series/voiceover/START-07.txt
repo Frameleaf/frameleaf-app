@@ -1,0 +1,26 @@
+START-07 · Your first mobile backup
+Target 2:00 · 238 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Backup copies the photos on your phone to your Frameleaf server. It starts from the cloud icon at the top right of the Frameleaf mobile app.
+
+Tap it to open Backup. First choose the albums to back up: tap Select.
+
+Tap an album to include it; double tap to exclude one. That helps on iPhone, where a photo can sit in several albums: include Recents, exclude Screenshots, and everything but screenshots is backed up.
+
+Back on the Backup page, three counts appear: Total in the selected albums, what's already backed up, and the Remainder still to go.
+
+Turn on Enable Backup. The app uploads those albums, then backs up new photos whenever you open the app, and periodically in the background.
+
+First it checks each file's content against the server, so anything already there, from the web or another device, is skipped.
+
+[pause]
+
+Uploads wait for Wi-Fi by default. The gear opens Backup Options, where photos or videos can use cellular data. On Android, background backup can wait for charging; on iPhone, turn on Background App Refresh.
+
+[pause]
+
+In the timeline, small cloud icons show where each item is. A crossed-out cloud: only on the phone, not backed up yet. A plain cloud: only on the server. A cloud with a tick: on both.
+
+The badge on that icon shows backup itself: off, uploading, on, or a warning when something needs attention.
+
+Next up: Already running Immich? Move to Frameleaf.

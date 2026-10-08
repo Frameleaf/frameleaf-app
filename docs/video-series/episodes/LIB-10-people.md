@@ -1,0 +1,65 @@
+# LIB-10 · People
+
+| Field | Value |
+| --- | --- |
+| Series | Your library |
+| Type | How-to |
+| Target length | 2:45 |
+| Audience | Families naming the people in their library and fixing what face recognition got wrong |
+| Features demonstrated | People page (Find a person, Sort people: Name / Photo count / Recently seen, Show hidden, Show and hide people), naming (Add a name, Suggested names), merge suggestions (Are these the same person?, Yes merge, No, Ask me later, Stop suggesting, Undo), Merge into…, Favorite and Hide, Show & hide people page, person page toolbar, Featured photo, Set date of birth and age in the viewer, Fix incorrect match (Not this person, This is…, Someone else…, Someone new…, Not a face of anyone, Move to…), Correction history with Undo, Tag people (P, Draw face, Who is this?, Save face tags), Recognition groups, administrator Facial Recognition settings |
+| Source docs | docs/docs/features/facial-recognition.md, docs/docs/guides/better-facial-clusters.md |
+| Capture checklist | Taylor signed in as administrator; facial recognition has run on the sample library; people Jamie, Emma and Taylor named, plus one unnamed group of Emma and a second group that the capture names "Jamie" so a merge suggestion appears; two of Taylor's faces wrongly grouped under Jamie for beat 8; "Campfire evening" with Taylor's face undetected for beat 10; Emma's date of birth not yet set; dark theme |
+
+## Storyboard
+
+| # | Time | Visual | On-screen text | Voice-over |
+| --- | --- | --- | --- | --- |
+| 1 | 0:00–0:03 | LOGO INTRO | — | (sting, no VO) |
+| 2 | 0:03–0:17 | LOWER-THIRD "People · Your library". SCREEN: sidebar Explore → People; page "People" with the summary "12 people · 3,400 photos and videos · 2 hidden people"; toolbar Find a person, Sort people (menu: Name, Photo count, Recently seen), Show hidden, Show and hide people; grid of round faces. | LOWER-THIRD; CALLOUT "Find a person · Sort people" | "Frameleaf finds the faces in your photos and groups them into people. People, under Explore, lists everyone. Find a person searches by name, and the sort menu orders by Name, Photo count or Recently seen." |
+| 3 | 0:17–0:30 | CURSOR clicks the dashed "+ Add a name" under an unnamed face; an inline field opens with placeholder "Add a name"; typing "Em" drops down Suggested names with "Emma"; CURSOR presses Enter; the status reads "Named this person Emma." | CALLOUT "Add a name"; CALLOUT "Suggested names" | "Unnamed groups show Add a name. Click it, type, and press Enter. Existing names are suggested as you type, and giving a group a name someone already has makes Frameleaf ask about merging them." |
+| 4 | 0:30–0:47 | ZOOM on the banner above the grid: two face crops, "Are these the same person?", "Jamie and Jamie look similar", "2 more to review", buttons Yes, merge / No / Ask me later / Stop suggesting Jamie; two photos below with the faces outlined. CURSOR clicks Yes, merge; status "Merged Jamie into Jamie."; the next pair appears; CURSOR clicks No; toast "Kept as two people." with Undo. | CALLOUT "Are these the same person?"; CALLOUT "Yes, merge · No · Ask me later · Stop suggesting" | "Merge suggestions appear above the grid. Are these the same person? Choose Yes, merge to combine them, No to keep them apart, or Ask me later. Stop suggesting stops asking about that person. No, Ask me later and Stop suggesting each come with Undo." |
+| 5 | 0:47–1:00 | CURSOR opens a card's menu (Rename, Favorite, Hide, Merge into…, Set date of birth) and picks Merge into…; dialog "Merge people": this person → "Choose a person" / "Photos move to them"; hint "Everything tagged as Emma will appear under the person you choose. Their name, birthday and favorite status are kept."; CURSOR picks Emma; Merge. | CALLOUT "Merge into…"; CALLOUT "Merge people" | "To merge by hand, open a person's menu and choose Merge into. Pick who they belong to. Their photos move to that person, who keeps their own name, birthday and favorite status." |
+| 6 | 1:00–1:14 | CURSOR picks Favorite on Jamie's card; a heart badge appears; status "Jamie added to favorites.". CURSOR picks Hide on an unnamed stranger; status "… is hidden. Use Show and hide people to bring them back.". Cut to "Show & hide people": "Hidden people stay off the People page and out of suggestions. Their photos remain in your library."; CURSOR clicks Hide unnamed; footer "Save changes (6)". | CALLOUT "Favorite · Hide"; CALLOUT "Show & hide people"; CALLOUT "Hide unnamed" | "Favorite adds a heart. Hide takes someone off the People page, and their photos stay in your library. Show and hide people changes many at once, like Hide unnamed, and then Save changes." |
+| 7 | 1:14–1:28 | CURSOR opens Emma; the person page: large avatar, name, facts line; toolbar Featured photo, Merge people, Set date of birth, Hide, Favorite, Fix incorrect match, Recognition groups, Correction history. CURSOR clicks Featured photo; dialog "Select featured photo"; clicks a tile; status "Featured photo updated.". CURSOR clicks Set date of birth; dialog "Date of birth" with "Emma is 7 years old. The viewer shows their age at the time of each photo."; Save. Inset: the viewer's People section shows "Emma · Age 6". | CALLOUT "Featured photo"; CALLOUT "Date of birth"; inset CALLOUT "Age 6" | "Open a person for their page. Featured photo picks the picture that represents them everywhere. Set date of birth, and the viewer shows their age in each photo." |
+| 8 | 1:28–1:45 | SCREEN: Jamie's page; CURSOR clicks Fix incorrect match; side panel "Fix incorrect match" with "Faces grouped as Jamie. Move any that belong to someone else."; a row's menu Not this person: This is Taylor, This is Emma, Someone else…, Someone new…, Not a face of anyone; CURSOR picks This is Taylor; the row reads "Moved to Taylor". CURSOR ticks two more rows; bar "2 faces selected" with Move to…, Someone new…, Not a face of anyone. | CALLOUT "Fix incorrect match"; CALLOUT "Not this person"; CALLOUT "2 faces selected · Move to…" | "When a face is in the wrong place, choose Fix incorrect match. Each face has Not this person, where you pick who it really is, someone new, or Not a face of anyone. Select several faces to move them together." |
+| 9 | 1:45–1:59 | CURSOR clicks Correction history; panel "Correction history for Jamie" with the hint "Every change you made to this person's faces, most recent first. Changes stay when faces are detected or recognized again."; rows "Moved from Jamie to Taylor", "Merged Jamie into Jamie"; CURSOR clicks Undo on the first row; it reads "Undone" and the footer says "Change undone." | CALLOUT "Correction history"; CALLOUT "Undo" | "Correction history lists every change you made to this person's faces, newest first, and those changes stay when recognition runs again. Undo reverses a change while the face is still as you left it." |
+| 10 | 1:59–2:13 | SCREEN: viewer on "Campfire evening"; keycap "P"; dialog "Tag people"; Draw face is on; CURSOR drags a box around Taylor's face; the box reads "Choose a person"; panel "Who is this?" with Find a person; CURSOR picks Taylor; footer "Changes are ready to save."; CURSOR clicks Save face tags. | CALLOUT "Tag people · P"; CALLOUT "Draw face"; CALLOUT "Save face tags" | "If a face was missed, open the photo and choose Tag people, or press P. Draw around the face, choose who it is or create someone new, and save the face tags." |
+| 11 | 2:13–2:29 | CURSOR clicks Recognition groups on a person page; Settings → People & sharing opens at "Recognition groups": "Choose whose recognition results help organise people in your library.", Invite a member. Cut: Settings → Search & intelligence → Machine Learning Settings → Facial Recognition: Enable facial recognition, Facial recognition model, Minimum detection score, Maximum recognition distance, Minimum recognized faces. | CALLOUT "Recognition groups"; CALLOUT "Facial Recognition (administrators)" | "Recognition groups, in Settings, let a family recognize people across everyone's photos, and membership does not open up anyone's library. Administrators tune detection under Search and intelligence, in Facial Recognition." |
+| 12 | 2:29–2:42 | CARD "People": bullet 1 "Name and merge"; bullet 2 "Fix and undo"; bullet 3 "Tag what was missed". | CARD | "Name and merge, fix what is wrong, and tag what was missed. That is People." |
+| 13 | 2:42–2:45 | LOGO OUTRO | Next: LIB-11 · Pets | "Next up: Pets." |
+
+## Voice-over (clean)
+
+Frameleaf finds the faces in your photos and groups them into people. People, under Explore, lists everyone. Find a person searches by name, and the sort menu orders by Name, Photo count or Recently seen.
+
+Unnamed groups show Add a name. Click it, type, and press Enter. Existing names are suggested as you type, and giving a group a name someone already has makes Frameleaf ask about merging them.
+
+Merge suggestions appear above the grid. Are these the same person? Choose Yes, merge to combine them, No to keep them apart, or Ask me later. Stop suggesting stops asking about that person. No, Ask me later and Stop suggesting each come with Undo.
+
+To merge by hand, open a person's menu and choose Merge into. Pick who they belong to. Their photos move to that person, who keeps their own name, birthday and favorite status.
+
+Favorite adds a heart. Hide takes someone off the People page, and their photos stay in your library. Show and hide people changes many at once, like Hide unnamed, and then Save changes.
+
+Open a person for their page. Featured photo picks the picture that represents them everywhere. Set date of birth, and the viewer shows their age in each photo.
+
+When a face is in the wrong place, choose Fix incorrect match. Each face has Not this person, where you pick who it really is, someone new, or Not a face of anyone. Select several faces to move them together.
+
+Correction history lists every change you made to this person's faces, newest first, and those changes stay when recognition runs again. Undo reverses a change while the face is still as you left it.
+
+If a face was missed, open the photo and choose Tag people, or press P. Draw around the face, choose who it is or create someone new, and save the face tags.
+
+Recognition groups, in Settings, let a family recognize people across everyone's photos, and membership does not open up anyone's library. Administrators tune detection under Search and intelligence, in Facial Recognition.
+
+Name and merge, fix what is wrong, and tag what was missed. That is People.
+
+Next up: Pets.
+
+## Production notes
+
+- Interface vs docs: facial-recognition.md says people are listed "in the Explore page", that actions sit "in the app bar", that favorites are pinned "to the top of the list", and that two or more people merge at once. In the current interface People is its own page under Explore, person actions are an eight-button toolbar (Featured photo, Merge people, Set date of birth, Hide, Favorite, Fix incorrect match, Recognition groups, Correction history) plus each card's menu, a favorite only adds a heart (the grid sorts by Name, Photo count or Recently seen), and Merge people joins one person into one other. Merge suggestions, Fix incorrect match, Correction history, Tag people, Show & hide people and Recognition groups are not in the docs. Narration follows the interface; flag facial-recognition.md for an update.
+- There is no control called "Recognition settings". The person page's "Recognition groups" opens Settings → People & sharing → "Partners & recipient groups", whose first part is "Recognition groups" (Invite a member, Re-run face recognition, Leave group; invitations say "Recognition membership does not grant unrestricted photo access."). The administrator's settings are Settings → Search & intelligence → Machine Learning Settings → group "Facial Recognition". Each account also has "Minimum faces to display a person" under Features.
+- better-facial-clusters.md's advice (raise Minimum recognized faces, reset and re-run recognition) deletes all names; it is not demonstrated. If shown in a later episode, back up first, and note that "Re-run face recognition" for a recognition group also clears names: "Resetting facial recognition will delete all people for all users in this group."
+- Label differences inside the app: the button reads "Show and hide people", the page heading "Show & hide people"; the viewer menu says "Tag people", the shortcut list "Tag People". The merge banner shows "Add a name" for an unnamed group, so capture beat 4 with two named groups (both "Jamie").
+- The "Yes, merge" answer has no toast Undo; a merge appears in Correction history as "Merged {from} into {to}". Undo there is refused if the face has changed since ("This face has changed since, so this can't be undone").
+- The age line in the viewer reads "Age N" (or months for infants). Emma's birthday and age are sample data.
+- Tag people is offered for your own photos (not in Trash); for a video it tags the preview still and applies to the whole video. Pets are marked separately (LIB-11); keep Max out of this episode.

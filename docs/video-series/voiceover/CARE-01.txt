@@ -1,0 +1,40 @@
+CARE-01 · Library Care overview
+Target 2:45 · 348 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Library Care is where Frameleaf looks after the files behind your photos. Open Library Care at the bottom of the sidebar. It takes you to the Library care area of Settings.
+
+It has three parts. Media health and integrity sets what scans check. Repair queues open the tools that fix things. Enrichment completeness decides what gets processed again.
+
+Schedule incremental health scans runs a scan by itself. The Health scan schedule is a cron expression, and the default is every night at two.
+
+Verify original checksums compares each file with the checksum recorded when it was added. Audit database and file references checks that every record points at a real file.
+
+[pause]
+
+Repair queues lists four repairs. Missing originals finds moved files and verifies their identity. Damaged media and RAW separates unsupported formats from confirmed damage.
+
+Duplicate groups compares copies so you can choose keepers. Live Photo pairs reconnects photos with their motion clips.
+
+Each card opens its tool: Duplicate review, Missing media, Damaged media or Live Photo pairing. Missing media and Damaged media are for administrators.
+
+Inside Missing media and Damaged media, counts show what waits elsewhere: duplicate groups, iCloud Photos items in Import review, and metadata still to read.
+
+Another account's Locked media is never counted, and your own only after you unlock your session.
+
+[pause]
+
+Scan again checks every item in your library: whether its original is there, and whether it reads back intact.
+
+The scan is a background job listed in Activity and in the notifications panel. It records a checkpoint after every small batch, so you can pause, resume or cancel it.
+
+Close the browser or restart the server, and it carries on where it stopped. A failed scan is retried once before it is reported. The scan bar shows the last scan, a running one and a failure.
+
+[pause]
+
+Under Enrichment completeness, Reprocess only affected outputs stops a changed identity from rerunning unrelated jobs. Preserve manual metadata on rerun keeps what you typed.
+
+Everyone reviews their own findings. An administrator can also choose one other account, or all accounts.
+
+[pause]
+
+The written guide is linked below.

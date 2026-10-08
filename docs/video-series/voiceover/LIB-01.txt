@@ -1,0 +1,28 @@
+LIB-01 · Timeline, layouts and the grid
+Target 2:30 · 335 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is your library in Frameleaf. Every photo and video you own, newest first. In this episode: the three layouts, moving through the years, and what the grid shows.
+
+Beside the title sits the layout switch: Timeline, Browse and Work. Browse is the default, a plain grid for looking through your photos.
+
+Timeline shows your library by date. Years and months become cards, and a year scrubber appears at the right edge.
+
+Work is for getting things done. On a wide screen the information panel opens beside the grid, so you can select an item and read its details without leaving the page.
+
+Timeline grouping divides the grid into Days, Months, Years, or All in one list. Press D, M or Y to switch from the keyboard.
+
+The scrubber is called Jump to a month. Hover to read a month and its count. Drag to land there. Here we drop into August 2026, on the hikes with Jamie.
+
+The toolbar holds the rest. Grid view or List view. Thumbnail size makes the tiles larger or smaller.
+
+In Work, choose Show file names to label every tile. Hide file names clears them again.
+
+Sort assets changes the order. Captured — newest and Captured — oldest follow the capture date. Added — newest puts your latest uploads first, whatever their capture date. Filename and Rating — highest are there too.
+
+A long view loads in pages, and Showing tells you how many are on screen. To act on the whole view, open More library actions and choose Select all matching items. The selection bar then reads Everything matching this view, and a bulk action applies to every item, loaded or not.
+
+Three things to remember. Browse looks, Work does. D, M and Y change the grouping. And Select all matching items reaches everything in the view, not only what is on screen.
+
+Albums, people and search results use this same grid, so what you learned here works there too.
+
+Next up: The viewer and the information card.

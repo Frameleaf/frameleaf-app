@@ -1,0 +1,32 @@
+START-08 · Already running Immich? Move to Frameleaf
+Target 2:45 · 359 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+If you run Immich with Docker Compose, moving to Frameleaf is a change of images. Your photos, database and settings stay exactly where they are.
+
+Before you start, back up the database and your originals. Work in your existing stack folder, and never start a second stack against the same database folder.
+
+Replace docker-compose.yml with the one from a Frameleaf release; it selects the Frameleaf server and machine-learning images. Keep your .env as it is, along with the project name, volume names and any changes you made, such as external library mounts.
+
+Pull the new images and bring the stack up again. Nothing is moved and no database is recreated. Never remove volumes during the switch.
+
+The containers now show frameleaf names. Service names stay the same, so service-based commands keep working; update scripts that use the old container names.
+
+[pause]
+
+Open Frameleaf in the browser and sign in once with your existing admin email and password. There's nothing to register, and everyone else keeps using the library while you finish.
+
+Your library is safe counts what Frameleaf found: items, people, albums and the size of your originals. Every original, album, face and edit is where it was; nothing moves unless you say so.
+
+Under Your account, Keep your local admin is recommended: you sign in exactly as you do today, and can link a Frameleaf account later.
+
+Library check takes a quick look at the file records and counts missing originals and damaged files for Library Care. Keep your current folder layout; changing it moves every original, which can take hours.
+
+Processing estimates how long re-indexing with the new models takes; your library stays usable the whole time. Choose On this server, or Decide later to keep your current results. Jobs only queue when you finish.
+
+After Protection and Privacy, Your people shows that Jamie and Emma skip setup and get a short Set up your account page instead. Then choose Open Frameleaf.
+
+[pause]
+
+On phones, the Immich app keeps working. The Frameleaf mobile app is separate: sign in and choose backup albums again, and back up from only one of the two.
+
+Next up: Timeline, layouts and the grid.

@@ -1,0 +1,38 @@
+OPS-12 · Users, quotas and accounts
+Target 2:45 · 345 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Every person gets their own library. Accounts live in Settings, under Users, with each person's role, status, items and storage against their quota.
+
+Choose Create account. Enter the email and name, and choose how they sign in: a password, or your sign-in provider only. Give a first password, and require a change at the next sign-in.
+
+Storage quota is set in gibibytes. Leave it blank for no limit; zero blocks new uploads but keeps existing photos. Storage label names the person's folder in the storage template. Send a welcome email needs email set up first.
+
+Save account. A quota never reserves disk space, and external libraries do not count toward it. When someone runs out, their row reads Over quota.
+
+[pause]
+
+Select an account to open its details: Overview, Libraries, Security and Activity. Edit account changes the name, role, quota or label later.
+
+Changing a storage label does not move files already stored. Run the storage template migration when you are ready.
+
+[pause]
+
+Security handles sign-in help. Reset password makes a one-time temporary password, shown only once. The old password stops working, and they choose a new one at the next sign-in.
+
+Forgot their Locked folder PIN? Reset PIN clears it so they can set a new one after signing in. Their devices leave Locked content, and their protected media stays protected.
+
+Signed-in devices lists every session and when it was last seen. Sign out a lost phone here; it must sign in again to reach the library.
+
+[pause]
+
+At the bottom of Overview is the account lifecycle. Delete account signs out every device and starts a seven-day recovery period, during which the files remain. Type the account's email to confirm.
+
+Until then, Restore account brings it back. After that, the account shows Removing and can no longer be restored.
+
+Skip recovery removes the account, its originals and its library entries at once, and cannot be undone. Change the seven-day window with Delete delay, in Storage & originals.
+
+Your own administrator account cannot be deleted or demoted from your own session.
+
+[pause]
+
+Next up: Access & security: single sign-on.

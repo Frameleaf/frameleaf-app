@@ -1,0 +1,28 @@
+EDIT-01 · Photo quick editor: Adjust
+Target 2:45 · 325 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Editing in Frameleaf never changes the original file. Every edit is a recipe, and you can go back to the original at any time. To begin, select a photo in the library and choose Quick edit.
+
+The editor opens on Adjust. The other tools sit beside it: Crop, Masks, Presets and Restore. Versions keeps every edit you save.
+
+Adjust has four groups. Light holds Exposure, Contrast, Highlights, Shadows, Whites and Blacks. Drag Exposure up to brighten the whole photo, then pull Highlights down to bring the sky back.
+
+The histogram at the top follows the preview. When a tone is lost it says so, for example Highlights are clipping. Ease the slider back until the warning clears.
+
+Color holds Temperature, Tint, Vibrance and Saturation. A small move on Temperature warms the evening light on the lake.
+
+Effects holds Clarity, Dehaze, Vignette and Grain. Small moves go a long way here.
+
+Detail holds Sharpen and Noise reduction. Double-click any slider to reset it. Reset all adjustments clears the whole panel.
+
+To check your work, hold the backslash key, or Y, and the original shows for as long as you hold. Or turn on Split view before and after and drag the divider across the photo.
+
+When the look is right, choose Copy adjustments. Open the next photo from the same evening in Quick edit and choose Paste adjustments. The whole recipe lands on Ridge trail in one click.
+
+Choose Save version to keep the edit. Frameleaf renders an edited master from the original plus your recipe, and the status moves from Queued to Rendering to Rendered.
+
+That is Adjust. Four groups of sliders, a histogram that warns you before you lose a tone, and a recipe you can copy to the next photo.
+
+Versions lists the original and every saved edit. To show the original again, choose Make current on its row. The original file is never touched.
+
+[pause] Next up: Crop, straighten, social formats and masks.

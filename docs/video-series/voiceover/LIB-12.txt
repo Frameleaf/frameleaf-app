@@ -1,0 +1,22 @@
+LIB-12 · Map and Places
+Target 2:15 · 294 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Every photo with a location lands on the map. Open Map, under Explore. Nearby photos gather into clusters, and the count at the top says how many items are in view.
+
+Hover over a cluster to see its size, and click to zoom in until it splits. Single photos show as small thumbnails. Click one to open it, and the viewer steps through everything in view.
+
+Move the map, and Search this area appears. It opens your library limited to that part of the map, so you can select, share or add to an album. The cross beside Map area clears it.
+
+Show list opens In view, a list of everything on screen with its date and place. The target button beside a row centres the map on it.
+
+Map settings choose what the map shows. Pick a date range, and under Include, turn Partner items and Shared spaces on or off to add or remove photos that others share with you. Archived items and Only favorites are there too.
+
+Places lists where your photos were taken, grouped by country, then by region, then by city. Find a place searches the names. Click a city to see its photos, or Show on map to jump there.
+
+Place names come from a geographic database kept on your own server. If one is wrong, open the photo and use Edit location. A name you type there is kept.
+
+The map itself is drawn from an online map service. An administrator can change its look, or its provider, under Server and updates, then Maps and geography. Paste a style address into Light style and Dark style, and save.
+
+Zoom into clusters, search an area to act on it, and browse by Places.
+
+Next up: Tags and Folders.

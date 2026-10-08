@@ -1,0 +1,28 @@
+EDIT-02 · Crop, straighten, social formats and masks
+Target 2:30 · 320 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Open a photo in Quick edit and choose Crop. The panel is called Crop and straighten, and nothing you do here cuts anything from the original file.
+
+Drag a corner or an edge to reshape the crop. Drag inside it to move it. With the crop focused, the arrow keys nudge it, and Shift moves it further.
+
+Aspect locks the shape. Free draws any rectangle, Original keeps the photo's own ratio, Square is square, and fixed ratios run from 16:9 to 4:5.
+
+Straighten levels a tilted horizon a degree at a time. Rotate left and Rotate right turn the photo a quarter turn. Flip horizontal and Flip vertical mirror it.
+
+Social formats live in Presets. Portrait 4:5 is for a feed, Shorts 9:16 is vertical and Wide 16:9 is landscape. Each sets the crop and aspect in one click. Fine-tune the framing in Crop.
+
+Back in Crop, Reset crop returns the full photo at any time.
+
+Masks adjust part of a photo instead of all of it. Open Masks and choose Radial or Linear.
+
+A radial mask is an oval you place with its handles. Light and color changes then apply only inside it. Feather softens the edge, Amount scales the effect, and Invert applies it outside instead.
+
+A linear mask is a gradient. Drag Gradient start and Gradient end across the sky, then lower Exposure to hold the clouds.
+
+Each mask is listed with its number and kind. A photo can have up to eight masks. Turn one off to compare, or choose Remove all masks to start again.
+
+Save version keeps the crop and the masks together as one edit. Applying a preset never changes the crop, so it is safe to add a Look next.
+
+Crop and straighten for the frame, Social formats for a post, and masks for a part of the picture. The original is untouched in every case.
+
+[pause] Next up: Looks, presets and versions.

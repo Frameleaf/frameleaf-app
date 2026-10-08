@@ -1,0 +1,24 @@
+CARE-05 · Live Photo pairing
+Target 2:00 · 245 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A Live Photo is a still and a short video that belong together. Imported from a backup or another app, they can arrive as two separate items. Live Photo pairing puts them back together.
+
+Open Library Care, then Live Photo pairs, or find Live Photo pairing under Utilities. Every account can use it. It lists candidate pairs, each with the still and its video.
+
+Each pair says how it was matched. Matched by identifier means both files carry the identifier Apple writes into a Live Photo, so the match is exact. Matched by filename and time is a best guess for files whose metadata was stripped.
+
+Inspect shows the still and plays the motion video next to it, with the confidence and the evidence. Use it on every lower-confidence pair before you link it.
+
+To relink one pair, choose Review pair, read the warning if it is uncertain, and confirm. The original files stay; only the video is hidden as the still's motion clip.
+
+To relink every confident match at once, choose Link high-confidence pairs, check the list and confirm. Lower-confidence pairs are never included; they wait for you.
+
+The pair becomes one playable Live Photo again, just as if it had been uploaded intact. Show All results to see what you linked.
+
+[beat]
+
+The separate audio track some Live Photos include is not carried over. Live Photos imported through iCloud Photos are linked by the import itself.
+
+[pause]
+
+Next up: Large files and the location editor.

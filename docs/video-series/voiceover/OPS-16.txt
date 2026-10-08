@@ -1,0 +1,38 @@
+OPS-16 · Environment variables and the config file
+Target 2:45 · 328 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf reads its settings from two places. The environment decides how the server is deployed. The Settings pages decide how it behaves. A config file can take over the second.
+
+[pause]
+
+The environment lives in the .env file beside your compose file. The upload and database locations are folders on the host. Then come the time zone, the image version and the database password.
+
+A few more are worth knowing: the log level and log format, the addresses of trusted reverse proxies, and the Frameleaf Cloud address. Leave that last one unset and Frameleaf Cloud is never contacted.
+
+[beat]
+
+Changing a variable takes one more step. A restart keeps the old environment, so recreate the containers instead. If Docker does not notice the change, force the recreate.
+
+[pause]
+
+If you would rather keep settings in a file, write them as JSON or YAML. Mount the file into the server container, and point the config file variable at its path inside the container.
+
+The easiest start is Configuration transfer under Server & updates. Export settings or Copy settings gives you the saved configuration, without passwords or secrets.
+
+Once the file is in use, the Settings pages are locked. Each one says the config is set by a config file, and passwords and secrets come from the file as well.
+
+[beat]
+
+If you run separate worker containers, mount the same file into each of them.
+
+[pause]
+
+Logging shows how the two places interact. Logs & diagnostics sets the log level in the app. Set the log level variable instead and it wins, and the page can no longer change it.
+
+The log format variable switches the output from readable console lines to one JSON object per line, for log tools. Either way, the logs stay on your server.
+
+[pause]
+
+In short: use the environment for paths, passwords and addresses, the Settings pages for everyday choices, with review and change history, and a config file when you manage settings as code.
+
+The written guide is linked below.

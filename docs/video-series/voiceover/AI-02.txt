@@ -1,0 +1,14 @@
+AI-02 · Turn on descriptions and tags
+Target 2:45 · 291 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Descriptions and tags make every photo searchable by what is in it. Open Settings, then Search & intelligence, then Image Description. [pause]
+
+Start with Image enrichment hardware. Auto-detect is fine for most servers. Pick Intel iGPU (OpenVINO) or NVIDIA GPU (CUDA) only when you need to pin a device. [beat] Turn on Generate image descriptions and tags. [beat] Description model lists curated models with a memory estimate each. Qwen2.5-VL 3B is the default and suits most GPUs. Qwen2.5-VL 7B needs about sixteen gigabytes. [beat] Leave Fallback model on Florence-2. It only steps in on this server when the main model fails. It writes captions only, so do not pick it as the main model. [pause]
+
+Choose Review changes to see every change, then Save changes. [beat] Scroll to Status & Re-generation. Choose Re-queue all image descriptions to describe the library with the settings you just saved. [beat] The modal shows Total eligible assets, how many already have a description and an Estimated total time. Choose Re-queue now. [beat] The running-jobs indicator in the top bar counts the work down. Job manager under Compute & jobs shows the Descriptions & tags queue. [pause]
+
+Open Moraine Lake once the queue clears. The Description now carries the AI badge. A description you typed yourself shows Yours instead, and your text is never overwritten. [beat] Tags arrive with it, lowercase and searchable, so lake, mountain and canoe now find this photo. [beat] Choose Rewrite with AI to generate this one photo again with the current prompt. [beat] Check again with AI reruns the sensitive-content check on the same photo and shows how likely sensitive it is. [pause]
+
+From now on, new uploads are described after their thumbnails are made. Generated text is alpha quality today and improves over time. [pause]
+
+Next up: Try an enrichment change before you commit.

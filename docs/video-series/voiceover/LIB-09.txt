@@ -1,0 +1,24 @@
+LIB-09 · Filters, bulk actions and Compare
+Target 2:30 · 332 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Search finds photos. This episode is about what comes next: narrowing a view with filters, acting on many items at once, and picking the best shot with Compare.
+
+Choose Filter above any grid, or pick a section from the menu beside it. Each filter you set becomes a chip, like People, or City: Banff. Click a chip to change it, or its cross to remove it.
+
+To leave something out, switch a group from Any of to Exclude, and its chip reads Not, like Not Tags. Yes or No choices work the same way, so No under Favorites reads Not Favorite. Clear all removes every filter at once.
+
+Select items by their check marks, and the selection bar appears. Select all takes in the whole view. The everyday actions sit right on the bar: favorite, add to an album, share, send a copy, download and delete.
+
+More actions holds the rest, in groups. Organize stacks, tags and changes dates, descriptions and locations. Visibility archives items or marks them sensitive. Jobs refreshes thumbnails and metadata.
+
+Most bulk actions can be reversed. After Archive, a toast says what changed and offers Undo, and the selection bar keeps an Undo too. Selections over five hundred items run on the server, and you follow them in Activity.
+
+Compare helps you pick the best of several similar shots. Select them and choose Compare. The first one you selected stays pinned on the left, and the others come up beside it, one at a time.
+
+Click a photo to zoom both at the same point, and move to pan them together. Choose Keep or Reject under each. Deciding on the right-hand photo brings up the next one, and Undo decision steps back.
+
+Keep writes five stars, and Reject marks the photo as rejected, so every view and search can use the result. Choose Done, filter by Rejected, and delete the rejects together.
+
+Filters narrow the view, the selection bar acts on it, and Compare decides.
+
+Next up: People.

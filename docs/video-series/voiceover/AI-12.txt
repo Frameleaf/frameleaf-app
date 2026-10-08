@@ -1,0 +1,32 @@
+AI-12 · Documents and text in photos
+Target 2:30 · 300 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Documents gathers every photo with readable text: receipts, signs, letters and screenshots. Open it from the Explore section of the sidebar.
+
+Search text in your photos finds them by their words, or by your own corrections. Search LAKE AGNES and the trailhead sign comes straight up.
+
+Text is read automatically on your own hardware, so it can contain mistakes. You can fix them.
+
+[pause]
+
+Open the photo. The information card ends with Text in this photo. Show text regions draws a box around each line, right on the photo.
+
+Select text highlights it all, and Copy text puts it on your clipboard.
+
+[pause]
+
+As the owner, you can review each line. Open Review lines and choose Correct on a misread line. Your correction is stored beside what was read, never over it, and search finds both.
+
+Dismiss hides a line that is only noise, and Restore brings it back. Hover a line, or choose Show where, to see where it sits on the photo.
+
+Read text again sends the photo back through text recognition, on the destination chosen for it in Settings. With none chosen, it tells you instead of sending the photo anywhere.
+
+People you share the photo with read it with your corrections and without the lines you dismissed. Only you see the review. A locked photo's text is listed only while your session is unlocked.
+
+[pause]
+
+For receipts, an administrator can turn on Suggest receipt and document fields, in the OCR settings under Search & intelligence. It is off by default.
+
+Suggested details then offers a date, a total, a reference, an email address and a phone number from the text. Each is only what the text says, never a verified record. Confirm it, pick one of the other readings, correct it or dismiss it.
+
+Next up: Privacy by design.

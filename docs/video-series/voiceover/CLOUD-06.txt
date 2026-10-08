@@ -1,0 +1,30 @@
+CLOUD-06 · Models, estimates and the AI Wallet
+Target 2:45 · 326 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+With cloud processing on, three things shape a cloud job: the model, the estimate, and your AI Wallet. All three are on the Cloud processing page.
+
+Models has a slider for each kind of work, from lighter to heavier. White runs on the processor, green on your GPU, and blue only on Frameleaf Cloud.
+
+Slide to a heavier model, and the readout says where it runs and about what it costs per photo. Any single job can still use a different model.
+
+If that work is set to Local only in Where each job runs, the blue models are crossed out, and the slider says to choose Both or Cloud only.
+
+A model whose licence does not allow hosted use never turns blue. It stays on your server, and the slider says why.
+
+[pause]
+
+How cloud jobs are billed explains the rule. You pay for the GPU time a job uses, per second, plus a start fee for each worker that loads the model. Per-photo prices are estimates.
+
+Estimate a job tries a model and a quantity before you commit. It shows the likely cost, the most it should cost, the amount held until the job settles, and whether the job could start now.
+
+[pause]
+
+The AI Wallet is prepaid credit in US dollars. It shows your balance, what is held for running jobs, and what is available. Each job holds its estimate, then settles at the actual cost.
+
+Daily spending cap sets a limit for each day. Jobs that would pass it wait until tomorrow instead of starting.
+
+Add credit offers $25, $50 or $100, or any amount from $20 to $500. There is no bonus credit, and card fees are included. Payment happens on frameleaf.cloud in a new tab.
+
+Top up automatically adds credit when it runs low, using the payment method saved on frameleaf.cloud. An empty wallet refuses a job. It never lowers quality or moves the work elsewhere.
+
+Next up: Running a cloud job.

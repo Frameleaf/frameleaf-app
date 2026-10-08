@@ -1,0 +1,22 @@
+LIB-07 · Partner libraries
+Target 2:15 · 311 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A partner library shares your whole library with one other person on your server. It is one-way. To see their photos as well, they share theirs with you.
+
+Open Account Settings, then People and sharing. Under Partner libraries, choose Add partner and pick an account. Review partner access explains what they will see: Locked media stays restricted, and nothing asks them to share back. Choose Confirm.
+
+Your partner sees every photo and video that is not archived or in the trash, with its metadata. They do not see your favorites, your people and face data, or your existing albums.
+
+When Jamie shares back, Jamie's library appears in your sidebar under Shared spaces, and on the Shared spaces page under Partners.
+
+It opens like your own library, with the same grid and viewer. The originals stay in Jamie's account, so changes are left to Jamie, but you can still download what you need.
+
+Turn on Show in timeline, and Jamie's photos join your main timeline. Turn it off, and they stay in Jamie's library. If you both keep the same photo, you may see it twice, because duplicates are found per person.
+
+Where your photos were taken is your choice. Because you share with Jamie too, Share my location with this partner appears. Turn it off, and Jamie no longer sees the places on the photos you share. Frameleaf reminds you that earlier locations may already have been seen.
+
+To hand over the files themselves, select photos and choose Send a copy. Your device's share sheet opens with the originals, and no link or share is created. Locked and trashed items are left out, and so are photos from a partner who keeps locations private.
+
+Stop sharing, in Settings, ends Jamie's access to your library. Jamie's originals, and anything Jamie shares with you, stay as they are.
+
+Next up: The search palette.

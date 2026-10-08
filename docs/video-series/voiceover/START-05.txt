@@ -1,0 +1,28 @@
+START-05 · Upload from your browser
+Target 2:00 · 245 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+To add photos from your computer, choose Upload in the top bar.
+
+Upload files picks photos and videos. Upload folder takes everything inside, including subfolders. Add to puts them straight into an album, or leave it on Library only.
+
+You can also drag files onto any library page. From an album page, they join that album.
+
+The Uploads panel lists every file with its state: waiting, uploading with a percentage, uploaded, or already in your library. Duplicates are recognized by their content and never stored twice. Keep browsing; uploads carry on as you move between pages.
+
+Retry failed sends failed files again. Cancel remaining stops the rest, and anything already uploaded stays. Clear finished tidies the list while the others continue.
+
+[pause]
+
+Uploads aren't resumable: reloading or closing the tab stops whatever is still waiting. To finish, upload the same files again, and the ones already there are skipped.
+
+Activity, in the top bar, lists them too, marked This browser tab only.
+
+[pause]
+
+Downloads work the same way. Several items or an album download as a zip archive, built on the server; a large one is split into parts. The Downloads panel shows each one preparing, then Save. A failed row offers Retry.
+
+A single item downloads its current version; for an edited photo, Download original gets the untouched file.
+
+Locked items download only after you unlock this session, and locking again or signing out clears the panel.
+
+Next up: Get the mobile app and sign in.

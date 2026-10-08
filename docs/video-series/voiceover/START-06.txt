@@ -1,0 +1,28 @@
+START-06 · Get the mobile app and sign in
+Target 2:15 · 275 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+The Frameleaf mobile app lets you browse your library and back up your phone. Your server tells you where to get it.
+
+Open Settings, then Utilities. Under Connect, choose Mobile applications. Utilities belong to every account, so anyone on your server can do this.
+
+Choose your platform. On Android, leave Architecture on Automatic and choose Download Android app; the signing certificate's fingerprint is shown so you can check what you install. On an iPhone, Open App Store takes you to the app's page.
+
+The Setup checklist beside it walks you through the rest, from signing in to switching off any previous uploader.
+
+If the page says no signed release is available, app downloads haven't been set up on this server yet; ask your administrator.
+
+[pause]
+
+On Android, Obtainium setup lets Obtainium, an independent open-source updater, keep the app current from your server's releases. Check the Server address, then choose Create download-only access; that key can only download the app. Open in Obtainium imports the configuration.
+
+[pause]
+
+Now open the app. In Server Endpoint URL, enter your server's address with port 2283, the one you use in the browser, and choose Next. Then enter your email and password and choose Login.
+
+Allow access to your photos when the phone asks. Your library appears, including anything you uploaded from the browser.
+
+If the app can't sign in after an update, check that the app and server run the same major and minor version. Release information, on the Mobile applications page, shows your server's version.
+
+Each person signs in to their own account. The phone now appears under Signed-in devices, in Access and security.
+
+Next up: Your first mobile backup.

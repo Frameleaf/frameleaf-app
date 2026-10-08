@@ -1,0 +1,28 @@
+LIB-04 · Albums and collections
+Target 2:45 · 383 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+All albums is where your albums live. Collections sit at the top as shelves, then your albums, then any shared spaces you belong to.
+
+Choose New to create something. An Album holds the photos you pick. A Collection holds albums. A Smart album fills itself from rules. A Shared space is a library you build with others, and it has its own episode. Here we create the album Winter 2026.
+
+To fill it, select photos in the library and choose Add to album in the selection bar. On the album page, Upload photos adds new files straight into it.
+
+Filter the page with All, My albums, Shared or Smart. Sort albums by Last modified, Date created, Title, Item count, Newest photos, Oldest photos, or your own Custom order. Grid view and List view change how the page is drawn.
+
+Collections go one level deep: a collection holds albums, and that is all. Drag an album onto a collection to move it in, or open Edit album and use Move to. On its own, in no collection takes it back out.
+
+Every album and collection can carry an icon. In Edit album, choose Change icon and pick one, so a shelf reads at a glance.
+
+Open an album. Click the title to edit it, and Add a description below it. Share this album invites people by name or email, as an Editor who can add and change things, or a Viewer who can only look. Members shows who has access and their role.
+
+Select cover picks the photo that fronts the album. Options turns Likes and comments on or off for the members.
+
+Activity opens the panel where members like the album and comment on its photos.
+
+Deleting an album never deletes photos. The dialog says it plainly: its items stay in your library, and only the album, its sharing and its public links go. Deleting a collection leaves its albums on their own.
+
+If someone shared an album with you, Leave album removes it from your view. The owner keeps everything and can invite you again.
+
+Albums hold photos, collections hold albums, and nothing you do here moves or deletes a file. When several people should add photos, not only view them, a shared space is the better tool.
+
+Next up: Shared spaces.

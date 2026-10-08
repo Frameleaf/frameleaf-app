@@ -1,0 +1,34 @@
+CLOUD-05 · Cloud processing: turn it on
+Target 2:45 · 353 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Cloud processing lets Frameleaf Cloud GPUs take on heavy work, like detailed descriptions or video restoration, when you ask. You need a linked server. Open Settings, Frameleaf Cloud, then Cloud processing.
+
+The page opens with a promise: your own computers stay the default, and nothing goes to the cloud without asking. Turn on Use Frameleaf Cloud for chosen jobs.
+
+The cloud processing terms open first. Only previews are sent, never originals, and location and camera metadata are stripped. Files are deleted as soon as the job finishes, within 24 hours at most.
+
+Nothing you send trains models, and jobs run in your account's region. Faces are never sent.
+
+Two optional features stay off unless you choose them: Use recognised names in descriptions, and Describe health and medical details.
+
+Tick I have read these terms, then choose Accept and turn on. Save changes in the settings bar, and the chip changes to On.
+
+The card now lists what you agreed to. Review terms and features changes the optional features later. If the terms change, cloud jobs are refused until you accept the new version.
+
+[pause]
+
+Next, Where each job runs. For each kind of work, choose Local only, Both, or Cloud only.
+
+Both means each job lets you pick this server or Frameleaf Cloud, and a job never moves to the cloud on its own. Cloud only sends that work to Frameleaf Cloud, with the cost shown first.
+
+When a job can run in both places, start with decides which choice comes first. You can still switch before a job starts. Save changes when you're done.
+
+Some rows never change. Smart search, Face recognition and Text in photos always run on this server, and Studio exports render at home or on another computer on your network.
+
+You'll find the same table under Compute & jobs, in Workload destinations, with a model slider on each row.
+
+[pause]
+
+Turn the switch off at any time, and every cloud job is refused. Nothing falls back to the cloud silently, and your originals, faces and search index stay at home either way.
+
+Next up: Models, estimates and the AI Wallet.

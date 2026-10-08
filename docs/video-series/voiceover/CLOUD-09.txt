@@ -1,0 +1,32 @@
+CLOUD-09 · Remote access through Frameleaf Cloud
+Target 2:45 · 337 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of remote access through Frameleaf Cloud. It lets you, and the people you share with, reach your server from anywhere, without opening ports or managing certificates.
+
+Here is how it works. Your server dials out to a Frameleaf relay and keeps that connection open. Visitors reach the relay, and the relay passes their encrypted traffic straight through. It never sees inside.
+
+[pause]
+
+To turn it on, you need a linked server and a Frameleaf Cloud plan. Open Settings, Frameleaf Cloud, Remote access, and switch on Allow remote access.
+
+Your public address appears with a QR code to scan on a phone. Its certificate renews automatically, and the private key never leaves your server.
+
+Connection offers Relay only, or Relay and direct. Direct connections go straight to your router, so they are faster and don't count toward your relay allowance. If your internet provider shares one public address, the relay keeps working.
+
+Use your own domain publishes your server at an address you own. Add the two DNS records it shows, then choose Check DNS. Your server gets its own certificate for it, and traffic still flows through the relay.
+
+[pause]
+
+On Account & link, the apps card changes from At home only to Available anywhere. Away from home, the Frameleaf mobile app connects directly when it can, and through the relay otherwise.
+
+Everyone who connects from outside your home signs in with a Frameleaf account linked to their account here. That rule is always on. Public shared links still open without signing in.
+
+The relay has limits. Its speed is capped, and each server has a monthly allowance. Past the allowance it slows down, but it never cuts you off. Originals stay off the relay unless you allow them; previews and streaming always work.
+
+Test connection checks the routes. Turn remote access off, and remote visitors are disconnected immediately. Your home network is unaffected.
+
+[beat]
+
+To get ready, link your server, and ask everyone to link their own Frameleaf account.
+
+The written guide is linked below.

@@ -1,0 +1,36 @@
+EDIT-05 · Restoration: Faithful and Creative
+Target 2:30 · 333 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Restoration cleans up a noisy, compressed or small photo and saves the result as a new version. Open the photo in Quick edit and choose Restore.
+
+Restoration runs on a restoration worker that an administrator adds under Processing destinations. That worker is not ready for general use yet, so these screens are marked Preview.
+
+[pause]
+
+First choose the kind. Faithful removes noise and compression while keeping the original look. Creative rebuilds fine detail and may invent texture, so keep it for very small sources.
+
+Size keeps the photo the same size or enlarges it two or four times. The line below gives the output size and says when it is capped at 4K.
+
+Tick Keep film grain to keep fine grain instead of smoothing it. Preview area picks the part to test: the centre of the frame, or your current crop.
+
+[beat]
+
+Under Destination, choose where to process. Nothing runs until you pick one. Here it is a restoration worker on the home network, and the panel confirms that media stays on your network.
+
+Estimate shows how long the preview and the full restoration should take, based on runs measured on that destination. When nothing has been measured yet, it says so instead of guessing.
+
+[pause]
+
+Choose Preview restoration. Only the preview area is restored at first, and the job appears in Activity while it runs.
+
+When the preview is ready, choose Compare and drag the divider across the stage. Loupe magnifies the detail, so you can judge the grain and the edges.
+
+If you like it, choose Accept and restore. The whole photo is restored at full resolution, on the same destination, with the same settings. If not, choose Reject and try the other kind.
+
+The result is a new version. Choose Use for playback to show it, or Download restored file. The original file is never changed.
+
+Choose the kind and size, preview a small area on a destination you pick, and accept only what you like.
+
+[pause]
+
+Next up: Studio: projects and the editor.

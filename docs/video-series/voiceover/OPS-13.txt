@@ -1,0 +1,28 @@
+OPS-13 · Access & security: single sign-on
+Target 2:45 · 338 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf can sign people in with your own identity provider. It speaks OpenID Connect, so most providers work. Everything lives under Access & security. [pause]
+
+Start in your provider. Create a client application: OpenID Connect, a confidential web client, and the authorization code grant. [beat]
+
+Register three redirect addresses. The login page and the user settings page on every address you use to reach Frameleaf, plus the Frameleaf mobile app callback. [pause]
+
+Now open Settings, then Access & security, then Sign-in methods. Turn on Login with OAuth and the fields appear. [beat]
+
+Enter the Issuer URL your provider gives you; the discovery part of the address is added for you. Then enter the Client ID. [beat]
+
+The client secret is a stored credential. Choose Replace credential, paste it once, and save. The row reads Stored, and the value is never shown again. [pause]
+
+Keep the scope at openid, email and profile. A sign-in is matched to an account by email only when the provider says the address is verified. If yours does not send that claim, map it first. [pause]
+
+Three claims are optional. Storage label claim names the person's folder. Role Claim can make someone an administrator. Storage quota claim sets a quota. All three apply only when the account is created. [beat]
+
+Button text is what people see on the login page. Auto register creates accounts on first sign-in. Auto launch skips the login page; the guide shows how to reach it again. [beat]
+
+Mobile app callbacks lists the redirect addresses your mobile apps need; allow each one with your provider. If a custom scheme is refused, turn on Mobile redirect URI override and use this server's mobile-redirect address. [pause]
+
+Leave Login with email and password on until single sign-on works; turning it off applies to administrators too. If you lock yourself out, the server command line turns it back on. [beat]
+
+Save changes. The login page shows your button, and the Frameleaf mobile app signs in through the same provider. Each person can also link or unlink their account under Sign-in provider. [pause]
+
+Next up: Email notifications.

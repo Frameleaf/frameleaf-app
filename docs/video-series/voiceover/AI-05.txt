@@ -1,0 +1,14 @@
+AI-05 · Custom instructions
+Target 2:30 · 281 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Custom instructions teach the model new behaviour in plain sentences, without touching the prompt template. In Prompt & Vocabulary, find Custom instructions. [beat] Write it like a short briefing for a careful assistant. Full sentences. Say what to do and when not to. The limit is two thousand characters. [pause]
+
+Vehicles first. If you can clearly see a car, truck or motorcycle, identify the make and model. If you are uncertain, say a red car rather than guessing. [beat] A car photo then reads with its make and model instead of just a red car. [pause]
+
+Sports. When people are clearly playing a sport, name the sport and the visible equipment. Do not guess the sport from clothing alone. [beat] Documents. For a receipt or a screenshot of text, transcribe the store name, total, date and document type. Never transcribe full account or card numbers; say the number is redacted. [beat] Pets. Identify the breed when you can recognise it, and note what a dog is doing. Do not guess a breed from coat colour alone. Dad and Max then reads golden retriever, not dog. [pause]
+
+You can stack rules in one box. End with a line such as: never guess; if you are not confident, use a generic description. [beat] Custom instructions cannot override safety rules, cannot invent names the face library does not know, cannot change the output shape and cannot remember one photo when describing the next. [beat] They are also ignored while Enable raw prompt override is on. Turn Advanced off, or paste the text into your template. [pause]
+
+Save changes, then rewrite a few photos to check the effect. If a rule is not followed, use simpler, more direct wording. [pause]
+
+Next up: Descriptions that name people.

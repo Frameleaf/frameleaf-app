@@ -1,0 +1,28 @@
+MKT-06 · Never lose a photo
+Target 1:15 · 176 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A library is only as safe as the files behind it. Library Care checks every one of yours and tells you when something is wrong.
+
+Scans run on a schedule or on demand. They read each original back to prove it is intact, and carry on even if you close the browser.
+
+[beat]
+
+Move a drive or rename a folder, and a photo goes missing. Locate originals searches by checksum, never by name, and relinks the exact file.
+
+Damaged files can be replaced from a verified copy, and the damaged one is kept beside it, never written over.
+
+Live Photo pairing puts back together Live Photos that arrived as two files, confident matches in one go.
+
+Duplicate review lines copies up side by side and suggests keeping the original format, RAW or HEIC, even when the JPEG is bigger. Nothing is deleted until you decide.
+
+[pause]
+
+Every repair is checked again at the moment it happens. If a file changed since you looked, Frameleaf says so instead of guessing.
+
+[beat]
+
+Never lose a photo.
+
+[beat]
+
+Frameleaf. Your memories grow further.

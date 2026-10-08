@@ -1,0 +1,30 @@
+MKT-07 · Bring everything together
+Target 1:15 · 171 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Your photos are scattered: some in Google Photos, some in iCloud, some on an old server. Frameleaf brings them home.
+
+Import Google Photos takes a Takeout export whole: originals, dates, descriptions, locations and albums. If the upload drops, it carries on.
+
+Photos you already have are matched by checksum, not copied again. Run it twice and you still get one of everything.
+
+[beat]
+
+iCloud Photos imports on the server and keeps going after you close the browser. Apple edits arrive stacked with their originals.
+
+Live Apple accounts are still being verified, so start with a small album.
+
+[beat]
+
+Moving from another server is one command you can stop and restart. Nothing is stored twice, and nothing is deleted from the old server.
+
+When it finishes, an audit checks every file by checksum. You retire the old server only when the report says Pass.
+
+For the copy you keep elsewhere, a preservation package holds your originals and everything you know about them, verified file by file.
+
+[pause]
+
+Bring everything together.
+
+[beat]
+
+Frameleaf. Your memories grow further.

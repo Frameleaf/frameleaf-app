@@ -1,0 +1,22 @@
+LIB-11 · Pets
+Target 2:15 · 290 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Pets get their own page, separate from People. Open Pets, under Explore. You add each pet yourself, then show Frameleaf which photos they are in.
+
+Choose New pet. Give a name, the kind of animal, and a birthday if you like, then choose New pet again. Max now has a card, with no confirmed photos yet.
+
+Open a photo of your pet and find Pets in the information card. Choose Add, then the pet's name to mark the whole photo, or Mark a region to draw around the animal. Tick Whole photo instead when a region does not fit.
+
+Recognition learns from the photos you confirm, so mark a few first. Then, under Recognition, choose Look for pets. The panel says where the work runs, here on this server, and counts the photos as it looks.
+
+Suggestions ask, Is this Max? Each shows how confident the match is. Choose Yes to confirm, No to ignore it, or Someone else to give it to another pet. Every answer comes with Undo.
+
+Each card's menu handles the rest. If you made the same pet twice, Merge into moves everything you confirmed to the pet you keep. Hide pet takes a pet off the page and out of search suggestions, and Show hidden brings it back into view.
+
+Max's own page shows every confirmed photo. Decisions lists each one, marked by you or from a suggestion, and Remove takes back any that are wrong.
+
+Once Max has at least five confirmed photos in a month, Memories can make a story called Moments with Max. Only named pets get one, and hidden pets are left out.
+
+Add your pets, mark a few photos, and let Recognition suggest the rest.
+
+Next up: Map and Places.

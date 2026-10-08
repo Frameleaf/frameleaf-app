@@ -1,0 +1,34 @@
+OPS-01 · The settings Command Center
+Target 2:45 · 371 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Every Frameleaf setting lives in one place, the settings Command Center. Open Settings at the bottom of the sidebar. Administrators land on the Overview.
+
+The rail groups the areas. Command center holds the Overview and Library analytics. Your library covers storage, imports, search, editing and care. Your server covers processing, access, email, updates, maintenance and users. Personal holds your own preferences and Change history.
+
+Not sure where something lives? Search all settings from the field at the top, for example for transcoding. Accounts that are not administrators see only their own settings.
+
+[pause]
+
+Every settings page edits one shared draft. Change the trash retention here, then the playback resolution in another area. Both changes wait in the draft, and each area with changes gets a dot in the rail.
+
+The bar at the bottom counts them. Review changes lists each change with its page, the saved value and the new one. Save changes saves everything together.
+
+Discard returns every page to the saved settings. Reset this page puts that page's defaults into the draft, for you to review. Leave with unsaved changes, and Frameleaf asks whether to keep editing or discard them.
+
+[pause]
+
+If another administrator saves while you edit, your draft is kept. Your changes to other settings are carried onto theirs, and you review and save again. Where you both changed the same setting, you see the saved value and yours: keep your changes, or discard your draft and load the latest.
+
+[pause]
+
+Passwords and secrets are never part of the draft. The SMTP password and the OAuth client secret show only Stored or Not set. Replace credential sends a new value once. Clear removes it after a confirmation.
+
+To move settings between servers, open Server & updates, then Configuration transfer. Export settings and Copy settings leave out passwords, secrets and keys. Import settings puts a file into your draft for review; settings this server does not have are listed and ignored, and credentials are never applied.
+
+[pause]
+
+Change history, under Personal, lists every saved change, newest first, with who saved it, when, and each value before and after. Credentials show only as replaced or cleared. Every administrator sees the same history of the latest fifty saves.
+
+[pause]
+
+The written guide is linked below.

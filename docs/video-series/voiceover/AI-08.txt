@@ -1,0 +1,32 @@
+AI-08 · Status and re-generation
+Target 2:15 · 296 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Changing the description model or prompt changes nothing that is already written until you re-queue. Status & Re-generation shows how much there is and how long it will take.
+
+[pause]
+
+Open Settings, then Search & intelligence, and scroll to the bottom of Image descriptions and tags. Last config change records when the saved settings really changed; saving without a change leaves it alone.
+
+Total eligible image assets is what the pipeline can describe, split into Already described and Pending re-description. Pending re-queue scheduled shows a reminder you have set.
+
+Estimated re-queue time covers every eligible image, from the average of the last hundred description jobs on this server. After a restart it assumes one and a half seconds each until new jobs finish.
+
+[pause]
+
+Choose Re-queue all image descriptions. The modal repeats the counts and adds the seconds per asset, the total time, and the backend and model that will do the work.
+
+Re-queue now starts straight away and describes every eligible image again with the saved settings. Re-queue later sets a reminder instead.
+
+Re-queue later suits a session of tuning. A banner appears at the top of Image descriptions and tags with the date of the change and how many assets will be described again.
+
+Job manager, under Compute & jobs, shows the same reminder. Review reminder opens Enrichment tasks, where Regenerate descriptions can be queued now or left for later.
+
+[pause]
+
+When you are ready, choose Re-queue now in the banner. The modal opens with the latest counts. Once the job starts, the banner and the reminder clear.
+
+Clicking again while it runs does not duplicate work; Frameleaf says a re-queue job is already in flight.
+
+Until then, older generated descriptions are marked out of date. Text you wrote yourself is never touched.
+
+Next up: Smart albums.

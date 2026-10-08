@@ -1,0 +1,36 @@
+OPS-14 · Email notifications
+Target 2:15 · 290 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf can email people when they get an account, when they are invited to a shared album, and when new photos land in one. It sends through a mail server you choose.
+
+[pause]
+
+You need the mail server host and port, a username and password, and an address you are allowed to send from. For Gmail, turn on 2-Step Verification and create an app password.
+
+[beat]
+
+Open Settings, then Notifications, then Email delivery. Turn on Enable email notifications, then fill in Host, Port and Username.
+
+From address is the sender people see, and Reply-to address is optional. Turn on SMTPS if your mail server uses SMTP over TLS, and leave Ignore certificate errors off.
+
+[pause]
+
+The password is a stored credential, and saving a different host or username clears it. So save the server first: switch email off for a moment and choose Save changes.
+
+Now, under SMTP password, choose Replace credential, paste the password once, and save it. The row reads Stored, and the value is never shown again.
+
+[beat]
+
+Turn email back on and choose Send test email and save. The test goes to your own address, and a successful test saves the email settings and nothing else.
+
+[pause]
+
+Below, Email Templates lets you replace the wording with your own HTML. Each template lists the variables it accepts, and Preview shows the result. An empty template uses the default email.
+
+Once email works, Create account under Users offers Send a welcome email. Links in emails use the External domain from Server & updates, when you set one.
+
+Everyone controls their own email in the same area, under Notifications: Receive email notifications, Album invitations and Album updates. Turning the first one off turns off the other two.
+
+[pause]
+
+Next up: Server & updates: upgrading Frameleaf.

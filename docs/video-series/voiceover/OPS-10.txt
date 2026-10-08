@@ -1,0 +1,34 @@
+OPS-10 · Backups: database dumps and your media
+Target 2:45 · 352 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A Frameleaf backup has two parts: the database, and the files in your upload location. You need both, and Frameleaf only takes care of the first.
+
+The database holds your albums, people, edits, settings and the path to every file. Frameleaf does not rediscover files by scanning, so without the database, your originals are just a pile of files.
+
+[pause]
+
+Database backups are on by default. Open Settings, then Import & protection, then Database backups. A dump is made every night at two, and the last fourteen are kept. Change the schedule with a preset or a cron expression.
+
+Before a big change, make one yourself. In Job manager, choose Create job, then Back up the database, review it and start it. Maintenance has a Create backup now button too.
+
+Dumps land in the backups folder of your upload location and count toward the fourteen. They hold no photos or videos, only the database.
+
+[pause]
+
+Now the files. Three folders are critical: library, upload and profile. Thumbnails and encoded videos can be rebuilt, but backing up the whole upload location is simplest. If you moved a folder to another disk, include that path.
+
+Follow the three-two-one rule: three copies of your data, on two different kinds of storage, with one copy off-site. A second drive at home plus a remote copy covers it.
+
+Order matters. Stop the server during the backup if you can. If not, back up the database first and the files second, so at worst a restore has extra files, never missing ones.
+
+[pause]
+
+The guide includes a template script for Borg, run from cron. It dumps the database into the upload location, then snapshots that folder to a second drive and a remote machine, skipping thumbnails and encoded videos, and prunes old snapshots.
+
+Because the dump and the files are captured together, every snapshot is in sync, and versioning saves space. With the script in place, you can turn off the built-in dumps.
+
+Then test it. Restore into a separate place, check it, and record it under Recovery readiness. The next episode shows the restore.
+
+[pause]
+
+The written guide is linked below.

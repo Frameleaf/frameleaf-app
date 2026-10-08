@@ -1,0 +1,38 @@
+OPS-18 · Reverse proxy setup
+Target 2:45 · 325 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A reverse proxy gives Frameleaf a proper HTTPS address and passes every request on to port 2283. This episode covers what any proxy needs, with Caddy and nginx as examples.
+
+[pause]
+
+Three rules apply everywhere. Serve Frameleaf at the root of a domain or subdomain, never under a sub-path. Forward every header, including the four forwarding headers. And allow large uploads and WebSockets. The guide has worked examples for Caddy, nginx, Apache and Traefik.
+
+Caddy is the shortest route. Three lines name your domain and the Frameleaf server, and Caddy configures HTTPS for you automatically.
+
+[beat]
+
+In nginx, you spell it out. First, uploads: raise the maximum body size so large videos fit, and turn off request buffering so uploads stream straight through.
+
+Next, the headers: pass on the host, the visitor's real address, the forwarding chain and the original scheme.
+
+[beat]
+
+Then WebSockets: use HTTP 1.1 and pass the Upgrade and Connection headers, which carry Frameleaf's live updates. Set generous timeouts too; the example uses ten minutes.
+
+Two symptoms to know. If long uploads stop after a minute, your proxy's timeout is too short; Traefik's default is sixty seconds. If the installed build channel reads Unknown, WebSockets are not getting through.
+
+[pause]
+
+If your certificate uses the Let's Encrypt HTTP challenge, make sure the server's well-known address still reaches Frameleaf, or the mobile app may fail to connect.
+
+Now tell Frameleaf its public address. Open Settings, then Server & updates, then Server identity & network, and enter External domain without a trailing slash. Shared links and emails use it, so they point at your public address rather than your home network.
+
+[beat]
+
+If the proxy runs on another machine, add its address to the trusted proxies variable in your .env file, then recreate the containers.
+
+Test from outside your network: open the address in a browser, then enter the same address in the Frameleaf mobile app. Keep port 2283 itself closed to the internet.
+
+[pause]
+
+Next up: Scaling across machines.

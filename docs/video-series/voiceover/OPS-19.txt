@@ -1,0 +1,34 @@
+OPS-19 · Scaling across machines
+Target 2:30 · 293 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+One Frameleaf server container does two kinds of work. Its api worker answers the web and mobile apps. Its microservices worker runs background jobs, such as thumbnails and video encoding.
+
+[pause]
+
+The server is built to run as several copies at once, so you can split that work across containers, or across machines.
+
+To split them, copy the server service in your compose file. Give the original the setting that includes only the api worker, and give the copy the setting that excludes it. Only the api copy publishes port 2283.
+
+Every copy must share the same infrastructure: the same Postgres database, the same Redis instance, and the same files mounted into each container. Give every copy the same database and Redis settings.
+
+A config file, if you use one, goes into every copy as well. Machine learning is separate: another machine joins as a worker under Compute & jobs, as in the home-network episode.
+
+[beat]
+
+How the machines connect depends on your setup. It might be more replicas in Kubernetes, a network tunnel, or an NFS mount for the files. The guide leaves those details to you.
+
+[pause]
+
+When does it help? A gaming PC that takes on transcoding and thumbnails, or a cluster of servers. On a single machine it gains nothing; raise queue concurrency instead.
+
+That lives in Compute & jobs, Job manager, under Concurrency. Keep each value within your processor's core count.
+
+[pause]
+
+Scaling down is just as safe. All state lives in Postgres, Redis and the files, so you can stop a job worker at any time, for example to use that GPU for games.
+
+As long as an api worker is running, everyone can still browse. Jobs simply wait until a worker is available again.
+
+[pause]
+
+The written guide is linked below.

@@ -1,0 +1,30 @@
+CARE-07 · Physical deduplication for family libraries
+Target 2:45 · 326 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+In a family, the same photo is often uploaded by everyone who was there. Physical deduplication keeps one stored copy of that file, while every account keeps its own photo, albums and details.
+
+Nothing about ownership changes. Each photo keeps its owner, albums, favorites, faces, shared links and Locked state. Only the file behind it changes.
+
+First, keep an independent, verified backup. Then, as an administrator, open Storage and originals, turn on Enable physical deduplication, and save the Master account whose originals are kept.
+
+Open Physical deduplication in the same area. Choose the Scan scope, all accounts or just one, and choose Prepare preview plan. The preview is a background scan; no file changes.
+
+The plan has its own name. It lists every exact copy beside the retained original it matches, with how many photos point at that original now and after the plan, and the space you would get back.
+
+Open the evidence to see each checksum and size. Copies that cannot share are skipped with a reason, such as an external library, whose files are never moved, linked or deleted.
+
+Decide group by group. Clear Share this original in the plan to leave a group as it is; its copies keep their own files.
+
+Choose Mark plan reviewed. The server checks the plan against the library again. If anything has changed since the preview, it refuses, nothing changes, and you prepare a new plan.
+
+Choose Apply reviewed plan. The confirmation shows the plan, its scope, the retained account and the space to reclaim. Type APPLY and the plan's name exactly, then apply it.
+
+[pause]
+
+Applying is a background job you can pause, resume or stop, and it survives a restart. Each copy is checked again before its file changes, and a retained original is never deleted.
+
+Review history lists recent plans, who applied them, and what they shared and reclaimed. For copies uploaded later, prepare a new plan.
+
+[pause]
+
+Next up: iCloud Photos: import your library.

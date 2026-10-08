@@ -1,0 +1,26 @@
+LIB-15 · Your account and preferences
+Target 2:30 · 334 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Your own account lives behind your name, top right. The account menu leads to two places: Set up your account, for the basics, and Account Settings, for everything else.
+
+Set up your account opens the first time you sign in, and you can reopen it from the menu. It holds a few things that make Frameleaf yours, in any order. Each card you finish gets a Done mark.
+
+Profile sets your display name and avatar. Appearance picks Dark or Light, which applies when you close the page, and the language Frameleaf uses.
+
+Privacy and notifications covers emails about shared albums, On this day memories, and one switch that stops every email from this server. The mobile app card shows a code your phone scans to open this server.
+
+The card at the top links a Frameleaf account. It is optional, your photos stay on this server, and the Frameleaf Cloud series covers it. Choose Done when you are finished.
+
+Account Settings keeps the rest. Your preferences holds your profile, usage, supporter status, app settings and features. Access and security holds your password, PIN, devices and API keys.
+
+API keys let importers and scripts reach your library without your password. Choose Create API key, name it, and tick only the permissions it needs. The key is shown once, so copy it then. Rotate replaces a key, and the old one stops working at once.
+
+Signed-in devices lists everywhere your account is signed in, with this device marked. Sign out any one of them, or choose Sign out other devices to end every session but this one.
+
+Supporter status is where you enter a personal supporter key. Once it is active, a Supporter badge sits beside your name, and Hide the supporter badge keeps supporting without showing it.
+
+App Settings, marked This device, sets display and video playback for this browser. Notifications, in its own area, chooses which emails you get.
+
+Set it up once, and change it any time.
+
+Next up: How Frameleaf's AI works.

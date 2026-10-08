@@ -1,0 +1,26 @@
+MKT-02 · Your photos, your server
+Target 1:10 · 162 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf runs on your own server. Install it with Docker Compose, open a browser, and your whole library lives at home.
+
+During setup, pick Local account only, and your account is stored only on this server.
+
+Then you choose where processing runs. Pick Local only, and everything runs here.
+
+With Local only, search, faces, text in photos and descriptions are all worked out on your own hardware.
+
+[beat]
+
+There is no usage reporting to switch off, because there is none. Update checks are your choice, and they ask only Frameleaf's own releases. Nothing about your library is sent.
+
+The Privacy step shows the outside calls that are yours to decide: map tiles and update checks. Everything Frameleaf does not need stays off.
+
+Frameleaf Cloud is optional, and it stays quiet until you link a server. Even linking uploads nothing from your library.
+
+[pause]
+
+Your photos stay where you put them. Frameleaf works for you, and reports to no one.
+
+[beat]
+
+Frameleaf. Your memories grow further.

@@ -1,0 +1,34 @@
+OPS-15 · Server & updates: upgrading Frameleaf
+Target 2:30 · 300 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Server & updates is where Frameleaf keeps its name and learns about new releases. The upgrade itself happens where Frameleaf runs, with two commands.
+
+[pause]
+
+Start with Server identity & network. Server name appears in the command center and the connection picker; leave it empty to show the address. External domain and the login Welcome message live here too.
+
+Versions & compatibility controls update checks. They stay off until you turn on Check for updates. Then the server asks Frameleaf's own release feed once an hour, and sends no library data.
+
+Update channel picks stable releases, or release candidates as well, which change more often. Third-party release checks stay off, and Installed build channel shows which channel this build came from.
+
+[beat]
+
+Check for updates asks right now, even with automatic checks off, and so does About Frameleaf in the account menu. Everyone else sees the last result there. Checking never installs anything.
+
+When a release is found, administrators see a notice that links to the release notes. Read them before you update, and look for anything marked as a breaking change.
+
+[pause]
+
+Before you upgrade, back up the database and your originals. Update the Frameleaf mobile app on every phone first: the app works with the current and previous major version, but the server only with its own.
+
+On the server, open the folder with your compose file. If your .env pins a version, change it to the new release. The release tag always follows the latest stable version.
+
+Then pull the new images and recreate the containers. Once everything is running, you can remove the old images to free disk space.
+
+[beat]
+
+Reload Frameleaf and open About Frameleaf to confirm the new version. Downgrading is not supported, which is why the backup comes first.
+
+[pause]
+
+Next up: Environment variables and the config file.

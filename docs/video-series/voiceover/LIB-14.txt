@@ -1,0 +1,24 @@
+LIB-14 · Memories and slideshows
+Target 2:30 · 325 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Memories brings back days worth revisiting. If Memories is not in your sidebar, open Account Settings, then Features, and turn on Show Memories in the sidebar.
+
+The page groups them into Today, Upcoming for the next two weeks, and Earlier for trips and highlights. Year in review gathers a year's highlights, and a birthday memory arrives for any person or pet whose date of birth you set.
+
+Choose a memory to play it. Photos drift with a slow pan and zoom, and a line at the bottom names the place and day. Space pauses, and the arrow keys step through.
+
+Remove from memory drops a photo you would rather not see, with Undo if you change your mind. Open the gallery and choose Reorder to move photos earlier or later, or rename the memory.
+
+On the Memories page, each card's menu can hide a memory, or show less of a person, a date or a kind of memory. Hidden memories, at the bottom, restores anything you hid.
+
+Export this memory builds a zip of the original files on the server. You can leave the page while it works, then choose Download export. Only your own items go in, and nothing archived, locked or in the trash.
+
+For a slideshow, open a photo and press S, or choose Slideshow above an album. Slideshow settings set the photo duration, fit, captions and order, and the transition: None, Fade, Slide, Ken Burns, or Memories, which adds title cards.
+
+Repeat collection loops it, and videos always play to their end. These settings are kept in this browser.
+
+To show photos on a TV, turn on Enable Chromecast under Features. It is experimental and off by default, because it loads scripts from Google. It needs your server on a public HTTPS address, and the Cast button then appears in the viewer.
+
+Play a memory, keep what matters, and share it on the big screen.
+
+Next up: Your account and preferences.

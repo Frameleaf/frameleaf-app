@@ -1,0 +1,36 @@
+OPS-05 · Hardware acceleration for processing
+Target 2:45 · 363 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A GPU speeds up search, faces and descriptions and takes load off the processor. This episode turns it on for the machine-learning container.
+
+Five backends are supported: CUDA for NVIDIA, ROCm for AMD, OpenVINO for Intel graphics, ARM NN for Mali and RKNN for Rockchip. It works on Linux, and on Windows through WSL2, and it is still experimental.
+
+Check the prerequisites for your card. NVIDIA needs driver 545 or newer and, on Linux, the NVIDIA Container Toolkit. The ROCm image needs at least 35 gigabytes of free disk.
+
+[pause]
+
+Next to your compose file you need the machine-learning acceleration file. Frameleaf releases include it; keep both in the same folder.
+
+Open the compose file at the machine-learning service. Add your backend's suffix to the image tag: cuda, rocm, openvino, armnn or rknn. Then uncomment the extends section and change cpu to the same backend. On WSL2, use the wsl variant where one exists.
+
+Recreate the container. You do not need to rerun any jobs; the GPU is used from the next job on.
+
+[pause]
+
+To confirm, follow the machine-learning logs and run a search. The line that sets the execution providers should list your GPU's provider first, such as the CUDA execution provider. On ARM NN, look for Loaded ANN model.
+
+Then open Compute & jobs, then Hardware & GPU, and choose Run check again. AI features should read GPU in use, and the check should say GPU ready.
+
+If it says Needs attention, read What needs fixing. A common cause is a missing tag suffix, so the container still runs the processor image.
+
+[pause]
+
+With several NVIDIA or Intel GPUs, list their device IDs in one variable and set the worker count to match. Each worker takes one device. The same variable can also pin a single device.
+
+Each GPU must hold every model, and one model is never split across cards. Raise queue concurrency in Job manager so every card stays busy.
+
+On Unraid or Portainer, which take a single compose file, copy your backend's block from the acceleration file into the machine-learning service instead. If one model fails on your card, try another.
+
+[pause]
+
+Next up: A second computer on your home network.

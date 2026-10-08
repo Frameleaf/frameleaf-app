@@ -1,0 +1,36 @@
+CLOUD-10 · Your Frameleaf account site
+Target 2:45 · 304 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of your Frameleaf account site, at account.frameleaf.cloud. Sign in with a passkey, or with a code sent to your email.
+
+Overview shows your servers, your subscription, your AI credit balance and backup health, with notices that need a decision. Your servers keep working without any of it.
+
+[pause]
+
+Servers lists each linked server with its last contact, region and remote access. Link a server is where you enter the code your server shows.
+
+Share invites someone by email as a viewer, editor or admin. They accept with a verified Frameleaf account, and removing someone signs them out immediately.
+
+Unlink lists what stops. Unlinking never deletes anything on the server, and you confirm with your passkey and the server's name.
+
+[pause]
+
+Subscription & billing holds your plan, where you can switch between monthly and annual, plus your payment method and invoices. Cloud processing is never part of the subscription.
+
+Licenses lists your supporter keys by their last four characters, where each one is active, and license files for servers without internet access.
+
+AI Wallet shows your balance, what is held and what you spent today. Top up, set your limits and auto top-up, and read every movement in the ledger and monthly statements.
+
+Cloud processing keeps the job history from all your servers, each estimate next to its cost. Consent shows what you agreed to.
+
+Cloud backup shows each server's bucket, its key mode and its recent runs. Frameleaf Cloud sees file names and sizes, never the contents.
+
+[pause]
+
+Security manages your passkeys, an optional password and authenticator app, and your active sessions.
+
+Privacy & data shows your data region, exports your account data, and deletes your account after a thirty-day grace period.
+
+Everything here is optional. Your photos and every local feature never depend on this account.
+
+The written guide is linked below.

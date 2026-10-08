@@ -1,0 +1,14 @@
+AI-06 · Descriptions that name people
+Target 2:30 · 308 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Identity injection turns a family at the lake into Jamie and Emma at Lake Louise. This episode explains how it works and what it needs. [pause]
+
+It needs three things. Facial recognition has run. You have named the people you photograph most. And the description model is Qwen or Phi, because Florence-2 ignores it. [pause]
+
+For each photo, Frameleaf looks up the named faces on it. It adds each name and its position in the frame to the prompt. [beat] The prompt is strict. It requires the model to name each listed person at least once. It forbids group nouns such as a family, a group, everyone or the kids when names are known. [beat] A validator then checks the result. Any proper noun that is not a known person on that photo is replaced with Someone. It cannot be turned off. [beat] Day names, months, holidays and well-known places are allowed through, so Christmas and Banff are never mistaken for people. [beat] When exactly one known person is on the photo and the model writes the woman, the validator swaps in the name. With several people it leaves the text alone. [pause]
+
+The controls live under Prompt & Vocabulary, then Identity injection. Enable identity injection is on by default. [beat] Max names caps how many people go into one prompt. The default is five. Raise it for large groups; lower it to one or two for crowd photos. [beat] Min face confidence defaults to zero point seven. Today named faces count as confirmed, so this behaves as an on-off switch until per-face scores are stored. [pause]
+
+Family hike now reads Jamie, Emma and Taylor on the ridge, not a family on a hike. [beat] If names are missing, check the People list on the photo, check that Max names covers everyone, then re-queue. Older descriptions keep their old wording until you do. [pause]
+
+The written guide is linked below.

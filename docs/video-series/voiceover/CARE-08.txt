@@ -1,0 +1,34 @@
+CARE-08 · iCloud Photos: import your library
+Target 2:45 · 340 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+iCloud Photos imports your Apple photo library into your own Frameleaf account. Downloads run on the server and carry on after you close the browser. Find it in Settings, under Utilities.
+
+Before you start, your administrator must set it up, Frameleaf must be open over HTTPS, and Access iCloud Data on the Web must be on for your trusted Apple device.
+
+Live Apple-account sync has not been verified yet, so start with a small album.
+
+Choose Add connection. You can keep several connections. Then choose Connect account.
+
+Enter your Apple account email and password, and choose Connect account. Frameleaf keeps an encrypted session, never your password. Enter the six-digit code from your trusted device, then choose Verify connection.
+
+If Apple asks for approval instead, approve it on your device and choose Check device approval. Text-message codes are not supported.
+
+Connecting starts the first sync straight away, and until you choose, every library is included. To start small, choose Pause while it reads your library.
+
+Your libraries and albums appear as the library is read. Tick a library, then use Find albums to pick one album. Leaving albums unticked imports everything in the libraries you chose.
+
+Under Include, Edited versions brings Apple edits in as stacks. Hidden photos arrive Locked, so saving asks you to unlock first. Under Sync limits, name the connection and set how often it checks, how many downloads run at once, and the staging budget.
+
+Choose Save sync preferences, then Resume. Progress is saved as it goes, so the counts survive closing the page or restarting the server.
+
+[pause]
+
+The controls sit below. Sync now starts a run. Pause and Cancel stop one and keep what is imported. Retry tries failed items again, and Rescan source checks everything against iCloud again without importing twice.
+
+Reconciliation sums up each run and lists anything that needs a decision. Nothing is written back to iCloud, and photos deleted there stay here.
+
+Review connection checks the saved session or disconnects. Imported photos always stay.
+
+[pause]
+
+Next up: iCloud Photos: recovery, stacks and setup.

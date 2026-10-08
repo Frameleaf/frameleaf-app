@@ -1,0 +1,36 @@
+EDIT-06 · Studio: projects and the editor
+Target 2:45 · 334 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Studio is where clips and photos become a film. It sits in the top bar beside Library and Activity, and opens on Studio projects.
+
+Every project lives here, on three shelves: Projects, Archive and Trash. Search by name, change the order, and use the buttons on each project to open, rename, duplicate, archive or move it to the trash.
+
+Archived projects are read-only until you bring them back. Projects in the trash are deleted for good after thirty days, and the photos and videos they use are never touched.
+
+[pause]
+
+To start a film, select clips and photos in the library and choose Open in Studio. They arrive in the order you picked them, up to two hundred at a time.
+
+The editor fills the page. The media bin is on the left, the program monitor is in the middle, and the timeline runs along the bottom. The header shows the project name and whether every change is saved.
+
+Titles and overlays sit above the video track, with camera sound, music and voice below. Drag a clip from the bin onto the video track and trim its end. Studio saves as you go.
+
+Editing mode starts on Basic, which keeps the controls simple. Switch to Advanced for keyframes and the finer controls. The project is the same in both.
+
+[beat]
+
+You can also open Studio from the quick editor. Your unsaved edits are kept, and Back to quick edit returns you to the clip with them still in place.
+
+[pause]
+
+Studio needs a render worker, a qualified graphics worker that an administrator adds. Without one, Studio says it is not available and lists what is missing. Your library and quick edits keep working.
+
+Render workers are not available yet, so the Studio editor in this episode is a preview.
+
+[pause]
+
+Projects on three shelves, Open in Studio from a selection or from the quick editor, and Basic or Advanced editing on a multitrack timeline. Review, history and export come next.
+
+[pause]
+
+Next up: Studio: review, history, export and bundles.

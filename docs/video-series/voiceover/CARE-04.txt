@@ -1,0 +1,30 @@
+CARE-04 · Damaged media and RAW
+Target 2:45 · 319 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Damaged media lists originals that did not read back cleanly during a health scan. Open Library Care, then Damaged media and RAW. Like Missing media, it is an administrator tool.
+
+Each finding has a status. Confirmed damaged means the file failed to decode, or no longer matches its checksum. Suspected damage and Unsupported RAW prove nothing yet, so they stay until validation confirms a problem.
+
+Inspect explains each one. An unsupported RAW is a decoder limit, not damage. A long video that timed out simply needs more time to be checked.
+
+The check has a two-minute limit by default. For long videos, your administrator can raise it on each server that validates, then run Scan again. A timeout never counts as damage, or as a repair.
+
+[pause]
+
+For RAW files, Enhanced RAW rendering is on by default, under Editing and playback, then Image previews. It uses the preview inside the RAW file first, and renders the RAW itself when that preview is missing or unusable.
+
+To repair confirmed damage, select it and choose Recover from a verified copy. Search library storage and your recovery locations. Only a copy whose checksum matches exactly, and that decodes, can be chosen.
+
+Tick that you reviewed the evidence, then Record verified recovery. The copy is published without replacing any file, and the damaged file is kept beside it, never written over.
+
+When no good copy exists, choose Trash confirmed damage. Enter your PIN if your account has one, then type the phrase shown, move corrupt media to trash, and confirm.
+
+The evidence must be from the last day, and each item is checked again as it moves; one that no longer fails is kept. Moving to the trash is not a recovery.
+
+[beat]
+
+Recoveries and moves are background jobs you can pause or cancel, retried once automatically. A finding that changed since you reviewed it is reported instead of applied.
+
+[pause]
+
+Next up: Live Photo pairing.

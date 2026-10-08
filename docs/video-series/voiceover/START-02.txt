@@ -1,0 +1,34 @@
+START-02 · Install with Docker Compose
+Target 2:45 · 302 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf installs with Docker Compose, using files attached to a published Frameleaf release. They select the Frameleaf server and machine-learning images. You need two: docker-compose.yml and example.env.
+
+On your server, create a folder to hold them, for example frameleaf-app, and move into it.
+
+Download the Compose file, then download example.env, saving it as .env. If you use a browser instead, rename example.env to .env yourself. Take both files from the same release.
+
+For hardware acceleration, get the two hwaccel files from that release too. A rootless Compose file is also included, to use instead of the regular one.
+
+[pause]
+
+Open .env in an editor. UPLOAD_LOCATION is where your photos and videos are stored: choose a new folder with plenty of free space. Frameleaf's database backups don't include these files, so back this folder up separately.
+
+DB_DATA_LOCATION is where the database lives. Keep it on local SSD storage, never a network share.
+
+To set your time zone, remove the hash in front of TZ and enter your zone, such as America/Edmonton.
+
+Change DB_PASSWORD to a random value, using only letters and numbers. The database isn't exposed publicly, so this password is only used locally.
+
+Leave the version line and everything below the marked line as they are, and save the file.
+
+[pause]
+
+From the same folder, start Frameleaf with docker compose up. Docker downloads the images and runs everything in the background.
+
+Four containers start: frameleaf_server, which also serves the web app, frameleaf_machine_learning, frameleaf_postgres for the database, and frameleaf_redis. The server listens on port 2283.
+
+In a browser, open your server's address on port 2283. Welcome to Frameleaf means the install worked; Getting Started begins first-run setup.
+
+If Docker rejects the command, your distribution's Docker package is probably the cause: install Docker Engine from Docker's own repository.
+
+Next up: Set up Frameleaf: your first run.

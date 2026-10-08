@@ -1,0 +1,24 @@
+LIB-03 · Favorites, archive, recently added and trash
+Target 2:15 · 322 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Four places in the sidebar keep your library tidy without moving a single file: Favorites, Archive, Recently added, and Trash.
+
+In the viewer, choose Add to favorites. With several items selected, choose Favorite in the selection bar. Favorites in the sidebar gathers them all, and Remove from favorites takes one out again.
+
+Archive hides a photo from the timeline and the folder view without deleting it. Select it, then choose Archive. It still turns up in search, and the Archive view lists everything you put away. Unarchive brings it back.
+
+Archive works on Select all matching too. Frameleaf confirms the count first, and Undo in the selection bar reverses the last archive.
+
+Recently added shows your newest uploads first, grouped by the day they arrived, whatever their capture date. After a big import it is the fastest way to see what just landed.
+
+Deleted items go to Trash, under Tools. The summary counts the items, the size of their originals, and how long they stay before permanent deletion. Find in trash searches file names, Media shows Photos or Videos, and Sort orders by Recently deleted, Filename or Largest first.
+
+Restore puts an item back exactly where it was. Albums, favorites, archive, tags, stacks and the lock are all kept, because trashing never removed them.
+
+Delete selected and Empty your trash are reviewed first. The dialog shows how many items and which ones, then asks you to type DELETE and the count. Empty your trash always covers your whole visible trash, whatever filters are on.
+
+What you trash, restore or delete in one tab shows up in every other tab and device without a reload. A viewer open on that item simply moves to the next one.
+
+Items in Locked show in the trash only after you unlock your session with your PIN. While your session is locked they stay put, uncounted and untouched by Empty your trash.
+
+Next up: Albums and collections.

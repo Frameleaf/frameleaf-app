@@ -1,0 +1,34 @@
+AI-09 · Smart albums
+Target 2:45 · 343 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A smart album fills itself. There are two kinds: albums you build from your own rules, and six built-in categories that an administrator turns on.
+
+[pause]
+
+Start with your own. Choose New, then Smart album, and name it. The Smart album switch is already on, with the rules below.
+
+Tick people and tags; any one of each is enough. Add a date range and choose photos, videos or both. The line underneath counts what matches right now, and nothing changes while you edit.
+
+Looks like adds visual categories such as lake or trail, matched by smart search, with a Confidence slider. With these, the count comes from your newest items, and it says so.
+
+When something matches decides what happens. Suggest for review waits for you. Add rule-owned tags adds matches to the album with the rule's own tag. Archive matches stays off unless you switch it on and agree.
+
+[pause]
+
+Choose Create. Nothing is matched until you apply the rule, so choose Re-evaluate. It shows what matches now, what would be added or suggested, and what no longer matches. Choose Apply.
+
+Suggestions wait for you. Choose the suggestions link in the header, tick the photos that belong and choose Accept, or choose Reject. Rejected items never come back.
+
+Open a photo, and the Smart albums line on its information card says why it is there: added by the rule, suggested, or kept by you.
+
+[pause]
+
+Now the built-in categories. An administrator opens Settings, then Search & intelligence, then Categories & smart albums, and turns on Build curated smart albums. Six albums are created for every account.
+
+Travel, Documents, Screenshots, Food, Pets and Nature each have Tag triggers, one per line, matched against description tags. Add golden retriever to Pets, and Max is never missed.
+
+CLIP queries match by meaning through smart search. Tag threshold starts at zero point two eight; lower it if an album is sparse, raise it if it is noisy.
+
+Save, then choose Re-evaluate this album, or Re-evaluate all assets for every category. Only described images are checked.
+
+Next up: Best photos.

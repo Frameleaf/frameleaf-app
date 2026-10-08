@@ -1,0 +1,38 @@
+EDIT-07 · Studio: review, history, export and bundles
+Target 2:45 · 338 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A film is rarely finished in one sitting. This episode covers feedback, going back to an earlier version, exporting the film, and moving a project to another server.
+
+Choose Review in the header. A drawer opens with the project's history and its review comments. Each comment is pinned to an exact moment on the timeline.
+
+When a project belongs to a shared space, its members can open it as Review only and leave comments. Type a note for this moment and choose Add comment. Resolve a comment once it is handled, or Reopen it.
+
+[beat]
+
+History lists every saved version, newest first, with how many changes each one holds. Restore brings an earlier version back as a new one, so nothing after it is lost.
+
+[pause]
+
+When the cut is right, choose Export. The dialog has four choices.
+
+Format offers MP4 in H.265 or H.264, WebM with AV1, and ProRes. Colour can preserve the source or make HDR10. Resolution runs from 4K down to 720p.
+
+Render on picks this server or another computer on your home network, so exports stay on your own hardware. A choice no render worker can handle is disabled, with the reason. Choose Export, and follow it in Activity.
+
+[pause]
+
+To move a project, choose Export bundle, on its card or in the editor header. Tick Include copies of my photos and videos to carry your own files with it. Shared items are only referenced, and Locked items are never included.
+
+When the bundle is ready, the dialog says what it holds. Choose Download bundle.
+
+On the other server, open Studio projects and choose Import bundle. Frameleaf checks the file and marks every source Already here, Matched or Missing. The bundle becomes a new project, and your library is not changed.
+
+[pause]
+
+Studio needs a render worker, and render workers are not available yet, so these screens are a preview.
+
+Comments pinned to the moment, a history you can restore from, and exports on your own hardware or as a bundle for another server.
+
+[pause]
+
+Next up: Backup settings.

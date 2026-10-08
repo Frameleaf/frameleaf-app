@@ -1,0 +1,30 @@
+PRIV-04 · Locked tags, people and pets
+Target 2:15 · 274 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Some private things are a whole subject, not one photo: medical records, legal papers, a private project. Locked tags and people hide a subject at once.
+
+[pause]
+
+Open Settings, then Access & security, then Locked tags & people. The rules are private too, so choose Unlock Locked settings and enter your PIN.
+
+First, Apply Locked rules to. My photos and videos covers only what you own. All photos and videos I can access also covers partners' photos and albums shared with you.
+
+Under Tags, find a tag and tick it, or type a new name and create it. A tag nested inside a locked tag is locked through it, so Documents covers everything beneath.
+
+People and Pets work the same way: tick one, and every photo of them is locked.
+
+Choose Save Locked rules. If they changed on another device meanwhile, your draft is kept until you choose to reload.
+
+[pause]
+
+Choose Hide Locked content. Photos with those tags leave the timeline, search and albums. Nothing is removed from any album; it is simply not shown until you unlock.
+
+To review what your rules hide, unlock and add slash suppressed to your server's address. Suppressed content has two tabs. Timeline lists every hidden item. Albums shows which albums hold them, so each item keeps its album context.
+
+[pause]
+
+Locked rules shape what you see, on every device. They don't change what partners or shared links see. To keep one photo from everyone, mark it sensitive instead.
+
+If a tag or person is deleted, it stays in your rules as unavailable until you remove it, so nothing is revealed by accident.
+
+Next up: Location privacy when you share.

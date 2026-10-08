@@ -1,0 +1,16 @@
+AI-04 · Tuning the description prompt
+Target 2:45 · 307 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+The prompt decides how long descriptions are and what they notice. In Image Description, expand Prompt & Vocabulary. [beat] These controls work with the Qwen and Phi models. Florence-2 ignores every one of them, and a banner says so when it is selected. [pause]
+
+Description style sets the length. Terse is one or two sentences. Balanced is a short paragraph. Rich is a detailed multi-sentence description. [beat] Sentence count target is a soft target from one to six. The default is three, and the model sometimes goes over by one. [pause]
+
+Look for lists categories to call out when they are visible: brands, signage, screens, documents, uniforms, tools, vehicles, animals, food and landmarks. Add hiking trail and mountain range for this library. [beat] Custom vocabulary is the spelling to reuse in tags. One entry per line. Add Banff, Lake Louise and Jasper so tags match your place names. [beat] The three fields do different jobs. Look for says what to notice. Custom vocabulary says how to spell a tag. Custom instructions, in the next episode, says how to write. [pause]
+
+Forbidden inferences are things the model must never guess, even when the picture hints at them. The defaults are diagnoses, medication names, procedures, pregnancy and disability. [beat] NSFW indicators and Medical indicators are allow-lists of terms a description may use. Clear a box and save to restore its defaults. [beat] Advanced, the raw prompt editor, replaces all of this with one template. Most libraries never need it. [pause]
+
+Choose Review changes, then Save changes. Existing descriptions keep the old prompt until you re-queue them. Status & Re-generation records the Last config change. [beat] Preview a description on Ridge trail before a full run. The candidate now names the trail and uses your vocabulary. [pause]
+
+Iterate in short cycles: edit, save, rewrite a handful of photos, check, repeat. Re-queue the whole library once you are happy. [pause]
+
+Next up: Custom instructions.

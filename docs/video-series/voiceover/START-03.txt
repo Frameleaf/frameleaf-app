@@ -1,0 +1,32 @@
+START-03 · Set up Frameleaf: your first run
+Target 2:45 · 357 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Choose Getting Started and first-run setup opens with its own welcome. Change the language in the corner if you need to, then choose Continue setup.
+
+The rail shows five chapters: Welcome, Account, Library, Protection and Ready. Progress is saved as you go, so you can come back later.
+
+How you'll sign in offers a Frameleaf account, which works through Frameleaf Cloud, or Local account only. When the Cloud can't be reached, the Frameleaf card says so. Choose Local account only: it's stored on this server, and nothing leaves your network.
+
+Create the admin account is required. Enter your name, email and a password; the strength meter and checklist show what it still needs. Confirm it and continue. The password stays on this server and isn't saved with your setup progress.
+
+[pause]
+
+Where your library lives checks that the storage location from your install is writable, and shows its free space. To change it, change the install. Folder layout decides how originals are filed. Year, Month, file is recommended; Change shows the others.
+
+Processing shows the hardware Frameleaf detected and the model tier. Balanced is recommended; Light is fastest on any processor, and Best is highest quality but about twice as slow. Where processing runs is Local only: nothing leaves your network.
+
+[pause]
+
+Protection has Nightly database backups, on by default: every night at two, fourteen kept. They protect albums, people and edits, so leave it on unless another tool backs up the database.
+
+Privacy has two switches. Check for Frameleaf updates asks GitHub once a day and sends nothing about your library. Map tiles load the map; the tile server sees which areas you view.
+
+Bring everything together shows where Google Photos and iCloud Photos imports live. Nothing starts during setup.
+
+[pause]
+
+You're ready lists every choice. Indexing starts as photos arrive, and you can follow it in Activity. Pick the theme you want after setup, then choose Open Frameleaf. Your new, empty library opens.
+
+Only the admin account and a writable library are required. Every other step has a recommended choice that Use recommended accepts, and Settings can change it later.
+
+Next up: A tour of the Frameleaf interface.

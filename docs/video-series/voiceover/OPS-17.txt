@@ -1,0 +1,36 @@
+OPS-17 · Remote access: your options
+Target 2:45 · 333 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+At home, Frameleaf sits on your own network. Away from home, your phone and browser need a safe way back in. There are three proven options, and a fourth is coming from Frameleaf Cloud.
+
+[pause]
+
+First, what not to do. Never forward port 2283 on your router to the internet. That serves the web app over plain HTTP, open to anyone who can sit between you and your server.
+
+[pause]
+
+Option one is a VPN into your home network, such as WireGuard or OpenVPN. It is simple and very secure: even if Frameleaf had a flaw, only the VPN faces the internet.
+
+The costs: you open one port for the VPN, you need dynamic DNS if you have no static address, and the VPN app runs on every device.
+
+[beat]
+
+Option two is Tailscale. It builds the same kind of encrypted tunnel directly between your devices, even behind firewalls, without opening any port. Setup on each end is minimal.
+
+The trade-offs: its client usually runs with full system rights, it is a paid service with a free tier for personal use, and it must run on both ends.
+
+[pause]
+
+Option three is a reverse proxy. Your own domain answers over HTTPS with a free Let's Encrypt certificate and passes requests on to Frameleaf. Browsers and the Frameleaf mobile app connect with no extra app.
+
+It is the most complex option, and both the web app and its API face the internet. If you only need the web app remotely, an access-control layer in front of it can shield it.
+
+[pause]
+
+The coming option is remote access through Frameleaf Cloud, for a server you choose to link. Through it, the sign-in page offers only Sign in with Frameleaf. It is optional, and your server never depends on it.
+
+To choose: if only your own devices need access, a VPN or Tailscale keeps Frameleaf off the internet. If you want a normal web address, use a reverse proxy. The next episode sets one up.
+
+[pause]
+
+The written guide is linked below.

@@ -1,0 +1,30 @@
+CARE-06 · Large files and the location editor
+Target 2:15 · 269 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Two Organize tools help you tidy your library by hand. Large files finds what takes the most space, and the Location editor fixes where photos were taken. Both are in Settings, under Utilities.
+
+Large files lists your originals, biggest first, with a running total of what is in view. Filter by account, search by filename, and use Inspect to see the size, status and original path.
+
+Select what you no longer need and choose Move selected to trash. The review lists exactly those items and their sizes. Confirm to move them.
+
+A notice confirms the move, with Undo beside it if you change your mind. Space comes back only when the trash is emptied.
+
+Recent utility activity keeps a record of each move and restore, with the files and sizes. Export file list saves the current list to review elsewhere.
+
+Items that belong to someone else show Owner access required. Only the owner can move them.
+
+[pause]
+
+The Location editor shows your photos, their coordinates and a map. A photo without a position says No location.
+
+To copy a place, choose Use this location on a photo that has one. Select the photos to fix, choose Apply to selected, check the coordinates in the review and apply.
+
+You can also click the map, or type a latitude and longitude, to place photos at a precise point.
+
+Remove location clears the coordinates and place names of the selected photos, here and in their metadata files.
+
+Each change runs in the background with a loader on the photo, and is listed in Recent utility activity.
+
+[pause]
+
+Next up: Physical deduplication for family libraries.

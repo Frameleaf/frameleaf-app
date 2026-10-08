@@ -1,0 +1,34 @@
+OPS-04 · Compute & jobs: workers, endpoints and the GPU check
+Target 2:45 · 356 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Compute & jobs is where you see every worker, check the GPU and choose where work runs. Open Settings, then Compute & jobs.
+
+Workers & endpoints lists every worker with its state. Not checked means no check has run yet. Model ready and CPU only mean it serves its work, with or without an accelerator. Unreachable, No models ready and Turned off mean it cannot.
+
+Open a worker to see what it reported: capabilities, GPU memory, credentials as a state only, the work routed here, what admission would answer, and its load. Check capabilities checks that one worker now.
+
+Library analysis routes shows where each kind of library work goes. The page refreshes every thirty seconds and says when a snapshot is old.
+
+[pause]
+
+Hardware & GPU runs the GPU check on both containers: the server, for video playback, and machine learning, for AI features. Each needs its own access to the card, so each is checked.
+
+The result is GPU ready, Processor only or Needs attention. When something needs fixing, the check names the problem, shows the log line, and offers a compose fix to copy. Recreate the containers, then run the check again.
+
+What this hardware can run lists the largest models that fit here. Run a short benchmark to time your own hardware.
+
+[pause]
+
+Next, Workload destinations. Where each job runs sets each kind of work to Local only, Both or Cloud only. Faces, search and text in photos always stay local. Cloud choices stay off until you link Frameleaf Cloud and turn on cloud processing.
+
+Below it, Processing destinations lists each destination with its allowed work and health. Where each kind of work runs picks exactly one destination per kind of work. Only enabled destinations that allow that work are offered.
+
+Nothing falls back. If a destination is off or unreachable, its jobs are refused with a reason, not moved. Route the work elsewhere, or bring the worker back.
+
+[beat]
+
+Keep an eye on Load. A long backlog on one worker is the sign to add a GPU or a second computer, and the next two episodes show both.
+
+[pause]
+
+Next up: Hardware acceleration for processing.

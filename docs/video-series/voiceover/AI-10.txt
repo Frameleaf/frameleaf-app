@@ -1,0 +1,28 @@
+AI-10 · Best photos
+Target 2:00 · 244 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Best Photos ranks your strongest pictures by quality. Open it from the sidebar, just below Recently added.
+
+[pause]
+
+Each item is scored on your server from its preview. The score looks at sharpness, exposure, contrast and detail, and usable resolution. Faces add a gentle bonus, and screenshots and document-like images lose a little.
+
+The order is the quality ranking, never your stars. Each tile still shows your own rating, so the two aren't confused.
+
+Nothing else changes. Best Photos makes no album, copies no files and leaves your favorites alone. It lists only your own items, and never Locked or archived ones.
+
+[pause]
+
+Videos are ranked too. Frameleaf scores five frames from each video up to fifteen minutes long and keeps the best one. Best moments in your videos shows it for each ranked video.
+
+Choose Play from, and the video starts at that moment. Use as cover makes the moment the video's cover, once its moment frames have been cut.
+
+Explore has a Best Photos card too, counting the strongest suggestions in your library.
+
+[pause]
+
+Scoring is automatic. A new upload is scored once its thumbnails are made, and again after face detection or an edit.
+
+On a library that was never scored, the page says No best photos have been scored yet. To score everything, an administrator opens Job manager under Compute & jobs, chooses Create job, then Recalculate Best Photos. It rescores every item, including ones already scored.
+
+Next up: Ask about your photos.

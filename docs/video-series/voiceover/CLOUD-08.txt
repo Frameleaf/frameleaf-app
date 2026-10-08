@@ -1,0 +1,30 @@
+CLOUD-08 · Cloud backup and restore
+Target 2:45 · 352 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of cloud backup. It copies your originals and your database to an encrypted bucket that only this server uses. You need a linked server. Open Settings, Frameleaf Cloud, then Cloud backup.
+
+Only new or changed files upload, and a photo you have twice is stored once. Choose Set up cloud backup.
+
+First, Destination. Choose Frameleaf-managed storage, priced by what you store, or Your own S3-compatible bucket from a provider that supports customer-provided keys. With managed storage, Frameleaf sees file names and sizes, never contents.
+
+Next, Encryption key. Generate a key for me keeps the key on this server. I'll maintain my own key creates one in your browser for you to download, and nobody can recover it for you. You can't change this later without starting a new backup.
+
+With your own key, Keep a copy on this server lets backups run unattended. Turn it off, and backups pause after every restart until someone loads the key.
+
+A generated key comes with a recovery kit, shown once. Download or print it. Also keep an encrypted copy with Frameleaf protects a copy with a passphrase only you know.
+
+Claim bucket ties the bucket to this server alone. Choose Finish setup, and the first run starts tonight.
+
+[pause]
+
+Each run uploads the newest nightly database backup, then only new or changed files. Back up now starts a run straight away, and Verify checks a sample of files against the latest backup.
+
+Restore brings things back at four levels. Items returns deleted photos with their favourites, ratings, tags, albums, people and edits. Albums recreates a deleted album, or repairs a damaged one.
+
+Whole library puts the server into maintenance mode, then restores the database and every file from the backup you choose. Type RESTORE to confirm.
+
+The fourth level is a single item. In Library Care, Missing media and Damaged media gain a Backup column. Restore from backup puts the original back, checked against its fingerprint first.
+
+A file a restore replaces is moved aside, never deleted, and items always go back to their owner.
+
+Next up: Remote access through Frameleaf Cloud.

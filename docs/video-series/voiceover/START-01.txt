@@ -1,0 +1,24 @@
+START-01 · What you need
+Target 2:00 · 277 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf runs on a computer you own, usually a home server. Before you install, check four things: the operating system, memory and processor, storage, and Docker.
+
+Linux is the recommended system: any 64-bit distribution, such as Ubuntu or Debian. Windows and macOS work through Docker Desktop, but are strongly discouraged. A full virtual machine is fine; Docker inside an LXC container is not recommended.
+
+Memory: at least six gigabytes, and eight is better. With only four, Frameleaf can run with machine learning turned off. Processor: at least two cores, four recommended, on amd64 or arm64.
+
+On amd64, machine learning needs the x86-64-v2 instruction level, which most processors since about 2012 have. In a virtual machine, choose a CPU type that passes it through.
+
+[pause]
+
+Store photos on a Unix-compatible filesystem, such as EXT4, ZFS or APFS, that keeps file ownership and permissions. Thumbnails and converted videos usually add ten to twenty percent to the library's size, so leave room.
+
+The database is small, usually one to three gigabytes, but it needs speed and a steady connection. Keep it on a local SSD, never on a network share. If you set Docker resource limits, give it at least two gigabytes of memory.
+
+[pause]
+
+Frameleaf runs in Docker with the Compose plugin. On a Linux server, use Docker Engine; Docker Desktop is for Windows and macOS. The command is docker compose, with a space; the old hyphenated command is not supported.
+
+On Windows, the database folder can't be on NTFS or FAT drives, or on a Windows folder mounted into WSL. Use a Docker volume for it instead; the written guide shows the two changes.
+
+The written guide is linked below.

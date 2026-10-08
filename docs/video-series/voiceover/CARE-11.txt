@@ -1,0 +1,30 @@
+CARE-11 · Preservation packages
+Target 2:45 · 321 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A preservation package is an independent copy of your originals, with what your library knows about them: dates, places, descriptions, albums, people, tags and edit recipes. It is in Import and protection, under Originals and preservation.
+
+It is not a backup of the server. Accounts, sharing, settings, pets, memories and Studio projects are not included, so keep your database backups as well.
+
+Choose Preview preservation manifest. Under What to preserve, pick the whole library, favorites, a range of dates or chosen albums. Only your own items are ever included. Name the package and choose Continue.
+
+Verify counts and measures the selection, and checks that it fits in one package, up to one hundred thousand items, and in the free space on the server. Nothing is written yet.
+
+Manifest shows, category by category, what a restoration would bring back. Choose Start export.
+
+The export is a background job in Activity, and closing the page does not stop it. Each original is copied and checked against its recorded checksum; your library's files are never changed.
+
+A new package reads Not verified. Verify files reads it back and checks every original and sidecar against its checksum. Then it reads Verified.
+
+[pause]
+
+Download package saves it as one ZIP. A finished download is not a verified copy, so verify the copy you keep elsewhere as well.
+
+To bring a package back, choose Restore from a package. Pick a saved package, upload a ZIP, or, as an administrator, a path on the server. Choose what wins where the package and your library disagree.
+
+Check package verifies every file and compares each original with your library, without writing anything. Review then sorts originals into new, already in your library, and in your trash.
+
+For photos you already have, each difference is listed; choose Keep library or Use package. Choose Restore. Existing originals are never replaced or copied twice, and nothing is removed.
+
+[pause]
+
+Next up: Photo quick editor: Adjust.

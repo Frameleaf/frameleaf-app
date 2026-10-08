@@ -1,0 +1,34 @@
+OPS-22 · Bulk upload with the CLI and API keys
+Target 2:30 · 290 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+For a big folder of photos, the command-line tool uploads in bulk from any computer. It signs in with an API key, so start there.
+
+[beat]
+
+Open Settings, then Access & security, then API keys, and choose Create API key. Name it. A key belongs to one account, and everything it uploads belongs to that account too.
+
+Choose only what the tool needs. Signing in needs user read, and uploading needs asset upload. To create albums as well, add album read, album create and album asset create.
+
+Create it and copy the key now. It is shown once and can never be shown again.
+
+[pause]
+
+Install the tool with Node.js 22 or later; the guide also has a Docker version. Log in with your server's API address and the key. Both are stored in a small file in your home folder, so log out when you are done.
+
+Always start with a dry run. It scans the folder and its subfolders and shows what would upload, without changing anything.
+
+[beat]
+
+Now upload for real. The album option turns each folder name into an album. To put everything into one album instead, use the album name option.
+
+A few more options. Ignore skips files matching a pattern. Visibility can send uploads straight to the archive. Skip hash saves time on fast connections, and watch keeps uploading new files as they appear. The server still spots duplicates.
+
+[pause]
+
+When the import is finished, delete the key, or rotate it if you will use it again. A rotated key stops working at once.
+
+Importing a Google Photos Takeout? Use Frameleaf's own Google Photos import instead. The command-line guide also points to a community tool built for Takeout archives.
+
+[pause]
+
+Next up: Installing on Unraid, Synology, TrueNAS and Portainer.

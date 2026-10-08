@@ -1,0 +1,32 @@
+OPS-08 · Storage & originals: the storage template
+Target 2:45 · 345 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Out of the box, Frameleaf files originals by account in folders arranged for the app, not for people. The storage template names and arranges them your way: by date, album or camera.
+
+Open Settings, then Storage & originals, then Originals & folder structure. Turn on Enable storage template engine, and leave Hash verification enabled on.
+
+Variables lists what you can use: date and time parts from each item's creation time, the file name and type, camera make, model and lens, and the album. Dates use the server's local time zone.
+
+Pick a preset or type your own. The default makes a folder for each year, then one for each day. The preview shows the full path and how close it is to the length limit.
+
+[pause]
+
+To file by album, use an if block: the album's folder when there is one, and Other when there is not. A photo in several albums goes to the most recently created one. Wrap album in three braces to keep characters like ampersands.
+
+Extensions become lowercase, and files with the same name are never overwritten; a number is added. Changes apply only to new uploads.
+
+The first folder is the account's storage label, or its ID when there is none. Set labels in Users, with Edit account. Changing a label moves nothing until you run the migration.
+
+[pause]
+
+Review and save. Then apply the template to what is already stored. The note's link opens Job manager: open Storage organization, choose Start task, and confirm the review. Each original moves into the new layout.
+
+What moves: originals, into the library folder under each label. Thumbnails, playback videos, profile pictures and database backups stay where they are, and external libraries are never moved. Mobile uploads land in the upload folder first, then move.
+
+Turning the template off later leaves files where they are, and new uploads are saved in the upload folder. Never move or rename files by hand; only Frameleaf should change them.
+
+Before a big migration, make sure your backups are current; the backup episodes show how.
+
+[pause]
+
+Next up: External libraries.

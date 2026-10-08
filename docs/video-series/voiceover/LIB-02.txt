@@ -1,0 +1,28 @@
+LIB-02 · The viewer and the information card
+Target 2:45 · 384 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Open any photo and the viewer fills the screen. The arrow keys move to the next or previous item. Escape closes it. Press I to open the information card.
+
+Press Shift F for the filmstrip, a row of thumbnails along the bottom, so you can skip ahead without closing the viewer. Shift F again hides it.
+
+More actions holds the rest. Copy image copies the picture. Find similar searches for photos that look alike. Under Go to, Show in folder and View on map show where it lives.
+
+Stacks keep related shots together. The viewer shows Stack and the count, and the up and down arrows step through it. Set as stack primary picks the cover, Unstack splits them, and Keep this, remove the rest keeps only this one.
+
+The information card starts with the Description. A badge says who wrote it: AI, or Yours once you edit it. Rewrite with AI asks for a fresh one; Check again with AI reruns the check.
+
+Captured is when the photo was taken; choose Edit date to change it. Pick a Time zone, or keep the current one, and a line at the bottom shows the new capture time before you save.
+
+Edit location opens a map. Place the pin, then type the City, State or region and Country. Names you type are kept; move the pin without touching them and Frameleaf names the new spot. Remove location clears both.
+
+Under Tags, choose Add a tag. Tag suggestions appear as you type, or create a new tag on the spot.
+
+Rating is a row of stars. Details lists the camera, lens, exposure, file name, path and checksum. Copy checksum copies the file's fingerprint, useful for comparing two copies.
+
+A Live Photo shows a Live badge. Hover over it, or press it, to play the short video that came with the still.
+
+Under all of this, Frameleaf never rewrites your original file. Changes to the description, rating, tags, date or location go into the database and a companion .xmp sidecar, written by the Sidecar Write job. Lightroom, Darktable and digiKam use the same kind of sidecar.
+
+Everything you changed is saved as you go. Close the viewer and you are back in the grid, exactly where you left it.
+
+Next up: Favorites, archive, recently added and trash.

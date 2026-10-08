@@ -1,0 +1,32 @@
+START-04 · A tour of the Frameleaf interface
+Target 2:45 · 346 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf's pages share one frame: the top bar, the sidebar on the left, and your photos in the middle. Here's what lives where.
+
+The switcher in the top bar holds three workspaces. Library is your photos and videos. Studio holds your projects and has its own series. Activity lists uploads, downloads and background jobs while they run.
+
+In the middle sits Search your library. Press slash, or Control K, then type what you're looking for. Start with a greater-than sign and it becomes the command palette: type a page, a setting or an action, and press Enter.
+
+Upload offers files or a whole folder, and an album to add them to. The next episode walks through it.
+
+Next to Upload: a job count that appears while work is running, the notifications bell, Locked, which hides or reveals your Locked photos with your PIN, the theme switch, and your account menu.
+
+In the library, press the question mark to see every keyboard shortcut. Shortcuts pause while you type in a field.
+
+[pause]
+
+The sidebar starts with your library views: Library, Favorites, Recently added, Best Photos, Archive and Locked. Then come Explore, with People, Pets, Places, Map and more; Albums, with your collections and Shared links; Shared spaces; and Tools, with Workflows and Trash.
+
+Click a heading to fold its section away; Frameleaf remembers that on this device. The arrows at the top shrink the sidebar to icons.
+
+Three entries sit at the bottom. Library Care opens the checks and repairs that look after your files. Settings holds your own preferences and, for administrators, every server setting, grouped into areas you can search.
+
+Support Frameleaf explains how the project is funded: Frameleaf is free to self-host, and a supporter key adds a badge that says thanks.
+
+[pause]
+
+Account Settings in your account menu opens Settings too. Your preferences holds your profile and appearance, and Access and security holds your password, Locked PIN, devices and API keys.
+
+Personal settings change only your own account. Everything else in this series starts from one of these places.
+
+The written guide is linked below.

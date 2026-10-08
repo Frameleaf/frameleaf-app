@@ -1,0 +1,38 @@
+OPS-21 · Running the official Immich image and coming back
+Target 2:45 · 354 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf is built on Immich. On a compatibility-certified release, you can run the exact official Immich image for a while and then come back, without losing Frameleaf's data.
+
+[pause]
+
+Here is why it works. Official migrations stay in the official ledger, and what Frameleaf adds lives in a separate schema of its own. While official Immich runs, that data stays dormant, not deleted.
+
+One official image is certified today: version 3.1.0, by its exact tag. Never swap in latest, release or any other floating tag.
+
+[beat]
+
+Before you start, take a fresh database backup and a matching snapshot of your media, and note their real IDs. Keep both until you are safely back. Then turn on maintenance mode and stop every other container.
+
+The order is fixed. Check and finish the backfills. Verify storage against your backup and snapshot IDs. Run the preflight, which produces a report digest. Apply the cutover with that digest. Then prepare the handoff, and save the record it prints.
+
+Stop Frameleaf, leave maintenance mode with a one-off admin command, and start the exact official image. Its normal startup applies its own pending migrations.
+
+[pause]
+
+While it runs, Frameleaf-only features are unavailable. Items hidden only by Frameleaf's own privacy filters can become visible in timelines, search, albums, sharing and the mobile apps. Review that before you hand off.
+
+Then check it: sign in, run an existing workflow, and upload, download and delete a test item, comparing counts as you go.
+
+[beat]
+
+Coming back has the same shape. Turn on maintenance mode, stop official Immich, and run the return preparation. It validates the official ledger, reconciles Frameleaf's data, and switches features back on only when that finishes.
+
+Know the rollback boundary. A failure before the cutover commits changes nothing. After it, restore the database and media checkpoints together. Never edit the migration ledger by hand.
+
+[pause]
+
+Two cautions. The certification is a synthetic test, so repeat the whole sequence on a clean copy of your own setup first. And a database first opened by an older release must be converted by a compatibility release first, or restored from matched backups.
+
+[pause]
+
+The written guide is linked below.

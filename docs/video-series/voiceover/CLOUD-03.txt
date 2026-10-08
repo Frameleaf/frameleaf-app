@@ -1,0 +1,32 @@
+CLOUD-03 · Sign in with Frameleaf
+Target 2:30 · 295 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of Sign in with Frameleaf. Once your server is linked, people can sign in with their Frameleaf account. It works alongside passwords and your own OpenID provider, and never changes them.
+
+[pause]
+
+As an administrator, open Settings, then Access & security, then Sign in with Frameleaf. The chip says Available, and the page shows this server's client ID and how many accounts are linked.
+
+Require Frameleaf sign-in for remote access is always on, so visitors who arrive through remote access see only the Frameleaf button. At home, people keep signing in as they do now.
+
+Turn on Show Sign in with Frameleaf at home to add the button to the local sign-in page. Button text lets you change what it says. Save.
+
+[pause]
+
+Each person links their own account. In Your preferences, open Frameleaf account and choose Link Frameleaf account. You continue to frameleaf.cloud, sign in, and come back.
+
+The page then says Linked to your email since today. Unlink here ends your other Frameleaf sessions.
+
+On the sign-in page, choose Sign in with Frameleaf. The page says Opening frameleaf.cloud, and you return signed in.
+
+[pause]
+
+Through remote access, the page explains that you are reaching this server through Frameleaf remote access, and that passwords stay on the local network.
+
+If you turn out to be on the same network as this server, it offers the local address, which is faster, or Stay on remote access.
+
+At home, a Frameleaf account is optional. It is needed only for remote access and Frameleaf Cloud features.
+
+A person your account authorises for this server gets an account here on first sign-in. An existing account links only by a verified email address. Unlinking the server ends every Frameleaf session.
+
+Next up: Plans, supporter keys and Support Frameleaf.

@@ -1,0 +1,34 @@
+MOBILE-01 · Backup settings
+Target 2:30 · 325 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+The Frameleaf mobile app backs up your phone to your own server. Tap the cloud icon at the top of the timeline to open Backup.
+
+Backup Albums says which albums are included and which are left out. Total, Backup and Remainder count what you selected, what is already on the server, and what is still to go.
+
+Tap Select to choose albums. Tap an album to include it, and double tap to exclude it. On an iPhone a photo can sit in several albums, so you can back up Recents and still leave out Screenshots.
+
+An excluded album always wins. Anything in Screenshots stays on the phone, even though it is also in Recents.
+
+[beat]
+
+The first time, the app works out a checksum for every file. Anything already on the server, from the web or another device, is skipped, so nothing uploads twice.
+
+[pause]
+
+The gear icon opens Backup Options. Out of the box the app uploads only on Wi-Fi. Under Network Requirements, turn on Videos or Photos to let that kind of file use cellular data.
+
+On Android there are two more choices under Background Options. Charging runs background backup only while the phone is charging. Delay new assets backup waits five seconds, thirty seconds, two minutes or ten minutes after a new photo.
+
+Back on the Backup page, turn on Enable Backup. Uploading starts, and View Details shows each file as it goes.
+
+[pause]
+
+There are two kinds of backup. Foreground backup runs while the app is open and stops when you leave it. Background backup is scheduled by your phone's operating system, which decides when it runs.
+
+So new photos upload whenever you open or resume the app, and from time to time in the background. The next episode shows how to help background backup along.
+
+Include and exclude albums, keep uploads on Wi-Fi unless you allow cellular, and on Android set charging and a delay.
+
+[pause]
+
+Next up: Background backup on iOS and Android.

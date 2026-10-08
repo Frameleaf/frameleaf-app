@@ -1,0 +1,14 @@
+AI-03 · Try an enrichment change before you commit
+Target 2:30 · 272 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A prompt or model change can re-describe your whole library. Try it on a few samples first. In Image Description, choose Preview a description. [pause]
+
+The Try an enrichment change dialog has three steps: Choose sample, Compare and Scope. Understand a change before it reaches your library. [beat] Choose up to six of your own photos or videos. Pick Hiking with Jamie, Elk in meadow and the Kayaking video. [beat] Processing destination names where the preview runs. Default is the destination routed for descriptions. A cloud destination is marked and sends the samples off your network. [beat] You can preview settings you have not saved yet. The dialog says so. [pause]
+
+Compare runs the samples one at a time. Current sits beside Candidate, with the tags and any names the check removed. [beat] For a video, it also says how many frames the model saw. [beat] Nothing is written. Descriptions, tags, the Locked state, search embeddings and frames stay exactly as they were. [pause]
+
+Scope chooses what a plan runs on those samples: Descriptions and tags and the Locked-content check for photos; Reusable video frames, Moment search index and Moment captions for videos. [beat] Moment captions are never ticked for you, because they add one model request per frame. The plan uses your saved settings, so save first to run what you previewed. [pause]
+
+Choose Queue plan. It runs in the background one item at a time and appears in Activity. It survives closing the browser or restarting the server. [beat] The dialog follows each item: queued, running, skipped, failed or completed, with a reason. Pause and Cancel act between items, and Retry reruns only what failed. [pause]
+
+Next up: Tuning the description prompt.

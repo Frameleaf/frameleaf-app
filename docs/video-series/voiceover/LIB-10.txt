@@ -1,0 +1,26 @@
+LIB-10 · People
+Target 2:45 · 360 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf finds the faces in your photos and groups them into people. People, under Explore, lists everyone. Find a person searches by name, and the sort menu orders by Name, Photo count or Recently seen.
+
+Unnamed groups show Add a name. Click it, type, and press Enter. Existing names are suggested as you type, and giving a group a name someone already has makes Frameleaf ask about merging them.
+
+Merge suggestions appear above the grid. Are these the same person? Choose Yes, merge to combine them, No to keep them apart, or Ask me later. Stop suggesting stops asking about that person. No, Ask me later and Stop suggesting each come with Undo.
+
+To merge by hand, open a person's menu and choose Merge into. Pick who they belong to. Their photos move to that person, who keeps their own name, birthday and favorite status.
+
+Favorite adds a heart. Hide takes someone off the People page, and their photos stay in your library. Show and hide people changes many at once, like Hide unnamed, and then Save changes.
+
+Open a person for their page. Featured photo picks the picture that represents them everywhere. Set date of birth, and the viewer shows their age in each photo.
+
+When a face is in the wrong place, choose Fix incorrect match. Each face has Not this person, where you pick who it really is, someone new, or Not a face of anyone. Select several faces to move them together.
+
+Correction history lists every change you made to this person's faces, newest first, and those changes stay when recognition runs again. Undo reverses a change while the face is still as you left it.
+
+If a face was missed, open the photo and choose Tag people, or press P. Draw around the face, choose who it is or create someone new, and save the face tags.
+
+Recognition groups, in Settings, let a family recognize people across everyone's photos, and membership does not open up anyone's library. Administrators tune detection under Search and intelligence, in Facial Recognition.
+
+Name and merge, fix what is wrong, and tag what was missed. That is People.
+
+Next up: Pets.

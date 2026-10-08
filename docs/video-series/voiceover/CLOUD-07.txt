@@ -1,0 +1,32 @@
+CLOUD-07 · Running a cloud job
+Target 2:45 · 337 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of running a job on Frameleaf Cloud. Every cloud job follows the same path: you confirm it, it runs, and it settles. Here, Lake morning is restored on Frameleaf Cloud.
+
+The confirmation comes first. It shows the model, and an estimate from typical to high end with start fees included. It shows how the job is billed, and how much is held from your AI credit.
+
+Tick Send this job to Frameleaf Cloud. Only previews leave your server, metadata is removed, and nothing is kept after the job. Then choose Run on Frameleaf Cloud.
+
+[pause]
+
+In Activity, the job moves through Queued, Starting and Running. Starting means a Frameleaf Cloud worker is loading the model. The start fee covers that, and GPU time is billed only once work begins.
+
+While it runs, Activity shows the estimate, the cost so far and the amount held. You can close the dialog; the job keeps going.
+
+Long videos are cut into chunks of twenty to thirty seconds and spread across up to five workers, so they finish sooner. Each chunk is saved as it finishes, so a lost worker costs at most one chunk. Each worker adds a start fee, and the estimate includes them.
+
+[pause]
+
+Sometimes a job cannot start. The dialog says why: the wallet needs credit, today's spending cap is reached, the terms need accepting, or Frameleaf Cloud did not answer. Nothing is sent, and the job never moves to another worker.
+
+When the job finishes, it settles at the metered cost. The rest of the hold returns to your AI credit, and previews and results are deleted from Frameleaf Cloud.
+
+If a job fails on Frameleaf Cloud's side, you pay nothing, not even the start fee. Retry it from Activity.
+
+On the Cloud processing page, Recent cloud jobs puts each estimate next to what the job cost, with its GPU time and workers.
+
+[beat]
+
+Every cloud job shows its cost first, sends only previews, and never falls back silently.
+
+The written guide is linked below.

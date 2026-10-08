@@ -1,0 +1,34 @@
+PRIV-01 · Privacy by design
+Target 2:30 · 323 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf is built so your server tells the outside world as little as possible. This episode covers what never leaves, what you decide, and what still uses the network.
+
+[pause]
+
+Start with what never leaves. There is no telemetry: the reporting code is removed from the server, reporting in the bundled machine-learning libraries is blocked, and old telemetry settings do nothing.
+
+There is no version phone-home to other services either. Update checks ask only for new Frameleaf releases, and only if you allow them.
+
+[pause]
+
+During setup, the Privacy step shows the two outside calls that are yours to decide. Check for Frameleaf updates asks GitHub once a day and sends nothing about your library. Map tiles loads map images, and the tile server sees which areas you view.
+
+You can change both later. In Settings, Server & updates, Versions & compatibility holds Check for updates. Third-party release checks is shown off, and it cannot be turned on.
+
+Maps & geography holds Enable map features. With it off, no tiles load. Place names come from a database on your own server, so naming a place never needs an outside call.
+
+[pause]
+
+Some things still use the network, because you asked for them. Downloading a model tells the download host which file you want and your network address. Workers you add receive the images they process. Your own sign-in provider and email server hear from Frameleaf only when you set them up.
+
+[pause]
+
+Frameleaf Cloud is optional. Without a Frameleaf Cloud address in the deployment, the server never contacts it. Linking is your choice, and linking uploads nothing from your library.
+
+Once linked, the server checks in every few minutes, and the page lists every field it sends. Photos, videos, thumbnails, metadata, names, accounts and usage are never among them.
+
+[pause]
+
+So walk through the Privacy step, decide on updates and map tiles, and link Frameleaf Cloud only for the extras you want.
+
+The written guide is linked below.

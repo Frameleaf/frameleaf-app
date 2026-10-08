@@ -1,0 +1,34 @@
+PRIV-03 · Detect sensitive content automatically
+Target 2:45 · 326 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf can check your images for sensitive content. You review what it finds before anything is hidden.
+
+Roll it out in three steps. Detect first. Review the results and tune the threshold. Only then turn on hiding.
+
+[pause]
+
+Open Settings, then Search & intelligence, and find NSFW detection. Turn on Detect NSFW images, and leave Hide detected NSFW assets off for now. The model is a dedicated classifier, not the description model.
+
+NSFW threshold is the minimum score, from zero to one, that counts as a detection. It starts at zero point eight five. Review your changes and save.
+
+New uploads are checked automatically. For the images you already have, open Job manager under Compute & jobs, find Locked-content detection and choose Run missing.
+
+[pause]
+
+When it finishes, open search. The quick filter Needs sensitivity review lists every flagged image that nobody has reviewed yet.
+
+Open one. In the Enrichment section of the information card, Sensitive content shows Needs review, the model, and how likely sensitive the image is. Accept agrees with the detector. Unmark Sensitive marks it safe. A person's decision always wins over the model.
+
+The detector is wrong about this lake, so choose Unmark Sensitive. The row now reads Overridden, reviewed by you. Check again with AI reruns the check on this image.
+
+The Sensitivity review filter also finds reviewed, overridden, failed and unchecked images, so you can judge the detector on your own library.
+
+[pause]
+
+When the results look right, turn on Hide detected NSFW assets and save. Detections are then locked, hidden until you unlock with your PIN, and listed in Locked under Detected. Images you marked safe stay visible.
+
+Detected items follow the same rules as anything you lock. They keep their albums, and partners and shared links never see them.
+
+Detection covers images only, and a classifier can be wrong. The generated nsfw tag is only a search word; the lock is what hides things.
+
+Next up: Locked tags, people and pets.

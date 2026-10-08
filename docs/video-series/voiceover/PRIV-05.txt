@@ -1,0 +1,28 @@
+PRIV-05 · Location privacy when you share
+Target 2:15 · 268 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A photo's location tells people where you were, and sometimes where you live. Frameleaf gives you three ways to keep it to yourself.
+
+[pause]
+
+First, partners. Open Settings, then People & sharing. Each partner who can see your library has Share my location with this partner. Turn it off for Jamie. Frameleaf notes that Jamie may already have seen earlier locations.
+
+From then on, your photos reach Jamie without coordinates or place names, and they are left off Jamie's map. An original Jamie downloads is a copy with the location removed, or nothing if that can't be guaranteed.
+
+Jamie can't get it back another way. A link Jamie makes shows no more than Jamie sees, and in Jamie's albums your photos show no location to anyone.
+
+[pause]
+
+Second, shared links. With Show metadata off, a link shows no camera details, capture time or location. Originals carry all of that inside the file, so a link without metadata never offers downloads, and its videos play without their location.
+
+[pause]
+
+Third, remove a location for good. In the viewer, choose the location on the information card, then Remove location, and confirm. The coordinates and place names are cleared, here and in the photo's metadata file, and from a Live Photo's video too.
+
+The photo leaves the map and place searches. To clear many at once, the Location editor in Settings, Utilities, removes the location from a selection.
+
+[pause]
+
+In short: switch location off for each partner who shouldn't have it, keep Show metadata off on links you post widely, and remove a location that no one should ever see.
+
+Next up: Library Care overview.

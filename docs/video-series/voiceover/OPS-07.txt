@@ -1,0 +1,36 @@
+OPS-07 · Video transcoding and hardware transcoding
+Target 2:45 · 356 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Not every browser or phone plays every video. Frameleaf keeps your original and, when needed, makes a playback copy that plays everywhere.
+
+Open Settings, then Editing & playback, then Video playback proxies. Transcode policy decides which videos get a copy.
+
+The default, Only videos not in an accepted format, converts HDR video, unusual pixel formats and codecs you have not accepted. Other choices also convert videos above the target resolution or bitrate, convert everything, or nothing at all, which can break playback on some devices.
+
+Accepted video codecs, audio codecs and containers set what counts as accepted. Out of the box that is H.264 video with AAC, MP3 or Opus audio, in MOV, Ogg or WebM. Other containers are repackaged as MP4.
+
+Encoding Options shape the copy: H.264 video, AAC audio and a target resolution of 720 by default. Videos are never upscaled. A lower constant rate factor means better quality and larger files.
+
+[pause]
+
+A GPU can do the encoding. Frameleaf supports NVENC, Quick Sync, VAAPI and RKMPP. Hardware encoding is experimental and makes larger files than software at similar settings.
+
+Keep the transcoding acceleration file next to your compose file. In the server service, uncomment extends and change cpu to your backend, such as quicksync. For VAAPI on WSL2, use vaapi-wsl. Then recreate the containers.
+
+Back in Video playback proxies, set Acceleration API to match. Keep Hardware decoding on for end-to-end acceleration; it may not work on every video.
+
+On Jasper Lake or Elkhart Lake processors, set Constant quality mode to CQP. A slower preset narrows the quality gap.
+
+Review changes, then Save changes. New conversions use the GPU; existing copies do not need redoing.
+
+[pause]
+
+To check, open Hardware & GPU and run the check. Video playback and export should read GPU in use, and the test transcode says where it ran.
+
+Acceleration is best effort: if the device fails, Frameleaf falls back to software, so a clean log while converting is a good sign.
+
+A few limits: NVIDIA and AMD cards cannot encode VP9, two-pass encoding works only with NVENC, and Raspberry Pi is not supported.
+
+[pause]
+
+Next up: Storage & originals: the storage template.

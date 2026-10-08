@@ -1,0 +1,26 @@
+LIB-05 · Shared spaces
+Target 2:30 · 360 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A shared space is a top-level library that everyone you invite adds to. It is not one person's album. Each member brings their own photos, and everyone sees the whole.
+
+Choose New, then Shared space, and name it. Here it is Family. It appears in the sidebar under Shared spaces, and its page has sections for Photos, Members, Albums, People, Places and Activity.
+
+Under Members, choose Invite people. Search by name or email, pick a role, Editor or Viewer, and choose Invite. The other person finds it under Invitations and chooses Join or Decline. Nobody is added without saying yes.
+
+If you invite the same people often, make a recipient group. Choose Manage groups, then New group, name it and add people. Next time, invite the group and Frameleaf sends each person their own invitation. Groups are shortcuts, not permissions, and only you see their names.
+
+Adding photos works like an album. Select them in your library, choose Add to album, and pick the shared space.
+
+To add a whole set at once, filter your library, then choose Add everything matching. Choose where the items come from, check the count, and confirm. The set is fixed the moment you start, so changing a filter afterwards does not change what is added.
+
+Link album points the space at an existing album. The album stays where its owner keeps it, with its own members, and nothing is moved or copied. Unlink takes the link away and leaves the album untouched.
+
+Every item, and the space itself, can take comments. Type @ to mention a member. Activity lists what everyone has done here, newest first.
+
+When you come back, a banner counts the new items since your last visit. Show only what is new filters to just those. Mark as seen clears the count.
+
+Leave shared space takes you out; the owner keeps the space. Only the owner can delete it, and members then lose access. The photos themselves stay in each member's own library.
+
+Everyone invited adds. Joining is always a choice. And linking an album never copies it. That is a shared space.
+
+Next up: Shared links and the public viewer.

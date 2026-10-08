@@ -1,0 +1,34 @@
+OPS-23 · Installing on Unraid, Synology, TrueNAS and Portainer
+Target 2:45 · 327 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf installs the same way on any Docker host: a compose file and an environment file from a Frameleaf release. On a NAS, the question is where those two files go.
+
+[pause]
+
+Two settings matter most. The upload location is where your photos and videos live. The database location should be a local disk, ideally an SSD, never a network share. And change the database password.
+
+On Unraid, install the Docker Compose Manager plugin. Add a new stack, paste the Frameleaf compose file into Compose File, and the example environment into Env File.
+
+Use absolute share paths, with the database on appdata; left at the default path, the database keeps restarting. Save, choose Compose Up, and open the address shown next to the Frameleaf server container.
+
+To update, ignore Unraid's update ready label. When Frameleaf tells you a release is out, choose Update Stack.
+
+[pause]
+
+On Synology, put both files in a project folder with library and postgres subfolders. In Container Manager, create a project on that path. If the database sits on hard drives, uncomment the HDD storage line.
+
+Then allow the server container's address and port 2283 in the firewall. To update, stop the project, clean it, remove unused images, and build it again.
+
+[pause]
+
+The TrueNAS guide uses its Community app rather than a compose file. Prepare two datasets, one for data and one for the database, and choose both as host paths. Before you point it at a Frameleaf library, check that the app runs the Frameleaf images.
+
+In Portainer, add a stack, paste the compose file into the web editor, and change each environment file reference to stack env.
+
+Paste the example environment in Advanced mode, set the password and both locations in Simple mode, and deploy the stack.
+
+[pause]
+
+Wherever you run it, read the release notes before each update, keep the same stack, environment file and paths, and never start a second stack against the same database folder.
+
+The written guide is linked below.

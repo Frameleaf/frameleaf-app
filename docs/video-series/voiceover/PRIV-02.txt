@@ -1,0 +1,36 @@
+PRIV-02 · Locked: Mark Sensitive and your PIN
+Target 2:45 · 336 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Locked keeps photos and videos private without moving them anywhere. It starts with a six-digit PIN.
+
+Open Settings, then Access & security, then Locked folder PIN. Choose Create PIN, enter six digits and confirm them. If you ever forget it, Forgot your PIN resets it with your account password.
+
+[pause]
+
+Select what you want to keep private and choose Mark Sensitive in the selection bar. The items leave the timeline at once. Locking never needs your PIN; seeing them again does.
+
+Nothing moves. A lock is a note on the item, so it keeps its albums, stack, favorites, tags and its place in time. Stacks and Live Photos lock as a whole.
+
+The viewer's More menu has Mark Sensitive too, and anything you upload while in Locked stays locked.
+
+[pause]
+
+To see locked items, choose Locked in the top bar. Unlock Locked content asks for your PIN and checks it as soon as the sixth digit is in. The control then reads Revealed.
+
+This lasts for the session only. Leave the tab or wait an hour, and everything hides again. Choose the control again to hide it right away.
+
+[pause]
+
+Locked in the sidebar lists every locked item, newest first. Filter by the reason: Marked by you, Detected by sensitive-content detection, or Moved from old Locked folder after an upgrade. Each tile's shield says Sensitive or Locked.
+
+From here you can still add items to albums, download them, change their date or location, or delete them permanently.
+
+To unlock, select items and choose Unmark Sensitive. Each goes back exactly where it was, and detection will not lock it again.
+
+[pause]
+
+While locked, an item is left out of the timeline, albums, search, the map, memories, people and downloads. Partners, album and space members and shared links never see it, whatever their own session.
+
+A locked photo is never used as a cover or a featured photo. Background work such as thumbnails and backups still includes it, so nothing is skipped while it is hidden.
+
+Next up: Detect sensitive content automatically.

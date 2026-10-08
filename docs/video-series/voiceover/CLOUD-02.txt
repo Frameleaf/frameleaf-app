@@ -1,0 +1,36 @@
+CLOUD-02 · Link your server to a Frameleaf account
+Target 2:45 · 324 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+This is a preview of linking a server to a Frameleaf account. You need a free Frameleaf account, and the Frameleaf Cloud address set on your server. Open Settings, Frameleaf Cloud, then Account & link.
+
+Choose Link to Frameleaf.
+
+The page shows Your code, a QR code and a countdown. Expires in counts down from ten minutes. Server key is this server's fingerprint. Keep this page open; it waits for approval.
+
+Copy link and Download QR code give you other ways to hand the address to the device you approve from.
+
+[pause]
+
+On your phone or another computer, open that address, sign in to your Frameleaf account, and enter the code, or scan the QR code.
+
+The approval page shows the server's name, version and key fingerprint. Only approve if they match what your server shows. Then choose Approve and link.
+
+Your server picks up the approval by itself. The chip changes to Linked, and the page shows your account, the last contact and your data region.
+
+The Apps card says At home only for now. It changes to Available anywhere once remote access is on.
+
+[pause]
+
+Allow Frameleaf Cloud to… sets what your account may ask this server to do. Turn remote access on or off starts off. Start a cloud backup and Refresh your plan automatically start on. The server records every request.
+
+What this server sends lists every field of a check-in. Photos, videos, thumbnails, metadata, names, accounts and usage are never sent.
+
+Check in now sends a check-in straight away and confirms with Checked in with Frameleaf Cloud.
+
+[pause]
+
+If nobody approves in time, the page says The code expired. Get a new code starts over. A declined code changes nothing.
+
+To undo it, choose Unlink. The dialog lists what stops: remote access, cloud jobs and scheduled cloud backups. Local photos, albums, accounts and sign-in keep working exactly as before. You can link again at any time.
+
+Next up: Sign in with Frameleaf.

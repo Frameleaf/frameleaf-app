@@ -1,0 +1,24 @@
+MKT-03 · Find anything
+Target 1:10 · 157 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A hundred and fifty thousand photos are only useful if you can find the one you mean.
+
+Search understands pictures, not just file names. Ask for a campfire by a lake, and Campfire evening comes back, with no tag on it.
+
+Ask about your photos takes a whole sentence. Jamie hiking in August 2026 becomes a person, a month and a scene, and Frameleaf shows what it searched for.
+
+Receipts from 2024 uses the text it has already read, so the paperwork you photographed turns up too.
+
+[beat]
+
+Documents lists every photo with words in it. Text in this photo shows what was read; copy it, or search for LAKE AGNES and land on the sign.
+
+Videos are searchable inside. Moments in your videos finds the frame that matches, and one click plays from that second.
+
+[pause]
+
+Search, faces and text reading all run on your own server. What you look for stays yours.
+
+[beat]
+
+Frameleaf. Your memories grow further.

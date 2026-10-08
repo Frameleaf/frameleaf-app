@@ -1,0 +1,38 @@
+MOBILE-02 · Background backup on iOS and Android
+Target 2:30 · 319 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Background backup is how the Frameleaf mobile app uploads new photos while it is closed. This episode explains why it sometimes waits, and what you can do about it.
+
+[pause]
+
+Foreground and background backup are separate. While the app is open, it uploads by itself. Once you leave, the job passes to the phone's operating system, which decides when the background task runs and for how long.
+
+Most of those decisions are about saving battery. Other apps compete for the same background time, and each phone maker sets its own rules.
+
+[pause]
+
+On an iPhone, open the Settings app, then General, then Background App Refresh, and make sure it is on for the Frameleaf mobile app. Without it, the app cannot back up in the background at all.
+
+iOS chooses when that task runs, and the app cannot change that. Low Power Mode can stop background tasks, so turn it off when you do not need it. Turn off background refresh for apps that do not need it, and open Frameleaf often.
+
+[pause]
+
+On Android, battery optimisation is the usual reason background backup stops. With backup on, the Backup page shows two links: one to allow notifications, and one about battery optimisations.
+
+Some phone makers limit background work very strictly. Show me how opens a guide for your model, so you can turn battery optimisation off for the app. Allowing notifications helps too.
+
+Check Background Options as well. With Charging on, background backup waits until the phone is plugged in.
+
+[pause]
+
+iPhones that use iCloud Photos need one more thought. When a selected album holds photos kept only in iCloud, the app downloads each original to a temporary cache, uploads it, then empties the cache.
+
+That uses extra data and space while it runs, so keep some storage free and stay on Wi-Fi for a large library.
+
+[beat]
+
+Background refresh on for iPhone, battery optimisation off for Android.
+
+[pause]
+
+The written guide is linked below.

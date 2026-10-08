@@ -1,0 +1,30 @@
+AI-11 · Ask about your photos
+Target 2:15 · 272 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Ask about your photos lets you search the way you talk. It runs on your own server, against your own library.
+
+[pause]
+
+Open search, leave the field empty and choose Show results. The search page opens with a large question field and some ideas under Try a search.
+
+Choose photos from last summer. The count appears beside the field, and What Frameleaf searched for explains how the question was read: which search ran and which filters it used.
+
+[pause]
+
+People you have named become a real person filter. Jamie hiking in August 2026 finds Jamie, in that month, ranked by smart search. The sparkle means smart search read the question.
+
+Pets work the same way, and a place after in, at or near becomes a location filter. Max at Lake Louise finds the dog at the lake.
+
+Receipts, screenshots and documents switch to searching text and file names instead. Receipts from 2024 looks for receipt words read from your photos in that year. Screenshots from last month looks for screenshot file names.
+
+When a name or place can't be matched, Ask still searches, and a note under the explanation tells you what it left out.
+
+[pause]
+
+Answers stop at one hundred by default, and Locked items and things you can't access never appear in answers or counts.
+
+Administrators control it under Settings, Search & intelligence, in Search models & suggested tags. Enable Ask Search is on by default, and Maximum Ask Search results sets the cap.
+
+Turned off, the panel says so rather than offering a field that can't answer. Ask appears only while smart search is on.
+
+Next up: Documents and text in photos.

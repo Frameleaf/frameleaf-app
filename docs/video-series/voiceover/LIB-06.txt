@@ -1,0 +1,26 @@
+LIB-06 · Shared links and the public viewer
+Target 2:30 · 342 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A shared link lets anyone with the address see a set of photos, with no account needed. Shared links in the sidebar lists every link you have made.
+
+Choose New link and pick an album. To share a few items instead, select them in the library and choose Share link in the selection bar.
+
+The form starts with a title viewers will see. Custom address lets you choose a readable address, like rockies 2026, instead of a generated one. Changing it later breaks the old link.
+
+Expires can be Never, a preset, or a custom date and time. Add a Password and viewers must enter it before they see anything.
+
+Show metadata reveals camera, exposure, capture time and location. Allow download lets viewers save originals, one at a time or as an archive, and because originals carry their metadata, downloads need Show metadata on. Allow upload lets viewers add photos to the share.
+
+Choose Create link. Link ready shows the address. Copy it, or choose View QR code to show a code the other person scans with their phone.
+
+Back in the list, badges show what each link allows: Downloads, Uploads, Metadata, and when it Expires. Filter by Link types, search links, and edit or delete any of them. Deleting a link cuts access at once; your photos and the album are not affected.
+
+This is what the other person sees. Shared by, your display name, the title, and the photos. With downloads allowed they get Download all, Download selected, and a slideshow.
+
+A password-protected link asks for the password first. An expired link says so, and tells the visitor to ask you for a new one.
+
+When Allow upload is on, a visitor can add photos, and they land in your account inside that share. It is a simple way to collect everyone's pictures after a trip.
+
+Before you send a link, remember: the password and expiry can be changed later, Show metadata controls the camera and location details, and deleting the link ends access at once.
+
+Next up: Partner libraries.

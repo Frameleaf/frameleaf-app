@@ -1,0 +1,38 @@
+EDIT-04 · Video quick editor
+Target 2:45 · 359 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Videos open in the same quick editor as photos. Select a clip and choose Quick edit, and the rail switches to video tools: Trim, Speed, Adjust, Crop, Audio, Text, Enhance and Presets.
+
+Start with Trim. Drag the handles on the filmstrip, or move the playhead and press I or O to mark the in and out points. The panel shows exactly how much is selected.
+
+Trim mode has two choices. Precise cuts on the exact frame and re-encodes from the original. Fast snaps to the nearest keyframes and finishes in seconds without re-encoding.
+
+[beat]
+
+Speed sets the whole clip from a quarter speed to four times. Ranges change just part of it and show as blue bands on the filmstrip. Audio pitch holds up to twice the speed.
+
+Adjust has the photo editor's groups, Light, Color, Effects and Detail, with a histogram and an Auto button. A touch of Temperature warms the morning light.
+
+Crop and straighten works as it does for photos, with an aspect, a straighten dial, and buttons to rotate and flip.
+
+Audio sets the clip gain or mutes the clip. The original channels are kept, so stereo stays stereo and surround stays surround.
+
+[beat]
+
+Text adds titles and captions. Type the words, pick one of nine positions, set when it starts and ends, then choose a size, a colour and a shadow.
+
+Enhance has two switches. Stabilize smooths handheld shake and crops the edges slightly. Auto-enhance lifts contrast, colour and midtones. Both are applied when you save.
+
+Presets has the same looks as photos, plus B&W for video, each with a strength slider, and the same social formats.
+
+To pull a still, move the playhead and choose Export frame. The frame, with your crop and look, becomes a new photo beside the clip.
+
+[pause]
+
+Save version renders the edited video in the background, from the original. Versions lists the original and each saved version. Pick one to load its recipe, or choose Export master for a full-quality copy.
+
+Trim, speed and crop, then adjust the look, add text and set the audio. Every version renders from the original, which is never changed.
+
+[pause]
+
+Next up: Restoration: Faithful and Creative.

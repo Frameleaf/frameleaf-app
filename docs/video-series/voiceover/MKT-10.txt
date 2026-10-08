@@ -1,0 +1,28 @@
+MKT-10 · Studio
+Target 1:15 · 165 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Some memories want to be a film. Select the clips from a summer, choose Open in Studio, and cut them together.
+
+Studio projects keep every film you are working on in one place, with an archive for the finished ones.
+
+The editor is a real multitrack timeline. Layer titles over video, mix the audio underneath, and every change is saved as you go.
+
+Start in Basic and switch to Advanced when you want keyframes and effects. The tools grow with you.
+
+[beat]
+
+Share a project into a space, and Review lets Jamie pin a comment to the exact second.
+
+History keeps every saved version. Restore an earlier one at any time.
+
+Export renders on your own hardware, this server or another computer on your home network, never in the cloud.
+
+Export bundle packs the whole project, with your clips if you choose, so it opens on another Frameleaf server.
+
+[pause]
+
+Studio is a preview of what Frameleaf is building. Organize. Enhance. Create.
+
+[beat]
+
+Frameleaf. Your memories grow further.

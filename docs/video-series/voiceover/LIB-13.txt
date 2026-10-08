@@ -1,0 +1,24 @@
+LIB-13 · Tags and Folders
+Target 2:30 · 351 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Albums are one way to group photos. Tags and Folders are two more. Tags are labels you nest into a tree. Folders show your originals the way they are stored on disk.
+
+If you do not see them, open Account Settings, then Features. Turn on Enable tags and Enable folders, and choose whether each shows in the sidebar.
+
+The Tags page shows every tag as a tree, with a count beside each. Choose one to see a preview. The path runs along the top, the count includes its subtags, and Show all opens those items in your library.
+
+Choose New tag, give it a name, and pick a Parent tag to nest it, or None for the top level. Pick a colour and choose Create. From a tag's menu, New subtag nests one straight inside.
+
+Rename changes a tag everywhere it is used. The colour menu recolours it. More tag actions can move a tag to the top level or delete it. Deleting removes the tag from its items, and the items stay in your library.
+
+To tag a photo, open it and press T, or choose Add a tag. Tag suggestions list your tags as you type, and you can create a new one on the spot. For many items, select them, choose Tag, and confirm.
+
+Tags travel with your files. When you tag an item, Frameleaf writes the tag into an .xmp sidecar beside the original, and never changes the original itself. Tags written by Lightroom, digiKam and similar tools are read in the same way.
+
+If you edit tags in another app later, an administrator opens Compute and jobs, then Job manager. Under Metadata sidecars, Discover sidecars finds new .xmp files, and Synchronize all reads existing ones again.
+
+Folders shows your originals the way they are stored on disk, as a tree with file counts and sizes. Open a folder to see its files, sort them by Name, Date taken or Size, or choose Show in timeline. Nothing here moves or renames a file.
+
+Tags describe, folders locate, and neither touches your originals.
+
+Next up: Memories and slideshows.

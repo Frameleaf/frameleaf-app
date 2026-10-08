@@ -1,0 +1,34 @@
+OPS-02 · Overview and Library analytics
+Target 2:30 · 330 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+The Overview is the first page administrators see in Settings. Its top line says whether the library is available, how many things need attention, and when this snapshot was taken.
+
+Four tiles follow: your items, the library filesystem, the latest database backup and the Frameleaf version. Each opens the page behind it. Viewing, at the top, narrows the page to one account or one library.
+
+Needs your attention lists only issues you can act on, such as a missing or overdue restore test, or failed jobs. Each item opens the place to fix it.
+
+[beat]
+
+The storage meter covers the whole filesystem, here 2.42 of 4 tebibytes used. Below it, physical originals, thumbnails and proxies, and the database are listed apart. Thumbnails and the database are measured each night.
+
+Processing shows the busy queues, and System at a glance checks the database, the machine-learning endpoint and the cloud destination.
+
+[pause]
+
+Now fix the first item. Prove your backup can restore opens Recovery readiness, under Maintenance and Database backups. A backup only counts once you know it restores.
+
+Restore a backup into an isolated place and verify the checksums. Then choose Record a restore test, tick what restored correctly, and save. Frameleaf records your statement; it does not run the test. The next one is due in ninety days.
+
+[pause]
+
+For the long view, choose Explore analytics, or Library analytics in the rail. Pick a date range of twelve months or ninety days, and a scope: the whole server, one account or one library.
+
+The page reads top to bottom: library growth, arrivals, processing outcomes, how much the library knows, where your photos live, albums, and storage details under the hood.
+
+Every chart has a data table, and Export CSV downloads what you see. Locked items are never counted, and everything is computed and kept on this server.
+
+Growth history starts with the first nightly collection, so a new server fills in from the next day.
+
+[pause]
+
+Next up: How processing works: queues and Activity.

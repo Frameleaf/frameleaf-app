@@ -1,0 +1,24 @@
+MOBILE-04 · Sync only selected photos
+Target 1:45 · 216 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+You do not have to back up everything. When the phone holds far more than you want to keep, the Frameleaf mobile app lets you pick exactly which photos go to your server.
+
+First, open Settings, then Photo Grid, and turn on Show storage indicator on asset tiles. A small cloud icon then appears in the corner of every tile.
+
+A crossed-out cloud means the photo is only on this phone and not backed up. A cloud with a tick means it is on the server and still on the phone. A plain cloud means it is only on the server.
+
+[pause]
+
+Next, make sure the album is selected on the Backup page, as in the first episode of this series. Automatic backup can stay off.
+
+Albums selected for backup are listed in the Library tab, under On this device. Open Camera.
+
+Long-press to select the photos you want, the ones with the crossed-out cloud, and tap Upload in the menu at the bottom. When they finish, their icons change to the cloud with a tick. Anything already on the server is skipped.
+
+[pause]
+
+Turn on the storage indicator, select the album for backup, then upload just what you choose from On this device. The rest stays on the phone until you decide.
+
+[pause]
+
+Next up: Free Up Space.

@@ -1,0 +1,30 @@
+CARE-03 · Missing originals: locate and relink
+Target 2:45 · 337 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+When a drive moves or a folder is renamed, Frameleaf can lose track of an original. Missing media finds it again. Open Library Care, then Missing originals. It is an administrator tool.
+
+A missing file is not proof that anything was deleted. If many photos go missing at once, check that the storage is mounted and readable first. Restoring access may be all you need.
+
+Each finding shows the original, its account and its status. Inspect shows the evidence, the original path and the checksum recorded when the photo was added. That checksum is what proves a match.
+
+Select the findings and choose Locate originals. Pick where to look: library storage, your external libraries and, for administrators, the recovery locations your operator set up.
+
+Search selected locations looks for exact copies by checksum, never by name. It runs in the background and shows in Activity, so you can close the page while it works.
+
+Each candidate shows where it was found, whether its checksum is an exact match and whether it decodes. A renamed file with the same bytes matches. A look-alike with a different checksum cannot be chosen.
+
+When a copy turns up in more than one place, choose one, then Save candidate choices. Each row now reads Verified copy ready to relink.
+
+Choose Relink verified matches. The review lists exactly what will change, fixed for this operation. Confirm, and each row shows a small loader until its relink is done.
+
+A copy in library storage, or in the photo's own external library, is linked where it is. A copy in a recovery location is copied into library storage first. Recovery locations are only ever read.
+
+[pause]
+
+Operators add recovery locations with one server setting, each with a readable name. Mount them read-only if you can. A candidate reached through a link that leads outside its location is refused.
+
+Inspect a relinked item to see who relinked it, from where, and its previous path. Then open the photo to check it.
+
+[pause]
+
+Next up: Damaged media and RAW.

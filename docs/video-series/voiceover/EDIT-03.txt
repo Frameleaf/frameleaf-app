@@ -1,0 +1,36 @@
+EDIT-03 · Looks, presets and versions
+Target 2:45 · 360 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+A look changes the mood of a photo in one click, and a version keeps every edit you save. Open a photo in Quick edit and choose Presets in the tool rail.
+
+The row at the top is Looks. Each thumbnail shows this photo with the look applied: Original, Vivid, Natural, Warm and Cool, then Mono, Silvertone and Noir in black and white, and Fade. Choose Warm.
+
+Below the row, the strength slider scales the look from zero to one hundred percent. Sixty keeps the warmth without losing the blue of the evening sky.
+
+[beat]
+
+Under Your presets, type a name such as Evening glow and choose Save as preset. A preset keeps your light, color, effects, detail, look and masks, but never the crop.
+
+Open another photo, choose Presets, and select Evening glow. The whole recipe lands at once. The icons beside a preset replace it with the current settings or delete it.
+
+[pause]
+
+Choose Save version. The editor closes, and Frameleaf renders an edited master from the original plus your recipe. When it finishes, the new version is the one your library shows.
+
+Open Quick edit again and choose Versions in the top bar. Each entry loads its recipe. All versions and renders opens the full list, with the original at the top.
+
+Each version shows when it was saved, its size, and checksums that tie it to the original. Compare with original splits the stage. Make current shows that version in your library instead.
+
+Download edited master saves the full-quality render. To show the original again, choose Make current on Original. Revert in the top bar only resets the settings you are editing.
+
+[pause]
+
+For a RAW developer, scroll to Edit in another app and choose Export original. Frameleaf records the original's checksum and downloads the file.
+
+When you are done, choose the finished file and Bring back as a version. Frameleaf checks it came from this original and adds it as a new version, current once its preview is ready.
+
+Looks for a quick mood, presets for your own recipes, and versions you can compare, make current or download. The original is never touched.
+
+[pause]
+
+Next up: Video quick editor.

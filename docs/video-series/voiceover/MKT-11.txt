@@ -1,0 +1,28 @@
+MKT-11 · Frameleaf Cloud, when you want it
+Target 1:20 · 185 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf runs entirely at home. Frameleaf Cloud is the set of extras you add only when you want them.
+
+Link a server with a short code you approve from your account. Linking uploads nothing from your library.
+
+You can read exactly what a linked server sends. Never a photo, a name, or how you use it.
+
+[beat]
+
+Switch on Allow remote access, and your library reaches you anywhere, with no port to open and no certificate to manage.
+
+Cloud processing puts Frameleaf Cloud GPUs behind the heavy jobs, each priced before it starts. Faces, search and text in photos never go.
+
+You pay from a prepaid AI Wallet, in US dollars, and a daily cap holds the line.
+
+Originals never leave your server. Location and camera details are stripped first, and files are deleted when the job is done.
+
+Cloud backup sends your originals to an encrypted bucket only your server can read. You hold the key.
+
+[pause]
+
+Unlink, and every photo, album and account keeps working as before. This is a preview of Frameleaf Cloud. Your server never depends on it.
+
+[beat]
+
+Frameleaf. Your memories grow further.

@@ -1,0 +1,36 @@
+OPS-06 · A second computer on your home network
+Target 2:45 · 349 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+If your server is small, a desktop on your home network can do the heavy machine-learning work. The server sends it image previews, and it sends back results.
+
+Only the machine-learning container moves. Face matching, thumbnails, playback videos, your originals and the database stay on the server. The worker keeps nothing and does not know whose photos it sees.
+
+[pause]
+
+On the second computer, install Docker and create a compose file with only the machine-learning service. Use the Frameleaf machine-learning image, publish port 3003, and add the acceleration file if it has a GPU, as in the last episode.
+
+Start it. From the server, check that the worker answers; a ping returns pong.
+
+[pause]
+
+In Frameleaf, open Settings, then Compute & jobs, then Workload destinations. Under Processing destinations, choose Add home-network worker. Name it, enter its URL, allow the library work it should take, and save.
+
+Choose Check now. Health moves from Not checked to Healthy. In Workers & endpoints, the new worker shows Model ready with a GPU, or CPU only without one.
+
+Adding a worker sends it nothing yet. Under Where each kind of work runs, route Search and similarity, and Descriptions, tags and content checks, to the new worker. Leave the rest on this server.
+
+You can instead add the worker's URL to the machine-learning endpoint list with Add endpoint. There, the order only decides where work without a route starts. It is not a fallback list.
+
+[pause]
+
+Nothing falls back. If the desktop is asleep, work routed to it is refused with a reason, not sent back to the server. When it is awake again, open Job manager and retry the failed jobs, or run missing.
+
+The worker has no protection of its own, so keep it on your home network and never expose port 3003. Update it whenever you update the server; mismatched versions can misbehave.
+
+In Job manager, each job's worker shows where it ran, and Load in Workers & endpoints shows how busy the desktop is.
+
+Three steps: run the container, add the destination, and route the work.
+
+[pause]
+
+Next up: Video transcoding and hardware transcoding.

@@ -1,0 +1,28 @@
+MOBILE-03 · Album sync
+Target 2:00 · 246 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Album sync mirrors the albums you back up from your phone as albums on your Frameleaf server, so your library is organised the way your phone is. It stays off until you turn it on.
+
+Open Backup Options and find Backup Albums Synchronization. Turn on Sync albums. Each album you back up gets an album with the same name on the server, and new uploads land in it automatically.
+
+If an album with that name already exists on the server, the phone's photos are merged into it. When that album is shared, the new photos are shared too, so everyone in it sees them.
+
+[beat]
+
+Photos you backed up before turning this on stay where they are. Tap Organize into albums once to put those earlier uploads into their matching albums. On the web they are ordinary albums you own.
+
+[pause]
+
+Sync runs one way, from the phone to the server. Photos you add to a phone album are added on the server. Deleting or moving photos on the phone is not copied across, even when you sync again.
+
+Album sync belongs to each person. It never mixes with other users or with partners, even on the same server.
+
+Album sync is a phone feature. For folders on a computer, use external libraries, covered in the Running Frameleaf series.
+
+[pause]
+
+Turn on Sync albums, organise earlier uploads once, and remember that it only ever adds, one way and one person at a time.
+
+[pause]
+
+Next up: Sync only selected photos.

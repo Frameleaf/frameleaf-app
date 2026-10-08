@@ -1,0 +1,38 @@
+OPS-03 · How processing works: queues and Activity
+Target 2:45 · 361 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+When a photo arrives, Frameleaf does its work in the background as jobs. This episode follows an upload through the queues and shows where to watch it.
+
+[pause]
+
+First the server reads metadata, such as the capture date and camera. If a storage template is on, the file is organized. Then thumbnails are made. From there the work fans out: visual search, face detection, text recognition, playback videos, and descriptions and tags.
+
+Some jobs wait for others. Duplicate detection uses the search index, and face recognition matches the faces that detection found.
+
+[pause]
+
+Open Settings, then Compute & jobs, then Job manager. Queues & jobs shows what is processing, waiting and failed, with a row for every queue and its status.
+
+Open a queue to see its jobs under Active, Waiting, Failed and History. You can pause or resume it, run missing work, or reprocess everything. Every command shows a review first.
+
+Concurrency sets how many jobs of each kind run at once on a server worker. Higher is faster only if the hardware keeps up, so stay within your processor cores. Changes join the settings review, and running jobs are never cancelled. Face recognition is fixed at one.
+
+[beat]
+
+When jobs fail, open the Failed tab and read the last error. Fix the cause first, then choose Retry failed. The jobs go back in the queue with their saved inputs.
+
+Create job opens Create a maintenance job: one-off tasks such as generating memories, cleaning up unused tags or backing up the database. Pick one, review it, and start it.
+
+Scheduled work, like memories, runs each night from midnight; set the time in Nightly work & model cache.
+
+[pause]
+
+Queues are the server's plumbing. Activity, in the top bar, shows the tasks people start: uploads, downloads, imports, library scans and edits. Filter by All, Running, Done or Failed.
+
+Each row shows progress and, where it applies, pause, cancel or retry. Background jobs run on your server, so they keep going when you leave the page. The indicator in the top bar counts what is running.
+
+Use Job manager for the server's queues, and Activity for the tasks people start.
+
+[pause]
+
+The written guide is linked below.

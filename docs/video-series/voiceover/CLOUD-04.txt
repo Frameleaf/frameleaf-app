@@ -1,0 +1,34 @@
+CLOUD-04 · Plans, supporter keys and Support Frameleaf
+Target 2:45 · 343 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Frameleaf is free to self-host, and nothing on your server is ever locked. Two things are for sale: a Frameleaf Cloud plan and a supporter key. Both live in Settings, under Frameleaf Cloud.
+
+Open Plan. Self-hosting needs no plan. A Frameleaf Cloud plan adds remote access, and if a plan ends, only cloud-connected features pause.
+
+A plan costs $6 a month, or $60 a year, which is two months free. Continue to checkout hands you to the Frameleaf store in a new tab, so payment details never touch your server.
+
+Cloud backup is priced separately by what you store, from $7.99 a month per terabyte, with a one-terabyte minimum.
+
+Once you buy, the server picks the plan up by itself and shows when it renews. Remove from this server takes the plan off this server only; the subscription stays in your Frameleaf account.
+
+[pause]
+
+Next, Licence. A licence is a one-time supporter key. It never expires, adds a supporter badge, and takes 20% off Frameleaf Cloud plans. AI credit is priced the same for everyone.
+
+Server keys begin FL-S, and keys for one person begin FL-I. Each key is checked as you type, before it goes anywhere, so a typo shows straight away.
+
+A server without internet access can still be licensed. Copy its instance ID, download the licence file from your Frameleaf account on another device, then use Choose licence file.
+
+[pause]
+
+Anyone can open Support Frameleaf from the account menu. It shows the plans and the supporter keys: $100 for a server, covering every account on it, or $25 for one person.
+
+Already have a key? Enter it here. A personal key covers your own account. A server key is activated by an administrator.
+
+Once a key is active, a Supporter badge appears next to your name. Hide the supporter badge keeps you supporting without showing it. Your preferences, Supporter status, holds the same card.
+
+[beat]
+
+Every price is in US dollars, and neither a plan nor a key ever locks a photo or a local feature.
+
+Next up: Cloud processing: turn it on.

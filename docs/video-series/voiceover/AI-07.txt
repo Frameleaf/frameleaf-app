@@ -1,0 +1,34 @@
+AI-07 · Video moments and video descriptions
+Target 2:45 · 368 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Videos get descriptions and moments too. Both are built from six frames that Frameleaf cuts from each video and keeps.
+
+[pause]
+
+The frames are evenly spaced through the video, scored for exposure, contrast and detail, and ranked best first. They are cut once and reused, and cut again only if the original is replaced.
+
+To describe a video, the frames are laid out as one grid in time order, and the model reads the whole clip at once. Names come from faces on the video's preview, as with a photo.
+
+Kayaking now reads as one clip: Emma paddles out from the shore, then turns back. Videos are described whenever the Descriptions & tags queue runs, such as after a re-queue.
+
+[pause]
+
+Below the description, Moments shows those frames, best first, with a Best label on the top one. Choose any frame and the video plays from there.
+
+Use as cover under a frame makes it the video's cover. It is saved as a time in the video, so it survives new frames. Use the best frame goes back to the top one.
+
+A video that has not been processed says No moments yet. Choose Find moments. It cuts the frames and builds the moment search index in the background, shows in Activity, and keeps going if you close the page.
+
+Add captions is optional. It describes each frame separately, one model request per frame, and the panel says how many requests that is.
+
+[pause]
+
+You can add your own moments. On Lake morning, choose Add moment, enter a time and a title, and type a transcript if you like. Nothing is transcribed automatically. Your moments are marked Yours and are never removed by a refresh.
+
+Now search. Type Max jumps, and Moments in your videos appears above the results: frames that match by meaning, and moments whose words match. Choose one and the video opens at that moment. Only your own videos are searched.
+
+[pause]
+
+Every video gets the same six evenly spaced frames. If what you care about falls between them, add your own moment there. Videos longer than three hours are not cut, and a video with no usable frames is skipped with a reason.
+
+Next up: Status and re-generation.

@@ -1,0 +1,30 @@
+CARE-09 · iCloud Photos: recovery, stacks and setup
+Target 2:45 · 343 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+iCloud Photos is more than an import. It can repair photos you already have, keep Apple edits and Live Photos together, and it only ever copies in one direction.
+
+Every iCloud file is compared with your library by its content, never its name. A healthy match is reused, not copied again. Anything without a match is imported. A photo you trashed stays in the trash.
+
+If your copy is missing or damaged but its saved checksum matches, the file is downloaded, validated, and used to repair the same photo. It keeps its identity, albums and links, and the Library Care finding is resolved.
+
+Only the exact original can do this; a resized or edited version cannot. For an external library, it also needs Recover external files into managed storage.
+
+With Edited versions on, each Apple edit arrives as its own photo, stacked with its original. The latest Apple edit can show on top, unless you chose the cover yourself. Reverting in Apple never deletes your original.
+
+Apple's finished image is imported, not its editing recipe, and up to twenty edit versions are kept for each photo.
+
+Live Photos are linked using Apple's own identifiers, so the movie plays inside the still instead of appearing as a separate item. If only the movie is damaged, it is recovered on its own.
+
+[pause]
+
+Know the boundaries. Shared Albums, text-message codes and edited Live Photo pairs are not supported, and captions and locations are not read. Live Apple-account sync has not yet been verified.
+
+For administrators: the connector runs through a separate HTTPS bridge, added with a Compose overlay. The bridge has no published port, and Frameleaf itself must be served over HTTPS.
+
+Generate its token, encryption key and certificates once, and keep the key, because stored sessions depend on it. Staging must be a private folder, outside every media folder.
+
+Back up the database, media, staging and key together. Then test a small album: sign in, a Live Photo, an Apple edit, a repeated run, and a pause and resume.
+
+[pause]
+
+The written guide is linked below.

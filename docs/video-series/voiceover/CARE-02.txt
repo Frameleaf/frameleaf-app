@@ -1,0 +1,30 @@
+CARE-02 · Duplicate review
+Target 2:45 · 348 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Duplicate review is where you decide what happens to copies Frameleaf has found. Open Library Care, then Duplicate groups under Repair queues. It is also in Settings, under Utilities.
+
+The Review queue lists every group and says whether it holds copies or burst frames. Show Needs attention hides groups you have already decided, and Find items searches by filename.
+
+A group of two opens side by side. The suggested keeper is marked with its reasons, here Original format and Highest resolution. Where the copies differ lists what does not match, and Zoom both inspects the same spot in each.
+
+That suggestion comes from Prefer original format, which is on by default. It picks the camera RAW, then HEIC, even when a re-saved JPG is bigger. Administrators find it in Search and intelligence, under Duplicate Detection.
+
+Choose Keep suggested. The other copy moves to the trash, its albums, tags and favorite carry over to the keeper, and the next group opens. Undo takes back any recent decision.
+
+If the photos are not really duplicates, choose Keep all and the group leaves the queue. Stack together keeps every copy, shown as one stack.
+
+A burst is different: frames seconds apart are separate moments, so nothing is suggested. The contact sheet shows every frame. Pick your keepers and choose Keep selected, or Stack entire burst to keep them all.
+
+Keys make it quick. A number keeps that copy, or picks frames on a contact sheet. K keeps the suggestion, A keeps all, S stacks, E keeps your selection, and the arrow keys move between groups.
+
+To clear many groups at once, tick Select matching groups, check how many copies would move to the trash, and choose Keep suggested in the selected groups.
+
+Videos are compared using several frames sampled from inside each clip, so black frames and title cards no longer cause false matches. Play both from the start to watch the copies side by side.
+
+[pause]
+
+Nothing is removed until you choose an action, and space is freed only when the trash is emptied.
+
+[pause]
+
+Next up: Missing originals: locate and relink.

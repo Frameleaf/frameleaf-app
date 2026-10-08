@@ -1,0 +1,28 @@
+MOBILE-06 · Read-only mode and marking sensitive on the phone
+Target 2:00 · 249 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Two ways to make the phone safer to hand around: read-only mode for browsing, and marking photos sensitive so they stay out of sight.
+
+Long-press your profile picture at the top of the timeline to turn on read-only mode. The app confirms it, and your profile sheet reminds you how to leave it.
+
+In read-only mode photos can only be viewed. Selecting several at once, sharing, casting and deleting are all turned off. The same switch is in Settings, then Advanced. Long-press the picture again to turn it off.
+
+[pause]
+
+To hide photos, select them and scroll the menu at the bottom to Mark NSFW. It works on photos you own. They are locked, the same as Mark Sensitive on the web, and leave the timeline.
+
+Until you unlock with your PIN, a locked photo stays out of your timeline, albums, search, the map and memories. Partners, album members and shared links never see it. It keeps its albums and its place, so nothing moves.
+
+[beat]
+
+To see them, open the Library tab and choose Locked Folder, then enter your PIN. Every locked item is listed there, whether it was marked on the phone, on the web, or flagged by detection.
+
+To bring one back, select it inside Locked Folder and tap Mark safe. It returns to the timeline, and detection will not lock it again.
+
+[pause]
+
+Read-only mode for lending the phone, Mark NSFW to lock a photo, and Mark safe to bring it back.
+
+[pause]
+
+Next up: The settings Command Center.

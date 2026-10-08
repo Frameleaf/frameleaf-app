@@ -1,0 +1,34 @@
+OPS-09 · External libraries
+Target 2:45 · 361 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+External libraries bring in photos that already live in folders on your server or NAS. Frameleaf indexes them in place and never moves the files.
+
+First, mount the folder into the server container in your compose file. End the line with read-only, so Frameleaf cannot delete files or write sidecars there. Recreate the containers, then list the path inside the container to be sure it is visible.
+
+Always use the path as the container sees it, not the NAS path. Avoid symlinks, and mount the same path into any separate job container.
+
+[pause]
+
+In Settings, open Libraries and choose Add external library. Name it and pick the owner. Each library has one owner, and that cannot change later.
+
+Under Import folders, add the container path. Folders are scanned with all their subfolders, and a file in two folders is added once. Under Exclusion patterns, add glob patterns to skip files, such as every folder named Raw.
+
+Choose Create library. Saving never starts a scan, so open the library and choose Scan library. Access and permissions are checked when the server scans.
+
+The scan runs in the background; follow it here or in Activity. New items appear in the owner's timeline and behave like any other, in albums, on the map and in search.
+
+Below the list, External Library sets Periodic Scanning, every night at midnight by default. Library watching imports changes as they happen, but it is experimental and usually does not work on network drives.
+
+[pause]
+
+Know the caveats. Albums, descriptions and other changes live only in Frameleaf, never in the files. Move a file within the library and it returns as a new item, without them. Delete a file on disk, and the next scan moves it to trash.
+
+External libraries do not count toward storage quotas. To bring a trashed item back, restore the original file. After changing files outside Frameleaf, scan again.
+
+Remove library deletes the library and its entries from Frameleaf once you type its name. The files in your folders stay where they are.
+
+If a scan finds nothing, check the mount, the import path and the folder permissions.
+
+[pause]
+
+Next up: Backups: database dumps and your media.

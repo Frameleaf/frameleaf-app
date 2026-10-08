@@ -1,0 +1,34 @@
+MOBILE-05 · Free Up Space
+Target 2:30 · 327 words · read at 150 wpm. Cues: [pause] one second, [beat] half a second.
+---
+Free Up Space clears room on your phone by removing photos and videos that are already safely backed up to your Frameleaf server. Open Settings, then Free Up Space.
+
+It only touches items that are already on the server and not in its trash. They go to your phone's own trash, and the copies on the server stay safe.
+
+[beat]
+
+Start with Keep on device. Keep favorites is on by default. Keep albums holds everything in the albums you pick, whatever else you choose. Always keep can keep every photo or every video on the phone.
+
+Albums from messaging apps such as WhatsApp are kept by default, because their chats show pictures from those files.
+
+[pause]
+
+Step one is Select cutoff date. Choose how much to keep on the phone, from thirty days to three years, or pick a custom date. Only items from before that date are considered.
+
+Step two is Scan. The app looks for backed-up items that match your date and keep settings, and says how many it found and how much space they use. On an iPhone, iCloud Shared Albums are left out.
+
+Step three is Move to device trash. Before anything happens, tap Preview and look through every item that will be removed.
+
+Then tap Move to device trash and confirm. Items go to the phone's own trash, not straight to deletion. To use the space right away, empty that trash in the phone's gallery app.
+
+Removed photos no longer show up in other apps, so share them from the Frameleaf mobile app instead.
+
+[pause]
+
+If you use iCloud Photos, stop here first. iCloud syncs both ways, so removing a photo from your iPhone removes it from iCloud and your other Apple devices too. If iCloud is one of your backups, use Optimize iPhone Storage instead.
+
+After Free Up Space, your server holds the copy you rely on, so keep the server itself backed up.
+
+[pause]
+
+Next up: Read-only mode and marking sensitive on the phone.
