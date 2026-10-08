@@ -4,19 +4,24 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { VideoPacketInfo } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import {
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationDestination,
   MediaOperationStatus,
+  Permission,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
 } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/derivative-privacy.repository.js';
+import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -24,6 +29,7 @@ import {
   StudioExportVersionSourceTable,
   StudioExportVersionTable,
 } from 'src/schema/tables/studio-export.table.js';
+import { checkAccess } from 'src/utils/access.js';
 import { hiddenFromSession } from 'src/utils/database.js';
 import {
   DerivativePrivacy,
@@ -31,6 +37,10 @@ import {
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
+import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 /**
  * FL-195 follow-up (owner decision, September 27, 2026): which sessions a version is hidden from. A
@@ -64,7 +74,10 @@ const versionHiddenFrom = (visibility: StudioExportVisibility) => {
     : sql<boolean>`(coalesce(studio_export_version."privacy" ->> 'lockReason', '') <> '' or ${hiddenSource} or ${hiddenResult})`;
 };
 export type StudioExportVersion = Selectable<StudioExportVersionTable>;
-export type StudioExportVersionSource = Selectable<StudioExportVersionSourceTable>;
+// C2 epochs are compared as decimal integers, never rounded through JS Number.
+export type StudioExportVersionSource = Omit<Selectable<StudioExportVersionSourceTable>, 'sourceEpoch'> & {
+  sourceEpoch: string | null;
+};
 export type StudioExportRemoteReference = Selectable<StudioExportRemoteReferenceTable>;
 export type StudioExportSourceInput = Omit<
   Insertable<StudioExportVersionSourceTable>,
@@ -137,7 +150,10 @@ export type StudioExportPublication = {
   claimToken: string;
   ownerId: string;
   /** Library sources as the render recorded them, re-checked here under row locks. */
-  sources: ReadonlyArray<Pick<StudioExportVersionSource, 'key' | 'kind' | 'assetId' | 'checksum'>>;
+  sources: ReadonlyArray<
+    Pick<StudioExportVersionSource, 'key' | 'kind' | 'assetId' | 'checksum'> &
+      Partial<Pick<StudioExportVersionSource, 'ownerId' | 'sourceEpoch'>>
+  >;
   /** The scope the service prepared the file for. A different union refuses rather than guesses. */
   expectedScope: StudioExportScope;
   /** Keep the result with its project even when every source is the owner's (FL-194). */
@@ -150,6 +166,9 @@ export type StudioExportPublication = {
   contentType: string;
   assetType: AssetType;
   originalFileName: string;
+  subtitle?: RenderArtifact;
+  /** Server-owned pair moves; runs only under the publication's source/claim/version/path locks. */
+  files?: { paths: readonly string[]; move: () => Promise<void>; rollback: () => Promise<void> };
 };
 /** Durable acceptance record. External dispatch has no safe replay without an acknowledgement. */
 export type StudioPublicationFollowups = {
@@ -371,6 +390,7 @@ export class StudioExportRepository {
     const rows = (await this.db
       .selectFrom('studio_export_version_source')
       .selectAll()
+      .select(sql<string | null>`"sourceEpoch"::text`.as('sourceEpoch'))
       .where('versionId', 'in', [...versionIds])
       .orderBy('versionId')
       .orderBy('key', 'asc')
@@ -384,9 +404,105 @@ export class StudioExportRepository {
     return this.db
       .selectFrom('studio_export_version_source')
       .selectAll()
+      .select(sql<string | null>`"sourceEpoch"::text`.as('sourceEpoch'))
       .where('versionId', '=', versionId)
       .orderBy('key', 'asc')
       .execute() as Promise<StudioExportVersionSource[]>;
+  }
+  /** Interactive SRT reads use the current session and source epochs, never a worker's background grant. */
+  async withSubtitleAccess<T>(
+    versionId: string,
+    ownerId: string,
+    sessionId: string,
+    action: (version: StudioExportVersion) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      const observed = await tx
+        .selectFrom('studio_export_version')
+        .selectAll()
+        .where('id', '=', versionId)
+        .where('ownerId', '=', ownerId)
+        .executeTakeFirst();
+      if (!observed) throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      if (observed.scope === StudioExportScope.Project) {
+        const project = observed.projectId
+          ? await tx
+              .selectFrom('studio_project')
+              .select('id')
+              .where('id', '=', observed.projectId)
+              .where('ownerId', '=', ownerId)
+              .forShare()
+              .executeTakeFirst()
+          : undefined;
+        if (!project) throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      }
+      if (observed.scope === StudioExportScope.Library && !observed.resultAssetId)
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const scoped = new StudioExportRepository(tx, this.privacy);
+      const sources = await scoped.getSources(versionId);
+      if (sources.some((s) => s.assetId && (!s.ownerId || s.sourceEpoch === null)))
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle source authority unavailable');
+      const ids = [
+        ...new Set([
+          ...sources.flatMap((s) => (s.assetId ? [s.assetId] : [])),
+          ...(observed.resultAssetId ? [observed.resultAssetId] : []),
+        ]),
+      ].sort();
+      const evidence = await this.privacy.lockSources(tx, ids);
+      await holdSourceAdmission(tx, {
+        sourceEpochs: sources
+          .filter((s) => s.assetId)
+          .map((s) => ({ assetId: s.assetId, ownerId: s.ownerId, epoch: s.sourceEpoch })),
+      });
+      await tx
+        .selectFrom('studio_export_version')
+        .select('id')
+        .where('id', '=', versionId)
+        .forShare()
+        .executeTakeFirstOrThrow();
+      const auth = await currentAuth(tx, ownerId, sessionId, true);
+      if (!auth) throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const shared = await this.privacy.lockSharedAccess(tx, ownerId, evidence.values().toArray());
+      if (evidence.values().some((row) => row.ownerId !== ownerId && !shared.has(row.assetId)))
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const afterGrants = await currentAuth(tx, ownerId, sessionId, true);
+      if (!afterGrants) throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const current = await scoped.getForOwner(versionId, ownerId, {
+        ...getHiddenContentQueryOptions(afterGrants),
+        revealed: !!getLockedOwnerId(afterGrants),
+      });
+      const seal = current ? sidecarSealOf(current.settings) : null;
+      if (
+        !current ||
+        current.state !== StudioExportVersionState.Published ||
+        current.scope !== observed.scope ||
+        current.projectId !== observed.projectId ||
+        current.resultAssetId !== observed.resultAssetId ||
+        (current.scope === StudioExportScope.Project && !current.projectId) ||
+        (current.scope === StudioExportScope.Library && !current.resultAssetId) ||
+        !seal ||
+        !current.subtitlePath ||
+        current.subtitleRemovedAt ||
+        current.subtitleChecksum?.toString('hex') !== seal.expectedSrtSha256 ||
+        String(current.subtitleSizeInBytes) !== seal.sizeInBytes ||
+        canonicalJson(await scoped.getSources(versionId)) !== canonicalJson(sources)
+      )
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const rows = ids.length > 0 ? await new AssetRepository(tx).getByIds(ids) : [];
+      if (rows.length !== ids.length || rows.some((row) => row.isOffline || row.deletedAt !== null))
+        throw new StudioExportRefusal('source-unavailable', 'Subtitle unavailable');
+      const allowed = await checkAccess(new AccessRepository(tx), {
+        auth: afterGrants,
+        permission: Permission.AssetRead,
+        ids: new Set(ids),
+      });
+      if (ids.some((id) => !allowed.has(id)))
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      const fresh = await currentAuth(tx, ownerId, sessionId, true);
+      if (!fresh || !!getLockedOwnerId(fresh) !== !!getLockedOwnerId(afterGrants))
+        throw new StudioExportRefusal('source-access-lost', 'Subtitle unavailable');
+      return action(current);
+    });
   }
   /**
    * Record what a render claim was granted: the worker, its engine and every source with the
@@ -435,6 +551,7 @@ export class StudioExportRepository {
       sizeInBytes: number;
       contentType: string;
       remoteRef: string | null;
+      subtitle?: RenderArtifact;
     },
     publish: (version: StudioExportVersion) => MediaOperationCreate,
     requireActiveClaim = false,
@@ -446,6 +563,12 @@ export class StudioExportRepository {
     | undefined
   > {
     return this.db.transaction().execute(async (tx) => {
+      const observed = await tx
+        .selectFrom('media_operation')
+        .select('snapshot')
+        .where('id', '=', renderOperationId)
+        .executeTakeFirst();
+      if (observed) await holdSourceAdmission(tx, observed.snapshot);
       if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken, requireActiveClaim))) {
         return;
       }
@@ -456,9 +579,18 @@ export class StudioExportRepository {
         .where('state', '=', StudioExportVersionState.Rendering)
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
-      if (!version) {
+      if (!version || (requireActiveClaim && !(await this.lockClaim(tx, renderOperationId, claimToken, true)))) {
         return;
       }
+      const seal = sidecarSealOf(version.settings);
+      if (
+        seal &&
+        (!output.subtitle ||
+          output.subtitle.outputChecksum.toString('hex') !== seal.expectedSrtSha256 ||
+          String(output.subtitle.sizeInBytes) !== seal.sizeInBytes)
+      )
+        throw new StudioExportRefusal('output-rejected', 'The required subtitle sibling is unavailable');
+      if (!seal && output.subtitle) throw new StudioExportRefusal('output-rejected', 'Unexpected subtitle sibling');
       const operation = await tx
         .insertInto('media_operation')
         .values(publish(version))
@@ -473,12 +605,17 @@ export class StudioExportRepository {
           outputSizeInBytes: String(output.sizeInBytes),
           outputContentType: output.contentType,
           outputRemoteRef: output.remoteRef,
+          subtitlePath: output.subtitle?.outputPath ?? null,
+          subtitleChecksum: output.subtitle?.outputChecksum ?? null,
+          subtitleSizeInBytes: output.subtitle ? String(output.subtitle.sizeInBytes) : null,
           publishOperationId: operation.id,
           updatedAt: sql<Date>`now()`,
         })
         .where('id', '=', version.id)
         .returningAll()
         .executeTakeFirstOrThrow();
+      if (requireActiveClaim && !(await this.lockClaim(tx, renderOperationId, claimToken, true)))
+        throw new StudioExportRefusal('claim-lost', 'The render claim expired during staging');
       return { version: staged as unknown as StudioExportVersion, operation: operation as unknown as MediaOperation };
     });
   }
@@ -584,6 +721,19 @@ export class StudioExportRepository {
     scheduleNotification?: ScheduleStudioNotification,
   ): Promise<StudioExportPublished> {
     return this.db.transaction().execute(async (tx) => {
+      for (const path of [...new Set(input.files?.paths)].sort()) await lockFilePath(tx, path);
+      if (
+        input.subtitle &&
+        input.sources.some(
+          (row) => row.assetId && (!row.ownerId || row.sourceEpoch === null || row.sourceEpoch === undefined),
+        )
+      )
+        throw new StudioExportRefusal('source-access-lost', 'Required subtitle source epoch is unavailable');
+      await holdSourceAdmission(tx, {
+        sourceEpochs: input.sources
+          .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
+          .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) })),
+      });
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication claim is no longer validating');
       }
@@ -594,6 +744,22 @@ export class StudioExportRepository {
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
       if (version?.state === StudioExportVersionState.Published && version.publishOperationId === input.operationId) {
+        const sealed = sidecarSealOf(version.settings);
+        if (
+          sealed &&
+          (!input.subtitle ||
+            !version.subtitleChecksum ||
+            !version.outputChecksum ||
+            version.subtitleRemovedAt ||
+            input.subtitle.outputPath !== version.subtitlePath ||
+            !input.subtitle.outputChecksum.equals(version.subtitleChecksum!) ||
+            input.subtitle.outputChecksum.toString('hex') !== sealed.expectedSrtSha256 ||
+            String(input.subtitle.sizeInBytes) !== String(version.subtitleSizeInBytes) ||
+            String(input.subtitle.sizeInBytes) !== sealed.sizeInBytes ||
+            !input.checksum.equals(version.outputChecksum!) ||
+            String(input.sizeInBytes) !== String(version.outputSizeInBytes))
+        )
+          throw new StudioExportRefusal('output-rejected', 'Published pair identity changed');
         const privacy = (version.privacy ?? {}) as unknown as DerivativePrivacy;
         return { status: 'published', version, privacy, createdAssetId: null, reusedAssetId: null };
       }
@@ -607,6 +773,14 @@ export class StudioExportRepository {
         throw new StudioExportRefusal('not-staged', 'This export is no longer waiting to be published');
       }
 
+      const seal = sidecarSealOf(version.settings);
+      if (
+        seal &&
+        (!input.subtitle ||
+          input.subtitle.outputChecksum.toString('hex') !== seal.expectedSrtSha256 ||
+          String(input.subtitle.sizeInBytes) !== seal.sizeInBytes)
+      )
+        throw new StudioExportRefusal('output-rejected', 'The required subtitle sibling changed');
       const owner = await tx
         .selectFrom('user')
         .select('id')
@@ -631,74 +805,118 @@ export class StudioExportRepository {
       if (scope !== input.expectedScope) {
         throw new StudioExportRefusal('scope-changed', 'The sources of this export changed hands');
       }
-      const { createdAssetId, reusedAssetId } =
-        scope === StudioExportScope.Library
-          ? await this.adoptLibraryAsset(tx, input, privacy.union)
-          : { createdAssetId: null, reusedAssetId: null };
-      const next = await tx
-        .selectFrom('studio_export_version')
-        .select((eb) => sql<number>`coalesce(max(${eb.ref('version')}), 0) + 1`.as('next'))
-        .where('projectId', '=', project.id)
-        .executeTakeFirstOrThrow();
-      for (const row of privacy.evidence) {
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true)))
+        throw new StudioExportRefusal('claim-lost', 'The publication claim expired while checking sources');
+      try {
+        await input.files?.move();
+        const { createdAssetId, reusedAssetId } =
+          scope === StudioExportScope.Library
+            ? await this.adoptLibraryAsset(tx, input, privacy.union)
+            : { createdAssetId: null, reusedAssetId: null };
+        const next = await tx
+          .selectFrom('studio_export_version')
+          .select((eb) => sql<number>`coalesce(max(${eb.ref('version')}), 0) + 1`.as('next'))
+          .where('projectId', '=', project.id)
+          .executeTakeFirstOrThrow();
+        for (const row of privacy.evidence) {
+          await tx
+            .updateTable('studio_export_version_source')
+            .set({ locked: row.lockReason !== null, lockReason: row.lockReason, sensitive: row.sensitive })
+            .where('versionId', '=', version.id)
+            .where('assetId', '=', row.assetId)
+            .execute();
+        }
+        const published = await tx
+          .updateTable('studio_export_version')
+          .set({
+            state: StudioExportVersionState.Published,
+            version: Number(next.next),
+            scope,
+            resultAssetId: createdAssetId ?? reusedAssetId,
+            outputPath: reusedAssetId ? null : input.path,
+            subtitlePath: input.subtitle?.outputPath ?? null,
+            subtitleChecksum: input.subtitle?.outputChecksum ?? null,
+            subtitleSizeInBytes: input.subtitle ? String(input.subtitle.sizeInBytes) : null,
+            outputChecksum: input.checksum,
+            outputSizeInBytes: input.sizeInBytes,
+            privacy: { ...privacy.union, scope } as unknown as Record<string, unknown>,
+            publishedAt: sql<Date>`now()`,
+            updatedAt: sql<Date>`now()`,
+            errorCode: null,
+            error: null,
+          })
+          .where('id', '=', version.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        const operation = await tx
+          .selectFrom('media_operation')
+          .select(['snapshot', 'result', 'label'])
+          .where('id', '=', input.operationId)
+          .executeTakeFirstOrThrow();
+        if (createdAssetId && scheduleMetadata) await scheduleMetadata(tx, createdAssetId);
+        if (scheduleNotification) await scheduleNotification(tx, published as StudioExportVersion, operation.label);
+        if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
+          throw new StudioExportRefusal('claim-lost', 'The publication claim expired during queue admission');
+        }
+        const followups: StudioPublicationFollowups = {
+          revision: 1,
+          metadataAssetId: createdAssetId,
+          metadataAccepted: !createdAssetId || !!scheduleMetadata,
+          notification: scheduleNotification ? 'accepted' : 'pending',
+          smoothMotion: operation.snapshot.smoothMotion ? 'pending' : 'accepted',
+        };
         await tx
-          .updateTable('studio_export_version_source')
-          .set({ locked: row.lockReason !== null, lockReason: row.lockReason, sensitive: row.sensitive })
-          .where('versionId', '=', version.id)
-          .where('assetId', '=', row.assetId)
+          .updateTable('media_operation')
+          .set({
+            resultAssetId: createdAssetId ?? reusedAssetId,
+            result: { ...operation.result, studioPublication: followups },
+          })
+          .where('id', '=', input.operationId)
           .execute();
+        return {
+          status: 'published',
+          version: published as unknown as StudioExportVersion,
+          privacy: { ...privacy.union, scope },
+          createdAssetId,
+          reusedAssetId,
+        };
+      } catch (error) {
+        // Transaction failure has not committed: undo while the same authority and paths remain held.
+        try {
+          await input.files?.rollback();
+        } catch (error_) {
+          throw new AggregateError([error, error_], 'Publication failed and paired file recovery is pending', {
+            cause: error_,
+          });
+        }
+        throw error;
       }
-      const published = await tx
-        .updateTable('studio_export_version')
-        .set({
-          state: StudioExportVersionState.Published,
-          version: Number(next.next),
-          scope,
-          resultAssetId: createdAssetId ?? reusedAssetId,
-          outputPath: reusedAssetId ? null : input.path,
-          outputChecksum: input.checksum,
-          outputSizeInBytes: input.sizeInBytes,
-          privacy: { ...privacy.union, scope } as unknown as Record<string, unknown>,
-          publishedAt: sql<Date>`now()`,
-          updatedAt: sql<Date>`now()`,
-          errorCode: null,
-          error: null,
-        })
-        .where('id', '=', version.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      const operation = await tx
-        .selectFrom('media_operation')
-        .select(['snapshot', 'result', 'label'])
-        .where('id', '=', input.operationId)
-        .executeTakeFirstOrThrow();
-      if (createdAssetId && scheduleMetadata) await scheduleMetadata(tx, createdAssetId);
-      if (scheduleNotification) await scheduleNotification(tx, published as StudioExportVersion, operation.label);
-      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
-        throw new StudioExportRefusal('claim-lost', 'The publication claim expired during queue admission');
-      }
-      const followups: StudioPublicationFollowups = {
-        revision: 1,
-        metadataAssetId: createdAssetId,
-        metadataAccepted: !createdAssetId || !!scheduleMetadata,
-        notification: scheduleNotification ? 'accepted' : 'pending',
-        smoothMotion: operation.snapshot.smoothMotion ? 'pending' : 'accepted',
-      };
-      await tx
-        .updateTable('media_operation')
-        .set({
-          resultAssetId: createdAssetId ?? reusedAssetId,
-          result: { ...operation.result, studioPublication: followups },
-        })
-        .where('id', '=', input.operationId)
-        .execute();
-      return {
-        status: 'published',
-        version: published as unknown as StudioExportVersion,
-        privacy: { ...privacy.union, scope },
-        createdAssetId,
-        reusedAssetId,
-      };
+    });
+  }
+  /** A lost COMMIT acknowledgement never authorizes an unguarded reverse move. */
+  async restorePublicationFiles(
+    input: Pick<StudioExportPublication, 'versionId' | 'operationId' | 'claimToken' | 'sources'>,
+    files: NonNullable<StudioExportPublication['files']>,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      for (const path of [...new Set(files.paths)].sort()) await lockFilePath(tx, path);
+      await holdSourceAdmission(tx, {
+        sourceEpochs: input.sources
+          .filter((s) => s.assetId && s.ownerId && s.sourceEpoch !== null && s.sourceEpoch !== undefined)
+          .map((s) => ({ assetId: s.assetId, ownerId: s.ownerId, epoch: s.sourceEpoch })),
+      });
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) return false;
+      const version = await tx
+        .selectFrom('studio_export_version')
+        .select(['state', 'publishOperationId'])
+        .where('id', '=', input.versionId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (version?.state !== StudioExportVersionState.Staged || version.publishOperationId !== input.operationId)
+        return false;
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) return false;
+      await files.rollback();
+      return true;
     });
   }
   /** Replay database-only scheduling under the same claim; never re-publish an accepted version. */
@@ -1053,46 +1271,40 @@ export class StudioExportRepository {
    * was cancelled, and the file of a `project` result whose project was deleted for good. A
    * `library` result's file is its asset's original and is never listed.
    */
-  listRemovableOutputs(limit = 200): Promise<StudioExportVersion[]> {
-    return this.db
-      .selectFrom('studio_export_version')
-      .selectAll()
-      .where('outputPath', 'is not', null)
-      .where('outputRemovedAt', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
-          eb.and([
-            eb('state', '=', StudioExportVersionState.Published),
-            eb('scope', '=', StudioExportScope.Project),
-            eb('projectId', 'is', null),
-          ]),
-        ]),
-      )
-      .orderBy('updatedAt', 'asc')
-      .limit(limit)
-      .execute() as Promise<StudioExportVersion[]>;
+  async listRemovableOutputs(limit = 200): Promise<(StudioExportVersion & { role: 'media' | 'subtitle' })[]> {
+    const { rows } = await sql<StudioExportVersion & { role: 'media' | 'subtitle' }>`SELECT * FROM (
+      SELECT version.*, 'media'::text AS role FROM studio_export_version version
+      WHERE "outputPath" IS NOT NULL AND "outputRemovedAt" IS NULL AND
+        (state IN ('failed','cancelled') OR (state='published' AND scope='project' AND "projectId" IS NULL))
+      UNION ALL SELECT version.*, 'subtitle'::text AS role FROM studio_export_version version
+      WHERE "subtitlePath" IS NOT NULL AND "subtitleRemovedAt" IS NULL AND
+        (state IN ('failed','cancelled') OR (state='published' AND
+          ((scope='project' AND "projectId" IS NULL) OR (scope='library' AND "resultAssetId" IS NULL))))
+    ) retired ORDER BY "updatedAt",id,role LIMIT ${limit}`.execute(this.db);
+    return rows;
   }
   /** The output row is durable cleanup intent until its exact, unreferenced file is removed. */
-  async markOutputRemoved(id: string, unlink: (version: StudioExportVersion) => Promise<void>): Promise<boolean> {
+  async markOutputRemoved(
+    id: string,
+    unlink: (version: StudioExportVersion) => Promise<void>,
+    role: 'media' | 'subtitle' = 'media',
+  ): Promise<boolean> {
     const version = await this.db
       .selectFrom('studio_export_version')
       .selectAll()
       .where('id', '=', id)
       .executeTakeFirst();
-    if (!version?.outputPath) return false;
-    const result = await new PhysicalFileRepository(this.db).deleteUnreferencedPath(
-      version.outputPath,
-      () => unlink(version),
-      {
-        retiredStudioExport: {
-          id: version.id,
-          ownerId: version.ownerId,
-          checksum: version.outputChecksum,
-          sizeBytes: version.outputSizeInBytes,
-        },
+    const path = role === 'subtitle' ? version?.subtitlePath : version?.outputPath;
+    if (!version || !path) return false;
+    const result = await new PhysicalFileRepository(this.db).deleteUnreferencedPath(path, () => unlink(version), {
+      retiredStudioExport: {
+        id: version.id,
+        ownerId: version.ownerId,
+        role,
+        checksum: role === 'subtitle' ? version.subtitleChecksum : version.outputChecksum,
+        sizeBytes: role === 'subtitle' ? version.subtitleSizeInBytes : version.outputSizeInBytes,
       },
-    );
+    });
     return result.deleted;
   }
   /* ------------------------------------------------------------------ */

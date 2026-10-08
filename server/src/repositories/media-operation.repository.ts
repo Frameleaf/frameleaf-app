@@ -3,15 +3,19 @@ import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } f
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
+import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import {
   DatabaseLock,
   MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  RenderWorkerStatus,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
@@ -26,6 +30,7 @@ import {
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
 /** One unfinished retry per job (migration 2100000000590, FL-43). */
@@ -2225,14 +2230,24 @@ export class MediaOperationRepository {
     operationId: string,
     claimToken: string,
     chunk: Insertable<MediaOperationCheckpointTable>,
+    retire?: (tx: Transaction<DB>, paths: string[]) => Promise<void>,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`studio-artifacts:${operationId}`},0))`.execute(trx);
       // The claim check and the write are one unit (FL-43): the share lock holds off recovery's
       // requeue of this row until the chunk is recorded, so a lease that lapses between the two
       // cannot let a presumed-dead worker re-plan a chunk its replacement already owns.
       if (!(await this.lockClaim(trx, operationId, claimToken))) {
         return false;
       }
+      const previous = await trx
+        .selectFrom('media_operation_checkpoint')
+        .select(['outputPath', 'subtitlePath'])
+        .where('operationId', '=', operationId)
+        .where('sequence', '=', chunk.sequence)
+        .forUpdate()
+        .executeTakeFirst();
+      if (previous?.subtitlePath && !retire) throw new ConflictException('Paired artifacts require durable retirement');
       await trx
         .insertInto('media_operation_checkpoint')
         .values({ ...chunk, operationId, claimToken })
@@ -2252,13 +2267,180 @@ export class MediaOperationRepository {
             outputPath: null,
             outputChecksum: null,
             sizeInBytes: null,
+            subtitlePath: null,
+            subtitleChecksum: null,
+            subtitleSizeInBytes: null,
             completedAt: null,
             claimToken,
             attempt: sql<number>`"media_operation_checkpoint"."attempt" + 1`,
           }),
         )
         .execute();
+      if (previous && retire)
+        await retire(trx, [
+          ...new Set([previous.outputPath, previous.subtitlePath].filter((path): path is string => !!path)),
+        ]);
       return true;
+    });
+  }
+  /**
+   * One sequence-zero serializer for both roles and replanning. Claim/source/session locks are
+   * acquired only after the body, so cancel and revoke remain writable while bytes arrive.
+   * The callback cannot install bytes without the final transaction-bound authority fence.
+   */
+  async withExportArtifact<T>(
+    binding: {
+      operationId: string;
+      claimToken: string;
+      workerId: string;
+      sessionId: string;
+      chunkKey: string;
+      inputDigest: string;
+    },
+    action: (
+      checkpoint: MediaOperationCheckpoint,
+      install: (
+        role: 'media' | 'subtitle',
+        artifact: RenderArtifact,
+        check: () => Promise<void>,
+      ) => Promise<boolean | 'duplicate'>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`studio-artifacts:${binding.operationId}`},0))`.execute(
+        tx,
+      );
+      const checkpoint = await tx
+        .selectFrom('media_operation_checkpoint')
+        .selectAll()
+        .where('operationId', '=', binding.operationId)
+        .where('sequence', '=', 0)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !checkpoint ||
+        checkpoint.chunkKey !== binding.chunkKey ||
+        checkpoint.inputDigest !== binding.inputDigest ||
+        checkpoint.state === MediaOperationCheckpointState.Invalid
+      )
+        throw new ConflictException('Artifact checkpoint changed');
+      return action(checkpoint, async (role, artifact, check) => {
+        await lockFilePath(tx, artifact.outputPath);
+        const observed = await tx
+          .selectFrom('media_operation')
+          .selectAll()
+          .where('id', '=', binding.operationId)
+          .executeTakeFirstOrThrow();
+        const epochs = observed.snapshot.sourceEpochs as { assetId: string }[] | undefined;
+        const privacy = new DerivativePrivacyRepository(tx);
+        // Retain the actual source and share rows, not only an external post-body access answer.
+        const sources = await privacy.lockSources(tx, Array.isArray(epochs) ? epochs.map((row) => row.assetId) : []);
+        await holdSourceAdmission(tx, observed.snapshot);
+        const shared = await privacy.lockSharedAccess(tx, observed.ownerId, sources.values().toArray());
+        if (sources.values().some((source) => source.ownerId !== observed.ownerId && !shared.has(source.assetId)))
+          return false;
+        await tx
+          .selectFrom('render_worker')
+          .select('id')
+          .where('id', '=', binding.workerId)
+          .forShare()
+          .executeTakeFirstOrThrow();
+        await tx
+          .selectFrom('render_worker_session')
+          .select('id')
+          .where('id', '=', binding.sessionId)
+          .forShare()
+          .executeTakeFirstOrThrow();
+        await tx
+          .selectFrom('media_operation')
+          .select('id')
+          .where('id', '=', binding.operationId)
+          .forShare()
+          .executeTakeFirstOrThrow();
+        // Re-evaluate the clock and all mutable authority after every row-lock wait.
+        const current = await tx
+          .selectFrom('media_operation')
+          .selectAll()
+          .where('id', '=', binding.operationId)
+          .where('claimToken', '=', binding.claimToken)
+          .where('claimedBy', '=', binding.workerId)
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null)
+          .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+          .executeTakeFirst();
+        if (
+          !current ||
+          current.kind !== MediaOperationKind.StudioExport ||
+          canonicalJson(current.snapshot) !== canonicalJson(observed.snapshot)
+        )
+          return false;
+        await check();
+        const liveSession = await tx
+          .selectFrom('render_worker_session')
+          .innerJoin('render_worker', 'render_worker.id', 'render_worker_session.workerId')
+          .select('render_worker_session.id')
+          .where('render_worker_session.id', '=', binding.sessionId)
+          .where('render_worker_session.workerId', '=', binding.workerId)
+          .where('render_worker.status', '=', RenderWorkerStatus.Active)
+          .where('render_worker_session.revokedAt', 'is', null)
+          .where('render_worker_session.expiresAt', '>', sql<Date>`clock_timestamp()`)
+          .whereRef('render_worker_session.engineDigest', '=', 'render_worker.engineDigest')
+          .executeTakeFirst();
+        if (!liveSession) return false;
+        const liveClaim = await tx
+          .selectFrom('media_operation')
+          .select('id')
+          .where('id', '=', binding.operationId)
+          .where('claimToken', '=', binding.claimToken)
+          .where('claimedBy', '=', binding.workerId)
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .where('cancelRequestedAt', 'is', null)
+          .where('pauseRequestedAt', 'is', null)
+          .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+          .executeTakeFirst();
+        if (!liveClaim) return false;
+        const seal = sidecarSealOf(current.settings);
+        if (
+          role === 'subtitle' &&
+          (!seal ||
+            artifact.sizeInBytes !== Number(seal.sizeInBytes) ||
+            artifact.outputChecksum.toString('hex') !== seal.expectedSrtSha256)
+        )
+          throw new ConflictException('Subtitle does not match its immutable semantic seal');
+        const storedPath = role === 'media' ? checkpoint.outputPath : checkpoint.subtitlePath;
+        if (storedPath) {
+          const checksum = role === 'media' ? checkpoint.outputChecksum : checkpoint.subtitleChecksum;
+          const size = role === 'media' ? checkpoint.sizeInBytes : checkpoint.subtitleSizeInBytes;
+          if (!checksum?.equals(artifact.outputChecksum) || String(size) !== String(artifact.sizeInBytes))
+            throw new ConflictException('Artifact role identity already installed');
+          return 'duplicate';
+        }
+        if (checkpoint.claimToken !== binding.claimToken || checkpoint.state !== MediaOperationCheckpointState.Pending)
+          return false;
+        const complete = role === 'media' ? !seal || !!checkpoint.subtitlePath : !!checkpoint.outputPath;
+        const result = await tx
+          .updateTable('media_operation_checkpoint')
+          .set({
+            ...(role === 'media'
+              ? {
+                  outputPath: artifact.outputPath,
+                  outputChecksum: artifact.outputChecksum,
+                  sizeInBytes: String(artifact.sizeInBytes),
+                }
+              : {
+                  subtitlePath: artifact.outputPath,
+                  subtitleChecksum: artifact.outputChecksum,
+                  subtitleSizeInBytes: String(artifact.sizeInBytes),
+                }),
+            state: complete ? MediaOperationCheckpointState.Complete : MediaOperationCheckpointState.Pending,
+            completedAt: complete ? sql<Date>`clock_timestamp()` : null,
+          })
+          .where('id', '=', checkpoint.id)
+          .where('claimToken', '=', binding.claimToken)
+          .executeTakeFirst();
+        return Number(result.numUpdatedRows) === 1;
+      });
     });
   }
   /**

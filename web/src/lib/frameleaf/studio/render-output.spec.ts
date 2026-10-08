@@ -49,6 +49,32 @@ const settings: StudioRenderSettings = {
 };
 
 describe('Studio render output (FL-42)', () => {
+  it('requires the paired profile on the SAME qualified writer and the exact bounded tuple', () => {
+    const paired = {
+      format: StudioExportFormat.Mp4H264,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$720P,
+      subtitleMode: 'sidecar',
+      quality: 'high',
+    } as StudioRenderSettings;
+    const row = evidence();
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(false);
+    row.candidates![0].sidecarOutputFormats = [StudioExportFormat.Mp4H264];
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(true);
+    for (const change of [
+      { quality: 'medium' },
+      { resolution: StudioExportResolution.$1080P },
+      { format: StudioExportFormat.Mp4HevcMain10 },
+      { color: StudioExportColor.Hdr10 },
+    ]) {
+      expect(
+        evaluateStudioRender([row], MediaOperationDestination.Lan, { ...paired, ...change } as StudioRenderSettings)
+          .supported,
+      ).toBe(false);
+    }
+    row.candidates![0].outputFormats = [];
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(false);
+  });
   it('accepts a combination a qualified session verified', () => {
     expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
   });

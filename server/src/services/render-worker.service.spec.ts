@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -278,6 +278,7 @@ describe(RenderWorkerService.name, () => {
       reportProgress: vi.fn().mockResolvedValue(true),
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
+      withExportArtifact: vi.fn(),
       beginValidation: vi.fn().mockResolvedValue(true),
       invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
       complete: vi.fn().mockResolvedValue(true),
@@ -2235,6 +2236,22 @@ describe(RenderWorkerService.name, () => {
       vi.mocked(operations.getCheckpoints).mockResolvedValue([
         { ...checkpoint, state: MediaOperationCheckpointState.Pending },
       ] as never);
+      const install = vi.fn(async (_role, _artifact, check: () => Promise<void>) => {
+        await check();
+        return true;
+      });
+      vi.mocked(operations.withExportArtifact).mockImplementation(async (_binding, action) =>
+        action(
+          {
+            ...checkpoint,
+            state: MediaOperationCheckpointState.Pending,
+            outputPath: null,
+            outputChecksum: null,
+            sizeInBytes: null,
+          } as never,
+          install,
+        ),
+      );
       const result = await sut.uploadArtifact(
         SESSION_A,
         validating.id,
@@ -2248,21 +2265,94 @@ describe(RenderWorkerService.name, () => {
         Readable.from([bytes]),
       );
       expect(result.accepted).toBe(true);
-      expect(operations.completeCheckpoint).toHaveBeenCalledWith(
-        validating.id,
-        'claim-1',
+      expect(operations.withExportArtifact).toHaveBeenCalledWith(
         expect.objectContaining({
-          sequence: 0,
+          operationId: validating.id,
+          claimToken: 'claim-1',
           chunkKey: 'whole',
+          inputDigest: checkpoint.inputDigest,
+        }),
+        expect.any(Function),
+      );
+      expect(install).toHaveBeenCalledWith(
+        'media',
+        expect.objectContaining({
           outputChecksum: Buffer.from(output.checksum, 'hex'),
           sizeInBytes: bytes.length,
         }),
-        true,
+        expect.any(Function),
       );
-      const recorded = vi.mocked(operations.completeCheckpoint).mock.calls[0][2];
+      const recorded = install.mock.calls[0][1] as { outputPath: string };
+      expect(await readFile(recorded.outputPath)).toEqual(bytes);
       expect(recorded.outputPath).not.toBe(output.path);
       expect(recorded.outputPath).toMatch(/\/[a-f\d-]{36}\.artifact$/);
     });
+
+    it('accepts an identical artifact retry at the exact output ceiling without counting the role twice', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...validating,
+        status: MediaOperationStatus.Rendering,
+      } as never);
+      vi.mocked(workers.getWorker).mockResolvedValue({ ...workerA, maxOutputBytes: String(bytes.length) } as never);
+      const checkpoint = (await operations.getCheckpoints(validating.id))[0];
+      const install = vi.fn(async (_role, _artifact, check: () => Promise<void>) => {
+        await check();
+        return 'duplicate' as const;
+      });
+      vi.mocked(operations.withExportArtifact).mockImplementation(async (_binding, action) =>
+        action(checkpoint, install),
+      );
+      await expect(
+        sut.uploadArtifact(
+          SESSION_A,
+          validating.id,
+          0,
+          'claim-1',
+          { chunkKey: 'whole', checksum: output.checksum, sizeInBytes: output.sizeInBytes },
+          Readable.from([bytes]),
+        ),
+      ).resolves.toMatchObject({ accepted: true });
+      expect(install).toHaveBeenCalledOnce();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(await readFile(output.path)).toEqual(bytes);
+      expect(await readdir(folder)).toEqual([output.path.slice(folder.length + 1)]);
+    });
+
+    it.each(['checksum', 'size', 'missing-path'] as const)(
+      'does not exempt a changed retry %s from the output ceiling',
+      async (field) => {
+        vi.mocked(workers.getClaimed).mockResolvedValue({
+          ...validating,
+          status: MediaOperationStatus.Rendering,
+        } as never);
+        vi.mocked(workers.getWorker).mockResolvedValue({
+          ...workerA,
+          maxOutputBytes: String(bytes.length - (field === 'missing-path' ? 1 : 0)),
+        } as never);
+        const checkpoint = (await operations.getCheckpoints(validating.id))[0];
+        const install = vi.fn();
+        vi.mocked(operations.withExportArtifact).mockImplementation(async (_binding, action) =>
+          action({ ...checkpoint, ...(field === 'missing-path' && { outputPath: null }) }, install),
+        );
+        await expect(
+          sut.uploadArtifact(
+            SESSION_A,
+            validating.id,
+            0,
+            'claim-1',
+            {
+              chunkKey: 'whole',
+              checksum: field === 'checksum' ? '0'.repeat(64) : output.checksum,
+              sizeInBytes: field === 'size' ? String(bytes.length + 1) : output.sizeInBytes,
+            },
+            Readable.from([bytes]),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(install).not.toHaveBeenCalled();
+        expect(await readFile(output.path)).toEqual(bytes);
+        expect(await readdir(folder)).toEqual([output.path.slice(folder.length + 1)]);
+      },
+    );
 
     it('lets a replacement active claim read matching verified bytes and refuses the old claim', async () => {
       vi.mocked(workers.getClaimed).mockImplementation((_id, workerId, token) =>

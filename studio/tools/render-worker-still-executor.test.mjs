@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { stillRecipe, renderStillImage, ownedOutputBytes } from './render-worker-still-executor.mjs';
+import { createRequire } from 'node:module';
+import {
+  stillRecipe,
+  renderStillImage,
+  ownedOutputBytes,
+  settleStillCleanup,
+  createStillRelease,
+} from './render-worker-still-executor.mjs';
 const claim = () => ({
-  settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', audio: 'preserve' },
+  settings: {
+    format: 'mp4-h264',
+    color: 'preserve',
+    resolution: '720p',
+    audio: 'preserve',
+  },
   snapshot: {
     studio: {
       graph: {
@@ -65,13 +77,65 @@ test('native subtitle modes preserve legacy settings, reject unsupported modes a
     const input = claim();
     input.settings.subtitleMode = subtitleMode;
     assert.equal(stillRecipe(input).settings.subtitleMode, subtitleMode);
-    input.snapshot.studio.graph.timeline.items.push({ id: 'caption', type: 'subtitle', text: 'Caption', trackId: 'v1', from: 0, durationInFrames: 24 });
+    input.snapshot.studio.graph.timeline.items.push({
+      id: 'caption',
+      type: 'subtitle',
+      text: 'Caption',
+      trackId: 'v1',
+      from: 0,
+      durationInFrames: 24,
+    });
     assert.equal(stillRecipe(input).frames, 24);
   }
-  for (const subtitleMode of ['sidecar', 'embedded', null, 10, {}]) {
+  for (const subtitleMode of ['embedded', null, 10, {}]) {
     const input = claim();
     input.settings.subtitleMode = subtitleMode;
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_SUBTITLE_MODE/);
+  }
+  const unsealed = claim();
+  unsealed.settings.subtitleMode = 'sidecar';
+  assert.throws(() => stillRecipe(unsealed), /Required subtitle authority/);
+});
+test('sealed Sidecar recipe binds canonical bytes, supports empty cues and refuses changed evidence', () => {
+  const require = createRequire(import.meta.url);
+  const { sealStudioSidecar } = require('../../server/dist/utils/studio-subtitle-sidecar.js');
+  const input = claim();
+  input.revisionId = 'a'.repeat(64);
+  input.snapshot.manifestDigest = 'b'.repeat(64);
+  input.snapshot.engineDigest = 'c'.repeat(64);
+  input.settings.subtitleMode = 'sidecar';
+  const seal = sealStudioSidecar(input.snapshot.studio.graph, {
+    revisionDigest: input.revisionId,
+    manifestDigest: input.snapshot.manifestDigest,
+    engineDigest: input.snapshot.engineDigest,
+  });
+  input.settings.subtitleSeal = seal;
+  input.snapshot.contract.subtitles = seal;
+  const before = structuredClone(input);
+  assert.equal(stillRecipe(input).subtitle.content, '');
+  assert.equal(stillRecipe(input).subtitle.seal.zeroCue, true);
+  assert.equal(Object.hasOwn(stillRecipe(input).settings, 'subtitleSeal'), false);
+  assert.deepEqual(input, before);
+  for (const mutate of [
+    (c) => (c.settings.subtitleSeal.expectedSrtSha256 = '0'.repeat(64)),
+    (c) => (c.snapshot.manifestDigest = 'd'.repeat(64)),
+    (c) => (c.snapshot.contract.subtitles.cueCount = 1),
+    (c) =>
+      c.snapshot.studio.graph.timeline.items.push({
+        id: 'caption',
+        type: 'text',
+        textRole: 'caption',
+        captionSource: { type: 'subtitle-import' },
+        text: 'Caption',
+        trackId: 'v1',
+        from: 0,
+        durationInFrames: 24,
+      }),
+    (c) => (c.snapshot.studio.graph.compositions = [{ id: 'nested' }]),
+  ]) {
+    const changed = structuredClone(input);
+    mutate(changed);
+    assert.throws(() => stillRecipe(changed));
   }
 });
 test('ranges retain source-frame bounds, render only the selected frames and require the bound contract', () => {
@@ -175,8 +239,15 @@ test('expired lease refuses before loading engine/build or creating private outp
 test('still image recipes preserve explicit document intent and one frame without accepting video settings', () => {
   for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic']) {
     const input = claim();
-    input.settings = { format, color: 'preserve', resolution: 'original', audio: 'preserve' };
-    input.snapshot.studio.graph.metadata.colorManagement = { workingRange: 'hdr' };
+    input.settings = {
+      format,
+      color: 'preserve',
+      resolution: 'original',
+      audio: 'preserve',
+    };
+    input.snapshot.studio.graph.metadata.colorManagement = {
+      workingRange: 'hdr',
+    };
     input.snapshot.contract.image = {
       version: 1,
       format,
@@ -212,22 +283,60 @@ test('immutable visual timeline recipe retains multi-item transition, keyframes 
   const input = claim();
   const graph = input.snapshot.studio.graph;
   graph.schemaVersion = 1;
-  graph.timeline.items.push({ ...graph.timeline.items[0], id: 'clip-b', mediaId: 'asset-b', from: 24 });
-  graph.timeline.items[0].effects = [{ id: 'fx', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0.15 } } }];
-  graph.timeline.transitions = [{ id: 'dissolve', type: 'crossfade', presentation: 'dissolve', timing: 'linear', trackId: 'v1', leftClipId: 'clip', rightClipId: 'clip-b', durationInFrames: 12 }];
-  graph.timeline.keyframes = [{ itemId: 'clip', properties: [{ property: 'opacity', keyframes: [{ id: 'k0', frame: 0, value: 0, easing: 'linear' }, { id: 'k1', frame: 12, value: 1, easing: 'linear' }] }] }];
+  graph.timeline.items.push({
+    ...graph.timeline.items[0],
+    id: 'clip-b',
+    mediaId: 'asset-b',
+    from: 24,
+  });
+  graph.timeline.items[0].effects = [
+    {
+      id: 'fx',
+      enabled: true,
+      effect: {
+        type: 'gpu-effect',
+        gpuEffectType: 'gpu-brightness',
+        params: { amount: 0.15 },
+      },
+    },
+  ];
+  graph.timeline.transitions = [
+    {
+      id: 'dissolve',
+      type: 'crossfade',
+      presentation: 'dissolve',
+      timing: 'linear',
+      trackId: 'v1',
+      leftClipId: 'clip',
+      rightClipId: 'clip-b',
+      durationInFrames: 12,
+    },
+  ];
+  graph.timeline.keyframes = [
+    {
+      itemId: 'clip',
+      properties: [
+        {
+          property: 'opacity',
+          keyframes: [
+            { id: 'k0', frame: 0, value: 0, easing: 'linear' },
+            { id: 'k1', frame: 12, value: 1, easing: 'linear' },
+          ],
+        },
+      ],
+    },
+  ];
   graph.duration = 2;
   const original = structuredClone(input);
   assert.equal(stillRecipe(input).frames, 48);
   assert.deepEqual(input, original);
 });
 
-
 test('exact rational cadence and checkpoint ticks reuse the actual server timing helpers', () => {
   const input = claim();
   input.snapshot.studio.graph.metadata.fps = 30000 / 1001;
   input.snapshot.studio.graph.metadata.frameRate = { num: 30000, den: 1001 };
-  input.snapshot.studio.graph.duration = 24 * 1001 / 30000;
+  input.snapshot.studio.graph.duration = (24 * 1001) / 30000;
   input.snapshot.timing.cadence = '30000/1001';
   input.snapshot.timing.timeBase = '1/30000';
   const result = stillRecipe(input);
@@ -281,12 +390,16 @@ test('input digest mismatch refuses before engine/build/browser or private outpu
   const c = claim();
   c.artifactInputDigest = 'a'.repeat(64);
   for (const prepared of [undefined, { artifactInputDigest: 'b'.repeat(64) }]) {
-    await assert.rejects(renderStillImage({ claim: c, prepared, isLeaseActive: () => true,
-      elapsedMs: () => 0 }, () => assert.fail()), /INPUT_DIGEST_CHANGED/);
+    await assert.rejects(
+      renderStillImage({ claim: c, prepared, isLeaseActive: () => true, elapsedMs: () => 0 }, () => assert.fail()),
+      /INPUT_DIGEST_CHANGED/,
+    );
   }
   c.artifactInputDigest = 'not-a-sha256';
-  await assert.rejects(renderStillImage({ claim: c, isLeaseActive: () => true,
-    elapsedMs: () => 0 }, () => assert.fail()), /INPUT_DIGEST_REQUIRED/);
+  await assert.rejects(
+    renderStillImage({ claim: c, isLeaseActive: () => true, elapsedMs: () => 0 }, () => assert.fail()),
+    /INPUT_DIGEST_REQUIRED/,
+  );
 });
 
 test('terminal authority after output read clears the actual returned buffer and refuses completion', async () => {
@@ -367,4 +480,74 @@ test('terminal authority after output read clears the actual returned buffer and
     ],
     { cwd: new URL('../../', import.meta.url), stdio: 'pipe' },
   );
+});
+
+test('actual cleanup independently settles synchronous and asynchronous failures and retains the primary error', async () => {
+  const calls = [];
+  const first = new Error('first'),
+    primary = new Error('primary');
+  const actions = [
+    () => {
+      calls.push('browser');
+      throw first;
+    },
+    async () => {
+      calls.push('pool');
+      throw new Error('pool');
+    },
+    () => {
+      calls.push('folder');
+    },
+  ];
+  await assert.rejects(settleStillCleanup(actions), (error) => error === first);
+  assert.deepEqual(calls, ['browser', 'pool', 'folder']);
+  calls.length = 0;
+  await assert.rejects(settleStillCleanup(actions, primary), (error) => error === primary);
+  assert.deepEqual(calls, ['browser', 'pool', 'folder']);
+  await settleStillCleanup([
+    () => {
+      calls.push('success');
+    },
+  ]);
+});
+
+test('late resource acquisition is independently closed once, and rejected closure never becomes success', async () => {
+  let browser, pool;
+  const calls = [];
+  const context = {
+    leaseAuthority: {
+      terminate() {
+        calls.push('terminate');
+      },
+    },
+  };
+  const release = createStillRelease(
+    context,
+    {
+      abort() {
+        calls.push('abort');
+      },
+    },
+    () => browser,
+    () => pool,
+  );
+  await release();
+  browser = {
+    close() {
+      calls.push('browser');
+    },
+  };
+  const failure = new Error('pool-close');
+  pool = {
+    close() {
+      calls.push('pool');
+      throw failure;
+    },
+  };
+  await assert.rejects(release(), (error) => error === failure);
+  await assert.rejects(release(), (error) => error === failure);
+  assert.equal(calls.filter((call) => call === 'browser').length, 1);
+  assert.equal(calls.filter((call) => call === 'pool').length, 1);
+  assert.equal(calls.filter((call) => call === 'terminate').length, 3);
+  assert.equal(calls.filter((call) => call === 'abort').length, 3);
 });

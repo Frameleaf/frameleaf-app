@@ -244,7 +244,7 @@ describe('Studio export dialog', () => {
     }
   });
 
-  it('submits only native Burn-in and Off subtitle choices', async () => {
+  it('preserves native Burn-in and Off choices and refuses Sidecar without paired writer evidence', async () => {
     const onExport = vi.fn();
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
     const control = screen.getByLabelText('frameleaf_studio_export_subtitles');
@@ -252,12 +252,51 @@ describe('Studio export dialog', () => {
       within(control)
         .getAllByRole('option')
         .map((option) => (option as HTMLOptionElement).value),
-    ).toEqual([StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off]);
-    for (const subtitleMode of Object.values(StudioExportSubtitleMode)) {
+    ).toEqual([StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off, StudioExportSubtitleMode.Sidecar]);
+    expect(within(control).getByRole('option', { name: 'frameleaf_studio_export_subtitles_sidecar' })).toBeDisabled();
+    for (const subtitleMode of [StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off]) {
       await fireEvent.change(control, { target: { value: subtitleMode } });
       await fireEvent.click(exportButton());
       expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ subtitleMode }));
     }
+  });
+
+  it('submits Sidecar only with the exact paired writer tuple and disables it on profile withdrawal', async () => {
+    const onExport = vi.fn();
+    const row = evidence();
+    row.candidates![0].sidecarOutputFormats = [StudioExportFormat.Mp4H264];
+    const view = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Actual paired choice',
+      renderEvidence: [row],
+      onExport,
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.Mp4H264 },
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+      target: { value: StudioExportResolution.$720P },
+    });
+    const subtitles = screen.getByLabelText('frameleaf_studio_export_subtitles');
+    expect(within(subtitles).getByRole('option', { name: 'frameleaf_studio_export_subtitles_sidecar' })).toBeEnabled();
+    await fireEvent.change(subtitles, { target: { value: StudioExportSubtitleMode.Sidecar } });
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destination: MediaOperationDestination.Local,
+        format: StudioExportFormat.Mp4H264,
+        color: StudioExportColor.Preserve,
+        resolution: StudioExportResolution.$720P,
+        quality: StudioExportQuality.High,
+        subtitleMode: StudioExportSubtitleMode.Sidecar,
+      }),
+    );
+    expect(onExport.mock.calls[0][0]).not.toHaveProperty('subtitleSeal');
+    await view.rerender({ renderEvidence: [evidence()] });
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledTimes(1);
   });
 
   it('submits included/excluded integer frame boundaries and refuses invalid ranges', async () => {

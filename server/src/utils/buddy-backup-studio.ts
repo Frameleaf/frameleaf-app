@@ -17,7 +17,7 @@ import {
   sniffStudioImport,
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
-import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
+import { canonicalJson, checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import {
   StudioResourceKind,
   type StudioResourceReference,
@@ -26,6 +26,7 @@ import {
   isStudioIdentifier,
   studioReferenceKey,
 } from 'src/utils/studio-resources.js';
+import { sealStudioSidecar, sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 const uuid = z.uuid();
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
@@ -89,6 +90,11 @@ export const buddyStudioGeneratedSchema = z.object({
   derivedFrom: z.array(z.string().min(1).max(256)).min(1).max(10_000),
 });
 export const buddyStudioSourceSchema = z.object({
+  sourceEpoch: z
+    .string()
+    .regex(/^(0|[1-9][0-9]*)$/)
+    .nullable()
+    .default(null),
   versionId: uuid,
   key: z.string().min(1).max(256),
   kind: z.enum(StudioResourceKind),
@@ -119,6 +125,13 @@ export const buddyStudioExportSchema = z.object({
   ),
   outputSizeInBytes: bytes.nullable(),
   outputContentType: z.string().nullable(),
+  subtitlePath: path.nullable().default(null),
+  subtitleChecksum: z.preprocess(
+    (value) => (typeof value === 'string' ? value.replace(/^\\x/, '') : value),
+    sha.nullable().default(null),
+  ),
+  subtitleSizeInBytes: bytes.nullable().default(null),
+  subtitleRemovedAt: date.nullable().default(null),
   resultAssetId: uuid.nullable(),
   privacy: json.nullable(),
   publishedAt: date.nullable(),
@@ -152,7 +165,7 @@ export type BuddyStudioSnapshot = z.infer<typeof buddyStudioSchema>;
 export const buddyStudioPaths = (project: BuddyStudioProject) => [
   ...project.imports.map((row) => row.path),
   ...project.generated.map((row) => row.path),
-  ...project.exports.flatMap((row) => (row.outputPath ? [row.outputPath] : [])),
+  ...project.exports.flatMap((row) => [row.outputPath, row.subtitlePath].filter((path): path is string => !!path)),
 ];
 
 /** Studio documents are a library-level collection; an item or album never pulls unrelated projects into view. */
@@ -301,6 +314,28 @@ export const readBuddyStudioProject = (manifest: BuddyManifest, projectId: strin
     )
       throw new Error('Buddy Studio retained resource binding changed');
   for (const row of project.exports) {
+    const seal = sidecarSealOf(row.settings);
+    if (seal) {
+      const revision = revisions.get(row.revision)!;
+      const derived = sealStudioSidecar(
+        revision.envelope.graph as Record<string, unknown>,
+        { revisionDigest: row.revisionDigest, manifestDigest: seal.manifestDigest, engineDigest: seal.engineDigest },
+        { inPoint: seal.inPoint, outPoint: seal.outPoint },
+      );
+      if (
+        canonicalJson(derived) !== canonicalJson(seal) ||
+        row.engineDigest !== seal.engineDigest ||
+        !row.subtitlePath ||
+        row.subtitleRemovedAt ||
+        row.subtitleChecksum !== seal.expectedSrtSha256 ||
+        String(row.subtitleSizeInBytes) !== seal.sizeInBytes ||
+        files.get(row.subtitlePath)?.sha256 !== seal.expectedSrtSha256 ||
+        String(files.get(row.subtitlePath)?.size) !== seal.sizeInBytes ||
+        row.sources.some((source) => source.assetId && (!source.ownerId || source.sourceEpoch === null))
+      )
+        throw new Error('Buddy Studio required subtitle binding changed');
+    } else if (row.subtitlePath || row.subtitleChecksum || row.subtitleSizeInBytes !== null || row.subtitleRemovedAt)
+      throw new Error('Buddy Studio unexpected subtitle binding');
     if (
       revisions.get(row.revision)?.digest !== row.revisionDigest ||
       row.sources.some((source) => source.versionId !== row.id) ||

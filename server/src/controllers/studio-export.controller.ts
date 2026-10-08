@@ -1,4 +1,17 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -94,5 +107,36 @@ export class StudioExportController {
     @Next() next: NextFunction,
   ) {
     await sendFile(res, next, () => this.service.download(auth, id), this.logger);
+  }
+  @Get('exports/:id/subtitle')
+  @FileResponse()
+  @Authenticated()
+  @OriginalTransfer()
+  @Endpoint({
+    summary: 'Download the owner-private SRT sibling',
+    description:
+      'Available only for a published sealed pair with current source access, source epochs and session privacy. Supports one byte range. No public subtitle grant.',
+    history: history(),
+  })
+  async downloadStudioExportSubtitle(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Headers('range') range: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store, no-transform');
+    res.setHeader('Vary', 'Cookie, Authorization, Range');
+    const output = await this.service.subtitle(auth, id, range);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (output.range) {
+      res.status(206);
+      res.setHeader('Content-Range', output.range);
+    }
+    return new StreamableFile(output.stream, {
+      type: 'application/x-subrip; charset=utf-8',
+      length: output.length,
+      disposition: 'attachment; filename="captions.srt"',
+    });
   }
 }

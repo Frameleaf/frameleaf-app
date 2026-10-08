@@ -13095,6 +13095,15 @@ export type StudioExportVersionDto = {
     /** Library sources the result was made from */
     sourceCount: number;
     state: StudioExportVersionState;
+    /** Owner-private sibling. Never contains text, server paths or a public grant */
+    subtitle?: {
+        available: boolean;
+        codec: Codec;
+        cueCount: number;
+        required: true;
+        sha256: string;
+        sizeInBytes: string;
+    } | null;
     /** The version number, once published */
     version: number | null;
 };
@@ -23966,9 +23975,10 @@ export function claimRenderOperation({ xFrameleafWorkerSession, renderWorkerClai
 /**
  * Read a verified whole-export artifact under the current claim
  */
-export function readRenderArtifact({ chunkKey, id, sequence, xFrameleafWorkerSession, xRenderClaimToken }: {
+export function readRenderArtifact({ chunkKey, id, role, sequence, xFrameleafWorkerSession, xRenderClaimToken }: {
     chunkKey: string;
     id: string;
+    role?: "media" | "subtitle";
     sequence: number;
     xFrameleafWorkerSession: string;
     xRenderClaimToken: string;
@@ -23977,7 +23987,8 @@ export function readRenderArtifact({ chunkKey, id, sequence, xFrameleafWorkerSes
         status: 200;
         data: Blob;
     }>(`/render-workers/operations/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(sequence)}${QS.query(QS.explode({
-        chunkKey
+        chunkKey,
+        role
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
@@ -23989,10 +24000,11 @@ export function readRenderArtifact({ chunkKey, id, sequence, xFrameleafWorkerSes
 /**
  * Upload a whole-export artifact
  */
-export function uploadRenderArtifact({ checksum, chunkKey, id, sequence, sizeInBytes, xFrameleafWorkerSession, xRenderClaimToken, body }: {
+export function uploadRenderArtifact({ checksum, chunkKey, id, role, sequence, sizeInBytes, xFrameleafWorkerSession, xRenderClaimToken, body }: {
     checksum: string;
     chunkKey: string;
     id: string;
+    role?: "media" | "subtitle";
     sequence: number;
     sizeInBytes: string;
     xFrameleafWorkerSession: string;
@@ -24005,6 +24017,7 @@ export function uploadRenderArtifact({ checksum, chunkKey, id, sequence, sizeInB
     }>(`/render-workers/operations/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(sequence)}${QS.query(QS.explode({
         checksum,
         chunkKey,
+        role,
         sizeInBytes
     }))}`, {
         ...opts,
@@ -25587,6 +25600,19 @@ export function downloadStudioExport({ id }: {
         status: 200;
         data: Blob;
     }>(`/studio/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Download the owner-private SRT sibling
+ */
+export function downloadStudioExportSubtitle({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/exports/${encodeURIComponent(id)}/subtitle`, {
         ...opts
     }));
 }
@@ -30852,7 +30878,8 @@ export enum StudioExportQuality {
 }
 export enum StudioExportSubtitleMode {
     Burn = "burn",
-    Off = "off"
+    Off = "off",
+    Sidecar = "sidecar"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",
@@ -30860,6 +30887,9 @@ export enum StudioExportVersionState {
     Published = "published",
     Failed = "failed",
     Cancelled = "cancelled"
+}
+export enum Codec {
+    Srt = "srt"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",

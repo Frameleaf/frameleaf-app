@@ -15,10 +15,16 @@ export async function receiveRenderArtifact(
   input: Readable,
   expected: { checksum: string; sizeInBytes: string },
   check: ArtifactAccessCheck,
-  commit: (artifact: RenderArtifact) => Promise<boolean>,
+  commit: (artifact: RenderArtifact) => Promise<boolean | 'duplicate'>,
+  options: { allowEmpty?: boolean } = {},
 ): Promise<boolean> {
   const size = Number(expected.sizeInBytes);
-  if (!Number.isSafeInteger(size) || size <= 0 || !/^[a-f\d]{64}$/i.test(expected.checksum)) {
+  if (
+    !Number.isSafeInteger(size) ||
+    size < 0 ||
+    (size === 0 && !options.allowEmpty) ||
+    !/^[a-f\d]{64}$/i.test(expected.checksum)
+  ) {
     throw new BadRequestException('Invalid artifact size or SHA-256');
   }
   await check();
@@ -68,8 +74,9 @@ export async function receiveRenderArtifact(
     // Independently open and hash the actual regular file before recording completion.
     const verified = await openRenderArtifact(folder, artifact, check);
     verified.destroy();
-    accepted = await commit(artifact);
-    return accepted;
+    const outcome = await commit(artifact);
+    accepted = outcome === true;
+    return accepted || outcome === 'duplicate';
   } finally {
     // pipeline may reject before an asynchronous open settles. Close before unlinking so a late
     // open cannot recreate a partial after cleanup, including when the input disconnects.
@@ -87,11 +94,15 @@ export async function openRenderArtifact(
   folder: string,
   artifact: RenderArtifact,
   check: ArtifactAccessCheck,
+  options: { publishedName?: string; start?: number; end?: number; checkEachChunk?: boolean } = {},
 ): Promise<Readable> {
   await check();
   if (
     dirname(resolve(artifact.outputPath)) !== resolve(folder) ||
-    !/^[a-f\d-]{36}\.artifact$/.test(basename(artifact.outputPath))
+    (options.publishedName
+      ? basename(artifact.outputPath) !== options.publishedName ||
+        !/^(?:[a-f\d-]{36}|[a-f\d]{64})\.srt$/.test(options.publishedName)
+      : !/^[a-f\d-]{36}\.artifact$/.test(basename(artifact.outputPath)))
   ) {
     throw new BadRequestException('Artifact is not server-staged');
   }
@@ -122,13 +133,17 @@ export async function openRenderArtifact(
       throw new BadRequestException('Artifact SHA-256 does not match');
     }
     await check();
-    const source = file.createReadStream({ start: 0, autoClose: true });
+    const source = file.createReadStream({
+      start: options.start ?? 0,
+      ...(options.end !== undefined && { end: options.end }),
+      autoClose: true,
+    });
     const stream = Readable.from(
       (async function* () {
         let checkedAt = Date.now();
         try {
           for await (const chunk of source) {
-            if (Date.now() - checkedAt >= 1000) {
+            if (options.checkEachChunk || Date.now() - checkedAt >= 1000) {
               await check();
               checkedAt = Date.now();
             }

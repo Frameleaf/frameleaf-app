@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { prepareSidecarPlan, resolveEffectiveTrackStates, serializeSrt } from '#studio-subtitle-sidecar';
-import { buildStudioSidecarSemanticPlan } from 'src/utils/studio-subtitle-sidecar.js';
+import { buildStudioSidecarSemanticPlan, sealStudioSidecar, sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 const fps = 30_000 / 1001;
 const track = (id: string, order = 0, extra = {}) => ({ id, order, visible: true, ...extra });
@@ -47,6 +47,30 @@ function graph() {
   };
 }
 describe('shared durable-sidecar semantic producer only', () => {
+  it('binds the immutable server seal to actual ordered bytes, graph, revision, manifest and engine', () => {
+    const input = graph();
+    const binding = { revisionDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64), engineDigest: 'c'.repeat(64) };
+    const seal = sealStudioSidecar(input, binding, { inPoint: 30, outPoint: 90 });
+    const expected =
+      '1\n00:00:00,000 --> 00:00:00,667\nCafé 東京\nsecond line\n\n2\n00:00:01,335 --> 00:00:02,002\nTail cue';
+    expect(seal).toMatchObject({
+      ...binding,
+      required: true,
+      codec: 'srt',
+      cueCount: 2,
+      zeroCue: false,
+      sizeInBytes: String(Buffer.byteLength(expected)),
+      expectedSrtSha256: createHash('sha256').update(expected).digest('hex'),
+      cadence: { num: 30_000, den: 1001 },
+      inPoint: 30,
+      outPoint: 90,
+    });
+    expect(sidecarSealOf({ subtitleMode: 'sidecar', subtitleSeal: seal })).toEqual(seal);
+    expect(() => sidecarSealOf({ subtitleMode: 'sidecar' })).toThrow();
+    expect(() => sidecarSealOf({ subtitleMode: 'burn', subtitleSeal: seal })).toThrow();
+    expect(() => sidecarSealOf({ subtitleMode: 'sidecar', subtitleSeal: { ...seal, cueCount: 0 } })).toThrow();
+    expect(() => sealStudioSidecar({ ...input, compositions: [{ id: 'nested' }] }, binding)).toThrow();
+  });
   it('matches independently authored whole/subrange 30000/1001 bytes and preserves graph', () => {
     const input = graph(),
       before = JSON.stringify(input);

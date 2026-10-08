@@ -411,13 +411,56 @@ test(
 test("synchronous executor release failure still closes every private media response", async (t) => {
   const f = await fixture(t);
   let mediaUrl;
-  const result = await f.run(async ({ engineInputs, registerRelease }) => {
-    mediaUrl = engineInputs.input.media[0].url;
-    registerRelease(() => {
-      throw new Error("SYNCHRONOUS_RELEASE_FAILURE");
-    });
-    return { accepted: true }; // HTTP contract fixture; never asserts publication authority.
-  });
-  assert.equal(result.status, "completed");
+  await assert.rejects(
+    f.run(async ({ engineInputs, registerRelease }) => {
+      mediaUrl = engineInputs.input.media[0].url;
+      registerRelease(() => {
+        throw new Error("SYNCHRONOUS_RELEASE_FAILURE");
+      });
+      return { accepted: true }; // HTTP contract fixture; never asserts publication authority.
+    }),
+    /SYNCHRONOUS_RELEASE_FAILURE/,
+  );
   await assert.rejects(fetch(mediaUrl, { signal: AbortSignal.timeout(1000) }));
+});
+
+test("failed measurement plus failed cleanup retains the primary failure without falsely settling released ownership", async (t) => {
+  const f = await fixture(t);
+  const primary = new Error("PRIMARY_MEASUREMENT_FAILURE");
+  await assert.rejects(
+    f.run(async ({ registerRelease }) => {
+      registerRelease(() => {
+        throw new Error("CLEANUP_INCOMPLETE");
+      });
+      throw primary;
+    }),
+    (error) => error === primary,
+  );
+  assert.equal(
+    f.requests.some(
+      (request) =>
+        request.path.endsWith("/fail") || request.path.endsWith("/cancel-ack"),
+    ),
+    false,
+  );
+});
+
+test("cancel with rejected release still closes private media and never claims released:true", async (t) => {
+  const f = await fixture(t, { cancelAt: 4 });
+  let url;
+  await assert.rejects(
+    f.run(async ({ engineInputs, registerRelease, heartbeat }) => {
+      url = engineInputs.input.media[0].url;
+      registerRelease(() => {
+        throw new Error("CANCEL_RELEASE_FAILED");
+      });
+      await heartbeat();
+    }),
+    /CANCEL_RELEASE_FAILED/,
+  );
+  await assert.rejects(fetch(url, { signal: AbortSignal.timeout(1000) }));
+  assert.equal(
+    f.requests.some((request) => request.path.endsWith("/cancel-ack")),
+    false,
+  );
 });

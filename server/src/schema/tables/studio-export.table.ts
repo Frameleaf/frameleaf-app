@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique } from '@frameleaf/sql-tools';
+import { Check, Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
@@ -35,6 +35,11 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 @Index({ columns: ['state', 'updatedAt'] })
 @Unique({ columns: ['renderOperationId'] })
 @Unique({ columns: ['projectId', 'version'] })
+@Check({
+  name: 'studio_export_version_subtitle_identity_check',
+  expression:
+    '("subtitlePath" IS NULL AND "subtitleChecksum" IS NULL AND "subtitleSizeInBytes" IS NULL) OR ("subtitlePath" IS NOT NULL AND "subtitleChecksum" IS NOT NULL AND "subtitleSizeInBytes" IS NOT NULL AND octet_length("subtitleChecksum")=32 AND "subtitleSizeInBytes">=0)',
+})
 @Table('studio_export_version')
 export class StudioExportVersionTable {
   @PrimaryGeneratedUuidV7Column()
@@ -84,6 +89,19 @@ export class StudioExportVersionTable {
 
   @Column({ nullable: true })
   engineDigest!: string | null;
+
+  /** Independently verified required SRT sibling; NULL means a legacy/non-Sidecar output. */
+  @Column({ nullable: true })
+  subtitlePath!: string | null;
+
+  @Column({ type: 'bytea', nullable: true })
+  subtitleChecksum!: Buffer | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  subtitleSizeInBytes!: Int8Writable | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  subtitleRemovedAt!: Timestamp | null;
 
   @Column({ nullable: true })
   outputPath!: string | null;
@@ -143,8 +161,13 @@ export class StudioExportVersionTable {
  * deletion of the source and of its owner.
  */
 @Index({ columns: ['assetId'] })
+@Check({ name: 'studio_export_version_source_epoch_check', expression: '"sourceEpoch" IS NULL OR "sourceEpoch">=0' })
 @Table('studio_export_version_source')
 export class StudioExportVersionSourceTable {
+  /** Captured local source incarnation, never refreshed by publication or restore. */
+  @Column({ type: 'bigint', nullable: true })
+  sourceEpoch!: Int8Writable | null;
+
   @ForeignKeyColumn(() => StudioExportVersionTable, {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',

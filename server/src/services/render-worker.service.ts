@@ -9,7 +9,9 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
+import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
 import type { DestinationHealthProvider } from 'src/utils/render-admission.js';
 import {
   RenderWorkerAdmissionDto,
@@ -106,6 +108,7 @@ import {
 import { RenderArtifact, openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
 import { sameTimeBase } from 'src/utils/studio-export-contract.js';
 import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
+import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 /** A session lives half a day; a worker that is still there re-admits with fresh evidence. */
 export const RENDER_WORKER_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -636,7 +639,7 @@ export class RenderWorkerService {
    * Resolve the session header on a worker request. Expired, revoked and unknown credentials all
    * get the same answer. The check on the worker's status is what makes revocation immediate.
    */
-  async authenticate(sessionToken: string | undefined): Promise<AuthenticatedRenderWorker> {
+  async authenticate(sessionToken: string | undefined, touch = true): Promise<AuthenticatedRenderWorker> {
     if (!sessionToken) {
       throw new UnauthorizedException('Worker session required');
     }
@@ -655,8 +658,10 @@ export class RenderWorkerService {
       throw new UnauthorizedException('Worker session invalid');
     }
 
-    await this.repository.touchSession(session.id);
-    await this.repository.markSeen(worker.id);
+    if (touch) {
+      await this.repository.touchSession(session.id);
+      await this.repository.markSeen(worker.id);
+    }
     return authenticated;
   }
 
@@ -1030,21 +1035,28 @@ export class RenderWorkerService {
       return { accepted: true, refusal: null };
     }
 
-    const accepted = await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
-      operationId: operation.id,
-      sequence: dto.sequence,
-      chunkKey: dto.chunkKey,
-      inputDigest: dto.inputDigest,
-      historyDigest: dto.historyDigest,
-      configDigest: dto.configDigest,
-      seed: dto.seed,
-      timebase: dto.timebase,
-      startTicks: dto.startTicks,
-      endTicks: dto.endTicks,
-      prerollTicks: dto.prerollTicks ?? '0',
-      requiresSequentialContext: dto.requiresSequentialContext ?? false,
-      claimToken: dto.claimToken,
-    });
+    const accepted = await this.operations.upsertCheckpoint(
+      operation.id,
+      dto.claimToken,
+      {
+        operationId: operation.id,
+        sequence: dto.sequence,
+        chunkKey: dto.chunkKey,
+        inputDigest: dto.inputDigest,
+        historyDigest: dto.historyDigest,
+        configDigest: dto.configDigest,
+        seed: dto.seed,
+        timebase: dto.timebase,
+        startTicks: dto.startTicks,
+        endTicks: dto.endTicks,
+        prerollTicks: dto.prerollTicks ?? '0',
+        requiresSequentialContext: dto.requiresSequentialContext ?? false,
+        claimToken: dto.claimToken,
+      },
+      ...(sidecarSealOf(operation.settings)
+        ? [(tx: Transaction<DB>, paths: string[]) => this.studioExports.retireArtifacts(tx, operation, paths)]
+        : []),
+    );
 
     if (accepted && existing) {
       let restart = dto.sequence;
@@ -1055,21 +1067,28 @@ export class RenderWorkerService {
       // The re-planned chunk itself is pending again; everything else from the restart is invalid.
       if (restart < dto.sequence) {
         await this.operations.invalidateCheckpointsFrom(operation.id, restart);
-        await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
-          operationId: operation.id,
-          sequence: dto.sequence,
-          chunkKey: dto.chunkKey,
-          inputDigest: dto.inputDigest,
-          historyDigest: dto.historyDigest,
-          configDigest: dto.configDigest,
-          seed: dto.seed,
-          timebase: dto.timebase,
-          startTicks: dto.startTicks,
-          endTicks: dto.endTicks,
-          prerollTicks: dto.prerollTicks ?? '0',
-          requiresSequentialContext: dto.requiresSequentialContext ?? false,
-          claimToken: dto.claimToken,
-        });
+        await this.operations.upsertCheckpoint(
+          operation.id,
+          dto.claimToken,
+          {
+            operationId: operation.id,
+            sequence: dto.sequence,
+            chunkKey: dto.chunkKey,
+            inputDigest: dto.inputDigest,
+            historyDigest: dto.historyDigest,
+            configDigest: dto.configDigest,
+            seed: dto.seed,
+            timebase: dto.timebase,
+            startTicks: dto.startTicks,
+            endTicks: dto.endTicks,
+            prerollTicks: dto.prerollTicks ?? '0',
+            requiresSequentialContext: dto.requiresSequentialContext ?? false,
+            claimToken: dto.claimToken,
+          },
+          ...(sidecarSealOf(operation.settings)
+            ? [(tx: Transaction<DB>, paths: string[]) => this.studioExports.retireArtifacts(tx, operation, paths)]
+            : []),
+        );
       } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
         await this.operations.invalidateCheckpointsFrom(operation.id, dto.sequence + 1);
       }
@@ -1088,46 +1107,91 @@ export class RenderWorkerService {
     input: Readable,
   ): Promise<RenderWorkerWriteResultDto> {
     const context = await this.artifactContext(sessionToken, operationId, claimToken);
-    if (sequence !== 0 || context.operation.status === MediaOperationStatus.Validating) {
-      throw new BadRequestException('Only a pending whole-export artifact can be uploaded');
-    }
-    const checkpoints = await this.operations.getCheckpoints(operationId);
-    if (checkpoints[0]?.inputDigest !== context.inputDigest) {
-      throw new BadRequestException('Artifact sources do not match the current claim');
-    }
+    if (sequence !== 0 || context.operation.status === MediaOperationStatus.Validating)
+      throw new BadRequestException('Only a whole-export artifact can be uploaded');
+    const role = dto.role ?? 'media';
+    const seal = sidecarSealOf(context.operation.settings);
     if (
-      checkpoints.length !== 1 ||
-      checkpoints[0].sequence !== 0 ||
-      checkpoints[0].chunkKey !== dto.chunkKey ||
-      checkpoints[0].state !== MediaOperationCheckpointState.Pending
-    ) {
-      throw new BadRequestException('Artifact must match the pending whole-export checkpoint');
-    }
-    const check = async () => {
-      const current = await this.artifactContext(sessionToken, operationId, claimToken);
-      if (await this.enforceRunningLimits(current.worker.id, current.operation, dto.sizeInBytes)) {
-        throw new ForbiddenException('Artifact exceeds the operation limits');
-      }
+      role === 'subtitle' &&
+      (!seal || dto.checksum.toLowerCase() !== seal.expectedSrtSha256 || dto.sizeInBytes !== seal.sizeInBytes)
+    )
+      throw new BadRequestException('Subtitle must match its server-sealed meaning');
+    const folder = this.studioExports.stagingFolder(context.operation);
+    const current = async (settle = true) => {
+      const live = await this.artifactContext(sessionToken, operationId, claimToken, settle);
+      if (live.inputDigest !== context.inputDigest) throw new ForbiddenException('Artifact sources changed');
+      return live;
     };
-    const accepted = await receiveRenderArtifact(
-      this.studioExports.stagingFolder(context.operation),
-      input,
-      dto,
-      check,
-      async (artifact) => {
-        await check();
-        return this.operations.completeCheckpoint(
+    let installedPath: string | undefined;
+    let accepted: boolean;
+    try {
+      accepted = await this.operations.withExportArtifact(
+        {
           operationId,
-          claimToken!,
-          {
-            ...artifact,
-            sequence,
-            chunkKey: dto.chunkKey,
-          },
-          true,
-        );
-      },
-    );
+          claimToken: claimToken!,
+          workerId: context.worker.id,
+          sessionId: context.session.id,
+          chunkKey: dto.chunkKey,
+          inputDigest: context.inputDigest,
+        },
+        async (checkpoint, install) => {
+          const descriptors: RenderArtifact[] = [];
+          if (checkpoint.outputPath && checkpoint.outputChecksum && checkpoint.sizeInBytes !== null)
+            descriptors.push({
+              outputPath: checkpoint.outputPath,
+              outputChecksum: checkpoint.outputChecksum,
+              sizeInBytes: Number(checkpoint.sizeInBytes),
+            });
+          if (checkpoint.subtitlePath && checkpoint.subtitleChecksum && checkpoint.subtitleSizeInBytes !== null)
+            descriptors.push({
+              outputPath: checkpoint.subtitlePath,
+              outputChecksum: checkpoint.subtitleChecksum,
+              sizeInBytes: Number(checkpoint.subtitleSizeInBytes),
+            });
+          const storedPath = role === 'media' ? checkpoint.outputPath : checkpoint.subtitlePath;
+          const storedChecksum = role === 'media' ? checkpoint.outputChecksum : checkpoint.subtitleChecksum;
+          const storedSize = role === 'media' ? checkpoint.sizeInBytes : checkpoint.subtitleSizeInBytes;
+          const duplicate =
+            !!storedPath &&
+            storedChecksum?.toString('hex') === dto.checksum.toLowerCase() &&
+            String(storedSize) === dto.sizeInBytes;
+          const total =
+            descriptors.reduce((sum, file) => sum + file.sizeInBytes, 0) + (duplicate ? 0 : Number(dto.sizeInBytes));
+          if (!Number.isSafeInteger(total)) throw new BadRequestException('Artifact budget is not finite');
+          const check = async (settle = true) => {
+            const live = await current(settle);
+            if (await this.enforceRunningLimits(live.worker.id, live.operation, String(total), settle))
+              throw new ForbiddenException('Artifact exceeds the shared operation limits');
+          };
+          for (const descriptor of descriptors) {
+            const verified = await openRenderArtifact(folder, descriptor, check);
+            verified.destroy();
+          }
+          return receiveRenderArtifact(
+            folder,
+            input,
+            dto,
+            check,
+            (artifact) => {
+              installedPath = artifact.outputPath;
+              return install(role, artifact, () => check(false));
+            },
+            { allowEmpty: role === 'subtitle' && seal?.zeroCue === true },
+          );
+        },
+      );
+    } catch (error) {
+      // A lost COMMIT acknowledgement cannot justify unlinking the file. The existing
+      // durable deletion job takes its path lock and counts ALL references first.
+      if (installedPath) {
+        try {
+          await this.studioExports.retireArtifacts(undefined, context.operation, [installedPath]);
+        } catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], 'Artifact settlement is unresolved', { cause: cleanupError });
+        }
+      }
+      throw error;
+    }
     return { accepted, refusal: null };
   }
 
@@ -1142,18 +1206,23 @@ export class RenderWorkerService {
     if (sequence !== 0) {
       throw new BadRequestException('Only a whole-export artifact can be read');
     }
-    const artifact = await this.completedArtifact(operation, inputDigest, dto.chunkKey);
+    const artifact = await this.completedArtifact(operation, inputDigest, dto.chunkKey, dto.role ?? 'media');
     const stream = await openRenderArtifact(this.studioExports.stagingFolder(operation), artifact, async () => {
       await this.artifactContext(sessionToken, operationId, claimToken);
     });
     return { stream, size: artifact.sizeInBytes, checksum: artifact.outputChecksum.toString('hex') };
   }
 
-  private async artifactContext(sessionToken: string | undefined, operationId: string, claimToken: string | undefined) {
+  private async artifactContext(
+    sessionToken: string | undefined,
+    operationId: string,
+    claimToken: string | undefined,
+    touch = true,
+  ) {
     if (!claimToken) {
       throw new NotFoundException('Media operation not found');
     }
-    const { worker, session } = await this.authenticate(sessionToken);
+    const { worker, session } = await this.authenticate(sessionToken, touch);
     const operation = await this.requireClaimed(worker.id, operationId, claimToken);
     if (
       operation.kind !== MediaOperationKind.StudioExport ||
@@ -1173,13 +1242,14 @@ export class RenderWorkerService {
     }
     await this.studioExports.verifyRenderSources(operation, resolved.studio.entries);
     const inputDigest = artifactInputDigestOf(operation, resolved.studio);
-    return { operation, worker, inputDigest };
+    return { operation, worker, session, inputDigest };
   }
 
   private async completedArtifact(
     operation: MediaOperation,
     inputDigest: string,
     chunkKey?: string,
+    role: 'media' | 'subtitle' = 'media',
   ): Promise<RenderArtifact> {
     const checkpoints = await this.operations.getCheckpoints(operation.id);
     const checkpoint = checkpoints[0];
@@ -1197,6 +1267,23 @@ export class RenderWorkerService {
     ) {
       throw new BadRequestException('Export has no matching server-verified whole-export artifact');
     }
+    const seal = sidecarSealOf(operation.settings);
+    if (
+      seal &&
+      (!checkpoint.subtitlePath ||
+        !checkpoint.subtitleChecksum ||
+        checkpoint.subtitleChecksum.toString('hex') !== seal.expectedSrtSha256 ||
+        String(checkpoint.subtitleSizeInBytes) !== seal.sizeInBytes)
+    )
+      throw new BadRequestException('Export has no matching sealed subtitle artifact');
+    if (role === 'subtitle') {
+      if (!seal) throw new BadRequestException('Export has no subtitle role');
+      return {
+        outputPath: checkpoint.subtitlePath!,
+        outputChecksum: checkpoint.subtitleChecksum!,
+        sizeInBytes: Number(checkpoint.subtitleSizeInBytes),
+      };
+    }
     return {
       outputPath: checkpoint.outputPath,
       outputChecksum: checkpoint.outputChecksum,
@@ -1211,6 +1298,13 @@ export class RenderWorkerService {
       await this.artifactContext(sessionToken, operation.id, operation.claimToken!);
     });
     stream.destroy();
+    if (sidecarSealOf(operation.settings)) {
+      const subtitle = await this.completedArtifact(operation, current.inputDigest, undefined, 'subtitle');
+      const verified = await openRenderArtifact(this.studioExports.stagingFolder(operation), subtitle, async () => {
+        await this.artifactContext(sessionToken, operation.id, operation.claimToken!);
+      });
+      verified.destroy();
+    }
     return artifact;
   }
 
@@ -1321,6 +1415,14 @@ export class RenderWorkerService {
           sizeInBytes: String(artifact.sizeInBytes),
           contentType,
           remoteRef: null,
+          ...(sidecarSealOf(operation.settings) && {
+            subtitle: await this.completedArtifact(
+              operation,
+              (await this.artifactContext(sessionToken, operation.id, dto.claimToken)).inputDigest,
+              undefined,
+              'subtitle',
+            ),
+          }),
         },
         true,
       );
@@ -1894,6 +1996,7 @@ export class RenderWorkerService {
     workerId: string,
     operation: MediaOperation,
     reportedOutputBytes: string | undefined,
+    settle = true,
   ): Promise<RenderWorkerRefusalReason | null> {
     const [worker, instanceLimit, userLimit] = await Promise.all([
       this.repository.getWorker(workerId),
@@ -1919,6 +2022,7 @@ export class RenderWorkerService {
       return null;
     }
 
+    if (!settle) return decision.reason;
     await this.operations.fail(operation.id, operation.claimToken!, {
       error: `Stopped by the server: ${decision.reason}`,
       errorCode: decision.reason,

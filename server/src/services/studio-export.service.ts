@@ -2,14 +2,18 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
+import { basename, dirname, join, sep } from 'node:path';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DB } from 'src/schema/index.js';
+import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -80,6 +84,7 @@ import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { RenderOutputRequest, evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
+import { openRenderArtifact } from 'src/utils/render-artifact.js';
 import {
   StudioExportContract,
   StudioExportImageContractSchema,
@@ -114,6 +119,7 @@ import {
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
   STUDIO_DOLBY_TOOLS_ID,
@@ -121,6 +127,7 @@ import {
   checkStudioRights,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
+import { sealStudioSidecar, sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 import { StudioTimingError } from 'src/utils/studio-timing.js';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
@@ -368,6 +375,29 @@ export class StudioExportService {
       authorized.manifest.entries,
       settings,
     );
+    let subtitleSeal;
+    if (dto.subtitleMode === 'sidecar') {
+      if (dto.format !== 'mp4-h264' || dto.color !== 'preserve')
+        throw new BadRequestException('Sidecar requires local MP4/H.264 output');
+      try {
+        subtitleSeal = sealStudioSidecar(
+          authorized.envelope.graph as Record<string, unknown>,
+          {
+            revisionDigest: authorized.revision.digest,
+            manifestDigest: authorized.manifest.digest,
+            engineDigest: authorized.envelope.engineRevision,
+          },
+          dto.range,
+        );
+      } catch {
+        throw new ConflictException({
+          code: 'studio_export_sidecar_unsupported',
+          message: 'The caption timeline cannot be exported as a durable SRT',
+        });
+      }
+      contract.subtitles = subtitleSeal;
+    }
+    const sealedSettings = { ...settings, ...(subtitleSeal && { subtitleSeal }) };
     const { operation, version } = await this.repository.createWithRender(
       {
         ownerId: auth.user.id,
@@ -398,11 +428,12 @@ export class StudioExportService {
           // and audio its result must have. Publication holds the result to the contract.
           timing,
           contract,
+          ...(subtitleSeal && { engineDigest: subtitleSeal.engineDigest }),
           ...(options.retainInProject && { retain: 'project' }),
           // FL-162: Smooth motion is its own job on the published video, never part of this render.
           ...(smoothMotion && { smoothMotion }),
         },
-        settings,
+        settings: sealedSettings,
         estimate: null,
         totalUnits: null,
         maxAttempts: 3,
@@ -413,7 +444,7 @@ export class StudioExportService {
         revision: authorized.revision.revision,
         revisionDigest: authorized.revision.digest,
         destination: dto.destination,
-        settings,
+        settings: sealedSettings,
       },
     );
 
@@ -586,6 +617,59 @@ export class StudioExportService {
       cacheControl: CacheControl.PrivateWithoutCache,
     });
   }
+  /** The SRT sibling never has a public capability. Every read boundary refreshes session privacy. */
+  async subtitle(auth: AuthDto, id: string, range?: string) {
+    if (!auth.session?.id || auth.apiKey || auth.sharedLink) throw new NotFoundException('Studio export not found');
+    const unavailable = () => new NotFoundException('Studio export not found');
+    const read = <T>(action: (version: StudioExportVersion) => Promise<T>) =>
+      this.repository.withSubtitleAccess(id, auth.user.id, auth.session!.id, action).catch(() => {
+        throw unavailable();
+      });
+    const version = await read((version) => Promise.resolve(version));
+    const path = version.subtitlePath!;
+    if (!isManagedStudioExportPath({ ...version, outputPath: path })) throw unavailable();
+    const size = Number(version.subtitleSizeInBytes);
+    let start = 0,
+      end = size - 1;
+    if (range !== undefined) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match || !size || (!match[1] && !match[2])) throw new HttpException('Range not satisfiable', 416);
+      if (match[1]) {
+        start = Number(match[1]);
+        end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start)
+          throw new HttpException('Range not satisfiable', 416);
+      } else {
+        const suffix = Number(match[2]);
+        if (!Number.isSafeInteger(suffix) || suffix <= 0) throw new HttpException('Range not satisfiable', 416);
+        start = Math.max(0, size - suffix);
+      }
+    }
+    const check = async () =>
+      read((current) => {
+        if (
+          current.subtitlePath !== path ||
+          !current.subtitleChecksum?.equals(version.subtitleChecksum!) ||
+          String(current.subtitleSizeInBytes) !== String(version.subtitleSizeInBytes)
+        )
+          throw unavailable();
+        return Promise.resolve();
+      });
+    const stream = await openRenderArtifact(
+      dirname(path),
+      { outputPath: path, outputChecksum: version.subtitleChecksum!, sizeInBytes: size },
+      check,
+      { publishedName: basename(path), ...(size && { start, end }), checkEachChunk: true },
+    ).catch(() => {
+      throw unavailable();
+    });
+    return {
+      stream,
+      size,
+      length: size ? end - start + 1 : 0,
+      range: range === undefined ? null : `bytes ${start}-${end}/${size}`,
+    };
+  }
 
   /**
    * Save a result that was kept with its project to the owner's library (FL-194).
@@ -678,6 +762,23 @@ export class StudioExportService {
   stagingFolder(operation: Pick<MediaOperation, 'ownerId' | 'id'>): string {
     return studioExportStagingFolder(operation.ownerId, operation.id);
   }
+  /** Retirement is admitted in the same replan transaction; FileDelete still rechecks every reference. */
+  async retireArtifacts(
+    tx: Transaction<DB> | undefined,
+    operation: Pick<MediaOperation, 'ownerId' | 'id'>,
+    paths: string[],
+  ): Promise<void> {
+    const folder = this.stagingFolder(operation);
+    for (const path of paths) {
+      if (!isInsideFolder(folder, path) || !/\/[a-f0-9-]{36}\.artifact$/.test(path))
+        throw new BadRequestException('Paired retirement path is not server-staged');
+    }
+    if (paths.length > 0) {
+      const intent = { name: JobName.FileDelete, data: { files: paths } } as const;
+      if (tx) await this.jobs.queueInTransaction(tx, intent);
+      else await this.jobs.queue(intent);
+    }
+  }
 
   /**
    * A render worker claimed an export: record what it may read — the provenance publication checks
@@ -690,7 +791,16 @@ export class StudioExportService {
     const recorded = await this.repository.recordRenderClaim(operation.id, {
       workerId: claim.workerId,
       engineDigest: claim.engineDigest,
-      sources: claim.entries.map((entry) => studioExportSourceOf(entry)),
+      sources: claim.entries.map((entry) => {
+        const source = studioExportSourceOf(entry);
+        return {
+          ...source,
+          sourceEpoch:
+            (operation.snapshot.sourceEpochs as { assetId: string; epoch: string }[] | undefined)?.find(
+              (row) => row.assetId === source.assetId,
+            )?.epoch ?? null,
+        };
+      }),
     });
     if (!recorded) {
       this.logger.warn(`Studio export render ${operation.id} was claimed but its version is no longer rendering`);
@@ -729,7 +839,14 @@ export class StudioExportService {
   async onRenderCompleted(
     operation: MediaOperation,
     workerId: string,
-    output: { path: string; checksum: string; sizeInBytes: string; contentType: string; remoteRef?: string | null },
+    output: {
+      path: string;
+      checksum: string;
+      sizeInBytes: string;
+      contentType: string;
+      remoteRef?: string | null;
+      subtitle?: RenderArtifact;
+    },
     requireActiveClaim = false,
   ): Promise<{ accepted: boolean }> {
     if (!isStudioExportContentType(output.contentType)) {
@@ -753,6 +870,7 @@ export class StudioExportService {
         sizeInBytes: Number(output.sizeInBytes),
         contentType: output.contentType,
         remoteRef: output.remoteRef ?? null,
+        subtitle: output.subtitle,
       },
       (version) => ({
         ownerId: version.ownerId,
@@ -775,6 +893,7 @@ export class StudioExportService {
           smoothMotion: parseStudioExportSmoothMotion(
             (operation.snapshot as { smoothMotion?: unknown } | null)?.smoothMotion,
           ),
+          sourceEpochs: operation.snapshot.sourceEpochs,
           ...(isRetainedInProject(operation.snapshot) && { retain: 'project' }),
         } satisfies StudioExportPublishSnapshot as unknown as Record<string, unknown>,
         settings: version.settings,
@@ -974,7 +1093,7 @@ export class StudioExportService {
         return;
       }
       if (prepared) {
-        await this.restoreStaged(prepared);
+        await this.restoreStaged(prepared, operation, claimToken);
       }
       if (error instanceof StudioExportRefusal && error.cancels) {
         await this.cancelVersion(version, error.code, error.message);
@@ -1051,6 +1170,31 @@ export class StudioExportService {
       throw new PublishError('studio_export_output_invalid', 'The render this export came from is gone');
     }
     const staging = this.stagingFolder({ ownerId: version.ownerId, id: version.renderOperationId });
+    const seal = sidecarSealOf(version.settings);
+    if (seal) {
+      const derived = sealStudioSidecar(
+        (revision.envelope as { graph: Record<string, unknown> }).graph,
+        {
+          revisionDigest: version.revisionDigest,
+          manifestDigest: seal.manifestDigest,
+          engineDigest: seal.engineDigest,
+        },
+        { inPoint: seal.inPoint, outPoint: seal.outPoint },
+      );
+      if (
+        canonicalJson(derived) !== canonicalJson(seal) ||
+        canonicalJson(contract?.subtitles) !== canonicalJson(seal) ||
+        version.engineDigest !== seal.engineDigest ||
+        !version.subtitlePath ||
+        !version.subtitleChecksum ||
+        String(version.subtitleSizeInBytes) !== seal.sizeInBytes ||
+        version.subtitleChecksum.toString('hex') !== seal.expectedSrtSha256
+      )
+        throw new StudioExportRefusal(
+          'output-rejected',
+          'The required subtitle sibling has no matching immutable authority',
+        );
+    }
     const photo = isStudioPhotoFormat((version.settings as { format?: unknown }).format);
     if (photo && !contract?.image)
       throw new StudioExportRefusal('output-rejected', 'The still export has no matching image contract');
@@ -1065,6 +1209,44 @@ export class StudioExportService {
     const current = (await this.storage.checkFileExists(stagedPath)) ? stagedPath : finalPath;
     await this.verifyOutput(current, current === stagedPath ? staging : dirname(finalPath), version);
     await this.verifyContract(current, version, contract);
+    let pair: PreparedPublication['pair'];
+    if (seal) {
+      const subtitleFinalPath = studioExportProjectPath(version.ownerId, version.id, '.srt');
+      const files = [
+        {
+          stagedPath: version.outputPath!,
+          currentPath: current,
+          finalPath,
+          checksum: version.outputChecksum!,
+          size: String(version.outputSizeInBytes),
+        },
+        {
+          stagedPath: version.subtitlePath!,
+          currentPath: (await this.storage.checkFileExists(version.subtitlePath!))
+            ? version.subtitlePath!
+            : subtitleFinalPath,
+          finalPath: subtitleFinalPath,
+          checksum: version.subtitleChecksum!,
+          size: seal.sizeInBytes,
+        },
+      ];
+      pair = [];
+      for (const file of files) {
+        await assertOwnerRestorePath([staging, dirname(file.finalPath)], file.currentPath);
+        const evidence = await captureOwnerRestoreFile(file.currentPath, async (path) =>
+          (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+        );
+        if (
+          !evidence.identity ||
+          evidence.sha256 !== file.checksum.toString('hex') ||
+          String(evidence.size) !== file.size
+        )
+          throw new StudioExportRefusal('output-rejected', 'A required paired file is missing or changed');
+        // Never overwrite another inode, even if it reports the same digest.
+        if (file.currentPath !== file.finalPath) await assertOwnerRestoreFile(file.finalPath, null);
+        pair.push({ ...file, identity: evidence.identity });
+      }
+    }
     const nsfwHiding = await this.nsfwHiding();
     let sanitized: { checksum: Buffer; sizeInBytes: number } | undefined;
     if (photo && contract?.image) {
@@ -1097,7 +1279,7 @@ export class StudioExportService {
       }
     }
 
-    if (current !== finalPath) {
+    if (!pair && current !== finalPath) {
       this.storage.mkdirSync(dirname(finalPath));
       assertExecutionActive();
       try {
@@ -1110,6 +1292,7 @@ export class StudioExportService {
 
     return {
       versionId: version.id,
+      pair,
       ...(sanitized && { sanitized }),
       stagedPath,
       finalPath,
@@ -1251,27 +1434,111 @@ export class StudioExportService {
     claimToken: string,
     prepared: PreparedPublication,
   ): Promise<StudioExportPublished> {
-    return settleStudioExportPublication(this.repository, version.id, operation.id, () =>
-      this.repository.publish(
-        {
-          versionId: version.id,
-          operationId: operation.id,
-          claimToken,
-          ownerId: version.ownerId,
-          sources: prepared.sources,
-          expectedScope: prepared.expectedScope,
-          retainInProject: prepared.retainInProject,
-          nsfwHiding: prepared.nsfwHiding,
-          path: prepared.finalPath,
-          checksum: prepared.sanitized?.checksum ?? Buffer.from(version.outputChecksum!),
-          sizeInBytes: prepared.sanitized?.sizeInBytes ?? Number(version.outputSizeInBytes),
-          contentType: prepared.contentType,
-          assetType: prepared.assetType,
-          originalFileName: prepared.originalFileName,
+    const syncDirectories = async (from: string, to: string) => {
+      const source = dirname(from);
+      const folders = new Set([source]);
+      // Retry directories may already exist after an interrupted mkdir; persist their entries too.
+      for (let folder = dirname(to); ; folder = dirname(folder)) {
+        folders.add(folder);
+        if (folder === source || source.startsWith(folder + sep) || folder === dirname(folder)) break;
+      }
+      for (const folder of folders) {
+        const directory = await open(folder, constants.O_RDONLY);
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+        }
+      }
+    };
+    if (prepared.pair)
+      prepared.files = {
+        paths: prepared.pair.flatMap((file) => [file.stagedPath, file.finalPath]),
+        move: async () => {
+          for (const file of prepared.pair!) {
+            await assertOwnerRestoreFile(file.currentPath, file.identity, file.currentPath === file.finalPath);
+            const measured = await captureOwnerRestoreFile(file.currentPath, async (path) =>
+              (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+            );
+            await assertOwnerRestoreFile(file.currentPath, file.identity, file.currentPath === file.finalPath);
+            if (
+              !measured.identity ||
+              measured.sha256 !== file.checksum.toString('hex') ||
+              String(measured.size) !== file.size
+            )
+              throw new StudioExportRefusal('output-rejected', 'A required paired file changed after authority waits');
+            if (file.currentPath !== file.finalPath) {
+              await assertOwnerRestoreFile(file.finalPath, null);
+              this.storage.mkdirSync(dirname(file.finalPath));
+              await this.storage.rename(file.currentPath, file.finalPath);
+              file.currentPath = file.finalPath;
+            }
+            await syncDirectories(file.stagedPath, file.finalPath);
+            await assertOwnerRestoreFile(file.finalPath, file.identity, true);
+          }
         },
-        (tx, assetId) => this.schedulePublishedMetadata(tx, assetId),
-        (tx, published, label) => this.schedulePublishedNotification(tx, published, label),
-      ),
+        rollback: async () => {
+          const errors: unknown[] = [];
+          for (const file of prepared.pair!.toReversed()) {
+            try {
+              if (file.currentPath === file.stagedPath) continue;
+              await assertOwnerRestoreFile(file.currentPath, file.identity, true);
+              await assertOwnerRestoreFile(file.stagedPath, null);
+              this.storage.mkdirSync(dirname(file.stagedPath));
+              await this.storage.rename(file.currentPath, file.stagedPath);
+              file.currentPath = file.stagedPath;
+              await syncDirectories(file.finalPath, file.stagedPath);
+              await assertOwnerRestoreFile(file.stagedPath, file.identity, true);
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          if (errors.length > 0) throw new AggregateError(errors, 'Paired file recovery is pending');
+        },
+      };
+    return settleStudioExportPublication(
+      this.repository,
+      version.id,
+      operation.id,
+      () =>
+        this.repository.publish(
+          {
+            versionId: version.id,
+            operationId: operation.id,
+            claimToken,
+            ownerId: version.ownerId,
+            sources: prepared.sources,
+            expectedScope: prepared.expectedScope,
+            retainInProject: prepared.retainInProject,
+            nsfwHiding: prepared.nsfwHiding,
+            path: prepared.finalPath,
+            checksum: prepared.sanitized?.checksum ?? Buffer.from(version.outputChecksum!),
+            sizeInBytes: prepared.sanitized?.sizeInBytes ?? Number(version.outputSizeInBytes),
+            contentType: prepared.contentType,
+            assetType: prepared.assetType,
+            originalFileName: prepared.originalFileName,
+            ...(prepared.pair && {
+              subtitle: {
+                outputPath: prepared.pair[1].finalPath,
+                outputChecksum: Buffer.from(prepared.pair[1].checksum),
+                sizeInBytes: Number(prepared.pair[1].size),
+              },
+              files: prepared.files,
+            }),
+          },
+          (tx, assetId) => this.schedulePublishedMetadata(tx, assetId),
+          (tx, published, label) => this.schedulePublishedNotification(tx, published, label),
+        ),
+      prepared.pair
+        ? (committed) =>
+            committed.subtitlePath === prepared.pair![1].finalPath &&
+            committed.subtitleChecksum?.equals(prepared.pair![1].checksum) === true &&
+            String(committed.subtitleSizeInBytes) === prepared.pair![1].size &&
+            !committed.subtitleRemovedAt &&
+            committed.outputChecksum?.equals(prepared.pair![0].checksum) === true &&
+            String(committed.outputSizeInBytes) === prepared.pair![0].size &&
+            (committed.outputPath === prepared.pair![0].finalPath || !!committed.resultAssetId)
+        : undefined,
     );
   }
 
@@ -1430,7 +1697,19 @@ export class StudioExportService {
   }
 
   /** Undo the move of an attempt that did not publish, so the retry and retention find the file. */
-  private async restoreStaged(prepared: PreparedPublication): Promise<void> {
+  private async restoreStaged(
+    prepared: PreparedPublication,
+    operation?: MediaOperation,
+    claimToken?: string,
+  ): Promise<void> {
+    if (prepared.files) {
+      if (!operation || !claimToken) throw new Error('Paired recovery requires the publication claim');
+      await this.repository.restorePublicationFiles(
+        { versionId: prepared.versionId, operationId: operation.id, claimToken, sources: prepared.sources },
+        prepared.files,
+      );
+      return;
+    }
     if (prepared.finalPath === prepared.stagedPath) {
       return;
     }
@@ -1548,25 +1827,29 @@ export class StudioExportService {
 
     for (const version of await this.repository.listRemovableOutputs()) {
       try {
-        await this.repository.markOutputRemoved(version.id, async (current) => {
-          if (!current.outputPath || !isManagedStudioExportPath({ ...current, outputPath: current.outputPath }))
-            throw new Error('Studio export cleanup path is not a declared managed file');
-          await assertOwnerRestorePath(
-            [StorageCore.getFolderLocation(StorageFolder.Exports, current.ownerId)],
-            current.outputPath,
-          );
-          const evidence = await captureOwnerRestoreFile(current.outputPath, async (path) =>
-            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
-          );
-          if (
-            evidence.identity &&
-            ((current.outputChecksum && evidence.sha256 !== current.outputChecksum.toString('hex')) ||
-              (current.outputSizeInBytes !== null && evidence.size !== BigInt(current.outputSizeInBytes)))
-          )
-            throw new Error('Studio export cleanup file identity changed');
-          await assertOwnerRestoreFile(current.outputPath, evidence.identity);
-          await this.storage.unlink(current.outputPath);
-        });
+        await this.repository.markOutputRemoved(
+          version.id,
+          async (current) => {
+            const path = version.role === 'subtitle' ? current.subtitlePath : current.outputPath;
+            const checksum = version.role === 'subtitle' ? current.subtitleChecksum : current.outputChecksum;
+            const size = version.role === 'subtitle' ? current.subtitleSizeInBytes : current.outputSizeInBytes;
+            if (!path || !isManagedStudioExportPath({ ...current, outputPath: path }))
+              throw new Error('Studio export cleanup path is not a declared managed file');
+            await assertOwnerRestorePath([StorageCore.getFolderLocation(StorageFolder.Exports, current.ownerId)], path);
+            const evidence = await captureOwnerRestoreFile(path, async (path) =>
+              (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+            );
+            if (
+              evidence.identity &&
+              ((checksum && evidence.sha256 !== checksum.toString('hex')) ||
+                (size !== null && evidence.size !== BigInt(size)))
+            )
+              throw new Error('Studio export cleanup file identity changed');
+            await assertOwnerRestoreFile(path, evidence.identity);
+            await this.storage.unlink(path);
+          },
+          version.role,
+        );
       } catch (error) {
         this.logger.warn(`Could not remove Studio export ${version.id}; its cleanup will retry: ${error}`);
       }
@@ -1671,7 +1954,9 @@ export class StudioExportService {
       sourceCount?: number;
     };
     const hidden = !!privacy.lockReason && !getLockedOwnerId(auth);
-    const settings = version.settings as StudioExportVersionDto['settings'];
+    const { subtitleSeal: _privateSubtitleSeal, ...publicSettings } = version.settings;
+    const settings = publicSettings as StudioExportVersionDto['settings'];
+    const seal = sidecarSealOf(version.settings);
     return {
       id: version.id,
       projectId: version.projectId,
@@ -1692,6 +1977,21 @@ export class StudioExportService {
       sourceCount: privacy.sourceCount ?? sources.filter((source) => isLibrarySource(source)).length,
       sizeInBytes: hidden || version.outputSizeInBytes === null ? null : String(version.outputSizeInBytes),
       contentType: version.outputContentType,
+      ...(seal && {
+        subtitle: hidden
+          ? null
+          : {
+              codec: 'srt' as const,
+              required: true as const,
+              cueCount: seal.cueCount,
+              sizeInBytes: seal.sizeInBytes,
+              sha256: seal.expectedSrtSha256,
+              available:
+                version.state === StudioExportVersionState.Published &&
+                !!version.subtitlePath &&
+                !version.subtitleRemovedAt,
+            },
+      }),
       errorCode: version.errorCode,
       error: version.error,
       createdAt: asIso(version.createdAt)!,
@@ -1702,6 +2002,15 @@ export class StudioExportService {
 }
 
 type PreparedPublication = {
+  pair?: {
+    stagedPath: string;
+    currentPath: string;
+    finalPath: string;
+    checksum: Buffer;
+    size: string;
+    identity: string;
+  }[];
+  files?: { paths: readonly string[]; move: () => Promise<void>; rollback: () => Promise<void> };
   sanitized?: { checksum: Buffer; sizeInBytes: number };
   versionId: string;
   stagedPath: string;
@@ -1732,6 +2041,7 @@ export const settleStudioExportPublication = async (
   versionId: string,
   operationId: string,
   attempt: () => Promise<StudioExportPublished>,
+  matches?: (committed: StudioExportVersion) => boolean,
 ): Promise<StudioExportPublished> => {
   try {
     return await attempt();
@@ -1740,7 +2050,11 @@ export const settleStudioExportPublication = async (
       throw error;
     }
     const committed = await repository.getById(versionId);
-    if (committed?.state === StudioExportVersionState.Published && committed.publishOperationId === operationId) {
+    if (
+      committed?.state === StudioExportVersionState.Published &&
+      committed.publishOperationId === operationId &&
+      (!matches || matches(committed))
+    ) {
       const privacy = (committed.privacy ?? {}) as unknown as StudioExportPublished['privacy'];
       return { status: 'published', version: committed, privacy, createdAssetId: null, reusedAssetId: null };
     }

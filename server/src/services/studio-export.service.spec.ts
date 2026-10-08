@@ -87,6 +87,7 @@ const entry = (overrides: Partial<StudioAuthorizedEntry> = {}): StudioAuthorized
 });
 
 const sourceRow = (overrides: Partial<StudioExportVersionSource> = {}): StudioExportVersionSource => ({
+  sourceEpoch: null,
   versionId: VERSION,
   key: `library-asset:${CLIP}`,
   kind: StudioResourceKind.LibraryAsset,
@@ -599,7 +600,14 @@ describe(StudioExportService.name, () => {
       const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
       expect(job.settings).not.toHaveProperty('subtitleMode');
       expect(version.settings).toEqual(job.settings);
-      for (const subtitleMode of ['sidecar', 'embedded', null, 10, {}]) {
+      expect(StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode: 'sidecar' }).success).toBe(
+        true,
+      );
+      expect(
+        StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode: 'sidecar', subtitleSeal: {} })
+          .success,
+      ).toBe(false);
+      for (const subtitleMode of ['embedded', null, 10, {}]) {
         expect(StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode }).success).toBe(false);
       }
     });

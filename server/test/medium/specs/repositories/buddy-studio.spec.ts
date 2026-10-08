@@ -45,6 +45,7 @@ import {
 } from 'src/utils/studio-export.js';
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
+import { sealStudioSidecar } from 'src/utils/studio-subtitle-sidecar.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -290,6 +291,113 @@ describe('Buddy Studio library fidelity', () => {
     }
     return promoted.version;
   };
+
+  it.each([false, true])(
+    'captures and restores the complete semantic pair (zero cue: %s) and refuses a missing required sibling',
+    async (zeroCue) => {
+      const project = await db
+        .insertInto('studio_project')
+        .values({ ownerId, name: 'Semantic pair backup', currentRevision: 1 })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const graph = {
+        metadata: { fps: 24 },
+        timeline: {
+          tracks: [{ id: 'captions', kind: 'video', order: 0, visible: true }],
+          items: zeroCue
+            ? [
+                {
+                  id: 'title',
+                  type: 'text',
+                  trackId: 'captions',
+                  from: 0,
+                  durationInFrames: 24,
+                  text: 'ORDINARY TITLE',
+                },
+              ]
+            : [
+                {
+                  id: 'captions',
+                  type: 'subtitle',
+                  trackId: 'captions',
+                  from: 0,
+                  durationInFrames: 24,
+                  source: { type: 'subtitle-import', fileName: 'authored.srt', format: 'srt', importedAt: 0 },
+                  cues: [{ id: 'one', startSeconds: 0, endSeconds: 1, text: 'Original words' }],
+                },
+              ],
+          transitions: [],
+          keyframes: [],
+        },
+      };
+      const saved = await revision(project.id, 1, graph);
+      const expected = zeroCue ? '' : '1\n00:00:00,000 --> 00:00:01,000\nOriginal words';
+      const seal = sealStudioSidecar(graph, {
+        revisionDigest: saved.digest,
+        manifestDigest: 'b'.repeat(64),
+        engineDigest: 'c'.repeat(64),
+      });
+      expect(seal.expectedSrtSha256).toBe(hash(expected));
+      const output = await file('paired.mp4', 'Actual backup media fixture, not encoder qualification');
+      const subtitle = await file('paired.srt', expected);
+      const exported = await db
+        .insertInto('studio_export_version')
+        .values({
+          ownerId,
+          projectId: project.id,
+          revision: 1,
+          revisionDigest: saved.digest,
+          state: StudioExportVersionState.Published,
+          version: 1,
+          scope: StudioExportScope.Project,
+          destination: MediaOperationDestination.Local,
+          settings: { subtitleMode: 'sidecar', subtitleSeal: seal },
+          engineDigest: seal.engineDigest,
+          outputPath: output.path,
+          outputChecksum: Buffer.from(output.sha256, 'hex'),
+          outputSizeInBytes: output.size,
+          outputContentType: 'video/mp4',
+          subtitlePath: subtitle.path,
+          subtitleChecksum: Buffer.from(subtitle.sha256, 'hex'),
+          subtitleSizeInBytes: String(subtitle.size),
+          publishedAt: new Date(),
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const manifest = await capture();
+      expect(manifest.studio!.projects[project.id].files.map((file) => file.path)).toEqual(
+        expect.arrayContaining([output.path, subtitle.path]),
+      );
+      const missing = structuredClone(manifest);
+      missing.studio!.projects[project.id].files = missing.studio!.projects[project.id].files.filter(
+        (file) => file.path !== subtitle.path,
+      );
+      expect(() => readBuddyStudioProject(missing, project.id)).toThrow();
+      const bad = structuredClone(manifest);
+      bad.studio!.projects[project.id].exports[0].subtitleChecksum = 'f'.repeat(64);
+      expect(() => readBuddyStudioProject(bad, project.id)).toThrow();
+      await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
+      const restore = await worker(manifest);
+      await restore.run();
+      expect((await restore.operations.getOfKind(restore.operation.id, MediaOperationKind.BuddyRestore))?.status).toBe(
+        MediaOperationStatus.Completed,
+      );
+      const restored = await db
+        .selectFrom('studio_export_version')
+        .selectAll()
+        .where('id', '=', exported.id)
+        .executeTakeFirstOrThrow();
+      expect(restored.subtitlePath).not.toBe(subtitle.path);
+      expect(await readFile(restored.subtitlePath!, 'utf8')).toBe(expected);
+      expect(hash(await readFile(restored.outputPath!))).toBe(output.sha256);
+      expect(restored.settings).toEqual(exported.settings);
+      const unlink = vi.fn();
+      expect(
+        (await new PhysicalFileRepository(db).deleteUnreferencedPath(restored.subtitlePath!, unlink)).deleted,
+      ).toBe(false);
+      expect(unlink).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ['keep', false],

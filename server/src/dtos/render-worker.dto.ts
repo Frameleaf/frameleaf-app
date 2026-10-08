@@ -289,10 +289,12 @@ const RenderWorkerArtifactSchema = z
     chunkKey: z.string().min(1).max(256),
     checksum: z.string().regex(/^[\da-f]{64}$/i, 'SHA-256 hex digest'),
     sizeInBytes: BigIntString,
+    role: z.enum(['media', 'subtitle']).optional(),
   })
+  .strict()
   .meta({ id: 'RenderWorkerArtifactDto' });
 
-const RenderWorkerArtifactReadSchema = RenderWorkerArtifactSchema.pick({ chunkKey: true }).meta({
+const RenderWorkerArtifactReadSchema = RenderWorkerArtifactSchema.pick({ chunkKey: true, role: true }).meta({
   id: 'RenderWorkerArtifactReadDto',
 });
 

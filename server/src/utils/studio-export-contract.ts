@@ -37,6 +37,7 @@ import {
   rational,
   tryParseRational,
 } from 'src/utils/rational-time.js';
+import { type StudioSidecarSeal, StudioSidecarSealSchema } from 'src/utils/studio-subtitle-sidecar.js';
 import {
   type StudioSourceTiming,
   StudioTimingError,
@@ -103,6 +104,7 @@ export type StudioExportImageContract = z.infer<typeof StudioExportImageContract
 export class StudioExportImageError extends Error {}
 
 export type StudioExportContract = {
+  subtitles?: StudioSidecarSeal;
   image?: StudioExportImageContract;
   /** Main-timeline frame selection; the output is rebased to zero at this exact cadence. */
   range?: StudioExportRange & { cadence: string };
@@ -501,6 +503,7 @@ export const findStudioExportRangeMismatch = (
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
   const record = asRecord(value);
   const video = asRecord(record.video);
+  if (record.subtitles !== undefined && !StudioSidecarSealSchema.safeParse(record.subtitles).success) return null;
   if (record.image !== undefined && !StudioExportImageContractSchema.safeParse(record.image).success) return null;
   if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {
     return null;

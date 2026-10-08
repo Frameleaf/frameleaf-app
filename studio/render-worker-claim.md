@@ -84,7 +84,8 @@ Upload the actual encoded bytes with
 `PUT /render-workers/operations/{id}/artifacts/0` and `application/octet-stream`.
 Keep the worker session in the existing `x-frameleaf-worker-session` header and the current claim
 in `x-render-claim-token`; neither credential belongs in the URL. Query metadata is `chunkKey`,
-`checksum` (SHA-256 hex), and `sizeInBytes` (positive decimal safe integer). The server streams with
+`checksum` (SHA-256 hex), `sizeInBytes` (decimal safe integer), and optional `role` (`media` or
+`subtitle`, default `media`). Media requires a positive size. The server streams with
 backpressure, enforces the declared exact byte count and existing operation output/wall-clock
 limits, and uses an exclusive private generated partial filename. It flushes and atomically
 renames the file, independently validates actual bytes, then conditionally completes the pending
@@ -110,6 +111,46 @@ their established output protocol. No engine patch or capability flag is changed
 This is transport/recovery infrastructure. Edited float PQ/HLG rendering, native Main10 encoding,
 independently measured output PTS, multichannel order/layout, complete HDR metadata, real executor
 restart, reference-monitor and deployment/hardware qualification still need genuine evidence.
+
+## Sealed media and SRT pair (FL-105)
+
+`subtitleMode: "sidecar"` requests a required SRT sibling for the supported local MP4/H.264
+export with `color: "preserve"`. Unsupported timelines and unqualified worker profiles remain
+refused. The server seals the canonical cue content against the immutable revision, authorized
+manifest, engine revision and export range. The worker cannot supply new subtitle meaning or
+replace the seal. This transport does not enable embedded subtitles or expand codec, audio,
+container, HDR, provider or hardware support.
+
+Both roles use the same sequence-zero checkpoint and claim credentials. Upload media with the
+omitted/default role or `role=media`; upload the SRT with `role=subtitle`. Its declared SHA-256
+and size must exactly match the seal. Only a sealed zero-cue SRT permits size zero. Installing
+one role leaves the pair pending; completion requires both matching files. The serialized
+checkpoint authority rechecks the claim after waits, verifies existing files, and applies the
+shared operation output budget to the artifacts. An identical retry counts its stored role once;
+both stored and incoming bytes are still verified. A different checksum or size receives no
+retry exemption. Recovery GET accepts the same optional role;
+subtitle recovery requires the sealed pair. Legacy media-only exports retain their role default.
+
+Validation and publication recheck the current authorized sources and independently hash both
+files. Pair moves occur under publication authority and path locks. A failed move attempts to restore
+both roles and retains an unresolved recovery failure; a lost commit acknowledgement is settled
+against durable version identity before any reverse move. Cleanup counts both roles' references and pins. Reusing an existing Library media
+asset retains the export's required subtitle sibling.
+
+`GET /studio/exports/{id}/subtitle` serves that sibling to the current owner session. API keys
+and shared links do not grant access. The version, original source epochs, current source access,
+Locked/sensitive session privacy and any Library result are checked again. The endpoint supports
+one inclusive byte range and uses private/no-store/no-transform caching. The verified descriptor
+is retained during delivery; current authority is checked before each body chunk. Revocation
+stops later chunks but cannot retract bytes already delivered or queued by HTTP transport.
+
+Schema migration `2100000002963-StudioSubtitleSidecarArtifacts` appends nullable paired fields;
+legacy rows remain media-only. Buddy metadata includes both roles and source epochs for sealed
+pairs. A missing required sibling refuses the pair rather than importing a partial export.
+
+The local repository and stream controls exercise authority, rollback, cleanup and test bytes.
+They are not an actual encoded-pair worker, measured profile or deployment receipt. Admission
+requires fresh evidence for the exact coherent engine and server source.
 
 ## Explicit PQ mastering display
 

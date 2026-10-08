@@ -266,7 +266,23 @@
       resolution: StudioExportResolution.$720P,
     }),
   );
-  const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
+  const verdict = $derived(
+    evaluateStudioRender(renderEvidence, destination, {
+      format,
+      color,
+      resolution,
+      ...(!photo && { subtitleMode, quality }),
+    }),
+  );
+  const sidecarAvailable = $derived(
+    evaluateStudioRender(renderEvidence, destination, {
+      format,
+      color,
+      resolution,
+      subtitleMode: StudioExportSubtitleMode.Sidecar,
+      quality,
+    }).supported,
+  );
   const needsMastering = $derived(
     color === StudioExportColor.Hdr10 || (color === StudioExportColor.Preserve && declarePqMastering),
   );
@@ -426,6 +442,9 @@
           <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
             <option value={StudioExportSubtitleMode.Burn}>{$t('frameleaf_studio_export_subtitles_burn')}</option>
             <option value={StudioExportSubtitleMode.Off}>{$t('frameleaf_studio_export_subtitles_off')}</option>
+            <option value={StudioExportSubtitleMode.Sidecar} disabled={!sidecarAvailable}
+              >{$t('frameleaf_studio_export_subtitles_sidecar')}</option
+            >
           </select>
         </label>
       {/if}

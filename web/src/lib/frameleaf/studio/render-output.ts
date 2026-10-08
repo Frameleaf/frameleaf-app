@@ -13,6 +13,8 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportSubtitleMode,
+  StudioExportQuality,
   type StudioRenderCandidateDto,
 } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
@@ -25,6 +27,8 @@ export type StudioRenderSettings = {
   format: StudioExportFormat;
   color: StudioExportColor;
   resolution: StudioExportResolution;
+  subtitleMode?: StudioExportSubtitleMode;
+  quality?: StudioExportQuality;
 };
 
 export type StudioRenderVerdict = { supported: true } | { supported: false; refusal: StudioRenderRefusal };
@@ -86,7 +90,21 @@ export const evaluateStudioRender = (
     return { supported: false, refusal: 'insufficient-memory' };
   }
   // The API derives this list with requiredOutput/provesOutput, including exact writer/container proof.
-  const withOutput = withMemory.filter((candidate) => candidate.outputFormats.includes(settings.format));
+  const sidecar = settings.subtitleMode === StudioExportSubtitleMode.Sidecar;
+  if (
+    sidecar &&
+    (settings.format !== StudioExportFormat.Mp4H264 ||
+      settings.color !== StudioExportColor.Preserve ||
+      settings.resolution !== StudioExportResolution.$720P ||
+      (settings.quality ?? StudioExportQuality.High) !== StudioExportQuality.High)
+  ) {
+    return { supported: false, refusal: 'codec-unavailable' };
+  }
+  const withOutput = withMemory.filter(
+    (candidate) =>
+      candidate.outputFormats.includes(settings.format) &&
+      (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)),
+  );
   if (withOutput.length === 0) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
