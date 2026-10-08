@@ -19,6 +19,24 @@ The older direct-stack catalog builder below is retained for existing release
 compatibility. New NAS installations use the Manager artifacts. No Manager
 digest is invented when publication is unavailable.
 
+Both builders emit a complete `unraid/` catalog directory: root `LICENSE`,
+`ca_profile.xml`, setup `README.md` and rendered `templates/*.xml`. Publish its
+contents to the public `Frameleaf/unraid-apps` repository's `main` branch; keep
+packaging source here. Manager output contains only the Manager template; merge
+its generated files into the catalog without removing independently qualified
+manual templates. Direct-stack output supplies Server and ML. Never publish the
+`.xml.in` source files or substitute floating image tags.
+
+Before publication, run `node --test packaging/nas/manager.test.cjs
+packaging/nas/build.test.cjs` with the workspace's YAML dependency available.
+Build against the actual signed release manifests, compare the generated diff,
+retain those manifests with the catalog, and verify each published raw
+`TemplateURL`, icon and support link. After meaningful XML changes, run Community
+Apps **Validate**, then **Scan**. Record those results and moderator acceptance
+separately; publication does not imply acceptance. The generated
+[Unraid setup guide](unraid/README.md) covers HTTPS/WebUI matching, custom storage,
+claiming the administrator, manual dependencies and recovery scope.
+
 `node packaging/nas/build.cjs RELEASE frameleaf-vX.Y.Z-N OUTPUT` builds TrueNAS Community app source and Unraid XML templates from one Frameleaf release. Before writing output it verifies version 3 release and NAS manifests, SHA256SUMS, asset hashes, all application image signatures, exact release attestations using committed `cosign.pub`, and the successful source build run. Install Cosign and server workspace dependencies; use `GITHUB_TOKEN` for authenticated reads when needed. Keep both manifests with packages and preserve digest references.
 
 These packages create a fresh canonical Frameleaf database on PostgreSQL 19 beta 4 with pgvector 0.8.7 and HNSW. Mount the database directory at `/var/lib/postgresql`; PostgreSQL writes its versioned data beneath it. An offline, read-only Immich 3.x export through stable 3.2.4 is a separate one-time import source. Never reuse an older PostgreSQL volume as the canonical database.

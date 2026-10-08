@@ -203,6 +203,13 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
       /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/,
     );
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
+    assert.equal(read('unraid/LICENSE'), fs.readFileSync(path.join(__dirname, '../../LICENSE'), 'utf8'));
+    assert(read('unraid/README.md').includes('PostgreSQL'));
+    for (const name of ['frameleaf-server', 'frameleaf-ml']) {
+      assert(read(`unraid/templates/${name}.xml`).includes(
+        `https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/${name}.xml`,
+      ));
+    }
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
     assert(values.includes(`19beta4-pgvector0.8.7@${digest(8)}`));
