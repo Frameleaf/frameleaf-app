@@ -399,7 +399,13 @@ describe(TrashService.name, () => {
         status: AssetStatus.Trashed,
         deletedAt: new Date(),
       });
-      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const fabricated = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const fabricatedReview = await sut.review(fabricated, { action: TrashReviewAction.Restore, ids: [asset.id] });
+      await expect(
+        sut.apply(fabricated, { action: TrashReviewAction.Restore, ids: [asset.id], token: fabricatedReview.token }),
+      ).rejects.toThrow('trash_owner_session_required');
+      const { session } = await ctx.newSession({ userId: user.id, pinExpiresAt: new Date(Date.now() + 60_000) });
+      const elevated = factory.auth({ user, session: { id: session.id, hasElevatedPermission: true } });
 
       const review = await sut.review(elevated, { action: TrashReviewAction.Restore, ids: [asset.id] });
 

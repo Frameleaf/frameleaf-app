@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -436,9 +436,17 @@ describe(AssetService.name, () => {
             ).resolves.toBeInstanceOf(ImmichFileResponse);
             await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
           }
-          expect(
-            (await request(http.getHttpServer()).get(`/assets/${asset.id}/original`).set(shareHeaders)).status,
-          ).toBe(400);
+          const deniedOriginal = await request(http.getHttpServer())
+            .get(`/assets/${asset.id}/original`)
+            .set(shareHeaders);
+          const missingOriginal = await request(http.getHttpServer())
+            .get(`/assets/${randomUUID()}/original`)
+            .set(shareHeaders);
+          // File transport conceals denied and absent originals with the same envelope.
+          expect(deniedOriginal.status).toBe(404);
+          expect(missingOriginal.status).toBe(404);
+          expect(deniedOriginal.body).toEqual(missingOriginal.body);
+          expect(deniedOriginal.body.message).toBe('Not Found');
           await expect(sut.downloadOriginal(shared, asset.id, {})).rejects.toThrow('access');
           // Removal must invalidate even an already-authenticated link's database entitlement.
           await sharedLinks.remove(link.id);
