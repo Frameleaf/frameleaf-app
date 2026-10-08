@@ -1,0 +1,373 @@
+--- a/src/runtime/composition-runtime/components/audio-playback-props.ts
++++ b/src/runtime/composition-runtime/components/audio-playback-props.ts
+@@ -11,6 +11,8 @@
+   trimBefore?: number
+   sourceFps?: number
+   volume?: number
++  /** Static track gain already included in volume; kept separate from clip automation. */
++  trackVolumeDb?: number
+   playbackRate?: number
+   isReversed?: boolean
+   reverseSourceEnd?: number
+--- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+@@ -54,6 +54,7 @@
+   trimBefore = 0,
+   sourceFps,
+   volume,
++  trackVolumeDb,
+   playbackRate,
+   isReversed,
+   reverseSourceEnd,
+@@ -123,6 +124,7 @@
+       sourceFps={sourceFps}
+       sourceStartOffsetSec={reversedPlayback ? 0 : sourceStartOffsetSec}
+       volume={volume}
++      trackVolumeDb={trackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed && !reversedPlayback}
+       reverseSourceEnd={reversedPlayback ? undefined : reverseSourceEnd}
+@@ -184,6 +186,7 @@
+   trimBefore = 0,
+   sourceFps,
+   volume = 0,
++  trackVolumeDb,
+   playbackRate = 1,
+   isReversed,
+   reverseSourceEnd,
+@@ -212,6 +215,7 @@
+     itemId,
+     liveGainItemIds,
+     volume,
++    trackVolumeDb,
+     muted,
+     durationInFrames,
+     audioFadeIn,
+@@ -411,6 +415,7 @@
+       trimBefore={trimBefore}
+       sourceFps={sourceFps}
+       volume={volume}
++      trackVolumeDb={trackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed}
+       reverseSourceEnd={reverseSourceEnd}
+@@ -448,6 +453,7 @@
+       sourceStartOffsetSec={decodedSource.sourceStartOffsetSec}
+       isComplete={decodedSource.isComplete}
+       volume={volume}
++      trackVolumeDb={trackVolumeDb}
+       playbackRate={playbackRate}
+       isReversed={isReversed}
+       reverseSourceEnd={reverseSourceEnd}
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -103,6 +103,7 @@
+     trimBefore = 0,
+     sourceFps,
+     volume = 0,
++    trackVolumeDb,
+     playbackRate = 1,
+     muted = false,
+     durationInFrames,
+@@ -137,6 +138,7 @@
+       itemId,
+       liveGainItemIds,
+       volume,
++      trackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -44,6 +44,7 @@
+   itemId,
+   liveGainItemIds,
+   volume = 0,
++  trackVolumeDb = 0,
+   muted = false,
+   durationInFrames,
+   audioFadeIn = 0,
+@@ -94,7 +95,7 @@
+   const itemKeyframes = contextKeyframes ?? storeKeyframes
+
+   const volumeKeyframes = getPropertyKeyframes(itemKeyframes, 'volume')
+-  const staticVolumeDb = preview?.volume ?? volume
++  const staticVolumeDb = preview?.volume ?? volume - trackVolumeDb
+   const effectiveVolumeDb =
+     volumeKeyframes.length > 0
+       ? interpolatePropertyValue(volumeKeyframes, frame, staticVolumeDb)
+@@ -127,7 +128,7 @@
+       useEqualPower: true,
+     })
+
+-  const linearVolume = Math.pow(10, effectiveVolumeDb / 20)
++  const linearVolume = Math.pow(10, (effectiveVolumeDb + trackVolumeDb) / 20)
+   const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier)
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+
+--- a/src/runtime/composition-runtime/components/item-content.tsx
++++ b/src/runtime/composition-runtime/components/item-content.tsx
+@@ -119,6 +119,8 @@
+ }): AudioPlaybackProps {
+   return {
+     itemId: item.id,
++    trackVolumeDb:
++      'trackVolumeDb' in item && typeof item.trackVolumeDb === 'number' ? item.trackVolumeDb : 0,
+     trimBefore,
+     volume,
+     playbackRate,
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -144,6 +144,7 @@
+     src,
+     itemId,
+     volume = 0,
++    trackVolumeDb,
+     playbackRate = 1,
+     isReversed = false,
+     reverseSourceEnd,
+@@ -183,6 +184,7 @@
+       itemId,
+       liveGainItemIds,
+       volume,
++      trackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+@@ -478,6 +480,7 @@
+       sourceFps,
+       sourceStartOffsetSec = 0,
+       volume = 0,
++      trackVolumeDb,
+       playbackRate = 1,
+       isReversed = false,
+       reverseSourceEnd,
+@@ -506,6 +509,7 @@
+         itemId,
+         liveGainItemIds,
+         volume,
++        trackVolumeDb,
+         muted,
+         durationInFrames,
+         audioFadeIn,
+@@ -727,6 +731,7 @@
+         sourceStartOffsetSec={playbackSourceStartOffsetSec}
+         isComplete={decodedSource.isComplete}
+         volume={volume}
++        trackVolumeDb={trackVolumeDb}
+         playbackRate={playbackRate}
+         isReversed={isReversed}
+         reverseSourceEnd={reverseSourceEnd}
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -40,6 +40,7 @@
+     audioBuffer,
+     itemId,
+     volume = 0,
++    trackVolumeDb,
+     playbackRate = 1,
+     isReversed = false,
+     reverseSourceEnd,
+@@ -83,6 +84,7 @@
+       itemId,
+       liveGainItemIds,
+       volume,
++      trackVolumeDb,
+       muted,
+       durationInFrames,
+       audioFadeIn,
+--- a/src/runtime/composition-runtime/compositions/main-composition.tsx
++++ b/src/runtime/composition-runtime/compositions/main-composition.tsx
+@@ -493,6 +493,7 @@
+                           trimBefore={segment.trimBefore}
+                           sourceFps={segment.sourceFps}
+                           volume={segment.volumeDb}
++                          trackVolumeDb={segment.trackVolumeDb}
+                           playbackRate={segment.playbackRate}
+                           isReversed={segment.isReversed}
+                           reverseSourceEnd={segment.reverseSourceEnd}
+@@ -523,6 +524,7 @@
+                           trimBefore={segment.trimBefore}
+                           sourceFps={segment.sourceFps}
+                           volume={segment.volumeDb}
++                          trackVolumeDb={segment.trackVolumeDb}
+                           playbackRate={segment.playbackRate}
+                           isReversed={segment.isReversed}
+                           reverseSourceEnd={segment.reverseSourceEnd}
+@@ -569,6 +571,7 @@
+                           trimBefore={segment.trimBefore}
+                           sourceFps={segment.sourceFps}
+                           volume={segment.volumeDb}
++                          trackVolumeDb={segment.trackVolumeDb}
+                           playbackRate={segment.playbackRate}
+                           isReversed={segment.isReversed}
+                           reverseSourceEnd={segment.reverseSourceEnd}
+@@ -593,6 +596,7 @@
+                           trimBefore={segment.trimBefore}
+                           sourceFps={segment.sourceFps}
+                           volume={segment.volumeDb}
++                          trackVolumeDb={segment.trackVolumeDb}
+                           playbackRate={segment.playbackRate}
+                           isReversed={segment.isReversed}
+                           reverseSourceEnd={segment.reverseSourceEnd}
+--- a/src/runtime/composition-runtime/utils/audio-scene.ts
++++ b/src/runtime/composition-runtime/utils/audio-scene.ts
+@@ -72,6 +72,7 @@
+   reverseSourceEnd?: number
+   sourceFps?: number
+   volumeDb: number
++  trackVolumeDb?: number
+   muted: boolean
+   audioFadeIn: number
+   audioFadeOut: number
+@@ -289,6 +290,7 @@
+       ),
+       sourceFps: item.sourceFps,
+       volumeDb: (item.volume ?? 0) + (item.trackVolumeDb ?? 0),
++      trackVolumeDb: item.trackVolumeDb,
+       muted: item.muted || !item.trackVisible,
+       audioFadeIn: item.audioFadeIn ?? 0,
+       audioFadeOut: item.audioFadeOut ?? 0,
+@@ -335,6 +337,7 @@
+       active.isReversed !== true &&
+       segment.isReversed !== true &&
+       Math.abs(active.volumeDb - segment.volumeDb) <= 0.0001 &&
++      active.trackVolumeDb === segment.trackVolumeDb &&
+       active.muted === segment.muted &&
+       active.audioPitchSemitones === segment.audioPitchSemitones &&
+       active.audioPitchCents === segment.audioPitchCents &&
+@@ -370,6 +373,7 @@
+       reverseSourceEnd: active.reverseSourceEnd,
+       sourceFps: active.sourceFps,
+       volumeDb: active.volumeDb,
++      trackVolumeDb: active.trackVolumeDb,
+       muted: active.muted,
+       audioFadeIn: active.audioFadeIn,
+       audioFadeOut: active.audioFadeOut,
+@@ -399,6 +403,7 @@
+       reverseSourceEnd: active.reverseSourceEnd,
+       sourceFps: active.sourceFps,
+       volumeDb: active.volumeDb,
++      trackVolumeDb: active.trackVolumeDb,
+       muted: active.muted,
+       audioFadeIn: active.audioFadeIn,
+       audioFadeOut: active.audioFadeOut,
+@@ -534,6 +539,7 @@
+           : undefined,
+       sourceFps: item.sourceFps,
+       volumeDb: (item.volume ?? 0) + (item.trackVolumeDb ?? 0),
++      trackVolumeDb: item.trackVolumeDb,
+       muted: item.muted || !item.trackVisible,
+       audioFadeIn: item.audioFadeIn ?? 0,
+       audioFadeOut: item.audioFadeOut ?? 0,
+@@ -591,6 +597,7 @@
+       active.isReversed !== true &&
+       segment.isReversed !== true &&
+       Math.abs(active.volumeDb - segment.volumeDb) <= 0.0001 &&
++      active.trackVolumeDb === segment.trackVolumeDb &&
+       active.muted === segment.muted &&
+       active.audioPitchSemitones === segment.audioPitchSemitones &&
+       active.audioPitchCents === segment.audioPitchCents &&
+@@ -632,6 +639,7 @@
+       reverseSourceEnd: active.reverseSourceEnd,
+       sourceFps: active.sourceFps,
+       volumeDb: active.volumeDb,
++      trackVolumeDb: active.trackVolumeDb,
+       muted: active.muted,
+       audioFadeIn: active.audioFadeIn,
+       audioFadeOut: active.audioFadeOut,
+@@ -667,6 +675,7 @@
+       reverseSourceEnd: active.reverseSourceEnd,
+       sourceFps: active.sourceFps,
+       volumeDb: active.volumeDb,
++      trackVolumeDb: active.trackVolumeDb,
+       muted: active.muted,
+       audioFadeIn: active.audioFadeIn,
+       audioFadeOut: active.audioFadeOut,
+--- /dev/null
++++ b/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
+@@ -0,0 +1,84 @@
++// @vitest-environment jsdom
++import { cleanup, renderHook } from '@testing-library/react'
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { VideoItem } from '@/types/timeline'
++import { useAudioPlaybackState } from './hooks/use-audio-playback-state'
++import { useVideoAudioState } from './video-audio-context'
++
++const state = vi.hoisted(() => ({
++  keyframes: undefined as ItemKeyframes | undefined,
++  preview: undefined as { volume: number } | undefined,
++}))
++vi.mock('@/runtime/composition-runtime/deps/player', async (original) => ({
++  ...(await original<object>()),
++  useSequenceContext: () => ({ localFrame: 15 }),
++  useClockPlaybackRate: () => 1,
++}))
++vi.mock('../hooks/use-player-compat', () => ({
++  useVideoConfig: () => ({ fps: 30 }),
++  useIsPlaying: () => true,
++}))
++vi.mock('@/runtime/composition-runtime/deps/stores', () => ({
++  usePlaybackStore: (select: (s: object) => unknown) =>
++    select({ volume: 0.5, muted: false, previewFrame: null }),
++  useGizmoStore: (select: (s: object) => unknown) =>
++    select({ activeGizmo: null, preview: { clip: { properties: state.preview } } }),
++  useCompositionsStore: (select: (s: object) => unknown) => select({ compositions: [] }),
++  useTimelineStore: (select: (s: object) => unknown) =>
++    select({
++      keyframes: state.keyframes ? [state.keyframes] : [],
++      items: [{ id: 'clip', trackId: 'audio' }],
++      tracks: [{ id: 'audio' }],
++    }),
++}))
++vi.mock('../contexts/keyframes-context', () => ({ useItemKeyframesFromContext: () => undefined }))
++vi.mock('./hooks/use-runtime-item-keyframes', () => ({
++  useRuntimeItemKeyframes: () => state.keyframes,
++}))
++afterEach(() => {
++  cleanup()
++  state.keyframes = undefined
++  state.preview = undefined
++})
++
++it.each(['static', 'keyframes', 'gizmo'] as const)(
++  'preserves the track fader with %s clip gain in both preview paths',
++  (mode) => {
++    const trackVolumeDb = -12
++    const clipDb = mode === 'static' ? -3 : mode === 'gizmo' ? -9 : -6
++    if (mode === 'keyframes')
++      state.keyframes = {
++        itemId: 'clip',
++        properties: [
++          {
++            property: 'volume',
++            keyframes: [
++              { id: 'a', frame: 0, value: -12, easing: 'linear' },
++              { id: 'b', frame: 30, value: 0, easing: 'linear' },
++            ],
++          },
++        ],
++      }
++    if (mode === 'gizmo') state.preview = { volume: -9 }
++    const clip = {
++      id: 'clip',
++      type: 'video',
++      durationInFrames: 60,
++      volume: -3,
++      trackVolumeDb,
++    } as VideoItem & { trackVolumeDb: number }
++    const { result } = renderHook(() => ({
++      audio: useAudioPlaybackState({
++        itemId: 'clip',
++        durationInFrames: 60,
++        volume: -3 + trackVolumeDb,
++        trackVolumeDb,
++      }).resolvedVolume,
++      video: useVideoAudioState(clip, false, []).audioVolume,
++    }))
++    const expected = 0.5 * 10 ** ((clipDb + trackVolumeDb) / 20)
++    expect(result.current.video).toBeCloseTo(expected, 8)
++    expect(result.current.audio).toBeCloseTo(expected, 8)
++  },
++)
