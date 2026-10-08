@@ -1,0 +1,59 @@
+<h2>Nested albums navigation scope</h2>
+<p class="subtitle">I found two album surfaces in the web app. The most likely target is the Albums page sidebar tree, then the global left nav.</p>
+
+<div class="cards">
+  <div class="card" data-choice="sidebar-tree" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:18px;min-height:320px">
+        <div style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fafafa">
+          <div style="font-size:12px;text-transform:uppercase;color:#777;margin:8px 0 10px">Global left nav</div>
+          <div style="padding:9px 12px;border-radius:0 999px 999px 0;background:#eef6ff;color:#1460aa;font-weight:600">Albums</div>
+          <div style="margin-left:18px;margin-top:10px;display:grid;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span>▸</span><span style="width:22px;height:22px;border-radius:4px;background:#d8d8d8"></span><span>Trips</span></div>
+            <div style="display:flex;align-items:center;gap:8px"><span>▸</span><span style="width:22px;height:22px;border-radius:4px;background:#d8d8d8"></span><span>Family</span></div>
+          </div>
+          <div style="font-size:12px;text-transform:uppercase;color:#777;margin:24px 0 10px">Albums page sidebar</div>
+          <div style="display:grid;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:0 999px 999px 0;background:#f0f6ff;color:#1460aa;font-weight:600"><span>▾</span><span style="width:22px;height:22px;border-radius:4px;background:#d8d8d8"></span><span>Trips</span></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:24px;padding:8px 12px;border-radius:0 999px 999px 0"><span style="width:22px;height:22px;border-radius:4px;background:#d8d8d8"></span><span>Disneyland</span></div>
+          </div>
+        </div>
+        <div style="border:1px solid #ddd;border-radius:8px;padding:14px;background:white">
+          <div style="font-size:22px;font-weight:700;margin-bottom:14px">Albums</div>
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+            <div style="aspect-ratio:1;border-radius:14px;background:#ddd"></div>
+            <div style="aspect-ratio:1;border-radius:14px;background:#d5dde8"></div>
+            <div style="aspect-ratio:1;border-radius:14px;background:#e5d8d0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Recommended: Nav-styled album trees</h3>
+      <p>Apply the rounded thumbnail row treatment to the Albums page sidebar tree and replace recent albums in the global nav with the same collapsible nested tree.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="main-grid" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:18px;min-height:320px">
+        <div style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fafafa">
+          <div style="font-size:12px;text-transform:uppercase;color:#777;margin:8px 0 10px">Left nav</div>
+          <div style="padding:9px 12px;border-radius:0 999px 999px 0;background:#eef6ff;color:#1460aa;font-weight:600">Albums</div>
+        </div>
+        <div style="border:1px solid #ddd;border-radius:8px;padding:14px;background:white">
+          <div style="font-size:22px;font-weight:700;margin-bottom:14px">Albums</div>
+          <div style="display:grid;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:0 999px 999px 0;background:#f6f6f6"><span>▾</span><span style="width:28px;height:28px;border-radius:5px;background:#d8d8d8"></span><strong>Trips</strong></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-left:28px;padding:10px 12px;border-radius:0 999px 999px 0;background:#fff"><span style="width:28px;height:28px;border-radius:5px;background:#d8d8d8"></span><span>Disneyland</span></div>
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:0 999px 999px 0;background:#f6f6f6"><span>▸</span><span style="width:28px;height:28px;border-radius:5px;background:#d8d8d8"></span><strong>Family</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Alternative: Rework the main Albums grid/list</h3>
+      <p>Make the primary Albums content itself into a nav-style nested list. This is a larger behavioral change and likely removes the existing cover-card-first experience.</p>
+    </div>
+  </div>
+</div>
