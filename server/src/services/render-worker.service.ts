@@ -728,6 +728,8 @@ export class RenderWorkerService {
             gpuMemoryBytes: asNumberOrNull(worker.gpuMemoryBytes),
             activeOperations: workerActive,
             limits: workerLimits,
+            engineDigest: worker.engineDigest,
+            conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
           },
           session: {
             expiresAt: new Date(session.expiresAt),
@@ -735,6 +737,7 @@ export class RenderWorkerService {
             scopes,
             gpuMemoryBytes: asNumberOrNull(session.gpuMemoryBytes),
             engineDigest: session.engineDigest,
+            conformanceReportedAt: new Date(session.conformanceReportedAt),
             capabilities: sessionCapabilities ?? null,
           },
           operation: {

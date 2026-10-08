@@ -287,6 +287,11 @@ const StudioRenderCandidateSchema = z
     outputFormats: z
       .array(StudioExportSettingsDto.schema.shape.format)
       .describe('Output formats whose exact writer and container this session verified'),
+    sidecarOutputFormats: z
+      .array(StudioExportSettingsDto.schema.shape.format)
+      .max(1)
+      .optional()
+      .describe('Output formats whose versioned paired SRT profile this same session verified'),
     maxBitDepth: z.int(),
     hdr10: z.boolean(),
     dolbyVision: z.boolean(),

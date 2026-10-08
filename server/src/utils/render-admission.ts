@@ -244,6 +244,8 @@ export type ClaimAdmissionInput = {
     /** Operations this worker already holds. */
     activeOperations: number;
     limits: RenderLimits;
+    engineDigest: string | null;
+    conformanceMaxAgeMs: number;
   };
   session: {
     expiresAt: Date;
@@ -252,6 +254,7 @@ export type ClaimAdmissionInput = {
     /** What the worker was admitted with. A claim is measured against this, not a fresh figure. */
     gpuMemoryBytes: number | null;
     engineDigest: string | null;
+    conformanceReportedAt: Date;
     /**
      * The encoders and containers the session's conformance check verified (FL-95). Null when the
      * session proved none, which admits no job that names an output format.
@@ -328,6 +331,21 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
   }
 
   const output = requiredOutput(operation.settings);
+  if (output?.profile) {
+    // An unexpired credential may outlive its measurement or an admin enrollment change.
+    // Only paired Sidecar output requires this stronger current-session qualification.
+    if (
+      !requiredEngine ||
+      !worker.engineDigest ||
+      worker.engineDigest !== session.engineDigest ||
+      session.engineDigest !== requiredEngine
+    ) {
+      return refuse(RenderWorkerRefusalReason.EngineDigestMismatch);
+    }
+    if (!isQualifiedRenderSession({ worker, session, now })) {
+      return refuse(RenderWorkerRefusalReason.ConformanceStale);
+    }
+  }
   if (output && !provesOutput(session.capabilities ?? null, output)) {
     // Bound to the evidence, not to a hope: an unproven encoder would fail or fall back mid-render.
     return refuse(RenderWorkerRefusalReason.CodecUnsupported);
@@ -443,16 +461,33 @@ const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; contai
   'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
 };
 
-export type RequiredOutput = { format: string; codec: readonly string[]; container: string };
+export type RequiredOutput = { format: string; codec: readonly string[]; container: string; profile?: string };
 
 /** What a job's output needs, or null when it names no output format. An unknown format needs the impossible. */
 export const requiredOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
   const format = settings?.format;
+  const mode = settings?.subtitleMode;
+  const sidecar = mode === 'sidecar';
+  // Unknown modes and unsupported paired-output tuples cannot fall back to an ordinary writer.
+  // Graph/range authority and the semantic byte seal remain separate server declaration gates.
+  if (
+    (mode !== undefined && mode !== 'burn' && mode !== 'off' && !sidecar) ||
+    (sidecar &&
+      (format !== 'mp4-h264' ||
+        settings?.color !== 'preserve' ||
+        settings?.resolution !== '720p' ||
+        (settings?.quality ?? 'high') !== 'high' ||
+        (settings?.audio ?? 'preserve') !== 'preserve'))
+  ) {
+    return { format: typeof format === 'string' ? format : '', codec: [], container: '' };
+  }
   if (typeof format !== 'string' || format.length === 0) {
     return null;
   }
   const known = Object.hasOwn(OUTPUT_FORMATS, format) ? OUTPUT_FORMATS[format] : undefined;
-  return known ? { format, ...known } : { format, codec: [], container: format };
+  return known
+    ? { format, ...known, ...(sidecar && { profile: 'mp4-h264+srt-sidecar-v1' }) }
+    : { format, codec: [], container: format };
 };
 
 /** Did the session's evidence name one of this format's encoders, exactly, and its container? */
@@ -465,7 +500,11 @@ export const provesOutput = (
   }
   const codecs = new Set(capabilities.codecs.map((codec) => codec.toLowerCase()));
   const formats = capabilities.formats.map((format) => format.toLowerCase());
-  return output.codec.some((encoder) => codecs.has(encoder)) && formats.includes(output.container);
+  return (
+    output.codec.some((encoder) => codecs.has(encoder)) &&
+    formats.includes(output.container) &&
+    (!output.profile || capabilities.formats.includes(output.profile))
+  );
 };
 
 const snapshotString = (snapshot: Record<string, unknown>, key: string): string | null => {
@@ -618,7 +657,14 @@ const FORMAT_BIT_DEPTH: Readonly<Record<string, number>> = Object.freeze({
   'prores-422-hq': 10,
 });
 
-export type RenderOutputRequest = { format: string; color: string; resolution: string };
+export type RenderOutputRequest = {
+  format: string;
+  color: string;
+  resolution: string;
+  subtitleMode?: string;
+  quality?: string;
+  audio?: string;
+};
 
 export type RenderOutputCandidate = {
   gpuMemoryBytes: number | null;
@@ -626,6 +672,8 @@ export type RenderOutputCandidate = {
   /** Container evidence from this same session; legacy sessions without it prove no output. */
   formats?: readonly string[] | null;
   colorPrecision: RenderColorPrecision | null;
+  /** Positive, matching enrollment/session engine binding; absent remains valid for legacy output. */
+  engineDigest?: string | null;
 };
 
 const colorSupported = (color: string, format: string, precision: RenderColorPrecision) => {
@@ -666,7 +714,10 @@ export const evaluateRenderOutput = (
   }
   const output = requiredOutput(request);
   const withCodec = withMemory.filter(
-    (candidate) => !!output && provesOutput({ codecs: candidate.codecs, formats: candidate.formats ?? [] }, output),
+    (candidate) =>
+      !!output &&
+      (!output.profile || !!candidate.engineDigest) &&
+      provesOutput({ codecs: candidate.codecs, formats: candidate.formats ?? [] }, output),
   );
   if (withCodec.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };

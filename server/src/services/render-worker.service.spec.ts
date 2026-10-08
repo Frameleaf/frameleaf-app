@@ -586,6 +586,102 @@ describe(RenderWorkerService.name, () => {
       expect(workers.claimQueued).not.toHaveBeenCalled();
     });
 
+    describe('Sidecar current claim qualification', () => {
+      const hour = 60 * 60_000;
+      const settings = {
+        format: 'mp4-h264',
+        color: 'preserve',
+        resolution: '720p',
+        quality: 'high',
+        audio: 'preserve',
+        subtitleMode: 'sidecar',
+      };
+      const cases = [
+        {
+          name: 'stale conformance within an unexpired twelve-hour session',
+          worker: { conformanceMaxAgeMs: hour },
+          session: { conformanceReportedAt: new Date(Date.now() - 2 * hour) },
+          reason: RenderWorkerRefusalReason.ConformanceStale,
+        },
+        {
+          name: 'changed enrollment despite matching old session and operation engines',
+          worker: { engineDigest: 'engine-2' },
+          session: {},
+          reason: RenderWorkerRefusalReason.EngineDigestMismatch,
+        },
+        {
+          name: 'null enrollment engine',
+          worker: { engineDigest: null },
+          session: {},
+          reason: RenderWorkerRefusalReason.EngineDigestMismatch,
+        },
+      ];
+
+      it.each(cases)(
+        'refuses $name before resolving inputs or allocating a claim',
+        async ({ worker: patch, session: report, reason }) => {
+          const worker = workerStub(patch);
+          installSessions({
+            worker,
+            session: sessionStub(worker, SESSION_A, { expiresAt: new Date(Date.now() + 12 * hour), ...report }),
+          });
+          vi.mocked(workers.peekQueued)
+            .mockReset()
+            .mockResolvedValueOnce([operationStub({ settings })] as never)
+            .mockResolvedValue([]);
+          vi.mocked(workers.getSessionCapabilities).mockResolvedValue({
+            codecs: ['webcodecs-avc'],
+            formats: ['mp4', 'mp4-h264+srt-sidecar-v1'],
+          });
+          await expect(sut.claim(SESSION_A, {} as never)).resolves.toBeUndefined();
+          expect(workers.recordAudit).toHaveBeenCalledWith(
+            expect.objectContaining({ event: RenderWorkerAuditEvent.ClaimRefused, reason, operationId: queued.id }),
+          );
+          expect(workers.claimQueued).not.toHaveBeenCalled();
+          expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+          expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
+          expect(studioExports.onRenderClaimed).not.toHaveBeenCalled();
+        },
+      );
+
+      it('allocates a synthetic fresh same-engine claim and then delivers its authorized input grant', async () => {
+        const worker = workerStub({ conformanceMaxAgeMs: hour });
+        installSessions({ worker, session: sessionStub(worker, SESSION_A) });
+        vi.mocked(workers.peekQueued)
+          .mockReset()
+          .mockResolvedValueOnce([operationStub({ settings })] as never)
+          .mockResolvedValue([]);
+        vi.mocked(workers.getSessionCapabilities).mockResolvedValue({
+          codecs: ['webcodecs-avc'],
+          formats: ['mp4', 'mp4-h264+srt-sidecar-v1'],
+        });
+        const claim = await sut.claim(SESSION_A, {} as never);
+        expect(workers.claimQueued).toHaveBeenCalledOnce();
+        expect(claim!.inputs).toHaveLength(1);
+        expect(workers.recordAudit).not.toHaveBeenCalledWith(
+          expect.objectContaining({ event: RenderWorkerAuditEvent.ClaimRefused }),
+        );
+      });
+
+      it.each(cases)(
+        'preserves Burn/Off/default claim behavior for $name',
+        async ({ worker: patch, session: report }) => {
+          const worker = workerStub(patch);
+          installSessions({ worker, session: sessionStub(worker, SESSION_A, report) });
+          vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
+          for (const subtitleMode of [undefined, 'burn', 'off']) {
+            vi.mocked(workers.peekQueued)
+              .mockReset()
+              .mockResolvedValueOnce([operationStub({ settings: { ...settings, subtitleMode } })] as never)
+              .mockResolvedValue([]);
+            const claim = await sut.claim(SESSION_A, {} as never);
+            expect(claim!.inputs).toHaveLength(1);
+          }
+          expect(workers.claimQueued).toHaveBeenCalledTimes(3);
+        },
+      );
+    });
+
     it('issues no grant for an input the owner has lost access to', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
