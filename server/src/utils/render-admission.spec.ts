@@ -767,7 +767,11 @@ describe('Sidecar v1 same-session capability admission', () => {
   });
 
   it('round-trips the profile through the native bounded admission DTO without changing legacy strings', () => {
-    expect(StudioExportSettingsDto.schema.shape.subtitleMode.safeParse('sidecar').success).toBe(false);
+    const subtitleMode = StudioExportSettingsDto.schema.shape.subtitleMode;
+    expect(subtitleMode.parse('sidecar')).toBe('sidecar');
+    expect(subtitleMode.parse('burn')).toBe('burn');
+    expect(subtitleMode.parse('off')).toBe('off');
+    expect(subtitleMode.safeParse('unknown').success).toBe(false);
     const formats = RenderWorkerAdmissionDto.schema.shape.formats;
     expect(formats.parse(['mp4', profile, 'legacy-container'])).toEqual(['mp4', profile, 'legacy-container']);
     expect(formats.safeParse(['x'.repeat(31)]).success).toBe(false);
