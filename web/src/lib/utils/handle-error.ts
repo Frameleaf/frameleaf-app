@@ -1,5 +1,7 @@
 import { isHttpError } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
@@ -68,16 +70,39 @@ export const setUnauthorizedHandler = (handler: UnauthorizedHandler | undefined)
   unauthorizedHandler = handler;
 };
 
+const statusOf = (error: unknown) =>
+  isHttpError(error) ? error.status : (error as { statusCode?: number } | undefined)?.statusCode;
+
+/**
+ * What the server's answer means, in the customer's words (BRAND.md: never a server message or a
+ * status code). Anything else is covered by the caller's own message.
+ */
+const customerReason = (error: unknown) => {
+  const status = statusOf(error);
+  if (status === undefined) {
+    return;
+  }
+  const $t = get(t);
+  if (status === 401 || status === 403) {
+    return $t('frameleaf_error_forbidden_title');
+  }
+  if (status === 404) {
+    return $t('frameleaf_error_reason_not_found');
+  }
+  if (status === 413) {
+    return $t('frameleaf_error_reason_too_large');
+  }
+  if (status === 429 || status >= 500) {
+    return $t('frameleaf_error_reason_try_later');
+  }
+};
+
 const notifyError = (error: unknown, localizedMessage: string, notify: boolean) => {
   try {
     // FC-62: Frameleaf Cloud paused new work of this kind; its own message is shown whole
     const paused = pausedRefusalMessage(error);
-    let serverMessage = paused ?? getServerErrorMessage(error);
-    if (serverMessage && !paused) {
-      serverMessage = `${serverMessage.slice(0, 75)}\n(Frameleaf Server Error)`;
-    }
-
-    const errorMessage = serverMessage || localizedMessage;
+    const reason = paused ?? customerReason(error);
+    const errorMessage = reason ? `${localizedMessage}\n${reason}` : localizedMessage;
 
     if (notify) {
       toastManager.danger(errorMessage);

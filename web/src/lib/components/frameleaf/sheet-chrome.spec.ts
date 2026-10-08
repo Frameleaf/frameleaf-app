@@ -54,7 +54,6 @@ describe('September 24 sheet chrome', () => {
       ['Dialog.svelte', 'dialog'],
       ['Pane.svelte', ''],
       ['CommandPalette.svelte', 'command-palette'],
-      ['SearchChip.svelte', 'search-chip'],
       ['SearchPalette.svelte', 'search-palette'],
       ['settings/SettingsHost.svelte', 'tile'],
       ['settings/SettingsHost.svelte', 'cc-section'],

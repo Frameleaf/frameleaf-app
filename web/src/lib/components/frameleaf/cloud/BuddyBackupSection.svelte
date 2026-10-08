@@ -3,6 +3,8 @@
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
@@ -53,6 +55,8 @@
   let failure = $state('');
   let notice = $state('');
   let busy = $state(false);
+  /** The first read of the status failed: the section says so and offers to try again. */
+  let loadFailed = $state(false);
   let setup = $state(false);
   let step = $state(0);
   let settingsOpen = $state(false);
@@ -96,6 +100,15 @@
   };
   const load = async () => {
     status = await getBuddyBackupStatus();
+    loadFailed = false;
+  };
+  const loadFirst = async () => {
+    loadFailed = false;
+    try {
+      await load();
+    } catch {
+      loadFailed = true;
+    }
   };
   const editSettings = () => {
     const s = status?.settings;
@@ -284,7 +297,7 @@
     });
   onMount(() => {
     const stopCloud = cloudManager.listen();
-    void action(load);
+    void loadFirst();
     const timer = setInterval(() => {
       if (!document.hidden && !busy) {
         void load().catch(() => {});
@@ -301,9 +314,16 @@
 </script>
 
 <div class="frameleaf-cloud buddy" class:status-grid={view === 'status'} data-section="buddy-backup">
-  {#if failure}<p class="fc-notice is-error" role="alert">{failure}</p>{/if}
+  {#if failure}<InlineError compact message={failure} />{/if}
   {#if notice}<p class="fc-notice" role="status">{notice}</p>{/if}
-  {#if !status}<p role="status">{$t('frameleaf_buddy_loading_buddy_backup')}</p>
+  {#if !status}
+    {#if loadFailed}
+      <InlineError message={$t('frameleaf_buddy_buddy_backup_is_unavailable_try_again')} onRetry={loadFirst} />
+    {:else}
+      <div class="loading" role="status" aria-label={$t('frameleaf_buddy_loading_buddy_backup')}>
+        <Skeleton variant="block" height="168px" />
+      </div>
+    {/if}
   {:else}
     {#if !status.enabled}<p class="fc-notice">
         {$t('frameleaf_buddy_new_buddy_backups_are_not_enabled_on_this_server_existing_restore_points_remain_av')}
@@ -322,14 +342,29 @@
             : 'muted'}
       >
         {#if !status.pairing}
-          {#if !linked}<p class="fc-notice">{$t('frameleaf_buddy_link_required')}</p>
-          {:else if !entitled}<p class="fc-notice">{$t('frameleaf_buddy_subscription_required')}</p>{/if}
-          <p class="explain">
-            {$t('frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off')}
-          </p>
-          <Button variant="primary" disabled={busy || !status.enabled || !entitled} onclick={beginSetup}
-            >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
-          >
+          <!-- One line and one action per state: link first, then a plan, then set up. -->
+          {#if !linked}
+            <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
+            <div class="fc-actions">
+              <a class="fc-button is-primary" href={commandCenterUrl('cloud', 'cloud-account')}
+                >{$t('frameleaf_cloud_backup_gate_link')}</a
+              >
+            </div>
+          {:else if !entitled}
+            <p class="explain">{$t('frameleaf_buddy_subscription_required')}</p>
+            <div class="fc-actions">
+              <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}
+                >{$t('frameleaf_cloud_backup_gate_plan')}</a
+              >
+            </div>
+          {:else}
+            <p class="explain">
+              {$t('frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off')}
+            </p>
+            <Button variant="primary" disabled={busy || !status.enabled} onclick={beginSetup}
+              >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+            >
+          {/if}
         {:else}
           <dl class="facts">
             <div>
@@ -373,7 +408,15 @@
               </dd>
             </div>
           </dl>
-          {#if status.run}
+          {#if status.run?.error}
+            <InlineError
+              compact
+              message="{$t('frameleaf_buddy_backup_failed')} {status.run.error}"
+              retryLabel={$t('frameleaf_buddy_back_up_now')}
+              retrying={busy}
+              onRetry={presentation.send ? () => control(BuddyControlAction.Start) : undefined}
+            />
+          {:else if status.run}
             <progress
               max={status.run.objects || 1}
               value={status.run.uploadedObjects}
@@ -388,7 +431,6 @@
                 },
               })}
             </p>
-            {#if status.run.error}<p role="status">{status.run.error}</p>{/if}
           {/if}
           <div class="actions">
             <Button
@@ -731,7 +773,7 @@
         $t('frameleaf_buddy_5_check_the_connection'),
       ][step]}
     </p>
-    {#if failure}<p role="alert" class="fc-notice is-error">{failure}</p>{/if}
+    {#if failure}<InlineError compact message={failure} />{/if}
     {#if step === 0}{@render storageForm()}
     {:else if step === 1}
       <p>{$t('frameleaf_buddy_both_servers_need_a_compatible_frameleaf_version_cloud_sign_in_and_an_active_subsc')}</p>
@@ -878,8 +920,13 @@
     align-items: start;
     gap: 1rem;
   }
-  .status-grid > p {
+  .status-grid > p,
+  .status-grid > .loading,
+  .status-grid > :global(.fl-inline-error) {
     grid-column: 1 / -1;
+  }
+  .loading {
+    margin-bottom: 1rem;
   }
   .buddy :global(.fc-card) {
     margin-bottom: 1rem;

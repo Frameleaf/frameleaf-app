@@ -213,9 +213,7 @@
    * filters", so the table says which it is instead of offering to clear filters nobody set.
    */
   const queuesPending = $derived(queueManager.snapshots.length === 0);
-  const queuesUnavailable = $derived(
-    queues.length === 0 && queueManager.snapshots.length > 0 && queueManager.snapshots.at(-1)?.snapshot === undefined,
-  );
+  const queuesUnavailable = $derived(queueManager.failed);
   const byName = $derived(new Map(queues.map((queue) => [queue.name, queue])));
   /** The catalogue's queues the server reports, in the template's order. */
   const rows = $derived(
@@ -1829,6 +1827,7 @@
   }
   .jm-footer-note {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     margin-top: 10px;
@@ -2073,6 +2072,8 @@
   .jm-job-detail pre {
     max-height: 16rem;
     overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     font-size: 12px;
     padding: 10px;
     background: var(--fl-canvas);

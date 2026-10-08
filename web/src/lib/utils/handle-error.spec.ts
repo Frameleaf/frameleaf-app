@@ -64,10 +64,21 @@ describe('handleError', () => {
       { name: 'HttpError', message, status: 503, data: { message, code: 'service-paused' } },
       'Could not link',
     );
-    expect(toastManager.danger).toHaveBeenLastCalledWith(message);
+    expect(toastManager.danger).toHaveBeenLastCalledWith(`Could not link\n${message}`);
 
     handleError(httpError(503, message), 'Could not link');
-    expect(toastManager.danger).toHaveBeenLastCalledWith(`${message.slice(0, 75)}\n(Frameleaf Server Error)`);
+    expect(toastManager.danger).toHaveBeenLastCalledWith('Could not link\nframeleaf_error_reason_try_later');
+  });
+
+  it('keeps server text out of the toast and says what the answer means instead', () => {
+    handleError(httpError(404, 'Not Found (Frameleaf Server Error)'), 'Unable to load');
+    expect(toastManager.danger).toHaveBeenLastCalledWith('Unable to load\nframeleaf_error_reason_not_found');
+
+    handleError(httpError(400, 'Bad Request'), 'Unable to load');
+    expect(toastManager.danger).toHaveBeenLastCalledWith('Unable to load');
+
+    handleError(httpError(413, 'Payload Too Large'), 'Unable to upload');
+    expect(toastManager.danger).toHaveBeenLastCalledWith('Unable to upload\nframeleaf_error_reason_too_large');
   });
 
   it('keeps an ordinary 403 a toast', () => {
@@ -100,7 +111,7 @@ describe('handleError', () => {
 
     handleError(httpError(401, 'Not permitted'), 'Unable to download');
 
-    expect(toastManager.danger).toHaveBeenCalledWith(expect.stringContaining('Not permitted'));
+    expect(toastManager.danger).toHaveBeenCalledWith('Unable to download\nframeleaf_error_forbidden_title');
   });
 
   it('still toasts other failures while a handler is registered', () => {

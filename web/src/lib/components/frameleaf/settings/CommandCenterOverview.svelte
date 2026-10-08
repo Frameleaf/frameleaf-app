@@ -14,6 +14,7 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
+  import { backupStamp, backupTime } from '$lib/components/frameleaf/settings/backup-time';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { Route } from '$lib/route';
   import { jobQueue } from '$lib/frameleaf/job-queues';
@@ -104,32 +105,17 @@
   );
   const latestBackup = $derived(
     backups
-      ?.filter((backup) => /\d{8}T\d{6}/.test(backup.filename))
-      .sort((a, b) => a.filename.match(/\d{8}T\d{6}/)![0].localeCompare(b.filename.match(/\d{8}T\d{6}/)![0]))
-      .at(-1)?.filename,
+      ?.filter((backup) => backupStamp(backup.filename))
+      .sort((a, b) => backupStamp(a.filename)!.localeCompare(backupStamp(b.filename)!))
+      .at(-1),
   );
   /**
-   * When the latest backup was made, as its file name records it (the server's own clock), shown
-   * as a time and a date like the reference ("02:00 · 19 Sep"). The file name stays in the tooltip.
+   * When the latest backup was made, shown as a time and a date like the reference ("02:00 · 19 Sep")
+   * through the same reading as Backups & restore. The file name stays in the tooltip.
    */
-  const latestBackupTime = $derived.by(() => {
-    const stamp = latestBackup?.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
-    if (!stamp) {
-      return;
-    }
-    const [year, month, day, hour, minute] = stamp.slice(1).map(Number);
-    const at = new Date(Date.UTC(year, month - 1, day, hour, minute));
-    const part = (options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat($locale, { ...options, timeZone: 'UTC' }).format(at);
-    return {
-      time: part({ hour: '2-digit', minute: '2-digit' }),
-      date: part({
-        day: 'numeric',
-        month: 'short',
-        year: at.getUTCFullYear() === new Date().getFullYear() ? undefined : 'numeric',
-      }),
-    };
-  });
+  const latestBackupTime = $derived(
+    latestBackup ? backupTime(latestBackup.filename, { timezone: latestBackup.timezone, locale: $locale }) : undefined,
+  );
   /** The storage percentage with the decimals the server reported, for the counting figure. */
   const percent = (value: number) => {
     const digits = (String(storage?.diskUsagePercentage ?? '').split('.', 2)[1] ?? '').length;
@@ -302,7 +288,7 @@
       >
       <!-- Both backup entry points on this page open Backup → Backups & restore (finding 66). -->
       <a href={href('maintenance', 'backups')} style:--i={2}
-        ><span>{$t('frameleaf_cc_latest_backup')}</span>{#if latestBackupTime}<strong title={latestBackup}
+        ><span>{$t('frameleaf_cc_latest_backup')}</span>{#if latestBackupTime}<strong title={latestBackup?.filename}
             >{latestBackupTime.time}<span class="date">{latestBackupTime.date}</span></strong
           >{:else}<strong class="note"
             >{backups

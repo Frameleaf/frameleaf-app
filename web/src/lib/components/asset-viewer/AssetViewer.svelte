@@ -1960,9 +1960,13 @@
     user-select: none;
   }
 
-  /* A video keeps its controls clear of the phone toolbar. */
+  /* A video keeps its controls clear of the phone toolbar, and of any strip above the footer. */
   .fl-viewer-video {
     padding-bottom: var(--fl-viewer-toolbar-offset);
+  }
+
+  .with-footer .fl-viewer-video {
+    padding-bottom: calc(var(--fl-viewer-toolbar-offset) + var(--fl-viewer-strips-height, 0px));
   }
 
   .dragging .fl-viewer-canvas {

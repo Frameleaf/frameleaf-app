@@ -163,13 +163,18 @@
     </div>
 
     {#if title || buttons}
-      <div class="absolute flex h-16 w-full place-items-center justify-between border-b p-2 text-dark">
-        <div class="flex items-center gap-2">
+      <!--
+        The prototype's one-row collection header (styles.css `.collection-header`, `h1 small`): the
+        title with its note beside it, the page's controls at the end. A page that draws its own
+        heading passes no `title`, so the name is on screen once.
+      -->
+      <div class="fl-page-header absolute flex h-16 w-full items-center justify-between gap-3 px-6">
+        <div class="fl-page-heading">
           {#if title}
-            <div class="pe-8 outline-none" tabindex="-1" id={headerId}>{title}</div>
+            <div class="fl-page-title outline-none" tabindex="-1" id={headerId}>{title}</div>
           {/if}
           {#if description}
-            <p class="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+            <p class="fl-page-note">{description}</p>
           {/if}
         </div>
 
@@ -199,3 +204,33 @@
     {/if}
   </main>
 </div>
+
+<style>
+  .fl-page-header {
+    border-bottom: 1px solid var(--fl-border);
+    color: var(--fl-text);
+  }
+  .fl-page-heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--fl-space-4);
+    min-width: 0;
+  }
+  .fl-page-title,
+  .fl-page-note {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .fl-page-title {
+    font-size: var(--fl-font-title);
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    line-height: 1.3;
+  }
+  .fl-page-note {
+    margin: 0;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+</style>

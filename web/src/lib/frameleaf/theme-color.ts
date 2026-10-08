@@ -4,7 +4,7 @@
  * so the chrome and the page meet without a seam (template/src/App.jsx:2193-2203, index.html:9;
  * design/frameleaf/tokens.json `color.dark.canvas` / `color.light.canvas`).
  */
-export const FRAMELEAF_THEME_COLORS = { dark: '#0d1115', light: '#f3f6f8' } as const;
+export const FRAMELEAF_THEME_COLORS = { dark: '#101416', light: '#f4f6f7' } as const;
 
 export const themeColor = (theme: 'dark' | 'light'): string => FRAMELEAF_THEME_COLORS[theme];
 

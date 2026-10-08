@@ -6,6 +6,7 @@
    * existing upload of a backup file above it. Replaces the legacy `MaintenanceBackupsList`.
    */
   import MaintenanceBackupRow from '$lib/components/frameleaf/MaintenanceBackupRow.svelte';
+  import { backupStamp } from '$lib/components/frameleaf/settings/backup-time';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { handleUploadDatabaseBackup } from '$lib/services/database-backups.service';
   import { listDatabaseBackups, type DatabaseBackupDto } from '@frameleaf/sdk';
@@ -53,8 +54,7 @@
     }
   }
 
-  // Backup filenames carry their UTC-free timestamp (yyyyMMddTHHmmss), so they sort by date.
-  const stamp = (filename: string) => filename.match(/\d{8}T\d{6}/)?.[0] ?? '';
+  const stamp = (filename: string) => backupStamp(filename) ?? '';
   const sorted = $derived([...loaded].sort((a, b) => stamp(b.filename).localeCompare(stamp(a.filename))));
 </script>
 

@@ -8,7 +8,9 @@
    */
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
   import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import WorkerInventoryPanel from '$lib/components/frameleaf/WorkerInventoryPanel.svelte';
+  import { getWorkerInventory } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import type { ProcessingData } from './loaders';
 
@@ -20,14 +22,28 @@
   const { section, data }: Props = $props();
 
   let inventoryKey = $state(0);
+  // The inventory the loader could not read is tried again here, without leaving the page.
+  let inventory = $derived(data.inventory);
+  let retrying = $state(false);
+
+  const retryInventory = async () => {
+    retrying = true;
+    try {
+      inventory = await getWorkerInventory();
+    } catch {
+      // Stays on the error with Try again.
+    } finally {
+      retrying = false;
+    }
+  };
 </script>
 
 {#if section === 'workers'}
   <div id="workers">
-    {#if data.inventory}
-      <WorkerInventoryPanel inventory={data.inventory} destinations={data.destinations} refreshKey={inventoryKey} />
+    {#if inventory}
+      <WorkerInventoryPanel {inventory} destinations={data.destinations} refreshKey={inventoryKey} />
     {:else}
-      <p role="alert">{$t('admin.frameleaf_workers_error_load')}</p>
+      <InlineError message={$t('admin.frameleaf_workers_load_failed')} onRetry={retryInventory} {retrying} />
     {/if}
   </div>
 {:else}

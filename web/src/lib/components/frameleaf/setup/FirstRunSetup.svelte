@@ -62,8 +62,9 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { DURATION, ICON_SIZE, STAGGER_MS } from '$lib/frameleaf/tokens';
+  import { forConfigSave } from '$lib/frameleaf/credentials';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
-  import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { lang, locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { convertBCP47, langs } from '$lib/utils/i18n';
@@ -86,6 +87,7 @@
     searchUsersAdmin,
     setUserOnboarding,
     signUpAdmin,
+    updateConfig,
     updateFrameleafSetup,
     type AdminConfigDto,
     type FrameleafSetupLibraryResponseDto,
@@ -184,6 +186,14 @@
   const linked = $derived(choices.linked);
   const context = $derived({ secrets, storageWritable: storage ? storage.writable : null, frameleafSignIn });
   const chapterAt = $derived(chapterIndex(current.chapter));
+  /**
+   * How far the rail's line is drawn: to the current chapter, and on to the next one the moment
+   * the account chapter's link to Frameleaf lands, so the success reads as progress.
+   */
+  const railProgress = $derived(
+    Math.min(chapterAt + (linked && current.chapter === 'account' ? 1 : 0), setupChapters.length - 1) /
+      (setupChapters.length - 1),
+  );
   const last = $derived(setup.step === steps.length - 1);
   const blocked = $derived(!validateStep(setup, current.id, context).ok);
 
@@ -452,7 +462,13 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
-      await handleSystemConfigSave(applySetupChoices(current, setup));
+      // Saved here, not through the settings service: a failed save must stop setup on this step
+      // with the error in view (the service only toasts), and no "Settings saved" toast belongs in
+      // the hand-off. Credentials are emptied for the save exactly as the service does.
+      const saved = await updateConfig({ adminConfigDto: forConfigSave(applySetupChoices(current, setup)) });
+      if (saved) {
+        eventManager.emit('SystemConfigUpdate', saved);
+      }
       choicesSaved = true;
       finishPhase = 'starting';
       if (needsReindex(current, setup)) {
@@ -856,7 +872,7 @@
       <aside class="frs-rail">
         <Logo variant="lockup" surface="dark" size="tiny" class="frs-rail-logo" />
         <nav aria-label={$t('frameleaf_setup_chapters')}>
-          <ol style:--frs-progress={chapterAt / (setupChapters.length - 1)}>
+          <ol style:--frs-progress={railProgress}>
             {#each setupChapters as chapter, position (chapter.id)}
               {@const first = steps.findIndex((entry) => entry.chapter === chapter.id)}
               {@const reachable = first >= 0 && first <= setup.reached}

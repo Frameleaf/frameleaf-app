@@ -6,6 +6,6 @@
   let { data }: { data: PageData } = $props();
 </script>
 
-<UserPageLayout title={data.meta.title}>
+<UserPageLayout>
   <ActivityView filter={data.filter} />
 </UserPageLayout>

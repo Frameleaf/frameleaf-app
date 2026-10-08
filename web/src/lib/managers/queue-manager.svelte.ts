@@ -5,7 +5,10 @@ import type { QueueSnapshot } from '$lib/types';
 
 export class QueueManager {
   #snapshots = $state<QueueSnapshot[]>([]);
-  #queues: QueueResponseDto[] = $derived(this.#snapshots.at(-1)?.snapshot ?? []);
+  /** The last answer the server gave: a failed or skipped poll keeps the page's queues on screen. */
+  #queues: QueueResponseDto[] = $derived(this.#snapshots.findLast((entry) => entry.snapshot)?.snapshot ?? []);
+  /** The newest poll failed; `queues` still holds the answer before it. */
+  #failed = $derived(this.#snapshots.length > 0 && this.#snapshots.at(-1)?.snapshot === undefined);
 
   #interval?: ReturnType<typeof setInterval>;
   #listenerCount = 0;
@@ -16,6 +19,10 @@ export class QueueManager {
 
   get queues() {
     return this.#queues;
+  }
+
+  get failed() {
+    return this.#failed;
   }
 
   constructor() {

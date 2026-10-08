@@ -232,14 +232,17 @@
 {/snippet}
 
 {#snippet railHeader({ collapsed, toggle }: { collapsed: boolean; toggle: () => void })}
-  <!-- LibraryRail.jsx `rail-header`: the "Library" label and the double-chevron toggle (desktop). -->
+  <!--
+    LibraryRail.jsx `rail-header`: the double-chevron toggle (desktop). The prototype's "Library"
+    label is left out: the rail's first row is already "Library" (review item 13), so the word
+    appears once.
+  -->
   <div
     class="frameleaf fl-rail-header"
     class:fl-icon-only={collapsed && iconOnly}
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
-    {#if !iconOnly}<span class="fl-label">{$t('library')}</span>{/if}
     <button
       type="button"
       class="fl-rail-toggle"
@@ -425,7 +428,7 @@
   .fl-rail-header {
     display: none;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 0.5rem;
     height: 44px;
     padding: 0 12px 0 22px;
@@ -441,7 +444,6 @@
    * rows turn icon-only when the width has arrived. Nothing here can be pressed in the meantime.
    */
   .fl-rail :global(.fl-label),
-  .fl-rail-header :global(.fl-label),
   .fl-heading,
   .fl-twisty,
   .fl-rail :global(.fl-rail-text) {
