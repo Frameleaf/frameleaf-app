@@ -457,10 +457,11 @@ const readCubeTriple = (text: string): number[] | undefined => {
  * {@link STUDIO_IMPORT_LUT_MAX_SIZE}, an unknown keyword, a keyword after the table has begun or a
  * table of any other length refuses the file.
  */
-export function validateStudioCubeLut(text: string): void {
+export function validateStudioCubeLut(text: string): { size: number; domainMin: number[]; domainMax: number[] } {
   let size: number | undefined;
   let rows = 0;
   let title = false;
+  let inputRange: number[] | undefined;
   const domain: { DOMAIN_MIN?: number[]; DOMAIN_MAX?: number[] } = {};
   const refuse: (line: number, problem: string) => never = (line, problem) => {
     throw new StudioImportRefusal(`Line ${line} of the LUT ${problem}`);
@@ -475,7 +476,8 @@ export function validateStudioCubeLut(text: string): void {
     }
     const keyword = cubeKeyword.exec(line)?.[1];
     if (!keyword) {
-      if (!readCubeTriple(line)) {
+      const triple = readCubeTriple(line);
+      if (!triple || triple.some((value) => Math.abs(value) > 1e37)) {
         refuse(index + 1, 'is not three numbers');
       }
       if (size === undefined) {
@@ -519,9 +521,15 @@ export function validateStudioCubeLut(text: string): void {
       }
       case 'LUT_3D_INPUT_RANGE': {
         const pair = cubePair.exec(value);
-        if (!pair || !(Number(pair[1]) < Number(pair[2]))) {
+        if (
+          inputRange ||
+          !pair ||
+          [Number(pair[1]), Number(pair[2])].some((value) => !Number.isFinite(value)) ||
+          !(Number(pair[1]) < Number(pair[2]))
+        ) {
           refuse(index + 1, 'is not a valid LUT_3D_INPUT_RANGE');
         }
+        inputRange = [Number(pair![1]), Number(pair![2])];
         break;
       }
       default: {
@@ -532,14 +540,33 @@ export function validateStudioCubeLut(text: string): void {
   if (size === undefined) {
     throw new StudioImportRefusal('The LUT has no LUT_3D_SIZE');
   }
-  const min = domain.DOMAIN_MIN ?? [0, 0, 0];
-  const max = domain.DOMAIN_MAX ?? [1, 1, 1];
+  if (
+    inputRange &&
+    (domain.DOMAIN_MIN?.some((value) => value !== inputRange![0]) ||
+      domain.DOMAIN_MAX?.some((value) => value !== inputRange![1]))
+  ) {
+    throw new StudioImportRefusal('The LUT input range conflicts with its domain');
+  }
+  const min = domain.DOMAIN_MIN ?? Array.from({ length: 3 }, () => inputRange?.[0] ?? 0);
+  const max = domain.DOMAIN_MAX ?? Array.from({ length: 3 }, () => inputRange?.[1] ?? 1);
   if (min.some((value, axis) => !(value < max[axis]))) {
     throw new StudioImportRefusal('The LUT domain is not valid');
   }
+  if (
+    min.some((value, axis) => {
+      const lo = Math.fround(value),
+        hi = Math.fround(max[axis]);
+      const span = Math.fround(hi - lo);
+      return (
+        Math.abs(value) > 1e37 || Math.abs(max[axis]) > 1e37 || !(span > 0) || !Number.isFinite(Math.fround(1 / span))
+      );
+    })
+  )
+    throw new StudioImportRefusal('The LUT domain is not representable');
   if (rows !== size ** 3) {
     throw new StudioImportRefusal(`The LUT has ${rows} rows where its size needs ${size ** 3}`);
   }
+  return { size, domainMin: min, domainMax: max };
 }
 
 /** Check a caption file or a LUT in full. Other kinds have their own checks and pass through. */

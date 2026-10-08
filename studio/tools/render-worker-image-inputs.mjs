@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inventory } from './engine.mjs';
 import { inspectVerifiedVideo, reconcileVideoTiming, timelineViews } from './render-worker-video-inputs.mjs';
+import { deriveClaimFileLuts } from './render-worker-lut-inputs.mjs';
 import { decodeHdrRaster } from './hdr-raster-input.mjs';
 
 const studio = fileURLToPath(new URL('../', import.meta.url));
@@ -186,6 +187,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   validateClaimResourceClosure(prepared, extraction);
   assert.equal(checkNestedSequences(extraction.sequences).refused.length, 0, 'INVALID_GRAPH_RESOURCE');
   validateInlineLuts(project);
+  const fileLuts = await deriveClaimFileLuts(prepared, isLeaseActive);
   const { collectMediaIds } = await import(pathToFileURL(path.join(engine, 'headless/lib/workspace.mjs')).href);
   const { createMediaServer } = await import(pathToFileURL(path.join(engine, 'headless/media-server.mjs')).href);
   // Include unused definitions as well as every reachable/off-range occurrence. The same
@@ -196,10 +198,11 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
   assert.ok(
     extraction.references.every((reference) =>
       (reference.kind === 'library-asset' && ids.includes(reference.id)) ||
-      (reference.kind === 'nested-sequence' && extraction.sequences.has(reference.id))),
+      (reference.kind === 'nested-sequence' && extraction.sequences.has(reference.id)) ||
+      (reference.kind === 'lut' && fileLuts.binding.resources.some(resource => resource.key === `lut:${reference.id}`))),
     'UNSUPPORTED_GRAPH_RESOURCE',
   );
-  assert.equal(prepared.inputs.size, ids.length, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
+  assert.equal(prepared.inputs.size, ids.length + fileLuts.binding.resources.length, 'UNSUPPORTED_OR_UNUSED_RESOURCE');
   const sources = ids.map((id) => {
     const input = prepared.inputs.get(`library-asset:${id}`);
     assert.ok(
@@ -375,6 +378,7 @@ export async function createClaimImageInputs(prepared, isLeaseActive) {
       sourceSha256: configuration.sourceSha256,
       videoTiming,
       videoInputs,
+      fileLuts,
       // This is the existing headless payload fragment. The graph is preserved without migration
       // or guessed settings. Each opaque local URL serves only a verified, grant-bound input.
       input: {

@@ -298,3 +298,34 @@ describe('caption files and LUTs (FL-105)', () => {
     expect(STUDIO_IMPORT_LUT_MAX_BYTES).toBe(16 * 1024 * 1024);
   });
 });
+
+// File LUT domains are input coordinates; they never normalize table outputs.
+describe('Cube file input-domain admission', () => {
+  const body = (headers: string) => `LUT_3D_SIZE 2\n${headers}\n${'-1 2 .5\n'.repeat(8)}`;
+  it('retains common input range and independent per-axis domains', () => {
+    expect(validateStudioCubeLut(body('LUT_3D_INPUT_RANGE -2 2'))).toEqual({
+      size: 2,
+      domainMin: [-2, -2, -2],
+      domainMax: [2, 2, 2],
+    });
+    expect(validateStudioCubeLut(body('DOMAIN_MIN -2 -1 0\nDOMAIN_MAX 2 3 4'))).toEqual({
+      size: 2,
+      domainMin: [-2, -1, 0],
+      domainMax: [2, 3, 4],
+    });
+    expect(validateStudioCubeLut(body('LUT_3D_INPUT_RANGE -2 2\nDOMAIN_MIN -2 -2 -2'))).toEqual({
+      size: 2,
+      domainMin: [-2, -2, -2],
+      domainMax: [2, 2, 2],
+    });
+  });
+  it.each([
+    'LUT_3D_INPUT_RANGE 0 1\nLUT_3D_INPUT_RANGE 0 1',
+    'LUT_3D_INPUT_RANGE 0 2\nDOMAIN_MAX 1 2 2',
+    'DOMAIN_MIN 0 -1 0\nLUT_3D_INPUT_RANGE 0 1',
+    'DOMAIN_MIN 1 1 1\nDOMAIN_MAX 1.000000001 2 2',
+    'LUT_3D_INPUT_RANGE 0 1e-40',
+  ])('refuses ambiguous or unrepresentable input domains %s', (headers) => {
+    expect(() => validateStudioCubeLut(body(headers))).toThrow(StudioImportRefusal);
+  });
+});
