@@ -86,18 +86,22 @@ const configure = async (
   }: { publicUrl?: string; customHostname?: boolean; useCustom?: boolean; linked?: boolean },
 ) => {
   const remote = defaults.frameleafCloud.remoteAccess;
-  await metadata.set(SystemMetadataKey.SystemConfig, {
-    server: { externalDomain: publicUrl },
-    frameleafCloud: {
-      remoteAccess: {
-        ...remote,
-        enabled: true,
-        mode: 'relay-and-direct',
-        publicUrl: useCustom ? 'custom' : remote.publicUrl,
-        customHostname: customHostname ? { host: CUSTOM, status: 'verified', checkedAt: null } : remote.customHostname,
+  await metadata.withConfigTransaction((bound) =>
+    bound.set(SystemMetadataKey.SystemConfig, {
+      server: { externalDomain: publicUrl },
+      frameleafCloud: {
+        remoteAccess: {
+          ...remote,
+          enabled: true,
+          mode: 'relay-and-direct',
+          publicUrl: useCustom ? 'custom' : remote.publicUrl,
+          customHostname: customHostname
+            ? { host: CUSTOM, status: 'verified', checkedAt: null }
+            : remote.customHostname,
+        },
       },
-    },
-  } as never);
+    } as never),
+  );
   await (linked
     ? metadata.set(SystemMetadataKey.FrameleafCloudLink, {
         status: 'linked',

@@ -63,9 +63,11 @@ describe(SharedLinkService.name, () => {
 
       await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({ url: null });
 
-      await ctx
-        .get(SystemMetadataRepository)
-        .set(SystemMetadataKey.SystemConfig, { server: { externalDomain: 'https://photos.example.test/' } });
+      const metadata = ctx.get(SystemMetadataRepository);
+      const previousConfig = (await metadata.get(SystemMetadataKey.SystemConfig)) ?? {};
+      await metadata.withConfigTransaction((bound) =>
+        bound.set(SystemMetadataKey.SystemConfig, { server: { externalDomain: 'https://photos.example.test/' } }),
+      );
       clearConfigCache();
       try {
         const expected = `https://photos.example.test/share/${key.toString('base64url')}`;
@@ -74,7 +76,7 @@ describe(SharedLinkService.name, () => {
           expect.arrayContaining([expect.objectContaining({ id: sharedLink.id, url: expected })]),
         );
       } finally {
-        await ctx.get(SystemMetadataRepository).delete(SystemMetadataKey.SystemConfig);
+        await metadata.withConfigTransaction((bound) => bound.set(SystemMetadataKey.SystemConfig, previousConfig));
         clearConfigCache();
       }
     });

@@ -120,9 +120,11 @@ describe(PetRecognitionService.name, () => {
       source: PetObservationSource.Review,
     });
     await pets.deleteCandidates(proposal.detectionId, [biscuit.id]);
-    await ctx.get(SystemMetadataRepository).set(SystemMetadataKey.SystemConfig, {
-      machineLearning: { clip: { modelName: 'ViT-B-32__openai' } },
-    });
+    await ctx.get(SystemMetadataRepository).withConfigTransaction((bound) =>
+      bound.set(SystemMetadataKey.SystemConfig, {
+        machineLearning: { clip: { modelName: 'ViT-B-32__openai' } },
+      }),
+    );
     clearConfigCache();
 
     await sut.handleRecognize({ id: candidate.id });
