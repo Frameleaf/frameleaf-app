@@ -404,12 +404,35 @@ test('existing worker generates validated PQ HEIC without rewriting the source o
   }
 });
 
-test('unedited still exports bind decoded bytes to the original checksum and regenerate HDR metadata', async () => {
+test('still exports bind source bytes and strip capture metadata while preserving edited and unedited HDR', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'frameleaf-original-still-'));
   const pool = new SharpProcessPool({ workers: 1, pending: 0 });
   const pixels = new Float32Array(16 * 16 * 4);
   for (let index = 0; index < pixels.length; index += 4) pixels.set([4, 2, 1, 1], index);
-  const original = codec.encode(Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), 16, 16, 1, ...limits);
+  const encoded = codec.encode(Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength), 16, 16, 1, ...limits);
+  const sharp = createRequire(import.meta.url)('sharp');
+  const tagged = await sharp({ create: { width: 16, height: 16, channels: 3, background: 'white' } })
+    .withExif({ IFD0: { Artist: 'private capture identity', ImageDescription: 'private capture description' } })
+    .jpeg()
+    .toBuffer();
+  const exif = (await sharp(tagged).metadata()).exif;
+  assert.ok(exif);
+  const privateXmp = Buffer.from(
+    'http://ns.adobe.com/xap/1.0/\0<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:GPSLatitude="49,16.0N" /></rdf:RDF></x:xmpmeta>',
+  );
+  const privateComment = Buffer.from('private camera serial and owner');
+  const segments = [
+    [225, exif],
+    [225, privateXmp],
+    [254, privateComment],
+  ].map(([marker, payload]) => {
+    const header = Buffer.from([255, marker, 0, 0]);
+    header.writeUInt16BE(payload.length + 2, 2);
+    return Buffer.concat([header, payload]);
+  });
+  const original = Buffer.concat([encoded.subarray(0, 2), ...segments, encoded.subarray(2)]);
+  assert.equal((await sharp(original).metadata()).exif.includes(Buffer.from('private capture identity')), true);
+  assert.equal(codec.inspect(original, ...limits).reconstructionAvailable, true);
   const source = join(folder, 'original.jpg');
   await writeFile(source, original);
   try {
@@ -418,22 +441,53 @@ test('unedited still exports bind decoded bytes to the original checksum and reg
       ['hdr-jpeg', 'jpg'],
       ['hdr-heic', 'heic'],
     ]) {
-      const output = join(folder, `${format}.${extension}`);
-      const checksum = createHash(format === 'sdr-jpeg' ? 'sha1' : 'sha256')
-        .update(original)
-        .digest();
-      await pool.run('exportPhotoStill', [source, output, format, checksum]);
-      const result = await readFile(output);
-      const metadata = codec.inspect(result, ...limits);
-      assert.equal(metadata.dynamicRange, format === 'sdr-jpeg' ? 'sdr' : 'hdr');
-      if (format === 'hdr-heic') {
-        assert.equal(metadata.bitDepth, 10);
-        assert.equal(metadata.transfer, 16);
-      }
-      if (format !== 'sdr-jpeg') {
-        const decoded = codec.decode(result, ...limits);
-        const rgba = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
-        assert.ok(Math.max(...rgba.subarray(0, 3)) > 1, 'export retains headroom');
+      for (const edited of [false, true]) {
+        const output = join(folder, `${edited ? 'edited' : 'original'}-${format}.${extension}`);
+        const checksum = createHash(format === 'sdr-jpeg' ? 'sha1' : 'sha256')
+          .update(original)
+          .digest();
+        if (edited) {
+          await pool.run('generateHdrRenditions', [
+            source,
+            [
+              {
+                path: output,
+                format: extension === 'heic' ? 'heic' : 'jpeg',
+                dynamicRange: format === 'sdr-jpeg' ? 'sdr' : 'hdr',
+              },
+            ],
+            {
+              recipe: { ...defaultDevelopRecipe(), exposure: -1 },
+              seed: 1,
+              masks: {},
+              fills: {},
+            },
+            checksum,
+          ]);
+        } else await pool.run('exportPhotoStill', [source, output, format, checksum]);
+        const result = await readFile(output);
+        for (const privateValue of [
+          'private capture identity',
+          'private capture description',
+          'GPSLatitude',
+          'private camera serial and owner',
+        ])
+          assert.equal(result.includes(Buffer.from(privateValue)), false, `${format} must remove capture metadata`);
+        const tags = await sharp(result).metadata();
+        assert.equal(tags.exif, undefined);
+        if (format === 'sdr-jpeg') assert.equal(tags.xmp, undefined);
+        const metadata = codec.inspect(result, ...limits);
+        assert.equal(metadata.dynamicRange, format === 'sdr-jpeg' ? 'sdr' : 'hdr');
+        if (format === 'hdr-heic') {
+          assert.equal(metadata.bitDepth, 10);
+          assert.equal(metadata.transfer, 16);
+        }
+        if (format !== 'sdr-jpeg') {
+          const decoded = codec.decode(result, ...limits);
+          const rgba = new Float32Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.length / 4);
+          assert.ok(Math.max(...rgba.subarray(0, 3)) > 1, 'export retains headroom');
+          assert.ok(Math.abs(rgba[0] - (edited ? 2 : 4)) < 0.3, 'privacy processing preserves rendered HDR light');
+        }
       }
     }
     const refused = join(folder, 'changed.jpg');
