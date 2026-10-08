@@ -238,6 +238,23 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     }
     const temperatureAdjustment={id:'temperature-adjustment',type:'adjustment',trackId:'temperature-adjustment',from:0,durationInFrames:60,effects:temperature(1,-1)};
     await render('temperature adjustment grades mixed sources before source-over',comp([track(temperatureAdjustment,0),track(shape('adjusted-graphic','#6699cc',.25),1),track(image('pq',.6),2)]),over(over(background,tempered(linear.pq,1,-1),.6),tempered(graphic,1,-1),.25));
+    const affineEffects = id => [{id,enabled:true,effect:{type:'gpu-effect',gpuEffectType:`gpu-${id}`,params:id==='invert'?{}:{amount:.375}}}];
+    const affine = (id,rgb) => {
+      if(id==='invert')return rgb.map(v=>1-v);
+      const weights=id==='grayscale'?Array.from({length:3},()=>[.299,.587,.114]):[[.393,.769,.189],[.349,.686,.168],[.272,.534,.131]];
+      return weights.map((row,c)=>rgb[c]*.625+dot(row,rgb)*.375);
+    };
+    for(const id of ['grayscale','sepia','invert']) {
+      for(const opacity of [0,.25,.5,1])await render(`${id} straight alpha ${opacity}`,comp([track(shape(id,'#6699cc',opacity,{effects:affineEffects(id)}),0)]),over(background,affine(id,graphic),opacity));
+      for(const transfer of ['pq','hlg'])await render(`${id} ${transfer} raster`,comp([track({...image(transfer,.6),effects:affineEffects(id)},0)]),over(background,affine(id,linear[transfer]),.6));
+      for(const gamut of [0,1,2])await render(`${id} gamut ${gamut} reference white`,comp([track({...image(`reconstructed-${gamut}`,.6),effects:affineEffects(id)},0)]),over(background,affine(id,reconstructed[`reconstructed-${gamut}`]),.3));
+      const adjustment={id:`${id}-adjustment`,type:'adjustment',trackId:`${id}-adjustment`,from:0,durationInFrames:60,effects:affineEffects(id)};
+      await render(`${id} adjustment mixed source-over`,comp([track(adjustment,0),track(shape(id,'#6699cc',.25),1),track(image('pq',.6),2)]),over(over(background,affine(id,linear.pq),.6),affine(id,graphic),.25));
+      const other=id==='grayscale'?expose(1,.125,2):id==='sepia'?temperature(1,-1):lift(.125);
+      const transform=rgb=>id==='grayscale'?exposed(rgb,1,.125,2):id==='sepia'?tempered(rgb,1,-1):rgb.map(v=>v+.125);
+      for(const reverse of [false,true])await render(`${id} discriminating order ${reverse}`,comp([track(shape(id,'#6699cc',.5,{effects:reverse?[...other,...affineEffects(id)]:[...affineEffects(id),...other]}),0)]),over(background,reverse?affine(id,transform(graphic)):transform(affine(id,graphic)),.5));
+    }
+    await render('all affine effects composed',comp([track(shape('affine-family','#6699cc',.5,{effects:['grayscale','sepia','invert'].flatMap(affineEffects)}),0)]),over(background,affine('invert',affine('sepia',affine('grayscale',graphic))),.5));
     const mixed=over(over(over(background,linear.pq,.6),linear.hlg,.4),graphic,.25);
     await render('root mixed linear source-over',comp([track(shape('graphic','#6699cc',.25),0),track(image('hlg',.4),1),track(image('pq',.6),2)]),mixed);
     const video=(transfer,opacity)=>({id:`root-video-${transfer}`,mediaId:`root-video-${transfer}`,type:'video',trackId:`root-video-${transfer}`,src:`/hdr-fixture/${transfer}.mp4`,from:0,durationInFrames:60,sourceStart:0,sourceEnd:30,sourceFps:30,sourceDuration:30,speed:1,sourceWidth:64,sourceHeight:64,transform:{x:0,y:0,width:16,height:16,rotation:0,opacity}});
@@ -245,6 +262,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       for(const transfer of ['pq','hlg']) registerHdrSourceUrl(`root-video-${transfer}`,`/hdr-fixture/${transfer}.mp4`);
       const want=over(over(over(background,videoReferences.pq,.6),videoReferences.hlg,.4),graphic,.25);
       for(const transfer of ['pq','hlg']) await render(`decoded ${transfer} video temperature`,comp([track({...video(transfer,.6),effects:temperature(-1,.5)},0)]),over(background,tempered(videoReferences[transfer],-1,.5),.6),{},25);
+      for(const id of ['grayscale','sepia','invert'])for(const transfer of ['pq','hlg'])await render(`${id} decoded ${transfer} video`,comp([track({...video(transfer,.6),effects:affineEffects(id)},0)]),over(background,affine(id,videoReferences[transfer]),.6),{},25);
       await render('decoded HDR video contrast',comp([track({...video('pq',.6),effects:grade(.75)},0)]),over(background,contrast(videoReferences.pq,.75),.6),{},25);
       await render('decoded HDR video exposure',comp([track({...video('pq',.6),effects:expose(-1,-.125,.75)},0)]),over(background,exposed(videoReferences.pq,-1,-.125,.75),.6),{},25);
       await render('decoded HDR video saturation',comp([track({...video('pq',.6),effects:saturate(1.5)},0)]),over(background,saturated(videoReferences.pq,1.5),.6),{},25);
@@ -264,6 +282,13 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const numerator=graphic.map((v,c)=>v*.25+linear.pq[c]*.6*.75);
       const want=background.map((v,c)=>v*(1-alpha*.5)+numerator[c]*.5);
       await render('nested straight alpha source-over',comp([track(instance,0)]),want);
+      for(const id of ['grayscale','sepia','invert']) {
+        const inner={...nested,id:`${id}-inner`,tracks:[track(shape(id,'#6699cc',.25,{effects:affineEffects(id)}),0),track(image('pq',.6),1)]};
+        inner.items=inner.tracks.flatMap(t=>t.items);useCompositionsStore.getState().setCompositions([nested,inner]);
+        const graded=affine(id,graphic).map((v,c)=>v*.25+linear.pq[c]*.6*.75);
+        await render(`${id} nested child`,comp([track({...instance,compositionId:inner.id},0)]),background.map((v,c)=>v*(1-alpha*.5)+graded[c]*.5));
+        await render(`${id} nested instance`,comp([track({...instance,effects:affineEffects(id)},0)]),over(background,affine(id,numerator.map(v=>v/alpha)),alpha*.5));
+      }
       const temperatureInner={...nested,id:'temperature-inner',tracks:[track(shape('temperature-child','#6699cc',.25,{effects:temperature(1,-1)}),0),track(image('pq',.6),1)]};
       temperatureInner.items=temperatureInner.tracks.flatMap(t=>t.items);useCompositionsStore.getState().setCompositions([nested,temperatureInner]);
       const temperatureNumerator=tempered(graphic,1,-1).map((v,c)=>v*.25+linear.pq[c]*.6*.75);
@@ -305,6 +330,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const maskedNumerator=graphic.map((v,c)=>v*.25*coverage+linear.pq[c]*.6*coverage*(1-.25*coverage));
       const maskedWant=background.map((v,c)=>v*(1-maskedAlpha*.5)+maskedNumerator[c]*.5);
       await render('nested mask preserves linear straight RGB',comp([track({...instance,compositionId:masked.id},0)]),maskedWant);
+      for(const id of ['grayscale','sepia','invert'])await render(`${id} masked nested instance`,comp([track({...instance,compositionId:masked.id,effects:affineEffects(id)},0)]),over(background,affine(id,maskedNumerator.map(v=>v/maskedAlpha)),maskedAlpha*.5));
       await render('temperature on masked nested instance preserves coverage',comp([track({...instance,compositionId:masked.id,effects:temperature(1,-1)},0)]),over(background,tempered(maskedNumerator.map(v=>v/maskedAlpha),1,-1),maskedAlpha*.5));
 
     } finally {useCompositionsStore.getState().setCompositions(previous);}
@@ -498,7 +524,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       }
       finally { encodedOutput.destroy(); }
       refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
-      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
+      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
       for(const id of GPU_TRANSITION_REGISTRY.keys())refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
     }finally{gateInput.destroy();gateOutput.destroy();transition.destroy();}

@@ -399,7 +399,12 @@
       "path": "patches/0083-linear-hdr-temperature.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "3d00b43d3d2f80d6bee0c99d46a96cdb56389a28de41d25985cea7d766b474ca"
+    },
+    {
+      "path": "patches/0084-linear-hdr-affine-color.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1842f24e0ca4479a4419a8422bef7fb7528d5bc02b5825eac29e58ee1ecb035d"
     }
   ],
-  "sourceSha256": "4233f7133831d9008e061428386419b8b252f1357ee33de845452f52a98c5187"
+  "sourceSha256": "4ae5672594630e0be3935fbf491386e4a4f2c8add2e001d844e638866917f494"
 }

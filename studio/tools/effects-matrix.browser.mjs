@@ -71,7 +71,7 @@ const source = await testedSource(new URL(import.meta.url));
 // digest (unrelated approved runtime policy changes may alter that digest).
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
-  'effects/color.ts': '53e8a9b6c748a9c04bfa02edad3d068e14872c5ff9652912ec42e1d6e8e85d5c',
+  'effects/color.ts': 'f0529681c7f739d1a420f835c9dea9a4236fa7ae4ef9f93f54d7015732215bd7',
   'common.ts': '5cfea24579d6e76b145ac88d9d20dc31334a62fd88d5cf56f16a0b1f13df8c62',
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
@@ -106,9 +106,13 @@ const alphaRow = [[1, 0, 0, q(0.5)], [0, 1, 0, q(0.25)], [0, 0, 1, q(0.75)], [1,
   [q(0.5), q(0.5), q(0.5), q(0.5)], [q(0.2), q(0.4), q(0.6), 1], [1, q(0.5), 0, q(0.1)], [0, 0, 0, 1]];
 const floatInput = [...sdrRows, hdrRow, alphaRow].flat(2);
 const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
+const affineInput = [0,.25,.5,1].flatMap(alpha => [
+  [-.25,.5,1.25],[-4,-2,-1],[4,2,1],[8,8,8],
+  [65504,65504,65504],[-65504,-65504,-65504],[65504,-65504,.5],[.1,-.1,0],
+].flatMap(rgb => [...rgb,alpha]));
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
-  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases }) => {
+  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput }) => {
     const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
@@ -134,6 +138,8 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     device.queue.writeTexture({ texture: sdrFloatInput }, new Float16Array(sdrInput),
       { bytesPerRow: W * 8 }, [W, H]);
 
+    const affineTexture = device.createTexture({size:[W,H],format:'rgba16float',usage});
+    device.queue.writeTexture({texture:affineTexture},new Float16Array(affineInput),{bytesPerRow:W*8},[W,H]);
     const render = async (source, effects) => {
       const output = device.createTexture({ size: [W, H], format: source.format, usage });
       const buffer = device.createBuffer({ size: 256 * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
@@ -194,6 +200,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
           list.push({ name: `${key}=${!param.default}`, params: { ...defaults, [key]: !param.default } });
         }
       }
+      if (['gpu-grayscale','gpu-sepia'].includes(definition.id)) list.push({name:'interior',params:{amount:.375}});
       if (definition.id === 'gpu-temperature') {
         for (const temperature of [-1, 1]) for (const tint of [-1, 1]) {
           list.push({ name: `temperature=${temperature},tint=${tint}`, params: { temperature, tint } });
@@ -208,7 +215,9 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       const entry = { id: definition.id, category: definition.category, cases: [] };
       if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
       if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
-      const hdr = entry.hdr ?? entry.hdrSpatial;
+      if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) entry.hdrAffine = {cases:[],invalid:[],uniformSize:definition.uniformSize,packedDefault:definition.packUniforms(getGpuEffectDefaultParams(definition.id))};
+      const hdr = entry.hdr ?? entry.hdrSpatial ?? entry.hdrAffine;
+      const hdrInput = entry.hdrAffine ? affineTexture : inputs.rgba16float;
       for (const { name, params } of cases(definition)) {
         const effect = [instance(definition.id, params)];
         // SDR project: Freecut's reference behaviour on both routes.
@@ -217,10 +226,10 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         const sdrFloat = await render(sdrFloatInput, effect);
         const sdr = await render(inputs.rgba8unorm, effect);
         const again = await render(sdrFloatInput, effect);
-        entry.cases.push({ name, again, floatSdr, sdrFloat, sdr });
+        entry.cases.push({ name, params, again, floatSdr, sdrFloat, sdr });
         if (hdr) {
           pipeline.setWorkingRange('hdr');
-          hdr.cases.push({ name, amount: params.amount, params, ...await render(inputs.rgba16float, effect) });
+          hdr.cases.push({ name, amount: params.amount, params, ...await render(hdrInput, effect) });
         }
       }
       pipeline.setWorkingRange('hdr');
@@ -254,7 +263,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
           frames[frame] = { value, ...rendered };
           if (hdr) {
             pipeline.setWorkingRange('hdr');
-            hdrFrames[frame] = { value, ...await render(inputs.rgba16float, resolved) };
+            hdrFrames[frame] = { value, ...await render(hdrInput, resolved) };
             pipeline.setWorkingRange('sdr');
           }
         }
@@ -332,10 +341,21 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         if (hdr) {
           pipeline.setWorkingRange('hdr');
           hdr.invalid.push({ name, amount: meant.amount, params: meant,
-            got: await render(inputs.rgba16float, [instance(definition.id, given)]),
-            want: await render(inputs.rgba16float, [instance(definition.id, meant)]) });
+            got: await render(hdrInput, [instance(definition.id, given)]),
+            want: await render(hdrInput, [instance(definition.id, meant)]) });
           pipeline.setWorkingRange('sdr');
         }
+      }
+      if (entry.hdrAffine) {
+        pipeline.setWorkingRange('hdr');
+        const params=definition.id==='gpu-invert'?{}:{amount:.375};
+        const effect=instance(definition.id,params,'affine');
+        const next=definition.id==='gpu-grayscale'?instance('gpu-exposure',{exposure:1,offset:.125,gamma:2},'next'):
+          definition.id==='gpu-sepia'?instance('gpu-temperature',{temperature:1,tint:-1},'next'):instance('gpu-brightness',{amount:.125},'next');
+        entry.hdrAffine.stack={params,forward:await render(affineTexture,[effect,next]),reverse:await render(affineTexture,[next,effect])};
+        entry.hdrAffine.disabled=await render(affineTexture,[{...effect,enabled:false}]);
+        entry.hdrAffine.extra=[await render(affineTexture,[instance(definition.id,{})]),await render(affineTexture,[instance(definition.id,{amount:'invalid','not-a-param':NaN})])];
+        pipeline.setWorkingRange('sdr');
       }
       if (entry.hdrSpatial) {
         pipeline.setWorkingRange('hdr');
@@ -370,10 +390,10 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       linearColor.push({ ...entry, ...await render(numericalInput, [instance(entry.id, entry.params)]) });
     numericalInput.destroy();
     pipeline.destroy();
-    for (const texture of [...Object.values(inputs), sdrFloatInput]) texture.destroy();
+    for (const texture of [...Object.values(inputs), sdrFloatInput, affineTexture]) texture.destroy();
     device.destroy();
     return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric, linearColor };
-  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases }),
+  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput }),
 );
 report.photometricSource = photometricSource;
 
@@ -395,7 +415,67 @@ const rows = (pixels, wanted) => wanted.flatMap((y) => pixels.slice(pixelIndex(0
 let caseCount = 0;
 for (const effect of report.effects) {
   const rule = declared.get(effect.id);
-  if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(effect.id)) {
+  if (effect.hdrAffine) {
+    check(rule.hdr === 'linear-display-bt709-v1', `${effect.id}: affine linear domain required`);
+    const quantize = values => Array.from(new Float16Array(values));
+    const input = quantize(affineInput);
+    const halfUlp = v => Math.max(2**-24,2**(Math.floor(Math.log2(Math.max(Math.abs(v),2**-14)))-10));
+    const limit = v => Math.max(-65504,Math.min(65504,v));
+    const matrix = amount => {
+      const base = effect.id==='gpu-grayscale' ? Array.from({length:3},()=>[.299,.587,.114]) :
+        effect.id==='gpu-sepia' ? [[.393,.769,.189],[.349,.686,.168],[.272,.534,.131]] : [[-1,0,0],[0,-1,0],[0,0,-1]];
+      return base.map((row,c)=>row.map((v,k)=>effect.id==='gpu-invert'?v:(1-amount)*(c===k?1:0)+amount*v));
+    };
+    const expected = (values,amount,clamp=limit) => {
+      const m=matrix(amount);
+      return values.map((v,i)=>i%4===3?v:clamp(m[i%4].reduce((sum,w,c)=>sum+w*values[i-i%4+c],effect.id==='gpu-invert'?1:0)));
+    };
+    const arithmetic = (values,amount,i) => i%4===3?0:2**-20*(
+      Math.abs(effect.id==='gpu-invert'?1:0)+matrix(amount)[i%4].reduce((sum,w,c)=>sum+Math.abs(w*values[i-i%4+c]),0));
+    const verify = (result,want,label,values=input,amount=1,propagated=[],byte=false) => {
+      check(!result.error && !result.errorType && result.pixels?.length===want.length,`${label}: affine render required`);
+      if(result.pixels)want.forEach((v,i)=>check(Number.isFinite(result.pixels[i]) &&
+        Math.abs(result.pixels[i]-v)<=(i%4===3?(byte?1/255:0):(byte?1/255:halfUlp(v))+arithmetic(values,amount,i)+(propagated[i]??0)),`${label}: independent channel ${i}`));
+    };
+    const hdr=effect.hdrAffine;
+    check(hdr.cases.length===(effect.id==='gpu-invert'?1:3),`${effect.id}: complete affine cases`);
+    for(const entry of hdr.cases) verify(entry,expected(input,entry.params.amount),`HDR ${effect.id} ${entry.name}`,input,entry.params.amount);
+    if(effect.id==='gpu-invert') {
+      check(hdr.uniformSize===0 && hdr.packedDefault===null && !hdr.animation && !effect.animation,'invert has no uniforms, strength or animation');
+    } else {
+      check(hdr.uniformSize===16 && hdr.packedDefault[0]===1,`${effect.id}: full-strength default retained`);
+      check(JSON.stringify(hdr.cases.map(e=>e.params.amount))==='[1,0,0.375]',`${effect.id}: exact default/min/interior`);
+      for(const frame of [0,5,10]) {
+        const entry=hdr.animation.frames[frame];check(entry.value===frame/10,`${effect.id}: actual animation resolver`);
+        verify(entry,expected(input,entry.value),`HDR ${effect.id} frame ${frame}`,input,entry.value);
+      }
+    }
+    check(hdr.invalid.length===(effect.id==='gpu-invert'?0:4),`${effect.id}: declared invalid scope`);
+    for(const entry of hdr.invalid)for(const route of ['got','want'])verify(entry[route],expected(input,entry.params.amount),`HDR ${effect.id} ${entry.name}/${route}`,input,entry.params.amount);
+    for(const entry of hdr.extra)verify(entry,expected(input,1),`HDR ${effect.id} missing/non-number/unknown parameters`);
+    verify(hdr.disabled,input,`HDR ${effect.id} disabled`,input,0);
+    const amount=hdr.stack.params.amount;
+    const first=quantize(expected(input,amount));
+    const next = values => values.map((v,i)=>i%4===3?v:limit(effect.id==='gpu-grayscale'?
+      Math.sign(v*2+.125)*Math.abs(v*2+.125)**.5:effect.id==='gpu-sepia'?v+[.05,.1,-.15][i%4]:v+.125));
+    const forward=next(first);
+    const firstError=first.map((v,i)=>i%4===3?0:halfUlp(v)+arithmetic(input,amount,i));
+    const low=next(first.map((v,i)=>v-firstError[i])),high=next(first.map((v,i)=>v+firstError[i]));
+    verify(hdr.stack.forward,forward,`HDR ${effect.id} forward order`,first,amount,
+      forward.map((v,i)=>Math.max(Math.abs(low[i]-v),Math.abs(high[i]-v))));
+    const second=quantize(next(input)),reverse=expected(second,amount);
+    const reverseError=second.map((v,i)=>i%4===3?0:matrix(amount)[i%4].reduce((sum,w,c)=>{
+      const at=i-i%4+c;return sum+Math.abs(w)*(halfUlp(second[at])+2**-20*Math.max(1,Math.abs(second[at])));
+    },0));
+    verify(hdr.stack.reverse,reverse,`HDR ${effect.id} reverse order`,second,amount,reverseError);
+    check(forward.some((v,i)=>i%4!==3&&Math.abs(v-reverse[i])>.01),`${effect.id}: chosen orders must differ`);
+    for(const entry of effect.cases) {
+      const clamp=effect.id==='gpu-sepia'?v=>Math.max(0,Math.min(1,v)):v=>v;
+      for(const [route,values] of [['floatSdr',quantize(floatInput)],['sdrFloat',quantize(sdrInput)]])
+        verify(entry[route],expected(values,entry.params.amount,clamp),`SDR ${effect.id} ${entry.name}/${route}`,values,entry.params.amount);
+      verify(entry.sdr,expected(sdrInput,entry.params.amount,v=>Math.max(0,Math.min(1,v))),`SDR ${effect.id} ${entry.name}/rgba8`,sdrInput,entry.params.amount,[],true);
+    }
+  } else if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature'].includes(effect.id)) {
     check(rule.hdr === 'linear-display-bt709-v1', `${effect.id} must declare the measured linear domain`);
     const input = Array.from(new Float16Array(floatInput));
     const transform = (v, p, i, values) => {
