@@ -482,13 +482,30 @@ test('explicit SDR export remains available when primary ICC blocks HDR reconstr
     const pixels = new Float32Array(16 * 8 * 4);
     for (let i = 0; i < pixels.length; i += 4) pixels.set([2, 2, 2, 1], i);
     const encoded = codec.encode(Buffer.from(pixels.buffer), 16, 8, 0, ...limits);
-    for (const invalid of ['missing', 'corrupt']) {
+    for (const invalid of ['missing', 'corrupt', 'custom-primaries', 'custom-transfer']) {
       const source = join(folder, `${invalid}.jpg`),
         output = join(folder, `${invalid}-sdr.jpg`);
       const bytes = Buffer.from(encoded);
-      const at = bytes.indexOf(invalid === 'missing' ? 'ICC_PROFILE\0' : 'acsp');
-      assert.ok(at >= 0);
-      bytes.write(invalid === 'missing' ? 'ICC_MISSING' : 'xxxx', at);
+      if (invalid.startsWith('custom-')) {
+        const base = bytes.indexOf('ICC_PROFILE\0') + 14;
+        assert.ok(base >= 14);
+        const tag = invalid === 'custom-primaries' ? 'rXYZ' : 'rTRC';
+        let changed = false;
+        for (let i = 0; i < bytes.readUInt32BE(base + 128); i++) {
+          const at = base + 132 + i * 12;
+          if (bytes.toString('ascii', at, at + 4) === tag) {
+            const data = base + bytes.readUInt32BE(at + 4);
+            bytes.writeInt32BE(Math.round((tag === 'rXYZ' ? 0.65 : 1) * 65536), data + (tag === 'rXYZ' ? 8 : 12));
+            changed = true;
+            break;
+          }
+        }
+        assert.ok(changed, invalid);
+      } else {
+        const at = bytes.indexOf(invalid === 'missing' ? 'ICC_PROFILE\0' : 'acsp');
+        assert.ok(at >= 0);
+        bytes.write(invalid === 'missing' ? 'ICC_MISSING' : 'xxxx', at);
+      }
       await writeFile(source, bytes);
       const checksum = createHash('sha256').update(bytes).digest();
       await pool.run('exportPhotoStill', [source, output, 'sdr-jpeg', checksum]);

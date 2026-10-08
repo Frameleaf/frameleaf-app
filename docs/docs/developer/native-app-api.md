@@ -241,6 +241,14 @@ and unsupported reconstruction fail explicitly. This does not claim adaptive HEI
 encoding. HDR HEIC export is
 offered only after the installed encoder passes the worker's ten-bit PQ probe.
 
+Adaptive JPEG reconstruction requires a primary RGB matrix ICC profile with supported
+BT.709, Display P3, or BT.2020 primaries and an sRGB transfer compatible with the
+installed decoder. Missing, corrupt, or unsupported primary color interpretation
+reports `reconstructionAvailable: false` with `fallbackReason: hdr-profile-unsupported`.
+Supported JPEG profiles expose their identified `colorPrimaries`. Clients must not
+infer sRGB when this information is unavailable. Authorized original downloads and
+explicit, color-managed SDR JPEG base export remain available; HDR export is refused.
+
 ### HDR preview histogram
 
 Recipe v3–v6 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
