@@ -163,8 +163,7 @@ export class AssetMediaController {
     res.once('close', abandon);
     if (res.destroyed) abandon();
     try {
-      const file = await this.service.downloadOriginal(auth, id, dto, controller.signal);
-      await sendFile(res, next, () => file, this.logger);
+      await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto, controller.signal), this.logger);
     } finally {
       res.removeListener('close', abandon);
     }
