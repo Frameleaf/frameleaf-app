@@ -6,7 +6,9 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
+import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
 import {
   clearStudioEngine,
   loadStudioEngine,
@@ -116,6 +118,57 @@ const renderReady = async (props: Record<string, unknown> = {}) => {
   await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
   return engine;
 };
+describe('explicit Studio capability retry', () => {
+  it('reads fresh admission after an initial failed probe and mounts without reloading the draft', async () => {
+    const engine = stubEngine();
+    sdkMock.getMlCapabilities.mockRejectedValueOnce(new Error('offline'));
+    const initial = await probeStudioHost();
+    sdkMock.getMlCapabilities.mockResolvedValueOnce({
+      workloads: [],
+      probedAt: '2026-10-08T00:00:00Z',
+      studio: { gpuWorker: true, renderWorker: true, restorationWorker: false, transcriptionWorker: false, render: [] },
+    });
+    const onRetry = async () => {
+      const next = await probeStudioHost();
+      await rerender({ ...baseProps(), ...next, loadEngine: engine.load, onRetry } as never);
+      return true;
+    };
+    const { rerender } = render(StudioHost, { ...baseProps(), ...initial, loadEngine: engine.load, onRetry } as never);
+    await waitFor(() => expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable'));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_retry' }));
+    await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+    expect(engine.module.mount).toHaveBeenCalledTimes(1);
+    expect(engine.contexts[0].project).toEqual(project);
+    expect(sdkMock.getMlCapabilities).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Studio capability reconnect', () => {
+  it('refreshes unavailable admission on offline to online before the first engine mount', async () => {
+    const engine = stubEngine();
+    sdkMock.getMlCapabilities.mockResolvedValueOnce({
+      workloads: [],
+      probedAt: '2026-10-08T00:00:00Z',
+      studio: { gpuWorker: true, renderWorker: true, restorationWorker: false, transcriptionWorker: false, render: [] },
+    });
+    const onRetry = async () => {
+      const next = await probeStudioHost();
+      await rerender({ ...baseProps(), ...next, loadEngine: engine.load, onRetry } as never);
+      return true;
+    };
+    const { rerender } = render(StudioHost, {
+      ...baseProps(),
+      capabilities: emptyStudioCapabilities(),
+      loadEngine: engine.load,
+      onRetry,
+    } as never);
+    await waitFor(() => expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable'));
+    await fireEvent(globalThis as unknown as Window, new Event('offline'));
+    await fireEvent(globalThis as unknown as Window, new Event('online'));
+    await waitFor(() => expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument());
+    expect(engine.module.mount).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
   it('renames the project from the header, and puts the stored name back when refused', async () => {

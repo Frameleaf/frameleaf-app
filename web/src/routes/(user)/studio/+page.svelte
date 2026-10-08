@@ -39,15 +39,13 @@
   import { createStudioRestorationHandlers } from '$lib/frameleaf/studio/restoration-jobs';
   import type { StudioRestoreFocus } from '$lib/components/frameleaf/StudioRestorePanel.svelte';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
-  import { probeStudioHost } from '$lib/frameleaf/studio/capabilities';
+  import { createStudioHostRefresh, type StudioHostSnapshot } from '$lib/frameleaf/studio/capabilities';
   import { loadStudioEngine, pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
-    type StudioCapabilities,
     type StudioCommandEngine,
     type StudioDraftResult,
-    type StudioRenderEvidence,
     type StudioHostServices,
     type StudioProjectHandle,
     type StudioProjectImportRef,
@@ -99,8 +97,9 @@
   registerFrameStudioEngine();
 
   // Null until the probe answers, so the host does not call an unknown deployment deficient.
-  let capabilities = $state<StudioCapabilities | null>(null);
-  let renderEvidence = $state<StudioRenderEvidence[]>([]);
+  let hostSnapshot = $state<StudioHostSnapshot | null>(null);
+  const capabilities = $derived(hostSnapshot?.capabilities ?? null);
+  const renderEvidence = $derived(hostSnapshot?.renderEvidence ?? []);
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
@@ -251,6 +250,19 @@
 
   const saveStatus = $derived(sessionState?.status ?? 'loading');
   const forbidden = $derived(saveStatus === 'forbidden');
+  const hostUserId = untrack(() => user.id);
+  const capabilityRefresh = createStudioHostRefresh({
+    hasAccess: () => !accessLost && !forbidden && authManager.authenticated && user.id === hostUserId,
+    onChange: (snapshot) => {
+      hostSnapshot = snapshot;
+    },
+  });
+  $effect(() => {
+    if (accessLost || forbidden || !authManager.authenticated || user.id !== hostUserId) {
+      untrack(() => capabilityRefresh.invalidate());
+    }
+  });
+
   /** Writes are refused while a conflict or a lost lease waits for the person's decision. */
   const writable = $derived(
     project.hasLease && saveStatus !== 'conflict' && saveStatus !== 'lease-lost' && saveStatus !== 'loading',
@@ -883,10 +895,15 @@
     });
 
     const goOnline = () => {
+      const reconnecting = !online;
       online = true;
       session.setOnline(true);
+      if (reconnecting) {
+        void capabilityRefresh.refresh();
+      }
     };
     const goOffline = () => {
+      capabilityRefresh.invalidate();
       online = false;
       session.setOnline(false);
     };
@@ -903,15 +920,13 @@
   // tracking effect would depend on its own subscription and re-run until Svelte stops it
   // (effect_update_depth_exceeded), leaving the page's later updates unapplied.
   onMount(() => {
-    void probeStudioHost().then((next) => {
-      capabilities = next.capabilities;
-      renderEvidence = next.renderEvidence;
-    });
+    void capabilityRefresh.refresh();
 
     // Losing the session or relocking must clear private editor state immediately, not on
     // the next navigation: the host disposes the engine when it hears this, and the project
     // session gives the lease back and stops listening for responses.
     const lost = () => {
+      capabilityRefresh.dispose();
       accessLost = true;
       dirty = false;
       // Nothing may be exported for a session that no longer has the project.
@@ -951,6 +966,7 @@
 
   onDestroy(() => {
     clearTimeout(exportTimer);
+    capabilityRefresh.dispose();
     settleExportChoice(null);
     releaseCommandEngine();
     void previewClient.dispose();
@@ -1036,6 +1052,7 @@
   {auth}
   {capabilities}
   {renderEvidence}
+  onRetry={() => capabilityRefresh.refresh()}
   {services}
   {onBack}
   {onBackToEditor}

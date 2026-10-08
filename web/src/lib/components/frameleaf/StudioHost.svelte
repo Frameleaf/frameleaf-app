@@ -156,6 +156,7 @@
     renderEvidence = [],
     services,
     onBack,
+    onRetry,
     onBackToEditor,
     quickEditWaiting = false,
     handoffPlayhead = null,
@@ -212,6 +213,8 @@
     renderEvidence?: readonly StudioRenderEvidence[];
     services: StudioHostServices;
     onBack: () => void;
+    /** Refresh authenticated worker admission before retrying the existing engine lifecycle. */
+    onRetry?: () => Promise<boolean>;
     /**
      * Back to the quick editor that opened Studio (FL-113), with the draft the person left there.
      * Absent when Studio was not opened from a quick editor.
@@ -472,6 +475,7 @@
   let engine: StudioEngineInstance | null = null;
   let disposing: Promise<void> | null = null;
   let mountToken = 0;
+  let destroyed = false;
   /** The mount in progress, so a second request for the same mount joins it instead of racing it. */
   let mounting: { token: number; done: Promise<void> } | null = null;
 
@@ -614,7 +618,16 @@
 
   // The reducer decides whether a retry can mount (the probe may still say the workers are
   // missing); `dispatch` starts the mount when it can.
-  const retry = () => {
+  const retry = async () => {
+    if (destroyed || accessLost || !studioHostCanRetry(host)) {
+      return;
+    }
+    if (onRetry && !(await onRetry())) {
+      return;
+    }
+    if (destroyed || accessLost || !online || !studioHostCanRetry(host)) {
+      return;
+    }
     dispatch({ type: 'retry' });
   };
 
@@ -623,7 +636,20 @@
     dispatch({ type: 'connectivity', online });
 
     const goOnline = () => {
+      if (online) {
+        return;
+      }
       online = true;
+      // Join the route's refresh before mounting from a pre-offline capability snapshot.
+      if (onRetry) {
+        void onRetry().then((applied) => {
+          if (!applied || destroyed || accessLost || !online) {
+            return;
+          }
+          dispatch({ type: 'connectivity', online: true });
+        });
+        return;
+      }
       dispatch({ type: 'connectivity', online: true });
     };
     const goOffline = () => {
@@ -683,6 +709,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     mountToken += 1;
     void disposeEngine();
   });
@@ -1162,7 +1189,7 @@
 
           <div class="fl-studio-state-actions">
             {#if studioHostCanRetry(host)}
-              <Button onclick={retry}>{$t('frameleaf_studio_retry')}</Button>
+              <Button onclick={() => void retry()}>{$t('frameleaf_studio_retry')}</Button>
             {/if}
             <Button variant={studioHostCanRetry(host) ? 'quiet' : 'primary'} onclick={onBack}>
               <Icon icon={mdiArrowLeft} size={ICON_SIZE.md} />
