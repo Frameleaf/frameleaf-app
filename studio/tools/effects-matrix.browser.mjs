@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { photometricCases, photometricInput, linearColorCases, photometricTolerance, validatePhotometricResults } from './photometric-goldens.mjs';
 import { blurReference, HDR_BLURS } from './blur-reference.mjs';
+import { pixelateReference } from './pixelate-reference.mjs';
 import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
@@ -214,7 +215,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     const effects = [];
     for (const definition of GPU_EFFECT_REGISTRY.values()) {
       const entry = { id: definition.id, category: definition.category, cases: [] };
-      if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
+      if (['gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate'].includes(definition.id)) entry.hdrSpatial = { cases: [], invalid: [], defaults: getGpuEffectDefaultParams(definition.id) };
       if (['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance'].includes(definition.id)) entry.hdr = { cases: [], invalid: [] };
       if (['gpu-grayscale','gpu-sepia','gpu-invert'].includes(definition.id)) {
         const packedDefault = definition.packUniforms(getGpuEffectDefaultParams(definition.id));
@@ -528,26 +529,27 @@ for (const effect of report.effects) {
       pixels(entry.got,expected(entry.params),`HDR ${effect.id} invalid ${entry.name}`);
       pixels(entry.want,expected(entry.params),`HDR ${effect.id} invalid meaning ${entry.name}`);
     }
-  } else if (HDR_BLURS.includes(effect.id)) {
+  } else if (HDR_BLURS.includes(effect.id) || effect.id === 'gpu-pixelate') {
     check(rule.hdr === 'linear-display-bt709-v1', `${effect.id}: linear domain required`);
     const input = Array.from(new Float16Array(floatInput));
+    const expected = params => effect.id === 'gpu-pixelate' ? pixelateReference(input,W,H,params) : blurReference(input,W,H,effect.id,params);
     const pixels = (result, want, label) => {
       check(!result.error && !result.errorType && result.pixels?.length === want.length, `${label}: linear render failed`);
       if (result.pixels) want.forEach((v,i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i]-v) <= Math.max(.004,Math.abs(v)*.003), `${label}: independent channel ${i}`));
     };
     check(effect.hdrSpatial.cases.length === effect.cases.length, `${effect.id}: every parameter bound requires HDR measurement`);
-    for (const entry of effect.hdrSpatial.cases) pixels(entry, blurReference(input,W,H,effect.id,entry.params), `HDR ${effect.id} ${entry.name}`);
+    for (const entry of effect.hdrSpatial.cases) pixels(entry, expected(entry.params), `HDR ${effect.id} ${entry.name}`);
     const { key, min, max, frames } = effect.hdrSpatial.animation;
     for (const frame of [0,5,10]) {
       check(frames[frame].value === min+(max-min)*frame/10, `${effect.id}: HDR animation resolver`);
-      pixels(frames[frame],blurReference(input,W,H,effect.id,{...effect.hdrSpatial.defaults,[key]:frames[frame].value}), `HDR ${effect.id} animation ${frame}`);
+      pixels(frames[frame],expected({...effect.hdrSpatial.defaults,[key]:frames[frame].value}), `HDR ${effect.id} animation ${frame}`);
     }
     for (const entry of effect.hdrSpatial.invalid) {
-      const expected = blurReference(input,W,H,effect.id,entry.params);
-      pixels(entry.got,expected,`HDR ${effect.id} invalid ${entry.name}`);
-      pixels(entry.want,expected,`HDR ${effect.id} invalid meaning ${entry.name}`);
+      const want = expected(entry.params);
+      pixels(entry.got,want,`HDR ${effect.id} invalid ${entry.name}`);
+      pixels(entry.want,want,`HDR ${effect.id} invalid meaning ${entry.name}`);
     }
-    const filtered = Array.from(new Float16Array(blurReference(input,W,H,effect.id,effect.hdrSpatial.defaults)));
+    const filtered = Array.from(new Float16Array(expected(effect.hdrSpatial.defaults)));
     pixels(effect.hdrSpatial.stack,filtered.map((v,i)=>i%4===3?v:v*2),`HDR ${effect.id} exposure stack`);
   } else {
     check(rule.hdr === 'refused', `${effect.id}: undeclared HDR admission`);

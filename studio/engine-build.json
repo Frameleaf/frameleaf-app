@@ -454,7 +454,12 @@
       "path": "patches/0095-decoded-channel-fixture-timestamps.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "fcf9823b752f7ec782879dbac5828806b2e58525b77abca2f51ae71de985e6f9"
+    },
+    {
+      "path": "patches/0094-linear-hdr-pixelate.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c174f96b2de818dd168bbf74f0b2897f590960dc1ca43e8ef38158e0be597ac3"
     }
   ],
-  "sourceSha256": "df0790d8edb41707ff3c8a2f68a34b505ba89fe264568fe31fdd384bd3f6a408"
+  "sourceSha256": "28cd71d5366f4d97b7ae596ee70d3be39bfc7af8f91418996e270c54d48333de"
 }
