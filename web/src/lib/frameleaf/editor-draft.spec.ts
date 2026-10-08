@@ -102,6 +102,20 @@ describe('editor draft', () => {
     );
   });
 
+  it('sends a keystone correction only when it corrects, or clears a stored one', () => {
+    expect('perspective' in toServerRecipe(initialRecipe())).toBe(false);
+    const corrected = changeDraft(createDraft(), { perspective: { vertical: 120, horizontal: -30.4 } }).recipe;
+    expect(corrected.perspective).toEqual({ vertical: 100, horizontal: -30 });
+    expect(toServerRecipe(corrected).perspective).toEqual({ vertical: 100, horizontal: -30 });
+    expect(geometryIsDefault(corrected)).toBe(false);
+    expect(normalizeRecipe({ ...corrected, ...resetGeometry() }).perspective).toEqual({ vertical: 0, horizontal: 0 });
+    const stored = createDraft({ version: 1, perspective: { vertical: 20, horizontal: 0 }, keyFrame: { timeMs: 900 } });
+    const cleared = toServerRecipe(changeDraft(stored, { perspective: { vertical: 0, horizontal: 0 } }).recipe);
+    expect(cleared.perspective).toEqual({ vertical: 0, horizontal: 0 });
+    // a key frame chosen on another device is carried, never dropped
+    expect(cleared.keyFrame).toEqual({ timeMs: 900 });
+  });
+
   it('opens with the current version recipe, or the original', () => {
     expect(openingRecipe({ currentRevisionId: 'rev-1', revisions: [revision()] }).contrast).toBe(30);
     expect(openingRecipe({ currentRevisionId: null, revisions: [revision()] })).toEqual(initialRecipe());

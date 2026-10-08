@@ -12566,6 +12566,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/develop/fills/generate": {
+      "post": {
+        "description": "Fills the area (`region` or `strokes`, in original-image fractions, as the Remove operation will carry it) on the instance-local ML worker and stores the result as a fill artifact covering the area's bounding box. Reference its `id` as the Remove operation's `fill`. Answers 503 with code `develop_inpaint_unavailable` while the worker has no inpainting model.",
+        "operationId": "generateAssetDevelopFill",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopFillGenerateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopArtifactResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Generate a Clean Up Remove fill",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/develop/imports": {
       "post": {
         "description": "Checks that the file arrived intact and was developed from the original the photo has now, then keeps it as a new version and renders its preview. Nothing is kept when a check fails; the original is never changed.",
@@ -12636,6 +12703,7 @@
     },
     "/assets/{id}/develop/masks/propose": {
       "post": {
+        "description": "Runs on the instance-local ML worker and stores the proposal as a mask artifact of this photo. Without `coordinates` (or with `sensor-active`) the original must be a RAW and the mask covers its unrotated sensor canvas, for version 2 recipes. With `coordinates: \"original\"` any still works and the mask covers the whole original (EXIF orientation applied); reference it as the `artifact` of a version 1 `subject`, `sky` or `background` mask.",
         "operationId": "proposeAssetDevelopMask",
         "parameters": [
           {
@@ -57539,6 +57607,30 @@
         ],
         "type": "string"
       },
+      "AssetDevelopFillGenerateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "feather": {
+            "default": 0,
+            "description": "Softness of the area's edge, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "region": {
+            "$ref": "#/components/schemas/AssetDevelopRegion"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopStroke"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "AssetDevelopImportDto": {
         "properties": {
           "exportId": {
@@ -57577,6 +57669,20 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopKeyFrame": {
+        "properties": {
+          "timeMs": {
+            "description": "Offset into the motion clip, in milliseconds, of the frame the still is rendered from",
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timeMs"
         ],
         "type": "object"
       },
@@ -57818,6 +57924,27 @@
         ],
         "type": "string"
       },
+      "AssetDevelopPerspective": {
+        "properties": {
+          "horizontal": {
+            "default": 0,
+            "description": "Positive widens the right side of the picture, negative the left side",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vertical": {
+            "default": 0,
+            "description": "Positive widens the top of the picture (verticals converging upwards), negative the bottom",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "AssetDevelopPreset": {
         "description": "Named look applied on top of the develop sliders",
         "enum": [
@@ -57859,6 +57986,13 @@
           "recipe"
         ],
         "type": "object"
+      },
+      "AssetDevelopProposalCoordinates": {
+        "enum": [
+          "sensor-active",
+          "original"
+        ],
+        "type": "string"
       },
       "AssetDevelopRecipeDto": {
         "anyOf": [
@@ -57992,6 +58126,14 @@
               },
               "flipVertical": {
                 "type": "boolean"
+              },
+              "perspective": {
+                "description": "Keystone correction, applied after the quarter turns and flips and before straightening",
+                "$ref": "#/components/schemas/AssetDevelopPerspective"
+              },
+              "keyFrame": {
+                "description": "Live and Motion Photos: the frame of the motion clip the still is rendered from",
+                "$ref": "#/components/schemas/AssetDevelopKeyFrame"
               },
               "preset": {
                 "$ref": "#/components/schemas/AssetDevelopPreset"
@@ -58254,8 +58396,15 @@
             "nullable": true,
             "type": "string"
           },
+          "sourceAssetId": {
+            "description": "Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "sourceChecksum": {
-            "description": "SHA-256 (hex) of the original this version was rendered or developed from",
+            "description": "SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources",
             "nullable": true,
             "type": "string"
           },
@@ -58350,7 +58499,12 @@
       "AssetDevelopSemanticMaskDto": {
         "additionalProperties": false,
         "properties": {
+          "coordinates": {
+            "$ref": "#/components/schemas/AssetDevelopProposalCoordinates",
+            "description": "Omitted or `sensor-active`: a RAW original only, the mask covers the unrotated sensor canvas, for version 2 recipes. `original`: any still, the mask covers the whole original image (EXIF orientation applied), for subject, sky and background masks of version 1 recipes"
+          },
           "target": {
+            "description": "What the proposed mask selects",
             "enum": [
               "subject",
               "sky"
@@ -72004,6 +72158,10 @@
             "minimum": 0,
             "type": "number"
           },
+          "perspective": {
+            "$ref": "#/components/schemas/AssetDevelopPerspective",
+            "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+          },
           "preset": {
             "$ref": "#/components/schemas/AssetDevelopPreset",
             "default": "Original"
@@ -72262,6 +72420,10 @@
             "maximum": 100,
             "minimum": 0,
             "type": "number"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/AssetDevelopPerspective",
+            "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
           },
           "preset": {
             "$ref": "#/components/schemas/AssetDevelopPreset",
@@ -72522,6 +72684,10 @@
             "minimum": 0,
             "type": "number"
           },
+          "perspective": {
+            "$ref": "#/components/schemas/AssetDevelopPerspective",
+            "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+          },
           "preset": {
             "$ref": "#/components/schemas/AssetDevelopPreset",
             "default": "Original"
@@ -72780,6 +72946,10 @@
             "maximum": 100,
             "minimum": 0,
             "type": "number"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/AssetDevelopPerspective",
+            "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
           },
           "preset": {
             "$ref": "#/components/schemas/AssetDevelopPreset",
@@ -76397,6 +76567,10 @@
             "minimum": -100,
             "type": "number"
           },
+          "keyFrame": {
+            "$ref": "#/components/schemas/AssetDevelopKeyFrame",
+            "description": "Live and Motion Photos: the frame of the motion clip the still is rendered from"
+          },
           "masks": {
             "default": [],
             "description": "Selective adjustments, applied in order after the global develop",
@@ -76413,6 +76587,10 @@
             "maximum": 100,
             "minimum": 0,
             "type": "number"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/AssetDevelopPerspective",
+            "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
           },
           "preset": {
             "$ref": "#/components/schemas/AssetDevelopPreset",

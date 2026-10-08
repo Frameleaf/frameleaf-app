@@ -4,6 +4,7 @@ import { ASSET_DEVELOP_BITMAP_MASK_KINDS, AssetDevelopMaskKind } from './develop
 import type { LinearHdrImage } from './image-hdr.js';
 import { SharpResourceLimitError } from './sharp-protocol.js';
 import { type DevelopBitmap, type DevelopLinearFill, orientedToOriginal } from '../utils/develop-cleanup.js';
+import { perspectiveFor, perspectiveSourcePoint } from '../utils/develop-perspective.js';
 import {
   type DevelopGeometryPlan,
   createNoise,
@@ -83,11 +84,19 @@ export function transformHdrGeometry(
   const scale = straightenScale(plan.oriented.width, plan.oriented.height, plan.straighten);
   const cx = plan.oriented.width / 2;
   const cy = plan.oriented.height / 2;
+  const keystone = perspectiveFor(plan.perspective);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const dx = plan.extract.left + x + 0.5 - cx;
       const dy = plan.extract.top + y + 0.5 - cy;
-      const point = orientedToOriginal((dx * cos + dy * sin) / scale + cx, (-dx * sin + dy * cos) / scale + cy, plan);
+      const [kx, ky] = perspectiveSourcePoint(
+        keystone,
+        (dx * cos + dy * sin) / scale + cx,
+        (-dx * sin + dy * cos) / scale + cy,
+        plan.oriented.width,
+        plan.oriented.height,
+      );
+      const point = orientedToOriginal(kx, ky, plan);
       const sx = Math.max(0, Math.min(image.width - 1, point.x - 0.5));
       const sy = Math.max(0, Math.min(image.height - 1, point.y - 0.5));
       const x0 = Math.floor(sx);
@@ -243,6 +252,7 @@ export function applyHdrDevelopMasks(
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const scale = straightenScale(ow, oh, plan.straighten);
+  const keystone = perspectiveFor(plan.perspective);
   for (const mask of active) {
     image.data.copy(scratch);
     applyHdrDevelopTone({ ...image, data: scratch }, { ...defaultDevelopRecipe(), ...mask.adjustments });
@@ -250,8 +260,13 @@ export function applyHdrDevelopMasks(
       for (let x = 0; x < image.width; x++) {
         const dx = plan.extract.left + x + 0.5 - ow / 2;
         const dy = plan.extract.top + y + 0.5 - oh / 2;
-        const ox = (dx * cos + dy * sin) / scale + ow / 2;
-        const oy = (-dx * sin + dy * cos) / scale + oh / 2;
+        const [ox, oy] = perspectiveSourcePoint(
+          keystone,
+          (dx * cos + dy * sin) / scale + ow / 2,
+          (-dx * sin + dy * cos) / scale + oh / 2,
+          ow,
+          oh,
+        );
         let weight: number;
         if (mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear) {
           weight = maskWeight(mask, ox / ow, oy / oh, ow / oh);

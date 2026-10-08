@@ -1239,7 +1239,8 @@ describe(CloudBackupService.name, () => {
           type: PushEventType.BackupNeedsAttention,
           admins: true,
           title: 'Cloud backup failed',
-          data: { reason: 'cloud-backup:failed' },
+          // native apps: Retry starts a new run (`POST /admin/cloud/backup/runs`)
+          data: { reason: 'cloud-backup:failed', job: 'run-1', jobType: 'cloud-backup-run', jobActions: 'retry' },
         }),
       );
     });

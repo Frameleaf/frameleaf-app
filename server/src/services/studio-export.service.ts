@@ -79,6 +79,7 @@ import {
 import { getConfig } from 'src/utils/config.js';
 import { assertExecutionActive, settleOperationExecution } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { pushJobData } from 'src/utils/frameleaf-push.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
@@ -1573,7 +1574,16 @@ export class StudioExportService {
           systemTemplate: label.trim()
             ? { version: 1, key: 'studio-export-ready-named', args: { label: label.trim() } }
             : { version: 1, key: 'studio-export-ready', args: {} },
-          data: { versionId: version.id, projectId: version.projectId, status: 'published' },
+          data: {
+            versionId: version.id,
+            projectId: version.projectId,
+            status: 'published',
+            ...pushJobData(
+              version.renderOperationId
+                ? { id: version.renderOperationId, type: 'media-operation', actions: [] }
+                : null,
+            ),
+          },
           assetIds: version.resultAssetId ? [version.resultAssetId] : [],
         },
       },
@@ -1761,7 +1771,21 @@ export class StudioExportService {
               args: { label: name },
             }
           : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
-        data: { versionId: version.id, projectId: version.projectId, status },
+        // native apps: a failed render offers Retry (`POST /media-operations/{job}/retry`)
+        data: {
+          versionId: version.id,
+          projectId: version.projectId,
+          status,
+          ...pushJobData(
+            version.renderOperationId
+              ? {
+                  id: version.renderOperationId,
+                  type: 'media-operation',
+                  actions: status === 'failed' ? ['retry'] : [],
+                }
+              : null,
+          ),
+        },
         assetIds: resultAssetId ? [resultAssetId] : [],
       });
     } catch (error) {

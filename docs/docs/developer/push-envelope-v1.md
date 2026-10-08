@@ -110,11 +110,23 @@ The plaintext is one JSON object, UTF-8 encoded, at most **2048 bytes**. The ser
 |                           | Mentioned in a shared space                                                   | `albumId`, `activityId`, `action: "mentioned"`, optional `assetId`                                                                                                    |
 |                           | A reply to your comment                                                       | `albumId`, `activityId`, `action: "replied"`, optional `assetId`                                                                                                      |
 | `memories`                | New memories are ready                                                        | `count`                                                                                                                                                               |
-| `render-finished`         | A Studio render finished or failed                                            | `versionId`, `projectId`, `status` (`published` or failed)                                                                                                            |
+| `render-finished`         | A Studio render finished or failed                                            | `versionId`, `projectId`, `status` (`published` or failed), and the render's `job` fields (see below)                                                                 |
 | `access-changed`          | Your role in an album changed                                                 | `albumId`, `change: "role"`, `role`                                                                                                                                   |
 |                           | A partner shared or stopped sharing their library                             | `partnerId`, `change` (`partner-added` or `partner-removed`)                                                                                                          |
 
 `data` values that name an item withheld for privacy are removed. A device must not assume an optional field is present.
+
+### Server jobs: `job`, `jobType`, `jobActions`
+
+A notice about a server job names it, so the app can offer Retry or Pause:
+
+| Field        | Meaning                                                                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `job`        | The job's id                                                                                                                                                                                                                              |
+| `jobType`    | `media-operation`: `POST /media-operations/{job}/retry`, `/pause`, `/resume`, `/cancel`. `cloud-backup-run` (administrators): `POST /admin/cloud/backup/runs/{job}/pause`, `/resume`, `/cancel`; Retry is `POST /admin/cloud/backup/runs` |
+| `jobActions` | Comma-separated actions on offer when the push was built (`retry`, `pause`, `resume`, `cancel`); may be empty                                                                                                                             |
+
+They are sent with `render-finished` (the Studio render; `retry` when it failed) and with the cloud backup notices of `backup-needs-attention`: a failed backup run (`retry`), a run waiting for its key (`pause,cancel`), and a failed verification, clean-up or restore (no action; started again from settings). The job's state may have moved on by the time the device shows the notice: the endpoints answer with the current state.
 
 ### `activation`
 

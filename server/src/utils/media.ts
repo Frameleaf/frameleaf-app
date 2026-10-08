@@ -1136,3 +1136,32 @@ export class RkmppHwDecodeConfig extends RkmppSwDecodeConfig {
     return [];
   }
 }
+
+/**
+ * Live and Motion Photos (`keyFrame` in a develop recipe): one full-resolution PNG frame of the motion
+ * clip at `timeMs`. Input seeking decodes up to the exact frame; the display matrix rotation is applied
+ * (ffmpeg's autorotate) so the frame is oriented like the still. HDR clips are tone mapped to BT.709 the
+ * way video thumbnails are; nothing is scaled.
+ */
+export function getKeyframeCommand(config: ConfigFFmpegDto, video: VideoStreamInfo, timeMs: number): TranscodeCommand {
+  const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
+  return {
+    inputOptions: ['-ss', (Math.max(0, timeMs) / 1000).toFixed(3)],
+    outputOptions: [
+      '-map',
+      `0:${video.index}`,
+      '-map_metadata',
+      '-1',
+      '-an',
+      '-frames:v',
+      '1',
+      '-update',
+      '1',
+      '-c:v',
+      'png',
+      ...(tonemap.length > 0 ? ['-vf', tonemap.join(',')] : []),
+    ],
+    twoPass: false,
+    progress: { frameCount: 1, percentInterval: 100 },
+  };
+}

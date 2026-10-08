@@ -387,6 +387,12 @@ export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
  * `unreachable` when the request never got an answer, or `protocol-error` when the answer
  * could not be trusted (missing or mismatched result, or a file that failed its hash).
  */
+/** The inpainting model the Clean Up Remove fill asks for; which model it is stays the owner's decision. */
+export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
+
+/** No local worker can fill an area today: ML is off, remote-only, or its worker has no inpainting model. */
+export class InpaintUnavailableError extends Error {}
+
 export class RestorationWorkerError extends Error {
   constructor(
     readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
@@ -506,6 +512,78 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
     await this.authorize({ url });
     return Buffer.from(result['semantic-mask'].png, 'base64');
+  }
+
+  /**
+   * Clean Up Remove (native API): ask the instance-local ML worker to fill the masked part of `image`.
+   * `image` is an RGB PNG of the area with surrounding context; `mask` a greyscale PNG of the same size,
+   * white where content is removed. The worker answers `{ inpaint: { png, width, height } }` with an RGB
+   * PNG of the same size. No inpainting model ships today (its choice is owner-gated); a worker without
+   * one refuses the task, which surfaces as `InpaintUnavailableError`.
+   */
+  async inpaintLocal(image: Buffer, mask: Buffer, signal?: AbortSignal): Promise<Buffer> {
+    if (!this.config.enabled) throw new InpaintUnavailableError('Local machine learning is disabled');
+    const url = this.getLocalUrls()[0];
+    if (this.configRepo && this.metadataRepo) {
+      const current = await readConfig({
+        configRepo: this.configRepo,
+        metadataRepo: this.metadataRepo,
+        logger: this.logger,
+      });
+      if (!current.machineLearning.enabled || !current.machineLearning.urls.includes(url)) throw recoveryMlRefusal();
+    }
+    await this.authorize({ url });
+    if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new InpaintUnavailableError('No local inpainting worker');
+    const endpoint = new URL('predict', url.endsWith('/') ? url : `${url}/`);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
+      throw new InpaintUnavailableError('Inpainting requires an instance-local worker');
+    const form = new FormData();
+    form.append('entries', JSON.stringify({ inpaint: { visual: { modelName: INPAINT_MODEL_NAME, options: {} } } }));
+    form.append('image', new Blob([new Uint8Array(image)]));
+    form.append('mask', new Blob([new Uint8Array(mask)]));
+    const deadline = AbortSignal.timeout(120_000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+      signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+    });
+    if (!response.ok) {
+      // an unknown task (422), a missing model (503) or no such route (404): nothing can fill today
+      if ([404, 422, 501, 503].includes(response.status))
+        throw new InpaintUnavailableError(`Local inpainting worker unavailable (${response.status})`);
+      throw new Error(`Local inpainting worker failed (${response.status})`);
+    }
+    // Bound the streamed response before JSON/base64 allocation; never include media in errors.
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Empty local inpainting result');
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 24 * 1024 * 1024) throw new Error('Local inpainting result is too large');
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+    const result = z
+      .object({
+        inpaint: z.object({
+          png: z
+            .string()
+            .max(18 * 1024 * 1024)
+            .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+          width: z.int().min(1).max(4096),
+          height: z.int().min(1).max(4096),
+        }),
+      })
+      .parse(JSON.parse(Buffer.concat(chunks).toString()));
+    await this.authorize({ url });
+    return Buffer.from(result.inpaint.png, 'base64');
   }
 
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */

@@ -6,6 +6,7 @@ import {
   collapseIdOf,
   liveActivityStateOf,
   pushGatewayUrl,
+  pushJobData,
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
 
@@ -166,5 +167,34 @@ describe('Cloud Backup activation progress (FL-228)', () => {
 
   it('has no chain when cloud backup is off', () => {
     expect(cloudBackupActivationProgress({ ...setup, target: 'off' })).toBeNull();
+  });
+});
+
+describe('push job reference (native apps: Retry and Pause)', () => {
+  it('names the job, its API and the actions on offer as plain data fields', () => {
+    expect(pushJobData({ id: 'op-1', type: 'media-operation', actions: ['retry'] })).toEqual({
+      job: 'op-1',
+      jobType: 'media-operation',
+      jobActions: 'retry',
+    });
+    expect(pushJobData({ id: 'run-1', type: 'cloud-backup-run', actions: ['pause', 'cancel'] })).toEqual({
+      job: 'run-1',
+      jobType: 'cloud-backup-run',
+      jobActions: 'pause,cancel',
+    });
+    expect(pushJobData(undefined)).toEqual({});
+  });
+
+  it('reaches the device payload unchanged', () => {
+    const payload = buildPushPayload(
+      {
+        type: PushEventType.RenderFinished,
+        title: 'Render failed',
+        body: 'x',
+        data: { versionId: 'v', ...pushJobData({ id: 'op-9', type: 'media-operation', actions: ['retry'] }) },
+      },
+      { id: 'p', sentAt: '2026-10-08T00:00:00.000Z', safeAssetIds: new Set() },
+    );
+    expect(payload.data).toMatchObject({ job: 'op-9', jobType: 'media-operation', jobActions: 'retry' });
   });
 });

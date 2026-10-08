@@ -5,6 +5,7 @@ import { ApiCustomExtension } from 'src/enum.js';
 
 import {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_KEY_FRAME_MAX_MS,
   ASSET_DEVELOP_MAX_CLEANUP,
   ASSET_DEVELOP_MAX_MASKS,
   ASSET_DEVELOP_MAX_RECIPE_POINTS,
@@ -18,6 +19,7 @@ import {
 
 export {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_KEY_FRAME_MAX_MS,
   ASSET_DEVELOP_MAX_CLEANUP,
   ASSET_DEVELOP_MAX_MASKS,
   ASSET_DEVELOP_MAX_RECIPE_POINTS,
@@ -430,6 +432,32 @@ export const DarktableDevelopRecipeSchema = z
 export type DarktableDevelopRecipe = z.infer<typeof DarktableDevelopRecipeSchema>;
 export type DarktableDevelopMask = NonNullable<DarktableDevelopRecipe['masks']>[number];
 
+/**
+ * Keystone correction of the oriented frame (after the quarter turns and flips, before straightening
+ * and the crop). The maths are in `server/src/utils/develop-perspective.ts` and the develop recipe
+ * protocol; omitted (or both zero) means no correction.
+ */
+export const AssetDevelopPerspectiveSchema = z
+  .object({
+    vertical: bipolar('Positive widens the top of the picture (verticals converging upwards), negative the bottom'),
+    horizontal: bipolar('Positive widens the right side of the picture, negative the left side'),
+  })
+  .meta({ id: 'AssetDevelopPerspective' });
+
+/**
+ * Live and Motion Photos: render the still from the motion clip at `timeMs` instead of the original
+ * still. Omitted means the original still.
+ */
+export const AssetDevelopKeyframeSchema = z
+  .object({
+    timeMs: z
+      .int()
+      .min(0)
+      .max(ASSET_DEVELOP_KEY_FRAME_MAX_MS)
+      .describe('Offset into the motion clip, in milliseconds, of the frame the still is rendered from'),
+  })
+  .meta({ id: 'AssetDevelopKeyFrame' });
+
 /** The recipe fields without the whole-recipe checks, for `.pick` and the envelope's shape. */
 export const KnownAssetDevelopRecipeFields = z.object({
   version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
@@ -477,6 +505,12 @@ export const KnownAssetDevelopRecipeFields = z.object({
     .describe('Quarter-turn rotation in degrees, clockwise'),
   flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
   flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
+  perspective: AssetDevelopPerspectiveSchema.optional().describe(
+    'Keystone correction, applied after the quarter turns and flips and before straightening',
+  ),
+  keyFrame: AssetDevelopKeyframeSchema.optional().describe(
+    'Live and Motion Photos: the frame of the motion clip the still is rendered from',
+  ),
   preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
   presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
   masks: z
@@ -502,19 +536,23 @@ export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refin
   { error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all` },
 ).meta({ id: 'KnownAssetDevelopRecipe' });
 
-/** HDR revisions use a separate identity; historical v1 and darktable v2 are unchanged. */
-const LegacyHdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.extend({
-  version: z.literal(3).meta({ type: 'integer', format: 'int32' }),
-  renderer: z.literal('frameleaf-develop-hdr/1').default('frameleaf-develop-hdr/1'),
-  hdr: z
-    .strictObject({
-      version: z.literal(1).meta({ type: 'integer', format: 'int32' }).default(1),
-      intent: z.literal('preserve').default('preserve'),
-      referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
-      sdrToneMapper: z.literal('libultrahdr/2.0.2').default('libultrahdr/2.0.2'),
-    })
-    .prefault({}),
-})
+/**
+ * HDR revisions use a separate identity; historical v1 and darktable v2 are unchanged. They are bound
+ * to the original still's bytes, so a motion clip `keyFrame` is a version 1 recipe only.
+ */
+const LegacyHdrAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.omit({ keyFrame: true })
+  .extend({
+    version: z.literal(3).meta({ type: 'integer', format: 'int32' }),
+    renderer: z.literal('frameleaf-develop-hdr/1').default('frameleaf-develop-hdr/1'),
+    hdr: z
+      .strictObject({
+        version: z.literal(1).meta({ type: 'integer', format: 'int32' }).default(1),
+        intent: z.literal('preserve').default('preserve'),
+        referenceWhite: z.literal(203).meta({ type: 'integer', format: 'int32' }).default(203),
+        sdrToneMapper: z.literal('libultrahdr/2.0.2').default('libultrahdr/2.0.2'),
+      })
+      .prefault({}),
+  })
   .strict()
   .meta({ id: 'HdrAssetDevelopRecipe' });
 const VersionFourHdrAssetDevelopRecipeSchema = LegacyHdrAssetDevelopRecipeSchema.extend({
@@ -675,6 +713,7 @@ export type AssetDevelopCrop = z.infer<typeof AssetDevelopCropSchema>;
 export type AssetDevelopMask = z.infer<typeof AssetDevelopMaskSchema>;
 export type AssetDevelopMaskAdjustments = z.infer<typeof AssetDevelopMaskAdjustmentsSchema>;
 export type AssetDevelopCleanup = z.infer<typeof AssetDevelopCleanupSchema>;
+export type AssetDevelopPerspective = z.infer<typeof AssetDevelopPerspectiveSchema>;
 
 const AssetDevelopSaveSchema = z
   .object({
@@ -752,10 +791,19 @@ const AssetDevelopRevisionResponseSchema = z
     width: z.int().nullable().describe('Width of the edited master in pixels'),
     height: z.int().nullable().describe('Height of the edited master in pixels'),
     kind: AssetDevelopRevisionKindSchema,
+    sourceAssetId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage',
+      ),
     sourceChecksum: z
       .string()
       .nullable()
-      .describe('SHA-256 (hex) of the original this version was rendered or developed from'),
+      .describe(
+        'SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources',
+      ),
     renditionChecksum: z.string().nullable().describe('SHA-256 (hex) of the edited master file, once it exists'),
     exportId: z.uuidv4().nullable().describe('The export of the original an imported version was developed from'),
     fileName: z.string().nullable().describe('Name of the imported file, for a version developed elsewhere'),
@@ -847,4 +895,38 @@ export class AssetDevelopRevisionParamDto extends createZodDto(AssetDevelopRevis
 export class AssetDevelopRevisionResponseDto extends createZodDto(AssetDevelopRevisionResponseSchema) {}
 export class AssetDevelopResponseDto extends createZodDto(AssetDevelopResponseSchema) {}
 
-export class AssetDevelopSemanticMaskDto extends createZodDto(z.strictObject({ target: z.enum(['subject', 'sky']) })) {}
+const AssetDevelopSemanticMaskSchema = z
+  .strictObject({
+    target: z.enum(['subject', 'sky']).describe('What the proposed mask selects'),
+    coordinates: z
+      .enum(['sensor-active', 'original'])
+      .meta({ id: 'AssetDevelopProposalCoordinates' })
+      .optional()
+      .describe(
+        'Omitted or `sensor-active`: a RAW original only, the mask covers the unrotated sensor canvas, for version 2 recipes. `original`: any still, the mask covers the whole original image (EXIF orientation applied), for subject, sky and background masks of version 1 recipes',
+      ),
+  })
+  .meta({ id: 'AssetDevelopSemanticMaskDto' });
+
+export class AssetDevelopSemanticMaskDto extends createZodDto(AssetDevelopSemanticMaskSchema) {}
+
+/**
+ * Clean Up Remove: the area to fill, exactly as the Remove operation of the recipe will carry it (one of
+ * `region` or `strokes`, in original-image fractions). The server answers with the generated fill, an
+ * RGBA artifact covering the area's bounding box, to reference as the operation's `fill`.
+ */
+const AssetDevelopFillGenerateSchema = z
+  .strictObject({
+    region: AssetDevelopRegionSchema.optional(),
+    strokes: z.array(AssetDevelopStrokeSchema).min(1).max(ASSET_DEVELOP_MAX_STROKES).optional(),
+    feather: z.int().min(0).max(100).default(0).describe("Softness of the area's edge, as a percentage"),
+  })
+  .refine((value) => (value.region === undefined) !== (value.strokes === undefined), {
+    error: 'Name exactly one of region or strokes',
+  })
+  .refine((value) => recipeStrokePoints({ cleanup: [value] }) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: `At most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points`,
+  })
+  .meta({ id: 'AssetDevelopFillGenerateDto' });
+
+export class AssetDevelopFillGenerateDto extends createZodDto(AssetDevelopFillGenerateSchema) {}

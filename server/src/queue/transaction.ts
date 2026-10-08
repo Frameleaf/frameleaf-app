@@ -1,5 +1,6 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { AssetType } from 'src/enum.js';
 
 /** Only DB-only adoption callbacks enter this scope. No executor holds a transaction during I/O. */
 export const publicationTransaction = new AsyncLocalStorage<Transaction<any>>();
@@ -42,4 +43,43 @@ export async function assertPublicationSource(assetId: string, checksum: Buffer)
   if (!asset || !Buffer.from(asset.checksum).equals(checksum)) {
     throw new Error('Prepared output source changed');
   }
+}
+
+/** Lock both sides of a Live Photo relationship before adopting pixels from its motion source. */
+export async function assertPublicationMotionSource(
+  stillId: string,
+  ownerId: string,
+  stillChecksum: Buffer,
+  motionId: string,
+  checksum: Buffer,
+) {
+  const tx = publicationTransaction.getStore();
+  if (!tx) throw new Error('Motion publication requires a database transaction');
+  for (const id of [stillId, motionId].sort())
+    await sql`select pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+  const assets = await tx
+    .selectFrom('asset')
+    .select(['id', 'ownerId', 'livePhotoVideoId', 'checksum', 'deletedAt', 'isOffline', 'type'])
+    .where('id', 'in', [stillId, motionId])
+    .orderBy('id')
+    .forUpdate()
+    .execute();
+  const still = assets.find((asset) => asset.id === stillId);
+  const motion = assets.find((asset) => asset.id === motionId);
+  const locked = await tx.selectFrom('asset_lock').select('assetId').where('assetId', '=', motionId).executeTakeFirst();
+  if (
+    !still ||
+    !motion ||
+    still.ownerId !== ownerId ||
+    motion.ownerId !== ownerId ||
+    !Buffer.from(still.checksum).equals(stillChecksum) ||
+    still.deletedAt ||
+    still.livePhotoVideoId !== motionId ||
+    motion.type !== AssetType.Video ||
+    motion.deletedAt ||
+    motion.isOffline ||
+    locked ||
+    !Buffer.from(motion.checksum).equals(checksum)
+  )
+    throw new Error('Prepared motion source changed or became unavailable');
 }

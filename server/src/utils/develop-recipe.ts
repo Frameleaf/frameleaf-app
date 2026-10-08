@@ -14,7 +14,14 @@ import {
   sampleCoverage,
 } from './develop-cleanup.js';
 import {
+  type DevelopPerspective,
+  isIdentityPerspective,
+  perspectiveFor,
+  perspectiveSourcePoint,
+} from './develop-perspective.js';
+import {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  ASSET_DEVELOP_KEY_FRAME_MAX_MS,
   ASSET_DEVELOP_MAX_MASKS,
   ASSET_DEVELOP_MAX_RECIPE_POINTS,
   ASSET_DEVELOP_RECIPE_VERSION,
@@ -54,8 +61,12 @@ import type {
  * before every other step (`develop-cleanup.ts`). A recipe that uses none of them renders to the
  * same bytes as under v2. The definitions are in docs/docs/features/develop-recipe-protocol.md and
  * are shared by the native renderers.
+ *
+ * Renderer v4 adds the keystone correction (`perspective`, `develop-perspective.ts`) between the
+ * quarter turns and flips and the straighten, and `keyFrame` (Live and Motion Photos render their
+ * still from the motion clip). A recipe that uses neither renders to the same bytes as under v3.
  */
-export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/3';
+export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/4';
 
 export const FULL_CROP: AssetDevelopCrop = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -200,6 +211,14 @@ export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | 
   recipe.rotation = ((rotation % 360) + 360) % 360;
   recipe.flipHorizontal = value.flipHorizontal === true;
   recipe.flipVertical = value.flipVertical === true;
+  const perspective = normalizePerspective(value.perspective);
+  if (perspective) {
+    recipe.perspective = perspective;
+  }
+  const keyframe = value.keyFrame?.timeMs;
+  if (typeof keyframe === 'number' && Number.isFinite(keyframe)) {
+    recipe.keyFrame = { timeMs: Math.round(clamp(keyframe, 0, ASSET_DEVELOP_KEY_FRAME_MAX_MS)) };
+  }
   recipe.preset = Object.values(AssetDevelopPreset).includes(value.preset as AssetDevelopPreset)
     ? (value.preset as AssetDevelopPreset)
     : AssetDevelopPreset.Original;
@@ -226,6 +245,17 @@ export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | 
   recipe.masks = recipe.masks.map((mask) => within(mask));
   recipe.cleanup = recipe.cleanup.map((op) => within(op)).filter((op) => !op.strokes || op.strokes.length > 0);
   return recipe;
+}
+
+/** A perspective clamped into the contract, or undefined when it corrects nothing. */
+export function normalizePerspective(candidate: Partial<DevelopPerspective> | null | undefined) {
+  if (!candidate || typeof candidate !== 'object' || isIdentityPerspective(candidate)) {
+    return;
+  }
+  return {
+    vertical: round(clamp(finite(candidate.vertical, 0), -100, 100)),
+    horizontal: round(clamp(finite(candidate.horizontal, 0), -100, 100)),
+  };
 }
 
 /* Selective adjustments (FL-64) ---------------------------------------------- */
@@ -441,6 +471,8 @@ export type DevelopMaskMapping = {
   rotation?: 0 | 90 | 180 | 270;
   flipHorizontal?: boolean;
   flipVertical?: boolean;
+  /** Keystone correction of the oriented frame, before the straighten; absent for none. */
+  perspective?: DevelopPerspective;
 };
 
 export const identityMaskMapping = (width: number, height: number): DevelopMaskMapping => ({
@@ -456,6 +488,7 @@ export const maskMappingFor = (plan: DevelopGeometryPlan): DevelopMaskMapping =>
   rotation: plan.rotation,
   flipHorizontal: plan.flipHorizontal,
   flipVertical: plan.flipVertical,
+  ...(plan.perspective && { perspective: plan.perspective }),
 });
 
 /**
@@ -482,6 +515,7 @@ export function applyDevelopMasks(
   const scale = straightenScale(ow, oh, mapping.straighten);
   const cx = ow / 2;
   const cy = oh / 2;
+  const keystone = perspectiveFor(mapping.perspective);
   const channels = info.channels;
   for (const mask of active) {
     const params = { ...zeroSliders(), ...mask.adjustments };
@@ -494,8 +528,14 @@ export function applyDevelopMasks(
         // pixel centre in the straightened frame, then back through the straighten rotation
         const sx = mapping.extract.left + x + 0.5 - cx;
         const sy = mapping.extract.top + y + 0.5 - cy;
-        const ox = (sx * cos + sy * sin) / scale + cx;
-        const oy = (-sx * sin + sy * cos) / scale + cy;
+        // then back through the keystone correction, so a mask stays on the content it was drawn over
+        const [ox, oy] = perspectiveSourcePoint(
+          keystone,
+          (sx * cos + sy * sin) / scale + cx,
+          (-sx * sin + sy * cos) / scale + cy,
+          ow,
+          oh,
+        );
         let shape: number;
         if (mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear) {
           shape = maskWeight(mask, ox / ow, oy / oh, aspect);
@@ -554,6 +594,8 @@ export const isIdentityDevelop = (recipe: AssetDevelopRecipe) => {
     recipe.rotation === 0 &&
     !recipe.flipHorizontal &&
     !recipe.flipVertical &&
+    isIdentityPerspective(recipe.perspective) &&
+    recipe.keyFrame === undefined &&
     (recipe.masks ?? []).every((mask) => !isActiveMask(mask)) &&
     (recipe.cleanup ?? []).every((op) => !op.enabled)
   );
@@ -577,6 +619,8 @@ export type DevelopGeometryPlan = {
   rotation: 0 | 90 | 180 | 270;
   flipHorizontal: boolean;
   flipVertical: boolean;
+  /** Keystone correction of the oriented frame, applied before the straighten; absent for none. */
+  perspective?: DevelopPerspective;
   /** Frame size after the quarter turns, before straightening. */
   oriented: { width: number; height: number };
   /** Straighten angle in degrees; zero skips the straighten stage. */
@@ -601,6 +645,7 @@ export function planDevelopGeometry(recipe: AssetDevelopRecipe, width: number, h
   const swapped = rotation === 90 || rotation === 270;
   const oriented = { width: swapped ? height : width, height: swapped ? width : height };
   const crop = normalizeCrop(recipe.crop);
+  const perspective = normalizePerspective(recipe.perspective);
   const left = Math.round(crop.x * oriented.width);
   const top = Math.round(crop.y * oriented.height);
   const extractWidth = Math.max(1, Math.min(oriented.width - left, Math.round(crop.w * oriented.width)));
@@ -609,6 +654,7 @@ export function planDevelopGeometry(recipe: AssetDevelopRecipe, width: number, h
     rotation,
     flipHorizontal: recipe.flipHorizontal,
     flipVertical: recipe.flipVertical,
+    ...(perspective && { perspective }),
     oriented,
     straighten: round(clamp(finite(recipe.straighten), -45, 45), 2),
     extract: { left, top, width: extractWidth, height: extractHeight },

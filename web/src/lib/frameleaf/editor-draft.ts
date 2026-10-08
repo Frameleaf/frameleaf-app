@@ -25,12 +25,15 @@ import {
   type AspectId,
   type DevelopValues,
 } from '$lib/frameleaf/develop';
+import { isIdentityPerspective, type Perspective } from '$lib/frameleaf/perspective';
 import { normalizeMasks, WEB_MASK_KINDS, type EditorMask } from '$lib/frameleaf/photo-tools';
 
 export const RECIPE_VERSION = 1 as const;
 
 export type EditorRecipe = DevelopValues & {
   straighten: number;
+  /** Keystone correction of the oriented frame, -100..100 on each axis; zero sends nothing. */
+  perspective: Perspective;
   rotation: number;
   flipHorizontal: boolean;
   flipVertical: boolean;
@@ -65,6 +68,7 @@ export const initialRecipe = (): EditorRecipe => ({
   crop: { x: 0, y: 0, w: 1, h: 1 },
   aspect: 'Original',
   straighten: 0,
+  perspective: { vertical: 0, horizontal: 0 },
   rotation: 0,
   flipHorizontal: false,
   flipVertical: false,
@@ -99,6 +103,10 @@ export function normalizeRecipe(candidate: unknown, fromWire = true): EditorReci
     crop: normalizeRect(value.crop),
     aspect: choice(value.aspect, ASPECT_IDS, isFullRect(value.crop) ? 'Original' : 'Free'),
     straighten: Math.round(number(value.straighten, 0, -45, 45) * 2) / 2,
+    perspective: {
+      vertical: Math.round(number(value.perspective?.vertical, 0, -100, 100)),
+      horizontal: Math.round(number(value.perspective?.horizontal, 0, -100, 100)),
+    },
     rotation,
     flipHorizontal: value.flipHorizontal === true,
     flipVertical: value.flipVertical === true,
@@ -110,8 +118,14 @@ export function normalizeRecipe(candidate: unknown, fromWire = true): EditorReci
 
 /** The wire shape: the recipe without the client-only aspect. */
 export function toServerRecipe(recipe: EditorRecipe): AssetDevelopRecipeDto {
-  const { aspect: _, opaqueRecipe, ...rest } = normalizeRecipe(recipe, false);
-  const raw: Partial<AssetDevelopRecipeDto> = opaqueRecipe ?? {};
+  const { aspect: _, opaqueRecipe, perspective, ...corrected } = normalizeRecipe(recipe, false);
+  const stored: Partial<AssetDevelopRecipeDto> = opaqueRecipe ?? {};
+  // no correction sends nothing, unless it clears one the recipe carried
+  const keystone = !isIdentityPerspective(perspective) || !isIdentityPerspective(stored.perspective);
+  const raw: Partial<AssetDevelopRecipeDto> = keystone
+    ? stored
+    : Object.fromEntries(Object.entries(stored).filter(([key]) => key !== 'perspective'));
+  const rest = keystone ? { ...corrected, perspective } : corrected;
   if (rest.version !== RECIPE_VERSION) {
     const original = normalizeRecipe(raw, true);
     const changed = Object.fromEntries(
@@ -214,6 +228,7 @@ export const geometryIsDefault = (recipe: EditorRecipe) =>
   recipe.aspect === 'Original' &&
   isFullRect(recipe.crop) &&
   recipe.straighten === 0 &&
+  isIdentityPerspective(recipe.perspective) &&
   recipe.rotation === 0 &&
   !recipe.flipHorizontal &&
   !recipe.flipVertical;
@@ -222,6 +237,7 @@ export const resetGeometry = (): Partial<EditorRecipe> => ({
   aspect: 'Original',
   crop: { x: 0, y: 0, w: 1, h: 1 },
   straighten: 0,
+  perspective: { vertical: 0, horizontal: 0 },
   rotation: 0,
   flipHorizontal: false,
   flipVertical: false,

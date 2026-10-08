@@ -22,6 +22,7 @@ import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperat
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
+import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
 
 import type { KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
@@ -584,6 +585,21 @@ export class SharpOperations {
 
     this.progress();
     const { width, height } = plan.oriented;
+    // Keystone correction of the oriented frame, before the straighten (renderer v4).
+    const keystone = perspectiveFor(plan.perspective);
+    if (keystone) {
+      const warped = warpPerspective(
+        new Uint8Array(current.data.buffer, current.data.byteOffset, current.data.length),
+        {
+          width: current.info.width,
+          height: current.info.height,
+          channels: current.info.channels,
+        },
+        keystone,
+      );
+      current = { data: Buffer.from(warped.buffer, warped.byteOffset, warped.length), info: current.info };
+      this.progress();
+    }
     if (plan.straighten !== 0) {
       const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
       const cos = Math.cos(theta);

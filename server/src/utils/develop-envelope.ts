@@ -128,6 +128,12 @@ export function renderDevelopProjection(value: unknown): KnownAssetDevelopRecipe
 /** Validate the HDR policy, then reuse the existing adjustment shape without accepting unknown semantics. */
 export function renderHdrDevelopProjection(value: unknown) {
   const envelope = developEnvelope(value);
+  if (envelope.keyFrame !== undefined)
+    // HDR revisions are bound to the original still's bytes; a motion clip frame is an SDR source
+    throw new BadRequestException({
+      message: 'A key frame from the motion clip renders as a version 1 recipe, not an HDR revision',
+      code: 'develop_key_frame_unsupported',
+    });
   const parsed = HdrAssetDevelopRecipeSchema.safeParse(envelope);
   if (!parsed.success)
     throw new BadRequestException({

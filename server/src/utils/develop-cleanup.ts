@@ -379,7 +379,7 @@ export function orientedToOriginal(
 }
 
 /** The pixel rectangle an operation can touch in an original of this size. */
-function operationBox(op: AssetDevelopCleanup, size: Size): Box {
+export function cleanupOperationBox(op: AssetDevelopCleanup, size: Size): Box {
   if (op.region) {
     return {
       left: Math.floor(op.region.x * size.width),
@@ -471,7 +471,7 @@ export function applyDevelopCleanup<T extends Uint8Array | Float32Array>(
     if (!op.enabled) {
       continue;
     }
-    const box = operationBox(op, size);
+    const box = cleanupOperationBox(op, size);
     if (box.right <= box.left || box.bottom <= box.top) {
       continue;
     }
@@ -630,4 +630,66 @@ export function applyDevelopCleanup<T extends Uint8Array | Float32Array>(
     }
   }
   return data;
+}
+
+/* Generated fills (Clean Up Remove on the server) ------------------------------------------------ */
+
+/**
+ * Where a server-generated fill is computed: the area's bounding box (`box`, original pixels) with as
+ * much context again around it (half its longer side on every side, clamped to the original), sampled
+ * at `scale` so the window's longer side is at most `maxSide` pixels. `area` is the box inside the
+ * scaled window, the part that becomes the fill artifact.
+ */
+export function developFillWindow(box: Box, original: Size, maxSide = 1024) {
+  const margin = Math.ceil(Math.max(box.right - box.left, box.bottom - box.top) / 2);
+  const window = {
+    left: clamp(box.left - margin, 0, original.width),
+    top: clamp(box.top - margin, 0, original.height),
+    right: clamp(box.right + margin, 0, original.width),
+    bottom: clamp(box.bottom + margin, 0, original.height),
+  };
+  const scale = Math.min(1, maxSide / Math.max(1, window.right - window.left, window.bottom - window.top));
+  const width = Math.max(1, Math.round((window.right - window.left) * scale));
+  const height = Math.max(1, Math.round((window.bottom - window.top) * scale));
+  const left = clamp(Math.round((box.left - window.left) * scale), 0, width - 1);
+  const top = clamp(Math.round((box.top - window.top) * scale), 0, height - 1);
+  return {
+    window,
+    scale,
+    width,
+    height,
+    area: {
+      left,
+      top,
+      width: clamp(Math.round((box.right - box.left) * scale), 1, width - left),
+      height: clamp(Math.round((box.bottom - box.top) * scale), 1, height - top),
+    },
+  };
+}
+
+/**
+ * The inpainting mask of one Clean Up area over a fill window: 255 where the area covers the pixel at
+ * all, 0 elsewhere (the fill is composited by the area's own soft coverage at render time, so the
+ * model fills the whole footprint).
+ */
+export function developFillMask(
+  op: Pick<AssetDevelopCleanup, 'region' | 'strokes' | 'feather'>,
+  original: Size,
+  fill: ReturnType<typeof developFillWindow>,
+): Uint8Array {
+  const { window, scale, width, height } = fill;
+  const mask = new Uint8Array(width * height);
+  const strokes = op.region ? undefined : normalizeStrokes(op.strokes, false);
+  const coverage = strokes ? rasterizeStrokes(strokes, original, op.feather, window, scale) : undefined;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const ux = window.left + (x + 0.5) / scale;
+      const uy = window.top + (y + 0.5) / scale;
+      const value = coverage
+        ? sampleCoverage(coverage, ux, uy)
+        : cleanupCoverage(op as AssetDevelopCleanup, ux, uy, original);
+      mask[y * width + x] = value > 1 / 255 ? 255 : 0;
+    }
+  }
+  return mask;
 }
