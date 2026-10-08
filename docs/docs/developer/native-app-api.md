@@ -177,7 +177,7 @@ fields and must not rewrite v3, v4, v5 or v6 recipes as v1. Unsupported fields f
 
 Preview requests and revision-file requests accept `dynamicRange=auto|sdr|hdr`.
 Omission retains SDR-compatible output; explicit HDR fails when unavailable.
-Versions 3, 4 and 5 render HDR master/preview and SDR master/preview together using the
+Versions 3–6 render HDR master/preview and SDR master/preview together using the
 isolated worker. The server validates the set before publication. Regeneration
 keeps the last accepted set available during failure or cancellation.
 
@@ -232,15 +232,18 @@ existing isolated image worker. `codecs` records the installed library versions.
 until real-media and physical-display acceptance pass. An absent field means an
 older server with unknown capabilities. A missing codec reports empty lists,
 without preventing ordinary server feature discovery. Apple gain-map HEIC and ISO
-adaptive HEIF decoding are reported separately when installed. ISO support currently
-requires an SDR base with 8–16-bit RGB, supported sRGB transfer/profile, and aligned
-integral geometry; unsupported reconstruction is refused explicitly. It does not
-claim adaptive HEIF encoding. HDR HEIC export is
+adaptive HEIF decoding are reported separately when installed. ISO reconstruction
+accepts supported SDR bases with sRGB signaling, or at least ten-bit PQ/HLG HDR
+bases with supported nclx primaries and a reconstructable authored SDR alternate.
+Reduced gain maps and supported fractional container crops use centered sampling;
+container transforms apply exactly once. HDR-base ICC profiles, invalid metadata,
+and unsupported reconstruction fail explicitly. This does not claim adaptive HEIF
+encoding. HDR HEIC export is
 offered only after the installed encoder passes the worker's ten-bit PQ probe.
 
 ### HDR preview histogram
 
-Recipe v3/v4 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
+Recipe v3–v6 preview responses optionally carry `X-Frameleaf-HDR-Histogram`, exposed
 for cross-origin clients. The image and histogram come from the same admitted
 worker render. The histogram uses linear pixels before output tone mapping, so
 choosing SDR display does not remove highlight evidence. No source metadata is
@@ -280,6 +283,14 @@ it through the float compositor and isolated codec. SDR documents use the
 renderer’s SDR output conversion; SDR exports of HDR documents use the pinned
 codec’s tone mapper. HDR output regenerates a gain map or writes ten-bit PQ HEIC.
 Every still is sanitized again on the server and verified before publication.
+
+HDR documents admit brightness, contrast, exposure, saturation, Gaussian blur,
+box blur, motion blur, and normal straight-alpha compositing in the linear BT.709
+working domain (1.0 = 203 cd/m²). Spatial filters accumulate premultiplied light
+and coverage, then return straight alpha. Unreviewed effects, transitions and
+non-normal blends fail with `HdrRenderUnavailableError`; clients must retain
+unsaved edits and show the explanation. SDR documents retain their existing
+encoded effect semantics.
 The transaction records the canonical file’s checksum and size. Worker artifacts
 remain private and immutable while a failed publication retries.
 
