@@ -139,9 +139,12 @@ Grids, face sources and thumbhash remain SDR. These routes retain existing asset
 authorization, shared-link access, revocation and relay full-size restrictions.
 
 HDR processing and delivery currently require `FRAMELEAF_HDR_IMAGES=experimental`.
-This is a qualification gate, disabled by default. The candidate codec build has
-not passed camera-media or physical-display acceptance. Existing derivatives
-remain registered when the gate is disabled. New HDR and SDR renditions publish
+This is a qualification gate, disabled by default. For PR #140 integration,
+physical-device acceptance is assumed and the remaining real-camera corpus
+qualification is waived. These integration decisions do not establish measured
+display correctness or camera-media qualification; the codec remains experimental
+and reports `qualified: false`. Existing derivatives remain registered when the
+gate is disabled. New HDR and SDR renditions publish
 together through the existing job lease; failed regeneration retains the prior
 set. No original or Live Photo motion is rewritten.
 
