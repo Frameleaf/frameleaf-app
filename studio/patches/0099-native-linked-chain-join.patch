@@ -1,0 +1,791 @@
+diff --git a/src/features/timeline/stores/actions/edit/join-actions.ts b/src/features/timeline/stores/actions/edit/join-actions.ts
+index c5a60fd059..a960e2261e 100644
+--- a/src/features/timeline/stores/actions/edit/join-actions.ts
++++ b/src/features/timeline/stores/actions/edit/join-actions.ts
+@@ -1,3 +1,6 @@
++import type { TimelineItem } from '@/types/timeline'
++import { getLinkedItems } from '../../../utils/linked-items'
++import { canJoinMultipleItems } from '../../../utils/clip-utils'
+ import { useItemsStore } from '../../items-store'
+ import { useTransitionsStore } from '../../transitions-store'
+ import { useKeyframesStore } from '../../keyframes-store'
+@@ -6,18 +9,144 @@ import { execute, applyTransitionRepairs } from '../shared'
+ import { getSynchronizedLinkedCounterpartPairForEdit } from '../linked-edit'
+ import { isLinkedSelectionEnabled } from './shared'
+ 
++/** Complete pre-mutation plan for a longer source-contiguous native chain. */
++function planLinkedChainJoin(
++  items: TimelineItem[],
++  itemIds: string[],
++  linked: boolean,
++): readonly (readonly string[])[] | null {
++  const ids = new Set(itemIds)
++  const primary = items.filter((item) => ids.has(item.id)).toSorted((a, b) => a.from - b.from)
++  if (primary.length !== ids.size || !canJoinMultipleItems(primary)) return null
++  if (
++    primary.some(
++      (item) =>
++        !Number.isFinite(item.from) ||
++        !Number.isFinite(item.durationInFrames) ||
++        item.durationInFrames <= 0 ||
++        !Number.isFinite(item.sourceStart) ||
++        !Number.isFinite(item.sourceEnd) ||
++        item.sourceEnd! <= item.sourceStart! ||
++        !Number.isFinite(item.speed ?? 1) ||
++        (item.speed ?? 1) <= 0,
++    )
++  )
++    return null
++  const groups = [primary]
++  const linkedGroups = linked ? primary.map((item) => getLinkedItems(items, item.id)) : []
++  if (
++    linked &&
++    primary.some((item, index) => item.linkedGroupId || linkedGroups[index]!.length > 1)
++  ) {
++    const companions: TimelineItem[] = []
++    for (const [index, item] of primary.entries()) {
++      const members = linkedGroups[index]!
++      if (members.length !== 2) return null
++      const companion = members.find((candidate) => candidate.id !== item.id)
++      if (
++        !companion ||
++        companion.trackId === item.trackId ||
++        (companion.compositionId ?? companion.mediaId) !== (item.compositionId ?? item.mediaId) ||
++        companion.sourceFps !== item.sourceFps ||
++        companion.sourceDuration !== item.sourceDuration
++      )
++        return null
++      const visual = (candidate: TimelineItem) =>
++        candidate.type === 'video' || candidate.type === 'composition'
++      if (
++        !(
++          (visual(item) && companion.type === 'audio') ||
++          (item.type === 'audio' && visual(companion))
++        )
++      )
++        return null
++      companions.push(companion)
++    }
++    if (!canJoinMultipleItems(companions)) return null
++    for (let index = 0; index < primary.length - 1; index++) {
++      const pair = getSynchronizedLinkedCounterpartPairForEdit(
++        items,
++        primary[index]!.id,
++        primary[index + 1]!.id,
++        true,
++      )
++      if (
++        !pair ||
++        pair.leftCounterpart.id !== companions[index]!.id ||
++        pair.rightCounterpart.id !== companions[index + 1]!.id
++      )
++        return null
++    }
++    groups.push(companions)
++  }
++  const tracks = useItemsStore.getState().tracks
++  const keyframes = useKeyframesStore.getState().keyframes
++  const rangeFields = new Set([
++    'id',
++    'from',
++    'durationInFrames',
++    'sourceStart',
++    'sourceEnd',
++    'trimStart',
++    'trimEnd',
++    'linkedGroupId',
++  ])
++  for (const group of groups) {
++    const first = group[0]!
++    const track = tracks.find((candidate) => candidate.id === first.trackId)
++    if (
++      !track ||
++      track.locked ||
++      (track.kind && track.kind !== (first.type === 'audio' ? 'audio' : 'video')) ||
++      !group.every((item) => item.type === first.type)
++    )
++      return null
++    const signature = (item: TimelineItem) =>
++      JSON.stringify(
++        Object.fromEntries(
++          Object.entries(item)
++            .filter(([key]) => !rangeFields.has(key))
++            .sort(([a], [b]) => a.localeCompare(b)),
++        ),
++      )
++    const expected = signature(first)
++    for (const item of group) {
++      // The existing join primitive retains the first item's authored state. A longer join
++      // cannot silently erase another part's animation or change repeated item-relative fades.
++      if (
++        item.isReversed ||
++        (item.speed ?? 1) <= 0 ||
++        item.effects?.length ||
++        item.motionModifiers?.length ||
++        item.motionLayers?.length ||
++        item.audioDucking ||
++        (item.fadeIn ?? 0) > 0 ||
++        (item.fadeOut ?? 0) > 0 ||
++        (item.audioFadeIn ?? 0) > 0 ||
++        (item.audioFadeOut ?? 0) > 0 ||
++        keyframes.some((entry) => entry.itemId === item.id) ||
++        signature(item) !== expected
++      )
++        return null
++    }
++  }
++  return Object.freeze(groups.map((group) => Object.freeze(group.map((item) => item.id))))
++}
++
+ export function joinItems(itemIds: string[]): void {
++  const items = useItemsStore.getState().items
++  const itemsToJoin = items
++    .filter((item) => itemIds.includes(item.id))
++    .toSorted((left, right) => left.from - right.from)
++  if (itemsToJoin.length < 2) return
++  const chain =
++    itemsToJoin.length > 2 ? planLinkedChainJoin(items, itemIds, isLinkedSelectionEnabled()) : null
++  if (itemsToJoin.length > 2 && !chain) return
+   execute(
+     'JOIN_ITEMS',
+     () => {
+-      const items = useItemsStore.getState().items
+-      const itemsToJoin = items
+-        .filter((item) => itemIds.includes(item.id))
+-        .toSorted((left, right) => left.from - right.from)
+-      if (itemsToJoin.length < 2) return
+-
+-      const joinGroups = [itemIds]
+-      if (itemsToJoin.length === 2) {
++      const joinGroups = chain ? chain.map((group) => [...group]) : [itemIds]
++      if (!chain && itemsToJoin.length === 2) {
+         const [leftItem, rightItem] = itemsToJoin
+         if (leftItem && rightItem) {
+           const counterpartPair = getSynchronizedLinkedCounterpartPairForEdit(
+diff --git a/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts b/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
+index 044f2238d9..2a5e41b312 100644
+--- a/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
++++ b/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
+@@ -8,6 +8,7 @@ import type {
+   TimelineTrack,
+   VideoItem,
+ } from '@/types/timeline'
++import { useCompositionsStore } from '../compositions-store'
+ import { useItemsStore } from '../items-store'
+ import { useTransitionsStore } from '../transitions-store'
+ import { useKeyframesStore } from '../keyframes-store'
+@@ -121,6 +122,29 @@ function makeCompositionItem(overrides: Partial<CompositionItem> = {}): Composit
+   } as CompositionItem
+ }
+ 
++function makeNativeChain(count = 3, sourceFps = 24, sourceSpan = 24) {
++  return Array.from({ length: count }, (_, index) => [
++    makeVideoItem({
++      id: `chain-video-${index}`,
++      from: index * 30,
++      durationInFrames: 30,
++      sourceStart: index * sourceSpan,
++      sourceEnd: (index + 1) * sourceSpan,
++      sourceFps,
++      linkedGroupId: `chain-group-${index}`,
++    }),
++    makeAudioItem({
++      id: `chain-audio-${index}`,
++      from: index * 30,
++      durationInFrames: 30,
++      sourceStart: index * sourceSpan,
++      sourceEnd: (index + 1) * sourceSpan,
++      sourceFps,
++      linkedGroupId: `chain-group-${index}`,
++    }),
++  ]).flat()
++}
++
+ function setCompoundWrapperItems() {
+   useItemsStore.getState().setItems([
+     makeCompositionItem({ sourceStart: 10, sourceEnd: 70, sourceDuration: 120 }),
+@@ -174,13 +198,398 @@ describe('linked edit tools', () => {
+     })
+   })
+ 
+-  it('clamps a linked end trim to the closest neighbor on every companion track', () => {
+-    useItemsStore.getState().setItems([
+-      makeVideoItem(),
+-      makeAudioItem(),
+-      makeVideoItem({ id: 'video-next', linkedGroupId: undefined, from: 100 }),
+-      makeAudioItem({ id: 'audio-next', linkedGroupId: undefined, from: 70 }),
++  it.each([3, 4])(
++    'joins an unsorted native %i-part linked chain in one undo/redo entry',
++    (count) => {
++      const chain = makeNativeChain(count)
++      useItemsStore.getState().setItems(chain)
++      const before = structuredClone(useItemsStore.getState().items)
++      joinItems(
++        chain
++          .filter((item) => item.type === 'video')
++          .map((item) => item.id)
++          .reverse(),
++      )
++      expect(useItemsStore.getState().items).toHaveLength(2)
++      for (const id of ['chain-video-0', 'chain-audio-0'])
++        expect(useItemsStore.getState().itemById[id]).toMatchObject({
++          from: 0,
++          durationInFrames: count * 30,
++          sourceStart: 0,
++          sourceEnd: count * 24,
++          sourceFps: 24,
++          linkedGroupId: 'chain-group-0',
++        })
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      const joined = structuredClone(useItemsStore.getState().items)
++      useTimelineCommandStore.getState().undo()
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineCommandStore.getState().redoStack).toHaveLength(1)
++      useTimelineCommandStore.getState().redo()
++      expect(useItemsStore.getState().items).toEqual(joined)
++    },
++  )
++
++  it.each([3, 4])(
++    'joins %i legacy linked pairs without group IDs in one native history entry',
++    (count) => {
++      const chain = makeNativeChain(count).map((item) => ({
++        ...item,
++        linkedGroupId: undefined,
++        originId: 'legacy-source',
++      }))
++      useItemsStore.getState().setItems(chain)
++      const original = structuredClone(useItemsStore.getState().items)
++      joinItems(
++        chain
++          .filter((item) => item.type === 'video')
++          .map((item) => item.id)
++          .reverse(),
++      )
++      expect(useItemsStore.getState().items).toHaveLength(2)
++      expect(
++        useItemsStore
++          .getState()
++          .items.every(
++            (item) => item.durationInFrames === count * 30 && item.sourceEnd === count * 24,
++          ),
++      ).toBe(true)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      const joined = structuredClone(useItemsStore.getState().items)
++      useTimelineCommandStore.getState().undo()
++      expect(useItemsStore.getState().items).toEqual(original)
++      useTimelineCommandStore.getState().redo()
++      expect(useItemsStore.getState().items).toEqual(joined)
++    },
++  )
++
++  it.each(['ambiguous', 'locked', 'partial', 'source-span'])(
++    'refuses %s legacy chains atomically',
++    (failure) => {
++      const chain = makeNativeChain().map((item) => ({
++        ...item,
++        linkedGroupId: undefined,
++        originId: 'legacy-source',
++      }))
++      if (failure === 'ambiguous') chain.push({ ...chain[1]!, id: 'extra-legacy-audio' })
++      if (failure === 'partial') chain.splice(3, 1)
++      if (failure === 'source-span') chain[3]!.sourceStart!++
++      useItemsStore.getState().setItems(chain)
++      if (failure === 'locked')
++        useItemsStore
++          .getState()
++          .setTracks(
++            useItemsStore
++              .getState()
++              .tracks.map((track) => ({ ...track, locked: track.id === 'audio-track' })),
++          )
++      const snapshot = () =>
++        JSON.stringify({
++          items: useItemsStore.getState().items,
++          tracks: useItemsStore.getState().tracks,
++          keys: useKeyframesStore.getState().keyframes,
++          transitions: useTransitionsStore.getState().transitions,
++          dirty: useTimelineSettingsStore.getState().isDirty,
++          undo: useTimelineCommandStore.getState().undoStack,
++          redo: useTimelineCommandStore.getState().redoStack,
++        })
++      const before = snapshot()
++      joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++      expect(snapshot()).toBe(before)
++    },
++  )
++
++  it('joins genuinely unlinked picture chains independently with linked selection enabled', () => {
++    useItemsStore.getState().setItems(
++      makeNativeChain()
++        .filter((item) => item.type === 'video')
++        .map((item) => ({ ...item, linkedGroupId: undefined })),
++    )
++    joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useItemsStore.getState().items[0]!.durationInFrames).toBe(90)
++  })
++
++  it('retains an earlier native history entry across chain join undo/redo', () => {
++    useItemsStore.getState().setItems([...makeNativeChain(), makeTextItem({ id: 'earlier-edit' })])
++    const original = structuredClone(useItemsStore.getState().items)
++    trimItemEnd('earlier-edit', -10)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    const earlier = useTimelineCommandStore.getState().undoStack[0]
++    const beforeJoin = structuredClone(useItemsStore.getState().items)
++    joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(2)
++    expect(useTimelineCommandStore.getState().undoStack[0]).toEqual(earlier)
++    const joined = structuredClone(useItemsStore.getState().items)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual(beforeJoin)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual(original)
++    useTimelineCommandStore.getState().redo()
++    expect(useItemsStore.getState().items).toEqual(beforeJoin)
++    useTimelineCommandStore.getState().redo()
++    expect(useItemsStore.getState().items).toEqual(joined)
++  })
++
++  it('joins compound wrapper chains without changing any nested child bytes', () => {
++    const child = {
++      id: 'composition-1',
++      name: 'Untouched child',
++      tracks: [makeTrack({ id: 'child-v', name: 'V1', order: 0 })],
++      items: [makeVideoItem({ id: 'nested-leaf', trackId: 'child-v', linkedGroupId: undefined })],
++      transitions: [],
++      keyframes: [],
++      fps: 30,
++      width: 1920,
++      height: 1080,
++      durationInFrames: 120,
++    }
++    useCompositionsStore.getState().setCompositions([child])
++    const original = JSON.stringify(useCompositionsStore.getState().compositions)
++    const wrappers = Array.from({ length: 3 }, (_, index) => [
++      makeCompositionItem({
++        id: `wrapper-v-${index}`,
++        from: index * 30,
++        durationInFrames: 30,
++        sourceStart: index * 30,
++        sourceEnd: (index + 1) * 30,
++        linkedGroupId: `wrapper-g-${index}`,
++      }),
++      makeAudioItem({
++        id: `wrapper-a-${index}`,
++        from: index * 30,
++        durationInFrames: 30,
++        sourceStart: index * 30,
++        sourceEnd: (index + 1) * 30,
++        mediaId: undefined,
++        compositionId: 'composition-1',
++        sourceDuration: 120,
++        linkedGroupId: `wrapper-g-${index}`,
++      }),
++    ]).flat()
++    useItemsStore.getState().setItems(wrappers)
++    joinItems(['wrapper-v-2', 'wrapper-v-0', 'wrapper-v-1'])
++    expect(useItemsStore.getState().items).toHaveLength(2)
++    expect(JSON.stringify(useCompositionsStore.getState().compositions)).toBe(original)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual(wrappers)
++    useTimelineCommandStore.getState().redo()
++    expect(JSON.stringify(useCompositionsStore.getState().compositions)).toBe(original)
++  })
++
++  it('keeps linked-disabled chain joining independent', () => {
++    const chain = makeNativeChain()
++    useItemsStore.getState().setItems(chain)
++    useEditorStore.setState({ linkedSelectionEnabled: false })
++    joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++    expect(useItemsStore.getState().items).toHaveLength(4)
++    expect(useItemsStore.getState().itemById['chain-video-0']!.durationInFrames).toBe(90)
++    expect(useItemsStore.getState().items.filter((item) => item.type === 'audio')).toEqual(
++      chain.filter((item) => item.type === 'audio'),
++    )
++  })
++
++  it.each([
++    'missing',
++    'offset',
++    'source-span',
++    'source-identity',
++    'speed',
++    'counterpart-track',
++    'locked-audio',
++    'locked-video',
++    'ambiguous',
++    'keyframes',
++    'effects',
++    'static-gain',
++    'reversed',
++    'fades',
++    'nonfinite-speed',
++    'invalid-span',
++    'wrong-track-kind',
++  ])('refuses %s chains before graph, dirty or history mutation', (failure) => {
++    let chain = makeNativeChain()
++    const companion = chain.find((item) => item.id === 'chain-audio-1')!
++    if (failure === 'missing') chain = chain.filter((item) => item.id !== companion.id)
++    if (failure === 'offset') companion.from++
++    if (failure === 'source-span') companion.sourceStart!++
++    if (failure === 'source-identity') companion.mediaId = 'unrelated'
++    if (failure === 'speed') companion.speed = 2
++    if (failure === 'counterpart-track') companion.trackId = 'caption-track'
++    if (failure === 'ambiguous') chain.push({ ...companion, id: 'ambiguous-companion' })
++    if (failure === 'effects')
++      chain[0]!.effects = [{ id: 'authored-effect', type: 'shader' } as never]
++    if (failure === 'static-gain') companion.volume = -3
++    if (failure === 'reversed') chain[0]!.isReversed = true
++    if (failure === 'fades') companion.audioFadeOut = 0.5
++    if (failure === 'nonfinite-speed')
++      chain.forEach((item) => {
++        item.speed = Number.NaN
++      })
++    if (failure === 'invalid-span') chain[0]!.sourceStart = 30
++    if (failure === 'wrong-track-kind')
++      useItemsStore
++        .getState()
++        .setTracks(useItemsStore.getState().tracks.map((track) => ({ ...track, kind: 'video' })))
++    if (failure.startsWith('locked-'))
++      useItemsStore.getState().setTracks(
++        useItemsStore.getState().tracks.map((track) => ({
++          ...track,
++          locked: track.id === (failure === 'locked-audio' ? 'audio-track' : 'video-track'),
++        })),
++      )
++    useItemsStore.getState().setItems(chain)
++    if (failure === 'keyframes')
++      useKeyframesStore.getState().setKeyframes([
++        {
++          itemId: companion.id,
++          properties: [
++            {
++              property: 'volume',
++              keyframes: [{ id: 'authored-key', frame: 5, value: -6, easing: 'linear' }],
++            },
++          ],
++        },
++      ])
++    const snapshot = () =>
++      JSON.stringify({
++        items: useItemsStore.getState().items,
++        tracks: useItemsStore.getState().tracks,
++        keys: useKeyframesStore.getState().keyframes,
++        transitions: useTransitionsStore.getState().transitions,
++        dirty: useTimelineSettingsStore.getState().isDirty,
++        history: useTimelineCommandStore.getState().undoStack,
++        redo: useTimelineCommandStore.getState().redoStack,
++      })
++    const before = snapshot()
++    joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++    expect(snapshot()).toBe(before)
++  })
++
++  it('preserves compatible static authored state on both joined streams', () => {
++    const chain = makeNativeChain().map((item) => ({
++      ...item,
++      volume: -6,
++      transform: { x: 10, y: 20, rotation: 0, width: 320, height: 180, opacity: 0.7 },
++    }))
++    useItemsStore.getState().setItems(chain)
++    joinItems(['chain-video-1', 'chain-video-2', 'chain-video-0'])
++    expect(useItemsStore.getState().items).toHaveLength(2)
++    expect(
++      useItemsStore
++        .getState()
++        .items.every(
++          (item) =>
++            item.volume === -6 && item.transform?.x === 10 && item.transform.opacity === 0.7,
++        ),
++    ).toBe(true)
++  })
++
++  it('retains fractional cadence source intervals and unrelated locked tracks', () => {
++    const rate = 30000 / 1001
++    useTimelineSettingsStore.setState({ fps: rate })
++    const chain = makeNativeChain(3, rate, 30)
++    useItemsStore.getState().setItems(chain)
++    useItemsStore
++      .getState()
++      .setTracks(
++        useItemsStore
++          .getState()
++          .tracks.map((track) => ({ ...track, locked: track.id === 'caption-track' })),
++      )
++    const admittedSourceFps = useItemsStore.getState().items[0]!.sourceFps
++    joinItems(['chain-video-2', 'chain-video-0', 'chain-video-1'])
++    expect(useItemsStore.getState().items).toHaveLength(2)
++    // Existing native admission stores FPS at three decimals; joining must not change it.
++    expect(admittedSourceFps).toBe(29.97)
++    expect(
++      useItemsStore
++        .getState()
++        .items.every(
++          (item) =>
++            item.sourceFps === admittedSourceFps &&
++            item.sourceStart === 0 &&
++            item.sourceEnd === 90 &&
++            item.durationInFrames === 90,
++        ),
++    ).toBe(true)
++  })
++
++  it('remaps both external ends and removes every internal transition in one chain history entry', () => {
++    const chain = makeNativeChain().map((item) => ({
++      ...item,
++      from: item.from + 30,
++      sourceStart: item.sourceStart! + 24,
++      sourceEnd: item.sourceEnd! + 24,
++    }))
++    const beforeClip = makeVideoItem({
++      id: 'before-chain',
++      linkedGroupId: undefined,
++      durationInFrames: 30,
++    })
++    const afterClip = makeVideoItem({
++      id: 'after-chain',
++      linkedGroupId: undefined,
++      from: 120,
++      durationInFrames: 30,
++    })
++    useItemsStore.getState().setItems([beforeClip, ...chain, afterClip])
++    useTransitionsStore.getState().setTransitions(
++      [
++        ['incoming', beforeClip.id, 'chain-video-0'],
++        ['internal-1', 'chain-video-0', 'chain-video-1'],
++        ['internal-2', 'chain-video-1', 'chain-video-2'],
++        ['outgoing', 'chain-video-2', afterClip.id],
++      ].map(([id, leftClipId, rightClipId]) => ({
++        id: id!,
++        leftClipId: leftClipId!,
++        rightClipId: rightClipId!,
++        type: 'crossfade',
++        trackId: 'video-track',
++        durationInFrames: 8,
++        timing: 'linear',
++        presentation: 'fade',
++      })),
++    )
++    const original = structuredClone({
++      items: useItemsStore.getState().items,
++      transitions: useTransitionsStore.getState().transitions,
++    })
++    joinItems(['chain-video-1', 'chain-video-2', 'chain-video-0'])
++    expect(useTransitionsStore.getState().transitions).toEqual([
++      expect.objectContaining({
++        id: 'incoming',
++        leftClipId: beforeClip.id,
++        rightClipId: 'chain-video-0',
++      }),
++      expect.objectContaining({
++        id: 'outgoing',
++        leftClipId: 'chain-video-0',
++        rightClipId: afterClip.id,
++      }),
+     ])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    useTimelineCommandStore.getState().undo()
++    expect({
++      items: useItemsStore.getState().items,
++      transitions: useTransitionsStore.getState().transitions,
++    }).toEqual(original)
++    useTimelineCommandStore.getState().redo()
++    expect(useTransitionsStore.getState().transitions.map((entry) => entry.id)).toEqual([
++      'incoming',
++      'outgoing',
++    ])
++  })
++
++  it('clamps a linked end trim to the closest neighbor on every companion track', () => {
++    useItemsStore
++      .getState()
++      .setItems([
++        makeVideoItem(),
++        makeAudioItem(),
++        makeVideoItem({ id: 'video-next', linkedGroupId: undefined, from: 100 }),
++        makeAudioItem({ id: 'audio-next', linkedGroupId: undefined, from: 70 }),
++      ])
+ 
+     trimItemEnd('video-1', 30)
+ 
+diff --git a/src/features/timeline/stores/timeline-persistence.test.ts b/src/features/timeline/stores/timeline-persistence.test.ts
+index 4f2c405708..383837ecf8 100644
+--- a/src/features/timeline/stores/timeline-persistence.test.ts
++++ b/src/features/timeline/stores/timeline-persistence.test.ts
+@@ -4,8 +4,12 @@ import type { CompositionItem, TextItem } from '@/types/timeline'
+ import {
+   makeTimelineTrack,
+   makeTimelineVideoItem,
++  makeTimelineAudioItem,
+   resetTimelineCompositionTestState,
+ } from '@/features/timeline/test-helpers'
++import { useEditorStore } from '@/shared/state/editor'
++import { joinItems } from './actions/item-actions'
++import { useTimelineCommandStore } from './timeline-command-store'
+ import { useItemsStore } from './items-store'
+ import { useCompositionsStore } from './compositions-store'
+ import { useCompositionNavigationStore } from './composition-navigation-store'
+@@ -25,17 +29,142 @@ describe('timeline project hydration', () => {
+   beforeEach(() => resetTimelineCompositionTestState())
+   afterEach(() => resetTimelineCompositionTestState())
+ 
++  it('joins a child chain with scoped history and saves/reopens from the entered child', async () => {
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    const childTracks = [
++      makeTimelineTrack({ id: 'cv', name: 'V1', kind: 'video', order: 0 }),
++      makeTimelineTrack({ id: 'ca', name: 'A1', kind: 'audio', order: 1 }),
++    ]
++    const childItems = Array.from({ length: 3 }, (_, index) => [
++      makeTimelineVideoItem({
++        id: `cv-${index}`,
++        src: '',
++        trackId: 'cv',
++        from: index * 30,
++        durationInFrames: 30,
++        sourceStart: index * 24,
++        sourceEnd: (index + 1) * 24,
++        sourceFps: 24,
++        linkedGroupId: `cg-${index}`,
++      }),
++      makeTimelineAudioItem({
++        id: `ca-${index}`,
++        src: '',
++        trackId: 'ca',
++        from: index * 30,
++        durationInFrames: 30,
++        sourceStart: index * 24,
++        sourceEnd: (index + 1) * 24,
++        sourceFps: 24,
++        linkedGroupId: `cg-${index}`,
++      }),
++    ]).flat()
++    useItemsStore.getState().setTracks([rootTrack])
++    useItemsStore
++      .getState()
++      .setItems([makeTimelineVideoItem({ id: 'untouched-root', src: '', trackId: rootTrack.id })])
++    const child = {
++      id: 'joined-child',
++      name: 'Child',
++      editorKind: 'sequence' as const,
++      tracks: childTracks,
++      items: childItems,
++      transitions: [],
++      keyframes: [],
++      markers: [],
++      inPoint: null,
++      outPoint: null,
++      fps: 30,
++      width: 1920,
++      height: 1080,
++      durationInFrames: 90,
++    }
++    const sibling = {
++      ...child,
++      id: 'untouched-sibling',
++      name: 'Sibling',
++      items: [makeTimelineVideoItem({ id: 'sibling-leaf', src: '', trackId: 'cv' })],
++    }
++    useCompositionsStore.getState().addComposition(child)
++    useCompositionsStore.getState().addComposition(sibling)
++    const rootBefore = structuredClone(buildTimelineFromStores().items)
++    const siblingBefore = structuredClone(
++      useCompositionsStore.getState().compositionById[sibling.id],
++    )
++    useCompositionNavigationStore.getState().switchToSequence(child.id)
++    const before = structuredClone(useItemsStore.getState().items)
++    joinItems(['cv-2', 'cv-0', 'cv-1'])
++    expect(useItemsStore.getState().items).toHaveLength(2)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    const joined = structuredClone(useItemsStore.getState().items)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual(before)
++    useTimelineCommandStore.getState().redo()
++    expect(useItemsStore.getState().items).toEqual(joined)
++    const timeline = structuredClone(buildTimelineFromStores())
++    expect(timeline.items).toEqual(rootBefore)
++    expect(useCompositionsStore.getState().compositionById[sibling.id]).toEqual(siblingBefore)
++    expect(timeline.compositions!.find((entry) => entry.id === child.id)!.items).toEqual(joined)
++    useCompositionNavigationStore.getState().switchToSequence(null)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    useCompositionNavigationStore.getState().switchToSequence(child.id)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    resetTimelineCompositionTestState()
++    const saved: Project = {
++      id: 'chain-project',
++      name: 'Chain',
++      description: '',
++      createdAt: 1,
++      updatedAt: 1,
++      duration: 3,
++      metadata: { width: 1920, height: 1080, fps: 30 },
++      timeline,
++    }
++    await hydrateTimelineStoresFromProject(saved)
++    expect(useItemsStore.getState().items).toEqual(rootBefore)
++    useCompositionNavigationStore.getState().switchToSequence(child.id)
++    expect(useItemsStore.getState().items).toEqual(joined)
++    expect(
++      useItemsStore
++        .getState()
++        .items.every(
++          (item) =>
++            item.linkedGroupId === 'cg-0' &&
++            item.sourceStart === 0 &&
++            item.sourceEnd === 72 &&
++            item.durationInFrames === 90,
++        ),
++    ).toBe(true)
++    expect(useCompositionsStore.getState().compositionById[sibling.id]).toEqual(siblingBefore)
++  })
++
+   it('loads each project master gain and EQ even without saved tracks', async () => {
+     const project: Project = {
+-      id: 'project-master', name: 'Master', description: '', createdAt: 1, updatedAt: 1, duration: 0,
++      id: 'project-master',
++      name: 'Master',
++      description: '',
++      createdAt: 1,
++      updatedAt: 1,
++      duration: 0,
+       metadata: { width: 1920, height: 1080, fps: 30 },
+     }
+     const eq = { enabled: true, lowGainDb: 2 }
+     usePlaybackStore.setState({ volume: 0.25, muted: true })
+     for (const timeline of [{ tracks: [], items: [], masterBusDb: 3, busAudioEq: eq }, undefined]) {
+-      await hydrateTimelineStoresFromProject({ ...project, timeline: { tracks: [rootTrack], items: [], masterBusDb: -6, busAudioEq: { lowGainDb: -4 } } })
++      await hydrateTimelineStoresFromProject({
++        ...project,
++        timeline: {
++          tracks: [rootTrack],
++          items: [],
++          masterBusDb: -6,
++          busAudioEq: { lowGainDb: -4 },
++        },
++      })
+       await hydrateTimelineStoresFromProject({ ...project, timeline })
+-      expect(buildTimelineFromStores()).toMatchObject({ masterBusDb: timeline?.masterBusDb ?? 0, masterBusMuted: false })
++      expect(buildTimelineFromStores()).toMatchObject({
++        masterBusDb: timeline?.masterBusDb ?? 0,
++        masterBusMuted: false,
++      })
+       expect(buildTimelineFromStores().busAudioEq).toEqual(timeline?.busAudioEq)
+       expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.25, muted: true })
+     }
+@@ -137,12 +266,11 @@ describe('timeline project hydration', () => {
+ 
+     await hydrateTimelineStoresFromProject(project)
+ 
+-    const hydratedComposition =
+-      useCompositionsStore.getState().compositionById['motion-comp']
++    const hydratedComposition = useCompositionsStore.getState().compositionById['motion-comp']
+     expect(hydratedComposition?.durationInFrames).toBe(100)
+-    expect(
+-      hydratedComposition?.items.map((item) => item.from + item.durationInFrames),
+-    ).toEqual([130])
++    expect(hydratedComposition?.items.map((item) => item.from + item.durationInFrames)).toEqual([
++      130,
++    ])
+   })
+ 
+   it('preserves versioned RGBA keyframe numbers during project hydration', async () => {
