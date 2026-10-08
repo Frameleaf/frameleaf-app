@@ -385,6 +385,7 @@ async def predict(
     entries: InferenceEntries = Depends(get_entries),
     image: bytes | None = File(default=None),
     text: str | None = Form(default=None),
+    mask: bytes | None = File(default=None),
 ) -> Any:
     if image is not None:
         decoded = await run(lambda: decode_pil(image))
@@ -395,11 +396,21 @@ async def predict(
         inputs = text
     else:
         raise HTTPException(400, "Either image or text must be provided")
-    response = await run_inference(inputs, entries)
+    # Clean Up Remove fills (`inpaint`): a greyscale mask the same size as the image, 255 where content is removed.
+    decoded_mask: Image | None = None
+    if mask is not None:
+        if not isinstance(inputs, Image):
+            raise HTTPException(400, "A mask needs an image")
+        decoded_mask = await run(lambda: decode_pil(mask))
+        if decoded_mask.size != inputs.size:
+            raise HTTPException(400, "The mask must be the same size as the image")
+    response = await run_inference(inputs, entries, decoded_mask)
     return ORJSONResponse(response)
 
 
-async def run_inference(payload: Image | str, entries: InferenceEntries) -> InferenceResponse:
+async def run_inference(
+    payload: Image | str, entries: InferenceEntries, mask: Image | None = None
+) -> InferenceResponse:
     outputs: dict[ModelIdentity, Any] = {}
     response: InferenceResponse = {}
 
@@ -407,7 +418,11 @@ async def run_inference(payload: Image | str, entries: InferenceEntries) -> Infe
         model = await model_cache.get(
             entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
         )
-        inputs = [payload]
+        inputs: list[Any] = [payload]
+        if entry["task"] == ModelTask.INPAINT:
+            if mask is None:
+                raise HTTPException(400, "Inpainting needs a mask")
+            inputs.append(mask)
         for dep in model.depends:
             try:
                 inputs.append(outputs[dep])

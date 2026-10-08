@@ -120,6 +120,34 @@ def get_ocr_model_file(model_name: str, model_type: ModelType) -> OcrModelFile:
     return detection if model_type == ModelType.DETECTION else recognition
 
 
+class InpaintModelFile(NamedTuple):
+    """Where an inpainting model lives on the model source: `visual/model.onnx` in `frameleaf/<repo>`.
+
+    `sha256` pins the exact export, so a mirror that serves other bytes is rejected.
+    """
+
+    repo: str
+    sha256: str
+    source: str
+
+
+# Clean Up Remove fills (owner decision 2026-10-08): LaMa big-lama, Apache-2.0
+# (https://github.com/advimman/lama), as the fp32 ONNX export by Carve
+# (https://huggingface.co/Carve/LaMa-ONNX, lama_fp32.onnx at revision c3c0c9e468934d62e79c329e35d82dd09ff8c444).
+# The Frameleaf model mirror serves that file unchanged as frameleaf/frameleaf-inpaint/visual/model.onnx.
+_INPAINT_MODELS: dict[str, InpaintModelFile] = {
+    "frameleaf-inpaint": InpaintModelFile(
+        "frameleaf-inpaint",
+        "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
+        "Carve/LaMa-ONNX@c3c0c9e468934d62e79c329e35d82dd09ff8c444:lama_fp32.onnx",
+    ),
+}
+
+
+def get_inpaint_model_file(model_name: str) -> InpaintModelFile | None:
+    return _INPAINT_MODELS.get(clean_name(model_name))
+
+
 SUPPORTED_PROVIDERS = [
     "CUDAExecutionProvider",
     "MIGraphXExecutionProvider",
