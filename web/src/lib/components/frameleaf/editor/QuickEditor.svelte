@@ -331,7 +331,7 @@
       presetFor(recipe.preset).id === AssetDevelopPreset.Original &&
       recipe.masks.every((mask) => !maskIsActive(mask)),
   );
-  const hdrEditing = $derived([3, 4, 5].includes(recipe.version));
+  const hdrEditing = $derived([3, 4, 5, 6].includes(recipe.version));
   const currentToneKey = $derived(toneKey(toServerRecipe(recipe)) + (hdrEditing ? $imageViewingPreference : ''));
   const previewMatches = $derived((!hdrEditing && identityTone) || serverPreview?.key === currentToneKey);
 

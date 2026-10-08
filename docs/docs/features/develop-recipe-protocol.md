@@ -104,12 +104,14 @@ A preset holds the develop sliders (Brilliance included), the look and its stren
 
 ### HDR renderer lineage
 
-New HDR quick edits use recipe v5 and `frameleaf-develop-hdr/3`, with HDR policy v3
-and `sdrToneMapper: libultrahdr/2.0.2-frameleaf.3`. This policy preserves reduced-map
+New HDR quick edits use recipe v6 and `frameleaf-develop-hdr/4`, with HDR policy v4
+and `sdrToneMapper: libultrahdr/2.0.2-frameleaf.4`. This policy reconstructs ISO HDR-base
+PQ/HLG images and their authored SDR alternate, and preserves reduced-map
 sampling through fractional crops and applies geometry after RGB conversion.
+Historical recipe v5 keeps `frameleaf-develop-hdr/3` and policy v3.
 Historical recipe v4 keeps `frameleaf-develop-hdr/2` and policy v2. Recipe v3 keeps
 `frameleaf-develop-hdr/1` and its original policy. The server checks the installed
 codec renderer before rendering; it never regenerates an old recipe with another
 codec policy. Previously published files remain available. Opening a supported
-historical HDR recipe for editing creates a v5 draft, retains opaque fields, and
+historical HDR recipe for editing creates a v6 draft, retains opaque fields, and
 saves a new revision. RAW/native v2 and ordinary SDR v1 remain unchanged.

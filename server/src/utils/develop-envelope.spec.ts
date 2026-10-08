@@ -238,3 +238,16 @@ it('pins reduced-map geometry to version 5 without relabeling historical revisio
   }
   expect(() => renderHdrDevelopProjection({ version: 5, hdr: { version: 2 } })).toThrow();
 });
+
+it('pins HDR-base reconstruction to version 6 while keeping historical renderer identities', () => {
+  expect(renderHdrDevelopProjection({ version: 6, exposure: 1 })).toMatchObject({
+    version: 6,
+    renderer: 'frameleaf-develop-hdr/4',
+    hdr: { version: 4, sdrToneMapper: 'libultrahdr/2.0.2-frameleaf.4' },
+  });
+  for (const version of [3, 4, 5]) {
+    expect(renderHdrDevelopProjection({ version }).renderer).toBe(`frameleaf-develop-hdr/${version - 2}`);
+    expect(() => renderHdrDevelopProjection({ version, renderer: 'frameleaf-develop-hdr/4' })).toThrow();
+  }
+  expect(() => renderHdrDevelopProjection({ version: 6, hdr: { version: 3 } })).toThrow();
+});

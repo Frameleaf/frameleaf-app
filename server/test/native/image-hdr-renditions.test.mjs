@@ -433,38 +433,43 @@ test(
   },
 );
 
-test(
-  '10-bit ISO Develop retains edited headroom and the immutable still',
-  {
-    skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
-  },
-  async () => {
-    const input = await readFile(new URL('./fixtures/iso-gain-map-10bit.heic', import.meta.url));
-    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-iso-10bit-develop-'));
-    const pool = new SharpProcessPool({ workers: 1, pending: 0 });
-    try {
-      const source = join(folder, 'original.heic');
-      await writeFile(source, input);
-      const output = join(folder, 'edited-hdr.jpg');
-      await pool.run('generateHdrRenditions', [
-        source,
-        [{ path: output, dynamicRange: 'hdr' }],
-        {
-          recipe: { ...defaultDevelopRecipe(), exposure: 1, rotation: 90 },
-          seed: 1,
-          masks: {},
-          fills: {},
-        },
-      ]);
-      const result = codec.decode(await readFile(output), ...limits);
-      assert.deepEqual([result.width, result.height], [32, 1024]);
-      const pixels = new Float32Array(result.data.buffer, result.data.byteOffset, result.data.length / 4);
-      const highlight = pixels[((result.height - 8) * result.width + 16) * 4];
-      assert.ok(highlight > 15 && highlight < 16.5, `edited highlight ${highlight}`);
-      assert.deepEqual(await readFile(source), input);
-    } finally {
-      await pool.close();
-      await rm(folder, { recursive: true, force: true });
-    }
-  },
-);
+for (const [fixture, peak] of [
+  ['iso-gain-map-10bit.heic', 16],
+  ['iso-hdr-base/pq-candidate.heic', 16],
+  ['iso-hdr-base/hlg-candidate.heic', 8],
+])
+  test(
+    `${fixture} Develop retains edited headroom and the immutable still`,
+    {
+      skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1',
+    },
+    async () => {
+      const input = await readFile(new URL(`./fixtures/${fixture}`, import.meta.url));
+      const folder = await mkdtemp(join(tmpdir(), 'frameleaf-iso-10bit-develop-'));
+      const pool = new SharpProcessPool({ workers: 1, pending: 0 });
+      try {
+        const source = join(folder, 'original.heic');
+        await writeFile(source, input);
+        const output = join(folder, 'edited-hdr.jpg');
+        await pool.run('generateHdrRenditions', [
+          source,
+          [{ path: output, dynamicRange: 'hdr' }],
+          {
+            recipe: { ...defaultDevelopRecipe(), exposure: 1, rotation: 90 },
+            seed: 1,
+            masks: {},
+            fills: {},
+          },
+        ]);
+        const result = codec.decode(await readFile(output), ...limits);
+        assert.deepEqual([result.width, result.height], [32, 1024]);
+        const pixels = new Float32Array(result.data.buffer, result.data.byteOffset, result.data.length / 4);
+        const highlight = pixels[((result.height - 8) * result.width + 16) * 4];
+        assert.ok(highlight > peak * 0.93 && highlight < peak * 1.04, `edited highlight ${highlight}`);
+        assert.deepEqual(await readFile(source), input);
+      } finally {
+        await pool.close();
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
+  );

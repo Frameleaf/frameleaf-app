@@ -153,15 +153,18 @@ and delivery require the separately qualified renderer/rendition capability.
 
 ## HDR-preserving Develop revisions (experimental)
 
-New edits use recipe version 5, renderer `frameleaf-develop-hdr/3`, and policy
-`hdr: {version: 3, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2-frameleaf.3"}`.
-This policy includes centered sampling of reduced ISO gain maps and fractional container crops,
+New edits use recipe version 6, renderer `frameleaf-develop-hdr/4`, and policy
+`hdr: {version: 4, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2-frameleaf.4"}`.
+This policy adds ISO HDR-base PQ/HLG reconstruction with the authored SDR alternate,
+and includes centered sampling of reduced ISO gain maps and fractional container crops,
 with RGB conversion before geometry and aggregate raw-surface/retained-buffer admission.
 The installed renderer is reported by `imageCapabilities.renderer`. Rendering a
 revision with another renderer fails with `develop_renderer_unsupported`; published
 files remain available and unchanged. Editing a historical HDR recipe creates a
-new v5 revision, preserving unknown fields rather than mutating historical rows.
+new v6 revision, preserving unknown fields rather than mutating historical rows.
 
+Historical version 5 retains `frameleaf-develop-hdr/3` and policy version 3,
+with `sdrToneMapper: libultrahdr/2.0.2-frameleaf.3`.
 Historical version 4 retains `frameleaf-develop-hdr/2` and HDR policy version 2,
 with `sdrToneMapper: libultrahdr/2.0.2-frameleaf.2`. Clients promote recognized
 historical policies only when creating a new editing revision; unknown policies remain opaque.
@@ -170,7 +173,7 @@ Historical recipe version 3 names renderer `frameleaf-develop-hdr/1` and policy
 `hdr: {version: 1, intent: "preserve", referenceWhite: 203, sdrToneMapper: "libultrahdr/2.0.2"}`.
 Omitted policy fields receive those defaults. Historical v1 and native RAW v2
 revisions keep their renderer identity. Clients must preserve unknown envelope
-fields and must not rewrite v3, v4 or v5 recipes as v1. Unsupported fields fail rendering.
+fields and must not rewrite v3, v4, v5 or v6 recipes as v1. Unsupported fields fail rendering.
 
 Preview requests and revision-file requests accept `dynamicRange=auto|sdr|hdr`.
 Omission retains SDR-compatible output; explicit HDR fails when unavailable.

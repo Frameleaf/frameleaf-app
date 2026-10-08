@@ -895,7 +895,7 @@ describe(AssetDevelopService.name, () => {
     );
   });
 
-  describe.each([3, 4, 5])('HDR version %s', (version) => {
+  describe.each([3, 4, 5, 6])('HDR version %s', (version) => {
     beforeEach(() =>
       mocks.media.getHdrCodecCapabilities.mockResolvedValue({
         libheif: '1.23.3',
