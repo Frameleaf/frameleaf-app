@@ -59,10 +59,24 @@ export const buddyFileHash = async (
   }
 };
 
+const assertRecoveryCredentialPath = async (target: string) => {
+  for (const key of ['DB_URL', 'DB_HOSTNAME', 'DB_DATABASE_NAME', 'DB_USERNAME', 'DB_PASSWORD']) {
+    const source = process.env[`${key}_FILE`];
+    if (!source) continue;
+    const canonical = await realpath(source).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return resolve(source);
+      throw new Error('Cannot verify local database credential file');
+    });
+    if (resolve(source) === target || canonical === target)
+      throw new Error('Recovery cannot replace a local database credential file');
+  }
+};
+
 /** Never follow a symlink in a publication path, including one inside an otherwise approved mount. */
 export const buddyRecoveryTarget = async (target: string, roots: string[], configuration: string[]) => {
   if (!isAbsolute(target) || resolve(target) !== target || target.includes('\0'))
     throw new Error('Invalid recovery path');
+  await assertRecoveryCredentialPath(target);
   const root = roots.filter((root) => buddyInside(root, target)).sort((a, b) => b.length - a.length)[0];
   if (!root && !configuration.includes(target))
     throw new Error('Recovery requires the original configured storage mounts');
@@ -168,6 +182,7 @@ export class BuddyRecoveryFiles {
     for (const file of files) {
       await this.assert();
       await buddyRecoveryTarget(file.path, roots, configuration);
+      await assertRecoveryCredentialPath(`${file.path}.buddy-rollback-${this.id}`);
       const evidence = await buddyFileHash(join(this.directory, 'objects', file.sha256));
       if (evidence.sha256 !== file.sha256 || evidence.size !== file.size)
         throw new Error('Staged recovery failed verification');
@@ -293,6 +308,7 @@ export class BuddyRecoveryFiles {
           throw new Error('Invalid recovery journal entry');
         await this.assert();
         await buddyRecoveryTarget(entry.target, roots, configuration);
+        await assertRecoveryCredentialPath(entry.rollback);
         const current = await lstat(entry.target).catch(() => null);
         if (current) {
           const evidence = await buddyFileHash(entry.target);
