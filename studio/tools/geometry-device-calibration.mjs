@@ -1,15 +1,22 @@
 // Test-only independent device math. No production shader, geometry, or color imports.
 // Accuracy source: https://www.w3.org/TR/WGSL/#floating-point-accuracy
 export async function probeGeometryCoordinates(device, width, height, cases) {
+  const vertex = `struct VertexOutput { @builtin(position) position:vec4f, @location(0) uv:vec2f, @location(1) @interpolate(flat) tri:u32 };
+@vertex fn vertexMain(@builtin(vertex_index) i:u32)->VertexOutput {
+ let corners=array<vec2f,6>(vec2f(0.,1.),vec2f(1.,1.),vec2f(0.,0.),vec2f(0.,0.),vec2f(1.,1.),vec2f(1.,0.));
+ let uv=corners[i]; var result:VertexOutput;result.position=vec4f(2.*uv.x-1.,1.-2.*uv.y,0.,1.);result.uv=uv;result.tri=i/3u;return result;
+}`
   const shader = device.createShaderModule({
-    code: `
+    code:
+      vertex +
+      `
 struct Params { shape: vec4f, effect: vec4f };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
-@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) {
-  let count = u32(p.shape.x * p.shape.y); if (id.x >= count) { return; }
-  let at = id.x * 32u;
-  let uv = (vec2f(f32(id.x % u32(p.shape.x)), f32(id.x / u32(p.shape.x))) + vec2f(0.5)) / p.shape.xy;
+@fragment fn main(input: VertexOutput) -> @location(0) vec4f {
+  let pixel = u32(input.position.y) * u32(p.shape.x) + u32(input.position.x);
+  let at = pixel * 32u;
+  let uv = input.uv;
   var result = uv; var delta = vec2f(0.0); var dist = 0.0; var branch = 1.0;
   var middle = 0.0; var arg1 = 0.0; var primitive1 = 0.0; var arg2 = 0.0; var primitive2 = 0.0;
   var base = 0.0; var power = 0.0; var next = 0.0;
@@ -35,7 +42,7 @@ struct Params { shape: vec4f, effect: vec4f };
       result = select(uv, p.effect.zw + delta / middle * next, branch == 1.0);
     }
   }
-  output[at] = f32(id.x); output[at+1u] = p.shape.w; output[at+2u] = p.shape.z;
+  output[at] = f32(pixel); output[at+1u] = p.shape.w; output[at+2u] = p.shape.z;
   output[at+3u] = p.shape.x; output[at+4u] = p.shape.y;
   output[at+5u] = uv.x; output[at+6u] = uv.y; output[at+7u] = branch;
   output[at+8u] = delta.x; output[at+9u] = delta.y; output[at+10u] = dist; output[at+11u] = middle;
@@ -45,12 +52,16 @@ struct Params { shape: vec4f, effect: vec4f };
   output[at+21u] = p.effect.x; output[at+22u] = p.effect.y; output[at+23u] = p.effect.z; output[at+24u] = p.effect.w;
   let point = result * p.shape.xy - vec2f(0.5);
   output[at+25u] = point.x; output[at+26u] = point.y;
-  for (var n = 27u; n < 32u; n++) { output[at+n] = 0.0; }
+  output[at+27u] = input.position.x; output[at+28u] = input.position.y; output[at+29u] = f32(input.tri); output[at+30u] = 0.0; output[at+31u] = 0.0;
+  return vec4f(0.0,0.0,0.0,1.0);
 }`,
   })
-  const pipeline = device.createComputePipeline({
+  const pipeline = device.createRenderPipeline({
     layout: 'auto',
-    compute: { module: shader, entryPoint: 'main' },
+    vertex: { module: shader, entryPoint: 'vertexMain' },
+    fragment: { module: shader, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+    primitive: { topology: 'triangle-list' },
+    multisample: { count: 1, mask: 0xffffffff, alphaToCoverageEnabled: false },
   })
   const rows = []
   for (const [caseIndex, entry] of cases.entries()) {
@@ -75,6 +86,11 @@ struct Params { shape: vec4f, effect: vec4f };
       size: bytes,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     })
+    const target = device.createTexture({
+      size: [width, height],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    })
     try {
       device.pushErrorScope('validation')
       device.queue.writeBuffer(uniform, 0, parameters)
@@ -86,10 +102,21 @@ struct Params { shape: vec4f, effect: vec4f };
         ],
       })
       const encoder = device.createCommandEncoder(),
-        pass = encoder.beginComputePass()
+        pass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: target.createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: 'clear',
+              storeOp: 'store',
+            },
+          ],
+        })
       pass.setPipeline(pipeline)
       pass.setBindGroup(0, group)
-      pass.dispatchWorkgroups(Math.ceil((width * height) / 64))
+      pass.setViewport(0, 0, width, height, 0, 1)
+      pass.setScissorRect(0, 0, width, height)
+      pass.draw(6)
       pass.end()
       encoder.copyBufferToBuffer(output, 0, read, 0, bytes)
       device.queue.submit([encoder.finish()])
@@ -99,6 +126,17 @@ struct Params { shape: vec4f, effect: vec4f };
       const values = Array.from(new Float32Array(read.getMappedRange()))
       read.unmap()
       rows.push({
+        stage: 'fragment',
+        rasterState: {
+          dimensions: [width, height],
+          viewport: [0, 0, width, height, 0, 1],
+          scissor: [0, 0, width, height],
+          sampleCount: 1,
+          sampleMask: 4294967295,
+          topology: 'triangle-list',
+          drawVertices: 6,
+          alphaToCoverageEnabled: false,
+        },
         type: entry.type,
         params: { ...p },
         width,
@@ -111,12 +149,13 @@ struct Params { shape: vec4f, effect: vec4f };
       uniform.destroy()
       output.destroy()
       read.destroy()
+      target.destroy()
     }
   }
   return rows
 }
 
-export function validateGeometryCalibration(row, width, height, entry, caseIndex) {
+export function validateGeometryCalibration(row, width, height, entry, caseIndex, raster) {
   let currentPixel = -1
   const measurements = []
   const check = (condition, label) => {
@@ -148,7 +187,8 @@ export function validateGeometryCalibration(row, width, height, entry, caseIndex
     ),
   )
   check(
-    row.type === entry.type &&
+    row.stage === 'fragment' &&
+      row.type === entry.type &&
       JSON.stringify(row.params) === JSON.stringify(p) &&
       row.width === width &&
       row.height === height &&
@@ -190,14 +230,35 @@ export function validateGeometryCalibration(row, width, height, entry, caseIndex
       'PIXEL_ID',
     )
     check(
-      JSON.stringify(r.slice(21, 25)) === JSON.stringify(packed) &&
-        r.slice(27).every((v) => v === 0),
+      JSON.stringify(r.slice(21, 25)) === JSON.stringify(packed) && r[30] === 0 && r[31] === 0,
       'PARAMETER_ECHO',
     )
     const u = ((i % width) + 0.5) / width,
       v = (Math.floor(i / width) + 0.5) / height
-    const eu = rounded(r[5], u, 2.5, 'CENTER_U'),
-      ev = rounded(r[6], v, 2.5, 'CENTER_V')
+    check(raster?.width === width && raster?.height === height, 'RASTER_DIMENSIONS')
+    check(JSON.stringify(row.rasterState) === JSON.stringify(raster.state), 'RASTER_STATE')
+    const uc = raster.components[i * 2],
+      vc = raster.components[i * 2 + 1]
+    check(
+      uc.pixel === i &&
+        uc.component === 0 &&
+        vc.pixel === i &&
+        vc.component === 1 &&
+        r[5] >= uc.low &&
+        r[5] <= uc.high &&
+        r[6] >= vc.low &&
+        r[6] <= vc.high,
+      'RASTER_UV',
+    )
+    check(
+      r[27] === (i % width) + 0.5 &&
+        r[28] === Math.floor(i / width) + 0.5 &&
+        r[29] ===
+          ((2 * Math.floor(i / width) + 1) * width > (2 * (i % width) + 1) * height ? 0 : 1),
+      'RASTER_PIXEL_TRIANGLE',
+    )
+    const eu = close(r[5], u, Math.max(Math.abs(uc.low - u), Math.abs(uc.high - u)), 'CENTER_U'),
+      ev = close(r[6], v, Math.max(Math.abs(vc.low - v), Math.abs(vc.high - v)), 'CENTER_V')
     let boundU = eu,
       boundV = ev
     if (type === 1) {
