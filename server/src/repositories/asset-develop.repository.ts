@@ -34,6 +34,7 @@ export type AssetDevelopRevision = {
   height: number | null;
   isCurrent: boolean;
   kind: AssetDevelopRevisionKind;
+  sourceAssetId?: string | null;
   sourceChecksum: Buffer | null;
   renditionChecksum: Buffer | null;
   exportId: string | null;
@@ -60,6 +61,7 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'width'
     | 'height'
     | 'renderedAt'
+    | 'sourceAssetId'
     | 'sourceChecksum'
     | 'renditionChecksum'
     | 'attempts'

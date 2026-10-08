@@ -791,10 +791,19 @@ const AssetDevelopRevisionResponseSchema = z
     width: z.int().nullable().describe('Width of the edited master in pixels'),
     height: z.int().nullable().describe('Height of the edited master in pixels'),
     kind: AssetDevelopRevisionKindSchema,
+    sourceAssetId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage',
+      ),
     sourceChecksum: z
       .string()
       .nullable()
-      .describe('SHA-256 (hex) of the original this version was rendered or developed from'),
+      .describe(
+        'SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources',
+      ),
     renditionChecksum: z.string().nullable().describe('SHA-256 (hex) of the edited master file, once it exists'),
     exportId: z.uuidv4().nullable().describe('The export of the original an imported version was developed from'),
     fileName: z.string().nullable().describe('Name of the imported file, for a version developed elsewhere'),

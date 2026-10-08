@@ -5058,7 +5058,7 @@
   "frameleaf_editor_version_details": "Details",
   "frameleaf_editor_version_external": "Brought back from {file}",
   "frameleaf_editor_version_failed": "Version {revision} couldn't be finished: {error}",
-  "frameleaf_editor_version_lineage": "Original file {original} · Edited file {master}",
+  "frameleaf_editor_version_lineage": "Source file {original} · Edited file {master}",
   "frameleaf_editor_version_made_current": "Now showing version {revision}",
   "frameleaf_editor_version_made_with": "Made with {version}",
   "frameleaf_editor_version_number": "Version {revision}",
