@@ -87,11 +87,12 @@ export async function prepareOneClaim({ serverUrl, sessionToken, execute }) {
   try {
     await heartbeat();
     assert.equal(claim.kind, 'studio_export');
+    assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
     assert.ok(claim.projectId && claim.revisionId && claim.snapshot?.studio?.graph &&
       Number.isSafeInteger(claim.snapshot.studio.revision) && Array.isArray(claim.inputs), 'IMMUTABLE_GRAPH_UNAVAILABLE');
     // Snapshot/settings are never fetched from a mutable project head or interpreted as local paths.
     prepared = { operationId: claim.operationId, claimToken: claim.claimToken,
-      projectId: claim.projectId, revisionId: claim.revisionId,
+      projectId: claim.projectId, revisionId: claim.revisionId, artifactInputDigest: claim.artifactInputDigest,
       snapshot: structuredClone(claim.snapshot), settings: structuredClone(claim.settings), inputs };
     let total = 0;
     for (const input of claim.inputs) {

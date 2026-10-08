@@ -237,6 +237,8 @@ export async function renderStillImage(context, consume) {
     assert.ok(elapsedMs() < recipe.maxMs, 'WALL_CLOCK_LIMIT');
   };
   assertLive();
+  assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
+  assert.equal(context.prepared?.artifactInputDigest, claim.artifactInputDigest, 'INPUT_DIGEST_CHANGED');
   const build = JSON.parse(await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'));
   assert.equal(process.versions.node, build.node, 'PINNED_NODE_REQUIRED');
   assert.equal(engineInputs.sourceSha256, build.sourceSha256, 'ENGINE_BINDING_MISMATCH');
@@ -612,7 +614,8 @@ export async function executeStillClaim(context) {
       }),
     );
     const historyDigest = digest(JSON.stringify(claim.snapshot.studio.graph));
-    assert.ok(typeof claim.artifactInputDigest === 'string' && claim.artifactInputDigest, 'INPUT_DIGEST_REQUIRED');
+    assert.ok(typeof claim.artifactInputDigest === 'string' && /^[a-f0-9]{64}$/.test(claim.artifactInputDigest), 'INPUT_DIGEST_REQUIRED');
+    assert.equal(context.prepared.artifactInputDigest, claim.artifactInputDigest, 'INPUT_DIGEST_CHANGED');
     const chunkKey = digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`);
     await heartbeat();
     const planned = await post(`${root}/checkpoints`, {

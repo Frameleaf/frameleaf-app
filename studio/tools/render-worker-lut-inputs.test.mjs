@@ -47,6 +47,7 @@ const specimen = () => {
     operationId: "op",
     claimToken: "claim",
     revisionId: "rev",
+    artifactInputDigest: "a".repeat(64),
     snapshot: {
       studio: {
         graph,
@@ -57,7 +58,6 @@ const specimen = () => {
             id: "grade",
             graphPath: "/timeline/items/0/effects/0/effect/params",
             sourceAccess: "project",
-            ownerId: "owner",
             grant: "render",
             checksum: sha(cube),
           },
@@ -294,5 +294,24 @@ test("actual claim adapter admits file resources separately from media and retai
     await assert.rejects(adapter.createHarness(), /LEASE_LOST/);
   } finally {
     await adapter.dispose();
+  }
+});
+
+test("opaque server input digest is required and independently binds LUT execution", async () => {
+  const p = specimen();
+  const derived = await deriveClaimFileLuts(p, () => true);
+  assert.equal(derived.binding.artifactInputDigest, p.artifactInputDigest);
+  assert.ok(!Object.hasOwn(derived.binding.resources[0], "ownerId"));
+  p.artifactInputDigest = "b".repeat(64);
+  await assert.rejects(
+    verifyClaimFileLuts(p, derived, () => true),
+    /FILE_LUT_EXECUTION_CHANGED/,
+  );
+  for (const invalid of [undefined, "", "x".repeat(64), "a".repeat(63)]) {
+    p.artifactInputDigest = invalid;
+    await assert.rejects(
+      deriveClaimFileLuts(p, () => true),
+      /INPUT_DIGEST_REQUIRED/,
+    );
   }
 });

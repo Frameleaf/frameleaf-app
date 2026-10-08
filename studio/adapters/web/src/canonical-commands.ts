@@ -1,3 +1,4 @@
+import { canPartitionSourceEdit, partitionSourceEditAt } from '@/features/timeline/stores/actions/source-edit-partitions'
 import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 /**
@@ -813,6 +814,7 @@ const splitTracksAt = (trackIds: ReadonlySet<string>, frame: number, command: st
     }
     // A linked group is cut together or not at all, as Freecut's split requires.
     if (!group.every(crosses)) failed(`${command}: linked clips of "${anchorId}" are not all cut at that time`)
+    assertUnlocked(group, command)
     const results: SplitResultEntry[] = []
     for (const id of group) {
       const item = requireItem(id)
@@ -2230,6 +2232,16 @@ const handlers: Record<string, Handler> = {
   'clip.insert'(payload, context) {
     const edit = buildSourceEdit(payload, context, 'clip.insert')
     const targets = new Set(edit.trackIds)
+    // Validate every linked member we will cut or move before the first mutation.
+    for (const item of items().filter((item) => targets.has(item.trackId) &&
+      item.from + item.durationInFrames > edit.at)) {
+      const group = getLinkedItemIds(items(), item.id)
+      assertUnlocked(group, 'clip.insert')
+      if (item.from < edit.at && group.some((id) => {
+        const companion = requireItem(id)
+        return companion.from !== item.from || companion.durationInFrames !== item.durationInFrames
+      })) failed('clip.insert: linked clips must share the cut partition')
+    }
     splitTracksAt(targets, edit.at, 'clip.insert')
     // Everything on the destination tracks from the edit point on makes room.
     const onTargets = items()
@@ -2273,28 +2285,15 @@ const handlers: Record<string, Handler> = {
     const edit = buildSourceEdit(payload, context, 'clip.overwrite')
     const start = edit.at
     const end = edit.at + edit.durationInFrames
-    const store = () => useItemsStore.getState()
-    for (const trackId of new Set(edit.trackIds)) {
-      const overlapping = items().filter(
-        (item) => item.trackId === trackId && item.from < end && item.from + item.durationInFrames > start,
-      )
-      for (const original of overlapping) {
-        // Freecut's overwrite: cut the covered part out of each clip; what is outside stays.
-        let covered: TimelineItem = original
-        if (covered.from < start) {
-          const cut = store()._splitItem(covered.id, start)
-          if (!cut) failed(`clip.overwrite: "${covered.id}" cannot be cut at the edit point`)
-          covered = cut!.rightItem
-        }
-        if (covered.from + covered.durationInFrames > end) {
-          const cut = store()._splitItem(covered.id, end)
-          if (!cut) failed(`clip.overwrite: "${covered.id}" cannot be cut at the end of the edit`)
-          covered = cut!.leftItem
-        }
-        // Only the covered part on this track goes; linked media on other tracks is left alone.
-        withLinkedSelection(false, () => removeItems([covered.id]))
-      }
+    const targets = new Set(edit.trackIds)
+    if (!canPartitionSourceEdit(items(), tracks(), targets, start, end)) {
+      failed('clip.overwrite: linked clips must share unlocked destination partitions')
     }
+    partitionSourceEditAt(targets, start)
+    partitionSourceEditAt(targets, end)
+    const covered = items().filter((item) => targets.has(item.trackId) &&
+      item.from >= start && item.from + item.durationInFrames <= end)
+    withLinkedSelection(false, () => removeItems(covered.map((item) => item.id)))
     applyTransitionRepairs(items().filter((item) => edit.trackIds.includes(item.trackId)).map((item) => item.id))
     assertNoOverlap(edit.trackIds, 'clip.overwrite')
     landSourceEdit(edit.placed, 'clip.overwrite')

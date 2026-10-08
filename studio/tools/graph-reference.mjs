@@ -1044,6 +1044,13 @@ const commands = {
   'clip.insert'(state, payload, draw) {
     const edit = sourceEdit(state, payload, 'clip.insert', draw);
     const targets = new Set(edit.trackIds);
+    // Validate all affected original linked members before cutting or moving any of them.
+    for (const anchor of state.items.filter((item) => targets.has(item.trackId) && end(item) > edit.at)) {
+      const group = linkedGroup(state, anchor);
+      refuseLocked(state, group.map((member) => member.id), 'clip.insert');
+      if (anchor.from < edit.at && group.some((member) => member.from !== anchor.from || member.durationInFrames !== anchor.durationInFrames))
+        failed('clip.insert: linked clips must share the cut partition');
+    }
     // Step 1: cut what spans the edit point on the destination tracks, each with its linked group.
     const seen = new Set();
     for (const candidate of state.items
@@ -1080,17 +1087,25 @@ const commands = {
   'clip.overwrite'(state, payload, draw) {
     const edit = sourceEdit(state, payload, 'clip.overwrite', draw);
     const [start, stop] = [edit.at, edit.at + edit.durationInFrames];
-    for (const trackId of new Set(edit.trackIds)) {
-      const overlapping = state.items
-        .filter((item) => item.trackId === trackId && item.from < stop && end(item) > start)
-        .map((item) => item.id);
-      for (const id of overlapping) {
-        let covered = clipOf(state, id);
-        if (covered.from < start) covered = cut(state, covered, start, draw).right;
-        if (end(covered) > stop) covered = cut(state, clipOf(state, covered.id), stop, draw).left;
-        removeClips(state, linkedSet(state, [covered.id], false));
+    const targets = new Set(edit.trackIds);
+    const affected = state.items.filter((item) => targets.has(item.trackId) && item.from < stop && end(item) > start);
+    for (const anchor of affected) {
+      if (linkedGroup(state, anchor).some((member) => !targets.has(member.trackId) || lockedTrack(state, member) ||
+        member.from !== anchor.from || member.durationInFrames !== anchor.durationInFrames))
+        failed('clip.overwrite: linked clips must share unlocked destination partitions');
+    }
+    for (const boundary of [start, stop]) {
+      const seen = new Set();
+      const crossing = state.items.filter((item) => targets.has(item.trackId) && item.from < boundary && end(item) > boundary).map((item) => item.id);
+      for (const id of crossing) {
+        if (seen.has(id)) continue;
+        const group = linkedGroup(state, clipOf(state, id));
+        for (const member of group) seen.add(member.id);
+        splitTogether(state, group, boundary, draw);
       }
     }
+    const covered = state.items.filter((item) => targets.has(item.trackId) && item.from >= start && end(item) <= stop);
+    removeClips(state, unique(covered.flatMap((item) => linkedSet(state, [item.id], false))));
     // 12.2.7: the points are clamped to the extent the timeline has before the new clips land.
     clamp(state);
     repair(

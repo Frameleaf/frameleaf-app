@@ -578,9 +578,49 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     ]
     expect(spans(overwritten, 'v1')).toEqual(expected)
     expect(spans(overwritten, 'a1')).toEqual(expected)
+    // Head, replacement and tail must each be an independent linked audio/video pair.
+    const groups = (trackId: string) => onTrack(overwritten, trackId).map((item) => item.linkedGroupId)
+    expect(groups('v1')).toEqual(groups('a1'))
+    expect(groups('v1').every(Boolean)).toBe(true)
+    expect(new Set(groups('v1')).size).toBe(3)
     // Sequence length is unchanged by an overwrite.
     const end = (graph: Project) => Math.max(...itemsOf(graph).map((item) => item.from + item.durationInFrames))
     expect(end(overwritten)).toBe(end(graph))
+  })
+
+  it('preserves the disjoint overwrite tail when the retained head is deleted with linked selection', async () => {
+    const graph = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const overwritten = await applied(graph, [envelope('clip.overwrite', {
+      trackId: 'v1', assetId: ASSET, at: seconds(2), sourceIn: seconds(5), sourceOut: seconds(6),
+    })])
+    const head = onTrack(overwritten, 'v1')[0]!
+    const deleted = await applied(overwritten, [envelope('clip.delete', { clipId: head.id })])
+    console.info('FL94 overwrite-head-delete consequence', JSON.stringify({
+      before: { video: spans(overwritten, 'v1'), audio: spans(overwritten, 'a1') },
+      after: { video: spans(deleted, 'v1'), audio: spans(deleted, 'a1') },
+    }))
+    expect(spans(deleted, 'v1')).toEqual([[60, 30, 150, 180], [90, 150, 90, 240]])
+    expect(spans(deleted, 'a1')).toEqual([[60, 30, 150, 180], [90, 150, 90, 240]])
+  })
+
+  it('does not treat an attached caption as a linked media partition on source insert', async () => {
+    const graph = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    const picture = onTrack(graph, 'v1')[0]!
+    graph.timeline!.tracks.push(track('captions', 'video', 2))
+    graph.timeline!.items.push({ id: 'early-caption', type: 'text', trackId: 'captions', from: 30,
+      durationInFrames: 30, label: 'Caption', text: 'Keep', color: '#ffffff', textRole: 'caption',
+      captionSource: { type: 'transcript', clipId: picture.id, mediaId: ASSET } } as never)
+    const inserted = await applied(graph, [envelope('clip.insert', {
+      trackId: 'v1', assetId: ASSET, at: seconds(4), sourceIn: seconds(0), sourceOut: seconds(1),
+    })])
+    expect(itemsOf(inserted).find((item) => item.id === 'early-caption')).toMatchObject({ from: 30, durationInFrames: 30 })
+  })
+
+  it('refuses fully covered partial linked overwrite groups before publishing an edit', async () => {
+    const graph = await applied(project(), [envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) })])
+    await refused(graph, [envelope('clip.overwrite', {
+      trackId: 'v1', assetId: STILL, at: seconds(0), sourceIn: seconds(0), sourceOut: seconds(8),
+    })], 'failed')
   })
 
   it('refuses source edits on locked tracks, past the source and on inexact source cadences', async () => {

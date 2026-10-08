@@ -8,7 +8,7 @@ const { prepareOneClaim } = await import(process.env.FRAMELEAF_CLAIM_TEST_MODULE
 const sharp = createRequire(new URL('../engine/package.json', import.meta.url))('sharp');
 
 // HTTP contract fixtures, NOT renderer admission or production-server qualification.
-async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum, sourceBytes, cancelAt } = {}) {
+async function fixture(t, { inputStatus = 200, redirect, loseLease = false, checksum, sourceBytes, cancelAt, artifactInputDigest = 'a'.repeat(64) } = {}) {
   const operationId = randomUUID();
   const claimToken = randomUUID();
   const sessionToken = randomUUID();
@@ -27,7 +27,7 @@ async function fixture(t, { inputStatus = 200, redirect, loseLease = false, chec
         response.statusCode = 400; response.end('{}'); return;
       }
       response.end(JSON.stringify({ operationId, claimToken, kind: 'studio_export', projectId: randomUUID(),
-        revisionId: 'immutable-revision-7', snapshot: { studio: { resources: [{ key: 'library-asset:fixture', kind: 'library-asset', id: 'fixture', graphPath: '/timeline/items/0', grant: 'render', checksum: checksum ?? createHash('sha1').update(bytes).digest('base64') }], stored: true, revision: 7, graph: {
+        revisionId: 'immutable-revision-7', artifactInputDigest, snapshot: { studio: { resources: [{ key: 'library-asset:fixture', kind: 'library-asset', id: 'fixture', graphPath: '/timeline/items/0', grant: 'render', checksum: checksum ?? createHash('sha1').update(bytes).digest('base64') }], stored: true, revision: 7, graph: {
           metadata: { width: 32, height: 32, fps: 24 },
           timeline: { tracks: [], items: [{ type: 'image', mediaId: 'fixture' }] },
         } } },
@@ -136,4 +136,15 @@ test('cancel closes executor and removes private input serving before release ac
   await assert.rejects(fetch(localUrl));
   assert.equal(f.requests.at(-1).path.split('/').at(-1), 'cancel-ack');
   assert.equal(f.requests.at(-1).body.released, true);
+});
+
+test('invalid server digest refuses before reading inputs or invoking executor', async (t) => {
+  for (const artifactInputDigest of ['', 'x'.repeat(64), 'a'.repeat(63)]) {
+    const f = await fixture(t, { artifactInputDigest });
+    let invoked = false;
+    const result = await f.run(async () => { invoked = true; });
+    assert.equal(result.errorCode, 'worker_input_preparation_failed');
+    assert.equal(invoked, false);
+    assert.equal(f.requests.some(request => request.path.includes('/inputs/')), false);
+  }
 });

@@ -276,3 +276,15 @@ test('private output accounting counts staging, deduplicates publication links a
     await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+test('input digest mismatch refuses before engine/build/browser or private output', async () => {
+  const c = claim();
+  c.artifactInputDigest = 'a'.repeat(64);
+  for (const prepared of [undefined, { artifactInputDigest: 'b'.repeat(64) }]) {
+    await assert.rejects(renderStillImage({ claim: c, prepared, isLeaseActive: () => true,
+      elapsedMs: () => 0 }, () => assert.fail()), /INPUT_DIGEST_CHANGED/);
+  }
+  c.artifactInputDigest = 'not-a-sha256';
+  await assert.rejects(renderStillImage({ claim: c, isLeaseActive: () => true,
+    elapsedMs: () => 0 }, () => assert.fail()), /INPUT_DIGEST_REQUIRED/);
+});

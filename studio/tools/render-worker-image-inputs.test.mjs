@@ -15,6 +15,7 @@ const prepared = () => ({
   operationId: randomUUID(),
   claimToken: randomUUID(),
   revisionId: 'immutable-revision-7',
+  artifactInputDigest: 'a'.repeat(64),
   snapshot: {
     studio: {
       resources: [{ key: `library-asset:${mediaId}`, kind: 'library-asset', id: mediaId,
