@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { cleanupWhisperRun } from './whisper-worker.browser.mjs';
+import { cleanupWhisperRun, fetchWhisperPayload } from './whisper-worker.browser.mjs';
 
 for (const failure of ['close', 'cache']) {
   test(`owned ${failure} failure persists failed evidence and rejects qualification`, async () => {
@@ -48,4 +48,71 @@ test('uncaught cleanup refusal exits a CLI process nonzero without starting brow
     { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Whisper cleanup failed/);
+});
+
+
+test('approved Whisper redirects are checked before transport and never forward credentials', async () => {
+  const url = 'https://huggingface.co/synthetic/fixture/resolve/' + 'a'.repeat(40) + '/config.json';
+  const exact = new Map([[url, { sha256: 'b'.repeat(64) }]]);
+  for (const target of [
+    'http://us.aws.cdn.hf.co/asset', 'https://other.example/asset',
+    'https://user:password@us.aws.cdn.hf.co/asset', 'https://us.aws.cdn.hf.co:444/asset',
+    'https://us.aws.cdn.hf.co/asset#fragment',
+  ]) {
+    const calls = [];
+    await assert.rejects(fetchWhisperPayload(url, exact, async (request, options) => {
+      calls.push(request);
+      assert.equal(options.redirect, 'manual');
+      assert.equal(options.credentials, 'omit');
+      assert.equal(options.method, 'GET');
+      assert.equal(options.body, undefined);
+      assert.equal(options.headers, undefined);
+      return new Response(null, { status: 302, headers: { location: target } });
+    }), /Whisper redirect/);
+    assert.deepEqual(calls, [url], 'Disallowed destination is never contacted');
+  }
+  let contacted = false;
+  await assert.rejects(fetchWhisperPayload(url + '?unapproved', exact, async () => {
+    contacted = true;
+  }), /Unapproved Whisper/);
+  assert.equal(contacted, false);
+});
+
+test('approved Whisper redirect chain stays bound and bounded', async () => {
+  const url = 'https://huggingface.co/synthetic/fixture/resolve/' + 'a'.repeat(40) + '/config.json';
+  const exact = new Map([[url, { sha256: 'b'.repeat(64) }]]);
+  const target = 'https://us.aws.cdn.hf.co/asset?signed=synthetic';
+  const calls = [];
+  const result = await fetchWhisperPayload(url, exact, async (request, options) => {
+    calls.push({ request, signal: options.signal });
+    return request === url
+      ? new Response(null, { status: 302, headers: { location: target } })
+      : new Response('approved synthetic bytes');
+  });
+  assert.deepEqual(calls.map(call => call.request), [url, target]);
+  assert.equal(calls[0].signal, calls[1].signal, 'One deadline bounds the entire chain');
+  assert.equal(result.redirects.length, 1);
+  assert.equal(result.redirects[0].to, 'https://us.aws.cdn.hf.co/asset');
+  assert.ok(!JSON.stringify(result.redirects).includes('signed=synthetic'));
+  assert.match(result.redirects[0].targetSha256, /^[a-f0-9]{64}$/);
+  assert.equal(await result.response.text(), 'approved synthetic bytes');
+  let attempts = 0;
+  await assert.rejects(fetchWhisperPayload(url, exact, async () => {
+    attempts++;
+    return new Response(null, { status: 302, headers: { location: target } });
+  }), /Whisper redirect limit/);
+  assert.equal(attempts, 6);
+});
+
+
+test('failed Whisper download responses retire their body before refusal', async () => {
+  const url = 'https://huggingface.co/synthetic/fixture/resolve/' + 'a'.repeat(40) + '/config.json';
+  const exact = new Map([[url, { sha256: 'b'.repeat(64) }]]);
+  for (const status of [206, 404, 503]) {
+    let cancelled = false;
+    await assert.rejects(fetchWhisperPayload(url, exact, async () => new Response(new ReadableStream({
+      cancel() { cancelled = true; },
+    }), { status })), /Whisper payload response/);
+    assert.equal(cancelled, true);
+  }
 });
