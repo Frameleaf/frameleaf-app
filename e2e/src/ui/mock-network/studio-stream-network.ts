@@ -16,7 +16,7 @@ export const STUDIO_PROJECT_ID = '0195e2a0-0000-7000-8000-0000000000f1';
 /** `pinnedFreecutRevision` in `web/src/lib/frameleaf/studio/engine-loader.ts`. */
 const ENGINE_REVISION = '4d62e8082c5eb387a96275bcbd323d28f6e41a62';
 // The e2e TS root cannot import the web package; ui-fixture-contracts.spec.mjs checks this against the host.
-const FRAME_PROTOCOL = 6;
+const FRAME_PROTOCOL = 7;
 
 export type StreamSessionState = 'queued' | 'negotiating' | 'offered' | 'answered' | 'closed';
 
