@@ -9,6 +9,11 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
+import {
+  type DuplicateUndoClaim,
+  requireDuplicateUndoClaim,
+  requireDuplicateUndoSelection,
+} from 'src/repositories/duplicate-undo-authority.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import {
   associatedSeeds,
@@ -261,12 +266,19 @@ export class TrashRepository {
     verify: (rows: TrashScopeRow[]) => boolean,
     auth?: AuthDto,
     capture?: (sequencedAssetIds: string[]) => void,
+    duplicateUndo?: DuplicateUndoClaim,
   ): Promise<string[] | null> {
-    if (!auth || ![TrashReviewAction.Trash, TrashReviewAction.Restore, TrashReviewAction.RestoreAll].includes(action))
+    if (
+      !duplicateUndo &&
+      (!auth || ![TrashReviewAction.Trash, TrashReviewAction.Restore, TrashReviewAction.RestoreAll].includes(action))
+    )
       return this.db
         .transaction()
         .execute((trx) => this.applyReviewedWithin(trx, userId, action, ids, options, verify));
-    if (auth.user.id !== userId || auth.sharedLink) throw new ForbiddenException('trash_owner_required');
+    if (duplicateUndo && (action !== TrashReviewAction.Restore || ids === undefined))
+      throw new ForbiddenException('duplicate_undo_claim_required');
+    if (!duplicateUndo && (auth!.user.id !== userId || auth!.sharedLink))
+      throw new ForbiddenException('trash_owner_required');
     const source = trashActionSourceStatus(action);
     const hints = await this.scope(this.db, userId, source, options)
       .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
@@ -280,7 +292,10 @@ export class TrashRepository {
       seed,
       async (tx) => {
         const binding = requireEditFamilyCoverage(tx, seed, seed.items.length > 0);
-        const locked = [...new Set([...selected, ...binding.family.assetIds])].sort();
+        if (duplicateUndo) await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
+        const locked = [
+          ...new Set([...selected, ...binding.family.assetIds, ...(duplicateUndo?.memberIds ?? [])]),
+        ].sort();
         if (locked.length > 0)
           await tx
             .selectFrom('asset')
@@ -292,14 +307,22 @@ export class TrashRepository {
             .execute();
         const refreshed = await associatedSeeds(tx, userId, selected);
         requireEditFamilyCoverage(tx, refreshed, refreshed.items.length > 0);
-        const live = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
-        if (!live) throw new ForbiddenException('trash_owner_session_required');
-        const freshOptions = { lockedOwnerId: getLockedOwnerId(live), privacy: getHiddenContentQueryOptions(live) };
+        const live = duplicateUndo
+          ? undefined
+          : auth!.session
+            ? await currentAuth(tx, userId, auth!.session.id, false)
+            : auth;
+        if (!duplicateUndo && !live) throw new ForbiddenException('trash_owner_session_required');
+        const freshOptions = duplicateUndo
+          ? await requireDuplicateUndoClaim(tx, userId, duplicateUndo)
+          : { lockedOwnerId: getLockedOwnerId(live!), privacy: getHiddenContentQueryOptions(live!) };
+        if (duplicateUndo) await requireDuplicateUndoSelection(tx, userId, duplicateUndo, ids!, freshOptions);
         const eligible = await this.scope(tx, userId, source, freshOptions)
           .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
           .select('asset.id')
           .execute();
-        if (eligible.some((row) => !selected.includes(row.id))) throw new ConflictException('trash_selection_changed');
+        if (eligible.some((row) => !selected.includes(row.id)) || (duplicateUndo && eligible.length !== ids!.length))
+          throw new ConflictException('trash_selection_changed');
         if (refreshed.items.length > 0 && action === TrashReviewAction.Trash && !binding.epoch?.trashEnabled)
           throw new ConflictException('edit_trash_disabled');
         const changed = await this.applyReviewedWithin(
@@ -349,16 +372,37 @@ export class TrashRepository {
             stacks: snapshots,
           });
           // A stream counter wait must not preserve expired elevation or stale privacy at COMMIT.
-          const finalAuth = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
-          if (!finalAuth) throw new ForbiddenException('trash_owner_session_required');
-          const safe = await this.scope(tx, userId, target, {
-            lockedOwnerId: getLockedOwnerId(finalAuth),
-            privacy: getHiddenContentQueryOptions(finalAuth),
-          })
+          const finalAuth = duplicateUndo
+            ? undefined
+            : auth!.session
+              ? await currentAuth(tx, userId, auth!.session.id, false)
+              : auth;
+          if (!duplicateUndo && !finalAuth) throw new ForbiddenException('trash_owner_session_required');
+          const safe = await this.scope(
+            tx,
+            userId,
+            target,
+            duplicateUndo
+              ? await requireDuplicateUndoClaim(tx, userId, duplicateUndo)
+              : {
+                  lockedOwnerId: getLockedOwnerId(finalAuth!),
+                  privacy: getHiddenContentQueryOptions(finalAuth!),
+                },
+          )
             .where('asset.id', '=', anyUuid(changed ?? []))
             .select('asset.id')
             .execute();
           if (safe.length !== changed!.length) throw new ConflictException('trash_selection_changed');
+        }
+        if (duplicateUndo) {
+          const finalOptions = await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
+          await requireDuplicateUndoSelection(tx, userId, duplicateUndo, ids!, finalOptions, true);
+          const safe = await this.scope(tx, userId, AssetStatus.Active, finalOptions)
+            .where('asset.id', '=', anyUuid(ids!))
+            .select('asset.id')
+            .execute();
+          if (safe.length !== ids!.length) throw new ConflictException('trash_selection_changed');
+          await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
         }
         return { changed, sequenced };
       },
@@ -366,6 +410,27 @@ export class TrashRepository {
     );
     capture?.(committed.sequenced);
     return committed.changed;
+  }
+
+  /** Narrow worker entry: sessionless restoration requires this exact recorded Undo's live claim. */
+  async restoreDuplicateUndo(
+    userId: string,
+    ids: string[],
+    claim: DuplicateUndoClaim,
+    capture?: (ids: string[]) => void,
+  ): Promise<string[]> {
+    const changed = await this.applyReviewed(
+      userId,
+      TrashReviewAction.Restore,
+      ids,
+      { lockedOwnerId: userId },
+      () => true,
+      undefined,
+      capture,
+      claim,
+    );
+    if (!changed) throw new ConflictException('duplicate_undo_selection_changed');
+    return changed;
   }
 
   async enqueueLocalEffects(): Promise<number> {

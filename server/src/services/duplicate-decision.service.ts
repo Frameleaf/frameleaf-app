@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DuplicateUndoClaim } from 'src/repositories/duplicate-undo-authority.js';
 import { AssetBulkUpdateDto } from 'src/dtos/asset.dto.js';
 import {
   DuplicateActiveOperationDto,
@@ -572,8 +573,21 @@ export class DuplicateDecisionService {
    * Reverse one recorded decision for the undo job `operationId`, as the owner. Answers for every
    * member of the group, all the same way.
    */
-  async undoGroup(auth: AuthDto, operationId: string, group: DuplicateGroupDecision): Promise<BulkOperationItem[]> {
+  async undoGroup(
+    auth: AuthDto,
+    operationId: string,
+    group: DuplicateGroupDecision,
+    claim?: DuplicateUndoClaim,
+  ): Promise<BulkOperationItem[]> {
     const ids = group.memberIds;
+    if (
+      claim &&
+      (claim.operationId !== operationId ||
+        claim.decisionId !== group.decisionId ||
+        claim.duplicateId !== group.duplicateId ||
+        !sameSet(claim.memberIds, ids))
+    )
+      return skipped(ids, DuplicateDecisionReason.NotFound);
     const decision = group.decisionId ? await this.repository.getById(auth.user.id, group.decisionId) : undefined;
     if (!decision || decision.duplicateId !== group.duplicateId || !sameSet(decision.memberIds, group.memberIds)) {
       return skipped(ids, DuplicateDecisionReason.NotFound);
@@ -609,7 +623,7 @@ export class DuplicateDecisionService {
     }
 
     try {
-      await this.undoRecorded(auth, decision);
+      await this.undoRecorded(auth, decision, claim);
     } catch (error) {
       this.logger.warn(`Undo of duplicate decision ${decision.id} did not finish: ${bulkErrorMessage(error)}`);
       return refusedAll(ids, error);
@@ -664,7 +678,7 @@ export class DuplicateDecisionService {
   }
 
   /** The reversal itself. Every step is safe to repeat, so a replayed batch simply runs it again. */
-  private async undoRecorded(auth: AuthDto, decision: DuplicateDecision): Promise<void> {
+  private async undoRecorded(auth: AuthDto, decision: DuplicateDecision, claim?: DuplicateUndoClaim): Promise<void> {
     if (decision.decision === DuplicateDecisionKind.Stack && decision.stackId) {
       const stacked = await this.repository.getStackAssetIds(decision.stackId);
       if (stacked.length > 0) {
@@ -675,8 +689,11 @@ export class DuplicateDecisionService {
     if (decision.decision === DuplicateDecisionKind.Keepers) {
       const states = await this.repository.getAssetStates(decision.trashAssetIds);
       const inTrash = states.filter((state: DuplicateAssetState) => state.status === AssetStatus.Trashed);
-      if (inTrash.length > 0) {
-        await this.trash.restoreAssets(auth, { ids: inTrash.map(({ id }) => id) });
+      const ids = inTrash.map(({ id }) => id);
+      if (claim) {
+        await this.trash.restoreDuplicateUndo(auth, { ids }, claim);
+      } else if (ids.length > 0) {
+        await this.trash.restoreAssets(auth, { ids });
       }
       await this.restoreKeepers(auth, decision);
     }
