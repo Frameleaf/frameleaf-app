@@ -1,0 +1,10 @@
+--- a/src/features/editor/components/properties-sidebar/components/property-slider-control.test.tsx
++++ b/src/features/editor/components/properties-sidebar/components/property-slider-control.test.tsx
+@@ -34,6 +34,6 @@
+     render(<PropertySliderControl value={4} onChange={vi.fn()} min={0} max={50} unit="px" />)
+ 
+     expect(screen.queryByTestId('keyframe-toggle')).not.toBeInTheDocument()
+-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
++    expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: '4px' })])
+   })
+ })
