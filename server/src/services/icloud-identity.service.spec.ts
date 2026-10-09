@@ -488,6 +488,42 @@ describe(ICloudIdentityService.name, () => {
     const samples = (count: number, overrides: Record<string, unknown> = {}) =>
       Array.from({ length: count }, (_, n) => ({ cloudIdentifier: cloudIdentifier(n), ...metadata, ...overrides }));
 
+    it('does not prove library coverage by repeating the same sampled identifier', async () => {
+      const c = connection();
+      const { sut } = setup({ connections: [c], inventory: [record(c.id, 0)] });
+      const repeated = Array.from({ length: 20 }, (_, n) => ({
+        ...metadata,
+        cloudIdentifier: n % 2 === 0 ? cloudIdentifier(0) : `${name(0).toLowerCase()}:001:${MASTER}`,
+      }));
+      const result = await sut.coverage(auth, { deviceKey: randomUUID(), samples: repeated });
+      expect(result.connections[0]).toMatchObject({ sampled: 1, matched: 1, covers: false });
+    });
+
+    it('does not inflate the 95 % ratio by repeating matched samples', async () => {
+      const c = connection();
+      const { sut } = setup({ connections: [c], inventory: Array.from({ length: 18 }, (_, n) => record(c.id, n)) });
+      const result = await sut.coverage(auth, {
+        deviceKey: randomUUID(),
+        samples: [...samples(20), ...samples(18)],
+      });
+      expect(result.connections[0]).toMatchObject({ sampled: 20, matched: 18, covers: false });
+    });
+
+    it('covers 20 distinct pending inventory items without delivered assets in an albums-only scope', async () => {
+      const c = connection({ config: { albums: ['library:album'] } });
+      const { sut } = setup({
+        connections: [c],
+        inventory: Array.from({ length: 20 }, (_, n) => record(c.id, n, { pendingRoles: ['original'] })),
+      });
+      const result = await sut.coverage(auth, { deviceKey: randomUUID(), samples: samples(20) });
+      expect(result.connections[0]).toMatchObject({
+        sampled: 20,
+        matched: 20,
+        covers: true,
+        scope: { kind: 'albums', albums: ['library:album'] },
+      });
+    });
+
     it('covers with at least 20 samples and 95 % of them in the inventory', async () => {
       const c = connection();
       const other = connection({ label: 'Other' });

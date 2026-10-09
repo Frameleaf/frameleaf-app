@@ -178,10 +178,15 @@ export class ICloudIdentityService {
               ({ sample }) => !!sample.creationDate && Date.parse(sample.creationDate) < completeAt.getTime(),
             )
           : [];
-        const matched = sampled.filter(({ sample, parsed }) => {
-          const record = records.get(parsed.cplAssetRecordName);
-          return !!record && isActionable(inventoryStrength(parsed, sample, record));
-        }).length;
+        const sampledCount = new Set(sampled.map(({ parsed }) => parsed.cplAssetRecordName)).size;
+        const matched = new Set(
+          sampled
+            .filter(({ sample, parsed }) => {
+              const record = records.get(parsed.cplAssetRecordName);
+              return !!record && isActionable(inventoryStrength(parsed, sample, record));
+            })
+            .map(({ parsed }) => parsed.cplAssetRecordName),
+        ).size;
         const libraries = connection.config.libraries ?? [];
         const albums = connection.config.albums ?? [];
         return {
@@ -194,9 +199,9 @@ export class ICloudIdentityService {
           includeEdits: connection.config.includeEdits ?? true,
           lastCompleteInventoryAt: iso(completeAt),
           nextRunAt: iso(connection.nextRunAt),
-          sampled: sampled.length,
+          sampled: sampledCount,
           matched,
-          covers: sampled.length >= COVERAGE_MIN_SAMPLES && matched >= COVERAGE_MIN_RATIO * sampled.length,
+          covers: sampledCount >= COVERAGE_MIN_SAMPLES && matched >= COVERAGE_MIN_RATIO * sampledCount,
         };
       }),
     };
