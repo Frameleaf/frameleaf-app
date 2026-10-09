@@ -199,6 +199,12 @@ export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
   }
 
   const object = target as Record<string, unknown>;
+  // Zod literals emit JSON Schema `const`; OpenAPI 3.0 expresses the same restriction as an enum.
+  // Require a schema type so a property map containing a field named `const` is left intact.
+  if (typeof object.type === 'string' && Object.hasOwn(object, 'const')) {
+    object.enum = [object.const];
+    delete object.const;
+  }
   delete object.propertyNames;
   delete object.contentEncoding;
   // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
@@ -337,8 +343,7 @@ export const useSwagger = (app: INestApplication, { write }: { write: boolean })
     .setVersion(serverVersion.toString())
     .addBearerAuth({
       type: 'http',
-      scheme: 'Bearer',
-      in: 'header',
+      scheme: 'bearer',
     })
     .addCookieAuth(ImmichCookie.AccessToken)
     .addApiKey(

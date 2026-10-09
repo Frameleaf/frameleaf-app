@@ -50946,10 +50946,9 @@
   "components": {
     "securitySchemes": {
       "bearer": {
-        "scheme": "Bearer",
+        "scheme": "bearer",
         "bearerFormat": "JWT",
-        "type": "http",
-        "in": "header"
+        "type": "http"
       },
       "cookie": {
         "type": "apiKey",
@@ -74535,7 +74534,9 @@
                         "type": "string"
                       },
                       "suggestedAdministrativeLabel": {
-                        "const": "administrative-original",
+                        "enum": [
+                          "administrative-original"
+                        ],
                         "nullable": true,
                         "type": "string"
                       }
@@ -74699,8 +74700,10 @@
             "type": "boolean"
           },
           "executionAvailable": {
-            "const": false,
             "description": "Foundation consent does not enable weekly execution or identity reuse",
+            "enum": [
+              false
+            ],
             "type": "boolean"
           },
           "includeProtected": {
