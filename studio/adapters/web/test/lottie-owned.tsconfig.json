@@ -2,8 +2,34 @@
   "extends": "./keyframe-browser.tsconfig.json",
   "include": [
     "lottie-owned.browser.tsx",
+    "persisted-lottie.types.ts",
     "lottie-owned.fixture.d.mts",
     "../../../engine/src/**/*.d.ts",
     "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
-  ]
+  ],
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "../../../engine/src/*"
+      ],
+      "react": [
+        "../../../engine/node_modules/@types/react"
+      ],
+      "react-dom": [
+        "../../../engine/node_modules/@types/react-dom"
+      ],
+      "react-dom/*": [
+        "../../../engine/node_modules/@types/react-dom/*"
+      ],
+      "react/*": [
+        "../../../engine/node_modules/@types/react/*"
+      ],
+      "@frameleaf/host/*": [
+        "../../../../web/src/lib/frameleaf/studio/*"
+      ],
+      "fflate": [
+        "../../../engine/node_modules/fflate"
+      ]
+    }
+  }
 }
