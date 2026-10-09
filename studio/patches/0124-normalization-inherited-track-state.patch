@@ -1,0 +1,188 @@
+diff --git a/src/shared/projects/migrations/normalize.ts b/src/shared/projects/migrations/normalize.ts
+--- a/src/shared/projects/migrations/normalize.ts
++++ b/src/shared/projects/migrations/normalize.ts
+@@ -19,6 +19,7 @@
+ import type { Project, ProjectTimeline } from '@/types/project'
+ import { DEFAULT_TRACK_HEIGHT, DEFAULT_FPS } from '@/shared/timeline/defaults'
+ import { normalizeAudioEqSettings } from '@/shared/utils/audio-eq'
++import { resolveEffectiveTrackStates } from '@/shared/utils/subtitle-sidecar.mjs'
+ import { applyOptionalClamps } from '@/shared/timeline/item-clamps'
+ import { sanitizeTextMotion } from './sanitize-text-motion'
+ import type { ProjectWarning } from './types'
+@@ -165,8 +166,7 @@
+ }
+
+ function flattenTrackGroups(tracks: ProjectTimeline['tracks']): ProjectTimeline['tracks'] {
+-  return tracks
+-    .filter((track) => !track.isGroup)
++  return resolveEffectiveTrackStates(tracks)
+     .map((track) => ({
+       ...track,
+       parentTrackId: undefined,
+diff --git a/src/shared/projects/migrations/index.test.ts b/src/shared/projects/migrations/index.test.ts
+--- a/src/shared/projects/migrations/index.test.ts
++++ b/src/shared/projects/migrations/index.test.ts
+@@ -690,3 +690,163 @@
+     expect(effectsOf(project)[0]!.effect).toEqual(gpu)
+   })
+ })
++
++describe('migrateProject inherited group state', () => {
++  it.each(['root', 'sequence', 'composite-2d'] as const)(
++    'materializes existing effective flags before flattening %s tracks without altering graph data',
++    (scope) => {
++      const base = createBaseProject({
++        tracks: [createTrack('child', 2, 'video')],
++        items: [0, 60].map((from, index) => ({
++          id: `clip-${index + 1}`,
++          type: 'video' as const,
++          trackId: 'child',
++          from,
++          durationInFrames: 60,
++          label: `Clip ${index + 1}`,
++          src: 'source.mp4',
++          mediaId: 'source',
++          sourceStart: from,
++          sourceEnd: from + 60,
++          sourceDuration: 240,
++        })),
++        transitions: [
++          {
++            id: 'transition',
++            type: 'crossfade',
++            leftClipId: 'clip-1',
++            rightClipId: 'clip-2',
++            trackId: 'child',
++            durationInFrames: 8,
++            presentation: 'fade',
++            timing: 'linear',
++            alignment: 0.5,
++          },
++        ],
++        keyframes: [
++          {
++            itemId: 'clip-1',
++            properties: [
++              {
++                property: 'opacity',
++                keyframes: [{ id: 'key', frame: 0, value: 1, easing: 'linear' }],
++              },
++            ],
++          },
++        ],
++        currentFrame: 10,
++        zoomLevel: 2,
++        scrollPosition: 15,
++      })
++      base.schemaVersion = CURRENT_SCHEMA_VERSION
++      const input = migrateProject(base).project
++      const normalizedTrack = (id: string, order: number, kind: 'video' | 'audio') => ({
++        ...input.timeline!.tracks[0]!,
++        ...createTrack(id, order, kind),
++        height: input.timeline!.tracks[0]!.height,
++      })
++      const tracks: ProjectTimeline['tracks'] = [
++        {
++          ...normalizedTrack('parent', 0, 'video'),
++          isGroup: true,
++          locked: true,
++          muted: true,
++          visible: false,
++          solo: true,
++          volume: 9,
++        },
++        {
++          ...normalizedTrack('child', 2, 'video'),
++          parentTrackId: 'parent',
++          isCollapsed: true,
++          volume: -7,
++          syncLock: false,
++        },
++        { ...normalizedTrack('default-parent', 3, 'video'), isGroup: true },
++        {
++          ...normalizedTrack('explicit', 4, 'video'),
++          parentTrackId: 'default-parent',
++          locked: true,
++          muted: true,
++          visible: false,
++          solo: true,
++        },
++        { ...normalizedTrack('plain', 1, 'video'), name: 'Untouched plain lane' },
++        { ...normalizedTrack('unresolved', 5, 'audio'), parentTrackId: 'absent' },
++        { ...normalizedTrack('middle', 6, 'video'), isGroup: true, parentTrackId: 'parent' },
++        { ...normalizedTrack('immediate-only', 7, 'video'), parentTrackId: 'middle' },
++      ]
++      if (scope === 'root') {
++        input.timeline!.tracks = tracks
++      } else {
++        input.timeline!.compositions = [
++          {
++            id: 'composition',
++            name: 'Composition',
++            editorKind: scope,
++            tracks,
++            items: structuredClone(input.timeline!.items),
++            transitions: structuredClone(input.timeline!.transitions),
++            keyframes: structuredClone(input.timeline!.keyframes),
++            fps: 30,
++            width: 1920,
++            height: 1080,
++            durationInFrames: 120,
++          },
++        ]
++      }
++      const before = structuredClone(input)
++      const { project: result } = migrateProject(input)
++      const owner = scope === 'root' ? result.timeline! : result.timeline!.compositions![0]!
++      expect(owner.tracks.map((track) => track.id)).toEqual([
++        'plain',
++        'child',
++        'explicit',
++        'unresolved',
++        'immediate-only',
++      ])
++      expect(
++        owner.tracks.map((track) => [
++          track.id,
++          track.locked,
++          track.muted,
++          track.visible,
++          track.solo,
++        ]),
++      ).toEqual([
++        ['plain', false, false, true, false],
++        ['child', true, true, false, true],
++        ['explicit', true, true, false, true],
++        ['unresolved', false, false, true, false],
++        ['immediate-only', false, false, true, false],
++      ])
++      expect(
++        owner.tracks.every((track) => !track.isGroup && !track.parentTrackId && !track.isCollapsed),
++      ).toBe(true)
++      expect(owner.tracks.find((track) => track.id === 'child')).toMatchObject({
++        volume: -7,
++        syncLock: false,
++        name: 'child',
++        order: 2,
++      })
++      const expected = structuredClone(before)
++      const expectedOwner =
++        scope === 'root' ? expected.timeline! : expected.timeline!.compositions![0]!
++      expectedOwner.tracks = tracks
++        .filter((track) => !track.isGroup)
++        .map((track) => ({
++          ...track,
++          parentTrackId: undefined,
++          isGroup: undefined,
++          isCollapsed: undefined,
++          ...(track.id === 'child'
++            ? { locked: true, muted: true, visible: false, solo: true }
++            : {}),
++        }))
++        .sort((left, right) => left.order - right.order)
++      expect(result).toEqual(expected)
++      expect(JSON.stringify(input)).toBe(JSON.stringify(before))
++      expect(migrateProject(result).project).toEqual(result)
++    },
++  )
++})
