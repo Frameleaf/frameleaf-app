@@ -42,7 +42,7 @@
  */
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Selectable } from 'kysely';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import type { SourceEpoch } from 'src/repositories/asset-local-effect.repository.js';
 import type { InteractiveAdmissionSource, InteractiveAdmissionView } from 'src/repositories/studio-source-admission.js';
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
@@ -84,7 +84,11 @@ import {
   studioRightsId,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
-import { readStudioVectorBindings, validateStudioVectorClosure } from 'src/utils/studio-vector-dependencies.js';
+import {
+  parseStudioLottieDependencies,
+  readStudioVectorBindings,
+  validateStudioVectorClosure,
+} from 'src/utils/studio-vector-dependencies.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */
@@ -579,9 +583,11 @@ export class StudioResourceService extends BaseService {
       );
     };
 
-    const declaredImport = (
+    const declaredImport = async (
       reference: StudioResourceReference,
-    ): { ok: true; item: StudioDeclaredImport } | { ok: false; reason: StudioRefusalReason; detail: string } => {
+    ): Promise<
+      { ok: true; item: StudioDeclaredImport } | { ok: false; reason: StudioRefusalReason; detail: string }
+    > => {
       const item = imports.get(reference.id);
       if (!item) {
         return {
@@ -612,6 +618,36 @@ export class StudioResourceService extends BaseService {
               ? 'The graphic has not been scanned for external subresources.'
               : `The graphic references ${item.externalReferences} external subresource(s).`,
         };
+      }
+      // Stored zero-declaration Lottie imports predate strict upload admission; verify their exact bytes too.
+      if (
+        ['application/json', 'application/x-lottie+json'].includes(item.contentType) &&
+        !vectorParents.has(studioReferenceKey(reference))
+      ) {
+        let bytes: Uint8Array | undefined;
+        try {
+          if (!item.path) throw new Error('Missing vector input');
+          const file = await this.storageRepository.openForRandomRead(item.path);
+          try {
+            if (file.size === 0 || file.size > STUDIO_IMPORT_VECTOR_MAX_BYTES) throw new Error('Vector input limit');
+            bytes = await file.read(0, file.size);
+            if (bytes.length !== file.size || createHash('sha256').update(bytes).digest('hex') !== item.checksum)
+              throw new Error('Vector input changed');
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            if (parseStudioLottieDependencies(text).dependencies.length > 0)
+              throw new Error('Undeclared vector dependencies');
+          } finally {
+            await file.close();
+          }
+        } catch {
+          return {
+            ok: false,
+            reason: StudioRefusalReason.RemoteSubresource,
+            detail: 'Lottie did not match supported immutable bytes without external dependencies.',
+          };
+        } finally {
+          bytes?.fill(0);
+        }
       }
       // An import is used only as what it is: sound from sound or video, captions from a caption
       // file and a LUT from a `.cube` file, as the upload read each from its bytes.
@@ -703,7 +739,7 @@ export class StudioResourceService extends BaseService {
               break;
             }
             case 'import': {
-              const declared = declaredImport(reference);
+              const declared = await declaredImport(reference);
               if (declared.ok) {
                 authorize(reference, {
                   ownerId: context.ownerId,
@@ -748,7 +784,7 @@ export class StudioResourceService extends BaseService {
           if (destinationRefusal(reference)) {
             break;
           }
-          const declared = declaredImport(reference);
+          const declared = await declaredImport(reference);
           if (!declared.ok) {
             refuse(reference, declared.reason, declared.detail);
             break;
@@ -788,7 +824,7 @@ export class StudioResourceService extends BaseService {
             });
             break;
           }
-          const declared = declaredImport(reference);
+          const declared = await declaredImport(reference);
           if (!declared.ok) {
             refuse(reference, declared.reason, declared.detail);
             break;
@@ -824,7 +860,7 @@ export class StudioResourceService extends BaseService {
 
         case StudioResourceKind.Lut: {
           if (reference.lutSource === 'import') {
-            const declared = declaredImport(reference);
+            const declared = await declaredImport(reference);
             if (declared.ok) {
               authorize(reference, {
                 ownerId: context.ownerId,
