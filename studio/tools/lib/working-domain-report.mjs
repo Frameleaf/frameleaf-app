@@ -47,7 +47,7 @@ export function domainObservations(report) {
       workingDomain, expected, observed: expected, result: 'passed', witness,
       oracle: workingDomain === WORKING_DOMAINS.sdr ? oracle : expected === 'rendered' ?
         (family === 'effects' ? 'independent linear tone equations and premultiplied spatial-kernel equations, parameter limits, resolver, alpha and stack assertions' :
-          'independent linear straight-alpha source-over equation') : 'actual registered operator throws shared HdrRenderUnavailableError' });
+          (family === 'transition' ? 'independent linear additive-dissolve equation on premultiplied light' : 'independent linear straight-alpha source-over equation')) : 'actual registered operator throws shared HdrRenderUnavailableError' });
   };
   const rows = family === 'effects' ? report.effects : family === 'blend' ? report.results : report.transitions;
   assert(Array.isArray(rows), 'matrix measurement rows required');
@@ -70,7 +70,7 @@ export function domainObservations(report) {
           add(id, value.case, WORKING_DOMAINS.sdr, `cases.${at}`);
       });
       add(id, 'extreme', WORKING_DOMAINS.hdr, `${prefix}.${family === 'blend' ? 'float' : 'frames.0.hdr'}`,
-        family === 'blend' && id === 'normal' ? 'rendered' : 'refused');
+        (family === 'blend' && id === 'normal') || (family === 'transition' && id === 'additiveDissolve') ? 'rendered' : 'refused');
     }
   });
   return observations;
