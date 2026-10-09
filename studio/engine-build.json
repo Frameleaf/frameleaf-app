@@ -559,7 +559,12 @@
       "path": "patches/0115-caption-order-independent-lookup.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "31bcfd1874b2f5de4afff3e9259412ca932e9557928f4d41814d392caf86e51a"
+    },
+    {
+      "path": "patches/0116-still-default-project-duration.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "28558d507d6d08bf312c47e3bd16b0e0608d3cb8d2eec6c19959878d9229909e"
     }
   ],
-  "sourceSha256": "2cf0d70dfb6be1a3256738b144f0c7b789deb4d339039c42e73db4776bdc5201"
+  "sourceSha256": "2bacb415e43911d507c6299b4c551040eb963e6778ae15f080d53b3134bf272a"
 }
