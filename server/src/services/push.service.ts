@@ -251,7 +251,15 @@ export class PushService {
       throw new BadRequestException('Only iOS devices have Live Activity push tokens');
     }
     this.requireTokens(dto.token);
-    await this.devices.setActivity(current.id, { activityId, kind: dto.kind, token: dto.token });
+    if (dto.kind === 'studio-render' && !dto.operationId) {
+      throw new BadRequestException('Studio render activity requires its operationId');
+    }
+    await this.devices.setActivity(current.id, {
+      activityId,
+      kind: dto.kind,
+      token: dto.token,
+      ...(dto.operationId && { operationId: dto.operationId }),
+    });
     const device = await this.devices.getBySession(sessionId);
     return mapDevice(device ?? current, sessionId);
   }
@@ -431,7 +439,7 @@ export class PushService {
       }
     }
     let devices = (await this.devices.getDeliveryTargets([...recipients])).filter(
-      (device) => !device.disabledEvents.includes(notice.type),
+      (device) => !device.disabledEvents.includes(notice.type) || !!(notice.render && liveActivityPlanOf(notice)?.end),
     );
     if (notice.backupDeviceKey) {
       const linked = devices.filter((device) => device.backupDeviceKey === notice.backupDeviceKey);
@@ -642,7 +650,9 @@ export class PushService {
         ttlSec: pushTtlSec(notice, true),
         liveActivity: { state: live.state, staleAfterSec: 3600 },
       };
-      const activities = device.activities.filter(({ kind }) => kind === live.kind);
+      const activities = device.activities.filter(
+        ({ kind, operationId }) => kind === live.kind && (!notice.render || operationId === notice.render.job),
+      );
       for (const activity of activities) {
         planned.push({
           deviceId: device.id,
@@ -671,7 +681,17 @@ export class PushService {
     // While the chain runs, iOS follows it in the Live Activity alone; Android shows it as a progress
     // notification, and the end of the chain (complete or failed) is an alert everywhere. A render's
     // progress works the same way, except that its start also reaches iOS (naming the job).
-    if (!live?.liveOnly || device.platform !== PushPlatform.Ios) {
+    const silentRenderEnd = !!(
+      notice.render &&
+      live?.end &&
+      device.platform === PushPlatform.Android &&
+      !device.disabledEvents.includes(PushEventType.RenderProgress) &&
+      device.disabledEvents.includes(notice.type)
+    );
+    if (
+      (!live?.liveOnly || device.platform !== PushPlatform.Ios) &&
+      (!device.disabledEvents.includes(notice.type) || silentRenderEnd)
+    ) {
       const id = randomUUID();
       const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
       try {
@@ -681,8 +701,8 @@ export class PushService {
           request: {
             platform,
             token: device.pushToken,
-            type: notice.background ? 'background' : 'alert',
-            priority: notice.background ? 'normal' : 'high',
+            type: notice.background || silentRenderEnd ? 'background' : 'alert',
+            priority: notice.background || silentRenderEnd ? 'normal' : 'high',
             ttlSec: pushTtlSec(notice, false),
             payload: sealPushEnvelope(device.publicKey, Buffer.from(JSON.stringify(payload), 'utf8')),
             ...(collapseId && { collapseId }),

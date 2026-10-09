@@ -4,6 +4,7 @@ import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { CastMediaUrlCreateDto, CastMediaUrlResponseDto } from 'src/dtos/cast.dto.js';
 import { Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { isGranted } from 'src/utils/access.js';
 import {
   CAST_MEDIA_PURPOSE,
   CAST_MEDIA_TTL_MS,
@@ -31,6 +32,7 @@ export class CastService extends BaseService {
     if (auth.sharedLink || (!auth.session && !auth.apiKey)) {
       throw new ForbiddenException('Casting needs a signed-in account');
     }
+    this.requireKeyPermission(auth, dto.kind);
     await this.requireAccess({ auth, permission: this.permissionOf(dto.kind), ids: [id] });
     await this.requireCastable(auth.user.id, id);
 
@@ -91,6 +93,7 @@ export class CastService extends BaseService {
       throw new UnauthorizedException(INVALID_CAST_URL);
     }
 
+    this.requireKeyPermission(auth, claims.m);
     await this.requireAccess({ auth, permission: this.permissionOf(claims.m), ids: [claims.a] });
     const hiddenContent = await this.requireCastable(user.id, claims.a);
     if (hiddenContent) {
@@ -99,6 +102,12 @@ export class CastService extends BaseService {
       auth.hideNsfwAssets = true;
     }
     return { auth, assetId: claims.a, kind: claims.m };
+  }
+
+  private requireKeyPermission(auth: AuthDto, kind: CastMediaKind): void {
+    if (auth.apiKey && !isGranted({ requested: [this.permissionOf(kind)], current: auth.apiKey.permissions })) {
+      throw new ForbiddenException('API key cannot access this Cast rendition');
+    }
   }
 
   private permissionOf(kind: CastMediaKind) {

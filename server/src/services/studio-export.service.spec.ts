@@ -1150,12 +1150,52 @@ describe(StudioExportService.name, () => {
           'PushNotify',
           expect.objectContaining({
             type: 'render-finished',
-            data: expect.objectContaining({ status: 'failed', jobActions: 'retry' }),
+            data: expect.objectContaining({ status: 'failed', jobActions: '' }),
           }),
         );
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('announces cancellation once on entry and acknowledgement, clearing progress throttle', async () => {
+      const version = versionRow({ state: StudioExportVersionState.Rendering });
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.cancel.mockResolvedValue(version);
+      const render = operation({ status: MediaOperationStatus.Rendering });
+      await sut.onRenderProgress(render, 0.5);
+      events.emit.mockClear();
+      await sut.cancelVersion(version, 'cancelled', 'Cancelled');
+      repository.cancel.mockResolvedValue(undefined);
+      await sut.onRenderCancelAcknowledged(render, 'worker-1', true);
+      const notices = events.emit.mock.calls.filter(([name]) => name === 'PushNotify').map(([, value]) => value);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({
+        type: PushEventType.RenderProgress,
+        background: true,
+        render: { job: render.id, state: 'cancelled', progress: 0 },
+        data: { status: 'cancelled', versionId: version.id, jobActions: '' },
+      });
+      expect(repository.acknowledgeRemoteCancel).toHaveBeenCalledWith(render.id, 'worker-1');
+      events.emit.mockClear();
+      await sut.onRenderProgress(render, 0.01);
+      expect(events.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({ render: { job: render.id, state: 'running', progress: 0.01 } }),
+      );
+    });
+
+    it('announces a running cancellation acknowledgement without a prior entry', async () => {
+      const version = versionRow({ state: StudioExportVersionState.Rendering });
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.cancel.mockResolvedValue(version);
+      await sut.onRenderCancelAcknowledged(operation(), 'worker-1', false);
+      expect(events.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          render: { job: RENDER, state: 'cancelled', progress: 0 },
+        }),
+      );
     });
 
     it('records provenance and a remote stop obligation when a remote worker claims', async () => {
@@ -1609,13 +1649,13 @@ describe(StudioExportService.name, () => {
         expect.objectContaining({
           type: PushEventType.RenderFinished,
           userIds: [OWNER],
-          // native apps offer Retry for the failed render job
+          // Reopen this project/version in Studio; generic retry is unsupported.
           data: expect.objectContaining({
             versionId: VERSION,
             status: 'failed',
             job: RENDER,
             jobType: 'media-operation',
-            jobActions: 'retry',
+            jobActions: '',
           }),
           systemTemplate: { version: 1, key: 'studio-export-failed-named', args: { label: 'Lake trip' } },
         }),

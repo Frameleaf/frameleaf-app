@@ -11331,6 +11331,8 @@ export type PushDeviceRegisterDto = {
 export type PushActivityTokenDto = {
     /** The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes) */
     kind: Kind10;
+    /** Required for studio-render: the owned Studio render media operation this activity follows */
+    operationId?: string;
     /** The ActivityKit push token of this activity */
     token: string;
 };
@@ -11344,8 +11346,8 @@ export type PushStatusResponseDto = {
         keyAgreement: KeyAgreement;
         scheme: Scheme;
     };
-    /** The events this server can deliver */
-    events: PushEventType[];
+    /** The events this server can deliver. Open-ended: ignore unfamiliar event names. */
+    events: string[];
     /** Why push is unavailable; null when available */
     reason: (PushUnavailableReason) | null;
     /** Whether the session asking has registered its device */
@@ -15075,6 +15077,9 @@ export type KnownAssetDevelopRecipe = {
     whites?: number;
 };
 export type LicenseResponseDto = UserLicense;
+export type PushKnownEventsDto = {
+    events: PushEventType[];
+};
 export type SyncAckV1 = {};
 export type SyncAlbumAssetAccessDeleteV1 = {
     albumId: string;
@@ -30683,16 +30688,6 @@ export enum KeyAgreement {
 export enum Scheme {
     FrameleafPushV1 = "frameleaf-push-v1"
 }
-export enum PushEventType {
-    BackupNeedsAttention = "backup-needs-attention",
-    BackupStale = "backup-stale",
-    CloudBackupActivation = "cloud-backup-activation",
-    SharedActivity = "shared-activity",
-    Memories = "memories",
-    RenderFinished = "render-finished",
-    RenderProgress = "render-progress",
-    AccessChanged = "access-changed"
-}
 export enum PushUnavailableReason {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
@@ -31552,6 +31547,16 @@ export enum Version10 {
 }
 export enum Version11 {
     $1 = 1
+}
+export enum PushEventType {
+    BackupNeedsAttention = "backup-needs-attention",
+    BackupStale = "backup-stale",
+    CloudBackupActivation = "cloud-backup-activation",
+    SharedActivity = "shared-activity",
+    Memories = "memories",
+    RenderFinished = "render-finished",
+    RenderProgress = "render-progress",
+    AccessChanged = "access-changed"
 }
 export enum Status12 {
     Active = "active",

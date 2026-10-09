@@ -606,3 +606,5 @@ Complete operation contract:
   "x-immich-permission": "session.read"
 }
 ```
+
+Studio render activity registration requires the owned render `operationId`. An activity follows only that operation; legacy unbound render tokens receive no updates. Failed or cancelled Studio renders offer no generic Retry: reopen the project/version to export again. Discovery event names are open-ended.
