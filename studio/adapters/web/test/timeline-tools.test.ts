@@ -3,6 +3,7 @@ import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TimelineItem, TextItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
+import { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
 import { applyCanonicalCommands, canonicalJson, type CanonicalEnvelope } from '../src/canonical-commands'
 import {
   createStudioEngineCommandHandlers,
@@ -828,6 +829,158 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       expect(canonicalJson(graph)).toBe(marked)
     }
   })
+})
+
+describe('FL-94 canonical inherited group locks', () => {
+  const groupedParts = async (locked: boolean, leafLocked = false, soloNeighbour = false) => {
+    const graph = await fourParts()
+    graph.timeline!.tracks!.push(track('audio-group', 'audio', 2, { isGroup: true, locked }))
+    const audioTrack = graph.timeline!.tracks!.find((candidate) => candidate.id === 'a1')!
+    Object.assign(audioTrack, { parentTrackId: 'audio-group', locked: leafLocked })
+    if (soloNeighbour) {
+      const solo = onTrack(graph, 'a1')[2]!
+      Object.assign(solo, {
+        linkedGroupId: undefined,
+        originId: 'solo-source',
+        sourceStart: 30,
+        sourceEnd: 90,
+      })
+      graph.timeline!.items = graph.timeline!.items!.filter((item) =>
+        item.trackId === 'v1' ? item.from < 120 : item.from < 180,
+      )
+    }
+    return graph
+  }
+
+  const host = (initial: Project) => {
+    let graph: unknown = initial
+    const history = createStudioGraphHistory()
+    const handlers = createStudioEngineCommandHandlers({
+      graph: () => graph,
+      revision: () => 3,
+      assets: () => [],
+      restore: async () => false,
+      history,
+      stage: (next) => {
+        graph = next
+      },
+      engine: async () => ({
+        dispose() {},
+        async apply(current, envelopes) {
+          const outcome = await applyCanonicalCommands(
+            current,
+            envelopes.map((command) => envelope(command.id, { ...command.payload })),
+            media,
+          )
+          return outcome.status === 'applied'
+            ? { status: 'applied', graph: outcome.project, digest: outcome.digest }
+            : outcome
+        },
+      }),
+    })
+    return {
+      graph: () => graph as Project,
+      history,
+      run: (id: StudioCommandId, payload: Record<string, unknown>) =>
+        handlers[id]!(createStudioCommandEnvelope(id as never, payload as never, 3)),
+    }
+  }
+
+  it.each([
+    ['inherited', true, false, false],
+    ['explicit', false, true, false],
+    ['inherited with an unlinked companion neighbour', true, false, true],
+  ] as const)(
+    'refuses %s locks atomically and retains redo with linked selection disabled',
+    async (_name, groupLocked, leafLocked, soloNeighbour) => {
+      const initial = await groupedParts(groupLocked, leafLocked, soloNeighbour)
+      expect(initial.timeline!.tracks!.find((track) => track.id === 'audio-group')?.locked).toBe(
+        groupLocked,
+      )
+      expect(initial.timeline!.tracks!.find((track) => track.id === 'a1')?.parentTrackId).toBe(
+        'audio-group',
+      )
+      const normalized = await applied(initial, [])
+      expect(normalized.timeline!.tracks!.find((track) => track.id === 'a1')?.locked).toBe(
+        groupLocked || leafLocked,
+      )
+      expect(
+        normalized.timeline!.tracks!.some((track) => track.isGroup || track.parentTrackId),
+      ).toBe(false)
+      const previousLinked = useEditorStore.getState().linkedSelectionEnabled
+      useEditorStore.setState({ linkedSelectionEnabled: false })
+      try {
+        const cases: Array<[StudioCommandId, Record<string, unknown>]> = [
+          ['clip.slide', { clipId: onTrack(initial, 'v1')[1]!.id, delta: seconds(1, 3) }],
+          ['clip.setAudio', { clipId: onTrack(initial, 'a1')[1]!.id, muted: true }],
+        ]
+        for (const [id, payload] of cases) {
+          const session = host(initial)
+          await session.run('marker.add', { at: seconds(1) })
+          const marked = canonicalJson(session.graph())
+          await session.run('history.undo', {})
+          const before = canonicalJson(session.graph())
+          await applied(session.graph(), [])
+          const storesBefore = canonicalJson(buildTimelineFromStores())
+          const depth = session.history.depth
+          await expect(session.run(id, payload)).rejects.toThrow(
+            `${id}: a clip it would change is on a locked track`,
+          )
+          expect(canonicalJson(session.graph())).toBe(before)
+          expect(canonicalJson(buildTimelineFromStores())).toBe(storesBefore)
+          expect(session.history.depth).toEqual(depth)
+          expect(useEditorStore.getState().linkedSelectionEnabled).toBe(false)
+          await session.run('history.redo', {})
+          expect(canonicalJson(session.graph())).toBe(marked)
+        }
+      } finally {
+        useEditorStore.setState({ linkedSelectionEnabled: previousLinked })
+      }
+    },
+  )
+
+  it.each([false, true])(
+    'slides unlocked grouped tracks and restores complete graphs (solo neighbour: %s)',
+    async (soloNeighbour) => {
+      const initial = await groupedParts(false, false, soloNeighbour)
+      const normalized = await applied(initial, [])
+      expect(normalized.timeline!.tracks!.find((track) => track.id === 'a1')?.locked).toBe(false)
+      const session = host(initial)
+      const before = canonicalJson(initial)
+      const previousLinked = useEditorStore.getState().linkedSelectionEnabled
+      useEditorStore.setState({ linkedSelectionEnabled: false })
+      try {
+        await session.run('clip.slide', {
+          clipId: onTrack(initial, 'v1')[1]!.id,
+          delta: seconds(1, 3),
+        })
+        const after = canonicalJson(session.graph())
+        const expected = soloNeighbour
+          ? [
+              [0, 70, 0, 70],
+              [70, 60, 60, 120],
+            ]
+          : [
+              [0, 70, 0, 70],
+              [70, 60, 70, 130],
+              [130, 50, 130, 180],
+              [180, 60, 180, 240],
+            ]
+        expect(spans(session.graph(), 'v1')).toEqual(expected)
+        expect(spans(session.graph(), 'a1')).toEqual(
+          soloNeighbour ? [...expected, [130, 50, 40, 90]] : expected,
+        )
+        expect(session.graph().timeline!.tracks).toEqual(normalized.timeline!.tracks)
+        expect(useEditorStore.getState().linkedSelectionEnabled).toBe(false)
+        await session.run('history.undo', {})
+        expect(canonicalJson(session.graph())).toBe(before)
+        await session.run('history.redo', {})
+        expect(canonicalJson(session.graph())).toBe(after)
+      } finally {
+        useEditorStore.setState({ linkedSelectionEnabled: previousLinked })
+      }
+    },
+  )
 })
 
 describe('FL-94 sequence settings: nothing on an existing timeline retimes silently', () => {
