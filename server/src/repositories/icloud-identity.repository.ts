@@ -66,7 +66,7 @@ export type ICloudInventoryItem = {
   cplMasterRecordName: string | null;
   assetFields: Record<string, unknown>;
   masterFields: Record<string, unknown> | null;
-  /** The sync selected it (it has resources); otherwise it is outside the connection's selection. */
+  /** The sync currently selected it (it has current resources); otherwise it is outside its selection. */
   inScope: boolean;
   /**
    * The roles (as identity roles) the sync is still bringing: resources queued or in progress and
@@ -188,7 +188,8 @@ export class ICloudIdentityRepository {
       SELECT a."connectionId", upper(a."recordId") AS "cplAssetRecordName", a."masterId" AS "cplMasterRecordName",
         a.fields AS "assetFields", m.fields AS "masterFields",
         EXISTS (SELECT 1 FROM public.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId" = a."connectionId"
-          AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId") AS "inScope",
+          AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId"
+          AND coalesce((r.source->>'current')::boolean, true)) AS "inScope",
         coalesce((SELECT array_agg(DISTINCT ${identityRoleSql}) FROM public.icloud_resource r
           WHERE r."connectionId" = a."connectionId" AND r."libraryKey" = a."libraryKey"
             AND r."sourceAssetId" = a."recordId" AND ${pendingResourceSql}), '{}') AS "pendingRoles",

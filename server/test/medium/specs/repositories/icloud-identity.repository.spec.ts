@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   ICloudIdentityRepository,
@@ -7,7 +8,10 @@ import {
   releaseSyncClaim,
 } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -180,6 +184,65 @@ describe(ICloudIdentityRepository.name, () => {
     );
     expect(items).toHaveLength(2);
     await expect(sut.inventory(randomUUID(), [ASSET])).resolves.toEqual([]);
+  });
+
+  it('uses the latest selected album inventory instead of historical resources after a scope change', async () => {
+    const selected = '0B0B0B0B-75DF-41B2-8773-80C153D73A5A';
+    await sync.savePage(connection.id, 'assets:library', 'library', [asset(selected)], null, true);
+    const config = ICloudConfigSchema.parse({ albums: ['library:selected'] });
+    await sync.update(connection.id, connection.ownerId, { config });
+    const current = (await sync.get(connection.id, connection.ownerId))!;
+    await sync.saveMembershipPage(connection.id, 'library', 'selected', [asset(selected)], randomUUID(), true);
+    await expect(sync.materialize(current, 'library', library)).resolves.toBe(true);
+    await sync.savePage(connection.id, 'inventory-complete', '', [], null, true);
+
+    const { rows: resources } = await sql<{ sourceAssetId: string; current: boolean; status: string }>`
+      SELECT "sourceAssetId", (source->>'current')::boolean AS current, status FROM public.icloud_resource
+      WHERE "connectionId" = ${connection.id}::uuid AND "auditRequestId" IS NULL AND role = 'original'
+      ORDER BY "sourceAssetId"
+    `.execute(db);
+    expect(resources).toEqual([
+      { sourceAssetId: selected, current: true, status: 'pending' },
+      { sourceAssetId: ASSET, current: false, status: 'pending' },
+    ]);
+    const otherOwner = (await seedCanonicalUser(db)).id;
+    const other = (await sync.create(otherOwner, 'Other owner', ICloudConfigSchema.parse({})))!;
+    await sync.savePage(other.id, 'assets:library', 'library', [master, asset()], null, true);
+    await sync.materialize(other, 'library', library);
+    await expect(sut.connections(connection.ownerId)).resolves.toEqual([
+      expect.objectContaining({
+        config: expect.objectContaining({ albums: ['library:selected'] }),
+        lastCompleteInventoryAt: expect.any(Date),
+      }),
+    ]);
+    const service = new ICloudIdentityService(sut, new IntegrityRepository(db), LoggingRepository.create());
+    const coverage = await service.coverage({ user: { id: connection.ownerId } } as AuthDto, {
+      deviceKey: randomUUID(),
+      samples: [ASSET, selected].map((name) => ({
+        cloudIdentifier: `${name}:001:${MASTER}`,
+        originalFilename: 'IMG_0001.HEIC',
+        creationDate: '2026-06-01T10:00:00Z',
+      })),
+    });
+    expect(coverage.connections[0]).toMatchObject({ sampled: 2, matched: 1, covers: false });
+    const items = await sut.inventory(connection.ownerId, [ASSET, selected]);
+    expect(items).toHaveLength(2);
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cplAssetRecordName: selected,
+          inScope: true,
+          pendingRoles: expect.arrayContaining(['original']),
+        }),
+        expect.objectContaining({ cplAssetRecordName: ASSET, inScope: false, pendingRoles: [] }),
+      ]),
+    );
+    await expect(sut.inventory(randomUUID(), [ASSET, selected])).resolves.toEqual([]);
+    await expect(sut.connections(randomUUID())).resolves.toEqual([]);
+    await expect(sut.inventory(otherOwner, [ASSET, selected])).resolves.toEqual([
+      expect.objectContaining({ connectionId: other.id, cplAssetRecordName: ASSET, inScope: true }),
+    ]);
+    await expect(sut.connections(otherOwner)).resolves.toEqual([expect.objectContaining({ id: other.id })]);
   });
 
   it('stops calling a role pending once it is finalized, or failed for good', async () => {
