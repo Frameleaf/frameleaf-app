@@ -5,6 +5,76 @@ import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline } from './harness-wait.ts';
 
+test('cloud accounting joins the exact post-commit release within its existing deadline', async () => {
+  const source = readFileSync(new URL('./specs/cloud/cloud-accounting.spec.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('    // Production cron and 60s poll delay are retained.');
+  const end = source.indexOf('\n    const { body: enrichment }', start);
+  assert.ok(start >= 0 && end > start);
+  const release = Promise.withResolvers();
+  let released = false;
+  let settled = false;
+  let providerReads = 0;
+  const expect = (value) => ({
+    toBe: (expected) => assert.equal(value, expected),
+    toBeNull: () => assert.equal(value, null),
+    toHaveLength: (expected) => assert.equal(value.length, expected),
+    toMatchObject: (expected) => {
+      for (const [key, item] of Object.entries(expected)) assert.deepEqual(value[key], item);
+    },
+  });
+  const pending = new Function(
+    'vi',
+    'request',
+    'app',
+    'auth',
+    'expect',
+    'operationId',
+    'providerState',
+    `return (async () => {${source.slice(start, end)}})();`,
+  )(
+    {
+      waitFor: async (check, options) => {
+        assert.deepEqual(options, { timeout: 125_000, interval: 1000 });
+        try {
+          await check();
+        } catch {
+          await release.promise;
+          await check();
+        }
+      },
+    },
+    () => ({
+      get: () => ({
+        set: () => ({
+          expect: async () => ({
+            body: {
+              status: 'completed',
+              processedUnits: '1',
+              cloudJob: null,
+            },
+          }),
+        }),
+      }),
+    }),
+    'fixture',
+    () => ({}),
+    expect,
+    'operation',
+    async () => {
+      providerReads++;
+      return { lifecycle: { jobs: [{ clientRef: 'batch-operation', released }] } };
+    },
+  ).then(() => {
+    settled = true;
+  });
+  await sleep(0);
+  assert.equal(settled, false, 'operation completion is not provider release');
+  released = true;
+  release.resolve();
+  await pending;
+  assert.ok(providerReads >= 2);
+});
+
 test('job admission refuses an aborted owner and binds the admitted request signal', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  createJob: async');
