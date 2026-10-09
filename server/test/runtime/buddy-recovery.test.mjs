@@ -125,7 +125,30 @@ test('an encrypted export plus kit performs offline recovery with no database or
     await writeFile(kit, JSON.stringify({ version: 1, vaultId, current: 1, keys: { 1: key.toString('base64url') } }));
     const exported = join(root, 'export');
     await buddyBackupCommand(['export', '--vault', join(root, vaultId), '--output', exported]);
+    assert.deepEqual(JSON.parse(await readFile(join(exported, 'export-complete.json'), 'utf8')), { version: 1, vaultId });
     await rm(join(root, vaultId), { recursive: true });
+    const wrongKit = join(root, 'wrong-kit.json');
+    await writeFile(
+      wrongKit,
+      JSON.stringify({ version: 1, vaultId, current: 1, keys: { 1: randomBytes(32).toString('base64url') } }),
+    );
+    const wrongOutput = join(root, 'wrong-key');
+    await assert.rejects(
+      buddyBackupCommand(['recover', '--vault', join(exported, vaultId), '--kit', wrongKit, '--output', wrongOutput]),
+    );
+    await assert.rejects(readFile(join(wrongOutput, 'recovery-complete.json')), { code: 'ENOENT' });
+    const ciphertextPath = join(exported, vaultId, 'objects', object.slice(0, 2), object);
+    const ciphertext = await readFile(ciphertextPath);
+    const tampered = Buffer.from(ciphertext);
+    tampered[tampered.length - 1] ^= 1;
+    await writeFile(ciphertextPath, tampered);
+    const tamperedOutput = join(root, 'tampered');
+    await assert.rejects(
+      buddyBackupCommand(['recover', '--vault', join(exported, vaultId), '--kit', kit, '--output', tamperedOutput]),
+      /ciphertext failed verification/,
+    );
+    await assert.rejects(readFile(join(tamperedOutput, 'recovery-complete.json')), { code: 'ENOENT' });
+    await writeFile(ciphertextPath, ciphertext);
     const restored = join(root, 'restored');
     // A fresh Node process has no application alias loader or running server context.
     await promisify(execFile)(
@@ -145,6 +168,7 @@ test('an encrypted export plus kit performs offline recovery with no database or
       { env: { ...process.env, NODE_OPTIONS: '' }, timeout: 10_000 },
     );
     assert.deepEqual(await readFile(join(restored, 'objects', sha256)), data);
+    assert.deepEqual(JSON.parse(await readFile(join(restored, 'manifest.json'), 'utf8')), manifest);
     assert.equal(JSON.parse(await readFile(join(restored, 'recovery-complete.json'), 'utf8')).snapshotId, snapshotId);
   } finally {
     await rm(root, { recursive: true, force: true });
