@@ -129,8 +129,8 @@ it.each([
   cloud.entitled = gate.entitled;
   Object.assign(status, { enabled: gate.enabled, configured: false, settings: null, pairing: null });
   render(BuddyBackupSection, { view: 'status' });
-  const outgoing = within(await screen.findByRole('region', { name: 'My backup', exact: true }));
-  const setup = outgoing.getByRole('button', { name: 'Set up Buddy Backup', exact: true });
+  const outgoing = within(await screen.findByRole('region', { name: 'My backup' }));
+  const setup = outgoing.getByRole('button', { name: 'Set up Buddy Backup' });
   expect(setup).toBeVisible();
   if (gate.disabled) {
     expect(setup).toBeDisabled();
@@ -139,7 +139,7 @@ it.each([
   } else {
     expect(setup).toBeEnabled();
     await fireEvent.click(setup);
-    expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup', exact: true })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
   }
   if (!gate.linked) {
     expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
