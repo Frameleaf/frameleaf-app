@@ -1132,22 +1132,81 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('project imports, captions, LUTs and graphics', () => {
+    it.each([
+      ['data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Lz48L3N2Zz4=', false],
+      ['outside.png', false],
+      [
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+        true,
+      ],
+    ])('revalidates stored zero-declaration Lottie before issuing a render grant (FL-105)', async (p, allowed) => {
+      const id = newUuid();
+      const bytes = Buffer.from(JSON.stringify({ v: '5.9.0', layers: [], assets: [{ p }] }));
+      const close = vi.fn(async () => {});
+      mocks.storage.openForRandomRead.mockResolvedValue({
+        size: bytes.length,
+        read: () => Promise.resolve(Buffer.from(bytes)),
+        close,
+      });
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(
+          { graphicId: id },
+          {
+            imports: [
+              {
+                id,
+                contentType: 'application/json',
+                checksum: createHash('sha256').update(bytes).digest('hex'),
+                path: '/synthetic-animation',
+                sizeBytes: bytes.length,
+                externalReferences: 0,
+              },
+            ],
+          },
+        ),
+      );
+      expect(manifest.complete).toBe(allowed);
+      if (allowed) {
+        expect(refused).toEqual([]);
+        expect(manifest.entries).toEqual([expect.objectContaining({ id, grant: 'render' })]);
+      } else {
+        expect(manifest.entries).toEqual([]);
+        expect(refused).toEqual([expect.objectContaining({ id, reason: StudioRefusalReason.RemoteSubresource })]);
+        expect(() => sut.issueReadGrants(manifest, { workerId: 'worker-1' })).toThrow();
+      }
+      expect(close).toHaveBeenCalledOnce();
+    });
+
     it('matches complete Lottie dependencies against authorized parent and child byte snapshots', async () => {
       const parentId = newUuid();
       const childId = newUuid();
       const animation = Buffer.from(
-        JSON.stringify({ v: '5', layers: [], assets: [{ p: 'outside.png', u: 'https://uncontrolled/' }] }),
+        JSON.stringify({
+          v: '5',
+          layers: [],
+          assets: [{ p: 'outside.png', u: 'https://uncontrolled/' }],
+          fonts: { list: [{ fName: 'Inter', fPath: 'outside.woff2' }] },
+        }),
       );
       const png = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
         'base64',
       );
       const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+      const font = Buffer.from('synthetic catalog font');
+      const catalog = { fonts: { Inter: { path: '/font', checksum: hash(font) } }, audio: {}, models: {}, luts: {} };
+      admit('font:Inter');
       const bindings = [
         {
           parent: { kind: 'vector-graphic', id: parentId, checksum: hash(animation) },
           location: { format: 'lottie-json', entry: null, pointer: '/assets/0/p', role: 'image' },
           child: { kind: 'project-import', id: childId, checksum: hash(png) },
+        },
+        {
+          parent: { kind: 'vector-graphic', id: parentId, checksum: hash(animation) },
+          location: { format: 'lottie-json', entry: null, pointer: '/fonts/list/0/fPath', role: 'font' },
+          child: { kind: 'font', id: 'Inter', checksum: hash(font) },
         },
       ];
       const graph = { graphicId: parentId, studioVectorDependencies: { version: 1, bindings } };
@@ -1158,28 +1217,29 @@ describe(StudioResourceService.name, () => {
           checksum: hash(animation),
           path: '/parent',
           sizeBytes: animation.length,
-          externalReferences: 1,
+          externalReferences: 2,
         },
         { id: childId, contentType: 'image/png', checksum: hash(png), path: '/child', sizeBytes: png.length },
       ];
       const close = vi.fn(async () => {});
       mocks.storage.openForRandomRead.mockImplementation((path) => {
-        const bytes = path === '/parent' ? animation : png;
+        const bytes = path === '/parent' ? animation : path === '/font' ? font : png;
         return Promise.resolve({ size: bytes.length, read: () => Promise.resolve(Buffer.from(bytes)), close });
       });
-      const result = await sut.resolveProjectResources(auth, context(graph, { imports: declarations }));
+      const result = await sut.resolveProjectResources(auth, context(graph, { imports: declarations, catalog }));
       expect(result.manifest.complete).toBe(true);
       expect(result.refused).toEqual([]);
       expect(result.manifest.entries.map((entry) => entry.key)).toEqual([
         `vector-graphic:${parentId}`,
+        'font:Inter',
         `project-import:${childId}`,
       ]);
-      expect(close).toHaveBeenCalledTimes(2);
+      expect(close).toHaveBeenCalledTimes(3);
       expect(mocks.asset.getByIds).not.toHaveBeenCalled();
       // The library namespace is never silently redirected to the identically named import.
       const wrong = structuredClone(graph);
       wrong.studioVectorDependencies.bindings[0].child.kind = 'library-asset';
-      const refused = await sut.resolveProjectResources(auth, context(wrong, { imports: declarations }));
+      const refused = await sut.resolveProjectResources(auth, context(wrong, { imports: declarations, catalog }));
       expect(refused.manifest.complete).toBe(false);
       expect(refused.refused).toEqual(
         expect.arrayContaining([expect.objectContaining({ kind: StudioResourceKind.LibraryAsset })]),
@@ -1190,7 +1250,7 @@ describe(StudioResourceService.name, () => {
         read: () => Promise.resolve(Buffer.from('evil')),
         close,
       });
-      const changed = await sut.resolveProjectResources(auth, context(graph, { imports: declarations }));
+      const changed = await sut.resolveProjectResources(auth, context(graph, { imports: declarations, catalog }));
       expect(changed.manifest.complete).toBe(false);
       expect(changed.refused).toEqual(
         expect.arrayContaining([expect.objectContaining({ reason: StudioRefusalReason.RemoteSubresource })]),
