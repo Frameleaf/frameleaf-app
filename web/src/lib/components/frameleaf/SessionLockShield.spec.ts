@@ -43,6 +43,24 @@ describe('SessionLockShield', () => {
     expect(cached).toBeInTheDocument();
   });
 
+  it('installs the portal barrier for each lock and removes it on unlock or unmount', async () => {
+    const view = render(SessionLockShieldTestHarness, { active: false });
+    const barrier = () => document.head.querySelector('style[data-session-lock-portals]');
+    expect(barrier()).toBeNull();
+    for (let lock = 0; lock < 2; lock++) {
+      await view.rerender({ active: true });
+      await waitFor(() => expect(screen.getByRole('dialog')).toHaveAttribute('open'));
+      expect(barrier()).toHaveTextContent('dialog[open]:not(.session-lock-shield)');
+      expect(barrier()).toHaveTextContent('[popover]:popover-open');
+      await view.rerender({ active: false });
+      expect(barrier()).toBeNull();
+      expect(screen.getByTestId('cached-private-media').parentElement).not.toHaveAttribute('inert');
+    }
+    await view.rerender({ active: true });
+    view.unmount();
+    expect(barrier()).toBeNull();
+  });
+
   it('disables Retry while the lock runs and reports a failure inside the shield', async () => {
     sessionAccess.retryLock = vi.fn().mockResolvedValue(undefined);
     sessionAccess.lockStatus = 'locking';
