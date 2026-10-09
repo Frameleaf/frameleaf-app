@@ -293,7 +293,9 @@ try {
   } catch (error) {
     if (scenario === "monitor") {
       const sanitize = (value) =>
-        String(value).replace(/\?[^\s"'<>]*/g, "?[redacted]").slice(0, 2048);
+        String(value)
+          .replace(/\?[^\s"'<>]*/g, "?[redacted]")
+          .slice(0, 2048);
       const requests = harness.observations.slice(startupRequestOffset);
       let nativeStartup;
       let diagnosticTimer;
@@ -301,14 +303,17 @@ try {
         nativeStartup = await Promise.race([
           page.evaluate(() => {
             const clean = (value) =>
-              String(value).replace(/\?[^\s"'<>]*/g, "?[redacted]").slice(0, 2048);
+              String(value)
+                .replace(/\?[^\s"'<>]*/g, "?[redacted]")
+                .slice(0, 2048);
             const resources = performance.getEntriesByType("resource");
             return {
               readyState: document.readyState,
               fixtureGlobal: !!window.fl100Editor,
               elapsed: performance.now(),
               errorOverlay: clean(
-                document.querySelector("vite-error-overlay")?.shadowRoot?.querySelector(".message")?.textContent ?? "",
+                document.querySelector("vite-error-overlay")?.shadowRoot?.querySelector(".message")
+                  ?.textContent ?? "",
               ),
               resourceCount: resources.length,
               failedResources: resources
@@ -344,10 +349,13 @@ try {
           elapsed: Date.now() - startupStarted,
           error: sanitize(error),
           consoleAndPageErrors: "not exposed by existing driver",
-          requestCounts: requests.reduce((counts, request) => ({
-            ...counts,
-            [request.kind]: (counts[request.kind] ?? 0) + 1,
-          }), {}),
+          requestCounts: requests.reduce(
+            (counts, request) => ({
+              ...counts,
+              [request.kind]: (counts[request.kind] ?? 0) + 1,
+            }),
+            {},
+          ),
           rejectedRequests: requests
             .filter((request) => ["blocked", "error", "tunnelled"].includes(request.kind))
             .slice(-20)
