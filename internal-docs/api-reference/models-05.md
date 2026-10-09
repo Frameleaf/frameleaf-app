@@ -4,7 +4,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## AssetDevelopRecipeDto
 
-Related models: [AssetDevelopCrop](models-04.md#assetdevelopcrop), [AssetDevelopPreset](models-04.md#assetdeveloppreset).
+Related models: [AssetDevelopCrop](models-04.md#assetdevelopcrop), [AssetDevelopKeyFrame](models-04.md#assetdevelopkeyframe), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset).
 
 ```json
 {
@@ -139,6 +139,14 @@ Related models: [AssetDevelopCrop](models-04.md#assetdevelopcrop), [AssetDevelop
         },
         "flipVertical": {
           "type": "boolean"
+        },
+        "perspective": {
+          "description": "Keystone correction, applied after the quarter turns and flips and before straightening",
+          "$ref": "#/components/schemas/AssetDevelopPerspective"
+        },
+        "keyFrame": {
+          "description": "Live and Motion Photos: the frame of the motion clip the still is rendered from",
+          "$ref": "#/components/schemas/AssetDevelopKeyFrame"
         },
         "preset": {
           "$ref": "#/components/schemas/AssetDevelopPreset"
@@ -433,8 +441,15 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto), [As
       "nullable": true,
       "type": "string"
     },
+    "sourceAssetId": {
+      "description": "Source asset whose bytes produced this revision; motion clip for key frames, null for historical lineage",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
     "sourceChecksum": {
-      "description": "SHA-256 (hex) of the original this version was rendered or developed from",
+      "description": "SHA-256 (hex) of the source file this version was rendered or developed from; sourceAssetId identifies motion key-frame sources",
       "nullable": true,
       "type": "string"
     },
@@ -543,12 +558,18 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto).
 
 ## AssetDevelopSemanticMaskDto
 
+Related models: [AssetDevelopProposalCoordinates](models-04.md#assetdevelopproposalcoordinates).
 
 ```json
 {
   "additionalProperties": false,
   "properties": {
+    "coordinates": {
+      "$ref": "#/components/schemas/AssetDevelopProposalCoordinates",
+      "description": "Omitted or `sensor-active`: a RAW original only, the mask covers the unrotated sensor canvas, for version 2 recipes. `original`: any still, the mask covers the whole original image (EXIF orientation applied), for subject, sky and background masks of version 1 recipes"
+    },
     "target": {
+      "description": "What the proposed mask selects",
       "enum": [
         "subject",
         "sky"

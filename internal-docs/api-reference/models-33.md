@@ -587,6 +587,7 @@ Related models: [MediaOperationDestination](models-16.md#mediaoperationdestinati
 
 ```json
 {
+  "additionalProperties": false,
   "properties": {
     "audio": {
       "$ref": "#/components/schemas/StudioExportAudio",
@@ -947,10 +948,12 @@ Related models: [StudioExportAudio](models-33.md#studioexportaudio), [StudioExpo
 
 ```json
 {
-  "description": "Burn subtitle captions into the picture or omit them; ordinary titles are preserved",
+  "description": "Burn captions, omit captions, publish a private SRT sibling, or embed a qualified MP4 text track; ordinary titles are preserved",
   "enum": [
     "burn",
-    "off"
+    "off",
+    "sidecar",
+    "embedded"
   ],
   "type": "string"
 }
@@ -1066,6 +1069,48 @@ Related models: [MediaOperationDestination](models-16.md#mediaoperationdestinati
     },
     "state": {
       "$ref": "#/components/schemas/StudioExportVersionState"
+    },
+    "subtitle": {
+      "description": "Owner-private sibling. Never contains text, server paths or a public grant",
+      "nullable": true,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "codec": {
+          "enum": [
+            "srt"
+          ],
+          "type": "string"
+        },
+        "cueCount": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "sizeInBytes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "codec",
+        "required",
+        "cueCount",
+        "sizeInBytes",
+        "sha256",
+        "available"
+      ],
+      "type": "object"
     },
     "version": {
       "description": "The version number, once published",

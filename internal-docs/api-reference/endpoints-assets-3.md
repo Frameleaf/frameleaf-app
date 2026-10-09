@@ -2,6 +2,283 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## renderAssetDevelopRevision
+
+`POST /api/assets/{id}/develop/revisions/{revisionId}/render`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L194).
+
+Render a develop version
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [AssetDevelopRevisionResponseDto](models-05.md#assetdeveloprevisionresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Post(':id/develop/revisions/:revisionId/render')
+@HttpCode(HttpStatus.OK)
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Render a develop version',
+    description: 'Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.",
+  "operationId": "renderAssetDevelopRevision",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "description": "Asset ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "revisionId",
+      "required": true,
+      "in": "path",
+      "description": "Develop revision ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Render a develop version",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
+## getVideoEditVersions
+
+`GET /api/assets/{id}/edit-versions`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L341).
+
+List saved video versions
+
+Permission: `asset.edit.get`. Admin only: `false`.
+
+Models: [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Get(':id/edit-versions')
+@Authenticated({ permission: Permission.AssetEditGet })
+@Endpoint({ summary: 'List saved video versions', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "getVideoEditVersions",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/VideoEditVersionResponseDto"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List saved video versions",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Beta"
+    }
+  ],
+  "x-immich-permission": "asset.edit.get",
+  "x-immich-state": "Beta"
+}
+```
+
+## exportVideoEditVersion
+
+`POST /api/assets/{id}/edit-versions/export`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L348).
+
+Export the current video version
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [VideoEditExportDto](models-38.md#videoeditexportdto), [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Post(':id/edit-versions/export')
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Export the current video version',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "exportVideoEditVersion",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/VideoEditExportDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/VideoEditVersionResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Export the current video version",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Beta"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Beta"
+}
+```
+
 ## pruneVideoEditVersion
 
 `DELETE /api/assets/{id}/edit-versions/{versionId}`
@@ -1791,197 +2068,6 @@ Complete operation contract:
     }
   ],
   "x-immich-permission": "asset.edit.get",
-  "x-immich-state": "Alpha"
-}
-```
-
-## discardAssetRestoration
-
-`DELETE /api/assets/{id}/restorations/{restorationId}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L145).
-
-Discard a restoration
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Delete(':id/restorations/:restorationId')
-@HttpCode(HttpStatus.NO_CONTENT)
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Discard a restoration',
-    description:
-      'Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.",
-  "operationId": "discardAssetRestoration",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "description": "Asset ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "restorationId",
-      "required": true,
-      "in": "path",
-      "description": "Restoration ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "204": {
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Discard a restoration",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Alpha"
-}
-```
-
-## acceptAssetRestoration
-
-`POST /api/assets/{id}/restorations/{restorationId}/accept`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L114).
-
-Accept a restoration preview
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [AssetRestorationResponseDto](models-06.md#assetrestorationresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Post(':id/restorations/:restorationId/accept')
-@HttpCode(HttpStatus.OK)
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Accept a restoration preview',
-    description:
-      'Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.",
-  "operationId": "acceptAssetRestoration",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "description": "Asset ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "restorationId",
-      "required": true,
-      "in": "path",
-      "description": "Restoration ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetRestorationResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Accept a restoration preview",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
   "x-immich-state": "Alpha"
 }
 ```

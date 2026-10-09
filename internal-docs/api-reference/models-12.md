@@ -2,6 +2,163 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## FrameleafLinkResponseDto
+
+Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-37.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
+
+```json
+{
+  "properties": {
+    "avatarColor": {
+      "$ref": "#/components/schemas/UserAvatarColor"
+    },
+    "clusterGroupId": {
+      "description": "Cluster group the user is a member of",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "confirmExpiresAt": {
+      "description": "For a preview: when the confirm token expires",
+      "nullable": true,
+      "type": "string"
+    },
+    "confirmToken": {
+      "description": "For a preview: confirms the link through link/confirm",
+      "nullable": true,
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "deletedAt": {
+      "description": "Deletion date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "email": {
+      "description": "User email",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "id": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isAdmin": {
+      "description": "Is admin user",
+      "type": "boolean"
+    },
+    "license": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserLicense"
+        }
+      ],
+      "nullable": true
+    },
+    "linked": {
+      "description": "Whether the Frameleaf account is now linked (false for a preview)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "oauthId": {
+      "description": "OAuth ID",
+      "type": "string"
+    },
+    "profileChangedAt": {
+      "description": "Profile change date",
+      "format": "date-time",
+      "type": "string"
+    },
+    "profileImagePath": {
+      "description": "Profile image path",
+      "type": "string"
+    },
+    "quotaSizeInBytes": {
+      "description": "Storage quota in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "quotaUsageInBytes": {
+      "description": "Storage usage in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "roleChange": {
+      "$ref": "#/components/schemas/FrameleafLinkRoleChange"
+    },
+    "shouldChangePassword": {
+      "description": "Require password change on next login",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/components/schemas/UserStatus"
+    },
+    "storageLabel": {
+      "description": "Storage label",
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "avatarColor",
+    "clusterGroupId",
+    "confirmExpiresAt",
+    "confirmToken",
+    "createdAt",
+    "deletedAt",
+    "email",
+    "id",
+    "isAdmin",
+    "license",
+    "linked",
+    "name",
+    "oauthId",
+    "profileChangedAt",
+    "profileImagePath",
+    "quotaSizeInBytes",
+    "quotaUsageInBytes",
+    "roleChange",
+    "shouldChangePassword",
+    "status",
+    "storageLabel",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
 ## FrameleafLinkRoleChange
 
 
@@ -1260,7 +1417,7 @@ Related models: [HardwareBenchmarkSource](models-12.md#hardwarebenchmarksource),
 
 ## HdrAssetDevelopRecipe
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -1412,6 +1569,10 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
       "minimum": 0,
       "type": "number"
     },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+    },
     "preset": {
       "$ref": "#/components/schemas/AssetDevelopPreset",
       "default": "Original"
@@ -1526,7 +1687,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
 
 ## HdrAssetDevelopRecipeV4
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -1678,6 +1839,10 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
       "minimum": 0,
       "type": "number"
     },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+    },
     "preset": {
       "$ref": "#/components/schemas/AssetDevelopPreset",
       "default": "Original"
@@ -1792,7 +1957,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
 
 ## HdrAssetDevelopRecipeV5
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -1943,6 +2108,10 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
       "maximum": 100,
       "minimum": 0,
       "type": "number"
+    },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
     },
     "preset": {
       "$ref": "#/components/schemas/AssetDevelopPreset",

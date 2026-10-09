@@ -153,7 +153,7 @@ Create an album
 
 Permission: `album.create`. Admin only: `false`.
 
-Models: [AlbumResponseDto](models-02.md#albumresponsedto), [CreateAlbumDto](models-09.md#createalbumdto).
+Models: [AlbumResponseDto](models-02.md#albumresponsedto), [CreateAlbumDto](models-10.md#createalbumdto).
 
 Controller access declarations:
 
@@ -1870,7 +1870,7 @@ Preview a classification rule
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [ClassificationPreviewDto](models-07.md#classificationpreviewdto), [ClassificationPreviewResponseDto](models-07.md#classificationpreviewresponsedto).
+Models: [ClassificationPreviewDto](models-07.md#classificationpreviewdto), [ClassificationPreviewResponseDto](models-08.md#classificationpreviewresponsedto).
 
 Controller access declarations:
 

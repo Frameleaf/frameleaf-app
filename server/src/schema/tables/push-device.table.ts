@@ -48,6 +48,8 @@ export class PushDeviceActivityTable {
   @Column({ type: 'text' }) activityId!: string;
   /** The activity's attributes type; `cloud-backup-activation` today. */
   @Column({ type: 'text' }) kind!: string;
+  /** Render operation binding; unbound legacy render activities receive no updates. */
+  @Column({ type: 'uuid', nullable: true }) operationId!: string | null;
   @Column({ type: 'text' }) token!: string;
   @Column({ type: 'timestamp with time zone', default: () => 'now()' }) updatedAt!: Generated<Timestamp>;
 }

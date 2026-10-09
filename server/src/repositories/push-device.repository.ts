@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Selectable } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { PushDeviceActivityTable, PushDeviceTable } from 'src/schema/tables/push-device.table.js';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
-import { AssetVisibility, PushPlatform } from 'src/enum.js';
+import { AssetVisibility, MediaOperationKind, PushPlatform } from 'src/enum.js';
 import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
@@ -176,22 +176,48 @@ export class PushDeviceRepository {
       activityId: string;
       kind: string;
       token: string;
+      operationId?: string;
     },
   ) {
-    return this.db.transaction().execute((tx) =>
-      tx
+    return this.db.transaction().execute(async (tx) => {
+      if (activity.kind === 'studio-render') {
+        const operation =
+          activity.operationId &&
+          (await tx
+            .selectFrom('media_operation')
+            .innerJoin('push_device', 'push_device.userId', 'media_operation.ownerId')
+            .select('media_operation.id')
+            .where('push_device.id', '=', deviceId)
+            .where('media_operation.id', '=', activity.operationId)
+            .where('media_operation.kind', '=', MediaOperationKind.StudioExport)
+            .executeTakeFirst());
+        if (!operation) throw new BadRequestException('Studio render operation not found');
+      }
+      const operationId = activity.kind === 'studio-render' ? activity.operationId : null;
+      const registered = await tx
         .insertInto('push_device_activity')
-        .values({ deviceId, ...activity })
+        .values({ deviceId, ...activity, operationId })
         .onConflict((oc) =>
-          oc.columns(['deviceId', 'activityId']).doUpdateSet({
-            kind: activity.kind,
-            token: activity.token,
-            updatedAt: sql`now()`,
-          }),
+          oc
+            .columns(['deviceId', 'activityId'])
+            .doUpdateSet({
+              kind: activity.kind,
+              operationId,
+              token: activity.token,
+              updatedAt: sql`now()`,
+            })
+            .where((eb) =>
+              eb.or([
+                eb('push_device_activity.operationId', 'is', null),
+                eb('push_device_activity.operationId', '=', operationId ?? null),
+              ]),
+            ),
         )
         .returningAll()
-        .executeTakeFirstOrThrow(),
-    );
+        .executeTakeFirst();
+      if (!registered) throw new BadRequestException('A render activity cannot change its operation');
+      return registered;
+    });
   }
   async deleteActivity(deviceId: string, activityId: string): Promise<boolean> {
     const result = await this.db
@@ -298,6 +324,20 @@ export class PushDeviceRepository {
       .selectFrom('push_device_activity')
       .selectAll()
       .where('deviceId', '=', anyUuid(devices.map(({ id }) => id)))
+      .where((eb) =>
+        eb.or([
+          eb('kind', '!=', 'studio-render'),
+          eb.exists(
+            eb
+              .selectFrom('media_operation')
+              .innerJoin('push_device', 'push_device.userId', 'media_operation.ownerId')
+              .select('media_operation.id')
+              .whereRef('push_device.id', '=', 'push_device_activity.deviceId')
+              .whereRef('media_operation.id', '=', 'push_device_activity.operationId')
+              .where('media_operation.kind', '=', MediaOperationKind.StudioExport),
+          ),
+        ]),
+      )
       .orderBy('updatedAt')
       .orderBy('id')
       .execute();

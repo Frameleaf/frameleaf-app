@@ -1329,10 +1329,17 @@ Related models: [PublicConfigFrameleafSignInDto](models-27.md#publicconfigframel
 {
   "properties": {
     "kind": {
-      "description": "The Live Activity type",
+      "description": "The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)",
       "enum": [
-        "cloud-backup-activation"
+        "cloud-backup-activation",
+        "studio-render"
       ],
+      "type": "string"
+    },
+    "operationId": {
+      "description": "Required for studio-render: the owned Studio render media operation this activity follows",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
     "token": {
@@ -1602,9 +1609,31 @@ Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPr
     "shared-activity",
     "memories",
     "render-finished",
+    "render-progress",
     "access-changed"
   ],
   "type": "string"
+}
+```
+
+## PushKnownEventsDto
+
+Related models: [PushEventType](models-27.md#pusheventtype).
+
+```json
+{
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/components/schemas/PushEventType"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "events"
+  ],
+  "type": "object"
 }
 ```
 
@@ -1647,6 +1676,9 @@ Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPr
     "renderFinished": {
       "type": "boolean"
     },
+    "renderProgress": {
+      "type": "boolean"
+    },
     "sharedActivity": {
       "type": "boolean"
     }
@@ -1679,6 +1711,9 @@ Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPr
     "renderFinished": {
       "type": "boolean"
     },
+    "renderProgress": {
+      "type": "boolean"
+    },
     "sharedActivity": {
       "type": "boolean"
     }
@@ -1690,6 +1725,7 @@ Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPr
     "cloudBackupActivation",
     "memories",
     "renderFinished",
+    "renderProgress",
     "sharedActivity"
   ],
   "type": "object"
@@ -1698,7 +1734,7 @@ Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPr
 
 ## PushStatusResponseDto
 
-Related models: [PushEventType](models-27.md#pusheventtype), [PushUnavailableReason](models-27.md#pushunavailablereason).
+Related models: [PushUnavailableReason](models-27.md#pushunavailablereason).
 
 ```json
 {
@@ -1744,9 +1780,9 @@ Related models: [PushEventType](models-27.md#pusheventtype), [PushUnavailableRea
       "type": "object"
     },
     "events": {
-      "description": "The events this server can deliver",
+      "description": "The events this server can deliver. Open-ended: ignore unfamiliar event names.",
       "items": {
-        "$ref": "#/components/schemas/PushEventType"
+        "type": "string"
       },
       "type": "array"
     },

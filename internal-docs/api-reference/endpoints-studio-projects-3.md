@@ -2,6 +2,82 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## emptyStudioProjectTrash
+
+`POST /api/studio/projects/trash/empty`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L81).
+
+Empty the Studio trash
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioProjectTrashEmptyResponseDto](models-34.md#studioprojecttrashemptyresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Post('trash/empty')
+@HttpCode(HttpStatus.OK)
+@Authenticated()
+@Endpoint({
+    summary: 'Empty the Studio trash',
+    description:
+      'Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.",
+  "operationId": "emptyStudioProjectTrash",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioProjectTrashEmptyResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Empty the Studio trash",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
 ## deleteStudioProject
 
 `DELETE /api/studio/projects/{id}`
@@ -864,7 +940,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L53).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L66).
 
 List a Studio project’s exports
 
@@ -971,7 +1047,7 @@ Complete operation contract:
 
 `POST /api/studio/projects/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L49).
 
 Export a Studio project
 

@@ -2,6 +2,197 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## discardAssetRestoration
+
+`DELETE /api/assets/{id}/restorations/{restorationId}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L145).
+
+Discard a restoration
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Delete(':id/restorations/:restorationId')
+@HttpCode(HttpStatus.NO_CONTENT)
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Discard a restoration',
+    description:
+      'Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.",
+  "operationId": "discardAssetRestoration",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "description": "Asset ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "restorationId",
+      "required": true,
+      "in": "path",
+      "description": "Restoration ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "204": {
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Discard a restoration",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
+## acceptAssetRestoration
+
+`POST /api/assets/{id}/restorations/{restorationId}/accept`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L114).
+
+Accept a restoration preview
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [AssetRestorationResponseDto](models-06.md#assetrestorationresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Post(':id/restorations/:restorationId/accept')
+@HttpCode(HttpStatus.OK)
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Accept a restoration preview',
+    description:
+      'Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.",
+  "operationId": "acceptAssetRestoration",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "description": "Asset ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "restorationId",
+      "required": true,
+      "in": "path",
+      "description": "Restoration ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetRestorationResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Accept a restoration preview",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## viewAssetRestorationFile
 
 `GET /api/assets/{id}/restorations/{restorationId}/file`
@@ -1050,6 +1241,78 @@ Complete operation contract:
 }
 ```
 
+## readCastMedia
+
+`GET /api/cast/{token}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cast.controller.ts#L51).
+
+Read Cast media
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller()
+@Get('cast/:token')
+@FileResponse()
+@Authenticated({ public: true })
+@Endpoint({
+    summary: 'Read Cast media',
+    description:
+      'Streams the rendition a signed Cast URL names, without a session token or cookies (byte ranges supported for video). Answers 401 for an invalid, tampered or expired URL and 403 when casting is no longer allowed.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Streams the rendition a signed Cast URL names, without a session token or cookies (byte ranges supported for video). Answers 401 for an invalid, tampered or expired URL and 403 when casting is no longer allowed.",
+  "operationId": "readCastMedia",
+  "parameters": [
+    {
+      "name": "token",
+      "required": true,
+      "in": "path",
+      "description": "The signed Cast token",
+      "schema": {
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^[\\w-]+\\.[\\w-]+$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "summary": "Read Cast media",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3",
+      "state": "Added"
+    }
+  ]
+}
+```
+
 ## getDevelopPresets
 
 `GET /api/develop-presets`
@@ -1847,309 +2110,6 @@ Complete operation contract:
     }
   ],
   "summary": "Stage a Takeout archive",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## deleteTakeoutArchive
-
-`DELETE /api/takeout/{id}/archives/{archiveId}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L116).
-
-Remove a staged Takeout archive
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Delete(':id/archives/:archiveId')
-@HttpCode(HttpStatus.NO_CONTENT)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({ summary: 'Remove a staged Takeout archive', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "deleteTakeoutArchive",
-  "parameters": [
-    {
-      "name": "archiveId",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "204": {
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Remove a staged Takeout archive",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## uploadTakeoutArchiveChunk
-
-`PUT /api/takeout/{id}/archives/{archiveId}/chunks`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L124).
-
-Upload part of a Takeout archive
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Put(':id/archives/:archiveId/chunks')
-@Authenticated({ permission: Permission.AssetUpload })
-@ApiConsumes('application/octet-stream')
-@ApiBody({ schema: { type: 'string', format: 'binary' } })
-@Endpoint({
-    summary: 'Upload part of a Takeout archive',
-    description: 'Appends up to 8 MiB at the given byte offset. Repeating a part already staged is harmless.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Appends up to 8 MiB at the given byte offset. Repeating a part already staged is harmless.",
-  "operationId": "uploadTakeoutArchiveChunk",
-  "parameters": [
-    {
-      "name": "archiveId",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "offset",
-      "required": true,
-      "in": "query",
-      "description": "Byte offset of this chunk",
-      "schema": {
-        "minimum": 0,
-        "maximum": 1099511627776,
-        "type": "integer"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/octet-stream": {
-        "schema": {
-          "format": "binary",
-          "type": "string"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutSourceResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Upload part of a Takeout archive",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## verifyTakeoutArchiveChunk
-
-`POST /api/takeout/{id}/archives/{archiveId}/verify`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L158).
-
-Check a staged part of a Takeout archive
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutVerifyChunkDto](models-37.md#takeoutverifychunkdto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Post(':id/archives/:archiveId/verify')
-@HttpCode(HttpStatus.NO_CONTENT)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({
-    summary: 'Check a staged part of a Takeout archive',
-    description: 'Compares a range already uploaded with the file the browser is about to resume from.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Compares a range already uploaded with the file the browser is about to resume from.",
-  "operationId": "verifyTakeoutArchiveChunk",
-  "parameters": [
-    {
-      "name": "archiveId",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/TakeoutVerifyChunkDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "204": {
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Check a staged part of a Takeout archive",
   "tags": [
     "Assets"
   ],

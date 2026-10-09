@@ -1,7 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { ExtraModel } from 'src/decorators.js';
 import { PushEventTypeSchema, PushPlatformSchema, PushUnavailableReasonSchema } from 'src/enum.js';
-import { CLOUD_BACKUP_ACTIVITY_KIND } from 'src/utils/frameleaf-push.js';
+import { LIVE_ACTIVITY_KINDS } from 'src/utils/frameleaf-push.js';
 
 const DateTime = z.string().meta({ format: 'date-time' });
 
@@ -31,6 +32,7 @@ const PushPreferencesSchema = z
     sharedActivity: z.boolean().optional(),
     memories: z.boolean().optional(),
     renderFinished: z.boolean().optional(),
+    renderProgress: z.boolean().optional(),
     accessChanged: z.boolean().optional(),
   })
   .describe('Which events this device is told about; an omitted event keeps its current setting (on by default)')
@@ -45,6 +47,7 @@ const PushPreferencesResponseSchema = z
     sharedActivity: z.boolean(),
     memories: z.boolean(),
     renderFinished: z.boolean(),
+    renderProgress: z.boolean(),
     accessChanged: z.boolean(),
   })
   .meta({ id: 'PushPreferencesResponseDto' });
@@ -93,8 +96,16 @@ export class PushActivityParamDto extends createZodDto(PushActivityParamSchema) 
 
 export const PushActivityTokenSchema = z
   .object({
-    kind: z.literal(CLOUD_BACKUP_ACTIVITY_KIND).describe('The Live Activity type'),
+    kind: z
+      .enum(LIVE_ACTIVITY_KINDS)
+      .describe(
+        'The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)',
+      ),
     token: PushTokenSchema.describe('The ActivityKit push token of this activity'),
+    operationId: z
+      .uuid()
+      .optional()
+      .describe('Required for studio-render: the owned Studio render media operation this activity follows'),
   })
   .meta({ id: 'PushActivityTokenDto' });
 export class PushActivityTokenDto extends createZodDto(PushActivityTokenSchema) {}
@@ -142,8 +153,16 @@ const PushStatusResponseSchema = z
         cipher: z.literal('AES-256-GCM'),
       })
       .describe('How payloads are encrypted to the device key'),
-    events: z.array(PushEventTypeSchema).describe('The events this server can deliver'),
+    events: z
+      .array(z.string())
+      .describe('The events this server can deliver. Open-ended: ignore unfamiliar event names.'),
     registered: z.boolean().describe('Whether the session asking has registered its device'),
   })
   .meta({ id: 'PushStatusResponseDto' });
 export class PushStatusResponseDto extends createZodDto(PushStatusResponseSchema) {}
+
+// Preserve the known-event SDK enum while discovery accepts future event names.
+@ExtraModel()
+export class PushKnownEventsDto extends createZodDto(
+  z.object({ events: z.array(PushEventTypeSchema) }).meta({ id: 'PushKnownEventsDto' }),
+) {}

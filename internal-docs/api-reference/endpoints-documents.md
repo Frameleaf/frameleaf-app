@@ -12,7 +12,7 @@ Search documents
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [DocumentSearchResponseDto](models-10.md#documentsearchresponsedto).
+Models: [DocumentSearchResponseDto](models-11.md#documentsearchresponsedto).
 
 Controller access declarations:
 
@@ -121,7 +121,7 @@ Retrieve a document
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [DocumentResponseDto](models-10.md#documentresponsedto).
+Models: [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 
@@ -208,7 +208,7 @@ Clear a document field decision
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [DocumentField](models-10.md#documentfield), [DocumentResponseDto](models-10.md#documentresponsedto).
+Models: [DocumentField](models-10.md#documentfield), [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 
@@ -313,7 +313,7 @@ Decide a document field
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [DocumentField](models-10.md#documentfield), [DocumentFieldEditDto](models-10.md#documentfieldeditdto), [DocumentResponseDto](models-10.md#documentresponsedto).
+Models: [DocumentField](models-10.md#documentfield), [DocumentFieldEditDto](models-10.md#documentfieldeditdto), [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 
@@ -417,7 +417,7 @@ Correct or dismiss a line of text
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [DocumentLineEditDto](models-10.md#documentlineeditdto), [DocumentResponseDto](models-10.md#documentresponsedto).
+Models: [DocumentLineEditDto](models-10.md#documentlineeditdto), [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 
@@ -514,7 +514,7 @@ Restore a line of text
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [DocumentResponseDto](models-10.md#documentresponsedto).
+Models: [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 

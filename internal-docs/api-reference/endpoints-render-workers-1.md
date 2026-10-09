@@ -1058,6 +1058,18 @@ Complete operation contract:
       }
     },
     {
+      "name": "role",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "media",
+          "subtitle"
+        ]
+      }
+    },
+    {
       "name": "sequence",
       "required": true,
       "in": "path",
@@ -1176,6 +1188,18 @@ Complete operation contract:
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
         "type": "string"
+      }
+    },
+    {
+      "name": "role",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "media",
+          "subtitle"
+        ]
       }
     },
     {

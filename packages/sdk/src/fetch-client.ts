@@ -4280,6 +4280,18 @@ export type UpdateAssetDto = {
     state?: string | null;
     visibility?: AssetVisibility;
 };
+export type CastMediaUrlCreateDto = {
+    kind: CastMediaKind;
+};
+export type CastMediaUrlResponseDto = {
+    /** The one item this URL serves */
+    assetId: string;
+    /** When the URL stops working (15 minutes after it was issued) */
+    expiresAt: string;
+    kind: CastMediaKind;
+    /** The signed URL path (`/api/cast/{token}`), relative to the server origin. Prefix the server address the Cast receiver can reach. Works without a session token or cookies until `expiresAt`; never contains a session token. */
+    path: string;
+};
 export type AssetDevelopCrop = {
     /** Crop height as a fraction of the frame */
     h: number;
@@ -11259,6 +11271,7 @@ export type PushPreferencesResponseDto = {
     cloudBackupActivation: boolean;
     memories: boolean;
     renderFinished: boolean;
+    renderProgress: boolean;
     sharedActivity: boolean;
 };
 export type PushDeviceResponseDto = {
@@ -11288,6 +11301,7 @@ export type PushPreferencesDto = {
     cloudBackupActivation?: boolean;
     memories?: boolean;
     renderFinished?: boolean;
+    renderProgress?: boolean;
     sharedActivity?: boolean;
 };
 export type PushDeviceUpdateDto = {
@@ -11315,8 +11329,10 @@ export type PushDeviceRegisterDto = {
     pushToken: string;
 };
 export type PushActivityTokenDto = {
-    /** The Live Activity type */
+    /** The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes) */
     kind: Kind10;
+    /** Required for studio-render: the owned Studio render media operation this activity follows */
+    operationId?: string;
     /** The ActivityKit push token of this activity */
     token: string;
 };
@@ -11330,8 +11346,8 @@ export type PushStatusResponseDto = {
         keyAgreement: KeyAgreement;
         scheme: Scheme;
     };
-    /** The events this server can deliver */
-    events: PushEventType[];
+    /** The events this server can deliver. Open-ended: ignore unfamiliar event names. */
+    events: string[];
     /** Why push is unavailable; null when available */
     reason: (PushUnavailableReason) | null;
     /** Whether the session asking has registered its device */
@@ -15061,6 +15077,9 @@ export type KnownAssetDevelopRecipe = {
     whites?: number;
 };
 export type LicenseResponseDto = UserLicense;
+export type PushKnownEventsDto = {
+    events: PushEventType[];
+};
 export type SyncAckV1 = {};
 export type SyncAlbumAssetAccessDeleteV1 = {
     albumId: string;
@@ -18739,6 +18758,22 @@ export function updateAsset({ id, updateAssetDto }: {
     })));
 }
 /**
+ * Create a Cast media URL
+ */
+export function createCastMediaUrl({ id, castMediaUrlCreateDto }: {
+    id: string;
+    castMediaUrlCreateDto: CastMediaUrlCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CastMediaUrlResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/cast`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: castMediaUrlCreateDto
+    })));
+}
+/**
  * List develop versions of an asset
  */
 export function getAssetDevelop({ id }: {
@@ -19600,6 +19635,19 @@ export function getBestPhotos({ includeArchived, limit, minScore, page }: {
         minScore,
         page
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read Cast media
+ */
+export function readCastMedia({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/cast/${encodeURIComponent(token)}`, {
         ...opts
     }));
 }
@@ -29218,6 +29266,11 @@ export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
 }
+export enum CastMediaKind {
+    Original = "original",
+    Preview = "preview",
+    Video = "video"
+}
 export enum HdrRenderStatus {
     NotRequested = "not-requested",
     Pending = "pending",
@@ -30620,7 +30673,8 @@ export enum PushPlatform {
     Android = "android"
 }
 export enum Kind10 {
-    CloudBackupActivation = "cloud-backup-activation"
+    CloudBackupActivation = "cloud-backup-activation",
+    StudioRender = "studio-render"
 }
 export enum Cipher {
     Aes256Gcm = "AES-256-GCM"
@@ -30633,15 +30687,6 @@ export enum KeyAgreement {
 }
 export enum Scheme {
     FrameleafPushV1 = "frameleaf-push-v1"
-}
-export enum PushEventType {
-    BackupNeedsAttention = "backup-needs-attention",
-    BackupStale = "backup-stale",
-    CloudBackupActivation = "cloud-backup-activation",
-    SharedActivity = "shared-activity",
-    Memories = "memories",
-    RenderFinished = "render-finished",
-    AccessChanged = "access-changed"
 }
 export enum PushUnavailableReason {
     NotConfigured = "not-configured",
@@ -31502,6 +31547,16 @@ export enum Version10 {
 }
 export enum Version11 {
     $1 = 1
+}
+export enum PushEventType {
+    BackupNeedsAttention = "backup-needs-attention",
+    BackupStale = "backup-stale",
+    CloudBackupActivation = "cloud-backup-activation",
+    SharedActivity = "shared-activity",
+    Memories = "memories",
+    RenderFinished = "render-finished",
+    RenderProgress = "render-progress",
+    AccessChanged = "access-changed"
 }
 export enum Status12 {
     Active = "active",

@@ -114,7 +114,7 @@ Create a library
 
 Permission: `library.create`. Admin only: `true`.
 
-Models: [CreateLibraryDto](models-09.md#createlibrarydto), [LibraryResponseDto](models-15.md#libraryresponsedto).
+Models: [CreateLibraryDto](models-10.md#createlibrarydto), [LibraryResponseDto](models-15.md#libraryresponsedto).
 
 Controller access declarations:
 

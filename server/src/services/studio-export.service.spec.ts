@@ -1107,6 +1107,96 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('pushes render progress to native apps, throttled to 5% or 10 seconds, and ends it on failure', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-09T12:00:00.000Z') });
+      try {
+        const version = versionRow({ state: StudioExportVersionState.Rendering });
+        repository.getByRenderOperation.mockResolvedValue(version);
+        const job = operation({ status: MediaOperationStatus.Rendering });
+        const pushes = () =>
+          events.emit.mock.calls
+            .filter(([name]) => name === 'PushNotify')
+            .map(([, notice]) => [notice.type, notice.render?.state, notice.render?.progress]);
+
+        await sut.onRenderProgress(job, 0, true);
+        await sut.onRenderProgress(job, 0.03);
+        await sut.onRenderProgress(job, 0.06);
+        await sut.onRenderProgress(job, 0.08);
+        vi.advanceTimersByTime(10_000);
+        await sut.onRenderProgress(job, 0.08);
+        await sut.onRenderProgress(job, 0.09);
+        expect(pushes()).toEqual([
+          ['render-progress', 'started', 0],
+          ['render-progress', 'running', 0.06],
+          ['render-progress', 'running', 0.08],
+        ]);
+        expect(events.emit.mock.calls[0][1]).toMatchObject({
+          userIds: [version.ownerId],
+          background: true,
+          data: {
+            kind: 'render',
+            state: 'started',
+            progress: 0,
+            job: job.id,
+            jobType: 'media-operation',
+            jobActions: 'pause,cancel',
+          },
+          render: { job: job.id, state: 'started', progress: 0 },
+        });
+
+        events.emit.mockClear();
+        await sut.onRenderFailed(job, { errorCode: 'render_failed', error: 'boom' });
+        expect(events.emit).toHaveBeenCalledWith(
+          'PushNotify',
+          expect.objectContaining({
+            type: 'render-finished',
+            data: expect.objectContaining({ status: 'failed', jobActions: '' }),
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('announces cancellation once on entry and acknowledgement, clearing progress throttle', async () => {
+      const version = versionRow({ state: StudioExportVersionState.Rendering });
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.cancel.mockResolvedValue(version);
+      const render = operation({ status: MediaOperationStatus.Rendering });
+      await sut.onRenderProgress(render, 0.5);
+      events.emit.mockClear();
+      await sut.cancelVersion(version, 'cancelled', 'Cancelled');
+      repository.cancel.mockResolvedValue(undefined);
+      await sut.onRenderCancelAcknowledged(render, 'worker-1', true);
+      const notices = events.emit.mock.calls.filter(([name]) => name === 'PushNotify').map(([, value]) => value);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({
+        type: PushEventType.RenderProgress,
+        background: true,
+        render: { job: render.id, state: 'cancelled', progress: 0 },
+        data: { status: 'cancelled', versionId: version.id, jobActions: '' },
+      });
+      expect(repository.acknowledgeRemoteCancel).toHaveBeenCalledWith(render.id, 'worker-1');
+      expect(sut['renderProgressSent'].has(render.id)).toBe(false);
+      repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Cancelled }));
+      events.emit.mockClear();
+      await sut.onRenderProgress(render, 0.01);
+      expect(events.emit).not.toHaveBeenCalled();
+    });
+
+    it('announces a running cancellation acknowledgement without a prior entry', async () => {
+      const version = versionRow({ state: StudioExportVersionState.Rendering });
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.cancel.mockResolvedValue(version);
+      await sut.onRenderCancelAcknowledged(operation(), 'worker-1', false);
+      expect(events.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          render: { job: RENDER, state: 'cancelled', progress: 0 },
+        }),
+      );
+    });
+
     it('records provenance and a remote stop obligation when a remote worker claims', async () => {
       repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Rendering }));
 
@@ -1558,13 +1648,13 @@ describe(StudioExportService.name, () => {
         expect.objectContaining({
           type: PushEventType.RenderFinished,
           userIds: [OWNER],
-          // native apps offer Retry for the failed render job
+          // Reopen this project/version in Studio; generic retry is unsupported.
           data: expect.objectContaining({
             versionId: VERSION,
             status: 'failed',
             job: RENDER,
             jobType: 'media-operation',
-            jobActions: 'retry',
+            jobActions: '',
           }),
           systemTemplate: { version: 1, key: 'studio-export-failed-named', args: { label: 'Lake trip' } },
         }),

@@ -4,7 +4,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## HdrAssetDevelopRecipeV6
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -155,6 +155,10 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
       "maximum": 100,
       "minimum": 0,
       "type": "number"
+    },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
     },
     "preset": {
       "$ref": "#/components/schemas/AssetDevelopPreset",

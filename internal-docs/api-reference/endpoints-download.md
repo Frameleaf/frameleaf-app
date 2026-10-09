@@ -12,7 +12,7 @@ Download asset archive
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [DownloadArchiveDto](models-10.md#downloadarchivedto).
+Models: [DownloadArchiveDto](models-11.md#downloadarchivedto).
 
 Controller access declarations:
 

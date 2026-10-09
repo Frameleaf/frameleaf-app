@@ -1666,6 +1666,76 @@ Related models: [BulkIdErrorReason](models-07.md#bulkiderrorreason).
 }
 ```
 
+## CastMediaKind
+
+
+```json
+{
+  "description": "Which rendition the receiver gets: the original file, the edited preview image, or the video stream",
+  "enum": [
+    "original",
+    "preview",
+    "video"
+  ],
+  "type": "string"
+}
+```
+
+## CastMediaUrlCreateDto
+
+Related models: [CastMediaKind](models-07.md#castmediakind).
+
+```json
+{
+  "properties": {
+    "kind": {
+      "$ref": "#/components/schemas/CastMediaKind"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "type": "object"
+}
+```
+
+## CastMediaUrlResponseDto
+
+Related models: [CastMediaKind](models-07.md#castmediakind).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "The one item this URL serves",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When the URL stops working (15 minutes after it was issued)",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/CastMediaKind"
+    },
+    "path": {
+      "description": "The signed URL path (`/api/cast/{token}`), relative to the server origin. Prefix the server address the Cast receiver can reach. Works without a session token or cookies until `expiresAt`; never contains a session token.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "expiresAt",
+    "kind",
+    "path"
+  ],
+  "type": "object"
+}
+```
+
 ## CastResponse
 
 
@@ -1858,7 +1928,7 @@ Related models: [ClassificationMatchDecision](models-07.md#classificationmatchde
 
 ## ClassificationDecisionDto
 
-Related models: [ClassificationReviewDecision](models-07.md#classificationreviewdecision).
+Related models: [ClassificationReviewDecision](models-08.md#classificationreviewdecision).
 
 ```json
 {
@@ -2155,117 +2225,6 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype).
       "type": "array"
     }
   },
-  "type": "object"
-}
-```
-
-## ClassificationPreviewResponseDto
-
-Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
-
-```json
-{
-  "properties": {
-    "exact": {
-      "description": "True when `matched` counts the whole library, false for a bounded sample",
-      "type": "boolean"
-    },
-    "items": {
-      "description": "The first matches, best first",
-      "items": {
-        "$ref": "#/components/schemas/ClassificationScoredAssetDto"
-      },
-      "type": "array"
-    },
-    "matched": {
-      "description": "Items that match among those read",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "sampled": {
-      "description": "Items read: the whole library when exact, otherwise the newest items",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "visualSearchAvailable": {
-      "description": "False when visual phrases cannot be compared right now",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "exact",
-    "items",
-    "matched",
-    "sampled",
-    "visualSearchAvailable"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationReviewDecision
-
-
-```json
-{
-  "description": "Keep the matches, or turn them down and undo what the rule applied",
-  "enum": [
-    "accepted",
-    "rejected"
-  ],
-  "type": "string"
-}
-```
-
-## ClassificationRuleAction
-
-
-```json
-{
-  "description": "What a classification rule does with a match",
-  "enum": [
-    "review",
-    "tag"
-  ],
-  "type": "string"
-}
-```
-
-## ClassificationRuleCountsDto
-
-
-```json
-{
-  "properties": {
-    "accepted": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "matched": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "rejected": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "suggested": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "accepted",
-    "matched",
-    "rejected",
-    "suggested"
-  ],
   "type": "object"
 }
 ```

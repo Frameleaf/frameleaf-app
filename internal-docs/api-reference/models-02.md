@@ -714,7 +714,7 @@ Related models: [AdminConfigSmartAlbumKindDto](models-02.md#adminconfigsmartalbu
 
 ## AdminConfigSmartAlbumRulesDto
 
-Related models: [ClassificationRuleAction](models-07.md#classificationruleaction).
+Related models: [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {

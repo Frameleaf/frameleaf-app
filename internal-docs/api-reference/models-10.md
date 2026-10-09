@@ -2,6 +2,117 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## CreateAlbumDto
+
+Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserCreateDto](models-02.md#albumusercreatedto).
+
+```json
+{
+  "properties": {
+    "albumName": {
+      "description": "Album name",
+      "type": "string"
+    },
+    "albumUsers": {
+      "description": "Album users",
+      "items": {
+        "$ref": "#/components/schemas/AlbumUserCreateDto"
+      },
+      "type": "array"
+    },
+    "assetIds": {
+      "description": "Initial asset IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "description": {
+      "description": "Album description",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v3",
+          "state": "Updated",
+          "description": "Sending an empty string is deprecated; send null instead. Empty strings will no longer be coerced to null in v4."
+        }
+      ]
+    },
+    "icon": {
+      "description": "Optional icon: any Material Design Icons name (see GET /albums/icons)",
+      "maxLength": 80,
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/AlbumKind",
+      "default": "album",
+      "description": "What to create: an album (default), a collection of albums or a shared space"
+    },
+    "parentId": {
+      "description": "Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumName"
+  ],
+  "type": "object"
+}
+```
+
+## CreateLibraryDto
+
+
+```json
+{
+  "properties": {
+    "exclusionPatterns": {
+      "description": "Exclusion patterns (max 128)",
+      "items": {
+        "maxLength": 1024,
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "importPaths": {
+      "description": "Import paths (max 128)",
+      "items": {
+        "maxLength": 1024,
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "name": {
+      "description": "Library name",
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner user ID. Fixed once the library exists.",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ownerId"
+  ],
+  "type": "object"
+}
+```
+
 ## CreateProfileImageDto
 
 
@@ -1410,7 +1521,7 @@ Related models: [DevelopPresetSettingsUpdateDto](models-10.md#developpresetsetti
 
 ## DocumentFieldCandidateDto
 
-Related models: [DocumentRegionDto](models-10.md#documentregiondto).
+Related models: [DocumentRegionDto](models-11.md#documentregiondto).
 
 ```json
 {
@@ -1489,7 +1600,7 @@ Related models: [DocumentEditAction](models-10.md#documenteditaction).
 
 ## DocumentFieldResponseDto
 
-Related models: [DocumentField](models-10.md#documentfield), [DocumentFieldCandidateDto](models-10.md#documentfieldcandidatedto), [DocumentFieldStatus](models-10.md#documentfieldstatus), [DocumentRegionDto](models-10.md#documentregiondto).
+Related models: [DocumentField](models-10.md#documentfield), [DocumentFieldCandidateDto](models-10.md#documentfieldcandidatedto), [DocumentFieldStatus](models-10.md#documentfieldstatus), [DocumentRegionDto](models-11.md#documentregiondto).
 
 ```json
 {
@@ -1593,7 +1704,7 @@ Related models: [DocumentField](models-10.md#documentfield), [DocumentFieldCandi
 
 ## DocumentLineDto
 
-Related models: [DocumentLineStatus](models-10.md#documentlinestatus), [DocumentRegionDto](models-10.md#documentregiondto).
+Related models: [DocumentLineStatus](models-10.md#documentlinestatus), [DocumentRegionDto](models-11.md#documentregiondto).
 
 ```json
 {
@@ -1747,192 +1858,6 @@ Related models: [DocumentEditAction](models-10.md#documenteditaction).
   "required": [
     "enabled",
     "routed"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentRegionDto
-
-
-```json
-{
-  "description": "Where the text is in the photo as it is shown, edits applied",
-  "properties": {
-    "x1": {
-      "description": "Normalized x coordinate of corner 1 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "x2": {
-      "description": "Normalized x coordinate of corner 2 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "x3": {
-      "description": "Normalized x coordinate of corner 3 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "x4": {
-      "description": "Normalized x coordinate of corner 4 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "y1": {
-      "description": "Normalized y coordinate of corner 1 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "y2": {
-      "description": "Normalized y coordinate of corner 2 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "y3": {
-      "description": "Normalized y coordinate of corner 3 (0-1)",
-      "format": "double",
-      "type": "number"
-    },
-    "y4": {
-      "description": "Normalized y coordinate of corner 4 (0-1)",
-      "format": "double",
-      "type": "number"
-    }
-  },
-  "required": [
-    "x1",
-    "x2",
-    "x3",
-    "x4",
-    "y1",
-    "y2",
-    "y3",
-    "y4"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentResponseDto
-
-Related models: [DocumentFieldResponseDto](models-10.md#documentfieldresponsedto), [DocumentLineDto](models-10.md#documentlinedto), [DocumentRecognitionDto](models-10.md#documentrecognitiondto).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "canEdit": {
-      "description": "The caller owns the photo and may correct its text",
-      "type": "boolean"
-    },
-    "fields": {
-      "items": {
-        "$ref": "#/components/schemas/DocumentFieldResponseDto"
-      },
-      "type": "array"
-    },
-    "fieldsEnabled": {
-      "description": "Field suggestions are switched on",
-      "type": "boolean"
-    },
-    "lines": {
-      "items": {
-        "$ref": "#/components/schemas/DocumentLineDto"
-      },
-      "type": "array"
-    },
-    "recognition": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/DocumentRecognitionDto"
-        }
-      ],
-      "description": "Whether the photo can be read again; owner only",
-      "nullable": true
-    },
-    "recognizedAt": {
-      "description": "When the text was last read",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "canEdit",
-    "fields",
-    "fieldsEnabled",
-    "lines",
-    "recognition",
-    "recognizedAt"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentSearchResponseDto
-
-Related models: [AssetResponseDto](models-06.md#assetresponsedto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/AssetResponseDto"
-      },
-      "type": "array"
-    },
-    "nextPage": {
-      "nullable": true,
-      "type": "string"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "nextPage",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## DownloadArchiveDto
-
-
-```json
-{
-  "properties": {
-    "archiveName": {
-      "description": "The name of the archive to download, without extension",
-      "type": "string"
-    },
-    "assetIds": {
-      "description": "Asset IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "edited": {
-      "description": "Download edited asset if available",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "assetIds"
   ],
   "type": "object"
 }

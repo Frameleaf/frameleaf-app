@@ -2,9 +2,120 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ClassificationPreviewResponseDto
+
+Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
+
+```json
+{
+  "properties": {
+    "exact": {
+      "description": "True when `matched` counts the whole library, false for a bounded sample",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "The first matches, best first",
+      "items": {
+        "$ref": "#/components/schemas/ClassificationScoredAssetDto"
+      },
+      "type": "array"
+    },
+    "matched": {
+      "description": "Items that match among those read",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sampled": {
+      "description": "Items read: the whole library when exact, otherwise the newest items",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "visualSearchAvailable": {
+      "description": "False when visual phrases cannot be compared right now",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "exact",
+    "items",
+    "matched",
+    "sampled",
+    "visualSearchAvailable"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationReviewDecision
+
+
+```json
+{
+  "description": "Keep the matches, or turn them down and undo what the rule applied",
+  "enum": [
+    "accepted",
+    "rejected"
+  ],
+  "type": "string"
+}
+```
+
+## ClassificationRuleAction
+
+
+```json
+{
+  "description": "What a classification rule does with a match",
+  "enum": [
+    "review",
+    "tag"
+  ],
+  "type": "string"
+}
+```
+
+## ClassificationRuleCountsDto
+
+
+```json
+{
+  "properties": {
+    "accepted": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "matched": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "rejected": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "suggested": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "accepted",
+    "matched",
+    "rejected",
+    "suggested"
+  ],
+  "type": "object"
+}
+```
+
 ## ClassificationRuleCreateDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-07.md#classificationruleaction).
+Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {
@@ -125,7 +236,7 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype),
 
 ## ClassificationRuleResponseDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-07.md#classificationruleaction), [ClassificationRuleCountsDto](models-07.md#classificationrulecountsdto), [ClassificationTagDto](models-08.md#classificationtagdto).
+Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction), [ClassificationRuleCountsDto](models-08.md#classificationrulecountsdto), [ClassificationTagDto](models-08.md#classificationtagdto).
 
 ```json
 {
@@ -257,7 +368,7 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype),
 
 ## ClassificationRuleUpdateDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-07.md#classificationruleaction).
+Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {
@@ -366,7 +477,7 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype),
 
 ## ClassificationSettingsDto
 
-Related models: [ClassificationRuleAction](models-07.md#classificationruleaction).
+Related models: [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {
@@ -2320,102 +2431,6 @@ Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesd
     "recordedVersion",
     "requiredVersion",
     "summary"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConsentTermsDto
-
-
-```json
-{
-  "properties": {
-    "documentUrl": {
-      "description": "The full consent text, when Frameleaf Cloud links one",
-      "nullable": true,
-      "type": "string"
-    },
-    "recordedVersion": {
-      "description": "The version Frameleaf Cloud has on record for this server",
-      "nullable": true,
-      "type": "string"
-    },
-    "requiredVersion": {
-      "description": "The consent version the chosen features need now",
-      "type": "string"
-    },
-    "summary": {
-      "description": "What that version covers, as Frameleaf Cloud words it",
-      "type": "string"
-    },
-    "textSha256": {
-      "description": "SHA-256 of that version’s text; sent back when accepting, so only the terms shown are recorded",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "documentUrl",
-    "recordedVersion",
-    "requiredVersion",
-    "summary",
-    "textSha256"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlDescriptionBatchCreateDto
-
-
-```json
-{
-  "properties": {
-    "estimateId": {
-      "description": "The estimate to queue; its model, photos and prices are read from the server, never sent",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "estimateId"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlDescriptionBatchesResponseDto
-
-
-```json
-{
-  "properties": {
-    "batches": {
-      "description": "Batches queued",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "operationIds": {
-      "description": "The queued batches; each shows in Activity",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "photos": {
-      "description": "Photos in them",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "batches",
-    "operationIds",
-    "photos"
   ],
   "type": "object"
 }

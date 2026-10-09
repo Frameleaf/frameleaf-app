@@ -2,6 +2,309 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## deleteTakeoutArchive
+
+`DELETE /api/takeout/{id}/archives/{archiveId}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L116).
+
+Remove a staged Takeout archive
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Delete(':id/archives/:archiveId')
+@HttpCode(HttpStatus.NO_CONTENT)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({ summary: 'Remove a staged Takeout archive', history: history() })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "deleteTakeoutArchive",
+  "parameters": [
+    {
+      "name": "archiveId",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "204": {
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Remove a staged Takeout archive",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## uploadTakeoutArchiveChunk
+
+`PUT /api/takeout/{id}/archives/{archiveId}/chunks`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L124).
+
+Upload part of a Takeout archive
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Put(':id/archives/:archiveId/chunks')
+@Authenticated({ permission: Permission.AssetUpload })
+@ApiConsumes('application/octet-stream')
+@ApiBody({ schema: { type: 'string', format: 'binary' } })
+@Endpoint({
+    summary: 'Upload part of a Takeout archive',
+    description: 'Appends up to 8 MiB at the given byte offset. Repeating a part already staged is harmless.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Appends up to 8 MiB at the given byte offset. Repeating a part already staged is harmless.",
+  "operationId": "uploadTakeoutArchiveChunk",
+  "parameters": [
+    {
+      "name": "archiveId",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "offset",
+      "required": true,
+      "in": "query",
+      "description": "Byte offset of this chunk",
+      "schema": {
+        "minimum": 0,
+        "maximum": 1099511627776,
+        "type": "integer"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/octet-stream": {
+        "schema": {
+          "format": "binary",
+          "type": "string"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TakeoutSourceResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Upload part of a Takeout archive",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## verifyTakeoutArchiveChunk
+
+`POST /api/takeout/{id}/archives/{archiveId}/verify`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L158).
+
+Check a staged part of a Takeout archive
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutVerifyChunkDto](models-37.md#takeoutverifychunkdto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Post(':id/archives/:archiveId/verify')
+@HttpCode(HttpStatus.NO_CONTENT)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({
+    summary: 'Check a staged part of a Takeout archive',
+    description: 'Compares a range already uploaded with the file the browser is about to resume from.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Compares a range already uploaded with the file the browser is about to resume from.",
+  "operationId": "verifyTakeoutArchiveChunk",
+  "parameters": [
+    {
+      "name": "archiveId",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/TakeoutVerifyChunkDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "204": {
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Check a staged part of a Takeout archive",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## controlTakeoutImport
 
 `POST /api/takeout/{id}/control`

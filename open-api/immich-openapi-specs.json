@@ -12261,6 +12261,68 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/assets/{id}/cast": {
+      "post": {
+        "description": "Returns a signed URL path for one rendition (original, preview or video) of one item, for a Cast receiver that cannot send the session token or cookies. It expires after 15 minutes, serves only this item, and stops working when the session or API key is revoked, access is lost, the item becomes Locked or hidden for the account, or an administrator turns casting off for the account (refused with 403 here in those cases). Shared links cannot cast. The original needs download permission.",
+        "operationId": "createCastMediaUrl",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CastMediaUrlCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CastMediaUrlResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a Cast media URL",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.view"
+      }
+    },
     "/assets/{id}/develop": {
       "get": {
         "description": "Every saved still-image edit recipe for the asset, newest first, with its render state and which one is current.",
@@ -16063,6 +16125,49 @@
         ],
         "x-immich-permission": "asset.read",
         "x-immich-state": "Beta"
+      }
+    },
+    "/cast/{token}": {
+      "get": {
+        "description": "Streams the rendition a signed Cast URL names, without a session token or cookies (byte ranges supported for video). Answers 401 for an invalid, tampered or expired URL and 403 when casting is no longer allowed.",
+        "operationId": "readCastMedia",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The signed Cast token",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[\\w-]+\\.[\\w-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Read Cast media",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/classification/assets/{id}": {
@@ -63037,6 +63142,56 @@
         ],
         "type": "string"
       },
+      "CastMediaKind": {
+        "description": "Which rendition the receiver gets: the original file, the edited preview image, or the video stream",
+        "enum": [
+          "original",
+          "preview",
+          "video"
+        ],
+        "type": "string"
+      },
+      "CastMediaUrlCreateDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CastMediaKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "CastMediaUrlResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The one item this URL serves",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the URL stops working (15 minutes after it was issued)",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CastMediaKind"
+          },
+          "path": {
+            "description": "The signed URL path (`/api/cast/{token}`), relative to the server origin. Prefix the server address the Cast receiver can reach. Works without a session token or cookies until `expiresAt`; never contains a session token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "expiresAt",
+          "kind",
+          "path"
+        ],
+        "type": "object"
+      },
       "CastResponse": {
         "properties": {
           "adminDisabled": {
@@ -101294,10 +101449,17 @@
       "PushActivityTokenDto": {
         "properties": {
           "kind": {
-            "description": "The Live Activity type",
+            "description": "The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)",
             "enum": [
-              "cloud-backup-activation"
+              "cloud-backup-activation",
+              "studio-render"
             ],
+            "type": "string"
+          },
+          "operationId": {
+            "description": "Required for studio-render: the owned Studio render media operation this activity follows",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "token": {
@@ -101521,9 +101683,24 @@
           "shared-activity",
           "memories",
           "render-finished",
+          "render-progress",
           "access-changed"
         ],
         "type": "string"
+      },
+      "PushKnownEventsDto": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/PushEventType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
       },
       "PushPlatform": {
         "description": "FL-228: the push service a device receives notifications through",
@@ -101554,6 +101731,9 @@
           "renderFinished": {
             "type": "boolean"
           },
+          "renderProgress": {
+            "type": "boolean"
+          },
           "sharedActivity": {
             "type": "boolean"
           }
@@ -101580,6 +101760,9 @@
           "renderFinished": {
             "type": "boolean"
           },
+          "renderProgress": {
+            "type": "boolean"
+          },
           "sharedActivity": {
             "type": "boolean"
           }
@@ -101591,6 +101774,7 @@
           "cloudBackupActivation",
           "memories",
           "renderFinished",
+          "renderProgress",
           "sharedActivity"
         ],
         "type": "object"
@@ -101638,9 +101822,9 @@
             "type": "object"
           },
           "events": {
-            "description": "The events this server can deliver",
+            "description": "The events this server can deliver. Open-ended: ignore unfamiliar event names.",
             "items": {
-              "$ref": "#/components/schemas/PushEventType"
+              "type": "string"
             },
             "type": "array"
           },
