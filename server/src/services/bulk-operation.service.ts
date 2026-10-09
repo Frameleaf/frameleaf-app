@@ -448,7 +448,10 @@ export class BulkOperationService {
       : undefined;
     try {
       await this.requireCredentials(job.ownerId, job.snapshot);
-      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom, job.id));
+      return inBatchOrder(
+        batch,
+        await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom, job.id, job.claimToken),
+      );
     } catch (error) {
       if (error instanceof BulkJobError) {
         await this.write(job.id, job.claimToken, withoutInFlight(marked), processed, job.total);
@@ -628,11 +631,12 @@ export class BulkOperationService {
     batch: string[],
     shiftFrom: BulkOperationResult['shiftFrom'] = {},
     operationId?: string,
+    claimToken?: string,
   ): Promise<Outcome[]> {
     await this.requireTarget(auth, snapshot);
 
     if (isDuplicateDecisionAction(snapshot.action)) {
-      return this.applyDuplicateBatch(auth, snapshot, batch, operationId);
+      return this.applyDuplicateBatch(auth, snapshot, batch, operationId, claimToken);
     }
 
     const { action, payload } = snapshot;
@@ -873,6 +877,7 @@ export class BulkOperationService {
     snapshot: BulkOperationSnapshot,
     batch: string[],
     operationId?: string,
+    claimToken?: string,
   ): Promise<Outcome[]> {
     if (!operationId) {
       return batch.map((id) => refused(id, new Error('A duplicate decision needs the job it belongs to')));
@@ -902,7 +907,20 @@ export class BulkOperationService {
 
       try {
         const answers = undo
-          ? await this.duplicateDecisions.undoGroup(auth, operationId, group)
+          ? await this.duplicateDecisions.undoGroup(
+              auth,
+              operationId,
+              group,
+              claimToken && group.decisionId
+                ? {
+                    operationId,
+                    claimToken,
+                    decisionId: group.decisionId,
+                    duplicateId: group.duplicateId,
+                    memberIds: group.memberIds,
+                  }
+                : undefined,
+            )
           : await this.duplicateDecisions.applyGroup(auth, operationId, group);
         const byId = new Map(answers.map((answer) => [answer.id, answer]));
         outcomes.push(...ids.map((id) => byId.get(id) ?? refused(id, new Error('The group did not answer'))));
