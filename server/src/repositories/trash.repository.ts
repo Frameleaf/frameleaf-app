@@ -14,6 +14,13 @@ import {
   requireDuplicateUndoClaim,
   requireDuplicateUndoSelection,
 } from 'src/repositories/duplicate-undo-authority.js';
+import {
+  type DuplicateUndoEffects,
+  completeDuplicateUndo,
+  lockDuplicateUndoMetadata,
+  requireDuplicateUndoFamily,
+  restoreDuplicateUndoMetadata,
+} from 'src/repositories/duplicate-undo-completion.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import {
   associatedSeeds,
@@ -267,6 +274,7 @@ export class TrashRepository {
     auth?: AuthDto,
     capture?: (sequencedAssetIds: string[]) => void,
     duplicateUndo?: DuplicateUndoClaim,
+    captureUndoEffects?: (effects: DuplicateUndoEffects) => void,
   ): Promise<string[] | null> {
     if (
       !duplicateUndo &&
@@ -285,17 +293,26 @@ export class TrashRepository {
       .select('asset.id')
       .execute();
     const selected = hints.map((row) => row.id).sort();
-    const seed = await associatedSeeds(this.db, userId, selected);
+    const associated = await associatedSeeds(this.db, userId, duplicateUndo?.memberIds ?? selected);
+    const seed = duplicateUndo
+      ? { ...associated, assetIds: [...new Set([...associated.assetIds, ...duplicateUndo.memberIds])].sort() }
+      : associated;
     const committed = await withEditFamilyTransaction(
       this.db,
       userId,
       seed,
       async (tx) => {
         const binding = requireEditFamilyCoverage(tx, seed, seed.items.length > 0);
-        if (duplicateUndo) await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
+        if (duplicateUndo) {
+          await sql`SET LOCAL lock_timeout = '5s'`.execute(tx);
+          await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
+          await lockDuplicateUndoMetadata(tx, duplicateUndo);
+        }
         const locked = [
           ...new Set([...selected, ...binding.family.assetIds, ...(duplicateUndo?.memberIds ?? [])]),
         ].sort();
+        if (duplicateUndo)
+          for (const id of locked) await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
         if (locked.length > 0)
           await tx
             .selectFrom('asset')
@@ -305,7 +322,8 @@ export class TrashRepository {
             .orderBy('id')
             .forUpdate()
             .execute();
-        const refreshed = await associatedSeeds(tx, userId, selected);
+        if (duplicateUndo) await requireDuplicateUndoFamily(tx, userId, locked);
+        const refreshed = await associatedSeeds(tx, userId, duplicateUndo ? locked : selected);
         requireEditFamilyCoverage(tx, refreshed, refreshed.items.length > 0);
         const live = duplicateUndo
           ? undefined
@@ -333,7 +351,22 @@ export class TrashRepository {
           freshOptions,
           verify,
         );
-        const sequenced = changed?.filter((id) => binding.family.assetIds.includes(id)) ?? [];
+        let undoEffects: DuplicateUndoEffects | undefined;
+        if (duplicateUndo) {
+          undoEffects = await restoreDuplicateUndoMetadata(tx, userId, duplicateUndo);
+          const linked = await tx
+            .updateTable('asset')
+            .set({ duplicateId: duplicateUndo.duplicateId })
+            .where('ownerId', '=', userId)
+            .where('id', 'in', duplicateUndo.memberIds)
+            .where((eb) => eb.or([eb('duplicateId', 'is', null), eb('duplicateId', '=', duplicateUndo.duplicateId)]))
+            .returning('id')
+            .execute();
+          if (linked.length !== duplicateUndo.memberIds.length)
+            throw new ConflictException('duplicate_undo_selection_changed');
+        }
+        const sequenced =
+          binding.family.items.length > 0 ? (changed?.filter((id) => binding.family.assetIds.includes(id)) ?? []) : [];
         if (sequenced.length > 0) {
           const target = trashActionTargetStatus(action) as AssetStatus.Active | AssetStatus.Trashed;
           const stackIds = (
@@ -395,6 +428,7 @@ export class TrashRepository {
           if (safe.length !== changed!.length) throw new ConflictException('trash_selection_changed');
         }
         if (duplicateUndo) {
+          await requireDuplicateUndoFamily(tx, userId, locked);
           const finalOptions = await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
           await requireDuplicateUndoSelection(tx, userId, duplicateUndo, ids!, finalOptions, true);
           const safe = await this.scope(tx, userId, AssetStatus.Active, finalOptions)
@@ -403,12 +437,14 @@ export class TrashRepository {
             .execute();
           if (safe.length !== ids!.length) throw new ConflictException('trash_selection_changed');
           await requireDuplicateUndoClaim(tx, userId, duplicateUndo);
+          await completeDuplicateUndo(tx, userId, duplicateUndo);
         }
-        return { changed, sequenced };
+        return { changed, sequenced, undoEffects };
       },
       seed.items.length > 0,
     );
     capture?.(committed.sequenced);
+    if (committed.undoEffects) captureUndoEffects?.(committed.undoEffects);
     return committed.changed;
   }
 
@@ -418,6 +454,7 @@ export class TrashRepository {
     ids: string[],
     claim: DuplicateUndoClaim,
     capture?: (ids: string[]) => void,
+    captureEffects?: (effects: DuplicateUndoEffects) => void,
   ): Promise<string[]> {
     const changed = await this.applyReviewed(
       userId,
@@ -428,6 +465,7 @@ export class TrashRepository {
       undefined,
       capture,
       claim,
+      captureEffects,
     );
     if (!changed) throw new ConflictException('duplicate_undo_selection_changed');
     return changed;

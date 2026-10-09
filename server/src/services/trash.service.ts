@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DuplicateUndoClaim } from 'src/repositories/duplicate-undo-authority.js';
+import type { DuplicateUndoEffects } from 'src/repositories/duplicate-undo-completion.js';
 import type { TrashScopeOptions } from 'src/repositories/trash.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -19,6 +20,7 @@ import {
   UtilityActivityTool,
 } from 'src/dtos/trash.dto.js';
 import { AssetStatus, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -284,9 +286,43 @@ export class TrashService extends BaseService {
   /** Internal recorded Undo only; the repository revalidates the persisted lease and exact group. */
   async restoreDuplicateUndo(auth: AuthDto, dto: BulkIdsDto, claim: DuplicateUndoClaim): Promise<TrashResponseDto> {
     let sequenced: string[] = [];
-    const restored = await this.trashRepository.restoreDuplicateUndo(auth.user.id, dto.ids, claim, (ids) => {
-      sequenced = ids;
-    });
+    let effects: DuplicateUndoEffects | undefined;
+    const restored = await this.trashRepository.restoreDuplicateUndo(
+      auth.user.id,
+      dto.ids,
+      claim,
+      (ids) => {
+        sequenced = ids;
+      },
+      (value) => {
+        effects = value;
+      },
+    );
+    if (effects) {
+      for (const { assetId, fields } of effects.edits) {
+        const sources =
+          fields.length > 0 ? await this.partnerOriginRepository.getIdsWithFollowers('asset', [assetId]) : [];
+        await this.jobRepository.queueAll([
+          { name: JobName.SidecarWrite, data: { id: assetId } },
+          ...sources.map((sourceId) => ({
+            name: JobName.PartnerPropagate as const,
+            data: { kind: 'asset' as const, sourceId, fields },
+          })),
+        ]);
+      }
+      for (const assetId of new Set(effects.untagged)) await this.eventRepository.emit('AssetUntag', { assetId });
+      for (const album of effects.albums) {
+        await this.eventRepository.emit('AlbumUpdate', album);
+        const sources = await this.partnerOriginRepository.getIdsWithFollowers('album', [album.id]);
+        await this.jobRepository.queueAll(
+          sources.map((sourceId) => ({
+            name: JobName.PartnerPropagate as const,
+            data: { kind: 'album' as const, sourceId, fields: [AlbumOriginField.Membership] },
+          })),
+        );
+      }
+      await this.notifyAssetsUpdated(effects.visibility, auth.user.id);
+    }
     await this.afterChange(auth, TrashReviewAction.Restore, restored, sequenced);
     return { count: restored.length };
   }
