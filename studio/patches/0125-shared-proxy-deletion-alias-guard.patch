@@ -50,12 +50,13 @@
  import { requireResource } from '@/shared/utils/resource-admission.mjs'
  
  // Preserve import behavior tests after synthetic test-only admission. Production
-@@ -172,12 +172,28 @@
+@@ -172,12 +172,34 @@
    isLottieMime: vi.fn(() => false),
  }))
  
 -vi.mock('../utils/proxy-key', () => ({
 -  getSharedProxyKey: vi.fn((media: { id: string }) => `proxy-${media.id}`),
+-}))
 +const proxyWorkerMocks = vi.hoisted(() => ({
 +  postMessage: vi.fn(),
 +  onmessage: null as ((event: MessageEvent) => void) | null,
@@ -70,10 +71,16 @@
 +    }
 +  }),
 +}))
-+vi.mock('@/features/media-library/deps/storage', async (importOriginal) => ({
-+  ...(await importOriginal<typeof import('@/features/media-library/deps/storage')>()),
-+  removeWorkspaceCacheEntry: vi.fn(async () => undefined),
- }))
++vi.mock('@/features/media-library/deps/storage', async (importOriginal) => {
++  const { proxyDir } = await vi.importActual<
++    typeof import('@/infrastructure/storage/workspace-fs/paths')
++  >('@/infrastructure/storage/workspace-fs/paths')
++  return {
++    ...(await importOriginal<typeof import('@/features/media-library/deps/storage')>()),
++    proxyDir,
++    removeWorkspaceCacheEntry: vi.fn(async () => undefined),
++  }
++})
  
  import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
  import { mediaLibraryService, FileAccessError } from './media-library-service'
@@ -81,7 +88,7 @@
  import type { MediaMetadata } from '@/types/storage'
  import { useMediaPreparationStore } from '../stores/media-preparation-store'
  
-@@ -818,6 +834,235 @@
+@@ -818,6 +840,235 @@
      })
    })
  
