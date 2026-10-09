@@ -58,6 +58,7 @@ const harness = createHarness({ upstream: origin, inspectConnect: true });
 let browser;
 let page;
 let cleanupFailure;
+let lockedProjectPrepared = false;
 const projectId = `fl94-touch-${randomUUID()}`;
 const lockedProjectId = `fl94-touch-${randomUUID()}`;
 const witness = {
@@ -162,8 +163,12 @@ try {
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
-  const beginDrag = async () => {
-    const box = await clip.boundingBox();
+  const beginDrag = async (
+    target = clip,
+    durationFrames = 120,
+    pointerFrames = -30,
+  ) => {
+    const box = await target.boundingBox();
     assert(
       box && box.width > 0 && box.height > 0,
       "real clip must have geometry",
@@ -175,7 +180,7 @@ try {
       id: 1,
     };
     // Pointer Slip negates displacement: left30 timeline frames advances source by30.
-    const dx = -(box.width * 30) / 120;
+    const dx = (box.width * pointerFrames) / durationFrames;
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [start],
@@ -188,7 +193,7 @@ try {
       });
       await settle();
     }
-    return { start, dx, beforeBox: box, movingBox: await clip.boundingBox() };
+    return { start, dx, beforeBox: box, movingBox: await target.boundingBox() };
   };
   witness.initial = await state();
   witness.initialContent = editContent(await timeline());
@@ -263,7 +268,16 @@ try {
     "fixture must match the independent30fps source-range oracle",
   );
   witness.expectedContent = expectedSlipContent(witness.initialContent);
-  witness.editGesture = await beginDrag();
+  // A Select drag left from frame zero only selects. The negative control instead
+  // moves the tail B pair right into free space, proving actual movement cannot pass Slip.
+  witness.editGesture =
+    mutation === "wrong-tool"
+      ? await beginDrag(
+          page.locator('[data-timeline-item][data-item-id="slip-v-B"]'),
+          210,
+          30,
+        )
+      : await beginDrag();
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
@@ -271,6 +285,17 @@ try {
   await page.waitForFunction(() => window.fl100Editor.state().undoCount === 1);
   witness.edited = await state();
   witness.editedContent = editContent(await timeline());
+  if (mutation === "wrong-tool") {
+    assert.deepEqual(
+      witness.edited.items,
+      witness.initial.items.map((item) =>
+        ["slip-v-B", "slip-a-B"].includes(item.id)
+          ? { ...item, from: 150 }
+          : item,
+      ),
+      "wrong-tool control must first produce real linked movement with all source ranges unchanged",
+    );
+  }
   assert.deepEqual(
     witness.editedContent,
     witness.expectedContent,
@@ -393,6 +418,7 @@ try {
     (id) => window.fl100Editor.prepareSlipTimeline(id, true),
     lockedProjectId,
   );
+  lockedProjectPrepared = true;
   await page.waitForFunction(() => window.fl100Editor.touchReady());
   await selectSlip();
   witness.lockedBefore = await state();
@@ -519,7 +545,10 @@ try {
   throw error;
 } finally {
   try {
-    for (const id of [projectId, lockedProjectId]) {
+    for (const id of [
+      projectId,
+      ...(lockedProjectPrepared ? [lockedProjectId] : []),
+    ]) {
       await page?.evaluate(
         (fixtureId) => window.fl100Editor?.disposeTouchTimeline(fixtureId),
         id,
