@@ -16,10 +16,11 @@ import {
   unlockAuthSession,
   updateConfig,
 } from '@frameleaf/sdk';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { PNG } from 'pngjs';
 import { app, asBearerAuth, utils } from 'src/utils.js';
+import { test } from 'src/web-test.js';
 
 /**
  * FL-144 / FL-63: real browser, upload, auth, search and correction endpoints. Only OCR output is
@@ -58,6 +59,7 @@ test.describe('Document search and evidence journey (FL-63)', () => {
     context,
     page,
     request,
+    assetReady,
   }, testInfo) => {
     test.setTimeout(120_000);
     const suffix = randomUUID().slice(0, 8);
@@ -81,6 +83,9 @@ test.describe('Document search and evidence journey (FL-63)', () => {
     const asset = await utils.createAsset(user.accessToken, {
       assetData: { filename: `document-region-${suffix}.png`, bytes: PNG.sync.write(image) },
     });
+    // Upload acknowledgement precedes metadata and preview publication. Wait while the owner can
+    // still read the asset, before locking it and seeding deterministic OCR evidence.
+    await utils.waitForAssetReady(admin.accessToken, asset.id, { headers, signal: assetReady.signal });
     await lockAssets({ bulkIdsDto: { ids: [asset.id] } }, { headers });
     await setupPinCode({ pinCodeSetupDto: { pinCode } }, { headers });
     await unlockAuthSession({ sessionUnlockDto: { pinCode } }, { headers });

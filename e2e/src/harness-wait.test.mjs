@@ -518,3 +518,132 @@ test('invalid event wait arguments do not register a callback or accept an unrel
   journal.add('assetHidden', 'asset');
   await waiting;
 });
+
+// Execute the actual browser fixture setup and readiness implementation without a server.
+const documentSource = readFileSync(new URL('./specs/web/documents.e2e-spec.ts', import.meta.url), 'utf8');
+const setupStart = documentSource.indexOf('    const asset = await utils.createAsset');
+const setupEnd = documentSource.indexOf('    await setupPinCode', setupStart);
+assert.ok(setupStart >= 0 && setupEnd > setupStart);
+const setup = new Function(
+  'utils',
+  'user',
+  'admin',
+  'headers',
+  'PNG',
+  'image',
+  'suffix',
+  'lockAssets',
+  'assetReady',
+  stripTypeScriptTypes(`function bind() { return async () => { ${documentSource.slice(setupStart, setupEnd)} }; }`) +
+    '\nreturn bind();',
+);
+const utilsSource = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+const readyStart = utilsSource.indexOf('  waitForAssetReady: async');
+const readyEnd = utilsSource.indexOf('\n\n  poll:', readyStart);
+assert.ok(readyStart >= 0 && readyEnd > readyStart);
+const readiness = utilsSource
+  .slice(readyStart, readyEnd)
+  .trim()
+  .replace(/^waitForAssetReady: /, '')
+  .replace(/,$/, '');
+
+for (const outcome of ['published', 'empty', 'wrong-kind', 'aborted']) {
+  test(`document evidence waits for owner-readable preview before locking: ${outcome}`, async () => {
+    const publication = Promise.withResolvers();
+    const owner = new AbortController();
+    const calls = [];
+    const headers = { Authorization: 'Bearer owner' };
+    const waitForAssetReady = new Function(
+      'ownedWait',
+      'queueWaitTimeout',
+      'QueueName',
+      'waitForQueue',
+      'asBearerAuth',
+      'getAssetInfo',
+      'viewAsset',
+      'AssetMediaSize',
+      stripTypeScriptTypes(`function bind() { return (${readiness}); }`) + '\nreturn bind();',
+    )(
+      withDeadline,
+      () => 1000,
+      { MetadataExtraction: 'metadata', StorageTemplateMigration: 'storage', ThumbnailGeneration: 'thumbnail' },
+      async (token, queue, context) => {
+        assert.equal(token, 'admin');
+        calls.push(queue);
+        if (queue === 'thumbnail') {
+          await Promise.race([
+            publication.promise,
+            new Promise((_, reject) =>
+              context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true }),
+            ),
+          ]);
+        }
+      },
+      () => {
+        throw new Error('Owner read headers required');
+      },
+      async ({ id }, options) => {
+        assert.equal(options.headers, headers);
+        assert.equal(options.signal.aborted, false);
+        calls.push('info');
+        return { id };
+      },
+      async ({ id, size }, options) => {
+        assert.equal(id, 'document');
+        assert.equal(size, 'preview');
+        assert.equal(options.headers, headers);
+        calls.push('preview');
+        return {
+          size: outcome === 'empty' ? 0 : 12,
+          type: outcome === 'wrong-kind' ? 'application/json' : 'image/jpeg',
+        };
+      },
+      { Preview: 'preview' },
+    );
+    const run = setup(
+      {
+        createAsset: async (token) => {
+          assert.equal(token, 'owner');
+          calls.push('upload');
+          return { id: 'document' };
+        },
+        waitForAssetReady,
+      },
+      { accessToken: 'owner' },
+      { accessToken: 'admin' },
+      headers,
+      { sync: { write: () => new Uint8Array([1]) } },
+      {},
+      'fixture',
+      async (body, options) => {
+        assert.deepEqual(body, { bulkIdsDto: { ids: ['document'] } });
+        assert.equal(options.headers, headers);
+        calls.push('lock');
+      },
+      { signal: owner.signal },
+    );
+    const pending = run();
+    // Attach rejection handling before cancellation, then let admission reach the publication barrier.
+    const settled = pending.then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, error }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      calls.includes('lock'),
+      false,
+      'Upload acknowledgement must not admit locked evidence before publication',
+    );
+    if (outcome === 'aborted') owner.abort(new Error('fixture expired'));
+    else publication.resolve();
+    const result = await settled;
+    if (outcome === 'published') {
+      assert.equal(result.ok, true);
+      assert.deepEqual(calls, ['upload', 'metadata', 'storage', 'thumbnail', 'info', 'preview', 'lock']);
+    } else {
+      assert.equal(result.ok, false);
+      assert.match(result.error.message, /Asset readiness failed/);
+      assert.equal(calls.includes('lock'), false);
+    }
+  });
+}
