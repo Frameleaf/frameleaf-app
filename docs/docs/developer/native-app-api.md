@@ -99,6 +99,28 @@ Server branch `aj/native-api-gaps-2`. Definitions are in the [develop recipe pro
 | Subject and sky masks      | `proposeAssetDevelopMask` with `coordinates: "original"` (`AssetDevelopProposalCoordinates`)                                               | Any still; mask artifact covering the whole original for version 1 recipes. Omitted keeps the RAW sensor-canvas behaviour                  |
 | Job notifications          | push `data.job`, `data.jobType`, `data.jobActions`                                                                                         | Retry and Pause targets for Studio renders and cloud backup runs                                                                           |
 
+## Render progress and Cast URLs (October 9)
+
+Server branch `aj/native-api-gaps-3`.
+
+### Studio render progress pushes
+
+A render worker taking a Studio export, and its progress, are pushed to the owner's devices as the new event type `render-progress` (preference `renderProgress`, on by default). Pushes are throttled to one every 5% of progress, or every 10 seconds while it moves. The finished or failed render stays `render-finished`; a render that fails for good now also sends it (with `jobActions: retry`).
+
+- **Android:** a background (data) push per step. The decrypted plaintext has `type: "render-progress"` and flat `data`: `kind: "render"`, `state` (`started`, `running`), `progress` (0–1 number), `job` (the media operation id), `jobType: "media-operation"`, `jobActions: "pause,cancel"`, `versionId`, `projectId`. Show or update an ongoing progress notification keyed by `job`; `render-finished` replaces it.
+- **iOS:** a Live Activity with attributes type `RenderAttributes` and content state `{ "step": "render-running", "progress": 0.42 }`. The `started` push starts it with the push-to-start token (and also arrives as a background push naming the `job`); register the activity's update token with `PUT /push/devices/current/activities/{activityId}` and `kind: "studio-render"`. Later steps update it (Live Activity only), and `render-finished` ends it (`render-done` with progress 1, or `needs-attention`) before its alert. A cancelled render sends nothing more: the app that cancelled ends its own activity.
+
+Payload details are in the [push envelope](./push-envelope-v1.md).
+
+### Cast media URLs
+
+| Operation            | Endpoint                                                                       | Notes                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createCastMediaUrl` | `POST /assets/{id}/cast` with `{ "kind": "original" \| "preview" \| "video" }` | Signed-in session or API key with access to the item (`asset.view`; the original needs download access). Returns `CastMediaUrlResponseDto`: `assetId`, `kind`, `path` (`/api/cast/{token}`), `expiresAt` |
+| `readCastMedia`      | `GET /api/cast/{token}`                                                        | No session token or cookies. Streams the rendition; byte ranges work for `video`                                                                                                                         |
+
+Prefix `path` with the server address the Cast receiver can reach (normally the home-network address). The URL works for 15 minutes, for that one item and rendition only. It is signed with the server's own key (`server-hmac.key`) and holds the item, account, rendition, expiry and the issuing session or API key id, never a session token. Every read checks again that the session or API key still exists, the account still has access, the item is not Locked (even from a PIN-unlocked session) and none of the account's hidden people, pets or tags is in it, and that an administrator has not turned casting off for the account (`cast.adminDisabled`). Refusals: 403 when issuing (shared links, Locked or hidden items, casting turned off), 401 for an invalid, tampered or expired URL, 403 when a read is no longer allowed.
+
 ## Server issues found by the live tests
 
 ### FL-330: default smart-search model missing from the model mirror

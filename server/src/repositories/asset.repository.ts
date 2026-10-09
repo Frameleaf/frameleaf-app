@@ -1136,6 +1136,24 @@ export class AssetRepository {
     return lockedIds;
   }
   /**
+   * Whether an item may be sent to a Cast receiver for its viewer: it exists, is not trashed, is not
+   * Locked (by visibility or by a lock rule), and none of the viewer's hidden people, pets or tags is in
+   * it. Access itself is checked separately, with the ordinary access rules.
+   */
+  async isCastable(id: string, hiddenContent?: HiddenContentFilter): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', asUuid(id))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .where(isNotLocked('asset'))
+      .$call((qb) => withHiddenContentFilter(qb, { hiddenContent }))
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /**
    * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
    * (FL-34): what "hide sensitive detections" locks when it is switched on. Only positive
    * `public.asset.is_nsfw` evidence counts. A manual review in `asset_metadata`, either way,

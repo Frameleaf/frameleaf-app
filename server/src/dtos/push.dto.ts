@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { PushEventTypeSchema, PushPlatformSchema, PushUnavailableReasonSchema } from 'src/enum.js';
-import { CLOUD_BACKUP_ACTIVITY_KIND } from 'src/utils/frameleaf-push.js';
+import { LIVE_ACTIVITY_KINDS } from 'src/utils/frameleaf-push.js';
 
 const DateTime = z.string().meta({ format: 'date-time' });
 
@@ -31,6 +31,7 @@ const PushPreferencesSchema = z
     sharedActivity: z.boolean().optional(),
     memories: z.boolean().optional(),
     renderFinished: z.boolean().optional(),
+    renderProgress: z.boolean().optional(),
     accessChanged: z.boolean().optional(),
   })
   .describe('Which events this device is told about; an omitted event keeps its current setting (on by default)')
@@ -45,6 +46,7 @@ const PushPreferencesResponseSchema = z
     sharedActivity: z.boolean(),
     memories: z.boolean(),
     renderFinished: z.boolean(),
+    renderProgress: z.boolean(),
     accessChanged: z.boolean(),
   })
   .meta({ id: 'PushPreferencesResponseDto' });
@@ -93,7 +95,11 @@ export class PushActivityParamDto extends createZodDto(PushActivityParamSchema) 
 
 export const PushActivityTokenSchema = z
   .object({
-    kind: z.literal(CLOUD_BACKUP_ACTIVITY_KIND).describe('The Live Activity type'),
+    kind: z
+      .enum(LIVE_ACTIVITY_KINDS)
+      .describe(
+        'The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)',
+      ),
     token: PushTokenSchema.describe('The ActivityKit push token of this activity'),
   })
   .meta({ id: 'PushActivityTokenDto' });

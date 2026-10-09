@@ -4,10 +4,13 @@ import {
   buildPushPayload,
   cloudBackupActivationProgress,
   collapseIdOf,
+  liveActivityPlanOf,
   liveActivityStateOf,
   pushGatewayUrl,
   pushJobData,
+  pushSendRequestSchema,
   pushTtlSec,
+  shouldSendRenderProgress,
 } from 'src/utils/frameleaf-push.js';
 
 const document = {
@@ -196,5 +199,51 @@ describe('push job reference (native apps: Retry and Pause)', () => {
       { id: 'p', sentAt: '2026-10-08T00:00:00.000Z', safeAssetIds: new Set() },
     );
     expect(payload.data).toMatchObject({ job: 'op-9', jobType: 'media-operation', jobActions: 'retry' });
+  });
+});
+
+describe('Studio render progress pushes', () => {
+  it('throttles to a 5% step, or any movement after 10 seconds, and always sends the first report', () => {
+    expect(shouldSendRenderProgress(undefined, 0, 0)).toBe(true);
+    expect(shouldSendRenderProgress({ progress: 0.1, at: 0 }, 0.14, 1000)).toBe(false);
+    expect(shouldSendRenderProgress({ progress: 0.1, at: 0 }, 0.15, 1000)).toBe(true);
+    expect(shouldSendRenderProgress({ progress: 0.1, at: 0 }, 0.11, 9999)).toBe(false);
+    expect(shouldSendRenderProgress({ progress: 0.1, at: 0 }, 0.11, 10_000)).toBe(true);
+    expect(shouldSendRenderProgress({ progress: 0.1, at: 0 }, 0.1, 60_000)).toBe(false);
+  });
+
+  it('maps a render to the RenderAttributes Live Activity: start only at the start, end when it finishes', () => {
+    const plan = (state: 'started' | 'running' | 'done' | 'failed', progress = 0.5) =>
+      liveActivityPlanOf({ render: { job: 'job-1', state, progress } });
+    expect(plan('started', 0)).toEqual({
+      kind: 'studio-render',
+      attributesType: 'RenderAttributes',
+      state: { step: 'render-running', progress: 0 },
+      start: true,
+      end: false,
+      liveOnly: false,
+    });
+    expect(plan('running')).toMatchObject({ start: false, end: false, liveOnly: true });
+    expect(plan('done')).toMatchObject({ state: { step: 'render-done', progress: 1 }, end: true, liveOnly: false });
+    expect(plan('failed')).toMatchObject({ state: { step: 'needs-attention' }, end: true });
+    expect(liveActivityPlanOf({})).toBeNull();
+  });
+
+  it('lets the gateway start a render Live Activity and nothing but the two known attribute types', () => {
+    const request = {
+      platform: 'apns',
+      token: 'start-1-0123456789abcdef0123456789abcdef',
+      type: 'live-activity-start',
+      priority: 'high',
+      ttlSec: 3600,
+      liveActivity: { state: { step: 'render-running', progress: 0 }, attributesType: 'RenderAttributes' },
+    };
+    expect(pushSendRequestSchema.safeParse(request).success).toBe(true);
+    expect(
+      pushSendRequestSchema.safeParse({
+        ...request,
+        liveActivity: { ...request.liveActivity, attributesType: 'OtherAttributes' },
+      }).success,
+    ).toBe(false);
   });
 });

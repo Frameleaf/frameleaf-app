@@ -111,6 +111,7 @@ The plaintext is one JSON object, UTF-8 encoded, at most **2048 bytes**. The ser
 |                           | A reply to your comment                                                       | `albumId`, `activityId`, `action: "replied"`, optional `assetId`                                                                                                      |
 | `memories`                | New memories are ready                                                        | `count`                                                                                                                                                               |
 | `render-finished`         | A Studio render finished or failed                                            | `versionId`, `projectId`, `status` (`published` or failed), and the render's `job` fields (see below)                                                                 |
+| `render-progress`         | A Studio render started, or made progress (background push)                   | `kind: "render"`, `state` (`started` or `running`), `progress` (0–1), `versionId`, `projectId`, and the render's `job` fields (`pause,cancel`)                        |
 | `access-changed`          | Your role in an album changed                                                 | `albumId`, `change: "role"`, `role`                                                                                                                                   |
 |                           | A partner shared or stopped sharing their library                             | `partnerId`, `change` (`partner-added` or `partner-removed`)                                                                                                          |
 
@@ -126,7 +127,7 @@ A notice about a server job names it, so the app can offer Retry or Pause:
 | `jobType`    | `media-operation`: `POST /media-operations/{job}/retry`, `/pause`, `/resume`, `/cancel`. `cloud-backup-run` (administrators): `POST /admin/cloud/backup/runs/{job}/pause`, `/resume`, `/cancel`; Retry is `POST /admin/cloud/backup/runs` |
 | `jobActions` | Comma-separated actions on offer when the push was built (`retry`, `pause`, `resume`, `cancel`); may be empty                                                                                                                             |
 
-They are sent with `render-finished` (the Studio render; `retry` when it failed) and with the cloud backup notices of `backup-needs-attention`: a failed backup run (`retry`), a run waiting for its key (`pause,cancel`), and a failed verification, clean-up or restore (no action; started again from settings). The job's state may have moved on by the time the device shows the notice: the endpoints answer with the current state.
+They are sent with `render-progress` (the running Studio render; `pause,cancel`), with `render-finished` (the Studio render; `retry` when it failed) and with the cloud backup notices of `backup-needs-attention`: a failed backup run (`retry`), a run waiting for its key (`pause,cancel`), and a failed verification, clean-up or restore (no action; started again from settings). The job's state may have moved on by the time the device shows the notice: the endpoints answer with the current state.
 
 ### `activation`
 
@@ -174,11 +175,20 @@ The steps the gateway allows are `plan-active`, `server-notified`, `storage-read
 | `first-backup`, complete      | `backup-done`     | 1            |
 | any stage, failed             | `needs-attention` | omitted      |
 
+A Studio render (`render-progress`, then `render-finished`) maps onto them like this:
+
+| Render                   | `step`            | `progress` |
+| ------------------------ | ----------------- | ---------- |
+| started or running       | `render-running`  | 0–1        |
+| finished (`published`)   | `render-done`     | 1          |
+| failed (its retry spent) | `needs-attention` | omitted    |
+
 The activity's lifecycle is driven by the push type:
 
-- `live-activity-start` is sent to the push-to-start token, with attributes type `ActivationAttributes`.
+- `live-activity-start` is sent to the push-to-start token, with attributes type `ActivationAttributes` (activation) or `RenderAttributes` (render). A render activity is started only by the render's `started` push, and only on a device that has no `studio-render` activity token registered.
 - `live-activity-update` is sent while the chain runs. Each update has a stale date one hour after it is sent.
 - `live-activity-end` is sent when the chain completes or fails. An ordinary alert carrying the full plaintext follows it.
+- Activity tokens are registered per kind (`PUT /push/devices/current/activities/{activityId}` with `kind` `cloud-backup-activation` or `studio-render`); the app removes one when its activity ends (`DELETE` on the same path). Every `studio-render` activity of a device follows the most recent render progress pushed to it.
 
 An update that could not be delivered is not sent again, because the next update replaces it.
 

@@ -778,6 +778,68 @@ describe(PushService.name, () => {
       ]);
     });
 
+    it('drives a Studio render Live Activity on iOS and a background progress push on Android', async () => {
+      const { sut, devices, sent } = newHarness();
+      const render = (state: 'started' | 'running' | 'done' | 'failed', progress: number) => ({
+        type: state === 'done' || state === 'failed' ? PushEventType.RenderFinished : PushEventType.RenderProgress,
+        background: state === 'started' || state === 'running',
+        data: { kind: 'render', job: 'job-1', progress },
+        render: { job: 'job-1', state, progress },
+      });
+      const ios = () => device(newDeviceKey(), { pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef' });
+      const android = () =>
+        device(newDeviceKey(), { platform: PushPlatform.Android, pushToken: 'fcm-1-0123456789abcdef0123456789abcdef' });
+      const renderActivity = () => ({ ...activity(), kind: 'studio-render' });
+      const summary = () =>
+        sent.map(({ platform, type, liveActivity }) => [
+          platform,
+          type,
+          liveActivity?.state.step,
+          liveActivity?.state.progress,
+          liveActivity?.attributesType,
+        ]);
+
+      // started: push-to-start the activity on iOS, and tell both platforms the job in a background push
+      devices.getDeliveryTargets.mockResolvedValue([ios(), android()]);
+      await sut.handleDeliver({ notice: notice(render('started', 0)) });
+      expect(summary()).toEqual([
+        ['apns', 'live-activity-start', 'render-running', 0, 'RenderAttributes'],
+        ['apns', 'background', undefined, undefined, undefined],
+        ['fcm', 'background', undefined, undefined, undefined],
+      ]);
+
+      // running: iOS gets the activity update alone (never a second start), Android the progress push
+      sent.length = 0;
+      devices.getDeliveryTargets.mockResolvedValue([
+        ios(),
+        device(newDeviceKey(), { activities: [renderActivity()] }),
+        android(),
+      ]);
+      await sut.handleDeliver({ notice: notice(render('running', 0.4)) });
+      expect(summary()).toEqual([
+        ['apns', 'live-activity-update', 'render-running', 0.4, undefined],
+        ['fcm', 'background', undefined, undefined, undefined],
+      ]);
+
+      // a Cloud Backup activation activity is not a render activity
+      sent.length = 0;
+      devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey(), { activities: [activity()] })]);
+      await sut.handleDeliver({ notice: notice(render('running', 0.5)) });
+      expect(sent).toEqual([]);
+
+      // done / failed: the activity ends and the render-finished alert goes everywhere
+      sent.length = 0;
+      devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey(), { activities: [renderActivity()] })]);
+      await sut.handleDeliver({ notice: notice(render('done', 1)) });
+      expect(summary()).toEqual([
+        ['apns', 'live-activity-end', 'render-done', 1, undefined],
+        ['apns', 'alert', undefined, undefined, undefined],
+      ]);
+      sent.length = 0;
+      await sut.handleDeliver({ notice: notice(render('failed', 0)) });
+      expect(summary()[0]).toEqual(['apns', 'live-activity-end', 'needs-attention', undefined, undefined]);
+    });
+
     it('wakes only the device whose phone backup went stale, silently', async () => {
       const { sut, devices, jobs } = newHarness();
       devices.getStaleBackupWakeTargets.mockResolvedValue([
