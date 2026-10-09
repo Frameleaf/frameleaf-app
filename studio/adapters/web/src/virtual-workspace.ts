@@ -195,6 +195,7 @@ export class VirtualWorkspace {
       directory = next
     }
     const name = path[path.length - 1]
+    if (name === undefined) throw new TypeError('Invalid workspace entry name: undefined')
     assertName(name)
     return { parent: directory, name }
   }
