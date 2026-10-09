@@ -30,6 +30,7 @@
     withHdrSources,
   } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
@@ -490,6 +491,7 @@
   const restorationHandlers = createStudioRestorationHandlers({
     graph: () => project.graph,
     revision: () => project.revision,
+    cancel: (operationId) => activitySession.cancel(operationId),
     onQueued: () => {
       queuedJobs += 1;
       toastManager.primary($t('frameleaf_studio_restore_queued'));
@@ -574,6 +576,7 @@
       // FL-115 / FL-162: restoration and Smooth motion jobs, preview first; the graph is unchanged.
       'job.enqueueRestoration': (envelope) => restorationHandlers['job.enqueueRestoration'](envelope),
       'job.enqueueInterpolation': (envelope) => restorationHandlers['job.enqueueInterpolation'](envelope),
+      'job.cancel': (envelope) => restorationHandlers['job.cancel'](envelope),
     },
   });
 

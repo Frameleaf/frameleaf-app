@@ -57,6 +57,7 @@ const setup = () => {
     api: api as unknown as StudioRestorationApi,
     graph: () => graph,
     revision: () => 7,
+    cancel: vi.fn(),
     onQueued,
     onRefused,
     onConfirmOnCloud,
