@@ -594,7 +594,12 @@
       "path": "patches/0122-rolling-edit-linked-track-lock-preflight.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0b145069a4c5460163f4c9d1b056440f3e34ca353994478407db450ae947912c"
+    },
+    {
+      "path": "patches/0123-removal-preview-lifetime-context.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5d0ad7eab48db5fd795d5951e946990b845ad554f652069dd10db3f36d04cb61"
     }
   ],
-  "sourceSha256": "6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3"
+  "sourceSha256": "19daa0b620454002022c6eac56b13537c232fe5270104021e5c9c6b63f884c4c"
 }
