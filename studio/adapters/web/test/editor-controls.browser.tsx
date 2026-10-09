@@ -1,5 +1,5 @@
 /** Production Compose and Animate components, stores and history; no backend substitute. */
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { i18n, i18nReady } from "@/i18n";
@@ -20,7 +20,17 @@ import { useTimelineCommandStore } from "@/features/timeline/stores/timeline-com
 import { useKeyframesStore } from "@/features/timeline/stores/keyframes-store";
 import { useSelectionStore } from "@/shared/state/selection";
 import { useEditorStore } from "@/shared/state/editor";
-import { buildTimelineFromStores } from "@/features/timeline/stores/timeline-persistence";
+import {
+  buildTimelineFromStores,
+  loadTimeline,
+  saveTimeline,
+} from "@/features/timeline/stores/timeline-persistence";
+import { createProject, getProject } from "@/infrastructure/storage";
+import { setWorkspaceRoot } from "@/infrastructure/storage/workspace-fs/root";
+import { useProjectStore } from "@/features/projects/stores/project-store";
+import { CURRENT_SCHEMA_VERSION } from "@/shared/projects/migrations";
+import { installTimelineTouchEditing } from "../src/timeline-touch";
+import "../src/editor.css";
 import { usePlaybackStore } from "@/shared/state/playback";
 import {
   makeTimelineTrack,
@@ -130,8 +140,17 @@ function mountEditorControls(surface: Surface, reset = false) {
   }
   flushSync(() => root.render(<Controls surface={surface} />));
 }
+let timelineTouchReady = false;
 function NativeEditTimeline() {
   useEditingShortcuts({});
+  useEffect(() => {
+    const dispose = installTimelineTouchEditing();
+    timelineTouchReady = true;
+    return () => {
+      timelineTouchReady = false;
+      dispose();
+    };
+  }, []);
   return <Timeline duration={3} />;
 }
 function Controls({ surface }: { surface: Surface }) {
@@ -241,6 +260,106 @@ async function renderHero(frame = 0, expectedX?: number) {
 }
 Object.assign(window, {
   fl100Editor: {
+    touchReady: () => timelineTouchReady,
+    // OPFS is an isolated browser-owned fixture, never a host project or selected directory.
+    prepareTouchTimeline: async (projectId: string) => {
+      const root = await navigator.storage.getDirectory();
+      setWorkspaceRoot(
+        await root.getDirectoryHandle(projectId, { create: true }),
+      );
+      resetTimelineCompositionTestState();
+      useEditorStore.setState({
+        workspace: "edit",
+        linkedSelectionEnabled: true,
+      });
+      useItemsStore
+        .getState()
+        .setTracks([
+          makeTimelineTrack({
+            id: "tablet-v",
+            name: "V1",
+            kind: "video",
+            order: 0,
+          }),
+          makeTimelineTrack({
+            id: "tablet-a",
+            name: "A1",
+            kind: "audio",
+            order: 1,
+          }),
+        ]);
+      const common = {
+        from: 30,
+        durationInFrames: 60,
+        sourceStart: 12,
+        sourceEnd: 60,
+        sourceFps: 24,
+        sourceDuration: 120,
+        src: "",
+        mediaId: undefined,
+        linkedGroupId: "tablet-av",
+        originId: "tablet-source",
+      };
+      useItemsStore
+        .getState()
+        .setItems([
+          makeTimelineVideoItem({
+            ...common,
+            id: "tablet-v",
+            trackId: "tablet-v",
+          }),
+          makeTimelineAudioItem({
+            ...common,
+            id: "tablet-a",
+            trackId: "tablet-a",
+          }),
+        ]);
+      useSelectionStore.getState().clearSelection();
+      useTimelineCommandStore.getState().clearHistory();
+      const project = await createProject({
+        id: projectId,
+        name: "FL94 isolated touch fixture",
+        description:
+          "Linked A/V graph; no media decoding or host/API qualification",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        duration: 3,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        metadata: settings,
+        timeline: buildTimelineFromStores(),
+      });
+      useProjectStore.getState().setCurrentProject(project);
+      document.getElementById("editor")!.style.width = "100%";
+      mountEditorControls("edit");
+    },
+    saveTouchTimeline: async (projectId: string) => {
+      await saveTimeline(projectId);
+      return (await getProject(projectId))?.timeline;
+    },
+    reopenTouchTimeline: async (projectId: string) => {
+      const root = await navigator.storage.getDirectory();
+      setWorkspaceRoot(await root.getDirectoryHandle(projectId));
+      resetTimelineCompositionTestState();
+      const project = await getProject(projectId);
+      if (!project) throw new Error("Touch fixture project disappeared");
+      useProjectStore.getState().setCurrentProject(project);
+      await loadTimeline(projectId);
+      useEditorStore.setState({
+        workspace: "edit",
+        linkedSelectionEnabled: true,
+      });
+      document.getElementById("editor")!.style.width = "100%";
+      mountEditorControls("edit");
+    },
+    disposeTouchTimeline: async (projectId: string) => {
+      if (!/^fl94-touch-[a-f0-9-]{36}$/.test(projectId))
+        throw new Error("Refusing to remove a non-fixture OPFS entry");
+      setWorkspaceRoot(null);
+      useProjectStore.getState().setCurrentProject(null);
+      await (
+        await navigator.storage.getDirectory()
+      ).removeEntry(projectId, { recursive: true });
+    },
     // Arrangement only: all selection/join/history input is sent through native controls.
     seedLinkedChain: (legacy = false) => {
       resetTimelineCompositionTestState();
