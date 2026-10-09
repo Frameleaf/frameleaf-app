@@ -250,6 +250,10 @@ test.describe('Album', () => {
       'aria-pressed',
       'true',
     );
+    // Measure the drawing target after the sheet's scale/translation animation has settled.
+    await faceDialog.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
     const image = faceDialog.locator('.ft-stage img');
     const bounds = await image.evaluate((element: HTMLImageElement) => {
       const rect = element.getBoundingClientRect();
