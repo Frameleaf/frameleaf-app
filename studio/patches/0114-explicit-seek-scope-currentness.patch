@@ -104,7 +104,7 @@ diff --git a/src/features/preview/components/color-scopes-view.test.tsx b/src/fe
 +      }
 +    },
 +  )
- 
+
    it('does not present an old revision after the loaded owner changes during capture', async () => {
      const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => false }
 diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/features/preview/components/video-preview.sync.test.tsx
@@ -119,17 +119,17 @@ diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/f
  let deferPlayerSeekCompletion = false
  let completeDeferredPlayerSeek: ((frameOverride?: number) => void) | null = null
 @@ -337,6 +338,7 @@
- 
+
      React.useEffect(() => {
        onFrameChangeRef.current = onFrameChange
 +      emitMockPlayerFrame = onFrameChange as ((frame: number) => void) | undefined
      }, [onFrameChange])
- 
+
      React.useImperativeHandle(
 @@ -3666,6 +3668,58 @@
      })
    })
- 
+
 +  it.each(['explicit seek', 'normal progress'] as const)(
 +    'checks a deferred playing scope sample after short %s',
 +    async (change) => {
@@ -194,10 +194,10 @@ diff --git a/src/features/preview/hooks/use-custom-player.ts b/src/features/prev
  } from '../utils/player-command-planner'
 +import { invalidateScopeSeek } from '../utils/scope-capture-inputs'
  import { createLogger } from '@/shared/logging/logger'
- 
+
  const logger = createLogger('useCustomPlayer')
 @@ -76,6 +77,7 @@
- 
+
        ignorePlayerUpdatesRef.current = true
        try {
 +        invalidateScopeSeek()
@@ -263,7 +263,7 @@ diff --git a/src/features/preview/utils/scope-capture-inputs.ts b/src/features/p
 --- a/src/features/preview/utils/scope-capture-inputs.ts
 +++ b/src/features/preview/utils/scope-capture-inputs.ts
 @@ -11,6 +11,11 @@
- 
+
  let inputEpoch = 0
  let seekEpoch = 0
 +// Explicit primary Player seeks are distinct from ordinary frameupdate progress.
