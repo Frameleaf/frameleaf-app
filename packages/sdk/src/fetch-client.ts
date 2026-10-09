@@ -2637,6 +2637,33 @@ export type RenderWorkerUpdateDto = {
     maxWallClockMs?: string | null;
     name?: string;
 };
+export type QueueStatisticsDto = {
+    /** Number of active jobs */
+    active: number;
+    /** Number of completed jobs */
+    completed: number;
+    /** Number of delayed jobs */
+    delayed: number;
+    /** Number of failed jobs */
+    failed: number;
+    /** Number of paused jobs */
+    paused: number;
+    /** Number of waiting jobs */
+    waiting: number;
+};
+export type StorageMigrationStatusResponseDto = {
+    /** Whether the storage template is turned on; a run moves nothing while it is off */
+    enabled: boolean;
+    /** Whether durable work remains, including delayed, paused and unadmitted work */
+    hasUnfinishedWork: boolean;
+    /** Whether a migration is running now */
+    isActive: boolean;
+    /** Whether the storage template migration queue is paused */
+    isPaused: boolean;
+    statistics: QueueStatisticsDto;
+    /** The storage template originals are moved to */
+    template: string;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -6831,20 +6858,6 @@ export type ItemShareReceivedResponseDto = {
     /** The address of this list, as sent in share notifications */
     link: string | null;
 };
-export type QueueStatisticsDto = {
-    /** Number of active jobs */
-    active: number;
-    /** Number of completed jobs */
-    completed: number;
-    /** Number of delayed jobs */
-    delayed: number;
-    /** Number of failed jobs */
-    failed: number;
-    /** Number of paused jobs */
-    paused: number;
-    /** Number of waiting jobs */
-    waiting: number;
-};
 export type QueueStatusLegacyDto = {
     /** Whether the queue is currently active (has running jobs) */
     isActive: boolean;
@@ -10996,6 +11009,8 @@ export type SearchFilterBranch = {
     isFavorite?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -11032,6 +11047,8 @@ export type SearchFilter = {
     isFavorite?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -12812,6 +12829,8 @@ export type SharedSpacePreviewResponseDto = {
     memberCount: number;
     /** Who owns the shared space */
     owner: UserResponseDto;
+    /** Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation. */
+    previewAssetIds: string[];
     /** The role the recipient gets on accept */
     role: AlbumUserRole;
     /** Earliest item date, sensitive and Locked media excluded */
@@ -17548,6 +17567,29 @@ export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
         method: "PUT",
         body: renderWorkerUpdateDto
     })));
+}
+/**
+ * Get storage migration status
+ */
+export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/admin/storage-migration", {
+        ...opts
+    }));
+}
+/**
+ * Run storage migration in the background
+ */
+export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 202;
+        data: StorageMigrationStatusResponseDto;
+    }>("/admin/storage-migration", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Search users
@@ -25489,6 +25531,20 @@ export function getSharedSpacePreview({ id }: {
         status: 200;
         data: SharedSpacePreviewResponseDto;
     }>(`/shared-spaces/${encodeURIComponent(id)}/preview`, {
+        ...opts
+    }));
+}
+/**
+ * View a shared space preview thumbnail
+ */
+export function viewSharedSpacePreviewThumbnail({ assetId, id }: {
+    assetId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/preview/assets/${encodeURIComponent(assetId)}/thumbnail`, {
         ...opts
     }));
 }
