@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import z from 'zod';
+import { isTranscriptSubtitleItem } from '#studio-subtitle-sidecar';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import {
   type StudioSidecarSeal,
@@ -37,6 +38,52 @@ export function sealStudioEmbeddedSubtitles(
 ): StudioEmbeddedSubtitleSeal {
   const source = sealStudioSidecar(graph, binding, range);
   const plan = buildStudioSidecarSemanticPlan(graph, range);
+  // V1 carries timing/text/provenance only. Unknown rendering fields must not
+  // become silently plain text, including future per-cue styling extensions.
+  const itemFields = new Set([
+    'id',
+    'type',
+    'trackId',
+    'from',
+    'durationInFrames',
+    'label',
+    'mediaId',
+    'originId',
+    'linkedGroupId',
+    'source',
+    'sourceLabel',
+    'captionSource',
+    'textRole',
+    'text',
+    'cues',
+  ]);
+  const cueFields = new Set(['id', 'startSeconds', 'endSeconds', 'text']);
+  const timeline = graph.timeline as {
+    tracks: unknown[];
+    items: Record<string, unknown>[];
+    keyframes?: { itemId?: unknown }[];
+    transitions?: { leftClipId?: unknown; rightClipId?: unknown }[];
+  };
+  for (const item of timeline.items) {
+    if (!isTranscriptSubtitleItem(item)) continue;
+    const unsupported =
+      Object.keys(item).some((key) => item[key] !== undefined && !itemFields.has(key)) ||
+      (Array.isArray(item.cues) &&
+        item.cues.some((cue) => Object.keys(cue).some((key) => cue[key] !== undefined && !cueFields.has(key)))) ||
+      timeline.keyframes?.some(
+        (keyframes) =>
+          keyframes.itemId === item.id || (item.originId !== undefined && keyframes.itemId === item.originId),
+      ) ||
+      timeline.transitions?.some(
+        (transition) => transition.leftClipId === item.id || transition.rightClipId === item.id,
+      );
+    if (!unsupported) continue;
+    // Reuse canonical visibility/group/range projection; styled captions that
+    // contribute no output cues and ordinary titles retain their behavior.
+    const contribution = buildStudioSidecarSemanticPlan({ ...graph, timeline: { ...timeline, items: [item] } }, range);
+    if (contribution.cueCount > 0)
+      throw new Error('Embedded MP4 text cannot preserve authored caption styling or rendering fields');
+  }
   const cues = plan.cues.map((cue) => ({
     startMs: Math.round(cue.startSeconds * 1000),
     endMs: Math.round(cue.endSeconds * 1000),

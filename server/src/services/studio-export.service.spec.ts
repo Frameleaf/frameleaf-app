@@ -722,6 +722,16 @@ describe(StudioExportService.name, () => {
       await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow();
       expect(repository.createWithRender).not.toHaveBeenCalled();
       renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+      for (const style of [
+        { color: '#ff00ff' },
+        { styleTemplate: { fontFamily: 'Inter', fontSize: 48, color: '#00ff00' } },
+      ]) {
+        Object.assign(graph.timeline.items[0], style);
+        await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('without authored styling');
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+        delete (graph.timeline.items[0] as any).color;
+        delete (graph.timeline.items[0] as any).styleTemplate;
+      }
       graph.timeline.items[0].text = '<b>Styled caption</b>';
       await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('MP4 timed text requires');
       expect(repository.createWithRender).not.toHaveBeenCalled();
