@@ -2289,6 +2289,22 @@ class TestOcr:
         # the default must be unaffected by the request that just ran
         assert len(text_detector._predict(image)["boxes"]) == 1
 
+    @pytest.mark.parametrize(("max_resolution", "short_side"), [(736, 736), (1000, 1024), (1080, 1088), (1088, 1088)])
+    def test_det_rounds_the_resolution_up_to_a_multiple_of_32(
+        self, path: mock.Mock, max_resolution: int, short_side: int
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
+        text_detector.session = mock.Mock()
+        text_detector.session.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, -1, -1))]
+        text_detector.session.run.return_value = [np.zeros((1, 1, short_side, 2 * short_side), dtype=np.float32)]
+        image = Image.new("RGB", (4000, 2000))
+
+        text_detector._predict(image, maxResolution=max_resolution)
+
+        fed = text_detector.session.run.call_args.args[1]["input.1"]
+        assert fed.shape == (1, 3, short_side, 2 * short_side)  # the short side is never below what was asked
+
     def test_rec_min_score_is_per_request(self, path: mock.Mock, mocker: MockerFixture) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
         text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
