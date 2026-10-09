@@ -85,9 +85,9 @@ describe('login mandatory-change routing', () => {
   it('keeps Frameleaf accessible in both sign-in themes', async () => {
     render(Page, { data: data(false) } as never);
     expect(screen.getByText('Frameleaf', { exact: true })).toBeVisible();
-    expect(screen.queryByRole('img', { name: 'Frameleaf', exact: true })).toBeNull();
+    expect(screen.queryByRole('img', { name: 'Frameleaf' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
-    expect(screen.getByRole('img', { name: 'Frameleaf', exact: true })).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Frameleaf' })).toBeVisible();
     expect(screen.queryByText('Frameleaf', { exact: true })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
   });
