@@ -495,8 +495,10 @@ test('reviewed additive source retains raster bounds and strict source/browser a
   assert.equal(JSON.stringify(envelope), original)
 })
 
-test('deterministic additive coverage source retains raster policy and strict admission', () => {
-  const source = '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904'
+for (const source of [
+  '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904',
+  '723f55c7faae8dc989406bbf7df7a1f795ef1d2053b17379fb71beb87005fcca',
+]) test(`reviewed producer ${source} retains raster policy and strict admission`, () => {
   const previousSource = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
   const original = JSON.stringify(envelope)
   for (const f of envelope.envelopes) {
