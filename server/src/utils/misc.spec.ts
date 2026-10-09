@@ -8,13 +8,15 @@ describe('OpenAPI 3.0 literals', () => {
       properties: {
         executionAvailable: { type: 'boolean', const: false },
         suggestedAdministrativeLabel: { type: 'string', const: 'administrative-original', nullable: true },
+        nullOnly: { type: 'string', const: null, nullable: true },
         const: { type: 'string' },
       },
     };
     removeOpenApi30IncompatibleKeys(schema);
     expect(schema.properties).toEqual({
       executionAvailable: { type: 'boolean', enum: [false] },
-      suggestedAdministrativeLabel: { type: 'string', enum: ['administrative-original'], nullable: true },
+      suggestedAdministrativeLabel: { type: 'string', enum: ['administrative-original', null], nullable: true },
+      nullOnly: { type: 'string', enum: [null], nullable: true },
       const: { type: 'string' },
     });
   });

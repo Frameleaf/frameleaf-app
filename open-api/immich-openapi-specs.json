@@ -74535,7 +74535,8 @@
                       },
                       "suggestedAdministrativeLabel": {
                         "enum": [
-                          "administrative-original"
+                          "administrative-original",
+                          null
                         ],
                         "nullable": true,
                         "type": "string"

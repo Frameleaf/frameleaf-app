@@ -44,7 +44,7 @@ run = [
 
 [tasks.open-api-typescript]
 run = [
-  "oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts",
+  "node scripts/generate-typescript-sdk.mjs",
   { task = "//:sdk:install" },
   { task = "//:sdk:build" },
   { task = "//:sdk:test" },
