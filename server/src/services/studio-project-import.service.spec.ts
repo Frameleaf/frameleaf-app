@@ -132,6 +132,46 @@ describe(StudioProjectImportService.name, () => {
     await expect(readFile(scripted.path)).rejects.toThrow();
   });
 
+  it('refuses a nested SVG Lottie image before registering immutable bytes (FL-105)', async () => {
+    const bytes = Buffer.from(
+      JSON.stringify({
+        v: '5.9.0',
+        layers: [],
+        assets: [{ id: 'nested', p: 'data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Lz48L3N2Zz4=', e: 1 }],
+      }),
+    );
+    const file = await upload(bytes, 'application/json', 'animation.json');
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(BadRequestException);
+    expect(projects.registerImport).not.toHaveBeenCalled();
+    await expect(readFile(file.path)).rejects.toThrow();
+    await expect(readFile(join(directory, 'kept'))).rejects.toThrow();
+  });
+
+  it.each([
+    [
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+      0,
+    ],
+    ['outside.png', 1],
+  ])(
+    'keeps supported inline and declared external Lottie image sources unchanged (FL-105)',
+    async (p, externalReferences) => {
+      const bytes = Buffer.from(JSON.stringify({ v: '5.9.0', layers: [], assets: [{ p }] }));
+      const result = await sut.upload(
+        auth(),
+        PROJECT,
+        IMPORT,
+        await upload(bytes, 'application/json', 'animation.json'),
+      );
+      expect(result).toMatchObject({
+        contentType: 'application/json',
+        externalReferences,
+        checksum: createHash('sha256').update(bytes).digest('hex'),
+      });
+      expect(await readFile(join(directory, 'kept'))).toEqual(bytes);
+    },
+  );
+
   it('removes the upload and refuses files it cannot place', async () => {
     const pdf = await upload(Buffer.from('%PDF-1.7'.padEnd(64, ' ')), 'audio/wav', 'song.wav');
     await expect(sut.upload(auth(), PROJECT, IMPORT, pdf)).rejects.toBeInstanceOf(BadRequestException);
