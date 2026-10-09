@@ -11,6 +11,8 @@ import { useSettingsStore } from "@/features/timeline/deps/settings";
 import { getEditorLayout, getEditorLayoutCssVars } from "@/config/editor-layout";
 import { useEditingShortcuts } from "@/features/timeline/hooks/shortcuts/use-editing-shortcuts";
 import { useUIShortcuts } from "@/features/timeline/hooks/shortcuts/use-ui-shortcuts";
+import { useRollingEditPreviewStore } from "@/features/timeline/stores/rolling-edit-preview-store";
+import { useTimelineSettingsStore } from "@/features/timeline/stores/timeline-settings-store";
 import { useSlipEditPreviewStore } from "@/features/timeline/stores/slip-edit-preview-store";
 import { useLinkedEditPreviewStore } from "@/features/timeline/stores/linked-edit-preview-store";
 import { useItemsStore } from "@/features/timeline/stores/items-store";
@@ -816,6 +818,27 @@ Object.assign(window, {
         slipDelta: useSlipEditPreviewStore.getState().slipDelta,
         linkedUpdates: useLinkedEditPreviewStore.getState().updatesById,
       }),
+    // Read-only Roll observations: no tool choice, graph mutation or history action.
+    rollPreview: () => {
+      const preview = useRollingEditPreviewStore.getState();
+      return structuredClone({
+        trimmedItemId: preview.trimmedItemId,
+        neighborItemId: preview.neighborItemId,
+        handle: preview.handle,
+        neighborDelta: preview.neighborDelta,
+        linkedUpdates: useLinkedEditPreviewStore.getState().updatesById,
+      });
+    },
+    historySnapshot: () => {
+      const history = useTimelineCommandStore.getState();
+      return structuredClone({
+        undo: history.undoStack,
+        redo: history.redoStack,
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
+        dirty: useTimelineSettingsStore.getState().isDirty,
+      });
+    },
     saveTouchTimeline: async (projectId: string) => {
       await saveTimeline(projectId);
       return (await getProject(projectId))?.timeline;
