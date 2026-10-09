@@ -111901,11 +111901,12 @@
         "type": "object"
       },
       "StudioExportSubtitleMode": {
-        "description": "Burn subtitle captions, omit captions, or publish an owner-private SRT sibling; ordinary titles are preserved",
+        "description": "Burn captions, omit captions, publish a private SRT sibling, or embed a qualified MP4 text track; ordinary titles are preserved",
         "enum": [
           "burn",
           "off",
-          "sidecar"
+          "sidecar",
+          "embedded"
         ],
         "type": "string"
       },
@@ -113576,6 +113577,14 @@
           },
           "sidecarOutputFormats": {
             "description": "Output formats whose versioned paired SRT profile this same session verified",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFormat"
+            },
+            "maxItems": 1,
+            "type": "array"
+          },
+          "embeddedOutputFormats": {
+            "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },

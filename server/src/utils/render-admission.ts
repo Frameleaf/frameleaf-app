@@ -461,18 +461,25 @@ const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; contai
   'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
 };
 
-export type RequiredOutput = { format: string; codec: readonly string[]; container: string; profile?: string };
+export type RequiredOutput = {
+  format: string;
+  codec: readonly string[];
+  container: string;
+  profile?: string;
+  subtitleCodec?: string;
+};
 
 /** What a job's output needs, or null when it names no output format. An unknown format needs the impossible. */
 export const requiredOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
   const format = settings?.format;
   const mode = settings?.subtitleMode;
   const sidecar = mode === 'sidecar';
+  const embedded = mode === 'embedded';
   // Unknown modes and unsupported paired-output tuples cannot fall back to an ordinary writer.
   // Graph/range authority and the semantic byte seal remain separate server declaration gates.
   if (
-    (mode !== undefined && mode !== 'burn' && mode !== 'off' && !sidecar) ||
-    (sidecar &&
+    (mode !== undefined && mode !== 'burn' && mode !== 'off' && !sidecar && !embedded) ||
+    ((sidecar || embedded) &&
       (format !== 'mp4-h264' ||
         settings?.color !== 'preserve' ||
         settings?.resolution !== '720p' ||
@@ -486,7 +493,12 @@ export const requiredOutput = (settings: Record<string, unknown> | undefined): R
   }
   const known = Object.hasOwn(OUTPUT_FORMATS, format) ? OUTPUT_FORMATS[format] : undefined;
   return known
-    ? { format, ...known, ...(sidecar && { profile: 'mp4-h264+srt-sidecar-v1' }) }
+    ? {
+        format,
+        ...known,
+        ...(sidecar && { profile: 'mp4-h264+srt-sidecar-v1' }),
+        ...(embedded && { profile: 'mp4-h264+mov-text-v1', subtitleCodec: 'mov_text' }),
+      }
     : { format, codec: [], container: format };
 };
 
@@ -502,6 +514,7 @@ export const provesOutput = (
   const formats = capabilities.formats.map((format) => format.toLowerCase());
   return (
     output.codec.some((encoder) => codecs.has(encoder)) &&
+    (!output.subtitleCodec || codecs.has(output.subtitleCodec)) &&
     formats.includes(output.container) &&
     (!output.profile || capabilities.formats.includes(output.profile))
   );

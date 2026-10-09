@@ -7887,6 +7887,8 @@ export type StudioRenderCandidateDto = {
     outputFormats: StudioExportFormat[];
     /** Output formats whose versioned paired SRT profile this same session verified */
     sidecarOutputFormats?: StudioExportFormat[];
+    /** Output formats whose MP4 mov_text profile and encoder this same session verified */
+    embeddedOutputFormats?: StudioExportFormat[];
 };
 export type StudioRenderEvidenceDto = {
     /** Per-session StudioExport proof; aggregate fields must not authorize an export */
@@ -30936,7 +30938,8 @@ export enum StudioExportQuality {
 export enum StudioExportSubtitleMode {
     Burn = "burn",
     Off = "off",
-    Sidecar = "sidecar"
+    Sidecar = "sidecar",
+    Embedded = "embedded"
 }
 export enum StudioExportVersionState {
     Rendering = "rendering",

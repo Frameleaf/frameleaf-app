@@ -91,8 +91,9 @@ export const evaluateStudioRender = (
   }
   // The API derives this list with requiredOutput/provesOutput, including exact writer/container proof.
   const sidecar = settings.subtitleMode === StudioExportSubtitleMode.Sidecar;
+  const embedded = settings.subtitleMode === StudioExportSubtitleMode.Embedded;
   if (
-    sidecar &&
+    (sidecar || embedded) &&
     (settings.format !== StudioExportFormat.Mp4H264 ||
       settings.color !== StudioExportColor.Preserve ||
       settings.resolution !== StudioExportResolution.$720P ||
@@ -103,7 +104,8 @@ export const evaluateStudioRender = (
   const withOutput = withMemory.filter(
     (candidate) =>
       candidate.outputFormats.includes(settings.format) &&
-      (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)),
+      (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)) &&
+      (!embedded || candidate.embeddedOutputFormats?.includes(settings.format)),
   );
   if (withOutput.length === 0) {
     return { supported: false, refusal: 'codec-unavailable' };
