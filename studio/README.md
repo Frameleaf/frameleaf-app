@@ -509,9 +509,12 @@ contains HDR media.
   75% level. Highlights that are still out of range are scaled as a whole, keeping
   their chromaticity.
 
-`tools/allocation-audit.mjs` and `graph-allocation-audit.json` classify every 8-bit
-format, pooled texture and Canvas2D intermediate in the graph source. The audit fails
-on any undeclared site, or on a declared site that no longer exists.
+`tools/allocation-audit.mjs` and `graph-allocation-audit.json` inventory literal 8-bit
+formats, pooled texture calls and direct literal Canvas2D context calls in the graph
+source. The audit fails on any undeclared detected site, or on a declared site that
+no longer exists. A `canvas2d-context` declaration identifies an 8-bit surface; it
+does not establish whether an HDR render can reach it. Indirect allocations and
+complete float-route reachability still require graph and runtime qualification.
 
 `frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
 
