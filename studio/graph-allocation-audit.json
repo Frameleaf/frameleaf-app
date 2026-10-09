@@ -1,5 +1,5 @@
 {
-  "description": "FL-97 complete graph allocation audit: every 8-bit format, pooled texture and Canvas2D intermediate in the prepared engine source, with its class. tools/allocation-audit.mjs fails on any undeclared or vanished site.",
+  "description": "FL-97 allocation inventory of detected literal 8-bit formats, pooled textures and direct literal Canvas2D contexts in prepared engine source. Undeclared or vanished sites fail; declarations do not establish complete HDR route qualification.",
   "sites": [
     {
       "file": "app/debug/project-debug.ts",
@@ -429,6 +429,642 @@
       "code": "this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',",
       "class": "format-dispatch",
       "reason": "Checks the SDR source format to select pre-interpolation linear decoding; allocates no texture."
+    },
+    {
+      "file": "app/debug/project-debug.ts",
+      "code": "const sctx = sourceCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "app/debug/project-debug.ts",
+      "code": "readbackCtx = new OffscreenCanvas(width, height).getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/editor/components/transition-preview/sample-frames.ts",
+      "code": "const ctx = oc.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/editor/components/transition-preview/transition-preview.tsx",
+      "code": "const outCtx = out.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/editor/components/transition-preview/transition-preview.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/editor/utils/color-grade-tile-renderer.ts",
+      "code": "const ctx = source.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/editor/utils/color-grade-tile-renderer.ts",
+      "code": "const outCtx = out.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/effects/components/effect-thumbnail/engine.ts",
+      "code": "const ctx = oc.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/effects/components/effect-thumbnail/index.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/media-draw.ts",
+      "code": "const scratchCtx = pooledCanvas?.ctx ?? scratchCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/render-item.ts",
+      "code": "const tempCtx = tempCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/render-item.ts",
+      "code": "const maskedSourceCtx = maskedSourceCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/render-item.ts",
+      "code": "const maskedCtx = maskedCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/render-item.ts",
+      "code": "const pinCtx = pinCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-item-renderer/text.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-masks.ts",
+      "code": "const localCtx = localCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-masks.ts",
+      "code": "const outputCtx = outputCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-masks.ts",
+      "code": "const maskCtx = maskCanvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/export/utils/canvas-masks.ts",
+      "code": "const blurredMaskCtx = blurredMaskCanvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/export/utils/canvas-masks.ts",
+      "code": "const outputCtx = outputCanvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-pool.ts",
+      "code": "const ctx = canvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const ctx = renderCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const outputCtx = needsScaling ? outputCanvas.getContext('2d')! : ctx",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const renderCtx = renderCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const stepCtx = step.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const thumbnailCtx = thumbnailCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-video-extractor.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/client-render-engine.ts",
+      "code": "prewarmCtx = prewarmCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/client-render-engine.ts",
+      "code": "prewarmCtx = canvasEl.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/frame-mask-helpers.ts",
+      "code": "const maskSourceCtx = maskSource.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/frame-mask-helpers.ts",
+      "code": "const maskedCtx = maskedCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/keyframes/components/dopesheet-editor/dopesheet-live-ruler-canvas.tsx",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/media-library/utils/thumbnail-generator.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/media-library/workers/media-processor.worker.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/media-library/workers/render-support.ts",
+      "code": "const ctx = canvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/color-scopes-view.tsx",
+      "code": "const wfCtx = wfCanvas?.getContext('2d') ?? null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/color-scopes-view.tsx",
+      "code": "const parCtx = paradeCanvasRef.current?.getContext('2d') ?? null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/color-scopes-view.tsx",
+      "code": "const vsCtx = vsCanvas?.getContext('2d') ?? null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/color-scopes-view.tsx",
+      "code": "const histCtx = histogramCanvasRef.current?.getContext('2d') ?? null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/color-scopes-view.tsx",
+      "code": "const sctx = sc.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/comparison-composition-render-session.ts",
+      "code": "const targetContext = target.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/comparison-composition-render-session.ts",
+      "code": "const ctx = offscreen.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/corner-pin-overlay.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/edit-2up-panels.tsx",
+      "code": "ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/preview/components/edit-2up-panels.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/inline-composition-preview.tsx",
+      "code": "const displayCtx = display.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/inline-composition-preview.tsx",
+      "code": "const ctx = offscreen.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/mask-editor-overlay.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/source-audio-waveform.tsx",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/source-composition.tsx",
+      "code": "ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/video-preview.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/components/video-preview.tsx",
+      "code": "const displayCtx = displayCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-render-pump-controller.ts",
+      "code": "const context = committedPreviewSnapshot.canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-render-pump-controller.ts",
+      "code": "const context = blankProbeCanvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-render-pump-controller.ts",
+      "code": "const displayCtx = displayCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-render-pump-controller.ts",
+      "code": "const snapshotCtx = snapshot.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const offscreenCtx = offscreen.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const snapshotCtx = snapshot.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 4
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const stepCtx = step.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const ctx2d = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "offscreen.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-renderer-controller.ts",
+      "code": "const scaleCtx = scaleCanvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/hooks/use-preview-transition-session-controller.ts",
+      "code": "const snapshotCtx = snapshot.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/preview/workers/decoder-prewarm-worker.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/scene-browser/utils/lazy-thumb.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/timeline/components/clip-filmstrip/image-filmstrip.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/components/clip-filmstrip/tiled-canvas.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/components/clip-filmstrip/visible-filmstrip-canvas.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/components/clip-waveform/visible-waveform-canvas.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/components/timeline-item-canvas-layer.tsx",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/components/timeline-markers.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "features/timeline/components/timeline-ruler-viewport-canvas.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/hooks/use-timeline-drag.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/services/filmstrip-cache.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/services/gif-frame-cache.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/services/gif-frame-cache.ts",
+      "code": "const tempCtx = tempCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/stores/timeline-persistence.ts",
+      "code": "const ctx = step.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/stores/timeline-persistence.ts",
+      "code": "const outCtx = out.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/workers/filmstrip-extraction-worker.ts",
+      "code": "const encodeCtx = encodeCanvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "headless/main.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "headless/main.ts",
+      "code": "layoutMeasureCtx = new OffscreenCanvas(1, 1).getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "headless/signal-frame.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/adaptive-scene-detection-worker.ts",
+      "code": "const context = canvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/captioning/lfm-captioning-provider.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/embeddings/dominant-colors.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/histogram-scene-detection.ts",
+      "code": "const ctx = canvas.getContext('2d', { willReadFrequently: true })!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/lfm-scene-worker.ts",
+      "code": "const ctx = canvas.getContext('2d')!",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/analysis/scene-detection.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/gpu-effects/effects/stylize.ts",
+      "code": "const ctx = canvas?.getContext('2d', { willReadFrequently: true }) as",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "infrastructure/gpu-text/glyph-atlas-text-pipeline.ts",
+      "code": "const scratchCtx = scratchCanvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "runtime/composition-runtime/components/gif-player/gif-canvas.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "runtime/composition-runtime/components/item-visual-wrapper.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "runtime/composition-runtime/components/prores-preview-canvas.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "runtime/composition-runtime/utils/clip-mask-raster.ts",
+      "code": "return sharedCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "runtime/composition-runtime/utils/corner-pin.ts",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "runtime/composition-runtime/utils/text-layout.ts",
+      "code": "measureCtx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion.",
+      "count": 2
+    },
+    {
+      "file": "shared/graphics/dissolve-dither.ts",
+      "code": "const scratchCtx = scratch.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/timeline/transitions/renderers/gpu.ts",
+      "code": "const leftCtx = leftLayer.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/timeline/transitions/renderers/wipe.ts",
+      "code": "scratchCtx = scratchCanvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/ui/property-controls/app-eyedropper.tsx",
+      "code": "colorProbeCtx = canvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/ui/property-controls/app-eyedropper.tsx",
+      "code": "const ctx = canvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/ui/property-controls/app-eyedropper.tsx",
+      "code": "const ctx = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "shared/ui/property-controls/app-eyedropper.tsx",
+      "code": "tmp.getContext('2d')?.putImageData(loupe.data, 0, 0)",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
     }
   ]
 }
