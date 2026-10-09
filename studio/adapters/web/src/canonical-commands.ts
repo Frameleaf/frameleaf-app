@@ -1,3 +1,4 @@
+import { relinkMediaGraph } from '@frameleaf/host/media-relink'
 import { canPartitionSourceEdit, partitionSourceEditAt } from '@/features/timeline/stores/actions/source-edit-partitions'
 import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
@@ -214,6 +215,7 @@ const invalid = (message: string): never => {
  * implements. `history.undo` and `history.redo` are answered by the host's graph history.
  */
 export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
+  'media.relink': ['readme.media-import.4'],
   'captions.set': ['readme.local-ai-analysis.1'],
   'clip.add': ['command.addItem', 'command.addClip'],
   'clip.delete': ['command.removeItems'],
@@ -1211,6 +1213,18 @@ function canonicalAudioEq(value: unknown) {
 }
 
 const handlers: Record<string, Handler> = {
+  async 'media.relink'(payload, context) {
+    const mediaId = stringField(payload, 'mediaId')
+    const source = context.media.get(stringField(payload, 'assetId'))
+    if (!source) invalid('The replacement is not admitted media this session may use')
+    try {
+      const next = relinkMediaGraph({ ...context.project, timeline: buildTimelineFromStores() }, mediaId, source!) as Project
+      await hydrateTimelineStoresFromProject(next)
+      context.project = next
+    } catch (error) {
+      invalid(error instanceof Error ? error.message : 'The replacement cannot preserve this project')
+    }
+  },
   'captions.set'(payload, { cadence }) {
     if (Object.keys(payload).some((key) => key !== 'captions') || !Array.isArray(payload.captions))
       invalid('captions.set requires a captions array')

@@ -19,7 +19,7 @@ import type { MediaMetadata } from '@/types/storage'
 import { hydrateGeneratedMedia, storeGeneratedMedia } from '@frameleaf/host/generated-media'
 import { applyCanonicalCommands, graphDigest } from './canonical-commands'
 import { ENGINE_REVISION } from './engine-revision'
-import { initialMediaRecord, probeVideo, sourceUrlOf } from './library-media'
+import { initialMediaRecord, probeVideo, sourceUrlOf, projectImportRecord, probeProjectImport } from './library-media'
 import { installBrowserShims } from './browser-shims'
 
 installBrowserShims()
@@ -54,6 +54,12 @@ const referencedAssets = (request: StudioCommandApplyRequest): StudioAssetRef[] 
 async function apply(request: StudioCommandApplyRequest): Promise<StudioCommandApplyOutcome> {
   const media = await Promise.all(referencedAssets(request).map((asset) => metadataFor(asset)))
   media.push(...(request.generatedMedia ?? []).map((asset) => initialMediaRecord(asset, 0)))
+  const requested = new Set(request.envelopes.filter((entry) => entry.id === 'media.relink')
+    .map((entry) => (entry.payload as { assetId?: string }).assetId))
+  for (const item of request.projectImports ?? []) {
+    if (!requested.has(item.id)) continue
+    media.push({ ...projectImportRecord(item, 0), ...await probeProjectImport(item, new AbortController().signal) })
+  }
   const graph = hydrateGeneratedMedia(request.graph, request.generatedMedia ?? [])
   const outcome = await applyCanonicalCommands(graph, request.envelopes, media)
   if (outcome.status !== 'applied') return outcome

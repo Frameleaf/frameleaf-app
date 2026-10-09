@@ -569,7 +569,12 @@
       "path": "patches/0118-adaptive-preview-render-size.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "26a6a89d91cab552055e002094e8f51aed0846a2c981943db05f6664ae069a5f"
+    },
+    {
+      "path": "patches/0117-durable-media-relink.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e4ae0e6649505e6b8c79ecd18637affa331fddb1384fcbd4471a6678819c44d2"
     }
   ],
-  "sourceSha256": "36cbedc96ae8a2839db6e655ed35ecb3e7e8dda1c34e56346cb2fb61c7dc201d"
+  "sourceSha256": "1f76c10caf9d241ef09b4f5df2aabb5d59b08bcde51775199ac60b415ad58b51"
 }

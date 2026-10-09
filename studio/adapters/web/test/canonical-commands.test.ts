@@ -562,14 +562,14 @@ describe('canonical commands on the Freecut engine (FL-92)', () => {
     const covered = new Set(Object.values(ENGINE_COMMANDS).flat())
     expect(publicRows.length).toBe(19)
     expect(publicRows.filter((row) => !covered.has(row))).toEqual([])
-    // And every engine command is a catalogue command that changes the graph and can be undone.
+    // Every engine command changes the graph. Source admission cannot undo its external bytes.
     const rows = new Map(
       (
         catalogue as { commands: Array<{ id: string; mutatesGraph: boolean; undoable: boolean }> }
       ).commands.map((row) => [row.id, row]),
     )
     for (const id of Object.keys(ENGINE_COMMANDS)) {
-      expect(rows.get(id)).toMatchObject({ mutatesGraph: true, undoable: true })
+      expect(rows.get(id)).toMatchObject({ mutatesGraph: true, undoable: id !== 'media.relink' })
     }
     // The host routes exactly these commands to the engine.
     expect([...studioEngineCommandIds].sort()).toEqual(Object.keys(ENGINE_COMMANDS).sort())
@@ -1240,4 +1240,69 @@ it('FL103 track curve admission, clearing, atomic refusal and rational empty-tra
  const retimed=await applied(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1},timing:'keep-time'})]);expect((retimed.project.timeline!.tracks[1] as never as {gainEnvelope:{frame:number}[]}).gainEnvelope.map(p=>p.frame)).toEqual([0,24])
  const kept=await applied(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1},timing:'keep-frames'})]);expect((kept.project.timeline!.tracks[1] as never as {gainEnvelope:unknown}).gainEnvelope).toEqual(track().gainEnvelope)
  expect(await applyCanonicalCommands(first.project,[envelope('sequence.setSettings',{sequenceId:'main',fps:{num:24,den:1}})],media)).toMatchObject({status:'rejected'})
+})
+
+describe('durable media relink', () => {
+  it('remaps linked and nested readers without changing their authored ranges', async () => {
+    const clip = { id: 'v-relink', type: 'video', trackId: 'v1', label: 'surf.mp4', mediaId: ASSET,
+      from: 7, durationInFrames: 30, sourceStart: 15, sourceEnd: 45, sourceDuration: 240, sourceFps: 30,
+      linkedGroupId: 'linked', src: 'blob:old', audioSrc: 'blob:old-audio', reverseConformKey: 'old-hash', waveformData: [1] }
+    const graph = project({ items: [clip, { ...clip, id: 'a-relink', type: 'audio', trackId: 'a1' }],
+      compositions: [{ id: 'nested-relink', name: 'Nested', width: 1920, height: 1080, fps: 30, durationInFrames: 90,
+        tracks: project().timeline!.tracks, items: [{ ...clip, id: 'nested-reader' }], transitions: [], keyframes: [] }] } as never)
+    const replacement = { ...media[0]!, id: 'b7c1d2e3-0000-4000-8000-000000000011', contentHash: 'b'.repeat(64) }
+    const result = await applyCanonicalCommands(graph,
+      [envelope('media.relink', { mediaId: ASSET, assetId: replacement.id })], [...media, replacement])
+    expect(result.status).toBe('applied')
+    if (result.status !== 'applied') return
+    for (const item of [...result.project.timeline!.items, ...result.project.timeline!.compositions![0]!.items]) {
+      expect(item).toMatchObject({ mediaId: replacement.id, from: 7, durationInFrames: 30,
+        sourceStart: 15, sourceEnd: 45, sourceFps: 30, linkedGroupId: 'linked' })
+      expect(item.src).toBeUndefined()
+      expect((item as { audioSrc?: string }).audioSrc).toBeUndefined()
+      expect(item.reverseConformKey).toBeUndefined()
+      expect(item.waveformData).toBeUndefined()
+    }
+    expect(graph.timeline!.items[0]!.mediaId).toBe(ASSET)
+  })
+
+  it('refuses a replacement that cannot cover existing source ranges', async () => {
+    const graph = project({ items: [{ id: 'long', type: 'video', trackId: 'v1', label: 'long', mediaId: ASSET,
+      from: 0, durationInFrames: 30, sourceStart: 120, sourceEnd: 150, sourceDuration: 240, sourceFps: 30 }] })
+    const replacement = { ...media[0]!, id: STILL, duration: 1 }
+    const result = await applyCanonicalCommands(graph,
+      [envelope('media.relink', { mediaId: ASSET, assetId: STILL })], [replacement])
+    expect(result).toMatchObject({ status: 'rejected', reason: 'invalid' })
+    expect(graph.timeline!.items[0]!.mediaId).toBe(ASSET)
+  })
+  it('keeps Lottie segment edits while refreshing admitted source timing', async () => {
+    const graph = project({ items: [{ id: 'animation', type: 'lottie', trackId: 'v1', mediaId: ASSET,
+      from: 10, durationInFrames: 60, frameRate: 30, totalFrames: 240, segmentStart: 30, segmentEnd: 59,
+      loopMode: 'pingpong', textOverrides: { title: 'local edit' }, src: 'blob:old' }] } as never)
+    const replacement = { ...media[0]!, id: STILL, mimeType: 'application/lottie+json', duration: 10, fps: 30 }
+    const result = await applyCanonicalCommands(graph, [envelope('media.relink', { mediaId: ASSET, assetId: STILL })], [replacement])
+    expect(result.status).toBe('applied')
+    if (result.status !== 'applied') return
+    expect(result.project.timeline!.items[0]).toMatchObject({ mediaId: STILL, frameRate: 30, totalFrames: 300,
+      segmentStart: 30, segmentEnd: 59, loopMode: 'pingpong', textOverrides: { title: 'local edit' } })
+  })
+
+  it('refuses a shorter replacement when legacy source bounds are not explicit', async () => {
+    const graph = project({ items: [{ id: 'legacy', type: 'video', trackId: 'v1', mediaId: ASSET,
+      from: 0, durationInFrames: 30, offset: 270, sourceDuration: 300, sourceFps: 30 }] } as never)
+    const replacement = { ...media[0]!, id: STILL }
+    expect(await applyCanonicalCommands(graph, [envelope('media.relink', { mediaId: ASSET, assetId: STILL })], [replacement]))
+      .toMatchObject({ status: 'rejected', reason: 'invalid' })
+    expect(graph.timeline!.items[0]!.mediaId).toBe(ASSET)
+  })
+
+  it('refuses a visual replacement whose metadata probe did not yield dimensions', async () => {
+    const graph = project({ items: [{ id: 'image', type: 'image', trackId: 'v1', mediaId: STILL,
+      from: 0, durationInFrames: 30, src: 'blob:old' }] } as never)
+    const replacement = { ...media[1]!, id: ASSET, width: 0, height: 0 }
+    expect(await applyCanonicalCommands(graph, [envelope('media.relink', { mediaId: STILL, assetId: ASSET })], [replacement]))
+      .toMatchObject({ status: 'rejected', reason: 'invalid' })
+    expect(graph.timeline!.items[0]!.mediaId).toBe(STILL)
+  })
+
 })

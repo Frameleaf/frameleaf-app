@@ -18,6 +18,8 @@
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import type {
   StudioDraftResult,
+  StudioEditorScope,
+  StudioEditorCommitResult,
   StudioHostContext,
   StudioNavigationTarget,
   StudioNotificationTone,
@@ -28,7 +30,7 @@ import type {
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 6;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 7;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -50,6 +52,10 @@ export interface StudioFrameServiceCalls {
   stageDraft: {
     args: [graph: unknown, commandIds: string[], baseRevision?: number, graphVersion?: number];
     result: StudioDraftResult;
+  };
+  commitEditorDraft: {
+    args: [graph: unknown, baseRevision: number, scope: StudioEditorScope];
+    result: StudioEditorCommitResult;
   };
   reloadProject: { args: []; result: StudioProjectHandle };
   authorizeGeneratedMedia: { args: []; result: boolean };
@@ -102,6 +108,7 @@ export interface StudioCommandApplyRequest {
   /** Library media the commands may reference, for durations and frame rates. */
   assets: StudioHostContext['assets'];
   generatedMedia?: StudioHostContext['generatedMedia'];
+  projectImports?: StudioHostContext['projectImports'];
 }
 
 export type StudioCommandApplyOutcome =

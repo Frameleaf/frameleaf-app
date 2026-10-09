@@ -931,13 +931,13 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 53, host: 2, 'bundle-import': 1, 'not-implemented': 17 });
+  assert.deepEqual(counts, { engine: 54, host: 2, 'bundle-import': 1, 'not-implemented': 16 });
   assert.equal(mutating.length, 73);
 });
 
 // FL-105 replay is independent of the engine and checks every new positive/negative answer.
 test('Lottie map replacement and refusals match the independent reference', () => {
-  const cases = fixtures.cases.filter((entry) => entry.story === 'FL-105');
+  const cases = fixtures.cases.filter((entry) => entry.covers.includes('lottie.update'));
   assert.ok(cases.some((entry) => entry.expect.status === 'applied'));
   assert.ok(cases.some((entry) => entry.expect.status === 'rejected'));
   for (const entry of cases) {
@@ -950,5 +950,21 @@ test('Lottie map replacement and refusals match the independent reference', () =
     } else {
       assert.deepEqual(outcome, entry.expect, entry.id);
     }
+  }
+});
+
+
+test('media relink readers and refusals match the independent source-binding reference', () => {
+  const cases = fixtures.cases.filter((entry) => entry.covers.includes('media.relink'));
+  assert.ok(cases.some((entry) => entry.expect.status === 'applied'));
+  assert.ok(cases.some((entry) => entry.expect.status === 'rejected'));
+  for (const entry of cases) {
+    const base = fixtures.bases[entry.base];
+    const actual = applyBatch(base.graph, entry.envelopes, fixtures.media[entry.media ?? base.media]);
+    if (entry.expect.status === 'applied') {
+      assert.equal(actual.status, 'applied', entry.id);
+      assert.deepEqual(actual.graph, entry.expect.graph, entry.id);
+      assert.equal(graphDigest(actual.graph), entry.expect.digest, entry.id);
+    } else assert.deepEqual(actual, entry.expect, entry.id);
   }
 });
