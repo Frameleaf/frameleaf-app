@@ -172,7 +172,7 @@ window.__vite_plugin_react_preamble_installed__ = true
   for (const value of report.signal.title) assert.ok(Math.abs(value - 0.5807) <= 0.015, `title PQ ${report.signal.title}`);
   assert.equal(report.displayUntouched, true, 'the capture left the preview canvas as it was');
   assert.equal(report.cacheIntact, true, 'the capture did not replace the cached frame');
-  assert.match(report.label, /^Scopes · BT\.2100 PQ · BT\.2020 · 1\.0 = 10,000 cd\/m² · frame 12$/);
+  assert.equal(report.label, 'Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12 · revision unknown');
   console.log(`Scope HDR capture: PQ clip ${report.signal.clip[0].toFixed(3)}, title ${report.signal.title[0].toFixed(3)}; preview canvas and cache untouched; "${report.label}"`);
 } finally {
   await browser.close();

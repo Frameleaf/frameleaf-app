@@ -254,7 +254,7 @@ const required = {
     "web-lint",
     /^pnpm exec eslint \. --max-warnings 0 --concurrency 2$/m,
   ],
-  "Medium Tests (Server)": ["test.yml", "server-medium-tests", /ci-medium/],
+  "Medium Tests (Server)": ["test.yml", "server-medium-tests", /docker run --rm/],
   "Unit Test CLI": ["test.yml", "cli-unit-tests", /ci-unit/],
   "SQL Schema Checks": ["test.yml", "sql-schema-up-to-date", /migrations:run/],
   ShellCheck: ["test.yml", "shellcheck", /ludeeus\/action-shellcheck@/],

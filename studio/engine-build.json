@@ -539,7 +539,12 @@
       "path": "patches/0111-multichannel-shared-retiming.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1c28fe3886e8c64ebd0d2ce944fa6ad543032976a73e303cb37f351ad69ac875"
+    },
+    {
+      "path": "patches/0112-filler-apply-undo-routing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "947139bbfe0b3624e26068bfd85c49d4dc943c43d73997368e969d9ece810034"
     }
   ],
-  "sourceSha256": "7c83bc88923abb5e8995544567d437d260461569ef5dfaf14b893a4d664d9481"
+  "sourceSha256": "5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec"
 }

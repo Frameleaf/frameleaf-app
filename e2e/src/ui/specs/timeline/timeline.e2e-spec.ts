@@ -21,6 +21,7 @@ import {
   TimelineTestContext,
 } from 'src/ui/mock-network/timeline-network';
 import { utils } from 'src/utils.js';
+import { startTimelineProfile } from './failure-profile';
 import {
   assetViewerUtils,
   flowUtils,
@@ -88,6 +89,15 @@ test.describe('Timeline', () => {
     changes.assetDeletions = [];
     changes.assetArchivals = [];
     changes.assetFavorites = [];
+  });
+
+  let finishProfile: (() => Promise<void>) | undefined;
+  test.beforeEach(async ({ page, browserName }, info) => {
+    finishProfile = await startTimelineProfile(page, info, browserName);
+  });
+  test.afterEach(async () => {
+    await finishProfile?.();
+    finishProfile = undefined;
   });
 
   const assetsInMonth = (yearMonth: string) => assets.filter((asset) => getYearMonth(assets, asset.id) === yearMonth);

@@ -312,7 +312,10 @@ it('preserves exact selected-root priority for every pair of actual stage outcom
       'source-unavailable',
       'workload-disabled',
     ];
+    const expectedCounts: Record<string, number> = {};
+    for (const outcome of expected.values()) expectedCounts[outcome] = (expectedCounts[outcome] ?? 0) + 1;
     const before = (await store.listRuns(10, 0)).find((run) => run.id === runId)!;
+    expect(before).toMatchObject({ total: expected.size, ...expectedCounts });
     expect(before.reasons.filter((reason) => knownReasons.includes(reason))).toEqual(['local-capacity']);
     // Operational bookkeeping can carry every deferred reason while never inflating selected roots.
     const deferred = knownReasons.map((reason) => ({ id: randomUUID(), itemKey: `reason/${reason}`, reason }));
@@ -351,7 +354,7 @@ it('preserves exact selected-root priority for every pair of actual stage outcom
       )
       .execute();
     const after = (await store.listRuns(10, 0)).find((run) => run.id === runId)!;
-    expect(after.total).toBe(121);
+    expect(after).toMatchObject({ total: expected.size, ...expectedCounts });
     expect(after.stageTotals.total).toBe(249);
     expect(after.reasons.filter((reason) => knownReasons.includes(reason))).toEqual(knownReasons);
   } finally {
