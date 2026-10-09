@@ -1,7 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -84,6 +84,80 @@ beforeAll(async () => {
 });
 
 describe(SharedSpaceService.name, () => {
+  describe('preview items (FL-349)', () => {
+    it('names the newest items an invitee may see and opens only their thumbnails', async () => {
+      const context = setup();
+      const { sut, albums, ctx } = context;
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const space = await albums.create(authOf(owner.id), {
+        albumName: 'Family',
+        kind: AlbumKind.Space,
+        albumUsers: [{ userId: invitee.id, role: AlbumUserRole.Viewer }],
+      });
+      const add = async (day: number, extra: Parameters<typeof ctx.newAsset>[0] = {}) => {
+        const { asset } = await ctx.newAsset({
+          ownerId: owner.id,
+          fileCreatedAt: new Date(`2026-01-${String(day).padStart(2, '0')}T12:00:00Z`),
+          ...extra,
+        });
+        await ctx.newAlbumAsset({ albumId: space.id, assetId: asset.id });
+        return asset.id;
+      };
+
+      const visible: string[] = [];
+      for (let day = 1; day <= 14; day++) {
+        visible.push(await add(day));
+      }
+      // Newer than every visible item, so any leak would head the list
+      const sensitive = await add(28);
+      await sql`update public.asset set is_nsfw = true where id = ${sensitive}::uuid`.execute(ctx.database);
+      const hidden = await add(27, { visibility: AssetVisibility.Hidden });
+      const locked = await add(26);
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: locked, reason: AssetLockReason.Marked, lockedBy: null })
+        .execute();
+      const trashed = await add(25, { deletedAt: new Date() });
+
+      const preview = await sut.getPreview(authOf(invitee.id), space.id);
+      expect(preview.accepted).toBe(false);
+      expect(preview.assetCount).toBe(14);
+      expect(preview.previewAssetIds).toEqual(visible.slice(2).toReversed());
+      for (const id of [sensitive, hidden, locked, trashed]) {
+        expect(preview.previewAssetIds).not.toContain(id);
+      }
+      const [listedInvitation] = await sut.getInvitations(authOf(invitee.id));
+      expect(listedInvitation.previewAssetIds).toEqual(preview.previewAssetIds);
+
+      const newest = visible.at(-1)!;
+      await ctx.newAssetFile({ assetId: newest, type: AssetFileType.Thumbnail, path: '/thumbs/newest.webp' });
+      await ctx.newAssetFile({ assetId: sensitive, type: AssetFileType.Thumbnail, path: '/thumbs/sensitive.webp' });
+      await ctx.newAssetFile({ assetId: visible[0], type: AssetFileType.Thumbnail, path: '/thumbs/oldest.webp' });
+
+      await expect(sut.getPreviewThumbnail(authOf(invitee.id), space.id, newest)).resolves.toEqual(
+        expect.objectContaining({ path: '/thumbs/newest.webp', fileName: `${newest}_thumbnail.webp` }),
+      );
+      // In the space, but not among the twelve the preview names
+      await expect(sut.getPreviewThumbnail(authOf(invitee.id), space.id, visible[0])).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(sut.getPreviewThumbnail(authOf(invitee.id), space.id, sensitive)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(sut.getPreviewThumbnail(authOf(stranger.id), space.id, newest)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      // Declining ends it: the thumbnail closes with the invitation
+      await sut.decline(authOf(invitee.id), space.id);
+      await expect(sut.getPreviewThumbnail(authOf(invitee.id), space.id, newest)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('roles', () => {
     it('lets the owner and an editor contribute, and a viewer only look', async () => {
       const context = setup();

@@ -7111,6 +7111,98 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/storage-migration": {
+      "get": {
+        "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
+        "operationId": "getStorageMigrationStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get storage migration status",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queue.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.",
+        "operationId": "runStorageMigrationInBackground",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run storage migration in the background",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queue.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -38782,7 +38874,7 @@
     },
     "/shared-spaces/invitations": {
       "get": {
-        "description": "Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: no assets, and counts that exclude media marked sensitive and Locked media.",
+        "description": "Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: up to 12 preview item ids, and counts that exclude media marked sensitive and Locked media.",
         "operationId": "getSharedSpaceInvitations",
         "parameters": [],
         "responses": {
@@ -39967,7 +40059,7 @@
     },
     "/shared-spaces/{id}/preview": {
       "get": {
-        "description": "What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
+        "description": "What the shared space exposes, for someone holding an invitation to it or already in it. previewAssetIds lists up to 12 of the newest items, never media marked sensitive, hidden media or Locked media; their small thumbnails come from GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail. No file names, people or places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
         "operationId": "getSharedSpacePreview",
         "parameters": [
           {
@@ -40012,9 +40104,84 @@
           {
             "version": "v3",
             "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Updated",
+            "description": "Added previewAssetIds"
           }
         ],
         "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/preview/assets/{assetId}/thumbnail": {
+      "get": {
+        "description": "The small thumbnail of one item listed in previewAssetIds, for someone holding an invitation to the shared space or already in it. Only the ids the preview lists right now are served, and only at thumbnail size; any other item, size or caller gets 404.",
+        "operationId": "viewSharedSpacePreviewThumbnail",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "path",
+            "description": "One of the previewAssetIds of the shared space preview",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a shared space preview thumbnail",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/shared-spaces/{id}/visit": {
@@ -106690,6 +106857,12 @@
           "isOffline": {
             "$ref": "#/components/schemas/BoolFilter"
           },
+          "isPanorama": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isScreenshot": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
@@ -106803,6 +106976,12 @@
             "$ref": "#/components/schemas/BoolFilter"
           },
           "isOffline": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isPanorama": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
           },
           "lensModel": {
@@ -109389,6 +109568,16 @@
             "$ref": "#/components/schemas/UserResponseDto",
             "description": "Who owns the shared space"
           },
+          "previewAssetIds": {
+            "description": "Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array"
+          },
           "role": {
             "$ref": "#/components/schemas/AlbumUserRole",
             "description": "The role the recipient gets on accept"
@@ -109410,6 +109599,7 @@
           "invitedBy",
           "memberCount",
           "owner",
+          "previewAssetIds",
           "role"
         ],
         "type": "object"
@@ -111018,6 +111208,42 @@
           "exports"
         ],
         "type": "string"
+      },
+      "StorageMigrationStatusResponseDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the storage template is turned on; a run moves nothing while it is off",
+            "type": "boolean"
+          },
+          "hasUnfinishedWork": {
+            "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+            "type": "boolean"
+          },
+          "isActive": {
+            "description": "Whether a migration is running now",
+            "type": "boolean"
+          },
+          "isPaused": {
+            "description": "Whether the storage template migration queue is paused",
+            "type": "boolean"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/QueueStatisticsDto"
+          },
+          "template": {
+            "description": "The storage template originals are moved to",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "hasUnfinishedWork",
+          "isActive",
+          "isPaused",
+          "statistics",
+          "template"
+        ],
+        "type": "object"
       },
       "StraightenParameters": {
         "properties": {
