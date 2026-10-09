@@ -151,8 +151,11 @@ test.describe('Map', () => {
     await expect(list.getByRole('button', { name: /^thompson-springs\.jpg/ })).toBeVisible();
 
     // Back from the Library's map area lands on the same map position (the address keeps it).
-    await tools.getByRole('button', { name: 'Zoom out' }).click();
     await expect(page).toHaveURL(/\/map#[\d.-]+\/[\d.-]+\/[\d.-]+/);
+    const zoomBefore = Number(new URL(page.url()).hash.slice(1).split('/', 1)[0]);
+    await tools.getByRole('button', { name: 'Zoom out' }).click();
+    // The hash changes on moveend; its old value is still valid during the zoom animation.
+    await expect.poll(() => Number(new URL(page.url()).hash.slice(1).split('/', 1)[0])).toBe(zoomBefore - 0.5);
     const position = new URL(page.url()).hash;
     await page.getByRole('button', { name: 'Search this area' }).click();
     await page.waitForURL(/\/photos\?area=/);
