@@ -174,7 +174,8 @@ try {
       y: box.y + box.height / 2,
       id: 1,
     };
-    const dx = (box.width * 30) / 120;
+    // Pointer Slip negates displacement: left30 timeline frames advances source by30.
+    const dx = -(box.width * 30) / 120;
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [start],
