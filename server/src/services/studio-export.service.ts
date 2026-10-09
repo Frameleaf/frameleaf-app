@@ -420,7 +420,8 @@ export class StudioExportService {
       } catch {
         throw new ConflictException({
           code: 'studio_export_embedded_unsupported',
-          message: 'MP4 timed text requires nonempty plain captions without overlapping cues on the root timeline',
+          message:
+            'MP4 timed text requires nonempty plain captions without authored styling, rendering fields or overlapping cues on the root timeline',
         });
       }
       contract.embeddedSubtitles = embeddedSubtitleSeal;

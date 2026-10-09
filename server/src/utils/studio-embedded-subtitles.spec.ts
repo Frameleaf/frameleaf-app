@@ -122,6 +122,95 @@ describe('immutable MP4 text-track semantics', () => {
       parseStudioExportContract({ video: { minBitDepth: 8, transfer: null }, audio: null, embeddedSubtitles: seal }),
     ).not.toBeNull();
   });
+  it.each(['legacy-color', 'style-template'])(
+    'refuses authored %s styling rather than silently exporting bare text',
+    (kind) => {
+      const graph = captionGraph();
+      const caption = graph.timeline.items[1] as any;
+      if (kind === 'legacy-color') {
+        graph.timeline.items[1] = {
+          id: 'legacy-extracted',
+          type: 'text',
+          textRole: 'caption',
+          captionSource: { type: 'embedded-subtitles' },
+          trackId: 'c',
+          from: 15,
+          durationInFrames: 30,
+          text: 'Legacy cue',
+          color: '#ff00ff',
+        } as any;
+      } else caption.styleTemplate = { fontFamily: 'Inter', fontSize: 48, color: '#00ff00' };
+      expect(() => sealStudioEmbeddedSubtitles(graph, binding)).toThrow(/styling/);
+    },
+  );
+  it.each([
+    'fontSize',
+    'fontFamily',
+    'fontWeight',
+    'fontStyle',
+    'underline',
+    'color',
+    'letterSpacing',
+    'backgroundColor',
+    'backgroundRadius',
+    'textAlign',
+    'verticalAlign',
+    'lineHeight',
+    'textPadding',
+    'textShadow',
+    'stroke',
+    'textSpans',
+    'spanLayout',
+    'textLayoutDrafts',
+    'textStylePresetId',
+    'textStyleScale',
+    'textMotion',
+    'transform',
+    'effects',
+    'motionModifiers',
+    'motionLayers',
+    'fadeIn',
+    'fadeOut',
+    'futureAuthoredStyle',
+  ])('refuses contributing authored field %s', (field) => {
+    const graph = captionGraph();
+    (graph.timeline.items[1] as any)[field] = {};
+    expect(() => sealStudioEmbeddedSubtitles(graph, binding)).toThrow(/styling/);
+  });
+  it('refuses future per-cue styling and preserves noncontributing styles plus ordinary titles', () => {
+    const graph = captionGraph();
+    (graph.timeline.items[1] as any).cues[0].style = { color: '#ff00ff' };
+    expect(() => sealStudioEmbeddedSubtitles(graph, binding)).toThrow(/styling/);
+    delete (graph.timeline.items[1] as any).cues[0].style;
+    Object.assign(graph.timeline.items[0], { color: '#ff00ff', fontSize: 48 });
+    Object.assign(graph.timeline.items[2], { color: '#ff00ff' });
+    expect(() => sealStudioEmbeddedSubtitles(graph, binding)).not.toThrow();
+    graph.timeline.items.push({
+      ...graph.timeline.items[1],
+      id: 'outside',
+      from: 120,
+      durationInFrames: 120,
+      color: '#ff00ff',
+    } as any);
+    expect(() => sealStudioEmbeddedSubtitles(graph, binding, { inPoint: 30, outPoint: 90 })).not.toThrow();
+  });
+  it.each(['keyframes', 'inherited-keyframes', 'transition'])(
+    'refuses contributing caption %s rendering semantics',
+    (kind) => {
+      const graph = captionGraph();
+      if (kind === 'transition') graph.timeline.transitions = [{ leftClipId: 'c', rightClipId: 'title' }] as any;
+      else {
+        if (kind === 'inherited-keyframes') (graph.timeline.items[1] as any).originId = 'parent-caption';
+        graph.timeline.keyframes = [
+          {
+            itemId: kind === 'keyframes' ? 'c' : 'parent-caption',
+            properties: [{ property: 'opacity', keyframes: [] }],
+          },
+        ] as any;
+      }
+      expect(() => sealStudioEmbeddedSubtitles(graph, binding)).toThrow(/styling/);
+    },
+  );
   it.each(['empty', 'overlap', 'markup', 'blank-line'])(
     'refuses unsupported %s cue semantics before a track promise exists',
     (kind) => {
