@@ -34,7 +34,7 @@ import type { VirtualWorkspace } from './virtual-workspace'
  * (FL-93): Freecut counts source frames in this unit, and `29.97` drifts a tenth of a frame from
  * a 30000/1001 source over an hour.
  */
-const COMMON_FRAME_RATES = [
+const COMMON_FRAME_RATES: readonly [number, ...number[]] = [
   24_000 / 1001,
   24,
   25,

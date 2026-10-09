@@ -39,6 +39,25 @@ describe('project cadence (FL-93)', () => {
     expect(snapFrameRate(25.01)).toBe(25)
   })
 
+  it('uses the existing fallback for nonfinite and nonpositive packet rates', () => {
+    for (const fps of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -0, -1]) {
+      expect(snapFrameRate(fps)).toBe(30)
+    }
+  })
+
+  it('preserves every exact supported packet rate', () => {
+    for (const fps of [24_000 / 1001, 24, 25, 30_000 / 1001, 30, 48, 50, 60_000 / 1001, 60, 120]) {
+      expect(snapFrameRate(fps)).toBe(fps)
+    }
+  })
+
+  it('keeps the earlier nearest rate on ties and the inclusive 0.5 fps threshold', () => {
+    expect(snapFrameRate(24.5)).toBe(24)
+    expect(snapFrameRate(25.5)).toBe(25)
+    expect(snapFrameRate(25.5001)).toBe(25.5)
+    expect(snapFrameRate(27.34567)).toBe(27.346)
+  })
+
   it('matches a new project to its handoff only when every video shares an editor rate exactly', () => {
     const video = (id: string, fps: number) => ({ id, mimeType: 'video/mp4', fps })
     expect(handoffProjectFps(['a', 'b'], [video('a', 25), video('b', 25)])).toBe(25)
