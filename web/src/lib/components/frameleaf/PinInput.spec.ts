@@ -21,4 +21,14 @@ describe('PIN disabled state', () => {
     expect(screen.getByRole('textbox', { name: 'Recovery code' })).toBeDisabled();
     expect(screen.getByRole('textbox').closest('.group')).toHaveAttribute('data-disabled');
   });
+
+  it('keeps an explicitly forwarded undefined disabled prop enabled instead of using the field default', async () => {
+    const view = render(PinInputTestHarness, { disabled: true, override: undefined, forwardOverride: true });
+    const input = screen.getByRole('textbox', { name: 'Recovery code' });
+    expect(input).toBeEnabled();
+    expect(input.closest('.group')).not.toHaveAttribute('data-disabled');
+    await view.rerender({ disabled: true, forwardOverride: false });
+    expect(screen.getByRole('textbox', { name: 'Recovery code' })).toBeDisabled();
+    expect(screen.getByRole('textbox').closest('.group')).toHaveAttribute('data-disabled');
+  });
 });
