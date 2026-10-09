@@ -1,4 +1,4 @@
-import { sql } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
@@ -15,9 +15,92 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { DB } from 'src/schema/index.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { explainLibraryRunRead, getLibraryQueueDB, profileLibraryRunRead } from 'test/medium/library-queue-database.js';
 import { MediumTestContext } from 'test/medium.factory.js';
+
+// Generate each full-width root once, then retain the canonical intent and its copied alias.
+const seedSummaryRoots = (db: Kysely<DB>, id: string, origin: string, after: number, take = 1000) =>
+  sql`with roots as materialized (
+    select 'library/'||${id}::text||'/'||lpad(n::text,20,'0') "itemKey",
+      md5(n::text)::uuid::text "rootItemKey",md5(n::text)||md5(n::text) "sourceKey",
+      jsonb_build_object('id',md5(n::text)::uuid::text,'source','upload') selection
+    from generate_series(${after + 1}::int,${after + take}::int) n
+  )
+  insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId","librarySourceKey","libraryIntent","libraryOriginComplete")
+  select runs.id,roots."itemKey",roots."rootItemKey",${JobName.SidecarCheck},${QueueName.Sidecar},roots.selection,${id}::uuid,
+    case when runs.canonical then roots."sourceKey" end,
+    case when runs.canonical then jsonb_build_object('name',${JobName.SidecarCheck}::text,'queue',${QueueName.Sidecar}::text,'data',roots.selection,
+      'safeToRetry',false,'sensitive',false,'deadlineMs',300000,'runId',${id}::text,'itemKey',roots."itemKey",'rootItemKey',roots."rootItemKey") end,runs.canonical
+  from roots cross join (values (${id}::uuid,true),(${origin}::uuid,false)) runs(id,canonical)`.execute(db);
+
+it('preserves full canonical and copied seed values across adjacent root pages', async () => {
+  const db = await getLibraryQueueDB();
+  const store = new SqlQueueStore(db);
+  try {
+    await store.initialize([QueueName.Sidecar]);
+    const id = await store.createRun('seed-canonical', {});
+    const origin = await store.createRun('seed-origin', {});
+    await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state)
+      values (${id}::uuid,${id}::uuid,${JobName.SidecarCheck},${QueueName.Sidecar},false,false,300000,'enumerating')`.execute(
+      db,
+    );
+    await sql`insert into job_selection_run("runId","selectionId","copyComplete","libraryVersion")
+      values (${origin}::uuid,${id}::uuid,true,500000)`.execute(db);
+    const bookkeeping = () =>
+      sql`select to_jsonb(s) source,to_jsonb(m) membership
+      from job_selection s join job_selection_run m on m."selectionId"=s.id`.execute(db);
+    const before = (await bookkeeping()).rows;
+    await seedSummaryRoots(db, id, origin, 0, 2);
+    await seedSummaryRoots(db, id, origin, 2, 2);
+    const { rows } = await sql`select "runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",
+      "librarySourceKey","libraryIntent","libraryOriginComplete",state,"selectionVersion","jobId"
+      from job_run_item order by "runId","itemKey"`.execute(db);
+    const expected = [id, origin].sort().flatMap((runId) =>
+      Array.from({ length: 4 }, (_, index) => {
+        const hash = createHash('md5')
+          .update(String(index + 1))
+          .digest('hex');
+        const rootItemKey = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
+        const itemKey = `library/${id}/${String(index + 1).padStart(20, '0')}`;
+        const selection = { id: rootItemKey, source: 'upload' };
+        return {
+          runId,
+          itemKey,
+          rootItemKey,
+          stage: JobName.SidecarCheck,
+          queue: QueueName.Sidecar,
+          selection,
+          selectionId: id,
+          librarySourceKey: runId === id ? hash + hash : null,
+          libraryIntent:
+            runId === id
+              ? {
+                  name: JobName.SidecarCheck,
+                  queue: QueueName.Sidecar,
+                  data: selection,
+                  safeToRetry: false,
+                  sensitive: false,
+                  deadlineMs: 300_000,
+                  runId: id,
+                  itemKey,
+                  rootItemKey,
+                }
+              : null,
+          libraryOriginComplete: runId === id,
+          state: 'pending',
+          selectionVersion: 0,
+          jobId: null,
+        };
+      }),
+    );
+    expect(rows).toEqual(expected);
+    expect((await bookkeeping()).rows).toEqual(before);
+  } finally {
+    await db.destroy();
+  }
+});
 
 /** Synthetic ledger construction is excluded from public read timing. The separate service
  * harness proves actual asset/source acceptance; this calibrates its million-row read shape.
@@ -86,15 +169,13 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     expect(await store.complete(producer, [])).toBe(true);
     // Deliberate SQL-only fixture population with production-width item/hash keys and
     // copied-origin rows (no canonical intent). Not an append/checkpoint/media acceptance.
-    // Synthetic construction uses 1000-row statements to avoid 4000 serial round trips before read timing.
-    for (let after = 0; after < 500_000; after += 1000)
-      for (const run of [id, origin])
-        await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId","librarySourceKey","libraryIntent","libraryOriginComplete")
-          select ${run}::uuid,'library/'||${id}::text||'/'||lpad(n::text,20,'0'),md5(n::text)::uuid::text,${JobName.SidecarCheck},${QueueName.Sidecar},jsonb_build_object('id',md5(n::text)::uuid::text,'source','upload'),${id}::uuid,
-            case when ${run === id} then md5(n::text)||md5(n::text) end,
-            case when ${run === id} then jsonb_build_object('name',${JobName.SidecarCheck}::text,'queue',${QueueName.Sidecar}::text,'data',jsonb_build_object('id',md5(n::text)::uuid::text,'source','upload'),
-              'safeToRetry',false,'sensitive',false,'deadlineMs',300000,'runId',${id}::text,'itemKey','library/'||${id}::text||'/'||lpad(n::text,20,'0'),'rootItemKey',md5(n::text)::uuid::text) end,${run === id}
-          from generate_series(${after + 1}::int,${after + 1000}::int) n`.execute(db);
+    // Each 1000-root statement retains both run identities without a second generation/round trip.
+    const seedStarted = performance.now();
+    for (let after = 0; after < 500_000; after += 1000) await seedSummaryRoots(db, id, origin, after);
+    console.info(
+      'library-public-seed-complete',
+      JSON.stringify({ rootsPerRun: 500_000, ledgerRows: 1_000_001, elapsedMs: performance.now() - seedStarted }),
+    );
     await sql`update job_selection set state='ready',"sourceClosedAt"=now(),"capturedAt"=now(),"appendSequence"=500000 where id=${id}::uuid`.execute(
       db,
     );
