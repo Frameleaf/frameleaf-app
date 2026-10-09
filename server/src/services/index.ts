@@ -21,6 +21,7 @@ import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.s
 import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
+import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
@@ -161,6 +162,7 @@ export const services = [
   CloudBackupDetailsService,
   CloudBackupService,
   BuddyBackupService,
+  CastService,
   BuddyBackupPeerService,
   BuddyBackupCaptureService,
   BuddyBackupRestoreService,

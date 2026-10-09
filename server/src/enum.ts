@@ -3283,6 +3283,8 @@ export enum PushEventType {
   Memories = 'memories',
   /** A Studio render (export) finished. */
   RenderFinished = 'render-finished',
+  /** A Studio render (export) started or made progress (Live Activity on iOS, progress notification on Android). */
+  RenderProgress = 'render-progress',
   /** Access to an album, shared space or partner library was granted, changed or ended. */
   AccessChanged = 'access-changed',
 }

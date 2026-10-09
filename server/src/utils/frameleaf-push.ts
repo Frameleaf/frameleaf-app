@@ -36,6 +36,17 @@ export const PUSH_PAYLOAD_MAX_CHARS = 3072;
 export const CLOUD_BACKUP_ACTIVITY_KIND = 'cloud-backup-activation';
 /** Its ActivityKit attributes type, as the gateway names it. */
 export const CLOUD_BACKUP_ATTRIBUTES_TYPE = 'ActivationAttributes';
+/** The ActivityKit attributes kind of the Studio render progress Live Activity, as the app registers it. */
+export const STUDIO_RENDER_ACTIVITY_KIND = 'studio-render';
+/** Its ActivityKit attributes type, as the gateway names it. */
+export const STUDIO_RENDER_ATTRIBUTES_TYPE = 'RenderAttributes';
+/** The Live Activity kinds an app may register an update token for. */
+export const LIVE_ACTIVITY_KINDS = [CLOUD_BACKUP_ACTIVITY_KIND, STUDIO_RENDER_ACTIVITY_KIND] as const;
+
+/** A render progress push goes out when progress moved by at least this fraction since the last one... */
+export const RENDER_PROGRESS_MIN_STEP = 0.05;
+/** ...or when this long passed since the last one and progress moved at all. */
+export const RENDER_PROGRESS_MIN_INTERVAL_MS = 10_000;
 
 /**
  * The largest plaintext a payload may have before encryption: the envelope adds 61 bytes and
@@ -109,7 +120,7 @@ export const pushSendRequestSchema = z
     liveActivity: z
       .object({
         state: liveActivityStateSchema,
-        attributesType: z.literal(CLOUD_BACKUP_ATTRIBUTES_TYPE).optional(),
+        attributesType: z.enum([CLOUD_BACKUP_ATTRIBUTES_TYPE, STUDIO_RENDER_ATTRIBUTES_TYPE]).optional(),
         staleAfterSec: z.int().positive().max(86_400).optional(),
       })
       .strict()
@@ -153,6 +164,91 @@ export const liveActivityStateOf = (progress: CloudBackupActivationProgress): Li
   return { step: step[progress.stage], progress: Math.min(1, progress.step / progress.total) };
 };
 
+/**
+ * The progress of one Studio render (export), as a push carries it:
+ * - `started`: a render worker took the job (progress 0, or where a resumed job stands);
+ * - `running`: progress moved (throttled with `shouldSendRenderProgress`);
+ * - `done` / `failed`: the render finished; this rides on the `render-finished` notice.
+ */
+export type StudioRenderProgress = {
+  /** The render's media operation id (`POST /media-operations/{job}/...`). */
+  job: string;
+  state: 'started' | 'running' | 'done' | 'failed' | 'cancelled';
+  /** 0..1. */
+  progress: number;
+};
+
+/** The Live Activity state of a render: no free text, nothing personal. */
+export const renderLiveActivityStateOf = (render: StudioRenderProgress): LiveActivityState => {
+  if (render.state === 'failed' || render.state === 'cancelled') {
+    return { step: 'needs-attention' };
+  }
+  if (render.state === 'done') {
+    return { step: 'render-done', progress: 1 };
+  }
+  return { step: 'render-running', progress: Math.min(1, Math.max(0, render.progress)) };
+};
+
+/**
+ * Whether a render's progress is worth a push: the first report of a job always is; later ones when the
+ * fraction moved by `RENDER_PROGRESS_MIN_STEP`, or moved at all after `RENDER_PROGRESS_MIN_INTERVAL_MS`.
+ */
+export const shouldSendRenderProgress = (
+  last: { progress: number; at: number } | undefined,
+  progress: number,
+  now: number,
+): boolean => {
+  if (!last) {
+    return true;
+  }
+  const moved = progress - last.progress;
+  return moved >= RENDER_PROGRESS_MIN_STEP - 1e-9 || (moved > 0 && now - last.at >= RENDER_PROGRESS_MIN_INTERVAL_MS);
+};
+
+/**
+ * How a notice drives a Live Activity on iOS, if it does:
+ * - `kind` / `attributesType`: which activity (as the app registered its token, and as push-to-start names it);
+ * - `start`: whether a device without one may be pushed to start one (push-to-start token);
+ * - `end`: whether the activity ends with this state;
+ * - `liveOnly`: whether iOS gets only the Live Activity, without the alert or background payload.
+ */
+export type LiveActivityPlan = {
+  kind: (typeof LIVE_ACTIVITY_KINDS)[number];
+  attributesType: typeof CLOUD_BACKUP_ATTRIBUTES_TYPE | typeof STUDIO_RENDER_ATTRIBUTES_TYPE;
+  state: LiveActivityState;
+  start: boolean;
+  end: boolean;
+  liveOnly: boolean;
+};
+
+export const liveActivityPlanOf = (notice: Pick<PushNotice, 'activation' | 'render'>): LiveActivityPlan | null => {
+  if (notice.activation) {
+    const active = notice.activation.state === 'active';
+    return {
+      kind: CLOUD_BACKUP_ACTIVITY_KIND,
+      attributesType: CLOUD_BACKUP_ATTRIBUTES_TYPE,
+      state: liveActivityStateOf(notice.activation),
+      start: active,
+      end: !active,
+      liveOnly: active,
+    };
+  }
+  if (notice.render) {
+    const { state } = notice.render;
+    return {
+      kind: STUDIO_RENDER_ACTIVITY_KIND,
+      attributesType: STUDIO_RENDER_ATTRIBUTES_TYPE,
+      state: renderLiveActivityStateOf(notice.render),
+      // only the start of a render may start an activity, so a declined one is not started again
+      start: state === 'started',
+      end: ['done', 'failed', 'cancelled'].includes(state),
+      // the start also reaches iOS as a background push naming the job; later steps are the activity alone
+      liveOnly: state === 'running',
+    };
+  }
+  return null;
+};
+
 /** A notice's dedupe key as an APNs collapse id / FCM collapse key (64 safe characters at most). */
 export const collapseIdOf = (dedupeKey: string | undefined): string | undefined => {
   if (!dedupeKey) {
@@ -164,7 +260,7 @@ export const collapseIdOf = (dedupeKey: string | undefined): string | undefined 
 };
 
 /** How long a platform may hold a push for an offline device: a wake-up is stale after hours, a notice after a day. */
-export const pushTtlSec = (notice: Pick<PushNotice, 'background' | 'activation'>, live: boolean): number =>
+export const pushTtlSec = (notice: Pick<PushNotice, 'background'>, live: boolean): number =>
   live ? 3600 : notice.background ? 4 * 3600 : 86_400;
 
 /** Plain values only; identifiers, counts and names, never file paths or credentials. */
@@ -227,6 +323,8 @@ export type PushNotice = {
   background?: boolean;
   /** The activation chain's state, for the Live Activity. */
   activation?: CloudBackupActivationProgress;
+  /** A Studio render's progress, for the Live Activity (iOS) and the progress notification (Android). */
+  render?: StudioRenderProgress;
   /** Coalesces notices about the same thing while one waits (`PushDeliver` job id). */
   dedupeKey?: string;
   /** How long to wait before delivering, so a burst becomes one notice. */

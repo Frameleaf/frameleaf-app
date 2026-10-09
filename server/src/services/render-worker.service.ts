@@ -812,6 +812,8 @@ export class RenderWorkerService {
             engineDigest: session.engineDigest,
             entries: resolved.studio.entries,
           });
+          // native apps: the render started (a Live Activity on iOS, a progress notification on Android)
+          await this.studioExports.onRenderProgress(operation, Number(operation.progress ?? 0) / 100, true);
         }
         if (operation.kind === MediaOperationKind.StudioPreview) {
           // FL-96: the frame's own directory, which is the only place its output is accepted from.
@@ -974,6 +976,10 @@ export class RenderWorkerService {
       totalUnits: dto.totalUnits,
       progress,
     });
+    if (accepted && operation.kind === MediaOperationKind.StudioExport) {
+      // throttled there: at most every 5% or 10 seconds
+      await this.studioExports.onRenderProgress(operation, progress / 100);
+    }
 
     return { accepted, refusal: null };
   }
