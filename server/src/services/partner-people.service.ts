@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { PersonCopyUndo } from 'src/repositories/partner-origin.repository.js';
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
 import { JobName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -102,23 +103,16 @@ export class PartnerPeopleService extends BaseService {
       link.sourcePersonGroupId,
       link.personGroupId,
     );
-    const personGroupId = await this.createPersonCopy({
-      targetOwnerId: auth.user.id,
-      partnerSharedById: link.partnerSharedById,
-      sourceOwnerId: link.partnerSharedById,
-      sourcePersonGroupId: link.sourcePersonGroupId,
-      fallbackName: entry.fromPersonName ?? '',
-    });
-    const undone = await this.personRepository.undoPartnerMerge(entry.id, faceIds, personGroupId);
-    if (!undone) {
-      throw conflict('already-undone', 'This change was already undone');
-    }
-    await this.personRepository.savePartnerPersonLink({
-      ...link,
-      personGroupId,
-      kind: 'created',
-      correctionId: null,
-    });
+    const personGroupId = await this.createPersonCopy(
+      {
+        targetOwnerId: auth.user.id,
+        partnerSharedById: link.partnerSharedById,
+        sourceOwnerId: link.partnerSharedById,
+        sourcePersonGroupId: link.sourcePersonGroupId,
+        fallbackName: entry.fromPersonName ?? '',
+      },
+      { correctionId: entry.id, personGroupId: link.personGroupId, faceIds },
+    );
     await this.queueMissingThumbnails(auth.user.id, [personGroupId]);
   }
 
@@ -258,7 +252,6 @@ export class PartnerPeopleService extends BaseService {
       sourcePersonGroupId,
       fallbackName: '',
     });
-    await save(personGroupId, 'created');
     return personGroupId;
   }
 
@@ -304,36 +297,44 @@ export class PartnerPeopleService extends BaseService {
     }
   }
 
-  private async createPersonCopy(input: {
-    targetOwnerId: string;
-    partnerSharedById: string;
-    sourceOwnerId: string;
-    sourcePersonGroupId: string;
-    fallbackName: string;
-  }): Promise<string> {
+  private async createPersonCopy(
+    input: {
+      targetOwnerId: string;
+      partnerSharedById: string;
+      sourceOwnerId: string;
+      sourcePersonGroupId: string;
+      fallbackName: string;
+    },
+    undo?: PersonCopyUndo,
+  ): Promise<string> {
     const { targetOwnerId, sourceOwnerId, sourcePersonGroupId } = input;
     const source = await this.personRepository.getByGroupId({
       ownerId: sourceOwnerId,
       personGroupId: sourcePersonGroupId,
     });
-    const group = await this.personRepository.createGroup(targetOwnerId);
-    await this.personRepository.create({
-      ownerId: targetOwnerId,
-      personGroupId: group.id,
-      name: source?.name ?? input.fallbackName,
-      birthDate: source?.birthDate ?? null,
-      isHidden: source?.isHidden ?? false,
-    });
     const rootOwnerId =
       (await this.personRepository.getPersonOriginRoot(sourceOwnerId, sourcePersonGroupId)) ?? sourceOwnerId;
-    await this.partnerOriginRepository.createPersonOrigin({
-      ownerId: targetOwnerId,
-      personGroupId: group.id,
-      sourceOwnerId,
-      sourcePersonGroupId,
-      rootOwnerId,
-      partnerSharedById: input.partnerSharedById,
-    });
-    return group.id;
+    const result = await this.partnerOriginRepository.createPersonCopy(
+      {
+        ownerId: targetOwnerId,
+        sourceOwnerId,
+        sourcePersonGroupId,
+        rootOwnerId,
+        partnerSharedById: input.partnerSharedById,
+        name: source?.name ?? input.fallbackName,
+        birthDate: source?.birthDate ?? null,
+        isHidden: source?.isHidden ?? false,
+      },
+      undo,
+    );
+    if ('conflict' in result) {
+      throw conflict(
+        result.conflict,
+        result.conflict === 'already-undone'
+          ? 'This change was already undone'
+          : 'The partner person this merge came from is no longer linked',
+      );
+    }
+    return result.personGroupId;
   }
 }
