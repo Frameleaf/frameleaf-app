@@ -23,6 +23,7 @@ import {
   captureWav,
   cleanupAll,
   ownedProcesses,
+  signalOwnedProcesses,
   recordingBytes,
   reportBytes,
   sha,
@@ -412,8 +413,12 @@ async function attempt(manifestFile, expected) {
   }
   assert.equal(report.status, 'measured', report.error ?? 'cleanup refusal')
 }
-function census(group, known) {
-  const rows = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], { encoding: 'utf8' })
+function census() {
+  const rows = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
+    encoding: 'utf8',
+    timeout: 2000,
+    maxBuffer: BOUNDS.report,
+  })
     .trim()
     .split('\n')
     .map((line) => {
@@ -425,7 +430,7 @@ function census(group, known) {
         started: fields.slice(3).join(' '),
       }
     })
-  return ownedProcesses(rows, group, known)
+  return rows
 }
 async function supervise(manifestFile, expected) {
   await safeInputs()
@@ -441,22 +446,39 @@ async function supervise(manifestFile, expected) {
     },
   )
   const log = []
+  // Establish the spawned leader once while it is still our direct child. A
+  // retired leader/group can never seed a replacement into this identity set.
   const known = new Map()
   let bytes = 0,
     timedOut = false,
     signal = false
   let censusError
+  try {
+    const leader = census().find((row) => row.pid === child.pid)
+    assert(
+      child.exitCode === null && child.signalCode === null,
+      'leader retired before identity anchor',
+    )
+    assert(
+      leader && leader.parent === process.pid && leader.group === child.pid,
+      'unverified spawned leader',
+    )
+    known.set(leader.pid, leader.started)
+  } catch (error) {
+    censusError = String(error)
+  }
+  const observe = () => {
+    const rows = census()
+    const owned = ownedProcesses(rows, known)
+    const ambiguous = rows.filter((row) => row.group === child.pid && !owned.includes(row))
+    if (ambiguous.length)
+      censusError = `unowned/replacement group members: ${JSON.stringify(ambiguous)}`
+    return { rows, owned }
+  }
   const stop = (sig) => {
     try {
-      process.kill(-child.pid, sig)
-    } catch {}
-    try {
-      for (const row of census(child.pid, known))
-        if (row.group !== child.pid) {
-          try {
-            process.kill(row.pid, sig)
-          } catch {}
-        }
+      const { rows } = observe()
+      signalOwnedProcesses(rows, known, sig, (pid, signal) => process.kill(pid, signal))
     } catch (error) {
       censusError = String(error)
     }
@@ -469,7 +491,7 @@ async function supervise(manifestFile, expected) {
   process.once('SIGTERM', interrupted)
   const observer = setInterval(() => {
     try {
-      census(child.pid, known)
+      observe()
     } catch (error) {
       censusError = String(error)
       stop('SIGTERM')
@@ -493,7 +515,14 @@ async function supervise(manifestFile, expected) {
   const killTimer = setTimeout(() => stop('SIGKILL'), BOUNDS.overall + BOUNDS.cleanup)
   let code, exitSignal
   try {
-    ;[code, exitSignal] = await terminal
+    ;[code, exitSignal] = await bounded(
+      () => terminal,
+      BOUNDS.overall + BOUNDS.cleanup + 1000,
+      'supervisor terminal event',
+    )
+  } catch (error) {
+    censusError = String(error)
+    code = 1
   } finally {
     clearTimeout(timer)
     clearTimeout(killTimer)
@@ -501,32 +530,34 @@ async function supervise(manifestFile, expected) {
     process.off('SIGINT', interrupted)
     process.off('SIGTERM', interrupted)
   }
-  let survivors = census(child.pid, known)
+  const remaining = () => {
+    try {
+      return observe().owned
+    } catch (error) {
+      censusError = String(error)
+      return [...known].map(([pid, started]) => ({ pid, started, unverified: true }))
+    }
+  }
+  const waitRemaining = async (ms) => {
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline && remaining().length)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  let survivors = remaining()
   const beforeTermination = survivors
   if (survivors.length) {
     stop('SIGTERM')
-    await bounded(
-      async () => {
-        while (census(child.pid, known).length)
-          await new Promise((resolve) => setTimeout(resolve, 100))
-      },
-      BOUNDS.cleanup,
-      'owned group termination',
-    ).catch(() => {})
-    survivors = census(child.pid, known)
+    await waitRemaining(BOUNDS.cleanup)
+    survivors = remaining()
     if (survivors.length) {
       stop('SIGKILL')
-      await bounded(
-        async () => {
-          while (census(child.pid, known).length)
-            await new Promise((resolve) => setTimeout(resolve, 100))
-        },
-        1000,
-        'post-kill owned census',
-      ).catch(() => {})
-      survivors = census(child.pid, known)
+      await waitRemaining(1000)
+      survivors = remaining()
     }
   }
+  child.stdout.destroy()
+  child.stderr.destroy()
+  child.unref()
   await writeFile(output + '/runtime.log', Buffer.concat(log), { flag: 'wx', mode: 0o600 })
   let result
   try {
@@ -544,6 +575,8 @@ async function supervise(manifestFile, expected) {
     beforeTermination,
     survivors,
     censusError,
+    signalIdentityLimit:
+      'macOS ps start identity is a snapshot, not an atomic identity-and-signal guarantee; PID reuse between census and signal remains possible',
     observed: [...known].map(([pid, started]) => ({ pid, started })),
     status:
       code === 0 &&
@@ -555,7 +588,7 @@ async function supervise(manifestFile, expected) {
         ? 'measured'
         : 'refused',
     detachedDescendants:
-      '250ms process ancestry census plus whole owned group; descendants that detach before observation cannot be exhaustively certified',
+      '250ms process ancestry census with established identity tracking; descendants that detach before observation cannot be exhaustively certified',
     finishedAt: new Date().toISOString(),
   }
   await writeFile(output + '/supervisor.json', reportBytes(summary), { flag: 'wx', mode: 0o600 })

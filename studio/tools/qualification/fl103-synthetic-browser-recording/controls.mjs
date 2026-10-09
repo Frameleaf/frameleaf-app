@@ -115,15 +115,14 @@ export function recordingBytes(audio) {
 }
 
 // Remember start identity before any signal, including observed descendants that detach.
-export function ownedProcesses(rows, group, known) {
+export function ownedProcesses(rows, known) {
   let changed = true
   while (changed) {
     changed = false
     for (const row of rows) {
       if (
-        row.group === group ||
-        (known.has(row.parent) &&
-          rows.some((x) => x.pid === row.parent && x.started === known.get(row.parent)))
+        known.has(row.parent) &&
+        rows.some((x) => x.pid === row.parent && x.started === known.get(row.parent))
       ) {
         if (!known.has(row.pid)) {
           known.set(row.pid, row.started)
@@ -133,4 +132,19 @@ export function ownedProcesses(rows, group, known) {
     }
   }
   return rows.filter((row) => known.get(row.pid) === row.started)
+}
+
+// Positive PID targets only. The caller supplies a fresh census; start identity is
+// a snapshot guard, not an atomic macOS identity-and-signal operation.
+export function signalOwnedProcesses(rows, known, signal, send) {
+  const targets = ownedProcesses(rows, known)
+  for (const row of targets) {
+    assert(Number.isSafeInteger(row.pid) && row.pid > 0, 'positive identity target')
+    try {
+      send(row.pid, signal)
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
+  }
+  return targets
 }
