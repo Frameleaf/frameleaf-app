@@ -146,8 +146,13 @@ describe('opaque develop recipe preservation (FL-233)', () => {
     const auth = factory.auth({ user });
     const original = await sharp(bytes).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const saved = await sut.save(auth, asset.id, { recipe: { version: 1 }, render: true });
-    await expect(sut.handleRender({ id: saved.id })).resolves.toBe(JobStatus.Success);
+    const result = await sut.handleRender({ id: saved.id });
     const stored = await develop.get(saved.id);
+    const renderError = stored?.error
+      ?.replaceAll(root, '<fixture>')
+      .replaceAll(/\b(?:https?|postgres(?:ql)?):\/\/\S+/g, '<url>')
+      .slice(0, 300);
+    expect(result, JSON.stringify({ status: stored?.status, error: renderError })).toBe(JobStatus.Success);
     const preview = await sut.preview(auth, asset.id, { recipe: { version: 1 }, size: 256 });
     for (const input of [stored!.masterPath!, preview.buffer]) {
       const output = await sharp(input).removeAlpha().raw().toBuffer({ resolveWithObject: true });

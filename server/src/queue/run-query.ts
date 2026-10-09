@@ -151,7 +151,7 @@ const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,
 // Nonterminal stages take precedence: a failed thumbnail plus a live face stage is still active.
 // A stored blocked stage is terminal prerequisite failure; a derived blocked pending stage is not.
 // One scalar aggregate preserves this priority without nine aggregate states per root.
-const selectedOutcome = sql`case max(case
+const selectedPriority = sql<number>`case
   when outcome='active' then 10
   when outcome='retrying' then 9
   when outcome='waiting' then 8
@@ -160,7 +160,9 @@ const selectedOutcome = sql`case max(case
   when outcome='blocked' and state in ('pending','waiting') then 5
   when outcome='needsAttention' then 4
   when outcome in ('failed','blocked') then 3
-  when outcome='cancelled' then 2 else 1 end)
+  when outcome='cancelled' then 2 else 1 end`;
+
+const selectedOutcome = (priority: RawBuilder<number> = selectedPriority) => sql`case max(${priority})
   when 10 then 'active' when 9 then 'retrying' when 8 then 'waiting'
   when 7 then 'delayed' when 6 then 'paused' when 5 then 'blocked'
   when 4 then 'needsAttention' when 3 then 'failed' when 2 then 'cancelled'
@@ -304,10 +306,12 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
     ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
       select s.* from stages s
     ), selected as (
-      select "runId", "rootItemKey", ${selectedOutcome} outcome
-      -- Bytewise sorted grouping bounds spill work when distinct root counts are underestimated.
-      from (select "runId", "rootItemKey" collate "C" "rootItemKey", state, outcome from run_stages
-        where "rootItemKey" is not null order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
+      select "runId", "rootItemKey", ${selectedOutcome(sql<number>`priority`)} outcome
+      -- Sort bytewise root identities and one priority integer to bound spill work.
+      from (select * from (
+        select "runId", "rootItemKey" collate "C" "rootItemKey", ${selectedPriority} priority from run_stages
+        where "rootItemKey" is not null offset 0) ranked_roots
+        order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
       group by "runId", "rootItemKey"
     ), item_counts as (
       select s."runId", ${counts('s')} totals from selected s group by s."runId"
@@ -370,7 +374,7 @@ export async function listRunItems(
       select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
       order by "rootItemKey" limit ${take} offset ${skip}
     ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots)`, sql<string>`${runId}::uuid`)}), selected as (
-    select s."rootItemKey", ${selectedOutcome} outcome, ${counts('s')} "stageTotals",
+    select s."rootItemKey", ${selectedOutcome()} outcome, ${counts('s')} "stageTotals",
       max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
       array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
       bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",

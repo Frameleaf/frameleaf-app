@@ -54,6 +54,8 @@ jobs:
         run: pnpm --filter @frameleaf/scripts test
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
+      - name: Validate medium native runner contract
+        run: node --test docker/medium-runner.test.mjs
       - name: Validate canonical restore fixture mutations
         run: node --test e2e/src/backup-fixture.test.mjs
       - name: Validate E2E request and reset ownership
@@ -350,27 +352,44 @@ jobs:
       - name: Retrieve frozen media fixtures
         working-directory: .
         run: bash scripts/checkout-test-assets.sh
-      - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+      - name: Setup native runner builder
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build medium native runner
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
-          github_token: ${{ github.token }}
-          install_args: --locked
-          version: 2026.7.12
-      - name: Install PostgreSQL 19 client tools
-        timeout-minutes: 5
-        run: |
-          curl --fail --silent --show-error --location --max-time 60 https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$RUNNER_TEMP/frameleaf-pgdg.asc"
-          printf '%s  %s\n' 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 "$RUNNER_TEMP/frameleaf-pgdg.asc" | sha256sum --check --strict
-          sudo install -m 644 "$RUNNER_TEMP/frameleaf-pgdg.asc" /usr/share/keyrings/frameleaf-pgdg.asc
-          printf '%s\n' 'deb [signed-by=/usr/share/keyrings/frameleaf-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main 19' | sudo tee /etc/apt/sources.list.d/frameleaf-pgdg.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client-19
-          /usr/lib/postgresql/19/bin/pg_dump --version
-          /usr/lib/postgresql/19/bin/pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 19([.a-z]|$)'
-          printf '%s\n' /usr/lib/postgresql/19/bin >> "$GITHUB_PATH"
-      - name: Run ci-medium
-        run: mise run ci-medium
+          context: .
+          file: server/Dockerfile
+          target: medium-test
+          load: true
+          tags: frameleaf-medium:${{ github.sha }}
+          cache-from: type=gha,scope=server-medium
+          cache-to: type=gha,scope=server-medium,mode=max
+          secrets: mise_github_token=${{ github.token }}
+      - name: Run all medium tests in the native runner
         if: ${{ !cancelled() }}
+        working-directory: .
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker_cli=$(readlink -f "$(command -v docker)")
+          test -S /var/run/docker.sock
+          docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
+            --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+            --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/src",dst=/usr/src/app/e2e/src,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/test-assets",dst=/usr/src/app/e2e/test-assets,readonly \
+            --env DOCKER_HOST=unix:///var/run/docker.sock \
+            --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            "$MEDIUM_IMAGE"
+      - name: Remove medium runner after failure or cancellation
+        if: always()
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
   e2e-tests-server-cli:
     name: End-to-End Tests (Server & CLI)
