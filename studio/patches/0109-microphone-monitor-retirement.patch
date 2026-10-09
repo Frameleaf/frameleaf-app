@@ -22,7 +22,24 @@
    let stopped = false
 --- a/src/features/timeline/services/mic-recording-controller.ts
 +++ b/src/features/timeline/services/mic-recording-controller.ts
-@@ -115,6 +115,7 @@
+@@ -54,6 +54,7 @@
+ let recorder: MicRecorder | null = null
+ let monitor: MicMonitorHandle | null = null
+ let monitorToken = 0
++let deviceRefreshGeneration = 0
+ let transportUnsub: (() => void) | null = null
+ let projectUnsub: (() => void) | null = null
+ let elapsedTimer: ReturnType<typeof setInterval> | null = null
+@@ -108,13 +109,15 @@
+  * `start()`.
+  */
+ export async function refreshMicDevices(isCurrent?: () => boolean): Promise<void> {
++  const generation = ++deviceRefreshGeneration
+   try {
+     const devices = await enumerateAudioInputs()
+-    if (isCurrent && !isCurrent()) return
++    if (generation !== deviceRefreshGeneration || (isCurrent && !isCurrent())) return
+     const store = useMicRecordingStore.getState()
      store.setDevices(devices)
      if (store.selectedDeviceId && !devices.some((d) => d.deviceId === store.selectedDeviceId)) {
        store.setSelectedDeviceId(null)
@@ -30,7 +47,7 @@
      }
    } catch (error) {
      logger.warn('Failed to enumerate audio inputs', error)
-@@ -363,15 +364,17 @@
+@@ -363,15 +366,17 @@
    if (monitor || isMicRecordingActive(useMicRecordingStore.getState().status)) return
    const store = useMicRecordingStore.getState()
    const token = ++monitorToken

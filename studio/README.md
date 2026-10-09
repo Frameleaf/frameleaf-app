@@ -163,7 +163,8 @@ browser/native microphone, hotplug or latency behavior.
 Patch 0109 retires pre-record monitor permission requests before allocating a
 meter, and guards level callbacks against closed/replaced picker ownership or a
 recording taking over. The toolbar subscribes to device changes and releases the
-subscription on unmount; removing the selected input resets selection and retires
+subscription on unmount. Shared device refresh generation discards older
+enumerations that complete after a newer refresh; removing the selected input resets selection and retires
 its idle monitor while leaving an active recording under recorder authority.
 CPU fake-device regressions exercise production monitor/meter, controller and
 mount/teardown callbacks. They qualify these ownership controls only; real
