@@ -107,32 +107,28 @@ function mountEditorControls(surface: Surface, reset = false) {
         order,
       }),
     );
-    useCompositionsStore
-      .getState()
-      .addComposition({
-        id: "group-comp",
-        name: "Compose Group",
-        editorKind: "composite-2d",
-        tracks: [],
-        items: [],
-        transitions: [],
-        keyframes: [],
-        ...settings,
-        durationInFrames: 60,
-      });
-    useCompositionsStore
-      .getState()
-      .addComposition({
-        id: "main-comp",
-        name: "Acceptance scene",
-        editorKind: "composite-2d",
-        tracks,
-        items,
-        transitions: [],
-        keyframes: [],
-        ...settings,
-        durationInFrames: 60,
-      });
+    useCompositionsStore.getState().addComposition({
+      id: "group-comp",
+      name: "Compose Group",
+      editorKind: "composite-2d",
+      tracks: [],
+      items: [],
+      transitions: [],
+      keyframes: [],
+      ...settings,
+      durationInFrames: 60,
+    });
+    useCompositionsStore.getState().addComposition({
+      id: "main-comp",
+      name: "Acceptance scene",
+      editorKind: "composite-2d",
+      tracks,
+      items,
+      transitions: [],
+      keyframes: [],
+      ...settings,
+      durationInFrames: 60,
+    });
     useCompositionNavigationStore.getState().switchToSequence("main-comp");
     useSelectionStore.getState().selectItems(["hero"]);
     usePlaybackStore.getState().setCurrentFrame(0);
@@ -141,13 +137,16 @@ function mountEditorControls(surface: Surface, reset = false) {
   flushSync(() => root.render(<Controls surface={surface} />));
 }
 let timelineTouchReady = false;
+let disposeTimelineTouchForControl: (() => void) | undefined;
 function NativeEditTimeline() {
   useEditingShortcuts({});
   useEffect(() => {
     const dispose = installTimelineTouchEditing();
+    disposeTimelineTouchForControl = dispose;
     timelineTouchReady = true;
     return () => {
       timelineTouchReady = false;
+      disposeTimelineTouchForControl = undefined;
       dispose();
     };
   }, []);
@@ -261,6 +260,26 @@ async function renderHero(frame = 0, expectedX?: number) {
 Object.assign(window, {
   fl100Editor: {
     touchReady: () => timelineTouchReady,
+    // Negative controls retire the real route or corrupt only an existing retained snapshot.
+    disableTouchForControl: () => {
+      if (!disposeTimelineTouchForControl)
+        throw new Error("Touch hook is not installed");
+      disposeTimelineTouchForControl();
+    },
+    corruptRetainedTouchHistoryForControl: () => {
+      const history = useTimelineCommandStore.getState();
+      if (history.undoStack.length !== 1 || history.redoStack.length !== 0)
+        throw new Error("Expected exactly the retained touch move");
+      const entry = history.undoStack[0]!;
+      const beforeSnapshot = structuredClone(entry.beforeSnapshot);
+      beforeSnapshot.items = beforeSnapshot.items.map((item) => ({
+        ...item,
+        from: item.from + 1,
+      }));
+      useTimelineCommandStore.setState({
+        undoStack: [{ ...entry, beforeSnapshot }],
+      });
+    },
     // OPFS is an isolated browser-owned fixture, never a host project or selected directory.
     prepareTouchTimeline: async (projectId: string) => {
       const root = await navigator.storage.getDirectory();
@@ -272,22 +291,22 @@ Object.assign(window, {
         workspace: "edit",
         linkedSelectionEnabled: true,
       });
-      useItemsStore
-        .getState()
-        .setTracks([
-          makeTimelineTrack({
-            id: "tablet-v",
-            name: "V1",
-            kind: "video",
-            order: 0,
-          }),
-          makeTimelineTrack({
-            id: "tablet-a",
-            name: "A1",
-            kind: "audio",
-            order: 1,
-          }),
-        ]);
+      useItemsStore.getState().setTracks([
+        makeTimelineTrack({
+          id: "tablet-v",
+          name: "V1",
+          kind: "video",
+          syncLock: true,
+          order: 0,
+        }),
+        makeTimelineTrack({
+          id: "tablet-a",
+          name: "A1",
+          kind: "audio",
+          syncLock: true,
+          order: 1,
+        }),
+      ]);
       const common = {
         from: 30,
         durationInFrames: 60,
@@ -300,20 +319,18 @@ Object.assign(window, {
         linkedGroupId: "tablet-av",
         originId: "tablet-source",
       };
-      useItemsStore
-        .getState()
-        .setItems([
-          makeTimelineVideoItem({
-            ...common,
-            id: "tablet-v",
-            trackId: "tablet-v",
-          }),
-          makeTimelineAudioItem({
-            ...common,
-            id: "tablet-a",
-            trackId: "tablet-a",
-          }),
-        ]);
+      useItemsStore.getState().setItems([
+        makeTimelineVideoItem({
+          ...common,
+          id: "tablet-v",
+          trackId: "tablet-v",
+        }),
+        makeTimelineAudioItem({
+          ...common,
+          id: "tablet-a",
+          trackId: "tablet-a",
+        }),
+      ]);
       useSelectionStore.getState().clearSelection();
       useTimelineCommandStore.getState().clearHistory();
       const project = await createProject({
@@ -367,22 +384,20 @@ Object.assign(window, {
         workspace: "edit",
         linkedSelectionEnabled: true,
       });
-      useItemsStore
-        .getState()
-        .setTracks([
-          makeTimelineTrack({
-            id: "chain-v",
-            name: "V1",
-            kind: "video",
-            order: 0,
-          }),
-          makeTimelineTrack({
-            id: "chain-a",
-            name: "A1",
-            kind: "audio",
-            order: 1,
-          }),
-        ]);
+      useItemsStore.getState().setTracks([
+        makeTimelineTrack({
+          id: "chain-v",
+          name: "V1",
+          kind: "video",
+          order: 0,
+        }),
+        makeTimelineTrack({
+          id: "chain-a",
+          name: "A1",
+          kind: "audio",
+          order: 1,
+        }),
+      ]);
       useItemsStore.getState().setItems(
         Array.from({ length: 3 }, (_, index) => [
           makeTimelineVideoItem({
