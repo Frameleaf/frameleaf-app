@@ -173,14 +173,25 @@ try {
       box && box.width > 0 && box.height > 0,
       "real clip must have geometry",
     );
-    // Interior hit avoids trim/fade handles. The fixed A clip spans120 timeline frames.
+    // A long clip can extend outside the viewport; hit its visible interior.
+    // Keep the full clip width for frame scaling, never the cropped visible width.
+    const visibleLeft = Math.max(0, box.x);
+    const visibleRight = Math.min(witness.viewport.width, box.x + box.width);
+    assert(
+      visibleRight > visibleLeft,
+      "drag target must intersect the real viewport",
+    );
     const start = {
-      x: box.x + box.width / 2,
+      x: (visibleLeft + visibleRight) / 2,
       y: box.y + box.height / 2,
       id: 1,
     };
     // Pointer Slip negates displacement: left30 timeline frames advances source by30.
     const dx = (box.width * pointerFrames) / durationFrames;
+    assert(
+      start.x + dx > visibleLeft && start.x + dx < visibleRight,
+      "the complete trusted gesture must stay inside the visible clip",
+    );
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [start],
