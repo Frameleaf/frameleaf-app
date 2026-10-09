@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { checkDetachedChildGroup } from './media-encode-process-group.mjs';
 import { ColorMatrix, TranscodeHardwareAcceleration, VideoCodec } from '../src/enum.ts';
 import { selectEncoderPixelFormat } from '../src/utils/media-encode.ts';
 import { parseSourcePixelLayout } from '../src/utils/media-decode.ts';
@@ -93,37 +94,34 @@ for (const dither of ['ed', 'none']) {
     output,
   ];
   const started = performance.now();
-  const result = spawnSync(ffmpeg, argv, {
+  const spawnOptions = {
     cwd: outputDirectory,
     detached: true,
     timeout: 30_000,
     maxBuffer: 262_144,
     killSignal: 'SIGKILL',
-  });
+  };
+  const result = spawnSync(ffmpeg, argv, spawnOptions);
   writeFileSync(path.resolve(outputDirectory, `${dither}.stdout`), result.stdout ?? '');
   writeFileSync(path.resolve(outputDirectory, `${dither}.stderr`), result.stderr ?? '');
-  let isGroupAliveAfterWait = false;
-  try {
-    process.kill(-result.pid, 0);
-    isGroupAliveAfterWait = true;
-    process.kill(-result.pid, 'SIGKILL');
-  } catch (error) {
-    if (error.code !== 'ESRCH') throw error;
-  }
-  runs.push({
+  const run = {
     dither,
     pid: result.pid,
-    processGroup: result.pid,
-    isGroupAliveAfterWait,
+    processGroup: undefined,
+    isGroupAliveAfterWait: undefined,
     argv: [ffmpeg, ...argv],
     exit: result.status,
     signal: result.signal,
     error: result.error?.message ?? undefined,
     wallSeconds: (performance.now() - started) / 1000,
-  });
+  };
+  runs.push(run);
   writeFileSync(path.resolve(outputDirectory, 'runs.json'), JSON.stringify(runs, undefined, 2) + '\n');
-  assert.equal(isGroupAliveAfterWait, false, 'Subprocess group must be fully reaped');
-  assert.equal(result.error, undefined, result.error?.message);
+  // Preserve raw spawn failure evidence before the ownership checks can refuse.
+  run.isGroupAliveAfterWait = checkDetachedChildGroup(result, spawnOptions, process.kill, process.pid);
+  run.processGroup = result.pid;
+  writeFileSync(path.resolve(outputDirectory, 'runs.json'), JSON.stringify(runs, undefined, 2) + '\n');
+  assert.equal(run.isGroupAliveAfterWait, false, 'Subprocess group must be fully reaped');
   assert.equal(result.status, 0, result.stderr?.toString());
   assert.equal(readFileSync(output).length, width * height * 3, 'Complete native yuv420p10le frame required');
 }
