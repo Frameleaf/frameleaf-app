@@ -435,7 +435,22 @@ for (const transition of report.transitions) {
   for (const frame of transition.frames) {
     frameCount++;
     const label = `${transition.id} ${frame.direction ?? '-'} @${frame.progress}`;
-    check(frame.hdr.errorType === 'HdrRenderUnavailableError', `${label}: missing typed HDR refusal`);
+    if (transition.id === 'additiveDissolve') {
+      const got = frame.hdr.pixels;
+      check(Array.isArray(got) && got.every(Number.isFinite), `${label}: missing finite linear additive output`);
+      if (got) {
+        const p = frame.progress;
+        const expected = report.hdrLeft16.map((left, i) => {
+          const right = report.hdrRight16[i];
+          if (i % 4 === 3) return left * (1 - p) + right * p;
+          if (p === 0) return left;
+          if (p === 1) return right;
+          return left * (1 - p) + right * p + (left + right) * .22 * Math.sin(Math.PI * p);
+        });
+        check(got.every((v, i) => Math.abs(v - expected[i]) <= .004 + Math.abs(expected[i]) * .001),
+          `${label}: linear additive equation differs`);
+      }
+    } else check(frame.hdr.errorType === 'HdrRenderUnavailableError', `${label}: missing typed HDR refusal`);
     for (const route of ['sdrFloat', 'sdr']) check(!frame[route].error, `${label} ${route}: ${frame[route].error}`);
     if (frame.sdrFloat.error || frame.sdr.error) continue;
     check(frame.sdrFloat.pixels.every(Number.isFinite), `${label}: non-finite SDR output`);
