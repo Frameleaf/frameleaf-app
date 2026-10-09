@@ -23,7 +23,7 @@
   const { label, disabled, ...labelProps } = $derived(context());
   const size = $derived(initialSize ?? labelProps.size ?? 'large');
   // The root receives explicit props after field defaults; mirror the same disabled precedence.
-  const inputDisabled = $derived(props.disabled ?? disabled);
+  const inputDisabled = $derived(Object.hasOwn(props, 'disabled') ? props.disabled : disabled);
 
   const inputStyles = tv({
     base: 'group-data-[disabled]:text-dark data-active:border-primary dark:data-active:border-primary flex items-center justify-center border-2 bg-gray-100 font-mono transition-all duration-75 group-data-[disabled]:bg-gray-300 data-active:border-3 dark:bg-gray-800 dark:group-not-data-[disabled]:border-gray-700 dark:group-data-[disabled]:bg-gray-900 dark:group-data-[disabled]:text-gray-200',
