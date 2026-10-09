@@ -2,6 +2,102 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## CloudMlConsentTermsDto
+
+
+```json
+{
+  "properties": {
+    "documentUrl": {
+      "description": "The full consent text, when Frameleaf Cloud links one",
+      "nullable": true,
+      "type": "string"
+    },
+    "recordedVersion": {
+      "description": "The version Frameleaf Cloud has on record for this server",
+      "nullable": true,
+      "type": "string"
+    },
+    "requiredVersion": {
+      "description": "The consent version the chosen features need now",
+      "type": "string"
+    },
+    "summary": {
+      "description": "What that version covers, as Frameleaf Cloud words it",
+      "type": "string"
+    },
+    "textSha256": {
+      "description": "SHA-256 of that version’s text; sent back when accepting, so only the terms shown are recorded",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "documentUrl",
+    "recordedVersion",
+    "requiredVersion",
+    "summary",
+    "textSha256"
+  ],
+  "type": "object"
+}
+```
+
+## CloudMlDescriptionBatchCreateDto
+
+
+```json
+{
+  "properties": {
+    "estimateId": {
+      "description": "The estimate to queue; its model, photos and prices are read from the server, never sent",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "estimateId"
+  ],
+  "type": "object"
+}
+```
+
+## CloudMlDescriptionBatchesResponseDto
+
+
+```json
+{
+  "properties": {
+    "batches": {
+      "description": "Batches queued",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "operationIds": {
+      "description": "The queued batches; each shows in Activity",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "photos": {
+      "description": "Photos in them",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "batches",
+    "operationIds",
+    "photos"
+  ],
+  "type": "object"
+}
+```
+
 ## CloudMlDescriptionEstimateResponseDto
 
 Related models: [CloudMlDescriptionGuidanceDto](models-09.md#cloudmldescriptionguidancedto).
@@ -2037,117 +2133,6 @@ Related models: [ConfigCredential](models-09.md#configcredential).
   "required": [
     "assetCount",
     "userId"
-  ],
-  "type": "object"
-}
-```
-
-## CreateAlbumDto
-
-Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserCreateDto](models-02.md#albumusercreatedto).
-
-```json
-{
-  "properties": {
-    "albumName": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "albumUsers": {
-      "description": "Album users",
-      "items": {
-        "$ref": "#/components/schemas/AlbumUserCreateDto"
-      },
-      "type": "array"
-    },
-    "assetIds": {
-      "description": "Initial asset IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "description": {
-      "description": "Album description",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v3",
-          "state": "Updated",
-          "description": "Sending an empty string is deprecated; send null instead. Empty strings will no longer be coerced to null in v4."
-        }
-      ]
-    },
-    "icon": {
-      "description": "Optional icon: any Material Design Icons name (see GET /albums/icons)",
-      "maxLength": 80,
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/AlbumKind",
-      "default": "album",
-      "description": "What to create: an album (default), a collection of albums or a shared space"
-    },
-    "parentId": {
-      "description": "Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumName"
-  ],
-  "type": "object"
-}
-```
-
-## CreateLibraryDto
-
-
-```json
-{
-  "properties": {
-    "exclusionPatterns": {
-      "description": "Exclusion patterns (max 128)",
-      "items": {
-        "maxLength": 1024,
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
-    },
-    "importPaths": {
-      "description": "Import paths (max 128)",
-      "items": {
-        "maxLength": 1024,
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
-    },
-    "name": {
-      "description": "Library name",
-      "maxLength": 160,
-      "minLength": 1,
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "Owner user ID. Fixed once the library exists.",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "ownerId"
   ],
   "type": "object"
 }

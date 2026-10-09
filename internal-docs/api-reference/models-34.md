@@ -637,6 +637,14 @@ Related models: [StudioExportFormat](models-33.md#studioexportformat).
     "dolbyVision": {
       "type": "boolean"
     },
+    "embeddedOutputFormats": {
+      "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
+      "items": {
+        "$ref": "#/components/schemas/StudioExportFormat"
+      },
+      "maxItems": 1,
+      "type": "array"
+    },
     "gpuMemoryBytes": {
       "format": "double",
       "nullable": true,

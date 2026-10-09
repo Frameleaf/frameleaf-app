@@ -1729,7 +1729,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L81).
 
 Get a Studio export
 
@@ -1814,7 +1814,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L92).
 
 Download a Studio export kept with its project
 
@@ -1880,6 +1880,93 @@ Complete operation contract:
     }
   ],
   "summary": "Download a Studio export kept with its project",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## downloadStudioExportSubtitle
+
+`GET /api/studio/exports/{id}/subtitle`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L111).
+
+Download the owner-private SRT sibling
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio')
+@Get('exports/:id/subtitle')
+@FileResponse()
+@Authenticated()
+@OriginalTransfer()
+@Endpoint({
+    summary: 'Download the owner-private SRT sibling',
+    description:
+      'Available only for a published sealed pair with current source access, source epochs and session privacy. Supports one byte range. No public subtitle grant.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Available only for a published sealed pair with current source access, source epochs and session privacy. Supports one byte range. No public subtitle grant.",
+  "operationId": "downloadStudioExportSubtitle",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Download the owner-private SRT sibling",
   "tags": [
     "Studio projects"
   ],
@@ -2091,82 +2178,6 @@ Complete operation contract:
     }
   ],
   "summary": "Create a Studio project",
-  "tags": [
-    "Studio projects"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## emptyStudioProjectTrash
-
-`POST /api/studio/projects/trash/empty`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L81).
-
-Empty the Studio trash
-
-Permission: `See authentication declaration`. Admin only: `false`.
-
-Models: [StudioProjectTrashEmptyResponseDto](models-34.md#studioprojecttrashemptyresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.StudioProjects)
-@Controller('studio/projects')
-@Post('trash/empty')
-@HttpCode(HttpStatus.OK)
-@Authenticated()
-@Endpoint({
-    summary: 'Empty the Studio trash',
-    description:
-      'Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.',
-    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.",
-  "operationId": "emptyStudioProjectTrash",
-  "parameters": [],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/StudioProjectTrashEmptyResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Empty the Studio trash",
   "tags": [
     "Studio projects"
   ],

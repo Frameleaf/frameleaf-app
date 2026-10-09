@@ -1,6 +1,6 @@
 # Complete Frameleaf server API reference
 
-Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **838 OpenAPI operations**, **1533 schemas**, and **24 deliberately excluded controller routes**.
+Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **842 OpenAPI operations**, **1541 schemas**, and **24 deliberately excluded controller routes**.
 
 Start with [authentication and mobile workflows](auth-mobile.md) and [streaming, workers and other protocols](protocols.md), then the [complete worker wire models](worker-wire-models.md). Separate Frameleaf Cloud control-plane contracts are maintained with the Cloud service. Server URLs are relative to your installation, not the Cloud account host. This complete internal reference is kept outside the public documentation build; it includes administrative, Cloud integration and worker contracts.
 
@@ -91,15 +91,15 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 1: ActivityCreateDto through AdminConfigMachineLearningAvailabilityChecksDto](models-01.md)
 - [Models 2: AdminConfigMachineLearningDto through AnalyticsHistoryDto](models-02.md)
 - [Models 3: AnalyticsHostDto through AskSearchDto](models-03.md)
-- [Models 4: AskSearchPlanDto through AssetDevelopPreviewDto](models-04.md)
+- [Models 4: AskSearchPlanDto through AssetDevelopProposalCoordinates](models-04.md)
 - [Models 5: AssetDevelopRecipeDto through AssetRejectReason](models-05.md)
 - [Models 6: AssetResponseDto through BoolFilter](models-06.md)
-- [Models 7: BuddyAcceptDto through ClassificationRuleCountsDto](models-07.md)
-- [Models 8: ClassificationRuleCreateDto through CloudMlDescriptionBatchesResponseDto](models-08.md)
-- [Models 9: CloudMlDescriptionEstimateResponseDto through CreateLibraryDto](models-09.md)
-- [Models 10: CreateProfileImageDto through DownloadArchiveDto](models-10.md)
-- [Models 11: DownloadArchiveInfo through FrameleafLinkResponseDto](models-11.md)
-- [Models 12: FrameleafLinkRoleChange through HdrAssetDevelopRecipeV5](models-12.md)
+- [Models 7: BuddyAcceptDto through ClassificationPreviewDto](models-07.md)
+- [Models 8: ClassificationPreviewResponseDto through CloudMlConsentStateDto](models-08.md)
+- [Models 9: CloudMlConsentTermsDto through ContributorCountResponseDto](models-09.md)
+- [Models 10: CreateAlbumDto through DocumentRecognitionDto](models-10.md)
+- [Models 11: DocumentRegionDto through FrameleafLinkDto](models-11.md)
+- [Models 12: FrameleafLinkResponseDto through HdrAssetDevelopRecipeV5](models-12.md)
 - [Models 13: HdrAssetDevelopRecipeV6 through ICloudIdentityRole](models-13.md)
 - [Models 14: ICloudInventoryResponseDto through KnownAssetDevelopCrop](models-14.md)
 - [Models 15: KnownAssetDevelopRecipe through MediaHealthBulkActionDto](models-15.md)

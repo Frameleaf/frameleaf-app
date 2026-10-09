@@ -1751,7 +1751,7 @@ Link your Frameleaf account
 
 Permission: `frameleafAccount.update`. Admin only: `false`.
 
-Models: [FrameleafLinkDto](models-11.md#frameleaflinkdto), [FrameleafLinkResponseDto](models-11.md#frameleaflinkresponsedto).
+Models: [FrameleafLinkDto](models-11.md#frameleaflinkdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
 
 Controller access declarations:
 
@@ -1840,7 +1840,7 @@ Confirm linking your Frameleaf account
 
 Permission: `frameleafAccount.update`. Admin only: `false`.
 
-Models: [FrameleafLinkConfirmDto](models-11.md#frameleaflinkconfirmdto), [FrameleafLinkResponseDto](models-11.md#frameleaflinkresponsedto).
+Models: [FrameleafLinkConfirmDto](models-11.md#frameleaflinkconfirmdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
 
 Controller access declarations:
 

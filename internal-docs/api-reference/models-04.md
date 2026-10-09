@@ -1483,6 +1483,37 @@ Related models: [AssetDevelopCleanupMethod](models-04.md#assetdevelopcleanupmeth
 }
 ```
 
+## AssetDevelopFillGenerateDto
+
+Related models: [AssetDevelopRegion](models-05.md#assetdevelopregion), [AssetDevelopStroke](models-05.md#assetdevelopstroke).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "feather": {
+      "default": 0,
+      "description": "Softness of the area's edge, as a percentage",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "region": {
+      "$ref": "#/components/schemas/AssetDevelopRegion"
+    },
+    "strokes": {
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopStroke"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
 ## AssetDevelopImportDto
 
 
@@ -1525,6 +1556,26 @@ Related models: [AssetDevelopCleanupMethod](models-04.md#assetdevelopcleanupmeth
   },
   "required": [
     "file"
+  ],
+  "type": "object"
+}
+```
+
+## AssetDevelopKeyFrame
+
+
+```json
+{
+  "properties": {
+    "timeMs": {
+      "description": "Offset into the motion clip, in milliseconds, of the frame the still is rendered from",
+      "maximum": 600000,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "timeMs"
   ],
   "type": "object"
 }
@@ -1787,6 +1838,33 @@ Related models: [AssetDevelopMaskAdjustments](models-04.md#assetdevelopmaskadjus
 }
 ```
 
+## AssetDevelopPerspective
+
+
+```json
+{
+  "properties": {
+    "horizontal": {
+      "default": 0,
+      "description": "Positive widens the right side of the picture, negative the left side",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "vertical": {
+      "default": 0,
+      "description": "Positive widens the top of the picture (verticals converging upwards), negative the bottom",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    }
+  },
+  "type": "object"
+}
+```
+
 ## AssetDevelopPreset
 
 
@@ -1839,5 +1917,18 @@ Related models: [AssetDevelopRecipeDto](models-05.md#assetdeveloprecipedto).
     "recipe"
   ],
   "type": "object"
+}
+```
+
+## AssetDevelopProposalCoordinates
+
+
+```json
+{
+  "enum": [
+    "sensor-active",
+    "original"
+  ],
+  "type": "string"
 }
 ```

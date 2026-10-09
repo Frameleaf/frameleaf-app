@@ -244,7 +244,7 @@ Get the Frameleaf Cloud consent terms for chosen features
 
 Permission: `adminCloudMl.read`. Admin only: `true`.
 
-Models: [CloudMlConsentTermsDto](models-08.md#cloudmlconsenttermsdto).
+Models: [CloudMlConsentTermsDto](models-09.md#cloudmlconsenttermsdto).
 
 Controller access declarations:
 
@@ -341,7 +341,7 @@ Describe photos with Frameleaf Cloud
 
 Permission: `adminCloudMl.update`. Admin only: `true`.
 
-Models: [CloudMlDescriptionBatchCreateDto](models-08.md#cloudmldescriptionbatchcreatedto), [CloudMlDescriptionBatchesResponseDto](models-08.md#cloudmldescriptionbatchesresponsedto).
+Models: [CloudMlDescriptionBatchCreateDto](models-09.md#cloudmldescriptionbatchcreatedto), [CloudMlDescriptionBatchesResponseDto](models-09.md#cloudmldescriptionbatchesresponsedto).
 
 Controller access declarations:
 

@@ -2,6 +2,192 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## DocumentRegionDto
+
+
+```json
+{
+  "description": "Where the text is in the photo as it is shown, edits applied",
+  "properties": {
+    "x1": {
+      "description": "Normalized x coordinate of corner 1 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "x2": {
+      "description": "Normalized x coordinate of corner 2 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "x3": {
+      "description": "Normalized x coordinate of corner 3 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "x4": {
+      "description": "Normalized x coordinate of corner 4 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "y1": {
+      "description": "Normalized y coordinate of corner 1 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "y2": {
+      "description": "Normalized y coordinate of corner 2 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "y3": {
+      "description": "Normalized y coordinate of corner 3 (0-1)",
+      "format": "double",
+      "type": "number"
+    },
+    "y4": {
+      "description": "Normalized y coordinate of corner 4 (0-1)",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "y1",
+    "y2",
+    "y3",
+    "y4"
+  ],
+  "type": "object"
+}
+```
+
+## DocumentResponseDto
+
+Related models: [DocumentFieldResponseDto](models-10.md#documentfieldresponsedto), [DocumentLineDto](models-10.md#documentlinedto), [DocumentRecognitionDto](models-10.md#documentrecognitiondto).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "canEdit": {
+      "description": "The caller owns the photo and may correct its text",
+      "type": "boolean"
+    },
+    "fields": {
+      "items": {
+        "$ref": "#/components/schemas/DocumentFieldResponseDto"
+      },
+      "type": "array"
+    },
+    "fieldsEnabled": {
+      "description": "Field suggestions are switched on",
+      "type": "boolean"
+    },
+    "lines": {
+      "items": {
+        "$ref": "#/components/schemas/DocumentLineDto"
+      },
+      "type": "array"
+    },
+    "recognition": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/DocumentRecognitionDto"
+        }
+      ],
+      "description": "Whether the photo can be read again; owner only",
+      "nullable": true
+    },
+    "recognizedAt": {
+      "description": "When the text was last read",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "canEdit",
+    "fields",
+    "fieldsEnabled",
+    "lines",
+    "recognition",
+    "recognizedAt"
+  ],
+  "type": "object"
+}
+```
+
+## DocumentSearchResponseDto
+
+Related models: [AssetResponseDto](models-06.md#assetresponsedto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/AssetResponseDto"
+      },
+      "type": "array"
+    },
+    "nextPage": {
+      "nullable": true,
+      "type": "string"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "nextPage",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## DownloadArchiveDto
+
+
+```json
+{
+  "properties": {
+    "archiveName": {
+      "description": "The name of the archive to download, without extension",
+      "type": "string"
+    },
+    "assetIds": {
+      "description": "Asset IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "edited": {
+      "description": "Download edited asset if available",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "assetIds"
+  ],
+  "type": "object"
+}
+```
+
 ## DownloadArchiveInfo
 
 
@@ -2146,163 +2332,6 @@ Related models: [FileTrashItemResponseDto](models-11.md#filetrashitemresponsedto
   },
   "required": [
     "url"
-  ],
-  "type": "object"
-}
-```
-
-## FrameleafLinkResponseDto
-
-Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-37.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
-
-```json
-{
-  "properties": {
-    "avatarColor": {
-      "$ref": "#/components/schemas/UserAvatarColor"
-    },
-    "clusterGroupId": {
-      "description": "Cluster group the user is a member of",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "confirmExpiresAt": {
-      "description": "For a preview: when the confirm token expires",
-      "nullable": true,
-      "type": "string"
-    },
-    "confirmToken": {
-      "description": "For a preview: confirms the link through link/confirm",
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "Creation date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "deletedAt": {
-      "description": "Deletion date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "email": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "id": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "Is admin user",
-      "type": "boolean"
-    },
-    "license": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/UserLicense"
-        }
-      ],
-      "nullable": true
-    },
-    "linked": {
-      "description": "Whether the Frameleaf account is now linked (false for a preview)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "oauthId": {
-      "description": "OAuth ID",
-      "type": "string"
-    },
-    "profileChangedAt": {
-      "description": "Profile change date",
-      "format": "date-time",
-      "type": "string"
-    },
-    "profileImagePath": {
-      "description": "Profile image path",
-      "type": "string"
-    },
-    "quotaSizeInBytes": {
-      "description": "Storage quota in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "quotaUsageInBytes": {
-      "description": "Storage usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "roleChange": {
-      "$ref": "#/components/schemas/FrameleafLinkRoleChange"
-    },
-    "shouldChangePassword": {
-      "description": "Require password change on next login",
-      "type": "boolean"
-    },
-    "status": {
-      "$ref": "#/components/schemas/UserStatus"
-    },
-    "storageLabel": {
-      "description": "Storage label",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Last update date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "avatarColor",
-    "clusterGroupId",
-    "confirmExpiresAt",
-    "confirmToken",
-    "createdAt",
-    "deletedAt",
-    "email",
-    "id",
-    "isAdmin",
-    "license",
-    "linked",
-    "name",
-    "oauthId",
-    "profileChangedAt",
-    "profileImagePath",
-    "quotaSizeInBytes",
-    "quotaUsageInBytes",
-    "roleChange",
-    "shouldChangePassword",
-    "status",
-    "storageLabel",
-    "updatedAt"
   ],
   "type": "object"
 }

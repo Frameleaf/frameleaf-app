@@ -27769,121 +27769,6 @@
       "synchronize": true
     },
     {
-      "name": "push_device_activity",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "deviceId",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "activityId",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "kind",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "token",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "push_device_activity",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "push_device_activity_deviceId_idx",
-          "definition": "CREATE INDEX \"push_device_activity_deviceId_idx\" ON public.push_device_activity USING btree (\"deviceId\")",
-          "tableName": "push_device_activity",
-          "columnNames": [
-            "deviceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "push_device_activity_deviceId_activityId_uq",
-          "definition": "UNIQUE (\"deviceId\", \"activityId\")",
-          "tableName": "push_device_activity",
-          "columnNames": [
-            "deviceId",
-            "activityId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "push_device_activity_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "push_device_activity",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "push_device_activity_deviceId_fkey",
-          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES push_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "push_device_activity",
-          "columnNames": [
-            "deviceId"
-          ],
-          "referenceTableName": "push_device",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "render_worker_session",
       "columns": [
         {
@@ -38760,6 +38645,130 @@
           "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
           "tableName": "asset_develop_revision",
           "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "push_device_activity",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "activityId",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "token",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "push_device_activity",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operationId",
+          "tableName": "push_device_activity",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "push_device_activity_deviceId_idx",
+          "definition": "CREATE INDEX \"push_device_activity_deviceId_idx\" ON public.push_device_activity USING btree (\"deviceId\")",
+          "tableName": "push_device_activity",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "push_device_activity_deviceId_activityId_uq",
+          "definition": "UNIQUE (\"deviceId\", \"activityId\")",
+          "tableName": "push_device_activity",
+          "columnNames": [
+            "deviceId",
+            "activityId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "push_device_activity_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "push_device_activity",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "push_device_activity_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES push_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "push_device_activity",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "push_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],

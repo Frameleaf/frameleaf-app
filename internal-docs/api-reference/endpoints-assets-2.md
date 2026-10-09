@@ -574,11 +574,104 @@ Complete operation contract:
 }
 ```
 
+## createCastMediaUrl
+
+`POST /api/assets/{id}/cast`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cast.controller.ts#L34).
+
+Create a Cast media URL
+
+Permission: `asset.view`. Admin only: `false`.
+
+Models: [CastMediaUrlCreateDto](models-07.md#castmediaurlcreatedto), [CastMediaUrlResponseDto](models-07.md#castmediaurlresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller()
+@Post('assets/:id/cast')
+@HttpCode(HttpStatus.OK)
+@Authenticated({ permission: Permission.AssetView })
+@Endpoint({
+    summary: 'Create a Cast media URL',
+    description:
+      'Returns a signed URL path for one rendition (original, preview or video) of one item, for a Cast receiver that cannot send the session token or cookies. It expires after 15 minutes, serves only this item, and stops working when the session or API key is revoked, access is lost, the item becomes Locked or hidden for the account, or an administrator turns casting off for the account (refused with 403 here in those cases). Shared links cannot cast. The original needs download permission.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Returns a signed URL path for one rendition (original, preview or video) of one item, for a Cast receiver that cannot send the session token or cookies. It expires after 15 minutes, serves only this item, and stops working when the session or API key is revoked, access is lost, the item becomes Locked or hidden for the account, or an administrator turns casting off for the account (refused with 403 here in those cases). Shared links cannot cast. The original needs download permission.",
+  "operationId": "createCastMediaUrl",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/CastMediaUrlCreateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/CastMediaUrlResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Create a Cast media URL",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3",
+      "state": "Added"
+    }
+  ],
+  "x-immich-permission": "asset.view"
+}
+```
+
 ## getAssetDevelop
 
 `GET /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L52).
 
 List develop versions of an asset
 
@@ -665,7 +758,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L64).
 
 Save a develop recipe as a new version
 
@@ -1037,6 +1130,103 @@ Complete operation contract:
 }
 ```
 
+## generateAssetDevelopFill
+
+`POST /api/assets/{id}/develop/fills/generate`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L152).
+
+Generate a Clean Up Remove fill
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [AssetDevelopArtifactResponseDto](models-04.md#assetdevelopartifactresponsedto), [AssetDevelopFillGenerateDto](models-04.md#assetdevelopfillgeneratedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Post(':id/develop/fills/generate')
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Generate a Clean Up Remove fill',
+    description:
+      "Fills the area (`region` or `strokes`, in original-image fractions, as the Remove operation will carry it) on the instance-local ML worker and stores the result as a fill artifact covering the area's bounding box. Reference its `id` as the Remove operation's `fill`. Answers 503 with code `develop_inpaint_unavailable` while the worker has no inpainting model.",
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Fills the area (`region` or `strokes`, in original-image fractions, as the Remove operation will carry it) on the instance-local ML worker and stores the result as a fill artifact covering the area's bounding box. Reference its `id` as the Remove operation's `fill`. Answers 503 with code `develop_inpaint_unavailable` while the worker has no inpainting model.",
+  "operationId": "generateAssetDevelopFill",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/AssetDevelopFillGenerateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetDevelopArtifactResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Generate a Clean Up Remove fill",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## importAssetDevelopRendition
 
 `POST /api/assets/{id}/develop/imports`
@@ -1144,7 +1334,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/masks/propose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L127).
 
 Suggest a subject or sky mask locally
 
@@ -1159,13 +1349,19 @@ Controller access declarations:
 @Controller(RouteKey.Asset)
 @Post(':id/develop/masks/propose')
 @Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({ summary: 'Suggest a subject or sky mask locally', history: history() })
+@Endpoint({
+    summary: 'Suggest a subject or sky mask locally',
+    description:
+      'Runs on the instance-local ML worker and stores the proposal as a mask artifact of this photo. Without `coordinates` (or with `sensor-active`) the original must be a RAW and the mask covers its unrotated sensor canvas, for version 2 recipes. With `coordinates: "original"` any still works and the mask covers the whole original (EXIF orientation applied); reference it as the `artifact` of a version 1 `subject`, `sky` or `background` mask.',
+    history: history(),
+  })
 ```
 
 Complete operation contract:
 
 ```json
 {
+  "description": "Runs on the instance-local ML worker and stores the proposal as a mask artifact of this photo. Without `coordinates` (or with `sensor-active`) the original must be a RAW and the mask covers its unrotated sensor canvas, for version 2 recipes. With `coordinates: \"original\"` any still works and the mask covers the whole original (EXIF orientation applied); reference it as the `artifact` of a version 1 `subject`, `sky` or `background` mask.",
   "operationId": "proposeAssetDevelopMask",
   "parameters": [
     {
@@ -1235,7 +1431,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L80).
 
 Render a develop preview
 
@@ -1351,7 +1547,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revert`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L146).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L177).
 
 Revert to the original or an earlier develop version
 
@@ -1449,7 +1645,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/revisions/{revisionId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L194).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L225).
 
 View a rendered develop file
 
@@ -1586,7 +1782,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/develop/revisions/{revisionId}/render`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L209).
 
 Cancel a develop render
 
@@ -1679,282 +1875,5 @@ Complete operation contract:
   ],
   "x-immich-permission": "asset.edit.create",
   "x-immich-state": "Alpha"
-}
-```
-
-## renderAssetDevelopRevision
-
-`POST /api/assets/{id}/develop/revisions/{revisionId}/render`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L163).
-
-Render a develop version
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [AssetDevelopRevisionResponseDto](models-05.md#assetdeveloprevisionresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Post(':id/develop/revisions/:revisionId/render')
-@HttpCode(HttpStatus.OK)
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Render a develop version',
-    description: 'Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.",
-  "operationId": "renderAssetDevelopRevision",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "description": "Asset ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "revisionId",
-      "required": true,
-      "in": "path",
-      "description": "Develop revision ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Render a develop version",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Alpha"
-}
-```
-
-## getVideoEditVersions
-
-`GET /api/assets/{id}/edit-versions`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L341).
-
-List saved video versions
-
-Permission: `asset.edit.get`. Admin only: `false`.
-
-Models: [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Get(':id/edit-versions')
-@Authenticated({ permission: Permission.AssetEditGet })
-@Endpoint({ summary: 'List saved video versions', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "getVideoEditVersions",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "items": {
-              "$ref": "#/components/schemas/VideoEditVersionResponseDto"
-            },
-            "type": "array"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "List saved video versions",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Beta"
-    }
-  ],
-  "x-immich-permission": "asset.edit.get",
-  "x-immich-state": "Beta"
-}
-```
-
-## exportVideoEditVersion
-
-`POST /api/assets/{id}/edit-versions/export`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L348).
-
-Export the current video version
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [VideoEditExportDto](models-38.md#videoeditexportdto), [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Post(':id/edit-versions/export')
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Export the current video version',
-    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "exportVideoEditVersion",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/VideoEditExportDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "201": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/VideoEditVersionResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Export the current video version",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Beta"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Beta"
 }
 ```

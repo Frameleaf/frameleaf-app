@@ -998,7 +998,8 @@ export class StudioExportService {
     const state = started ? 'started' : 'running';
     try {
       const version = await this.repository.getByRenderOperation(operation.id);
-      if (!version) {
+      if (!version || version.state !== StudioExportVersionState.Rendering) {
+        this.renderProgressSent.delete(operation.id);
         return;
       }
       const name = operation.label?.trim() || 'Your Studio export';
