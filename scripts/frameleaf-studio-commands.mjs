@@ -310,6 +310,16 @@ export const catalogue = [
     description: 'Push or pull everything from a clip onward, on every track, by a signed delta.',
   },
   {
+    id: 'clip.relink',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    manifestIds: ['readme.media-import.4'],
+    payload: { clipId: 'string', assetId: 'string' },
+    description: 'Point a placed clip and its synchronised linked clips at another library asset.',
+  },
+  {
     id: 'clip.reorder',
     scope: 'clip',
     mutatesGraph: true,
@@ -1396,7 +1406,7 @@ export const nonCommandRows = [
   {
     id: 'module.media-library',
     reason: 'Source module inventory row, not an action.',
-    commands: ['media.import', 'media.relink', 'media.remove'],
+    commands: ['clip.relink', 'media.import', 'media.relink', 'media.remove'],
   },
   // FL-98: the preview module edits the graph only through its gizmos (transform, parenting,
   // crop, mask); its frames come from preview.request/release, which the matrix measures at the

@@ -429,8 +429,10 @@ export class CloudMlJobService {
       throw new BadRequestException('Smooth motion is for videos');
     }
 
-    // the preview a full render inherits its model and settings from
-    const preview = dto.stage === 'full' ? await this.requireReviewedPreview(auth, dto) : null;
+    // the preview a full render inherits its model and settings from; without one, a full-stage
+    // estimate is a quote for the whole file with the given settings, which cannot be confirmed (FL-348)
+    const quoteOnly = dto.stage === 'full' && !dto.restorationId;
+    const preview = dto.stage === 'full' && !quoteOnly ? await this.requireReviewedPreview(auth, dto) : null;
     const smooth = dto.purpose === 'smooth-motion';
     const settings = preview
       ? {
@@ -617,6 +619,7 @@ export class CloudMlJobService {
             outputHeight: output.height,
           }
         : null,
+      quoteOnly,
     };
   }
 
@@ -726,6 +729,15 @@ export class CloudMlJobService {
       }
       if (record.operationId && record.restorationId) {
         return { operationId: record.operationId, restorationId: record.restorationId, stage: record.stage };
+      }
+      if (record.stage === 'full' && !record.restorationId) {
+        // FL-115: a full render runs only what the owner reviewed in a preview; a quote is not a job
+        throw new ConflictException({
+          message: 'This is a quote for the whole file; preview it first, then estimate the reviewed preview in full',
+          error: 'Conflict',
+          statusCode: HttpStatus.CONFLICT,
+          code: 'quote-only',
+        });
       }
       // a confirmation whose job was created but not written back to the estimate answers with that job
       const [existing] = await this.mediaOperationRepository.getLatestBySubject(

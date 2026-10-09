@@ -211,6 +211,124 @@
         "createdAt": 0,
         "updatedAt": 0
       }
+    ],
+    "relink": [
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000001",
+        "storageType": "workspace",
+        "fileName": "surf.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000002",
+        "storageType": "workspace",
+        "fileName": "drone.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000003",
+        "storageType": "workspace",
+        "fileName": "interview.mov",
+        "fileSize": 1,
+        "mimeType": "video/quicktime",
+        "duration": 10,
+        "width": 1920,
+        "height": 1080,
+        "fps": 29.97002997002997,
+        "codec": "hvc1",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000004",
+        "storageType": "workspace",
+        "fileName": "summit.jpg",
+        "fileSize": 1,
+        "mimeType": "image/jpeg",
+        "duration": 0,
+        "width": 4000,
+        "height": 3000,
+        "fps": 0,
+        "codec": "unknown",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000005",
+        "storageType": "workspace",
+        "fileName": "archive.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 12,
+        "width": 1280,
+        "height": 720,
+        "fps": 25,
+        "codec": "avc1.4d401f",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000008",
+        "storageType": "workspace",
+        "fileName": "portrait.png",
+        "fileSize": 1,
+        "mimeType": "image/png",
+        "duration": 0,
+        "width": 1080,
+        "height": 1350,
+        "fps": 0,
+        "codec": "unknown",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000009",
+        "storageType": "workspace",
+        "fileName": "short.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 2,
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      }
     ]
   },
   "seeds": {
@@ -1701,6 +1819,206 @@
         ],
         "transitions": [],
         "keyframes": [],
+        "currentFrame": 0,
+        "zoomLevel": 1,
+        "scrollPosition": 0
+      }
+    },
+    "masks": {
+      "id": "fl-graph-protocol",
+      "name": "Graph protocol",
+      "description": "",
+      "createdAt": 0,
+      "updatedAt": 0,
+      "duration": 0,
+      "schemaVersion": 15,
+      "metadata": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "frameRate": {
+          "num": 30,
+          "den": 1
+        }
+      },
+      "timeline": {
+        "tracks": [
+          {
+            "id": "v1",
+            "name": "",
+            "kind": "video",
+            "height": 100,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 0,
+            "items": []
+          },
+          {
+            "id": "v2",
+            "name": "",
+            "kind": "video",
+            "height": 100,
+            "locked": false,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 1,
+            "items": []
+          },
+          {
+            "id": "v3",
+            "name": "",
+            "kind": "video",
+            "height": 100,
+            "locked": true,
+            "visible": true,
+            "muted": false,
+            "solo": false,
+            "order": 2,
+            "items": []
+          }
+        ],
+        "items": [
+          {
+            "id": "mask-rect",
+            "trackId": "v1",
+            "from": 0,
+            "durationInFrames": 90,
+            "label": "mask-rect",
+            "type": "shape",
+            "fillColor": "#3b82f6",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 400,
+              "height": 300,
+              "rotation": 0,
+              "opacity": 1
+            },
+            "shapeType": "rectangle"
+          },
+          {
+            "id": "mask-path",
+            "trackId": "v1",
+            "from": 120,
+            "durationInFrames": 90,
+            "label": "mask-path",
+            "type": "shape",
+            "fillColor": "#3b82f6",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 400,
+              "height": 300,
+              "rotation": 0,
+              "opacity": 1
+            },
+            "shapeType": "path",
+            "pathClosed": false,
+            "fillEnabled": false,
+            "strokeEnabled": true,
+            "strokeWidth": 4,
+            "pathVertices": [
+              {
+                "position": [
+                  0,
+                  0
+                ],
+                "inHandle": [
+                  0,
+                  0
+                ],
+                "outHandle": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  1,
+                  0
+                ],
+                "inHandle": [
+                  -0.1,
+                  0
+                ],
+                "outHandle": [
+                  0.1,
+                  0
+                ]
+              },
+              {
+                "position": [
+                  0.5,
+                  1
+                ],
+                "inHandle": [
+                  0,
+                  0
+                ],
+                "outHandle": [
+                  0,
+                  0
+                ],
+                "tangentMode": "corner"
+              }
+            ]
+          },
+          {
+            "id": "mask-on",
+            "trackId": "v1",
+            "from": 240,
+            "durationInFrames": 90,
+            "label": "mask-on",
+            "type": "shape",
+            "fillColor": "#3b82f6",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 400,
+              "height": 300,
+              "rotation": 0,
+              "opacity": 1
+            },
+            "shapeType": "ellipse",
+            "isMask": true,
+            "blendMode": "normal",
+            "maskType": "alpha",
+            "maskFeather": 25,
+            "maskOpacity": 80,
+            "maskInvert": true
+          },
+          {
+            "id": "mask-locked",
+            "trackId": "v3",
+            "from": 0,
+            "durationInFrames": 90,
+            "label": "mask-locked",
+            "type": "shape",
+            "fillColor": "#3b82f6",
+            "transform": {
+              "x": 0,
+              "y": 0,
+              "width": 400,
+              "height": 300,
+              "rotation": 0,
+              "opacity": 1
+            },
+            "shapeType": "rectangle"
+          },
+          {
+            "id": "under",
+            "trackId": "v2",
+            "from": 0,
+            "durationInFrames": 90,
+            "label": "Card",
+            "type": "text",
+            "text": "Under",
+            "color": "#ffffff"
+          }
+        ],
         "currentFrame": 0,
         "zoomLevel": 1,
         "scrollPosition": 0
@@ -9529,6 +9847,414 @@
         }
       },
       "digest": "584e67c2c5e94241a1e7c4373a3541a818229e75e2b6f724f2860ffcc34617c9"
+    },
+    "masks": {
+      "seed": "masks",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "items": [],
+              "syncLock": true,
+              "volume": 0
+            },
+            {
+              "id": "v2",
+              "name": "",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "items": [],
+              "syncLock": true,
+              "volume": 0
+            },
+            {
+              "id": "v3",
+              "name": "",
+              "kind": "video",
+              "height": 100,
+              "locked": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 2,
+              "items": [],
+              "syncLock": true,
+              "volume": 0
+            }
+          ],
+          "items": [
+            {
+              "id": "mask-rect",
+              "trackId": "v1",
+              "from": 0,
+              "durationInFrames": 90,
+              "label": "mask-rect",
+              "type": "shape",
+              "fillColor": "#3b82f6",
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 400,
+                "height": 300,
+                "rotation": 0,
+                "opacity": 1
+              },
+              "shapeType": "rectangle"
+            },
+            {
+              "id": "mask-path",
+              "trackId": "v1",
+              "from": 120,
+              "durationInFrames": 90,
+              "label": "mask-path",
+              "type": "shape",
+              "fillColor": "#3b82f6",
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 400,
+                "height": 300,
+                "rotation": 0,
+                "opacity": 1
+              },
+              "shapeType": "path",
+              "pathClosed": false,
+              "fillEnabled": false,
+              "strokeEnabled": true,
+              "strokeWidth": 4,
+              "pathVertices": [
+                {
+                  "position": [
+                    0,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ],
+                  "tangentMode": "corner"
+                },
+                {
+                  "position": [
+                    1,
+                    0
+                  ],
+                  "inHandle": [
+                    -0.1,
+                    0
+                  ],
+                  "outHandle": [
+                    0.1,
+                    0
+                  ],
+                  "tangentMode": "smooth"
+                },
+                {
+                  "position": [
+                    0.5,
+                    1
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ],
+                  "tangentMode": "corner"
+                }
+              ],
+              "strokeLineCap": "butt",
+              "strokeLineJoin": "miter",
+              "strokeMiterLimit": 4
+            },
+            {
+              "id": "mask-on",
+              "trackId": "v1",
+              "from": 240,
+              "durationInFrames": 90,
+              "label": "mask-on",
+              "type": "shape",
+              "fillColor": "#3b82f6",
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 400,
+                "height": 300,
+                "rotation": 0,
+                "opacity": 1
+              },
+              "shapeType": "ellipse",
+              "isMask": true,
+              "blendMode": "normal",
+              "maskType": "alpha",
+              "maskFeather": 25,
+              "maskOpacity": 80,
+              "maskInvert": true
+            },
+            {
+              "id": "mask-locked",
+              "trackId": "v3",
+              "from": 0,
+              "durationInFrames": 90,
+              "label": "mask-locked",
+              "type": "shape",
+              "fillColor": "#3b82f6",
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 400,
+                "height": 300,
+                "rotation": 0,
+                "opacity": 1
+              },
+              "shapeType": "rectangle"
+            },
+            {
+              "id": "under",
+              "trackId": "v2",
+              "from": 0,
+              "durationInFrames": 90,
+              "label": "Card",
+              "type": "text",
+              "text": "Under",
+              "color": "#ffffff"
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "78bb39eacc0b33a4776a5b0ae896a1e3e35a01c6dabfb09e6463944d85d26d44"
+    },
+    "long-pair": {
+      "seed": "empty-30",
+      "media": "standard",
+      "setup": [
+        {
+          "id": "clip.add",
+          "payload": {
+            "assetId": "0198a1c2-0000-7000-8000-000000000005",
+            "trackId": "v1",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "duration": {
+              "num": 10,
+              "den": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:base:long-pair",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": false,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            }
+          ],
+          "items": [
+            {
+              "id": "0cf305f3-8a2d-4244-aedc-beb6f540dd01",
+              "trackId": "v1",
+              "from": 0,
+              "durationInFrames": 300,
+              "label": "archive.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000005",
+              "originId": "14d572ce-4619-42d2-bb5f-ac0fa260f59c",
+              "linkedGroupId": "c3c1011b-6dbb-480e-bb75-83c7e10ce1c3",
+              "sourceStart": 0,
+              "sourceEnd": 250,
+              "sourceDuration": 300,
+              "sourceFps": 25,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "video",
+              "src": "",
+              "sourceWidth": 1280,
+              "sourceHeight": 720,
+              "transform": {
+                "x": 0,
+                "y": 0,
+                "width": 1920,
+                "height": 1080,
+                "rotation": 0
+              }
+            },
+            {
+              "id": "d23b8547-8308-4977-b0a5-222e9c67914c",
+              "trackId": "a1",
+              "from": 0,
+              "durationInFrames": 300,
+              "label": "archive.mp4",
+              "mediaId": "0198a1c2-0000-7000-8000-000000000005",
+              "originId": "14d572ce-4619-42d2-bb5f-ac0fa260f59c",
+              "linkedGroupId": "c3c1011b-6dbb-480e-bb75-83c7e10ce1c3",
+              "sourceStart": 0,
+              "sourceEnd": 250,
+              "sourceDuration": 300,
+              "sourceFps": 25,
+              "trimStart": 0,
+              "trimEnd": 0,
+              "type": "audio",
+              "src": ""
+            }
+          ],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "fa3eccfbfc7ca2386609266513142ebbdb9a41b2b469ffcc8c27c377c147b142"
+    },
+    "relink-locked": {
+      "seed": "locked",
+      "media": "standard",
+      "setup": [],
+      "graph": {
+        "id": "fl-graph-protocol",
+        "name": "Graph protocol",
+        "description": "",
+        "createdAt": 0,
+        "updatedAt": 0,
+        "duration": 0,
+        "schemaVersion": 15,
+        "metadata": {
+          "width": 1920,
+          "height": 1080,
+          "fps": 30,
+          "frameRate": {
+            "num": 30,
+            "den": 1
+          }
+        },
+        "timeline": {
+          "tracks": [
+            {
+              "id": "v1",
+              "name": "V1",
+              "kind": "video",
+              "height": 100,
+              "locked": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 0,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            },
+            {
+              "id": "a1",
+              "name": "A1",
+              "kind": "audio",
+              "height": 100,
+              "locked": true,
+              "visible": true,
+              "muted": false,
+              "solo": false,
+              "order": 1,
+              "syncLock": true,
+              "volume": 0,
+              "items": []
+            }
+          ],
+          "items": [],
+          "masterBusDb": 0,
+          "masterBusMuted": false,
+          "currentFrame": 0,
+          "zoomLevel": 1,
+          "scrollPosition": 0
+        }
+      },
+      "digest": "771d4856ff0ba8c300912a014d779ccbd800059ee95e6c29cfd66dab00a3a1d5"
     }
   },
   "vectors": {
@@ -140575,33 +141301,6 @@
       }
     },
     {
-      "id": "not-implemented/clip.setMask",
-      "story": "FL-309",
-      "covers": [
-        "clip.setMask"
-      ],
-      "summary": "The engine refuses clip.setMask as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "clip.setMask",
-          "payload": {
-            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
-            "mask": null
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/clip.setMask",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "clip.setMask is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/effect.reorder",
       "story": "FL-309",
       "covers": [
@@ -155307,6 +156006,3658 @@
       "covers": [
         "track.setAudio"
       ]
+    },
+    {
+      "id": "clip.setMask/enable-defaults",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "enable-defaults",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:enable-defaults",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "169dc207ac7f408fb9706b73231616ba0f981d18422b8dc6584828f1b0f030cc",
+        "envelopeDigest": "7cf41220dbb27be0204c97918d4dd3aa97f8b1f14e3f258652629d4d92efec82",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "clip",
+                "maskFeather": 0,
+                "maskOpacity": 100,
+                "maskInvert": false,
+                "pathClosed": true
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/enable-alpha",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "enable-alpha",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "type": "alpha"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:enable-alpha",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "db1a28a25856d36e5677f9d011aa26e852a802e30cb95f654fda3c87156f95cb",
+        "envelopeDigest": "ead026dfcf2d7ed3f6e9a9a60c889c546fd6600d0b4c0c6159d4849e9f718e55",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 10,
+                "maskOpacity": 100,
+                "maskInvert": false,
+                "pathClosed": true
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/enable-all-fields",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "enable-all-fields",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "type": "alpha",
+              "feather": 40,
+              "opacity": 75,
+              "invert": true
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:enable-all-fields",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "f4dc054ffcd0ae429a55c9cd69260cfd24e6ecd8a4a8d758a375571942b44d97",
+        "envelopeDigest": "392905741fc1eeadbb10e29c72928013836f83ee3891ee471363b1c7f4075eeb",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 40,
+                "maskOpacity": 75,
+                "maskInvert": true,
+                "pathClosed": true
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/update-keeps-others",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "update-keeps-others",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-on",
+            "mask": {
+              "opacity": 50
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:update-keeps-others",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "b592c6b06b7280f20094e1da3637f2f164f4c0b396c118f55c253fe449a869b4",
+        "envelopeDigest": "fd34f8e0a97f99a25c860ad799711617795ed7b634514926b843af087e417656",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 50,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/type-change-resets-feather",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "type-change-resets-feather",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-on",
+            "mask": {
+              "type": "clip"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:type-change-resets-feather",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "3f6d072a69860d59a92540db538505538e028ccfc79e37165825d03009c5a917",
+        "envelopeDigest": "59208e54e259d3faffcde7a3a5a67ccb7b022e4661b03f50c640ccc107a8b1c6",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "clip",
+                "maskFeather": 0,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/clear",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "clear",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-on",
+            "mask": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:clear",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "805d94ab0637970ceefb5161408560cb1c37ba961b3c6a26dd1b600c6e084b8c",
+        "envelopeDigest": "c21ece6a45d6736207dfcb3b2bccfc85147709b1837821e383b62e3cc1974eb5",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": false
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/clear-without-mask",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "clear-without-mask",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:clear-without-mask",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "78bb39eacc0b33a4776a5b0ae896a1e3e35a01c6dabfb09e6463944d85d26d44",
+        "envelopeDigest": "48ab045c6e1da8b03fb23c693e0e050b1fe9ab21e1ecc7f1697b23a95dc25c14",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/pen-path",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "pen-path",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-path",
+            "mask": {
+              "path": [
+                {
+                  "position": [
+                    0.1,
+                    0.1
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    0.9,
+                    0.2
+                  ],
+                  "inHandle": [
+                    -0.05,
+                    0
+                  ],
+                  "outHandle": [
+                    0.05,
+                    0
+                  ],
+                  "tangentMode": "broken"
+                },
+                {
+                  "position": [
+                    0.8,
+                    0.9
+                  ],
+                  "inHandle": [
+                    0.02,
+                    -0.02
+                  ],
+                  "outHandle": [
+                    -0.02,
+                    0.02
+                  ]
+                },
+                {
+                  "position": [
+                    0.2,
+                    0.8
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ],
+                  "tangentMode": "continuous"
+                }
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:pen-path",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "0762ef51b29e2ffc32b3c8bd5fbf44bf593c1adf556f24a85e2f602de5629b18",
+        "envelopeDigest": "a049db1f7e2b4708725df78fa65585023e927947eaaba962701cf725581bfe4d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": true,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0.1,
+                      0.1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      0.9,
+                      0.2
+                    ],
+                    "inHandle": [
+                      -0.05,
+                      0
+                    ],
+                    "outHandle": [
+                      0.05,
+                      0
+                    ],
+                    "tangentMode": "broken"
+                  },
+                  {
+                    "position": [
+                      0.8,
+                      0.9
+                    ],
+                    "inHandle": [
+                      0.02,
+                      -0.02
+                    ],
+                    "outHandle": [
+                      -0.02,
+                      0.02
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.2,
+                      0.8
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "continuous"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4,
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "clip",
+                "maskFeather": 0,
+                "maskOpacity": 100,
+                "maskInvert": false
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setMask/path-needs-path-shape",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "path-needs-path-shape",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "path": [
+                {
+                  "position": [
+                    0,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    1,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    1,
+                    1
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                }
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:path-needs-path-shape",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: path needs a path shape"
+      }
+    },
+    {
+      "id": "clip.setMask/path-too-short",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "path-too-short",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-path",
+            "mask": {
+              "path": [
+                {
+                  "position": [
+                    0,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    1,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                }
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:path-too-short",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: path must have 3 to 1000 vertices"
+      }
+    },
+    {
+      "id": "clip.setMask/bad-vertex",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "bad-vertex",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-path",
+            "mask": {
+              "path": [
+                {
+                  "position": [
+                    0,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    1,
+                    0
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                },
+                {
+                  "position": [
+                    1
+                  ],
+                  "inHandle": [
+                    0,
+                    0
+                  ],
+                  "outHandle": [
+                    0,
+                    0
+                  ]
+                }
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:bad-vertex",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: a vertex position or handle must be [x, y]"
+      }
+    },
+    {
+      "id": "clip.setMask/feather-out-of-range",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "feather-out-of-range",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "feather": 101
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:feather-out-of-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: feather must be a number from 0 to 100"
+      }
+    },
+    {
+      "id": "clip.setMask/unknown-type",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "unknown-type",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "type": "luma"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:unknown-type",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: type must be \"clip\" or \"alpha\""
+      }
+    },
+    {
+      "id": "clip.setMask/unknown-mask-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "unknown-mask-field",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "colour": "red"
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:unknown-mask-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: unknown mask field"
+      }
+    },
+    {
+      "id": "clip.setMask/mask-is-array",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "mask-is-array",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:mask-is-array",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask: mask must be an object or null"
+      }
+    },
+    {
+      "id": "clip.setMask/missing-mask",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "missing-mask",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:missing-mask",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "mask is required (null removes the mask)"
+      }
+    },
+    {
+      "id": "clip.setMask/not-a-shape",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "not-a-shape",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "under",
+            "mask": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:not-a-shape",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setMask requires a shape clip"
+      }
+    },
+    {
+      "id": "clip.setMask/missing-clip",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "missing-clip",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "missing",
+            "mask": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:missing-clip",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clipId: clip \"missing\" does not exist"
+      }
+    },
+    {
+      "id": "clip.setMask/locked-track",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "locked-track",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-locked",
+            "mask": {}
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:locked-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "clip.setMask: a clip it would change is on a locked track"
+      }
+    },
+    {
+      "id": "clip.setMask/enable-then-clear",
+      "story": "FL-348",
+      "covers": [
+        "clip.setMask"
+      ],
+      "summary": "enable-then-clear",
+      "base": "masks",
+      "envelopes": [
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": {
+              "type": "alpha",
+              "feather": 12
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:enable-then-clear:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setMask",
+          "payload": {
+            "clipId": "mask-rect",
+            "mask": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:mask:enable-then-clear:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "7ea7584c79720bc2bf72725c348a5b5ed9c27d9e270397264fcf4bd9167654c8",
+        "envelopeDigest": "ef78ba33f98399c7c83f2e84289e2303b39967825ea4474fe9b151d4f0ab5122",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "mask-rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle",
+                "isMask": false
+              },
+              {
+                "id": "mask-path",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 90,
+                "label": "mask-path",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": false,
+                "fillEnabled": false,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ],
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4
+              },
+              {
+                "id": "mask-on",
+                "trackId": "v1",
+                "from": 240,
+                "durationInFrames": 90,
+                "label": "mask-on",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "ellipse",
+                "isMask": true,
+                "blendMode": "normal",
+                "maskType": "alpha",
+                "maskFeather": 25,
+                "maskOpacity": 80,
+                "maskInvert": true
+              },
+              {
+                "id": "mask-locked",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "mask-locked",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "under",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Card",
+                "type": "text",
+                "text": "Under",
+                "color": "#ffffff"
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.relink/linked-pair-ntsc",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "linked-pair-ntsc",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000003"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:linked-pair-ntsc",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "1860e4400aeeac2a0077bbd78fe23dd8cb7e6c9d7a03ca658ec1ea5ba089be57",
+        "envelopeDigest": "5cfdf37de6f753df5c62591cd9d1d3c3e3b940277cda35e5a3178f98d563b82c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "interview.mov",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000003",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 300,
+                "sourceFps": 29.97,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "interview.mov",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000003",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 300,
+                "sourceFps": 29.97,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.relink/linked-pair-from-audio",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "linked-pair-from-audio",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "assetId": "0198a1c2-0000-7000-8000-000000000005"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:linked-pair-from-audio",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "e9bc4cbe0a477991e4a2b87015d49f88386b0eaed05f71d81293099917b236f0",
+        "envelopeDigest": "8c9de89a7f6889d18f8e6353d60a0df3e253452e24e6af9a5a5501958ff3d572",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "archive.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000005",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 100,
+                "sourceDuration": 300,
+                "sourceFps": 25,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1280,
+                "sourceHeight": 720,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "archive.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000005",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 100,
+                "sourceDuration": 300,
+                "sourceFps": 25,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.relink/higher-rate",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "higher-rate",
+      "base": "linked-pair",
+      "media": "relink",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000009"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:higher-rate",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "clip.relink: the asset does not cover the clip's source window"
+      }
+    },
+    {
+      "id": "clip.relink/same-asset",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "same-asset",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000001"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:same-asset",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "c0f809f437f5e25938cc67f88dddd2e3bf34ed8cc44a00fd4d44037051f351ca",
+        "envelopeDigest": "f33df606084679abcdb76dbef96098bbb7d1dcc9410c91c00aaaeb986653363f",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.relink/still-to-image",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "still-to-image",
+      "base": "still",
+      "media": "relink",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "assetId": "0198a1c2-0000-7000-8000-000000000008"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:still-to-image",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "e786688038d205d1024efa779e57236b68e231e33100419244cbc6371af9ae53",
+        "envelopeDigest": "6ed771fe260f544711c8b088f5d0b016259cf1434449ee67a9120955baa640dc",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "portrait.png",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000008",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 1080,
+                "sourceHeight": 1350,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.relink/still-to-video",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "still-to-video",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "assetId": "0198a1c2-0000-7000-8000-000000000001"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:still-to-video",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "assetId: an image clip needs an image"
+      }
+    },
+    {
+      "id": "clip.relink/video-to-image",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "video-to-image",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000004"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:video-to-image",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "assetId: a video clip needs a video"
+      }
+    },
+    {
+      "id": "clip.relink/audio-needs-sound",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "audio-needs-sound",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000002"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:audio-needs-sound",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "assetId: an audio clip needs a video with sound"
+      }
+    },
+    {
+      "id": "clip.relink/source-window-too-long",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "source-window-too-long",
+      "base": "long-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "0cf305f3-8a2d-4244-aedc-beb6f540dd01",
+            "assetId": "0198a1c2-0000-7000-8000-000000000001"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:source-window-too-long",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "clip.relink: the asset does not cover the clip's source window"
+      }
+    },
+    {
+      "id": "clip.relink/not-media",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "not-media",
+      "base": "title-over-still",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "4274fcda-28f4-4b97-b4ef-0eadbdaded43",
+            "assetId": "0198a1c2-0000-7000-8000-000000000001"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:not-media",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.relink requires a library media clip"
+      }
+    },
+    {
+      "id": "clip.relink/unknown-asset",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "unknown-asset",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-0000000000ff"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:unknown-asset",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "assetId: \"0198a1c2-0000-7000-8000-0000000000ff\" is not media this session may use"
+      }
+    },
+    {
+      "id": "clip.relink/unsupported-type",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "unsupported-type",
+      "base": "linked-pair",
+      "media": "extended",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "assetId": "0198a1c2-0000-7000-8000-000000000006"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:unsupported-type",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "assetId: unsupported media type audio/mpeg"
+      }
+    },
+    {
+      "id": "clip.relink/unknown-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "unknown-field",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "assetId": "0198a1c2-0000-7000-8000-000000000003",
+            "keep": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:unknown-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.relink: unknown field"
+      }
+    },
+    {
+      "id": "clip.relink/missing-clip",
+      "story": "FL-348",
+      "covers": [
+        "clip.relink"
+      ],
+      "summary": "missing-clip",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.relink",
+          "payload": {
+            "clipId": "missing",
+            "assetId": "0198a1c2-0000-7000-8000-000000000003"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:relink:missing-clip",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clipId: clip \"missing\" does not exist"
+      }
     }
   ],
   "history": [
@@ -156510,6 +160861,11 @@
       "story": "FL-307",
       "section": "12.5.1"
     },
+    "clip.relink": {
+      "status": "engine",
+      "story": "FL-348",
+      "section": "17.2"
+    },
     "clip.reorder": {
       "status": "engine",
       "story": "FL-307",
@@ -156552,9 +160908,9 @@
       "section": "12.6.1"
     },
     "clip.setMask": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-348",
+      "section": "17.1"
     },
     "clip.setSpeed": {
       "status": "engine",

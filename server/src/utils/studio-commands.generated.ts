@@ -146,6 +146,16 @@ export const studioCommandMirror = {
       delta: 'duration',
     },
   },
+  'clip.relink': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      assetId: 'string',
+      clipId: 'string',
+    },
+  },
   'clip.reorder': {
     scope: 'clip',
     mutatesGraph: true,

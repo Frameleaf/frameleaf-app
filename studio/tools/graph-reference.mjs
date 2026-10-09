@@ -1315,6 +1315,104 @@ const commands = {
     replace(state, next);
   },
 
+  /* 17.1 (FL-348) */
+  'clip.setMask'(state, payload) {
+    for (const key of Object.keys(payload)) if (key !== 'clipId' && key !== 'mask') invalid('clip.setMask: unknown field');
+    const id = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === id) ?? invalid(`clipId: clip "${id}" does not exist`);
+    if (clip.type !== 'shape') invalid('clip.setMask requires a shape clip');
+    if (!Object.hasOwn(payload, 'mask')) invalid('mask is required (null removes the mask)');
+    const mask = payload.mask;
+    const plain = (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+      (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+    if (mask !== null && !plain(mask)) invalid('clip.setMask: mask must be an object or null');
+    refuseLocked(state, [clip.id], 'clip.setMask');
+    const wasMask = clip.isMask === true;
+    if (mask === null) {
+      if (!wasMask) return;
+      const { blendMode, maskType, maskFeather, maskOpacity, maskInvert, pathClosed, ...rest } = clip;
+      replace(state, { ...rest, isMask: false });
+      return;
+    }
+    for (const key of Object.keys(mask)) if (!['type', 'feather', 'opacity', 'invert', 'path'].includes(key)) invalid('clip.setMask: unknown mask field');
+    let path;
+    if (mask.path !== undefined) {
+      if (clip.shapeType !== 'path') invalid('clip.setMask: path needs a path shape');
+      if (!Array.isArray(mask.path) || mask.path.length < 3 || mask.path.length > 1000) invalid('clip.setMask: path must have 3 to 1000 vertices');
+      const pair = (entry) => {
+        if (!Array.isArray(entry) || entry.length !== 2 || !entry.every((n) => typeof n === 'number' && Number.isFinite(n))) invalid('clip.setMask: a vertex position or handle must be [x, y]');
+        return [entry[0], entry[1]];
+      };
+      path = mask.path.map((vertex) => {
+        if (!plain(vertex)) invalid('clip.setMask: a vertex must be an object');
+        for (const key of Object.keys(vertex)) if (!['position', 'inHandle', 'outHandle', 'tangentMode'].includes(key)) invalid('clip.setMask: unknown vertex field');
+        const position = pair(vertex.position);
+        const inHandle = pair(vertex.inHandle);
+        const outHandle = pair(vertex.outHandle);
+        if (vertex.tangentMode !== undefined && !['corner', 'smooth', 'continuous', 'broken'].includes(vertex.tangentMode)) invalid('clip.setMask: unknown tangent mode');
+        const tangentMode = vertex.tangentMode ?? ([...inHandle, ...outHandle].every((n) => n === 0) ? 'corner' : 'smooth');
+        return { position, inHandle, outHandle, tangentMode };
+      });
+    }
+    if (mask.type !== undefined && mask.type !== 'clip' && mask.type !== 'alpha') invalid('clip.setMask: type must be "clip" or "alpha"');
+    for (const name of ['feather', 'opacity']) {
+      if (mask[name] !== undefined && !(typeof mask[name] === 'number' && Number.isFinite(mask[name]) && mask[name] >= 0 && mask[name] <= 100)) invalid(`clip.setMask: ${name} must be a number from 0 to 100`);
+    }
+    if (mask.invert !== undefined && typeof mask.invert !== 'boolean') invalid('clip.setMask: invert must be a boolean');
+    const current = wasMask
+      ? { type: clip.maskType ?? 'clip', feather: clip.maskFeather ?? 10, opacity: clip.maskOpacity ?? 100, invert: clip.maskInvert ?? false }
+      : { type: 'clip', feather: 0, opacity: 100, invert: false };
+    const type = mask.type ?? current.type;
+    const feather = mask.feather ?? (type === current.type ? current.feather : type === 'alpha' ? (current.feather > 0 ? current.feather : 10) : 0);
+    replace(state, {
+      ...clip,
+      isMask: true,
+      blendMode: 'normal',
+      maskType: type,
+      maskFeather: feather,
+      maskOpacity: mask.opacity ?? current.opacity,
+      maskInvert: mask.invert ?? current.invert,
+      ...(wasMask ? {} : { pathClosed: true }),
+      ...(path ? { pathVertices: path } : {}),
+    });
+  },
+
+  /* 17.2 (FL-348) */
+  'clip.relink'(state, payload) {
+    for (const key of Object.keys(payload)) if (key !== 'clipId' && key !== 'assetId') invalid('clip.relink: unknown field');
+    const id = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === id) ?? invalid(`clipId: clip "${id}" does not exist`);
+    const assetId = text(payload, 'assetId');
+    if (!['video', 'audio', 'image'].includes(clip.type) || !clip.mediaId) invalid('clip.relink requires a library media clip');
+    const record = state.media.get(assetId) ?? invalid(`assetId: "${assetId}" is not media this session may use`);
+    const kind = record.mimeType.startsWith('image/') ? 'image' : record.mimeType.startsWith('video/') ? 'video' : invalid(`assetId: unsupported media type ${record.mimeType}`);
+    const targets = synchronised(state, clip).filter((member) => member.mediaId === clip.mediaId);
+    for (const target of targets) {
+      if (target.type === 'image' && kind !== 'image') invalid('assetId: an image clip needs an image');
+      if (target.type === 'video' && kind !== 'video') invalid('assetId: a video clip needs a video');
+      if (target.type === 'audio' && (kind !== 'video' || !record.audioCodec)) invalid('assetId: an audio clip needs a video with sound');
+    }
+    refuseLocked(state, targets.map((target) => target.id), 'clip.relink');
+    if (clip.mediaId === assetId) return;
+    for (const target of targets) {
+      const { thumbnailUrl, waveformData, ...next } = target;
+      Object.assign(next, { mediaId: assetId, label: record.fileName });
+      if (target.type !== 'audio' && record.width > 0 && record.height > 0) Object.assign(next, { sourceWidth: record.width, sourceHeight: record.height });
+      if (target.type !== 'image') {
+        const rate = round3(record.fps || state.fps);
+        const previous = target.sourceFps ?? state.fps;
+        const sourceDuration = Math.max(1, Math.round(record.duration * rate));
+        const start = target.sourceStart ?? 0;
+        const stop = target.sourceEnd ?? start;
+        const sourceStart = rate === previous ? start : Math.round((start * rate) / previous);
+        const sourceEnd = rate === previous ? stop : Math.round((stop * rate) / previous);
+        if (sourceEnd > sourceDuration || sourceEnd <= sourceStart) failed("clip.relink: the asset does not cover the clip's source window");
+        Object.assign(next, { sourceFps: rate, sourceDuration, sourceStart, sourceEnd });
+      }
+      replace(state, next);
+    }
+  },
+
   /* 12.6.3 */
   'clip.setTransform'(state, payload) {
     const clip = namedClip(state, payload);
