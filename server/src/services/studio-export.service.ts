@@ -79,7 +79,7 @@ import {
 import { getConfig } from 'src/utils/config.js';
 import { assertExecutionActive, settleOperationExecution } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { pushJobData } from 'src/utils/frameleaf-push.js';
+import { pushJobData, shouldSendRenderProgress } from 'src/utils/frameleaf-push.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
@@ -160,6 +160,9 @@ class PublishError extends Error {
   }
 }
 
+/** Render progress throttling remembers at most this many renders per process. */
+const RENDER_PROGRESS_TRACKED_MAX = 1000;
+
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 500);
 
 const errorCode = (error: unknown): string => {
@@ -234,6 +237,8 @@ export class StudioExportService {
   private stopping = false;
   private lastSweepAt = 0;
   private readonly workerId = `studio-export-${randomUUID()}`;
+  /** The last render progress pushed, per render operation (throttling). */
+  private readonly renderProgressSent = new Map<string, { progress: number; at: number }>();
   /** Stands in for a session on the worker's owner auth; nothing on these paths reads it back. */
   private readonly sessionId = randomUUID();
 
@@ -959,11 +964,64 @@ export class StudioExportService {
     return { accepted: true };
   }
 
-  /** The render failed for good (its automatic retry spent): so does its version. */
+  /**
+   * The render failed for good (its automatic retry spent): so does its version, and the owner's devices
+   * are told (ending a render Live Activity, offering Retry).
+   */
   async onRenderFailed(operation: MediaOperation, failure: { errorCode: string; error: string }): Promise<void> {
+    this.renderProgressSent.delete(operation.id);
     const version = await this.repository.getByRenderOperation(operation.id);
     if (version) {
       await this.repository.markFailed(version.id, failure);
+      await this.notifyRenderFinished(version, 'failed', null, operation.label);
+    }
+  }
+
+  /**
+   * Native apps: a render worker took the job (`started`) or reported progress. The owner's devices get a
+   * `render-progress` push (a Live Activity on iOS, a progress notification on Android), at most every
+   * `RENDER_PROGRESS_MIN_STEP` of progress or `RENDER_PROGRESS_MIN_INTERVAL_MS`. Throttling is per server
+   * process, so a restart sends the next report at once. A failure to notify never touches the render.
+   */
+  async onRenderProgress(operation: MediaOperation, fraction: number, started = false): Promise<void> {
+    const now = Date.now();
+    const progress = Math.round(Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0)) * 1000) / 1000;
+    if (!started && !shouldSendRenderProgress(this.renderProgressSent.get(operation.id), progress, now)) {
+      return;
+    }
+    this.renderProgressSent.delete(operation.id);
+    this.renderProgressSent.set(operation.id, { progress, at: now });
+    if (this.renderProgressSent.size > RENDER_PROGRESS_TRACKED_MAX) {
+      // the oldest entry: its render most likely finished on another process
+      this.renderProgressSent.delete(this.renderProgressSent.keys().next().value!);
+    }
+    const state = started ? 'started' : 'running';
+    try {
+      const version = await this.repository.getByRenderOperation(operation.id);
+      if (!version) {
+        return;
+      }
+      const name = operation.label?.trim() || 'Your Studio export';
+      const percent = Math.floor(progress * 100);
+      await this.events.emit('PushNotify', {
+        type: PushEventType.RenderProgress,
+        userIds: [version.ownerId],
+        title: 'Rendering',
+        body: `${name} · ${percent}%`,
+        // native apps: `kind` names the payload, `progress` is 0..1, `job` is the render's media operation
+        data: {
+          kind: 'render',
+          state,
+          progress,
+          versionId: version.id,
+          projectId: version.projectId,
+          ...pushJobData({ id: operation.id, type: 'media-operation', actions: ['pause', 'cancel'] }),
+        },
+        background: true,
+        render: { job: operation.id, state, progress },
+      });
+    } catch (error) {
+      this.logger.warn(`Could not announce Studio render progress of ${operation.id}: ${errorMessage(error)}`);
     }
   }
 
@@ -1654,6 +1712,10 @@ export class StudioExportService {
             ),
           },
           assetIds: version.resultAssetId ? [version.resultAssetId] : [],
+          // ends the render's Live Activity on iOS
+          ...(version.renderOperationId && {
+            render: { job: version.renderOperationId, state: 'done', progress: 1 },
+          }),
         },
       },
     });
@@ -1856,6 +1918,14 @@ export class StudioExportService {
           ),
         },
         assetIds: resultAssetId ? [resultAssetId] : [],
+        // ends the render's Live Activity on iOS
+        ...(version.renderOperationId && {
+          render: {
+            job: version.renderOperationId,
+            state: status === 'published' ? 'done' : 'failed',
+            progress: status === 'published' ? 1 : 0,
+          },
+        }),
       });
     } catch (error) {
       this.logger.warn(`Could not announce Studio export ${version.id}: ${errorMessage(error)}`);

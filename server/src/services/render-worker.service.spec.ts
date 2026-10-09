@@ -207,6 +207,7 @@ describe(RenderWorkerService.name, () => {
     | 'stagingFolder'
     | 'verifyRenderSources'
     | 'onRenderClaimed'
+    | 'onRenderProgress'
     | 'onRenderCompleted'
     | 'onRenderFailed'
     | 'onRenderCancelAcknowledged'
@@ -303,6 +304,7 @@ describe(RenderWorkerService.name, () => {
       stagingFolder: vi.fn(),
       verifyRenderSources: vi.fn().mockResolvedValue(undefined),
       onRenderClaimed: vi.fn().mockResolvedValue(undefined),
+      onRenderProgress: vi.fn().mockResolvedValue(undefined),
       onRenderCompleted: vi.fn().mockResolvedValue({ accepted: true }),
       onRenderFailed: vi.fn().mockResolvedValue(undefined),
       onRenderCancelAcknowledged: vi.fn().mockResolvedValue(undefined),

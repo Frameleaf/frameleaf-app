@@ -30,8 +30,6 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
-  CLOUD_BACKUP_ACTIVITY_KIND,
-  CLOUD_BACKUP_ATTRIBUTES_TYPE,
   PUSH_GATEWAY_CONCURRENCY,
   PUSH_GATEWAY_MAX_ATTEMPTS,
   PushNotice,
@@ -41,7 +39,7 @@ import {
   buildPushPayload,
   collapseIdOf,
   isGatewayToken,
-  liveActivityStateOf,
+  liveActivityPlanOf,
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
@@ -64,6 +62,7 @@ const PREFERENCE_EVENTS: Record<keyof PushPreferencesDto, PushEventType> = {
   sharedActivity: PushEventType.SharedActivity,
   memories: PushEventType.Memories,
   renderFinished: PushEventType.RenderFinished,
+  renderProgress: PushEventType.RenderProgress,
   accessChanged: PushEventType.AccessChanged,
 };
 
@@ -635,43 +634,44 @@ export class PushService {
           : ('apns' as const);
     const collapseId = collapseIdOfNotice(notice);
     const planned: PlannedMessage[] = [];
-    const progress = notice.activation;
-    if (progress && device.platform === PushPlatform.Ios) {
-      const live = {
+    const live = liveActivityPlanOf(notice);
+    if (live && device.platform === PushPlatform.Ios) {
+      const base = {
         platform,
         priority: 'high' as const,
         ttlSec: pushTtlSec(notice, true),
-        liveActivity: { state: liveActivityStateOf(progress), staleAfterSec: 3600 },
+        liveActivity: { state: live.state, staleAfterSec: 3600 },
       };
-      const activities = device.activities.filter(({ kind }) => kind === CLOUD_BACKUP_ACTIVITY_KIND);
+      const activities = device.activities.filter(({ kind }) => kind === live.kind);
       for (const activity of activities) {
         planned.push({
           deviceId: device.id,
           kind: PushTargetKind.ActivityUpdate,
           activityRowId: activity.id,
           request: {
-            ...live,
+            ...base,
             token: activity.token,
-            type: progress.state === 'active' ? 'live-activity-update' : 'live-activity-end',
+            type: live.end ? 'live-activity-end' : 'live-activity-update',
           },
         });
       }
-      if (activities.length === 0 && device.pushToStartToken && progress.state === 'active') {
+      if (activities.length === 0 && device.pushToStartToken && live.start) {
         planned.push({
           deviceId: device.id,
           kind: PushTargetKind.ActivityStart,
           request: {
-            ...live,
+            ...base,
             token: device.pushToStartToken,
             type: 'live-activity-start',
-            liveActivity: { ...live.liveActivity, attributesType: CLOUD_BACKUP_ATTRIBUTES_TYPE },
+            liveActivity: { ...base.liveActivity, attributesType: live.attributesType },
           },
         });
       }
     }
     // While the chain runs, iOS follows it in the Live Activity alone; Android shows it as a progress
-    // notification, and the end of the chain (complete or failed) is an alert everywhere
-    if (!progress || device.platform !== PushPlatform.Ios || progress.state !== 'active') {
+    // notification, and the end of the chain (complete or failed) is an alert everywhere. A render's
+    // progress works the same way, except that its start also reaches iOS (naming the job).
+    if (!live?.liveOnly || device.platform !== PushPlatform.Ios) {
       const id = randomUUID();
       const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
       try {
