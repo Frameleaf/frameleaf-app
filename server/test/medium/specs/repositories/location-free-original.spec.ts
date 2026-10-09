@@ -9,6 +9,8 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -210,20 +212,43 @@ describe('MetadataRepository.acquireLocationFreeOriginal', () => {
     const lease = await sut.acquireLocationFreeOriginal(source);
     const directory = join(mediaLocation, 'tmp', 'location-free');
     const leftover = join(directory, 'locked-leftover.jpg');
-    writeFileSync(leftover, 'x');
-    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
-    utimesSync(leftover, old, old);
-    lease.release();
+    const leftoverCopy = join(leftover, 'retained-copy.jpg');
+    const retainedCopy = join(lease.path, 'retained-copy.jpg');
+    const movingCopy = `${lease.path}.retained`;
+    const bytes = readFileSync(lease.path);
 
-    // a read-only directory makes every unlink fail (EACCES), as EBUSY/EPERM would on a busy mount
-    chmodSync(directory, 0o500);
     try {
+      expect(await readGps(lease.path)).toEqual([]);
+      // rm without recursive fails on a nonempty directory even when the runner is root.
+      mkdirSync(leftover);
+      writeFileSync(leftoverCopy, bytes);
+      const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+      utimesSync(leftover, old, old);
+      renameSync(lease.path, movingCopy);
+      mkdirSync(lease.path);
+      renameSync(movingCopy, retainedCopy);
+      lease.release();
+
       await expect(sut.sweepLocationFree(directory)).resolves.toBeUndefined();
+      const sweepReports = [...logger.error.mock.calls];
+      expect(sweepReports).toContainEqual([
+        expect.stringContaining(`Unable to remove location-free copy ${leftover}:`),
+      ]);
+      expect(readFileSync(leftoverCopy)).toEqual(bytes);
+      expect(readFileSync(retainedCopy)).toEqual(bytes);
+
       await expect(sut.teardown()).resolves.toBeUndefined();
-      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Unable to remove location-free copy'));
-      expect(existsSync(lease.path)).toBe(true);
+      expect(logger.error.mock.calls.slice(sweepReports.length)).toContainEqual([
+        expect.stringContaining(`Unable to remove location-free copy ${lease.path}:`),
+      ]);
+      expect(readFileSync(leftoverCopy)).toEqual(bytes);
+      expect(readFileSync(retainedCopy)).toEqual(bytes);
     } finally {
-      chmodSync(directory, 0o700);
+      lease.release();
+      rmSync(leftover, { recursive: true, force: true });
+      rmSync(lease.path, { recursive: true, force: true });
+      rmSync(movingCopy, { force: true });
+      await sut.teardown();
     }
   });
 
