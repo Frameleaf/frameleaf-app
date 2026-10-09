@@ -147,8 +147,8 @@ const FFMPEG_COLOR_MATRIX: Partial<Record<ColorMatrix, string>> = {
 };
 
 /**
- * The name ffmpeg's `-colorspace` option and the `scale` filter's `out_color_matrix` option
- * accept for a probed matrix code point, or null when the code point has no name and the
+ * The name ffmpeg's `-colorspace` option accepts for a probed matrix code point. Filter
+ * options can use different spellings; `scale` names BT2020 NCL `bt2020`. Null means the
  * render should leave the matrix alone rather than guess at one.
  */
 export const getFfmpegColorMatrixName = (colorMatrix: ColorMatrix): string | null =>

@@ -184,8 +184,10 @@ export const selectEncoderPixelFormat = ({
   }
 
   const matrix = toneMapped ? 'bt709' : getFfmpegColorMatrixName(colorMatrix);
+  // scale uses `bt2020` for NCL; metadata and zscale use `bt2020nc`.
+  const scaleMatrix = matrix === 'bt2020nc' ? 'bt2020' : matrix;
   const scaleOptions = [
-    ...(matrix ? [`out_color_matrix=${matrix}`] : []),
+    ...(scaleMatrix ? [`out_color_matrix=${scaleMatrix}`] : []),
     `out_range=${range}`,
     `sws_dither=${FLOAT_TO_INTEGER_DITHER}`,
   ];
