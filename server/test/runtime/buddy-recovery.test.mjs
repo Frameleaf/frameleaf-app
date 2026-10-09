@@ -125,7 +125,10 @@ test('an encrypted export plus kit performs offline recovery with no database or
     await writeFile(kit, JSON.stringify({ version: 1, vaultId, current: 1, keys: { 1: key.toString('base64url') } }));
     const exported = join(root, 'export');
     await buddyBackupCommand(['export', '--vault', join(root, vaultId), '--output', exported]);
-    assert.deepEqual(JSON.parse(await readFile(join(exported, 'export-complete.json'), 'utf8')), { version: 1, vaultId });
+    assert.deepEqual(JSON.parse(await readFile(join(exported, 'export-complete.json'), 'utf8')), {
+      version: 1,
+      vaultId,
+    });
     await rm(join(root, vaultId), { recursive: true });
     const wrongKit = join(root, 'wrong-kit.json');
     await writeFile(
