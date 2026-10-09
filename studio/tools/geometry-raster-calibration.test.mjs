@@ -470,3 +470,27 @@ test('exact filler undo source admits fixed fixtures without changing bounds or 
   }
   assert.equal(JSON.stringify(envelope), original)
 })
+
+test('reviewed additive source retains raster bounds and strict source/browser admission', () => {
+  const source = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, sourceFiller))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + 'e', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
