@@ -24,7 +24,8 @@ if (browser !== "chromium")
   assert(process.env.WEBDRIVER_ENDPOINT, `${browser} requires WEBDRIVER_ENDPOINT`);
 let monitorWav;
 const harness = createHarness({
-  upstream: origin,
+  upstream: scenario === "monitor" ? `${origin}/studio-engine/` : origin,
+  inspectConnect: scenario === "monitor",
   overrides:
     scenario === "monitor"
       ? [
