@@ -132,12 +132,27 @@ test.describe('Transfers', () => {
     );
 
     await page.dispatchEvent('body', 'dragenter', { dataTransfer });
-    await expect(page.getByText('Drop photos and videos to upload')).toBeVisible();
+    const dropOverlay = page.getByRole('status').filter({ hasText: 'Drop to add to Drop target' });
+    await expect(dropOverlay).toBeVisible();
+    await expect(dropOverlay).toContainText('They are added to your library and to this album');
+    const uploaded = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/assets',
+    );
     await page.dispatchEvent('body', 'drop', { dataTransfer });
-    await expect(page.getByText('Drop photos and videos to upload')).toBeHidden();
+    await expect(dropOverlay).toBeHidden();
+    const uploadResponse = await uploaded;
+    expect(uploadResponse.ok()).toBe(true);
+    const { id: uploadedId } = await uploadResponse.json();
+    expect(uploadedId).toEqual(expect.any(String));
 
     await expect(page.getByRole('region', { name: 'Uploads' }).getByText('Upload complete')).toBeVisible();
     await expect.poll(() => albumCount(admin.accessToken, album.id)).toBe(1);
+    await expect
+      .poll(async () => {
+        const result = await utils.searchAssets(admin.accessToken, { albumIds: [album.id], id: uploadedId });
+        return result.assets.items.map((asset) => asset.id);
+      })
+      .toEqual([uploadedId]);
   });
 
   test('downloads a selection as one archive per part of the size limit', async ({ context, page }) => {
