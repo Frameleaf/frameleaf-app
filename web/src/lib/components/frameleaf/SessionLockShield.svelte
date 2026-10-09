@@ -54,6 +54,23 @@
   });
 </script>
 
+<!--
+  Keep the portal barrier while locking, including newly created top-layer content. Installing
+  its descendant selectors only while active avoids invalidating the whole body for every tile
+  inserted into an unlocked library.
+-->
+<svelte:head>
+  {#if active}
+    <style data-session-lock-portals>
+      body:has(.session-lock-shield[open]) > :not(:has(.session-lock-shield)),
+      body:has(.session-lock-shield[open]) dialog[open]:not(.session-lock-shield),
+      body:has(.session-lock-shield[open]) [popover]:popover-open {
+        visibility: hidden !important;
+      }
+    </style>
+  {/if}
+</svelte:head>
+
 <div
   class="session-lock-content"
   class:session-lock-content-hidden={active}
@@ -109,12 +126,6 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
-  }
-  /* Portals are attached directly to body, and native dialogs enter the browser top layer. */
-  :global(body:has(.session-lock-shield[open]) > :not(:has(.session-lock-shield))),
-  :global(body:has(.session-lock-shield[open]) dialog[open]:not(.session-lock-shield)),
-  :global(body:has(.session-lock-shield[open]) [popover]:popover-open) {
-    visibility: hidden !important;
   }
   .session-lock-shield {
     position: fixed;
