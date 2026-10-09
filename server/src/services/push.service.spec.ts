@@ -476,7 +476,8 @@ describe(PushService.name, () => {
       deviceId: 'd',
       activityId: 'activity-1',
       kind: 'cloud-backup-activation',
-      token: 'update-1-0123456789abcdef0123456789abcdef',
+      operationId: null,
+      token: `update-${randomUUID()}`,
       updatedAt: new Date(),
     });
 
@@ -747,7 +748,7 @@ describe(PushService.name, () => {
       expect(sent).toEqual([
         {
           platform: 'apns',
-          token: 'update-1-0123456789abcdef0123456789abcdef',
+          token: expect.any(String),
           type: 'live-activity-update',
           priority: 'high',
           ttlSec: 3600,
@@ -789,7 +790,7 @@ describe(PushService.name, () => {
       const ios = () => device(newDeviceKey(), { pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef' });
       const android = () =>
         device(newDeviceKey(), { platform: PushPlatform.Android, pushToken: 'fcm-1-0123456789abcdef0123456789abcdef' });
-      const renderActivity = () => ({ ...activity(), kind: 'studio-render' });
+      const renderActivity = () => ({ ...activity(), kind: 'studio-render', operationId: 'job-1' });
       const summary = () =>
         sent.map(({ platform, type, liveActivity }) => [
           platform,
@@ -838,6 +839,59 @@ describe(PushService.name, () => {
       sent.length = 0;
       await sut.handleDeliver({ notice: notice(render('failed', 0)) });
       expect(summary()[0]).toEqual(['apns', 'live-activity-end', 'needs-attention', undefined, undefined]);
+    });
+
+    it('ends only the bound render with progress enabled and finish alerts disabled', async () => {
+      const { sut, devices, sent } = newHarness();
+      const key = newDeviceKey();
+      devices.getDeliveryTargets.mockResolvedValue([
+        device(key, {
+          disabledEvents: [PushEventType.RenderFinished],
+          activities: [
+            { ...activity(), kind: 'studio-render', operationId: 'render-a' },
+            { ...activity(), kind: 'studio-render', operationId: 'render-b' },
+            { ...activity(), kind: 'studio-render', operationId: null },
+          ],
+        }),
+      ]);
+      await sut.handleDeliver({
+        notice: notice({
+          type: PushEventType.RenderFinished,
+          render: { job: 'render-a', state: 'done', progress: 1 },
+        }),
+      });
+      expect(sent.map(({ type }) => type)).toEqual(['live-activity-end']);
+      expect(sent[0].token).toBe((await devices.getDeliveryTargets())[0].activities[0].token);
+      sent.length = 0;
+      await sut.handleDeliver({
+        notice: notice({
+          type: PushEventType.RenderProgress,
+          background: true,
+          render: { job: 'render-b', state: 'running', progress: 0.6 },
+        }),
+      });
+      expect(sent.map(({ type }) => type)).toEqual(['live-activity-update']);
+      expect(sent[0].token).toBe((await devices.getDeliveryTargets())[0].activities[1].token);
+    });
+
+    it('silently clears Android render progress when finish alerts are disabled', async () => {
+      const { sut, devices, sent } = newHarness();
+      const key = newDeviceKey();
+      devices.getDeliveryTargets.mockResolvedValue([
+        device(key, {
+          platform: PushPlatform.Android,
+          disabledEvents: [PushEventType.RenderFinished],
+        }),
+      ]);
+      await sut.handleDeliver({
+        notice: notice({
+          type: PushEventType.RenderFinished,
+          render: { job: 'render-a', state: 'done', progress: 1 },
+          data: { job: 'render-a', status: 'published' },
+        }),
+      });
+      expect(sent.map(({ type }) => type)).toEqual(['background']);
+      expect(decrypt(sent[0], key).data).toMatchObject({ job: 'render-a', status: 'published' });
     });
 
     it('wakes only the device whose phone backup went stale, silently', async () => {

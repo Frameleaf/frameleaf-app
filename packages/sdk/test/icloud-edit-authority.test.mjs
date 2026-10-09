@@ -27,6 +27,7 @@ test("additive original-revert intent preserves existing generated enum exports"
   assert.deepEqual(sdk.Kind9, { Print: "print", Web: "web", Social: "social" });
   assert.deepEqual(sdk.Kind10, {
     CloudBackupActivation: "cloud-backup-activation",
+    StudioRender: "studio-render",
   });
   assert.deepEqual(sdk.Kind11, {
     Album: "album",

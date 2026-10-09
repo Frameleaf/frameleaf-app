@@ -127,7 +127,7 @@ A notice about a server job names it, so the app can offer Retry or Pause:
 | `jobType`    | `media-operation`: `POST /media-operations/{job}/retry`, `/pause`, `/resume`, `/cancel`. `cloud-backup-run` (administrators): `POST /admin/cloud/backup/runs/{job}/pause`, `/resume`, `/cancel`; Retry is `POST /admin/cloud/backup/runs` |
 | `jobActions` | Comma-separated actions on offer when the push was built (`retry`, `pause`, `resume`, `cancel`); may be empty                                                                                                                             |
 
-They are sent with `render-progress` (the running Studio render; `pause,cancel`), with `render-finished` (the Studio render; `retry` when it failed) and with the cloud backup notices of `backup-needs-attention`: a failed backup run (`retry`), a run waiting for its key (`pause,cancel`), and a failed verification, clean-up or restore (no action; started again from settings). The job's state may have moved on by the time the device shows the notice: the endpoints answer with the current state.
+They are sent with `render-progress` (the running Studio render; `pause,cancel`), with `render-finished` (the Studio render; no generic Retry action: reopen `projectId`/`versionId` in Studio to create a new export) and with the cloud backup notices of `backup-needs-attention`: a failed backup run (`retry`), a run waiting for its key (`pause,cancel`), and a failed verification, clean-up or restore (no action; started again from settings). The job's state may have moved on by the time the device shows the notice: the endpoints answer with the current state.
 
 ### `activation`
 
@@ -185,10 +185,10 @@ A Studio render (`render-progress`, then `render-finished`) maps onto them like 
 
 The activity's lifecycle is driven by the push type:
 
-- `live-activity-start` is sent to the push-to-start token, with attributes type `ActivationAttributes` (activation) or `RenderAttributes` (render). A render activity is started only by the render's `started` push, and only on a device that has no `studio-render` activity token registered.
+- `live-activity-start` is sent to the push-to-start token, with attributes type `ActivationAttributes` (activation) or `RenderAttributes` (render). A render activity is started only by the render's `started` push, and only when that job has no bound `studio-render` activity token registered.
 - `live-activity-update` is sent while the chain runs. Each update has a stale date one hour after it is sent.
 - `live-activity-end` is sent when the chain completes or fails. An ordinary alert carrying the full plaintext follows it.
-- Activity tokens are registered per kind (`PUT /push/devices/current/activities/{activityId}` with `kind` `cloud-backup-activation` or `studio-render`); the app removes one when its activity ends (`DELETE` on the same path). Every `studio-render` activity of a device follows the most recent render progress pushed to it.
+- Activity tokens are registered per kind (`PUT /push/devices/current/activities/{activityId}` with `kind` `cloud-backup-activation` or `studio-render`); the app removes one when its activity ends (`DELETE` on the same path). A `studio-render` registration must include `operationId`, the owned Studio render job that activity follows. The binding cannot change to another job: use a new activity id. Updates and terminal messages target only that job; unbound legacy render tokens fail closed. Cloud Backup activation registration is unchanged.
 
 An update that could not be delivered is not sent again, because the next update replaces it.
 
@@ -328,3 +328,5 @@ Envelope (base64url, the value of `e`):
 ```text
 AV3-3Ttr1H9voo7hXZadW7DqU3dNSIva-d8cbgEks-8iERERERERERERERERXfCTbG3gLMERp_edF7f1jEvFIhLXMxREZ-vDPzZFN9caXQhpVIaBfZnWTfT0eVqnabxHOuFkfmK1PVmVqAlgt9hR2v7Y5PmwpyAjTBd2EJ3odwq2fHLOYIW6ISNsynJKELoAW77Vqk_SGdDbh91YUr35ayLfnUV1p0Vh3m6vJazVMv0b7E-3-dT4FcSOh09MVBqOiEzs6OCKn7tBjs-3bgcU2t0GhJUJdaFF4naxLXwCPoRF_Ps5c0J2k8mrnpxMvwzt78iHa4F9eBePvi_ykDifGGt8mMuYxjfPzTZuPxZYRRauR4yZ37YW361kPg1zNM6GqSdaNvDe6uXJSD6jITJ5sttrtY8S3TS33G4X3EW52EQDFXLZuReYwbiyP7Te80MT08iLTJigCFGgmWPT46jxudEIHZxi9FJOkjwEJenEYj0P0QiEITJ6PJxuh_vd_Q5NTZFQ1n-TJRT-Le8VD7Sj93_N4Zd6RB5nKCnTWj8gtgeReecouiBYyfgHlqwW0WXlSmpU79ftMIB1KYCSF5jSKyI9u-JUZQaES24M7A7HdzfFr2RfuII
 ```
+
+A cancelled render sends a silent terminal `render-progress` payload with `state`/`status` `cancelled` and no actions. Cancellation delivery is idempotent. A render terminal activity message still ends the matching activity when `renderFinished` alerts are disabled; the ordinary finish alert stays suppressed. `/push/status` event names are open-ended; ignore unfamiliar names.

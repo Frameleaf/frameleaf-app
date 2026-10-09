@@ -966,7 +966,7 @@ export class StudioExportService {
 
   /**
    * The render failed for good (its automatic retry spent): so does its version, and the owner's devices
-   * are told (ending a render Live Activity, offering Retry).
+   * are told (ending the bound render Live Activity; reopen Studio to export again).
    */
   async onRenderFailed(operation: MediaOperation, failure: { errorCode: string; error: string }): Promise<void> {
     this.renderProgressSent.delete(operation.id);
@@ -1027,9 +1027,14 @@ export class StudioExportService {
 
   /** The worker confirmed a cancelled render stopped. A released render's obligation is settled. */
   async onRenderCancelAcknowledged(operation: MediaOperation, workerId: string, released: boolean): Promise<void> {
+    this.renderProgressSent.delete(operation.id);
     const version = await this.repository.getByRenderOperation(operation.id);
     if (version) {
-      await this.repository.cancel(version.id, { errorCode: 'studio_export_cancelled', error: 'Cancelled' });
+      const cancelled = await this.repository.cancel(version.id, {
+        errorCode: 'studio_export_cancelled',
+        error: 'Cancelled',
+      });
+      if (cancelled) await this.notifyRenderFinished(cancelled, 'cancelled', null, operation.label);
     }
     if (released) {
       await this.repository.acknowledgeRemoteCancel(operation.id, workerId);
@@ -1884,25 +1889,35 @@ export class StudioExportService {
    */
   private async notifyRenderFinished(
     version: StudioExportVersion,
-    status: 'published' | 'failed',
+    status: 'published' | 'failed' | 'cancelled',
     resultAssetId: string | null,
     label: string | null,
   ): Promise<void> {
     const name = label?.trim() || 'Your Studio export';
     try {
       await this.events.emit('PushNotify', {
-        type: PushEventType.RenderFinished,
+        type: status === 'cancelled' ? PushEventType.RenderProgress : PushEventType.RenderFinished,
+        ...(status === 'cancelled' && { background: true }),
         userIds: [version.ownerId],
-        title: status === 'published' ? 'Render finished' : 'Render failed',
-        body: status === 'published' ? `${name} is ready` : `${name} could not be finished`,
-        systemTemplate: label?.trim()
-          ? {
-              version: 1,
-              key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
-              args: { label: name },
-            }
-          : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
-        // native apps: a failed render offers Retry (`POST /media-operations/{job}/retry`)
+        title:
+          status === 'published' ? 'Render finished' : status === 'cancelled' ? 'Render cancelled' : 'Render failed',
+        body:
+          status === 'published'
+            ? `${name} is ready`
+            : status === 'cancelled'
+              ? `${name} was cancelled`
+              : `${name} could not be finished`,
+        systemTemplate:
+          status === 'cancelled'
+            ? undefined
+            : label?.trim()
+              ? {
+                  version: 1,
+                  key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
+                  args: { label: name },
+                }
+              : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
+        // Studio operations cannot use generic Retry; reopen this project/version for a new export.
         data: {
           versionId: version.id,
           projectId: version.projectId,
@@ -1912,7 +1927,7 @@ export class StudioExportService {
               ? {
                   id: version.renderOperationId,
                   type: 'media-operation',
-                  actions: status === 'failed' ? ['retry'] : [],
+                  actions: [],
                 }
               : null,
           ),
@@ -1922,7 +1937,7 @@ export class StudioExportService {
         ...(version.renderOperationId && {
           render: {
             job: version.renderOperationId,
-            state: status === 'published' ? 'done' : 'failed',
+            state: status === 'published' ? 'done' : status,
             progress: status === 'published' ? 1 : 0,
           },
         }),
@@ -2025,6 +2040,7 @@ export class StudioExportService {
    * until the worker confirms. A queued job is cancelled at once.
    */
   async cancelVersion(version: StudioExportVersion, code: StudioExportRefusalCode | string, message: string) {
+    if (version.renderOperationId) this.renderProgressSent.delete(version.renderOperationId);
     if (!PENDING_STUDIO_EXPORT_STATES.includes(version.state as StudioExportVersionState)) {
       return;
     }
@@ -2040,6 +2056,7 @@ export class StudioExportService {
         await this.operations.requestCancel(operationId, version.ownerId);
       }
     }
+    await this.notifyRenderFinished(cancelled, 'cancelled', null, null);
     this.logger.log(`Studio export ${version.id} cancelled: ${code}`);
   }
 

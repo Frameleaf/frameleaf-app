@@ -101456,6 +101456,12 @@
             ],
             "type": "string"
           },
+          "operationId": {
+            "description": "Required for studio-render: the owned Studio render media operation this activity follows",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "token": {
             "description": "The ActivityKit push token of this activity",
             "maxLength": 4096,
@@ -101682,6 +101688,20 @@
         ],
         "type": "string"
       },
+      "PushKnownEventsDto": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/PushEventType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
       "PushPlatform": {
         "description": "FL-228: the push service a device receives notifications through",
         "enum": [
@@ -101802,9 +101822,9 @@
             "type": "object"
           },
           "events": {
-            "description": "The events this server can deliver",
+            "description": "The events this server can deliver. Open-ended: ignore unfamiliar event names.",
             "items": {
-              "$ref": "#/components/schemas/PushEventType"
+              "type": "string"
             },
             "type": "array"
           },

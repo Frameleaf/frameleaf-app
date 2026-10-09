@@ -173,14 +173,14 @@ export const liveActivityStateOf = (progress: CloudBackupActivationProgress): Li
 export type StudioRenderProgress = {
   /** The render's media operation id (`POST /media-operations/{job}/...`). */
   job: string;
-  state: 'started' | 'running' | 'done' | 'failed';
+  state: 'started' | 'running' | 'done' | 'failed' | 'cancelled';
   /** 0..1. */
   progress: number;
 };
 
 /** The Live Activity state of a render: no free text, nothing personal. */
 export const renderLiveActivityStateOf = (render: StudioRenderProgress): LiveActivityState => {
-  if (render.state === 'failed') {
+  if (render.state === 'failed' || render.state === 'cancelled') {
     return { step: 'needs-attention' };
   }
   if (render.state === 'done') {
@@ -241,7 +241,7 @@ export const liveActivityPlanOf = (notice: Pick<PushNotice, 'activation' | 'rend
       state: renderLiveActivityStateOf(notice.render),
       // only the start of a render may start an activity, so a declined one is not started again
       start: state === 'started',
-      end: state === 'done' || state === 'failed',
+      end: ['done', 'failed', 'cancelled'].includes(state),
       // the start also reaches iOS as a background push naming the job; later steps are the activity alone
       liveOnly: state === 'running',
     };
