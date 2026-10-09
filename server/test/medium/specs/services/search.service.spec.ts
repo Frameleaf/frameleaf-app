@@ -671,6 +671,48 @@ describe(SearchService.name, () => {
       await expect(sut.searchStatistics(auth, { filter: { make: { like: 'o' } } })).resolves.toEqual({ total: 2 });
     });
 
+    it('finds panoramas by projection and screenshots by name or a camera-less PNG (FL-349)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const still = async (
+        originalFileName: string,
+        exif: { projectionType?: string; make?: string; model?: string },
+      ) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalFileName });
+        await ctx.newExif({ assetId: asset.id, make: null, ...exif });
+        return asset.id;
+      };
+      const sphere = await still('PANO_0001.jpg', { projectionType: 'EQUIRECTANGULAR' });
+      const sweep = await still('PANO_0002.jpg', { projectionType: 'CYLINDRICAL' });
+      const insta = await still('IMG_0003.insp', {});
+      const android = await still('Screenshot_20260101-101010_Maps.jpg', {});
+      const mac = await still('Screen Shot 2026-01-01 at 10.10.10.png', { make: 'Apple' });
+      const ios = await still('IMG_0004.PNG', {});
+      const photo = await still('IMG_0005.HEIC', { make: 'Apple', model: 'iPhone 17 Pro' });
+      const cameraPng = await still('DSC_0006.png', { make: 'NIKON', model: 'Z 8' });
+      const { asset: video } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'Screen Recording 2026.mov',
+        type: AssetType.Video,
+      });
+      await ctx.newExif({ assetId: video.id, projectionType: 'EQUIRECTANGULAR' });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ isPanorama: { eq: true } })).resolves.toEqual([sphere, sweep, insta].sort());
+      await expect(ids({ isScreenshot: { eq: true } })).resolves.toEqual([android, mac, ios].sort());
+      await expect(ids({ isScreenshot: { eq: false } })).resolves.toEqual(
+        [sphere, sweep, insta, photo, cameraPng, video.id].sort(),
+      );
+      await expect(ids({ isPanorama: { eq: false }, isScreenshot: { eq: false } })).resolves.toEqual(
+        [photo, cameraPng, video.id].sort(),
+      );
+      await expect(ids({ or: [{ isPanorama: { eq: true } }, { isScreenshot: { eq: true } }] })).resolves.toEqual(
+        [sphere, sweep, insta, android, mac, ios].sort(),
+      );
+    });
+
     it('narrows by the local capture date, which is what the histogram buckets by', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
