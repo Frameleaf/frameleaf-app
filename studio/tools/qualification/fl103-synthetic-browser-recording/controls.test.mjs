@@ -12,6 +12,7 @@ import {
   captureWav,
   cleanupAll,
   ownedProcesses,
+  signalOwnedProcesses,
   recordingBytes,
   reportBytes,
   sha,
@@ -119,22 +120,23 @@ test('missing witnesses time out and oversized reports cannot be published', asy
   assert(JSON.parse(reportBytes({ passed: false })).passed === false)
 })
 test('observed detached descendants remain owned after reparenting; PID reuse is excluded', () => {
-  const known = new Map()
   const child = { pid: 10, parent: 1, group: 10, started: 'child-start' }
+  const known = new Map([[child.pid, child.started]])
   const browser = { pid: 11, parent: 10, group: 10, started: 'browser-start' }
   const detached = { pid: 12, parent: 11, group: 12, started: 'detached-start' }
-  assert.equal(ownedProcesses([detached, browser, child], 10, known).length, 3)
-  assert.deepEqual(ownedProcesses([{ ...detached, parent: 1 }], 10, known), [
+  assert.equal(ownedProcesses([detached, browser, child], known).length, 3)
+  assert.deepEqual(ownedProcesses([{ ...detached, parent: 1 }], known), [
     { ...detached, parent: 1 },
   ])
-  assert.deepEqual(
-    ownedProcesses([{ ...detached, started: 'new-unrelated-process' }], 10, known),
-    [],
-  )
+  assert.deepEqual(ownedProcesses([{ ...detached, started: 'new-unrelated-process' }], known), [])
 })
 test('native recording transport refuses changed, malformed or oversized bytes', () => {
   const bytes = Buffer.from('owned synthetic encoded specimen')
-  const audio = { encodedBase64: bytes.toString('base64'), bytes: bytes.length, sha256: sha(bytes) }
+  const audio = {
+    encodedBase64: bytes.toString('base64'),
+    bytes: bytes.length,
+    sha256: sha(bytes),
+  }
   assert.deepEqual(recordingBytes(audio), bytes)
   for (const wrong of [
     { ...audio, sha256: 'bad' },
@@ -143,4 +145,35 @@ test('native recording transport refuses changed, malformed or oversized bytes',
     { ...audio, encodedBase64: 'a'.repeat(349529) },
   ])
     assert.throws(() => recordingBytes(wrong))
+})
+
+test('retired original group never adopts or signals replacement group members', () => {
+  const leader = { pid: 10, parent: 1, group: 10, started: 'original-leader' }
+  const browser = { pid: 11, parent: 10, group: 10, started: 'original-browser' }
+  const detached = { pid: 12, parent: 11, group: 12, started: 'owned-detached' }
+  const known = new Map([[10, leader.started]])
+  assert.equal(ownedProcesses([detached, browser, leader], known).length, 3)
+  const replacement = { pid: 13, parent: 1, group: 10, started: 'unrelated-new-member' }
+  const reusedLeader = { ...leader, started: 'unrelated-reused-leader' }
+  const current = [{ ...detached, parent: 1 }, replacement, reusedLeader]
+  const sent = []
+  signalOwnedProcesses(current.slice(0, 2), known, 'SIGTERM', (...args) => sent.push(args))
+  assert.deepEqual(sent, [[12, 'SIGTERM']])
+  sent.length = 0
+  signalOwnedProcesses(current, new Map(), 'SIGTERM', (...args) => sent.push(args))
+  assert.deepEqual(sent, [])
+  assert.deepEqual(
+    signalOwnedProcesses(current, known, 'SIGTERM', (...args) => sent.push(args)),
+    [current[0]],
+  )
+  assert.deepEqual(sent, [[12, 'SIGTERM']])
+  assert.equal(known.has(13), false)
+  const descendant = { pid: 14, parent: 12, group: 14, started: 'verified-descendant' }
+  sent.length = 0
+  signalOwnedProcesses([descendant, ...current], known, 'SIGKILL', (...args) => sent.push(args))
+  assert.deepEqual(sent, [
+    [14, 'SIGKILL'],
+    [12, 'SIGKILL'],
+  ])
+  assert(sent.every(([pid]) => pid > 0 && ![10, 13].includes(pid)))
 })
