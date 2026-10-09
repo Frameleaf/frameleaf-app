@@ -142,6 +142,52 @@ describe('validateStudioCommandEnvelope', () => {
     ).toMatchObject({ valid: false });
   });
 
+  it('admits the accepted master gain envelope and refuses malformed points', () => {
+    const point = { id: 'point-1', at: rational(1, 2), gainDb: -6 };
+    for (const gainEnvelope of [
+      [],
+      [point],
+      [{ ...point, id: '🎵'.repeat(128) }],
+      [
+        { ...point, at: rational(0), gainDb: -60 },
+        { id: 'point-2', at: rational(1), gainDb: 12 },
+      ],
+      Array.from({ length: 4096 }, (_, index) => ({ ...point, id: `point-${index}`, at: rational(index) })),
+    ]) {
+      expect(validateStudioCommandPayload('project.setMasterAudio', { gainEnvelope })).toEqual({ valid: true });
+    }
+    expect(validateStudioCommandPayload('project.setMasterAudio', {})).toEqual({ valid: true });
+    for (const gainEnvelope of [
+      null,
+      {},
+      [null],
+      [{ ...point, id: '' }],
+      [{ ...point, id: 'p'.repeat(129) }],
+      [{ ...point, at: 0.5 }],
+      [{ ...point, at: rational(-1) }],
+      [{ ...point, at: { num: 2, den: 4 } }],
+      [{ ...point, at: { num: 1, den: 0 } }],
+      [{ ...point, gainDb: NaN }],
+      [{ ...point, gainDb: Infinity }],
+      [{ ...point, gainDb: -61 }],
+      [{ ...point, gainDb: 13 }],
+      [{ ...point, gainDb: '-6' }],
+      [{ ...point, extra: true }],
+      [{ id: point.id, at: point.at }],
+      [point, point],
+      [point, { ...point, at: rational(1) }],
+      [point, { ...point, id: 'point-2' }],
+      Array.from({ length: 4097 }, (_, index) => ({ ...point, id: `point-${index}`, at: rational(index) })),
+    ]) {
+      expect(validateStudioCommandPayload('project.setMasterAudio', { gainEnvelope })).toMatchObject({ valid: false });
+    }
+    expect(
+      validateStudioCommandPayload('project.setMasterAudio', { gainEnvelope: [point], extra: true }),
+    ).toMatchObject({
+      valid: false,
+    });
+  });
+
   it('carries graph-shaped values through unread, including an explicit null', () => {
     // The grade payload is opaque on purpose: an unknown Freecut field inside it must not
     // make the command invalid, and clearing the grade is a real edit.
