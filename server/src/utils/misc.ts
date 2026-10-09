@@ -202,7 +202,7 @@ export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
   // Zod literals emit JSON Schema `const`; OpenAPI 3.0 expresses the same restriction as an enum.
   // Require a schema type so a property map containing a field named `const` is left intact.
   if (typeof object.type === 'string' && Object.hasOwn(object, 'const')) {
-    object.enum = [object.const];
+    object.enum = object.nullable === true && object.const !== null ? [object.const, null] : [object.const];
     delete object.const;
   }
   delete object.propertyNames;
