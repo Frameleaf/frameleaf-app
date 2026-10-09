@@ -1,0 +1,347 @@
+diff --git a/src/features/export/utils/canvas-item-renderer/text.ts b/src/features/export/utils/canvas-item-renderer/text.ts
+--- a/src/features/export/utils/canvas-item-renderer/text.ts
++++ b/src/features/export/utils/canvas-item-renderer/text.ts
+@@ -530,21 +530,9 @@
+   cues: readonly T[],
+   seconds: number,
+ ): T | null {
+-  if (cues.length === 0) return null
+-  let lo = 0
+-  let hi = cues.length - 1
+-  while (lo <= hi) {
+-    const mid = (lo + hi) >> 1
+-    const cue = cues[mid]!
+-    if (seconds < cue.startSeconds) {
+-      hi = mid - 1
+-    } else if (seconds >= cue.endSeconds) {
+-      lo = mid + 1
+-    } else {
+-      return cue
+-    }
+-  }
+-  return null
++  // Timing edits and nested overlaps invalidate binary search; first authored match wins.
++  // shortcut: O(n) per frame, index intervals if long cue lists show measured render cost.
++  return cues.find((cue) => seconds >= cue.startSeconds && seconds < cue.endSeconds) ?? null
+ }
+
+ /**
+diff --git a/src/runtime/composition-runtime/components/subtitle-segment-content.tsx b/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
+--- a/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
++++ b/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
+@@ -79,29 +79,11 @@
+   return <TextContent item={syntheticTextItem} />
+ }
+
+-/**
+- * Binary search for the cue whose `[startSeconds, endSeconds)` window
+- * contains `seconds`. Cues are pre-sorted by startSeconds at insertion
+- * time, so we can cut the per-frame cost from O(n) to O(log n) — meaningful
+- * on a 65-min episode with 600+ cues.
+- */
+ function findActiveCue<T extends { startSeconds: number; endSeconds: number }>(
+   cues: readonly T[],
+   seconds: number,
+ ): T | null {
+-  if (cues.length === 0) return null
+-  let lo = 0
+-  let hi = cues.length - 1
+-  while (lo <= hi) {
+-    const mid = (lo + hi) >> 1
+-    const cue = cues[mid]!
+-    if (seconds < cue.startSeconds) {
+-      hi = mid - 1
+-    } else if (seconds >= cue.endSeconds) {
+-      lo = mid + 1
+-    } else {
+-      return cue
+-    }
+-  }
+-  return null
++  // Timing edits and nested overlaps invalidate binary search; first authored match wins.
++  // shortcut: O(n) per frame, index intervals if long cue lists show measured render cost.
++  return cues.find((cue) => seconds >= cue.startSeconds && seconds < cue.endSeconds) ?? null
+ }
+diff --git a/src/test/subtitle-timing-render.test.tsx b/src/test/subtitle-timing-render.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/test/subtitle-timing-render.test.tsx
+@@ -0,0 +1,278 @@
++import { act, cleanup, fireEvent, render } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { SubtitleSection } from '@/features/editor/components/properties-sidebar/clip-panel/subtitle-section'
++import { useItemsStore, useTimelineCommandStore } from '@/features/editor/deps/timeline-store'
++import {
++  resetTimelineCompositionTestState,
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++} from '@/features/timeline/test-helpers'
++import { convertTimelineToComposition } from '@/features/export/utils/timeline-to-composition'
++import { renderSubtitleSegmentItem } from '@/features/export/utils/canvas-item-renderer/text'
++import type { ItemRenderContext } from '@/features/export/utils/canvas-item-renderer/types'
++import { TextMeasurementCache } from '@/features/export/utils/canvas-pool'
++import {
++  buildTranscriptSubtitleWebVtt,
++  omitTranscriptSubtitleItemsForSoftSubtitleExport,
++  resolveSubtitleExportPlan,
++} from '@/features/export/utils/embedded-subtitle-export'
++import { prepareSidecarPlan } from '@/shared/utils/subtitle-sidecar.mjs'
++import { SubtitleSegmentContent } from '@/runtime/composition-runtime/components/subtitle-segment-content'
++import { SequenceContext } from '@/runtime/player/composition/sequence-context'
++import { VideoConfigProvider } from '@/runtime/player/VideoConfigProvider'
++import type { SubtitleSegmentItem } from '@/types/timeline'
++
++// jsdom has no scrolling layout; only replace window measurement, retaining real cue inputs.
++vi.mock('@tanstack/react-virtual', () => ({
++  useVirtualizer: ({ count }: { count: number }) => ({
++    getVirtualItems: () =>
++      Array.from({ length: count }, (_, index) => ({ index, key: index, start: index * 116 })),
++    getTotalSize: () => count * 116,
++    measureElement: () => {},
++  }),
++}))
++// Font loading is a browser boundary; real DOM TextContent and typography remain in use.
++vi.mock('@/runtime/composition-runtime/utils/fonts', () => ({
++  loadFont: (family: string) => family,
++}))
++
++function freeze<T>(value: T): T {
++  if (value && typeof value === 'object') {
++    Object.values(value).forEach(freeze)
++    Object.freeze(value)
++  }
++  return value
++}
++
++function segment(
++  cues: SubtitleSegmentItem['cues'] = [
++    { id: 'A', startSeconds: 0, endSeconds: 1, text: 'A' },
++    { id: 'B', startSeconds: 2, endSeconds: 3, text: 'B' },
++    { id: 'C', startSeconds: 5, endSeconds: 6, text: 'C' },
++  ],
++): SubtitleSegmentItem {
++  return {
++    id: 'captions',
++    type: 'subtitle',
++    trackId: 'caption-track',
++    from: 0,
++    durationInFrames: 180,
++    label: 'Embedded captions',
++    mediaId: 'media-1',
++    source: {
++      type: 'embedded-subtitles',
++      mediaId: 'media-1',
++      clipId: 'video-1',
++      trackNumber: 1,
++      importedAt: 1,
++    },
++    cues,
++    fontFamily: 'Arial',
++    fontSize: 42,
++    fontWeight: 'bold',
++    color: '#ff7a00',
++    textAlign: 'left',
++    verticalAlign: 'bottom',
++    stroke: { color: '#112233', width: 2 },
++  }
++}
++
++function Editor() {
++  const items = useItemsStore((state) => state.items)
++  return <SubtitleSection items={items} />
++}
++
++function editTiming() {
++  const original = freeze(segment())
++  const media = freeze(
++    makeTimelineVideoItem({
++      durationInFrames: 180,
++      sourceStart: 90,
++      sourceEnd: 270,
++      sourceDuration: 300,
++    }),
++  )
++  useItemsStore
++    .getState()
++    .setTracks([
++      makeTimelineTrack({ id: 'track-v1', name: 'V1', order: 0, kind: 'video' }),
++      makeTimelineTrack({ id: 'caption-track', name: 'Captions', order: 1, kind: 'video' }),
++    ])
++  useItemsStore.getState().setItems([media, original])
++  const ui = render(<Editor />)
++  const end = ui.container.querySelector<HTMLInputElement>('#cue-A-end')!
++  expect(end).not.toBeNull()
++  fireEvent.change(end, { target: { value: '4.75' } })
++  fireEvent.change(ui.container.querySelector('#cue-A-start')!, { target: { value: '4.5' } })
++  expect(
++    current().cues.map(({ id, startSeconds, endSeconds }) => [id, startSeconds, endSeconds]),
++  ).toEqual([
++    ['A', 4.5, 4.75],
++    ['B', 2, 3],
++    ['C', 5, 6],
++  ])
++  ui.unmount()
++  return { original, media }
++}
++
++function current() {
++  return useItemsStore
++    .getState()
++    .items.find((item) => item.id === 'captions') as SubtitleSegmentItem
++}
++
++function composition() {
++  const { tracks, items } = useItemsStore.getState()
++  return convertTimelineToComposition(tracks, items, [], 30, 1280, 720)
++}
++
++function paint(item: SubtitleSegmentItem, frame: number) {
++  const painted: { text: string; color: string; font: string }[] = []
++  const stroked: { text: string; color: string; width: number }[] = []
++  const ctx = {
++    font: '',
++    fillStyle: '',
++    strokeStyle: '',
++    lineWidth: 0,
++    letterSpacing: '0px',
++    save() {},
++    restore() {},
++    beginPath() {},
++    rect() {},
++    clip() {},
++    measureText(text: string) {
++      return { width: text.length * 20, actualBoundingBoxAscent: 30, actualBoundingBoxDescent: 8 }
++    },
++    fillText(text: string) {
++      painted.push({ text, color: this.fillStyle, font: this.font })
++    },
++    strokeText(text: string) {
++      stroked.push({ text, color: this.strokeStyle, width: this.lineWidth })
++    },
++  }
++  renderSubtitleSegmentItem(
++    ctx as unknown as OffscreenCanvasRenderingContext2D,
++    item,
++    { x: 0, y: 0, width: 1000, height: 200 },
++    frame,
++    {
++      canvasSettings: { width: 1280, height: 720, fps: 30 },
++      renderMode: 'export',
++      textMeasureCache: new TextMeasurementCache(),
++    } as ItemRenderContext,
++  )
++  return { painted, stroked }
++}
++
++function preview(item: SubtitleSegmentItem, frame: number) {
++  return render(
++    <VideoConfigProvider fps={30} width={1280} height={720} durationInFrames={300}>
++      <SequenceContext.Provider
++        value={{
++          from: item.from,
++          durationInFrames: item.durationInFrames,
++          localFrame: frame - item.from,
++          parentFrom: 0,
++        }}
++      >
++        <SubtitleSegmentContent item={item} />
++      </SequenceContext.Provider>
++    </VideoConfigProvider>,
++  )
++}
++
++beforeEach(resetTimelineCompositionTestState)
++afterEach(cleanup)
++
++describe('caption timing edits through actual stores, composition, paint and preview', () => {
++  it('paints reordered A with authored typography and half-open bounds', () => {
++    editTiming()
++    const converted = composition()
++      .tracks.flatMap((track) => track.items ?? [])
++      .find((item) => item.id === 'captions') as SubtitleSegmentItem
++    const before = JSON.stringify(current())
++    freeze(converted)
++    expect(paint(converted, 138)).toEqual({
++      painted: [{ text: 'A', color: '#ff7a00', font: 'normal 700 42px "Arial", sans-serif' }],
++      stroked: [{ text: 'A', color: '#112233', width: 4 }],
++    })
++    expect(paint(converted, 135).painted.map((entry) => entry.text)).toEqual(['A'])
++    expect(paint(converted, 142.5).painted).toEqual([])
++    expect(paint(converted, 75).painted.map((entry) => entry.text)).toEqual(['B'])
++    expect(paint(converted, 165).painted.map((entry) => entry.text)).toEqual(['C'])
++    expect(JSON.stringify(current())).toBe(before)
++  })
++
++  it('previews the same edited cue with authored style and excludes its end', () => {
++    editTiming()
++    const item = current()
++    const ui = preview(item, 138)
++    expect(ui.getByText('A')).toHaveStyle({ color: '#ff7a00', fontSize: '42px' })
++    ui.unmount()
++    const start = preview(item, 135)
++    expect(start.getByText('A')).toBeInTheDocument()
++    start.unmount()
++    const end = preview(item, 142.5)
++    expect(end.container.textContent).toBe('')
++    end.unmount()
++    const b = preview(item, 75)
++    expect(b.getByText('B')).toBeInTheDocument()
++    b.unmount()
++    const c = preview(item, 165)
++    expect(c.getByText('C')).toBeInTheDocument()
++  })
++
++  it('keeps the edited state in sidecar and soft VTT, omits off mode and restores source graph on undo/redo', () => {
++    const { original, media } = editTiming()
++    const edited = structuredClone(useItemsStore.getState().items)
++    const converted = composition()
++    const before = JSON.stringify(edited)
++    expect(prepareSidecarPlan({ ...useItemsStore.getState(), fps: 30 }).content).toContain(
++      '00:00:04,500 --> 00:00:04,750\nA',
++    )
++    expect(buildTranscriptSubtitleWebVtt(converted)).toContain('00:00:04.500 --> 00:00:04.750\nA')
++    const offPlan = resolveSubtitleExportPlan({
++      subtitleMode: 'off',
++      container: 'mp4',
++      supportsWebVttSubtitles: true,
++      hasTranscriptVtt: true,
++    })
++    expect(offPlan.burnInSubtitles).toBe(false)
++    const off = offPlan.burnInSubtitles
++      ? converted
++      : omitTranscriptSubtitleItemsForSoftSubtitleExport(converted)
++    expect(off.tracks.flatMap((track) => track.items ?? []).map((item) => item.id)).toEqual([
++      'video-1',
++    ])
++    expect(
++      converted.tracks.flatMap((track) => track.items ?? []).find((item) => item.id === 'captions'),
++    ).toEqual(current())
++    expect(JSON.stringify(useItemsStore.getState().items)).toBe(before)
++    act(() => useTimelineCommandStore.getState().undo())
++    expect(current().cues[0]).toEqual({ ...original.cues[0], endSeconds: 4.75 })
++    act(() => useTimelineCommandStore.getState().undo())
++    expect(current()).toEqual(original)
++    expect(useItemsStore.getState().items.find((item) => item.id === media.id)).toEqual(media)
++    act(() => useTimelineCommandStore.getState().redo())
++    act(() => useTimelineCommandStore.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(edited)
++    expect(original.cues.map((cue) => cue.id)).toEqual(['A', 'B', 'C'])
++    expect(original.cues[0]).toEqual({ id: 'A', startSeconds: 0, endSeconds: 1, text: 'A' })
++  })
++
++  it('renders the first authored active cue for sorted nested overlaps without mutation', () => {
++    const item = freeze(
++      segment([
++        { id: 'A', startSeconds: 0, endSeconds: 10, text: 'A' },
++        { id: 'B', startSeconds: 1, endSeconds: 2, text: 'B' },
++        { id: 'C', startSeconds: 3, endSeconds: 4, text: 'C' },
++      ]),
++    )
++    const before = JSON.stringify(item)
++    expect(paint(item, 150).painted.map((entry) => entry.text)).toEqual(['A'])
++    expect(paint(item, 45).painted.map((entry) => entry.text)).toEqual(['A'])
++    const ui = preview(item, 150)
++    expect(ui.getByText('A')).toBeInTheDocument()
++    expect(JSON.stringify(item)).toBe(before)
++  })
++})
