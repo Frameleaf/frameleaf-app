@@ -302,10 +302,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (53):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 16.
+- **Engine (54):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 17.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (17):** the remaining 17 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (16):** the remaining 16 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
 
@@ -318,14 +318,15 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Engine: track audio                              | `track.setAudio`                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Engine: Lottie maps                              | `lottie.update`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Engine: media source relink | `media.relink` |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                              |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                              |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 17 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 14 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 16 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 13 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -385,7 +386,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `marker.remove`                    | Engine          | 12.8.3  |                                                                                                                        |
 | `marker.update`                    | Engine          | 12.8.2  |                                                                                                                        |
 | `media.import`                     | Not implemented | 8.2     | Do not record it. Media records are not in the graph (3.5); place library media with `clip.add` (12.3.1).              |
-| `media.relink`                     | Not implemented | 8.2     | Do not record it. Do not change a clip's `mediaId`.                                                                    |
+| `media.relink`                     | Engine          | 17      | Replace every source reader after admission and durable save; retain authored ranges. |
 | `media.remove`                     | Not implemented | 8.2     | Do not record it. Media records are not in the graph (3.5); remove clips with `clip.delete` (12.3.2).                  |
 | `music.add`                        | Engine          | 12.8.4  | Always refused at this revision (`failed`).                                                                            |
 | `project.applyTemplate`            | Engine          | 14.6.2  |                                                                                                                        |
@@ -2583,3 +2584,12 @@ those supplied maps. It leaves source, animation/theme selection, timing,
 transforms, media ownership, linked clips and other graph fields unchanged.
 Theme selection is not part of this canonical payload. Actual animated pixels,
 native slot rendering and bundle round-trip output require separate qualification.
+
+
+## 17. `media.relink` (FL-105)
+
+**Payload:** `{ mediaId, assetId }`. The replacement must be an admitted source supplied to the command runtime. On an isolated copy, change each matching reader in Main and every composition to that identity. Preserve clip ids, links, placement, duration, source ranges, transforms, selection and unrelated graph fields. Image readers need image bytes; Lottie readers need animation bytes with matching frame rate and valid existing segments; video readers need video; audio readers need audio or a video with an audio track. Refuse missing metadata, incompatible kinds, differing source frame rates, or a replacement too short for any existing source range as `invalid`; never clamp cuts. Update source dimensions and duration, and remove cached visual and audio URLs, thumbnail, waveform, transcript and reverse-conform fields. Legacy trim and offset bounds remain guarded. Admission never changes an existing import's checksum or owner.
+
+The web host refuses canonical relink while the editor reports unsubmitted edits. Its portable Relink File and missing-media Restore controls capture the complete live graph, including pending edits, instead. Actual selected bytes are hashed: matching an admitted import checksum restores that immutable identity and its metadata; different bytes receive a new admitted identity, including equal name/size/mtime selections. The existing leased compare-and-swap save must acknowledge the complete graph before live source publication or success. The source admission itself remains externally non-undoable (`undoable: false`); graph history preserves earlier references and the editor's source bindings in Main, sequences and navigation stashes. Old shared caches and admitted imports remain intact.
+
+Cancellation changes nothing. Admission, command or save failure keeps the previous live graph. An ambiguous save is reconciled by reading the current origin once, without retrying the rejected replacement. If the outcome cannot be established, guard editing until explicit reload. Fence project/account/mount transitions during every await, including A–B–A and unmount. Local CPU conformance verifies graph rules; browser render/save/reopen, network durability and worker output need separate qualification.

@@ -184,6 +184,8 @@ export interface StudioProjectImportRef {
   /** Content type the server read from the bytes. */
   mimeType: string;
   sizeBytes: number;
+  /** SHA-256 verified by the server; older hosts may omit it. */
+  checksum?: string;
   /**
    * Same-origin path of the bytes. It carries no credential: the owner's session cookie authorizes
    * it, exactly as for the page itself.
@@ -192,10 +194,19 @@ export interface StudioProjectImportRef {
 }
 
 /** A file the editor imported, for the host to keep with the project. */
+export interface StudioEditorScope {
+  projectId: string;
+  userId: string;
+  graphVersion: number;
+}
+
+export type StudioEditorCommitResult = { status: 'saved'; revision: number } | { status: 'rejected'; reason: string };
+
 export interface StudioProjectImportUpload {
   id: string;
   fileName: string;
   file: Blob;
+  scope?: StudioEditorScope;
 }
 
 export interface StudioHostContext {
@@ -384,6 +395,8 @@ export interface StudioHostServices {
     baseRevision?: number,
     graphVersion?: number,
   ): Promise<StudioDraftResult>;
+  /** Save one complete relink graph and acknowledge the leased CAS, never just a staged draft. */
+  commitEditorDraft?(graph: unknown, baseRevision: number, scope: StudioEditorScope): Promise<StudioEditorCommitResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
   /** Resolve one asset the engine knows only by id. */
@@ -464,6 +477,7 @@ export interface StudioCommandEngine {
     envelopes: readonly StudioCommandEnvelope[],
     assets: readonly StudioAssetRef[],
     projectId?: string,
+    projectImports?: readonly StudioProjectImportRef[],
   ): Promise<StudioCommandApplication>;
   dispose(): void;
 }

@@ -57,9 +57,9 @@ const setup = (applyResult?: (graph: unknown) => StudioCommandApplication) => {
 };
 
 describe('studio engine commands (FL-92)', () => {
-  it('handles every engine row the catalogue says changes the graph and can be undone', () => {
+  it('handles every declared engine graph command while preserving external admission semantics', () => {
     for (const id of studioEngineCommandIds) {
-      expect(studioCommandDefinition(id)).toMatchObject({ mutatesGraph: true, undoable: true });
+      expect(studioCommandDefinition(id)).toMatchObject({ mutatesGraph: true, undoable: id !== 'media.relink' });
     }
   });
 

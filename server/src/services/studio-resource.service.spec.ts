@@ -1371,6 +1371,54 @@ describe(StudioResourceService.name, () => {
       ]);
     });
 
+    it('reopened relink graph binds the worker manifest to admitted B, while A keeps its own checksum', async () => {
+      // Runtime-only import keeps the production server build independent of the web module.
+      const { relinkMediaGraph } = await import(
+        /* @vite-ignore */ new URL('../../../web/src/lib/frameleaf/studio/media-relink.ts', import.meta.url).href
+      );
+      const a = newUuid();
+      const b = newUuid();
+      const graphA = {
+        id: 'main',
+        metadata: { fps: 30 },
+        timeline: {
+          tracks: [],
+          items: [
+            {
+              id: 'clip',
+              type: 'audio',
+              mediaId: a,
+              durationInFrames: 30,
+              sourceStart: 0,
+              sourceEnd: 30,
+              sourceFps: 30,
+            },
+          ],
+          compositions: [],
+        },
+      };
+      const graphB = JSON.parse(
+        JSON.stringify(
+          relinkMediaGraph(graphA, a, { id: b, mimeType: 'audio/wav', duration: 8, fps: 0, width: 0, height: 0 }),
+        ),
+      );
+      const imports = [
+        { id: a, contentType: 'audio/wav', checksum: 'a'.repeat(64), sizeBytes: 4, path: '/owned/a.wav' },
+        { id: b, contentType: 'audio/wav', checksum: 'b'.repeat(64), sizeBytes: 4, path: '/owned/b.wav' },
+      ];
+      const reopened = await sut.resolveProjectResources(auth, context(graphB, { imports }));
+      expect(reopened.refused).toEqual([]);
+      expect(reopened.manifest.complete).toBe(true);
+      expect(reopened.manifest.entries).toEqual([
+        expect.objectContaining({ id: b, path: '/owned/b.wav', checksum: 'b'.repeat(64) }),
+      ]);
+      const old = await sut.resolveProjectResources(auth, context(graphA, { imports }));
+      expect(old.manifest.entries).toEqual([
+        expect.objectContaining({ id: a, path: '/owned/a.wav', checksum: 'a'.repeat(64) }),
+      ]);
+      expect(graphA.timeline.items[0].mediaId).toBe(a);
+    });
+
     it('resolves an editor media id the project declares as an import to that import (FL-103 / FL-105)', async () => {
       const owner = newUuid();
       const { manifest, refused } = await sut.resolveProjectResources(
