@@ -283,8 +283,91 @@ try {
   const page = driver.page;
   const browserProvenance = driver.browser;
   const url = `${origin}/studio-engine/test/editor-controls.browser.html`;
-  await page.goto(url);
-  await page.waitForFunction(() => !!window.fl100Editor);
+  const startupRequestOffset = harness.observations.length;
+  const startupStarted = Date.now();
+  let startupPhase = "navigation";
+  try {
+    await page.goto(url);
+    startupPhase = "fixture-global";
+    await page.waitForFunction(() => !!window.fl100Editor);
+  } catch (error) {
+    if (scenario === "monitor") {
+      const sanitize = (value) =>
+        String(value).replace(/\?[^\s"'<>]*/g, "?[redacted]").slice(0, 2048);
+      const requests = harness.observations.slice(startupRequestOffset);
+      let nativeStartup;
+      let diagnosticTimer;
+      try {
+        nativeStartup = await Promise.race([
+          page.evaluate(() => {
+            const clean = (value) =>
+              String(value).replace(/\?[^\s"'<>]*/g, "?[redacted]").slice(0, 2048);
+            const resources = performance.getEntriesByType("resource");
+            return {
+              readyState: document.readyState,
+              fixtureGlobal: !!window.fl100Editor,
+              elapsed: performance.now(),
+              errorOverlay: clean(
+                document.querySelector("vite-error-overlay")?.shadowRoot?.querySelector(".message")?.textContent ?? "",
+              ),
+              resourceCount: resources.length,
+              failedResources: resources
+                .filter((entry) => entry.responseStatus >= 400)
+                .slice(-20)
+                .map((entry) => ({ url: clean(entry.name), status: entry.responseStatus })),
+              slowResources: [...resources]
+                .sort((a, b) => b.duration - a.duration)
+                .slice(0, 20)
+                .map((entry) => ({
+                  url: clean(entry.name),
+                  duration: entry.duration,
+                  status: entry.responseStatus ?? null,
+                })),
+            };
+          }),
+          new Promise((_, reject) => {
+            diagnosticTimer = setTimeout(
+              () => reject(new Error("Startup diagnostic collection exceeded 2000ms")),
+              2000,
+            );
+          }),
+        ]);
+      } catch (diagnosticError) {
+        nativeStartup = { unavailable: sanitize(diagnosticError) };
+      } finally {
+        clearTimeout(diagnosticTimer);
+      }
+      console.error(
+        "FL98_STARTUP_FAILURE",
+        JSON.stringify({
+          phase: startupPhase,
+          elapsed: Date.now() - startupStarted,
+          error: sanitize(error),
+          consoleAndPageErrors: "not exposed by existing driver",
+          requestCounts: requests.reduce((counts, request) => ({
+            ...counts,
+            [request.kind]: (counts[request.kind] ?? 0) + 1,
+          }), {}),
+          rejectedRequests: requests
+            .filter((request) => ["blocked", "error", "tunnelled"].includes(request.kind))
+            .slice(-20)
+            .map((request) => ({
+              kind: request.kind,
+              method: request.method,
+              url: sanitize(request.url),
+              error: request.error && sanitize(request.error),
+            })),
+          recentRequests: requests.slice(-20).map((request) => ({
+            kind: request.kind,
+            method: request.method,
+            url: sanitize(request.url),
+          })),
+          nativeStartup,
+        }),
+      );
+    }
+    throw error;
+  }
   if (scenario === "monitor") {
     await qualifyMonitor(page, url);
     if (evidence) {
