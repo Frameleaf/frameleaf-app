@@ -160,6 +160,17 @@ origin-owned finalization controls. This source change does not qualify actual
 browser/native microphone, hotplug or latency behavior.
 
 
+Patch 0109 retires pre-record monitor permission requests before allocating a
+meter, and guards level callbacks against closed/replaced picker ownership or a
+recording taking over. The toolbar subscribes to device changes and releases the
+subscription on unmount; removing the selected input resets selection and retires
+its idle monitor while leaving an active recording under recorder authority.
+CPU fake-device regressions exercise production monitor/meter, controller and
+mount/teardown callbacks. They qualify these ownership controls only; real
+Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
+open. The adapted source digest still requires the artifact owner's binding.
+
+
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.
 Scopes label their current display-referred sRGB/Rec.709 full-range preview input. Deferred-capture regressions run in the hosted engine suite;

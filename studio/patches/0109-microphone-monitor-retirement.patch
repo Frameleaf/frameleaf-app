@@ -1,0 +1,76 @@
+--- a/src/infrastructure/audio/mic-recorder/monitor.ts
++++ b/src/infrastructure/audio/mic-recorder/monitor.ts
+@@ -16,6 +16,7 @@
+   noiseSuppression?: boolean
+   autoGainControl?: boolean
+   onLevel: (level: number) => void
++  isCurrent?: () => boolean
+ }
+
+ /**
+@@ -27,6 +28,11 @@
+     audio: buildAudioConstraints(options),
+     video: false,
+   })
++
++  if (options.isCurrent && !options.isCurrent()) {
++    for (const track of stream.getTracks()) track.stop()
++    throw new DOMException('Microphone monitor retired', 'AbortError')
++  }
+
+   const stopMeter = createMicLevelMeter(stream, options.onLevel)
+   let stopped = false
+--- a/src/features/timeline/services/mic-recording-controller.ts
++++ b/src/features/timeline/services/mic-recording-controller.ts
+@@ -115,6 +115,7 @@
+     store.setDevices(devices)
+     if (store.selectedDeviceId && !devices.some((d) => d.deviceId === store.selectedDeviceId)) {
+       store.setSelectedDeviceId(null)
++      if (store.status === 'idle') stopMicMonitor()
+     }
+   } catch (error) {
+     logger.warn('Failed to enumerate audio inputs', error)
+@@ -363,15 +364,17 @@
+   if (monitor || isMicRecordingActive(useMicRecordingStore.getState().status)) return
+   const store = useMicRecordingStore.getState()
+   const token = ++monitorToken
++  const isCurrent = () => token === monitorToken && useMicRecordingStore.getState().status === 'idle'
+   try {
+     const handle = await startMicLevelMonitor({
+       deviceId: store.selectedDeviceId ?? undefined,
+       noiseSuppression: store.noiseSuppression,
+       autoGainControl: store.autoGainControl,
+-      onLevel: handleLevel,
++      isCurrent,
++      onLevel: (level) => { if (isCurrent()) handleLevel(level) },
+     })
+     // A newer stop()/restart superseded us while awaiting — release immediately.
+-    if (token !== monitorToken || isMicRecordingActive(useMicRecordingStore.getState().status)) {
++    if (!isCurrent()) {
+       handle.stop()
+       return
+     }
+--- a/src/features/timeline/components/mic-record-control.tsx
++++ b/src/features/timeline/components/mic-record-control.tsx
+@@ -23,6 +23,7 @@
+   DropdownMenuSeparator,
+   DropdownMenuTrigger,
+ } from '@/components/ui/dropdown-menu'
++import { onAudioInputDevicesChanged } from '@/infrastructure/audio/mic-recorder'
+ import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
+ import { useMicRecordingStore, isMicRecordingActive } from '@/shared/state/mic-recording-store'
+ import {
+@@ -238,8 +239,12 @@
+   // On unmount (e.g. leaving the editor / switching projects) tear down any live
+   // take or monitor so the mic stream never stays hot in the background.
+   useEffect(() => {
+-    void refreshMicDevices()
++    let mounted = true
++    void refreshMicDevices(() => mounted)
++    const unsubscribeDevices = onAudioInputDevicesChanged(() => { void refreshMicDevices(() => mounted) })
+     return () => {
++      mounted = false
++      unsubscribeDevices()
+       const status = useMicRecordingStore.getState().status
+       if (isMicRecordingActive(status) || status === 'finalizing') {
+         cancelMicRecording()
