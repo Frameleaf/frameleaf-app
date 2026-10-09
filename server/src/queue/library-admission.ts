@@ -193,6 +193,7 @@ async function appendSourcePage(
   executionOwners?: SharedLibraryExecutions,
 ) {
   if (intents.length > QUEUE_BATCH) throw new Error('Library append is limited to 250 intents');
+  if (intents.length === 0) return;
   const prepared = new Map(intents.map((intent) => [librarySourceKey(intent), intent]));
   const { rows: existing } = await sql<{
     key: string;

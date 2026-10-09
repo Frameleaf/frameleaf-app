@@ -1,3 +1,4 @@
+import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
 import type { QueueIntent } from 'src/queue/types.js';
 import { JobName } from 'src/enum.js';
 import {
@@ -126,6 +127,31 @@ describe('library source contracts', () => {
       ).rejects.toThrow('250');
     expect(work).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('validates an empty initial page without reading its item ledger', async () => {
+    const db = new Kysely<any>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => new DummyDriver(),
+        createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    const execute = vi.spyOn(db.getExecutor(), 'executeQuery');
+    try {
+      execute
+        .mockResolvedValue({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ queue: 'sidecar', appendSequence: '0' }] });
+      await appendLibraryInitialSources(db as never, 'operation', []);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0][0].sql).toContain('for update');
+      execute.mockClear();
+      await expect(appendLibraryInitialSources(db as never, 'operation', [])).rejects.toThrow('not open');
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      await db.destroy();
+    }
   });
 
   it('rejects already cancelled queue work before taking catalogue locks', async () => {
