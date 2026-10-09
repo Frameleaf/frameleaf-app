@@ -149,6 +149,7 @@ try {
     return { start, dx, beforeBox: box, movingBox: await clip.boundingBox() };
   };
   witness.initial = await state();
+  witness.initialContent = editContent(await timeline());
   assert.equal(witness.initial.items.length, 2);
   assert(witness.initial.items.every((item) => item.from === 30));
   witness.editGesture = await beginDrag();
@@ -165,6 +166,7 @@ try {
     witness.initial.items.map((item) => ({ ...item, from: 42 })),
     "touch move must change exactly both linked offsets, retaining source ranges and all other fields",
   );
+  witness.editedContent = editContent(await timeline());
   assert.equal(witness.edited.undoCount, 1);
   assert.equal(witness.edited.canRedo, false);
   const modifier = process.platform === "darwin" ? "Meta" : "Control";
@@ -192,12 +194,40 @@ try {
   assert.deepEqual(
     witness.cancelled,
     beforeCancel,
-    "cancel must restore exact items, selection and history",
+    "cancel must restore exact items, selection and history counts/flags",
   );
   assert.deepEqual(
     editContent(await timeline()),
     contentBeforeCancel,
     "cancel must restore the whole edit graph",
+  );
+  // Counts cannot prove the retained command still owns the correct snapshots.
+  // Exercise that command through the same real shortcut path after cancellation.
+  await page.keyboard.press(`${modifier}+z`);
+  witness.afterCancelUndone = await state();
+  witness.afterCancelUndoneContent = editContent(await timeline());
+  assert.deepEqual(
+    witness.afterCancelUndoneContent,
+    witness.initialContent,
+    "retained undo after cancellation must restore the complete original edit graph",
+  );
+  assert.deepEqual(
+    witness.afterCancelUndone,
+    witness.undone,
+    "retained undo after cancellation must preserve selection and history behavior",
+  );
+  await page.keyboard.press(`${modifier}+Shift+z`);
+  witness.afterCancelRedone = await state();
+  witness.afterCancelRedoneContent = editContent(await timeline());
+  assert.deepEqual(
+    witness.afterCancelRedoneContent,
+    witness.editedContent,
+    "retained redo after cancellation must restore the complete edited graph",
+  );
+  assert.deepEqual(
+    witness.afterCancelRedone,
+    witness.redone,
+    "retained redo after cancellation must preserve selection and history behavior",
   );
   witness.pointerEvents = await page.evaluate(() => window.fl94TouchEvents);
   assert(witness.pointerEvents.length > 0);
@@ -222,6 +252,11 @@ try {
     1,
   );
   witness.beforeSave = editContent(await timeline());
+  assert.deepEqual(
+    witness.beforeSave,
+    witness.editedContent,
+    "save must receive the exact edited graph after the retained history probe",
+  );
   witness.persisted = editContent(
     await page.evaluate(
       (id) => window.fl100Editor.saveTouchTimeline(id),
