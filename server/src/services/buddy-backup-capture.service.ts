@@ -44,6 +44,7 @@ import {
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
@@ -243,12 +244,12 @@ export class BuddyBackupCaptureService {
     const hostRoot = await realpath(settings.directory);
     const sourceRoot = await realpath(dirname(this.repository.root()));
     const pinnedPaths = new Map<string, string>();
+    const configurationFile = readAliasedEnv('FRAMELEAF_CONFIG_FILE');
     const configurationPaths = [
       ...new Set(
-        [
-          ...settings.configurationFiles,
-          ...(process.env.FRAMELEAF_CONFIG_FILE ? [process.env.FRAMELEAF_CONFIG_FILE] : []),
-        ].map((path) => resolve(path)),
+        [...settings.configurationFiles, ...(configurationFile ? [configurationFile] : [])].map((path) =>
+          resolve(path),
+        ),
       ),
     ];
 
