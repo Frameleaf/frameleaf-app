@@ -604,7 +604,17 @@
       "path": "patches/0124-normalization-inherited-track-state.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e119801be4e11c1fea390f54bbba849fdd3f4b0a731a40cd8bc6437222364e9f"
+    },
+    {
+      "path": "patches/0125-shared-proxy-deletion-alias-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2e5d07f39fa4005d1f3c180b464b545929debc1bffcd33108826417c6db9b06b"
+    },
+    {
+      "path": "patches/0126-project-copy-media-entry-references.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c93159a43e624d238d086aac29014fd2c4927abfe199a012aa0f5ff0faccfa52"
     }
   ],
-  "sourceSha256": "cb8c9b6ec30597c44a26cead6dc11fba3770870192b156c68c8ddfe7e032a54f"
+  "sourceSha256": "85ef9a025dba470a1cb73d0a1ee6616a0e8d428602567fe7d9930959215dd302"
 }
