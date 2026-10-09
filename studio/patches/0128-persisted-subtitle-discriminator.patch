@@ -1,0 +1,15 @@
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -8,3 +8,3 @@
+ import type { MaskVertex } from './masks'
+-import type { LottieItem, ShapeStyleFields } from './timeline'
++import type { LottieItem, ShapeStyleFields, SubtitleSegmentItem } from './timeline'
+ import type { CompositionControlOverrides, CompositionControlSchema } from './composition-controls'
+@@ -101,2 +101,3 @@
+         | 'lottie'
++        | 'subtitle'
+       // Type-specific fields stored as optional for flexibility
+@@ -256,2 +257,3 @@
+         >
++      | Pick<SubtitleSegmentItem, 'type' | 'source' | 'cues' | 'color' | 'sourceLabel'>
+     )

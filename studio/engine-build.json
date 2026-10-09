@@ -619,7 +619,12 @@
       "path": "patches/0127-persisted-lottie-discriminator.patch",
       "sha256": "d037a57d7ccc013b58528e2bce8c878e9acfeadf96053572e5bb6692ac60e27a",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0128-persisted-subtitle-discriminator.patch",
+      "sha256": "814f21171d2100a1680365d2a9b7c9b57d1485330417367d6feda4dd4c211e0f",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "2f020b4240175b0ee7e4d75110582b0015c981171761d1021a15fce38b98418e"
+  "sourceSha256": "da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327"
 }

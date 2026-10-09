@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "$i18n/*": ["../../../../i18n/*"],
+      "$lib/*": ["../../../../web/src/lib/*"],
+      "*": ["../../../engine/node_modules/*"],
+      "@/*": ["../../../engine/src/*"],
+      "@frameleaf/host/*": ["../../../../web/src/lib/frameleaf/studio/*"],
+      "react": ["../../../engine/node_modules/@types/react"],
+      "react-dom": ["../../../engine/node_modules/@types/react-dom"],
+      "react-dom/*": ["../../../engine/node_modules/@types/react-dom/*"],
+      "react/*": ["../../../engine/node_modules/@types/react/*"],
+      "vite-plus/test": [
+        "../../../engine/node_modules/vite-plus/dist/test/index.d.ts"
+      ]
+    },
+    "skipLibCheck": true,
+    "typeRoots": ["../../../engine/node_modules/@types"],
+    "types": ["node", "chai"]
+  },
+  "exclude": [],
+  "extends": "../../../engine/tsconfig.json",
+  "include": [
+    "./host-command-envelope.types.ts",
+    "../../../../web/src/app.d.ts",
+    "../../../engine/src/**/*.d.ts",
+    "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
+  ]
+}

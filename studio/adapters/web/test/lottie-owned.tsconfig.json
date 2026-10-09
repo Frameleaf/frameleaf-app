@@ -14,6 +14,7 @@
   "include": [
     "lottie-owned.browser.tsx",
     "persisted-lottie.types.ts",
+    "persisted-subtitle.types.ts",
     "lottie-owned.fixture.d.mts",
     "../../../engine/src/**/*.d.ts",
     "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
