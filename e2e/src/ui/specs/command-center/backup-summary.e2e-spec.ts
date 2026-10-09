@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { analyticsReportFixture } from 'src/ui/mock-network/analytics-report.js';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 import { setupCloudMockApiRoutes } from 'src/ui/mock-network/cloud-network.js';
-import { analyticsReportFixture } from '../../../../../web/src/lib/frameleaf/analytics.fixture';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(60_000);
@@ -16,7 +16,7 @@ test('Command Center status links and failed-refresh recovery', async ({ context
   await context.route('**/api/**', (route) => route.fulfill({ status: 503, json: {} }));
   await setupBaseMockApiRoutes(context, '11111111-1111-4111-8111-111111111111');
   await setupCloudMockApiRoutes(context, { state: 'linked', requests: [] });
-  await context.route('**/api/analytics?**', (route) => route.fulfill({ json: analyticsReportFixture() }));
+  await context.route('**/api/analytics?**', (route) => route.fulfill({ json: analyticsReportFixture }));
   let failed = false;
   await context.route('**/api/admin/buddy-backup', (route) =>
     route.fulfill(
@@ -88,7 +88,7 @@ test('ordinary account has no server-wide backup summary or backup requests', as
       },
     }),
   );
-  await context.route('**/api/analytics?**', (route) => route.fulfill({ json: analyticsReportFixture() }));
+  await context.route('**/api/analytics?**', (route) => route.fulfill({ json: analyticsReportFixture }));
   await context.route(/\/api\/admin\/(buddy-backup|cloud\/backup)$/, (route) => {
     requests++;
     return route.fulfill({ status: 503, json: {} });
