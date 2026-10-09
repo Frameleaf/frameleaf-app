@@ -488,6 +488,9 @@ export class BuddyVault {
       const [stored] = await this.inventory([receipt.id]);
       if (!stored || stored.bytes !== receipt.bytes || stored.digest !== receipt.digest)
         throw new Error('Buddy snapshot is incomplete');
+      const bytes = await this.read(receipt.id);
+      if (bytes.length !== receipt.bytes || buddyDigest(bytes) !== receipt.digest)
+        throw new Error('Buddy snapshot is incomplete');
     }
     if (snapshot.manifest.some((id) => !ids.has(id))) throw new Error('Buddy snapshot manifest is missing');
     const encoded = JSON.stringify({ ...envelope, signer: publicKey });

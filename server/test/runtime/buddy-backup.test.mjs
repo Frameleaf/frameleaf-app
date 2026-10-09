@@ -177,7 +177,7 @@ test('vault plus recovery kit restores verified files without the source index a
   }
 });
 
-test('snapshot commits account for metadata and accept an immutable lost-ack retry after grant renewal', async () => {
+test('snapshot commits account for metadata, reject stored corruption and accept immutable lost-ack retries', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'buddy-snapshot-'));
   try {
     const now = Date.now();
@@ -220,8 +220,30 @@ test('snapshot commits account for metadata and accept an immutable lost-ack ret
       vault.commit(nextEnvelope, jwk, now, { ...capacity, quotaBytes: usage.committedBytes + 1 }),
       /quota/,
     );
-    await rm(join(directory, vaultId, 'catalog.json'));
-    assert.deepEqual(await new BuddyVault(directory, vaultId).usage(), usage);
+    const stagedBytes = randomBytes(100);
+    const stagedReceipt = BuddyVault.receipt('e'.repeat(64), stagedBytes);
+    await vault.put(stagedReceipt, stagedBytes, capacity);
+    const corrupted = Buffer.from(stagedBytes);
+    corrupted[20] ^= 1;
+    await writeFile(join(directory, vaultId, 'objects', stagedReceipt.id.slice(0, 2), stagedReceipt.id), corrupted);
+    assert.deepEqual(await vault.inventory([stagedReceipt.id]), [stagedReceipt]);
+    const corruptedSnapshot = { ...next, objects: [receipt, stagedReceipt] };
+    const corruptedEnvelope = {
+      snapshot: corruptedSnapshot,
+      signature: sign(null, buddySnapshotBytes(corruptedSnapshot), privateKey).toString('base64url'),
+    };
+    const catalogPath = join(directory, vaultId, 'catalog.json');
+    const catalog = await readFile(catalogPath);
+    const snapshots = await vault.snapshots();
+    await assert.rejects(vault.commit(corruptedEnvelope, jwk, now, capacity), /incomplete/);
+    assert.deepEqual(await readFile(catalogPath), catalog);
+    assert.deepEqual(await vault.snapshots(), snapshots);
+    assert.deepEqual(await vault.snapshot(snapshot.id), envelope);
+    assert.deepEqual(await vault.read(receipt.id), bytes);
+    await vault.commit(envelope, jwk, now + 301_000, capacity);
+    const stagedUsage = await vault.usage();
+    await rm(catalogPath);
+    assert.deepEqual(await new BuddyVault(directory, vaultId).usage(), stagedUsage);
     const storedPath = join(directory, vaultId, 'snapshots', snapshot.id);
     const stored = JSON.parse(await readFile(storedPath, 'utf8'));
     stored.snapshot.objects = [];
