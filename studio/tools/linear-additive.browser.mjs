@@ -211,6 +211,11 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
         tiny.push(
           await direct([2, -2, 4, tinyCoverage], [100, -100, 20, 0], p),
         );
+      const subnormalTies = [];
+      for (const units of [3, 5, 7])
+        subnormalTies.push(
+          await direct([2, -2, 4, units * tinyCoverage], [100, -100, 20, 0], 0.5),
+        );
       // Also retain representable small positive midpoint coverage, not only zero.
       const small = await direct(
         [2, -0.5, 0.25, 2 ** -10],
@@ -467,6 +472,7 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
         hiddenPremultiplied,
         zero,
         tiny,
+        subnormalTies,
         small,
         spatial,
         shiftedPasses,
@@ -497,6 +503,10 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
   near(result.tiny[0], [2, -2, 4, 2 ** -24], 0);
   near(result.tiny[1], [0, 0, 0, 0], 0);
   near(result.tiny[2], [0, 0, 0, 0], 0);
+  result.subnormalTies.forEach((got, i) => {
+    near(got, [2.88, -2.88, 5.76, [2, 2, 4][i] * 2 ** -24]);
+    assert.equal(got[3], [2, 2, 4][i] * 2 ** -24);
+  });
   near(result.small, [2.88, -0.72, 0.36, 2 ** -11]);
   assert.equal(result.small[3], 2 ** -11);
   result.spatial.forEach((got) => near(got, [2, -0.5, 0.25, 0.25]));

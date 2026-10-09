@@ -579,7 +579,12 @@
       "path": "patches/0119-linear-hdr-additive-dissolve.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "d8361eeb34d96415483288c4eb84e5638ef47c4c725dbb094b448e812e8fd19d"
+    },
+    {
+      "path": "patches/0120-additive-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "081806cdda71e4f08711c86bbb6c09071e1bf658836aa9ca57ecc08d245bcc57"
     }
   ],
-  "sourceSha256": "e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d"
+  "sourceSha256": "38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904"
 }
