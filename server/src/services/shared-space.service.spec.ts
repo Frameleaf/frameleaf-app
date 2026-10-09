@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
-import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType } from 'src/enum.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -135,7 +135,7 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('getPreview', () => {
-    it('shows an invited recipient what the space exposes, without any asset', async () => {
+    it('shows an invited recipient what the space exposes, with only the preview item ids', async () => {
       const recipient = UserFactory.create();
       const space = AlbumFactory.from({ kind: AlbumKind.Space, albumName: 'Family', icon: 'mdiHomeHeart' }).build();
       const owner = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!.user;
@@ -150,6 +150,8 @@ describe(SharedSpaceService.name, () => {
       });
       mocks.album.getById.mockResolvedValue(getForAlbum(space));
       mocks.album.getMetadataForIds.mockResolvedValue([metadata(space.id, 12)]);
+      const previewAssetIds = [newUuid(), newUuid()];
+      mocks.album.getSpacePreviewAssetIds.mockResolvedValue(previewAssetIds);
       mocks.user.get.mockResolvedValue(owner);
 
       const preview = await sut.getPreview(AuthFactory.create(recipient), space.id);
@@ -163,9 +165,12 @@ describe(SharedSpaceService.name, () => {
           accepted: false,
           assetCount: 12,
           memberCount: 1,
+          previewAssetIds,
         }),
       );
-      // The preview is a summary, never media: nothing asset-shaped may appear on it.
+      // FL-349: a dozen newest ids at most, read under the preview rule
+      expect(mocks.album.getSpacePreviewAssetIds).toHaveBeenCalledWith(space.id, 12);
+      // Beyond those ids the preview is a summary: no asset objects, cover or full id list.
       expect(preview).not.toHaveProperty('assets');
       expect(preview).not.toHaveProperty('albumThumbnailAssetId');
       expect(preview).not.toHaveProperty('assetIds');
@@ -222,6 +227,83 @@ describe(SharedSpaceService.name, () => {
 
       expect(preview.accepted).toBe(true);
       expect(preview.memberCount).toBe(2);
+    });
+  });
+
+  describe('getPreviewThumbnail (FL-349)', () => {
+    const invited = () => {
+      const recipient = UserFactory.create();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      mocks.albumUser.getInvite.mockResolvedValue({
+        albumId: space.id,
+        userId: recipient.id,
+        role: AlbumUserRole.Viewer,
+        invitedById: null,
+        createdAt: newDate(),
+      });
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      return { recipient, space };
+    };
+
+    it('serves the small thumbnail of a listed preview item, without its file name', async () => {
+      const { recipient, space } = invited();
+      const assetId = newUuid();
+      mocks.album.getSpacePreviewAssetIds.mockResolvedValue([newUuid(), assetId]);
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ownerId: newUuid(),
+        isEdited: false,
+        originalPath: '/originals/secret-name.jpg',
+        originalFileName: 'secret-name.jpg',
+        path: '/thumbs/a.webp',
+        renditionIdentity: null,
+        imageEncoding: null,
+      } as never);
+
+      const file = await sut.getPreviewThumbnail(AuthFactory.create(recipient), space.id, assetId);
+
+      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(assetId, AssetFileType.Thumbnail, true);
+      expect(file).toEqual(expect.objectContaining({ path: '/thumbs/a.webp', fileName: `${assetId}_thumbnail.webp` }));
+      expect(file.fileName).not.toContain('secret-name');
+    });
+
+    it('refuses an item of the space that the preview does not list', async () => {
+      const { recipient, space } = invited();
+      mocks.album.getSpacePreviewAssetIds.mockResolvedValue([newUuid()]);
+
+      await expect(sut.getPreviewThumbnail(AuthFactory.create(recipient), space.id, newUuid())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.asset.getForThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('refuses anyone without an invitation or membership', async () => {
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      const assetId = newUuid();
+      mocks.albumUser.getInvite.mockResolvedValue(void 0);
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.album.getSpacePreviewAssetIds.mockResolvedValue([assetId]);
+
+      await expect(sut.getPreviewThumbnail(AuthFactory.create(), space.id, assetId)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.album.getSpacePreviewAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('refuses an ordinary album, even for an invitation row', async () => {
+      const album = AlbumFactory.from({ kind: AlbumKind.Album }).build();
+      const recipient = UserFactory.create();
+      mocks.albumUser.getInvite.mockResolvedValue({
+        albumId: album.id,
+        userId: recipient.id,
+        role: AlbumUserRole.Viewer,
+        invitedById: null,
+        createdAt: newDate(),
+      });
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(sut.getPreviewThumbnail(AuthFactory.create(recipient), album.id, newUuid())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 

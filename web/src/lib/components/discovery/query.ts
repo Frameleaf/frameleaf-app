@@ -198,6 +198,8 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   hasAlbums: { eq: (value) => typeof value === 'boolean' },
   hasPeople: { eq: (value) => typeof value === 'boolean' },
   hasTags: { eq: (value) => typeof value === 'boolean' },
+  isPanorama: { eq: (value) => typeof value === 'boolean' },
+  isScreenshot: { eq: (value) => typeof value === 'boolean' },
   city: stringNullableOperators,
   state: stringNullableOperators,
   country: stringNullableOperators,
@@ -239,6 +241,8 @@ const BOOLEAN_FIELDS = new Set([
   'hasAlbums',
   'hasPeople',
   'hasTags',
+  'isPanorama',
+  'isScreenshot',
 ]);
 
 /**
