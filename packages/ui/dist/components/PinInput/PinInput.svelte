@@ -22,9 +22,11 @@
 
   const { label, disabled, ...labelProps } = $derived(context());
   const size = $derived(initialSize ?? labelProps.size ?? 'large');
+  // The root receives explicit props after field defaults; mirror the same disabled precedence.
+  const inputDisabled = $derived(props.disabled ?? disabled);
 
   const inputStyles = tv({
-    base: 'group-has-disabled:text-dark data-active:border-primary dark:data-active:border-primary flex items-center justify-center border-2 bg-gray-100 font-mono transition-all duration-75 group-has-disabled:bg-gray-300 data-active:border-3 dark:bg-gray-800 dark:group-not-has-disabled:border-gray-700 dark:group-has-disabled:bg-gray-900 dark:group-has-disabled:text-gray-200',
+    base: 'group-data-[disabled]:text-dark data-active:border-primary dark:data-active:border-primary flex items-center justify-center border-2 bg-gray-100 font-mono transition-all duration-75 group-data-[disabled]:bg-gray-300 data-active:border-3 dark:bg-gray-800 dark:group-not-data-[disabled]:border-gray-700 dark:group-data-[disabled]:bg-gray-900 dark:group-data-[disabled]:text-gray-200',
     variants: {
       shape: styleVariants.shape,
       size: {
@@ -63,7 +65,7 @@
   const labelId = `label-${id}`;
 </script>
 
-<div class={cleanClass('flex flex-col gap-1', className)}>
+<div class={cleanClass('group flex flex-col gap-1', className)} data-disabled={inputDisabled ? true : undefined}>
   {#if label}
     <Label id={labelId} for={inputId} {label} {...labelProps} {size} />
   {/if}
@@ -73,7 +75,7 @@
     aria-labelledby={label && labelId}
     {disabled}
     aria-disabled={disabled}
-    class="group flex w-fit items-center gap-2 [direction:ltr]"
+    class="flex w-fit items-center gap-2 [direction:ltr]"
     maxlength={length}
     pattern={REGEXP_ONLY_DIGITS}
     type={password ? 'password' : 'text'}
