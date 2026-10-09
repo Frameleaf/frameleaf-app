@@ -564,7 +564,12 @@
       "path": "patches/0116-still-default-project-duration.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "28558d507d6d08bf312c47e3bd16b0e0608d3cb8d2eec6c19959878d9229909e"
+    },
+    {
+      "path": "patches/0118-adaptive-preview-render-size.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "26a6a89d91cab552055e002094e8f51aed0846a2c981943db05f6664ae069a5f"
     }
   ],
-  "sourceSha256": "2bacb415e43911d507c6299b4c551040eb963e6778ae15f080d53b3134bf272a"
+  "sourceSha256": "36cbedc96ae8a2839db6e655ed35ecb3e7e8dda1c34e56346cb2fb61c7dc201d"
 }
