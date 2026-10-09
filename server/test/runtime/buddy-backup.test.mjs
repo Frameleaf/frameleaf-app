@@ -327,6 +327,130 @@ for (const allowedReads of [0, 32, 34]) {
   });
 }
 
+for (const revoked of [false, true]) {
+  test(`snapshot byte checkpoint ${revoked ? 'refuses revoked authority' : 'admits valid authority'} before the fifth large read`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'buddy-byte-authority-'));
+    try {
+      const now = Date.now();
+      const vaultId = randomUUID();
+      const key = randomBytes(32);
+      const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+      const jwk = publicKey.export({ format: 'jwk' });
+      const vault = new BuddyVault(directory, vaultId);
+      const capacity = { quotaBytes: 64 * 1024 * 1024, freeBytes: 100e9, totalBytes: 200e9 };
+      const upload = async (plain) => {
+        const id = buddyObjectId(key, vaultId, plain);
+        const bytes = encryptBuddyBlock(key, { vaultId, id, keyVersion: 1 }, plain);
+        const receipt = BuddyVault.receipt(id, bytes);
+        await vault.put(receipt, bytes, capacity);
+        return receipt;
+      };
+      const original = Buffer.from('original valid data survives a revoked successor');
+      const originalReceipt = await upload(original);
+      const previousId = randomUUID();
+      const manifest = {
+        version: 1,
+        vaultId,
+        snapshotId: previousId,
+        sequence: 1,
+        previous: null,
+        library: { version: 2, assets: {} },
+        contents: {},
+      };
+      const manifestReceipt = await upload(Buffer.from(JSON.stringify(manifest)));
+      const previousSnapshot = {
+        version: 1,
+        vaultId,
+        id: previousId,
+        sequence: 1,
+        previous: manifest.previous,
+        createdAt: new Date(now).toISOString(),
+        retainUntil: new Date(now + 31 * 86_400_000).toISOString(),
+        keyVersion: 1,
+        manifest: [manifestReceipt.id],
+        objects: [originalReceipt, manifestReceipt],
+      };
+      const previous = {
+        snapshot: previousSnapshot,
+        signature: sign(undefined, buddySnapshotBytes(previousSnapshot), privateKey).toString('base64url'),
+      };
+      await vault.commit(previous, jwk, now, capacity);
+      const large = [];
+      for (let index = 0; index < 5; index++) large.push(await upload(Buffer.alloc(8 * 1024 * 1024, index)));
+      const nextId = randomUUID();
+      const nextManifest = await upload(
+        Buffer.from(JSON.stringify({ ...manifest, snapshotId: nextId, sequence: 2, previous: previousId })),
+      );
+      const objects = [...large, originalReceipt, nextManifest];
+      const snapshot = {
+        ...previousSnapshot,
+        id: nextId,
+        sequence: 2,
+        previous: previousId,
+        manifest: [nextManifest.id],
+        objects,
+      };
+      const envelope = {
+        snapshot,
+        signature: sign(undefined, buddySnapshotBytes(snapshot), privateKey).toString('base64url'),
+      };
+      const catalogPath = join(directory, vaultId, 'catalog.json');
+      const catalog = await readFile(catalogPath);
+      const previousBytes = await readFile(join(directory, vaultId, 'snapshots', previousId));
+      const summaries = await vault.snapshots();
+      const originalRead = vault.read.bind(vault);
+      const reads = [];
+      let readBytes = 0;
+      const checkpoints = [];
+      vault.read = async (id) => {
+        const bytes = await originalRead(id);
+        reads.push(id);
+        readBytes += bytes.length;
+        return bytes;
+      };
+      const commit = vault.commit(envelope, jwk, now, capacity, async () => {
+        checkpoints.push({ reads: reads.length, bytes: readBytes });
+        // Revocation is learned after the fourth actual read, independently of callback cadence.
+        if (revoked && reads.length >= 4) throw new Error('authority revoked');
+      });
+      if (revoked) await assert.rejects(commit, /authority revoked/);
+      else await commit;
+      const fourBytes = 4 * (8 * 1024 * 1024 + 28);
+      assert.deepEqual(checkpoints[0], { reads: 0, bytes: 0 });
+      assert.deepEqual(checkpoints[1], { reads: 4, bytes: fourBytes });
+      assert.equal(checkpoints.length, revoked ? 2 : 3);
+      assert.deepEqual(
+        reads,
+        objects.slice(0, revoked ? 4 : objects.length).map(({ id }) => id),
+      );
+      if (revoked) {
+        assert.deepEqual(await readFile(catalogPath), catalog);
+        assert.deepEqual(await vault.snapshots(), summaries);
+        await assert.rejects(vault.snapshot(nextId), { code: 'ENOENT' });
+        await assert.rejects(readFile(join(directory, vaultId, 'snapshots', nextId)), { code: 'ENOENT' });
+        await assert.rejects(readFile(join(directory, vaultId, 'summaries', nextId)), { code: 'ENOENT' });
+        assert.deepEqual(await readdir(join(directory, vaultId, 'snapshots')), [previousId]);
+      } else {
+        assert.deepEqual(checkpoints[2], {
+          reads: objects.length,
+          bytes: objects.reduce((sum, r) => sum + r.bytes, 0),
+        });
+        assert.deepEqual(await vault.snapshot(nextId), envelope);
+      }
+      assert.deepEqual(await readFile(join(directory, vaultId, 'snapshots', previousId)), previousBytes);
+      const reader = new BuddyBackupReader(
+        { version: 1, vaultId, current: 1, keys: { 1: key.toString('base64url') } },
+        await vault.snapshot(previousId),
+        originalRead,
+      );
+      assert.deepEqual(await reader.manifest(), manifest);
+      assert.deepEqual(await reader.block(originalReceipt.id, 1), original);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 test('durable reservations, lost acknowledgements and catalog loss preserve quota and immutable ciphertext', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'buddy-vault-'));
   try {
