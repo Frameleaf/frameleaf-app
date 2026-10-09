@@ -22,6 +22,52 @@ import { LibraryService } from 'src/services/library.service.js';
 import { explainLibraryRunRead, getLibraryQueueDB, profileLibraryRunRead } from 'test/medium/library-queue-database.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 
+const libraryLedgerShape = () => sql<{
+  rows: number;
+  maximumItemKeyLength: number | null;
+  maximumSourceKeyLength: number | null;
+  intentRows: number;
+  runs: number;
+}>`select coalesce(sum(rows),0)::int rows,
+  max("maximumItemKeyLength")::int "maximumItemKeyLength",
+  max("maximumSourceKeyLength")::int "maximumSourceKeyLength",
+  coalesce(sum("intentRows"),0)::int "intentRows",count(*)::int runs
+  from (select "runId",count(*) rows,max(length("itemKey")) "maximumItemKeyLength",
+    max(length("librarySourceKey")) "maximumSourceKeyLength",
+    count(*) filter (where "libraryIntent" is not null) "intentRows"
+    from job_run_item group by "runId") per_run`;
+
+it('preserves ledger diagnostics for empty and multiple-run ledgers', async () => {
+  const db = await getLibraryQueueDB();
+  const store = new SqlQueueStore(db);
+  const original = () =>
+    sql`select count(*)::int rows,
+    max(length("itemKey"))::int "maximumItemKeyLength",max(length("librarySourceKey"))::int "maximumSourceKeyLength",
+    count(*) filter (where "libraryIntent" is not null)::int "intentRows",count(distinct "runId")::int runs
+    from job_run_item`.execute(db);
+  try {
+    const empty = (await libraryLedgerShape().execute(db)).rows;
+    expect(empty).toEqual((await original()).rows);
+    expect(empty).toEqual([
+      { rows: 0, maximumItemKeyLength: null, maximumSourceKeyLength: null, intentRows: 0, runs: 0 },
+    ]);
+    await store.initialize([QueueName.Sidecar]);
+    const first = await store.createRun('diagnostic-first', {});
+    const second = await store.createRun('diagnostic-second', {});
+    await sql`insert into job_run_item("runId","itemKey",stage,queue,selection,"librarySourceKey","libraryIntent")
+      values (${first}::uuid,'x',${JobName.SidecarCheck},${QueueName.Sidecar},'{}',null,null),
+        (${first}::uuid,'long-key',${JobName.SidecarCheck},${QueueName.Sidecar},'{}','12345','{}'),
+        (${second}::uuid,'yyy',${JobName.SidecarCheck},${QueueName.Sidecar},'{}',null,null)`.execute(db);
+    const populated = (await libraryLedgerShape().execute(db)).rows;
+    expect(populated).toEqual((await original()).rows);
+    expect(populated).toEqual([
+      { rows: 3, maximumItemKeyLength: 8, maximumSourceKeyLength: 5, intentRows: 1, runs: 2 },
+    ]);
+  } finally {
+    await db.destroy();
+  }
+});
+
 /** Synthetic read-only paths, real service/queue/domain/asset/source SQL. This does not decode media. */
 it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-owned sources and bounded control reads', async () => {
   StorageCore.setMediaLocation('/synthetic-managed');
@@ -243,17 +289,24 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
       maximumCopyPage = Math.max(maximumCopyPage, copied - previousCopied);
       previousCopied = copied;
     }
+    const ledgerQuery = libraryLedgerShape().compile(db);
+    // Estimated plan of this diagnostic itself; no extra full-ledger execution or connection.
     console.info(
-      'library-service-ledger-shape',
+      'library-service-ledger-estimated-plan',
       JSON.stringify(
         (
-          await sql`select count(*)::int rows,
-      max(length("itemKey"))::int "maximumItemKeyLength",max(length("librarySourceKey"))::int "maximumSourceKeyLength",
-      count(*) filter (where "libraryIntent" is not null)::int "intentRows",count(distinct "runId")::int runs from job_run_item`.execute(
-            db,
-          )
+          await db.executeQuery({
+            ...ledgerQuery,
+            sql: 'explain (format json) ' + ledgerQuery.sql,
+          })
         ).rows[0],
       ),
+    );
+    const ledgerStarted = performance.now();
+    const ledgerShape = (await db.executeQuery(ledgerQuery)).rows[0];
+    console.info(
+      'library-service-ledger-shape',
+      JSON.stringify({ ...ledgerShape, elapsedMs: performance.now() - ledgerStarted }),
     );
     const summaryStarted = performance.now();
     const summary = await (async () => {
