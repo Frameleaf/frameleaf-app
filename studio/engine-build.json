@@ -528,7 +528,7 @@
     {
       "path": "patches/0109-microphone-monitor-retirement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "41994c970ebeb10990b601ffa5d536761a430e56d14412bbfe302f7464f0135b"
+      "sha256": "f099c8f0828114efae58e979802c48cc35712c2f5e0b7750d139d5fe19fca57c"
     }
   ],
   "sourceSha256": "6a94f497df2b949fe43059094ed7cdaff656b06dd47422021fc55b079c7f7889"

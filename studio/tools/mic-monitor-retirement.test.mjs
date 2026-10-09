@@ -13,7 +13,7 @@ const { startMicLevelMonitor } = await import(monitorModule);
 const devices = await import(url(await read('infrastructure/audio/mic-recorder/devices.ts')));
 const controller = await read('features/timeline/services/mic-recording-controller.ts');
 const monitorSource = controller.slice(controller.indexOf('export async function startMicMonitor'), controller.indexOf('function startElapsedTimer'));
-const refreshSource = controller.slice(controller.indexOf('export async function refreshMicDevices'), controller.indexOf('export async function startMicRecording'));
+const refreshSource = `${controller.match(/^let deviceRefreshGeneration.*$/m)?.[0] ?? ''}\n${controller.slice(controller.indexOf('export async function refreshMicDevices'), controller.indexOf('export async function startMicRecording'))}`;
 const component = await read('features/timeline/components/mic-record-control.tsx');
 const effectStart = component.indexOf('useEffect(() => {');
 const effect = component.slice(effectStart + 'useEffect(() => {'.length, component.indexOf('}, [])', effectStart));
@@ -122,3 +122,31 @@ test('device enumeration completed after toolbar teardown cannot publish replace
   await Promise.resolve(); await Promise.resolve();
   assert.equal(s.store.devices[0].deviceId, 'A'); assert.equal(s.store.selectedDeviceId, 'A');
 });
+
+for (const caller of ['direct', 'toolbar']) {
+  test(`${caller} reverse-order enumerations preserve replacement selection and live monitor`, async (t) => {
+    const s = await setup(t);
+    const enumerations = [];
+    s.events.enumerateDevices = () => new Promise((resolve) => { enumerations.push(resolve) });
+    let older, newer, unmount;
+    if (caller === 'toolbar') {
+      unmount = s.api.mount();
+      s.events.dispatchEvent(new Event('devicechange'));
+    } else {
+      older = s.api.refreshMicDevices(); newer = s.api.refreshMicDevices();
+    }
+    assert.equal(enumerations.length, 2);
+    enumerations[1]([{ kind: 'audioinput', deviceId: 'B', label: 'Mic B' }]);
+    await newer; await Promise.resolve(); await Promise.resolve();
+    s.store.selectedDeviceId = 'B';
+    const opening = s.api.startMicMonitor(); const stream = s.stream();
+    s.requests[0].resolve(stream); await opening;
+    enumerations[0]([{ kind: 'audioinput', deviceId: 'A', label: 'Mic A' }]);
+    await older; await Promise.resolve(); await Promise.resolve();
+    assert.equal(s.store.devices[0].deviceId, 'B');
+    assert.equal(s.store.selectedDeviceId, 'B'); assert.equal(stream.stop.mock.callCount(), 0);
+    assert.equal(s.store.level, 0.9921875); assert.equal(s.meters(), 1);
+    if (unmount) unmount(); else s.api.stopMicMonitor();
+    assert.equal(stream.stop.mock.callCount(), 1);
+  });
+}
