@@ -24,7 +24,16 @@ class PythonSelectionTests(unittest.TestCase):
         self.assertTrue(linux_wheels, "Locked CPU wheel is missing")
         self.assertTrue(all(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))
         dockerfile = (root / "Dockerfile").read_text()
-        self.assertIn(f"FROM python:{selected}-slim-trixie@sha256:", dockerfile.split("AS builder-cpu")[0])
+        global_arguments = dockerfile.split("\nFROM ", 1)[0].splitlines()
+        cpu_images = [
+            line.removeprefix("ARG CPU_IMAGE=") for line in global_arguments if line.startswith("ARG CPU_IMAGE=")
+        ]
+        self.assertEqual(
+            cpu_images,
+            [f"python:{selected}-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"],
+        )
+        self.assertIn("FROM ${CPU_IMAGE} AS builder-cpu", dockerfile.splitlines())
+        self.assertIn("FROM ${CPU_IMAGE} AS prod-cpu", dockerfile.splitlines())
         # Runtime device images use --active and their selected base interpreter, not this developer/CI pin.
         self.assertIn("--active", dockerfile)
         self.assertNotIn(".python-version", dockerfile)
