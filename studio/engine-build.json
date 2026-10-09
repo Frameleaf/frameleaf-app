@@ -549,7 +549,12 @@
       "path": "patches/0113-crop-rotation-keyboard-entry.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1f2654c4ba8a405a02648f0869b8b937d9b5ff94b72d8f116f8cfa1b1ed60c43"
+    },
+    {
+      "path": "patches/0114-explicit-seek-scope-currentness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "91e400ff702499ef5f53f5a1f9eb354a0c8fdc6600cac6ddc1784f1ab6d5dcfd"
     }
   ],
-  "sourceSha256": "22ce9594e7330cbc01e5428d1d095f51f661d668f5e4cfd332985464cb7d57dd"
+  "sourceSha256": "ff526220c0bc944175195faf2fc928c2f7999de89b468717c7159eeb393b9773"
 }
