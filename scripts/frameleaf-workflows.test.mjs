@@ -1011,10 +1011,24 @@ test("OpenAPI compares immutable same-repository base commits, not the moving ta
     "${{ github.event.pull_request.base.sha || inputs.base_sha }}",
   );
   assert.equal(w.on.workflow_dispatch.inputs.base_sha.required, true);
-  assert.equal(
-    steps.find((s) => s.name === "Check for breaking API changes").with.base,
-    ".frameleaf-api-base/open-api/immich-openapi-specs.json",
+  const comparison = steps.find(
+    (s) => s.name === "Check for breaking API changes",
   );
+  const derivation = steps.find(
+    (s) => s.name === "Derive explicit legacy-dialect comparison base",
+  );
+  assert.equal(
+    derivation.run.trim().replace(/\s+/g, " "),
+    "node scripts/prepare-openapi-comparison-base.mjs .frameleaf-api-base/open-api/immich-openapi-specs.json .frameleaf-api-base/open-api/immich-openapi-comparison-base.json",
+  );
+  assert.ok(steps.indexOf(baseline) < steps.indexOf(derivation));
+  assert.ok(steps.indexOf(derivation) < steps.indexOf(comparison));
+  assert.equal(
+    comparison.with.base,
+    ".frameleaf-api-base/open-api/immich-openapi-comparison-base.json",
+  );
+  assert.equal(comparison.with.revision, "open-api/immich-openapi-specs.json");
+  assert.equal(comparison.with["fail-on"], "ERR");
   const guard = steps.find(
     (s) => s.name === "Validate immutable comparison commit",
   ).run;
