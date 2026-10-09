@@ -65,6 +65,8 @@ Part 3 (FL-308, section 13) gives the rules of the 12 effect, transition, keyfra
 
 Part 4 (FL-309, section 14) gives the rules of the 8 composition, group, published control, title, sequence setting and template commands, including the `keep-time` and `keep-frames` retime policies, and adds title styles, title animations, templates and project rates to the parameter catalogue. A case marked `settlesOnLoad` records a graph that is one load short of normal form; its answer also holds the `settled` digest a native client must match. Section 8.3 of the page has one row for each of the 73 graph-changing commands, and `commandStatus` in the fixtures names each command's status, story and section. The engine-free check is the coverage gate: it fails when a `mutatesGraph` command of `frameleaf-studio-commands.json` has no row in section 8.3, when the row and `commandStatus` disagree, when an engine command lacks applied or rejected fixtures, or when a command the engine does not apply lacks a `not-implemented/<command>` fixture and a native rule. To add a graph-changing command, add its rule to the page, its row to section 8.3, its `commandStatus` entry and its fixtures in the same change.
 
+FL-348 (section 17 of the page) makes `clip.setMask` an engine command and adds `clip.relink`, both with engine-generated `clip.setMask/<case>` and `clip.relink/<case>` fixtures that the reference replays. The web editor's own mask controls write the same fields, and its drafts report each changed mask as `clip.setMask` in the revision summary. The catalogue now has 74 graph-changing commands, 16 of them not implemented.
+
 ## Local source preflight
 
 The local source preflight (`node scripts/frameleaf-studio-preflight.mjs /absolute/path/to/local-plan.json`)

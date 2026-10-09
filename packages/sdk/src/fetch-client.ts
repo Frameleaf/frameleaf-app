@@ -5358,7 +5358,7 @@ export type CloudMlJobEstimateRequestDto = {
     purpose: CloudMlJobPurpose;
     /** Preview: the part of the frame to preview */
     region?: AssetRestorationRegionDto;
-    /** For the full stage: the reviewed preview it renders in full, with the same model and settings */
+    /** For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed */
     restorationId?: string;
     stage: CloudMlJobStage;
     /** Restoration preview: 2× or 4×, capped at 4K */
@@ -5456,6 +5456,8 @@ export type CloudMlJobEstimateResponseDto = {
     permission: CloudMlJobPermissionDto;
     /** Serverless workers the job is planned on, at most 5; each adds a start fee */
     plannedWorkers: number;
+    /** A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full */
+    quoteOnly: boolean;
     /** Why the job cannot be sent now, or null when it can */
     refusal: (CloudMlJobRefusalDto) | null;
     /** Expected GPU time once running (p50) */
@@ -13018,6 +13020,36 @@ export type StackUpdateDto = {
     /** Primary asset ID */
     primaryAssetId?: string;
 };
+export type StudioRationalDto = {
+    /** Denominator, positive; the pair is reduced */
+    den: number;
+    /** Numerator */
+    num: number;
+};
+export type StudioMediaFactsDto = {
+    assetId: string;
+    /** The first audio track codec; its presence places a linked audio clip */
+    audioCodec: string | null;
+    /** Length in seconds; 0 for a still; null when unknown */
+    durationSeconds: number | null;
+    /** frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still */
+    fps: number;
+    /** Frames in the video stream when the container says; null otherwise */
+    frameCount: number | null;
+    /** The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown */
+    frameRate: (StudioRationalDto) | null;
+    /** Whether the original has an audio track; null when it could not be read */
+    hasAudio: boolean | null;
+    /** Display height in pixels, after rotation; null when unknown */
+    height: number | null;
+    /** The original file type */
+    mimeType: string;
+    source: StudioMediaFactsSource;
+    "type": AssetTypeEnum;
+    videoCodec: string | null;
+    /** Display width in pixels, after rotation; null when unknown */
+    width: number | null;
+};
 export type StudioBundleImportCreateDto = {
     /** Source key to an asset of yours to use in its place; every choice is checked for access */
     mapping?: {
@@ -13537,6 +13569,31 @@ export type StudioProjectImportCreateDto = {
     /** The media id the editor gave this file; retrying the same file with it is idempotent */
     id: string;
 };
+export type StudioProjectResourceUseDto = {
+    /** Whether it may run on this server */
+    allowed: boolean;
+    /** Why not, when it may not */
+    detail: string | null;
+    kind: StudioProjectResourceKind;
+    license: string | null;
+    /** As written in the graph */
+    name: string;
+    /** The rights row it resolves to */
+    rightsId: string;
+};
+export type StudioProjectInventoryDto = {
+    /** Font families the head graph names */
+    fonts: StudioProjectResourceUseDto[];
+    /** Files kept with the project (FL-103, FL-105) */
+    keptFiles: StudioProjectImportDto[];
+    /** Bundled LUTs the head graph names */
+    luts: StudioProjectResourceUseDto[];
+    /** Models the head graph names */
+    models: StudioProjectResourceUseDto[];
+    projectId: string;
+    /** The head revision the graph references were read from; 0 for an empty project */
+    revision: number;
+};
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
@@ -13669,6 +13726,45 @@ export type StudioProjectDiffDto = {
     to: number;
     /** More paths changed than are listed */
     truncated: boolean;
+};
+export type StudioResourceApprovalDto = {
+    approvedBy: string;
+    approvedOn: string;
+} | null;
+export type StudioResourceUsesDto = {
+    /** May run on Frameleaf Cloud */
+    hostedUse: boolean;
+    /** May run on this server or a LAN worker */
+    localRuntime: boolean;
+    /** May be copied to someone else (a bundle, a download) */
+    redistribution: boolean;
+};
+export type StudioResourceItemDto = {
+    /** The date the owner approved this exact row, or null */
+    approvedOn: string | null;
+    /** The worker capability that runs it (GET /ml-destinations/capabilities says whether one is available), or null when the editor alone uses it */
+    capability: (StudioWorkerCapability) | null;
+    /** The rights row id, e.g. font:Roboto or model:onnx-community/whisper-base_timestamped */
+    id: string;
+    kind: StudioResourceItemKind;
+    /** The licence, as reviewed; null when the review records none */
+    license: string | null;
+    /** The name a graph or a job uses: a font family, a model id */
+    name: string;
+    /** For a model: the generated-file producers it serves (transcript, tts, musicgen) */
+    producers: string[];
+    /** Why the owner withheld a use, by use name (redistribution, localRuntime, hostedUse) */
+    restrictions: {
+        [key: string]: string;
+    };
+    uses: StudioResourceUsesDto;
+};
+export type StudioResourceInventoryDto = {
+    approval: StudioResourceApprovalDto;
+    /** Whether the engine as a whole may be redistributed; false blocks every redistribution use */
+    distributionApproved: boolean;
+    /** Every reviewed resource, sorted by id */
+    items: StudioResourceItemDto[];
 };
 export type StudioRestoredVersionDto = {
     /** The library original it was made from; never replaced by it */
@@ -25657,6 +25753,19 @@ export function removeAssetFromStack({ assetId, id }: {
     }));
 }
 /**
+ * Get the Studio media facts of an asset
+ */
+export function getStudioMediaFacts({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMediaFactsDto;
+    }>(`/studio/assets/${encodeURIComponent(id)}/media-facts`, {
+        ...opts
+    }));
+}
+/**
  * Download a Studio bundle
  */
 export function downloadStudioBundle({ id }: {
@@ -26179,6 +26288,19 @@ export function getStudioProjectImportFile({ id, importId }: {
     }));
 }
 /**
+ * List what a Studio project keeps and uses
+ */
+export function getStudioProjectInventory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectInventoryDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/inventory`, {
+        ...opts
+    }));
+}
+/**
  * Acquire or renew the write lease
  */
 export function acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
@@ -26332,6 +26454,17 @@ export function restoreStudioProjectFromTrash({ id }: {
     }>(`/studio/projects/${encodeURIComponent(id)}/trash/restore`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List the Studio resources this server may use
+ */
+export function getStudioResources(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioResourceInventoryDto;
+    }>("/studio/resources", {
+        ...opts
     }));
 }
 /**
@@ -31005,6 +31138,10 @@ export enum SharedSpaceEventType {
     Reply = "Reply",
     Like = "Like"
 }
+export enum StudioMediaFactsSource {
+    Probe = "probe",
+    Stored = "stored"
+}
 export enum StudioBundleSourceMode {
     Embedded = "embedded",
     Reference = "reference"
@@ -31100,11 +31237,35 @@ export enum StudioProjectImportKind {
     Captions = "captions",
     Lut = "lut"
 }
+export enum StudioProjectResourceKind {
+    Font = "font",
+    Lut = "lut",
+    Model = "model"
+}
 export enum Id {
     JobEnqueueReverseConform = "job.enqueueReverseConform"
 }
 export enum DestinationId {
     Local = "local"
+}
+export enum StudioWorkerCapability {
+    AnalysisWorker = "analysisWorker",
+    GenerationWorker = "generationWorker",
+    GpuWorker = "gpuWorker",
+    RenderWorker = "renderWorker",
+    RestorationWorker = "restorationWorker",
+    TranscriptionWorker = "transcriptionWorker"
+}
+export enum StudioResourceItemKind {
+    Font = "font",
+    Lut = "lut",
+    Audio = "audio",
+    Model = "model",
+    Voice = "voice",
+    Weights = "weights",
+    Tool = "tool",
+    Runtime = "runtime",
+    Asset = "asset"
 }
 export enum StudioRestoredVersionUnavailable {
     Discarded = "discarded",

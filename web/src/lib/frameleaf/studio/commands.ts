@@ -30,6 +30,7 @@ export const studioCommandIds = [
   'clip.move',
   'clip.overwrite',
   'clip.push',
+  'clip.relink',
   'clip.reorder',
   'clip.roll',
   'clip.setAudio',
@@ -230,6 +231,7 @@ export interface StudioCommandPayloads {
   'clip.overwrite': StudioSourceEdit;
   /** A signed delta: positive pushes later clips right on every track, negative pulls them left. */
   'clip.push': { clipId: string; delta: StudioDuration };
+  'clip.relink': { clipId: string; assetId: string };
   'clip.reorder': { trackId: string; clipId: string; index: number };
   'clip.roll': { clipId: string; at: StudioTime };
   'clip.setAudio': {
@@ -566,6 +568,12 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   }),
   define({
     id: 'clip.push',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
+    id: 'clip.relink',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,

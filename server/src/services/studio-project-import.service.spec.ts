@@ -43,6 +43,7 @@ describe(StudioProjectImportService.name, () => {
     getImportBytes: ReturnType<typeof vi.fn>;
     listOrphanImportProjects: ReturnType<typeof vi.fn>;
     deleteImports: ReturnType<typeof vi.fn<StudioProjectRepository['deleteImports']>>;
+    getRevision?: ReturnType<typeof vi.fn>;
   };
   let studio: { forgetResolutions: ReturnType<typeof vi.fn>; requireOwnedProject: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
@@ -373,5 +374,38 @@ describe(StudioProjectImportService.name, () => {
     });
     projects.getImport.mockResolvedValue(undefined);
     await expect(sut.getFile(auth(), PROJECT, IMPORT)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe('inventory (FL-348)', () => {
+    it('lists the kept files and the fonts and models the head graph names, with their rights', async () => {
+      projects.getById.mockResolvedValue({ id: PROJECT, ownerId: OWNER, currentRevision: 3, deletedAt: null });
+      projects.getRevision = vi.fn().mockResolvedValue({
+        envelope: {
+          graph: {
+            id: 'g',
+            timeline: {
+              tracks: [{ id: 'v1', items: [] }],
+              items: [
+                { id: 't1', type: 'text', trackId: 'v1', fontFamily: 'Abel' },
+                { id: 't2', type: 'text', trackId: 'v1', fontFamily: 'Not A Bundled Font' },
+              ],
+            },
+          },
+        },
+      });
+      (sut as unknown as { projects: typeof projects }).projects = projects;
+
+      const inventory = await sut.inventory(auth(), PROJECT);
+      expect(projects.getRevision).toHaveBeenCalledWith(PROJECT, 3);
+      expect(inventory).toMatchObject({ projectId: PROJECT, revision: 3, keptFiles: [], luts: [], models: [] });
+      expect(inventory.fonts).toEqual([
+        expect.objectContaining({ name: 'Abel', rightsId: 'font:Abel', allowed: true, detail: null }),
+        expect.objectContaining({ name: 'Not A Bundled Font', allowed: false }),
+      ]);
+    });
+
+    it('answers a stranger as if the project did not exist', async () => {
+      await expect(sut.inventory(auth(STRANGER), PROJECT)).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

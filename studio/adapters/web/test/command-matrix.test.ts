@@ -102,6 +102,7 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
 
 const ASSET = '0198a1c2-0000-7000-8000-00000000c001'
 const STILL = '0198a1c2-0000-7000-8000-00000000c002'
+const OTHER = '0198a1c2-0000-7000-8000-00000000c003'
 
 const media: MediaMetadata[] = [
   {
@@ -133,6 +134,23 @@ const media: MediaMetadata[] = [
     fps: 0,
     codec: 'unknown',
     bitrate: 0,
+    tags: [],
+    createdAt: 0,
+    updatedAt: 0,
+  },
+  {
+    id: OTHER,
+    storageType: 'workspace',
+    fileName: 'reef.mp4',
+    fileSize: 1,
+    mimeType: 'video/mp4',
+    duration: 12,
+    width: 1280,
+    height: 720,
+    fps: 25,
+    codec: 'avc1.64002a',
+    audioCodec: 'mp4a.40.2',
+    bitrate: 1,
     tags: [],
     createdAt: 0,
     updatedAt: 0,
@@ -242,7 +260,16 @@ async function buildFixture() {
     durationInFrames: 90, label: 'Template', src: '', width: 320, height: 180, lottieFps: 30,
     lottieDuration: 3, themeId: 'retained-theme', frameleafFuture: { keep: true },
   } as TimelineItem)
+  // FL-348: a shape the mask command turns into a mask.
+  const maskGraph = structuredClone(graph)
+  const mask = 'mask-shape'
+  maskGraph.timeline!.items.push({ id: mask, trackId: spare, type: 'shape', shapeType: 'rectangle',
+    from: 300, durationInFrames: 90, label: 'Mask', fillColor: '#ffffff', frameleafFuture: { keep: true },
+    transform: { x: 0, y: 0, width: 400, height: 300, rotation: 0, opacity: 1 },
+  } as unknown as TimelineItem)
   return {
+    maskGraph,
+    mask,
     lottieGraph,
     lottie,
     compose: { graph: grouped, published, group: group.id, composition: composition.id, titleInside },
@@ -284,6 +311,8 @@ const ENGINE_CASES: Record<
   'clip.roll': (f) => ({ payload: { clipId: f.left, at: seconds(3) } }),
   'clip.setAudio': (f) => ({ payload: { clipId: itemsOf(f.graph).find((item) => item.type === 'audio')!.id, volume: -6, fadeIn: seconds(1, 100), fadeOut: seconds(3, 2), pitchSemitones: -3, pitchCents: 25, eq: { lowGainDb: 4 }, muted: true } }),
   'clip.setLink': (f) => ({ payload: { clipIds: [f.left], linked: false } }),
+  'clip.setMask': (f) => ({ payload: { clipId: f.mask, mask: { type: 'alpha', feather: 20 } }, graph: async () => f.maskGraph }),
+  'clip.relink': (f) => ({ payload: { clipId: f.left, assetId: OTHER } }),
   'clip.setSpeed': (f) => ({ payload: { clipId: f.right, speed: { num: 2, den: 1 } } }),
   'clip.setTransform': (f) => ({ payload: { clipId: f.left, transform: { x: 10 } } }),
   'clip.setTransformParent': (f) => ({ payload: { clipId: f.title, parentId: f.left } }),
