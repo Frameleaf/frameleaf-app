@@ -75,6 +75,7 @@ jobs:
     timeout-minutes: 45
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/studio-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -152,7 +153,22 @@ jobs:
         run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs studio/tools/hdr-source-validation.test.mjs
       - name: Install Chromium for compositor readback
         working-directory: studio/engine
-        run: npx --no-install playwright install --with-deps chromium
+        # The CfT CDN redirects to a Google bucket that denied this runner's location.
+        # Keep the locked browser bytes and host GPU execution; use Microsoft's official image.
+        run: |
+          test "$(node -p "require('./node_modules/playwright/package.json').version")" = '1.60.0'
+          : "${PLAYWRIGHT_BROWSERS_PATH:?}"
+          container_id=$(docker create --platform linux/amd64 mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948)
+          trap 'docker rm "$container_id"' EXIT
+          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+          for browser in chromium-1223 chromium_headless_shell-1223 ffmpeg-1011; do
+            docker cp "$container_id:/ms-playwright/$browser" "$PLAYWRIGHT_BROWSERS_PATH/"
+            test -f "$PLAYWRIGHT_BROWSERS_PATH/$browser/INSTALLATION_COMPLETE"
+          done
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium-1223/chrome-linux64/chrome"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1011/ffmpeg-linux"
+          npx --no-install playwright install-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
         run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Build shared server contracts for render-worker tests
