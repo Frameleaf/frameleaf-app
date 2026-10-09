@@ -81,7 +81,7 @@
  import type { MediaMetadata } from '@/types/storage'
  import { useMediaPreparationStore } from '../stores/media-preparation-store'
  
-@@ -818,6 +834,234 @@
+@@ -818,6 +834,235 @@
      })
    })
  
@@ -281,12 +281,13 @@
 +      try {
 +        await vi.waitFor(() => expect(loadSource).toHaveBeenCalledOnce())
 +        await mediaLibraryService.deleteMedia(first.id)
-+        status.mockClear()
-+        // A new subscription to the surviving alias observes the producer's real state.
-+        realProxy.setProxyKey(second.id, key)
-+        expect(status).toHaveBeenCalledWith(second.id, 'generating', 0)
 +        expect(realProxy.getProxyKey(first.id)).toBeUndefined()
 +        expect(realProxy.getProxyKey(second.id)).toBe(key)
++        status.mockClear()
++        // Reattach only after independently proving the surviving mapping was retained.
++        realProxy.clearProxyKey(second.id)
++        realProxy.setProxyKey(second.id, key)
++        expect(status).toHaveBeenCalledWith(second.id, 'generating', 0)
 +        expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
 +        finishSource(new Blob(['source'], { type: 'video/mp4' }))
 +        await vi.waitFor(() =>
