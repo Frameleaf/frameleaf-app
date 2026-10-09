@@ -599,7 +599,12 @@
       "path": "patches/0123-removal-preview-lifetime-context.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "5d0ad7eab48db5fd795d5951e946990b845ad554f652069dd10db3f36d04cb61"
+    },
+    {
+      "path": "patches/0124-normalization-inherited-track-state.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e119801be4e11c1fea390f54bbba849fdd3f4b0a731a40cd8bc6437222364e9f"
     }
   ],
-  "sourceSha256": "19daa0b620454002022c6eac56b13537c232fe5270104021e5c9c6b63f884c4c"
+  "sourceSha256": "cb8c9b6ec30597c44a26cead6dc11fba3770870192b156c68c8ddfe7e032a54f"
 }

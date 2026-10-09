@@ -500,6 +500,7 @@ for (const source of [
   '723f55c7faae8dc989406bbf7df7a1f795ef1d2053b17379fb71beb87005fcca',
   '6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3',
   '19daa0b620454002022c6eac56b13537c232fe5270104021e5c9c6b63f884c4c',
+  'cb8c9b6ec30597c44a26cead6dc11fba3770870192b156c68c8ddfe7e032a54f',
 ]) test(`reviewed producer ${source} retains raster policy and strict admission`, () => {
   const previousSource = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
   const original = JSON.stringify(envelope)
