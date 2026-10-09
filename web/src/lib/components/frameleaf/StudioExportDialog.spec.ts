@@ -244,7 +244,7 @@ describe('Studio export dialog', () => {
     }
   });
 
-  it('preserves native Burn-in and Off choices and refuses Sidecar without paired writer evidence', async () => {
+  it('preserves Burn-in and Off choices and refuses Sidecar and Embedded without paired writer evidence', async () => {
     const onExport = vi.fn();
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
     const control = screen.getByLabelText('frameleaf_studio_export_subtitles');
@@ -252,13 +252,63 @@ describe('Studio export dialog', () => {
       within(control)
         .getAllByRole('option')
         .map((option) => (option as HTMLOptionElement).value),
-    ).toEqual([StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off, StudioExportSubtitleMode.Sidecar]);
+    ).toEqual([
+      StudioExportSubtitleMode.Burn,
+      StudioExportSubtitleMode.Off,
+      StudioExportSubtitleMode.Embedded,
+      StudioExportSubtitleMode.Sidecar,
+    ]);
     expect(within(control).getByRole('option', { name: 'frameleaf_studio_export_subtitles_sidecar' })).toBeDisabled();
+    expect(within(control).getByRole('option', { name: 'frameleaf_studio_export_subtitles_embedded' })).toBeDisabled();
     for (const subtitleMode of [StudioExportSubtitleMode.Burn, StudioExportSubtitleMode.Off]) {
       await fireEvent.change(control, { target: { value: subtitleMode } });
       await fireEvent.click(exportButton());
       expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ subtitleMode }));
     }
+  });
+
+  it('requires Embedded paired writer proof on the same candidate and refuses withdrawal before submission', async () => {
+    const onExport = vi.fn();
+    const row = evidence();
+    row.candidates = [
+      ...row.candidates!,
+      {
+        ...row.candidates![0],
+        outputFormats: [],
+        embeddedOutputFormats: [StudioExportFormat.Mp4H264],
+      },
+    ];
+    const view = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Explicit embedded choice',
+      renderEvidence: [row],
+      onExport,
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.Mp4H264 },
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+      target: { value: StudioExportResolution.$720P },
+    });
+    const control = screen.getByLabelText('frameleaf_studio_export_subtitles');
+    expect(within(control).getByRole('option', { name: 'frameleaf_studio_export_subtitles_embedded' })).toBeDisabled();
+    await fireEvent.change(control, { target: { value: StudioExportSubtitleMode.Embedded } });
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.click(exportButton());
+    expect(onExport).not.toHaveBeenCalled();
+    const paired = evidence();
+    paired.candidates![0].embeddedOutputFormats = [StudioExportFormat.Mp4H264];
+    await view.rerender({ renderEvidence: [paired] });
+    expect(within(control).getByRole('option', { name: 'frameleaf_studio_export_subtitles_embedded' })).toBeEnabled();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onExport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subtitleMode: StudioExportSubtitleMode.Embedded }),
+    );
+    await view.rerender({ renderEvidence: [row] });
+    expect(exportButton()).toBeDisabled();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledTimes(1);
   });
 
   it('submits Sidecar only with the exact paired writer tuple and disables it on profile withdrawal', async () => {

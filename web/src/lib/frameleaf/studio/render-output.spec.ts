@@ -93,11 +93,12 @@ describe('Studio render output (FL-42)', () => {
       { resolution: StudioExportResolution.$1080P },
       { format: StudioExportFormat.WebmAv1 },
       { color: StudioExportColor.Hdr10 },
-    ])
+    ]) {
       expect(
         evaluateStudioRender([row], MediaOperationDestination.Lan, { ...embedded, ...patch } as StudioRenderSettings)
           .supported,
       ).toBe(false);
+    }
     row.candidates![0].outputFormats = [];
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(false);
   });
