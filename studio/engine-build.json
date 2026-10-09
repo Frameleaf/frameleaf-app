@@ -544,7 +544,12 @@
       "path": "patches/0112-filler-apply-undo-routing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "947139bbfe0b3624e26068bfd85c49d4dc943c43d73997368e969d9ece810034"
+    },
+    {
+      "path": "patches/0113-crop-rotation-keyboard-entry.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f2654c4ba8a405a02648f0869b8b937d9b5ff94b72d8f116f8cfa1b1ed60c43"
     }
   ],
-  "sourceSha256": "5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec"
+  "sourceSha256": "22ce9594e7330cbc01e5428d1d095f51f661d668f5e4cfd332985464cb7d57dd"
 }

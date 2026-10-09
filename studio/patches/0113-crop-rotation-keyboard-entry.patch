@@ -1,0 +1,380 @@
+--- a/src/shared/ui/property-controls/slider-input.tsx
++++ b/src/shared/ui/property-controls/slider-input.tsx
+@@ -19,6 +19,7 @@
+   /** Optional throttle for live preview updates during drag. Set to 0 for every pointer move. */
+   liveChangeThrottleMs?: number
+   label?: string
++  ariaLabel?: string
+   min: number
+   max: number
+   step?: number
+@@ -110,6 +111,7 @@
+   onLiveChange,
+   liveChangeThrottleMs = LIVE_CHANGE_THROTTLE_MS,
+   label,
++  ariaLabel,
+   min,
+   max,
+   step = 1,
+@@ -128,7 +130,7 @@
+   const fillRef = useRef<HTMLDivElement>(null)
+   const handleRef = useRef<HTMLDivElement>(null)
+   const labelRef = useRef<HTMLSpanElement>(null)
+-  const valueSpanRef = useRef<HTMLSpanElement>(null)
++  const valueSpanRef = useRef<HTMLButtonElement>(null)
+   const inputRef = useRef<HTMLInputElement>(null)
+   const lastLiveChangeRef = useRef<number>(0)
+   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+@@ -137,6 +139,7 @@
+   const cancelSpringRef = useRef<(() => void) | null>(null)
+   // Use ref for input value to avoid stale closures in blur handlers
+   const inputValueRef = useRef('')
++  const restoreValueFocusRef = useRef(false)
+
+   // State
+   const [fillPercent, setFillPercent] = useState(() => ((numericValue - min) / (max - min)) * 100)
+@@ -347,9 +350,6 @@
+
+     queueMicrotask(() => {
+       isSubmittingRef.current = false
+-      if (document.activeElement instanceof HTMLElement) {
+-        document.activeElement.blur()
+-      }
+     })
+   }, [min, max, step, onChange, parseInputValue])
+
+@@ -512,6 +512,9 @@
+     if (showInput && inputRef.current) {
+       inputRef.current.focus()
+       inputRef.current.select()
++    } else if (!showInput && restoreValueFocusRef.current) {
++      restoreValueFocusRef.current = false
++      valueSpanRef.current?.focus()
+     }
+   }, [showInput])
+
+@@ -519,7 +522,7 @@
+   const handleValueClick = (e: React.MouseEvent) => {
+     e.stopPropagation()
+     e.preventDefault()
+-    openTextInput()
++    if (!disabled) openTextInput()
+   }
+
+   // Double-click anywhere on track → open text input
+@@ -535,8 +538,12 @@
+   const handleInputKeyDown = (e: React.KeyboardEvent) => {
+     e.stopPropagation()
+     if (e.key === 'Enter') {
++      e.preventDefault()
++      restoreValueFocusRef.current = true
+       commitTextInput()
+     } else if (e.key === 'Escape') {
++      e.preventDefault()
++      restoreValueFocusRef.current = true
+       cancelEditRef.current = true
+       setShowInput(false)
+       showInputRef.current = false
+@@ -645,6 +652,7 @@
+           <input
+             ref={inputRef}
+             type="text"
++            aria-label={ariaLabel ?? label}
+             autoComplete="off"
+             data-bwignore="true"
+             inputMode="decimal"
+@@ -657,18 +665,21 @@
+             onPointerDown={(e) => e.stopPropagation()}
+           />
+         ) : (
+-          <span
++          <button
+             ref={valueSpanRef}
++            type="button"
++            aria-label={ariaLabel ?? label}
++            disabled={disabled}
+             className={cn(
+               'absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono tabular-nums cursor-text',
+-              'text-muted-foreground hover:text-foreground transition-colors duration-150',
++              'text-muted-foreground hover:text-foreground transition-colors duration-150 focus-visible:outline focus-visible:outline-ring focus-visible:rounded-sm',
+               isMixed && localValue === null && 'italic opacity-50',
+             )}
+             onClick={handleValueClick}
+             onPointerDown={(e) => e.stopPropagation()}
+           >
+             {displayValue}
+-          </span>
++          </button>
+         )}
+       </div>
+     </div>
+--- a/src/features/editor/components/properties-sidebar/components/slider-input.test.tsx
++++ b/src/features/editor/components/properties-sidebar/components/slider-input.test.tsx
+@@ -94,3 +94,48 @@
+     })
+   })
+ })
++
++describe('SliderInput native value entry', () => {
++  it('opens the named native entry and commits once with focus restored', async () => {
++    const onChange = vi.fn()
++    render(
++      <SliderInput label="Crop left" value={5} onChange={onChange} min={0} max={10} step={1} />,
++    )
++    const entry = screen.getByRole('button', { name: 'Crop left' })
++    expect(entry.tagName).toBe('BUTTON')
++    expect(entry).toBeEnabled()
++    entry.focus()
++    expect(entry).toHaveFocus()
++    // Native button activation is supplied by the browser; this exercises its click handler.
++    fireEvent.click(entry)
++    const input = screen.getByRole('textbox', { name: 'Crop left' })
++    expect(input).toHaveFocus()
++    fireEvent.change(input, { target: { value: '15' } })
++    fireEvent.keyDown(input, { key: 'Enter' })
++    await waitFor(() => expect(screen.getByRole('button', { name: 'Crop left' })).toHaveFocus())
++    expect(onChange).toHaveBeenCalledTimes(1)
++    expect(onChange).toHaveBeenCalledWith(10)
++  })
++
++  it('cancels without commit and returns focus to the named entry', async () => {
++    const onChange = vi.fn()
++    render(<SliderInput label="Rotation" value={5} onChange={onChange} min={-180} max={180} />)
++    fireEvent.click(screen.getByRole('button', { name: 'Rotation' }))
++    const input = screen.getByRole('textbox', { name: 'Rotation' })
++    fireEvent.change(input, { target: { value: '30' } })
++    fireEvent.keyDown(input, { key: 'Escape' })
++    await waitFor(() => expect(screen.getByRole('button', { name: 'Rotation' })).toHaveFocus())
++    expect(onChange).not.toHaveBeenCalled()
++    expect(screen.getByText('5')).toBeInTheDocument()
++  })
++
++  it('keeps a disabled native entry closed', () => {
++    render(
++      <SliderInput label="Rotation" value={5} onChange={vi.fn()} min={-180} max={180} disabled />,
++    )
++    const entry = screen.getByRole('button', { name: 'Rotation' })
++    expect(entry).toBeDisabled()
++    fireEvent.click(entry)
++    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
++  })
++})
+--- a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
+@@ -621,6 +621,7 @@
+         <PropertyRow label={t('editor.videoSection.cropLeft')}>
+           <div className="flex items-center gap-1 w-full">
+             <SliderInput
++              ariaLabel={t('editor.videoSection.cropLeft')}
+               value={cropLeft}
+               onChange={(value) => commitCropEdge('left', value)}
+               onLiveChange={(value) => previewCropEdge('left', value)}
+@@ -653,6 +654,7 @@
+         <PropertyRow label={t('editor.videoSection.cropRight')}>
+           <div className="flex items-center gap-1 w-full">
+             <SliderInput
++              ariaLabel={t('editor.videoSection.cropRight')}
+               value={cropRight}
+               onChange={(value) => commitCropEdge('right', value)}
+               onLiveChange={(value) => previewCropEdge('right', value)}
+@@ -685,6 +687,7 @@
+         <PropertyRow label={t('editor.videoSection.cropTop')}>
+           <div className="flex items-center gap-1 w-full">
+             <SliderInput
++              ariaLabel={t('editor.videoSection.cropTop')}
+               value={cropTop}
+               onChange={(value) => commitCropEdge('top', value)}
+               onLiveChange={(value) => previewCropEdge('top', value)}
+@@ -717,6 +720,7 @@
+         <PropertyRow label={t('editor.videoSection.cropBottom')}>
+           <div className="flex items-center gap-1 w-full">
+             <SliderInput
++              ariaLabel={t('editor.videoSection.cropBottom')}
+               value={cropBottom}
+               onChange={(value) => commitCropEdge('bottom', value)}
+               onLiveChange={(value) => previewCropEdge('bottom', value)}
+--- a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+@@ -881,6 +881,7 @@
+       <PropertyRow label={t('editor.layoutSection.rotation')}>
+         <div className="flex items-center gap-1 w-full">
+           <SliderInput
++            ariaLabel={t('editor.layoutSection.rotation')}
+             value={rotation}
+             onChange={handleRotationChange}
+             onLiveChange={handleRotationLiveChange}
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/crop-rotation-entry.test.tsx
+@@ -0,0 +1,172 @@
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { useGizmoStore } from '@/features/editor/deps/preview'
++import { TooltipProvider } from '@/components/ui/tooltip'
++import { VideoSection } from './video-section'
++import { LayoutSection } from './layout-section'
++
++vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
++
++const ITEM: VideoItem = {
++  id: 'keyboard-video',
++  type: 'video',
++  trackId: 'track-1',
++  from: 0,
++  durationInFrames: 90,
++  label: 'Video',
++  src: 'blob:video',
++  mediaId: 'media-1',
++  sourceWidth: 1920,
++  sourceHeight: 1080,
++  crop: { left: 0.1, right: 0.2, top: 0.05, bottom: 0.15, softness: 0 },
++  transform: { x: 15, y: 25, width: 960, height: 540, rotation: 0, opacity: 1 },
++}
++
++function Inspector({ rotation = false }: { rotation?: boolean }) {
++  const items = useItemsStore((state) => state.items)
++  return rotation ? (
++    <LayoutSection
++      items={items}
++      canvas={{ width: 1920, height: 1080, fps: 30 }}
++      onTransformChange={useTimelineStore.getState().updateItemsTransform}
++      aspectLocked={false}
++      onAspectLockToggle={() => {}}
++    />
++  ) : (
++    <VideoSection items={items} />
++  )
++}
++
++async function edit(name: string, value: string, key = 'Enter') {
++  const entry = screen.getByRole('button', { name })
++  expect(entry.tagName).toBe('BUTTON')
++  expect(entry).toBeEnabled()
++  entry.focus()
++  expect(entry).toHaveFocus()
++  // JSDOM exercises native-button semantics and the activation handler, not real Tab/Enter synthesis.
++  fireEvent.click(entry)
++  const input = screen.getByRole('textbox', { name })
++  expect(input).toHaveFocus()
++  fireEvent.change(input, { target: { value } })
++  fireEvent.keyDown(input, { key })
++  await waitFor(() => expect(screen.getByRole('button', { name })).toHaveFocus())
++}
++
++describe('real crop and rotation value entry', () => {
++  beforeEach(() => {
++    useTimelineStore.setState({ keyframes: [], fps: 30 })
++    useItemsStore.getState().setItems([structuredClone(ITEM)])
++    useItemsStore.getState().setTracks([
++      {
++        id: 'track-1',
++        name: 'Track',
++        order: 0,
++        height: 72,
++        items: [],
++        locked: false,
++        visible: true,
++        muted: false,
++        solo: false,
++      },
++    ])
++    useGizmoStore.setState({
++      activeGizmo: null,
++      previewTransform: null,
++      presentationHandoff: null,
++      preview: null,
++    })
++    useTimelineStore.temporal.getState().clear()
++  })
++
++  it('names all crop edges and commits source pixels through one undoable canonical edit', async () => {
++    render(
++      <TooltipProvider>
++        <Inspector />
++      </TooltipProvider>,
++    )
++    for (const edge of ['Left', 'Right', 'Top', 'Bottom'])
++      expect(screen.getByRole('button', { name: `editor.videoSection.crop${edge}` })).toBeEnabled()
++    const before = structuredClone(useItemsStore.getState().items)
++    await edit('editor.videoSection.cropLeft', '384')
++    const after = structuredClone(useItemsStore.getState().items)
++    expect(after[0]!.crop).toEqual({ ...ITEM.crop, left: 0.2 })
++    expect(after[0]!.transform).toEqual(ITEM.transform)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(before)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(after)
++  })
++
++  it('cancels crop text without canonical mutation or history', async () => {
++    render(
++      <TooltipProvider>
++        <Inspector />
++      </TooltipProvider>,
++    )
++    await edit('editor.videoSection.cropTop', '300', 'Escape')
++    expect(useItemsStore.getState().items).toEqual([ITEM])
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++  })
++
++  it('commits a bounded rotation through the existing transform callback and undo/redo', async () => {
++    render(
++      <TooltipProvider>
++        <Inspector rotation />
++      </TooltipProvider>,
++    )
++    const before = structuredClone(useItemsStore.getState().items)
++    await edit('editor.layoutSection.rotation', '230')
++    const after = structuredClone(useItemsStore.getState().items)
++    expect(after[0]!.transform).toEqual({ ...ITEM.transform, rotation: 180 })
++    expect(after[0]!.crop).toEqual(ITEM.crop)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(before)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(after)
++  })
++
++  it.each([
++    ['cropLeft', 'editor.videoSection.cropLeft', '384', 384, false],
++    ['rotation', 'editor.layoutSection.rotation', '35', 35, true],
++  ] as const)(
++    'routes existing %s animation through its keyframe lane',
++    async (property, name, typed, value, rotation) => {
++      useTimelineStore.setState({
++        keyframes: [
++          {
++            itemId: ITEM.id,
++            properties: [
++              {
++                property,
++                keyframes: [{ id: 'existing-key', frame: 0, value: 0, easing: 'linear' }],
++              },
++            ],
++          },
++        ],
++      })
++      useTimelineStore.temporal.getState().clear()
++      render(
++        <TooltipProvider>
++          <Inspector rotation={rotation} />
++        </TooltipProvider>,
++      )
++      const before = structuredClone(useItemsStore.getState().items)
++      await edit(name, typed)
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.getState().keyframes[0]!.properties[0]!.keyframes).toEqual([
++        { id: 'existing-key', frame: 0, value, easing: 'linear' },
++      ])
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++      act(() => useTimelineStore.temporal.getState().undo())
++      expect(useTimelineStore.getState().keyframes[0]!.properties[0]!.keyframes[0]!.value).toBe(0)
++      act(() => useTimelineStore.temporal.getState().redo())
++      expect(useTimelineStore.getState().keyframes[0]!.properties[0]!.keyframes[0]!.value).toBe(
++        value,
++      )
++    },
++  )
++})
