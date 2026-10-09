@@ -1,8 +1,7 @@
-// FL-97 graph allocation audit. Every 8-bit texture format, pooled texture or
-// Canvas2D intermediate in the prepared engine's graph source must be declared in
-// graph-allocation-audit.json with a class and a reason. A new undeclared site,
-// or a declared site that no longer exists, fails the audit, so the float route
-// cannot silently regain an 8-bit intermediate.
+// FL-97 inventory of literal 8-bit formats, pooled textures and direct literal
+// Canvas2D contexts. Detected sites need an exact declaration and a reason.
+// shortcut: indirect allocations are not detected; qualify their graph callers
+// before claiming complete HDR route coverage.
 //   node studio/tools/allocation-audit.mjs          check (CI, after prepare)
 //   node studio/tools/allocation-audit.mjs --list   print the current sites
 import { readFile, readdir } from 'node:fs/promises';
@@ -15,6 +14,7 @@ const registryPath = path.join(studio, 'graph-allocation-audit.json');
 const PATTERN = new RegExp([
   "'(?:rgba8unorm|bgra8unorm|rgba8unorm-srgb|bgra8unorm-srgb|r8unorm|rg8unorm)'",
   'getPreferredCanvasFormat\\(',
+  'getContext\\s*\\(\\s*[\'\"]2d[\'\"]',
   '(?:canvasPool|texturePool!?|gpuTexturePool|gpuScratchTexturePool\\?)\\.acquire\\(',
   'acquireScratchTexture\\(',
 ].join('|'));
@@ -25,6 +25,7 @@ export const CLASSES = {
   'sdr-graphics': 'SDR graphics (text, Canvas2D-only items) entering at reference white.',
   'sdr-source-ingest': 'Browser-decoded media upload; HDR source decode is not yet in the browser graph.',
   'canvas2d-legacy': 'Canvas2D intermediate on the legacy route; the float route does not reach it.',
+  'canvas2d-context': 'Direct Canvas2D context; declaration does not qualify its HDR route reachability.',
   'preview-cache': 'SDR preview scrub cache.',
   'format-dispatch': 'A format check or type, not an allocation.',
   float: 'Float allocation (rgba16float) or pooled texture of the caller\'s float format.',
