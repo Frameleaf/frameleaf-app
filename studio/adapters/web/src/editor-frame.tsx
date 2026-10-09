@@ -89,6 +89,8 @@ import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
 import { installTimelineTouchEditing } from './timeline-touch'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
+import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
+import { publishScopeOwner, scopeTimelineContent } from './scope-owner'
 import { timelineEditContent } from './shims/timeline-persistence'
 
 installBrowserShims()
@@ -504,10 +506,12 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
   const mount = state.mount
   const outcome = loadFinished(state, projectId, error === null)
   if (outcome === 'loaded') {
+    publishScopeOwner(state, timelineEditContent)
     // A brand-new project is stored as its first draft as soon as it has loaded, so "make a movie"
     // is kept.
     if (mount.generation === 0 && !state.context.project.graph) void sendDraft(state, mount)
   } else if (outcome === 'failed') {
+    usePreviewBridgeStore.setState({ scopeOwner: null })
     useTimelineSettingsStore.getState().markClean()
     post({
       type: 'fatal',
@@ -522,6 +526,7 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
  * own project file and are never sent.
  */
 async function remount(state: Session, context: StudioHostContext, incoming: string) {
+  usePreviewBridgeStore.setState({ scopeOwner: null })
   const replaced = state.mount
   // Edits the old instance made that the host never took are lost with it; the person is told once
   // (FL-174). Asked before the timers that would have sent them are cancelled.
@@ -703,6 +708,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     disposed: false,
   }
   session = state
+  usePreviewBridgeStore.setState({ scopeOwner: null })
   const first = state.mount
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
   setPersistenceGate({
@@ -764,6 +770,11 @@ async function update(context: StudioHostContext): Promise<void> {
   } else if (outcome === 'echo') {
     state.hostContent = incoming
     confirmEcho(state, incoming, current, context.project.revision)
+    const owner = usePreviewBridgeStore.getState().scopeOwner
+    if (owner?.baseRevision !== state.mount.revision || owner.graphVersion !== state.mount.graphVersion) {
+      const confirmedGraph = JSON.parse(incoming) as { timeline?: unknown } | null
+      publishScopeOwner(state, timelineEditContent, scopeTimelineContent(confirmedGraph?.timeline))
+    }
   }
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
@@ -799,6 +810,7 @@ async function currentGraph(state: Session): Promise<unknown> {
 }
 
 async function dispose(): Promise<void> {
+  usePreviewBridgeStore.setState({ scopeOwner: null })
   const state = session
   session = null
   if (!state || state.disposed) return

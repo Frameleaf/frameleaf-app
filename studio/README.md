@@ -622,3 +622,21 @@ node --test scripts/frameleaf-studio-commands.test.mjs
 
 Publishing the vocabulary does not implement command semantics, rendering or worker
 admission. The bridge answers `not-implemented` for commands without an implementation.
+
+Patch `0111-multichannel-shared-retiming.patch` retains every decoded PCM plane
+through speed and independent pitch edits. The existing SoundTouch implementation
+uses one overlap choice, interpolation phase and output frame count for all planes;
+its mono/stereo controls retain exact original stereo PCM bytes. Export gain, EQ,
+fades, track/master automation and untouched sibling contributions retain their
+existing ownership. Preview serialization, queued source and worklet transport keep
+the supplied AudioBuffer plane count/order instead of truncating it to L/R.
+
+Encoder admission reads actual source plane counts. The current graph has no
+semantic surround speaker-layout authority, so PCM encoding with more than two
+planes refuses explicitly; original encoded packet-copy behavior is unchanged.
+This refusal is a temporary export boundary, not multichannel layout qualification.
+The persisted decoded-preview cache still stores downmixed stereo Int16 bins and
+cannot recover original surround planes; this patch does not change that durable
+cache contract. Hardware monitor limits, semantic source/output layouts, real
+decoder/encoder/mux round trips, latency and per-browser acceptance remain open.
+Focused synthetic PCM/source tests, typechecking and builds do not close those gates.

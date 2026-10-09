@@ -1,0 +1,1239 @@
+Subject: Preserve authored PCM planes through shared SoundTouch retiming
+
+The adapted Freecut files retain MIT notices; the owned SoundTouch JS library
+retains its LGPL-2.1-or-later copyright and license. One shared overlap choice
+and interpolation phase apply to all source planes. Speaker-layout metadata
+and the persisted stereo preview cache remain separate unqualified contracts.
+
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -24,7 +24,7 @@
+     }
+ 
+     async getPrimaryAudioTrack() {
+-      return { src: this.source.url, isDisposed: () => this.disposed }
++      return { src: this.source.url, isDisposed: () => this.disposed, getNumberOfChannels: async () => Number(/planes-(1|2|6|8)/.exec(this.source.url)?.[1] ?? 2) }
+     }
+ 
+     async computeDuration() {
+@@ -109,6 +109,7 @@
+   getAudioPacketPassthroughPlan,
+   hasAudioContent,
+   processAudio,
++  getAudioOutputChannelCount,
+   processAudioWindows,
+   supportsWindowedAudioProcessing,
+   type DuckingSource,
+@@ -1114,12 +1115,12 @@
+     expect(midway).toBeLessThan(0.125)
+   })
+ 
+-  it('keeps center-only 5.1 dialogue audible when speed changes', async () => {
++  it('keeps center-only six-plane audio in its own plane when speed changes', async () => {
+     const result = await processAudio(dspComposition({ src: 'blob:audio-center-51', speed: 2 }))
+     expect(result).not.toBeNull()
+-    expect(result!.channels).toBe(2)
+-    expect(result!.samples[0]![48_000]).toBeGreaterThan(0.05)
+-    expect(result!.samples[1]![48_000]).toBeGreaterThan(0.05)
++    expect(result!.channels).toBe(6)
++    expect(result!.samples[2]![48_000]).toBeGreaterThan(0.05)
++    for (const channel of [0,1,3,4,5]) expect(result!.samples[channel]!.every(sample => sample === 0)).toBe(true)
+   })
+ 
+   it('hasAudioContent: true for an audible clip, false when its track is muted', async () => {
+@@ -2031,3 +2032,34 @@
+  const comp:CompositionInputProps={fps:30,durationInFrames:90,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+  expect(extractAudioSegments(comp,30)[0]).toMatchObject({startFrame:30,durationFrames:60,sourceFps:24,isReversed:false,clipOwner:{scale:0.8,offset:-24}})
+ })
++
++
++it.each([1, 2, 6, 8])('preserves %s retimed planes with pitch and an untouched sibling', async (channels) => {
++  const target = makeTrack({id:'target',order:0,kind:'audio',items:[makeAudioItem({id:'target-clip',trackId:'target',src:`blob:ramp-planes-${channels}`,sourceStart:30,sourceFps:30,durationInFrames:30,speed:1.5,audioPitchSemitones:3,volume:-20})]})
++  const sibling = makeTrack({id:'sibling',order:1,kind:'audio',items:[makeAudioItem({id:'sibling-clip',trackId:'sibling',src:`blob:ramp-planes-${channels}`,sourceStart:15,sourceFps:30,durationInFrames:30,volume:-20})]})
++  const base: CompositionInputProps = {fps:30,durationInFrames:30,tracks:[target,sibling],transitions:[],keyframes:[]}
++  const before = structuredClone(base)
++  const result = await processAudio(base)
++  const edited = await processAudio({...base,tracks:[target]})
++  const untouched = await processAudio({...base,tracks:[sibling]})
++  expect(result!.channels).toBe(channels)
++  for (let c=0;c<channels;c++) {
++    expect(result!.samples[c]).toHaveLength(48000)
++    for (const i of [0,12000,24000,36000,47999]) {
++      expect(result!.samples[c]![i]).toBeCloseTo(edited!.samples[c]![i]!+untouched!.samples[c]![i]!,7)
++      expect(untouched!.samples[c]![i]).toBeCloseTo((24000+i)/1e6*(c+1)*0.1,7)
++    }
++  }
++  expect(base).toEqual(before)
++})
++
++
++it.each([1,2,6,8])('reads the actual %s source planes for encoder admission before mixing',async channels=>{
++ const composition:CompositionInputProps={fps:30,durationInFrames:30,tracks:[makeTrack({id:'a',order:0,kind:'audio',items:[makeAudioItem({src:`blob:planes-${channels}`,speed:1.5})]})],transitions:[],keyframes:[]}
++ expect(await getAudioOutputChannelCount(composition)).toBe(channels)
++ composition.tracks![0]!.pan=0.5
++ if(channels>2) await expect(getAudioOutputChannelCount(composition)).rejects.toThrow('Track pan requires a mono or stereo source')
++ else expect(await getAudioOutputChannelCount(composition)).toBe(2)
++ const controller=new AbortController();controller.abort()
++ await expect(getAudioOutputChannelCount(composition,controller.signal)).rejects.toThrow('Audio processing cancelled')
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1923,10 +1923,10 @@
+  * WSOLA overlap windows are consistent across channels (prevents phase drift
+  * between L/R that causes a hollow sound).
+  *
+- * @param channels - Input audio channels (downmixed to stereo for this export)
++ * @param channels - Input audio planes in their authored order
+  * @param speed - Playback rate (1.0 = normal, 2.0 = double speed, 0.5 = half speed)
+  * @param sampleRate - Sample rate for the audio
+- * @returns Processed mono or stereo channels
++ * @returns Processed planes in their authored order
+  */
+ async function applySpeedAndPitch(
+   channels: Float32Array[],
+@@ -1939,9 +1939,6 @@
+   if (!requiresTimeStretch) return channels
+   if (channels.length === 0 || channels[0]!.length === 0) return channels
+ 
+-  // SoundTouch only accepts stereo; preserve every source channel in the
+-  // export mix before processing rather than replacing C/surround with L.
+-  if (channels.length > 2) channels = downmixToOutputChannels(channels, 2)
+   const numChannels = channels.length
+   const samplesPerChannel = channels[0]!.length
+ 
+@@ -1954,72 +1951,59 @@
+ 
+   try {
+     const timeStretch = await import('@/infrastructure/audio/time-stretch')
+-    const st = new timeStretch.TimeStretchProcessor()
++    const st = new timeStretch.TimeStretchProcessor(numChannels)
+ 
+     st.tempo = speed
+     st.pitch = getAudioPitchRatioFromSemitones(pitchShiftSemitones)
+     st.rate = 1.0
+ 
+-    // The processor consumes interleaved stereo (duplicate mono input).
+-    const stereoInput = new Float32Array(samplesPerChannel * 2)
+-    const left = channels[0]!
+-    const right = numChannels >= 2 ? channels[1]! : left
++    const interleavedInput = new Float32Array(samplesPerChannel * numChannels)
+     for (let i = 0; i < samplesPerChannel; i++) {
+-      stereoInput[i * 2] = left[i]!
+-      stereoInput[i * 2 + 1] = right[i]!
++      for (let channel = 0; channel < numChannels; channel++) {
++        interleavedInput[i * numChannels + channel] = channels[channel]![i]!
++      }
+     }
+ 
+     let inputOffset = 0
+     const source = {
+       extract: (target: Float32Array, numFrames: number): number => {
+-        const samplesToRead = Math.min(numFrames * 2, stereoInput.length - inputOffset)
++        const samplesToRead = Math.min(numFrames * numChannels, interleavedInput.length - inputOffset)
+         if (samplesToRead <= 0) return 0
+ 
+         for (let i = 0; i < samplesToRead; i++) {
+-          target[i] = stereoInput[inputOffset + i]!
++          target[i] = interleavedInput[inputOffset + i]!
+         }
+         inputOffset += samplesToRead
+-        return samplesToRead / 2
++        return samplesToRead / numChannels
+       },
+     }
+ 
+     const filter = new timeStretch.TimeStretchFilter(source, st)
+ 
+     const expectedOutputLength = Math.floor(samplesPerChannel / speed)
+-    const stereoOutput = new Float32Array(expectedOutputLength * 2)
++    const interleavedOutput = new Float32Array(expectedOutputLength * numChannels)
+ 
+     let outputOffset = 0
+     const chunkSize = 4096
+-    const chunk = new Float32Array(chunkSize * 2)
+-
+-    while (outputOffset < stereoOutput.length) {
++    const chunk = new Float32Array(chunkSize * numChannels)
++
++    while (outputOffset < interleavedOutput.length) {
+       const framesExtracted = filter.extract(chunk, chunkSize)
+       if (framesExtracted === 0) break
+ 
+-      const samplesToWrite = Math.min(framesExtracted * 2, stereoOutput.length - outputOffset)
++      const samplesToWrite = Math.min(framesExtracted * numChannels, interleavedOutput.length - outputOffset)
+       for (let i = 0; i < samplesToWrite; i++) {
+-        stereoOutput[outputOffset + i] = chunk[i]!
++        interleavedOutput[outputOffset + i] = chunk[i]!
+       }
+-      outputOffset += framesExtracted * 2
+-    }
+-
+-    // De-interleave back to separate channels
+-    const actualOutputLength = Math.floor(outputOffset / 2)
+-    const outputChannels: Float32Array[] = []
+-
+-    // Always extract both L and R from the interleaved output
+-    const outLeft = new Float32Array(actualOutputLength)
+-    const outRight = new Float32Array(actualOutputLength)
++      outputOffset += framesExtracted * numChannels
++    }
++
++    const actualOutputLength = Math.floor(outputOffset / numChannels)
++    const outputChannels = Array.from({ length: numChannels }, () => new Float32Array(actualOutputLength))
+     for (let i = 0; i < actualOutputLength; i++) {
+-      outLeft[i] = stereoOutput[i * 2]!
+-      outRight[i] = stereoOutput[i * 2 + 1]!
+-    }
+-
+-    if (numChannels >= 2) {
+-      outputChannels.push(outLeft, outRight)
+-    } else {
+-      // Mono source: return left channel only
+-      outputChannels.push(outLeft)
++      for (let channel = 0; channel < numChannels; channel++) {
++        outputChannels[channel]![i] = interleavedOutput[i * numChannels + channel]!
++      }
+     }
+ 
+     log.debug('Time-stretch processing complete', {
+@@ -2748,6 +2732,40 @@
+   return actual
+ }
+ 
++/** Actual source plane counts, without inventing speaker-layout metadata. */
++export async function getAudioOutputChannelCount(
++  composition: CompositionInputProps,
++  signal?: AbortSignal,
++): Promise<number> {
++  await resolveSubCompMediaUrls(composition)
++  const segments = extractAudioSegments(composition, normalizeCompositionFps(composition.fps, 30))
++    .filter(segment => !segment.muted)
++  const mb = await import('mediabunny')
++  const counts = new Map<string, number>()
++  let channels = 0
++  for (const segment of segments) {
++    if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
++    let count = counts.get(segment.src)
++    if (count === undefined) {
++      const input = new mb.Input({ formats: mb.ALL_FORMATS, source: createMediabunnyInputSource(mb, segment.src) })
++      try {
++        const track = await input.getPrimaryAudioTrack()
++        if (!track) throw new Error('No audio track found')
++        count = await track.getNumberOfChannels()
++        counts.set(segment.src, count)
++      } finally {
++        input.dispose()
++      }
++    }
++    channels = requireMatchingAudioPlaneCount(count, channels)
++  }
++  if (segments.some(segment => segment.panStages?.length)) {
++    if (channels > 2) throw new Error('Track pan requires a mono or stereo source')
++    return 2
++  }
++  return channels
++}
++
+ export async function* processAudioWindows(
+   composition: CompositionInputProps,
+   signal?: AbortSignal,
+@@ -2942,8 +2960,7 @@
+       processedChannels = applyAudioPanStages(processedChannels, segment.panStages)
+       if (hasPan) processedChannels = downmixToOutputChannels(processedChannels, 2)
+ 
+-      // Normal-speed gain edits retain source planes. SoundTouch's existing
+-      // explicit stereo downmix remains a separate, unqualified retiming policy.
++      // Retiming and gain edits keep the same admitted source planes.
+       requireMatchingAudioPlaneCount(processedChannels.length, config.channels)
+       if (config.channels === 0) {
+         config.channels = processedChannels.length
+diff --git a/src/features/export/utils/canvas-render-orchestrator.audio-layout.test.ts b/src/features/export/utils/canvas-render-orchestrator.audio-layout.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-render-orchestrator.audio-layout.test.ts
+@@ -0,0 +1,61 @@
++// @vitest-environment node
++import { expect, it, vi } from 'vite-plus/test'
++import type { ClientExportSettings } from './client-renderer'
++const { count, probe, output } = vi.hoisted(() => ({
++  count: { value: 6 },
++  probe: vi.fn(async () => true),
++  output: vi.fn(),
++}))
++vi.mock('./canvas-audio', () => ({
++  hasAudioContent: async () => true,
++  supportsWindowedAudioProcessing: () => false,
++  getAudioOutputChannelCount: async () => count.value,
++}))
++vi.mock('@/shared/media/audio-encoder-support', () => ({ ensureAudioEncoderSupport: probe }))
++vi.mock('./export-output-target', () => ({ createExportOutputTarget: output }))
++import { renderAudioOnly } from './canvas-render-orchestrator'
++const settings: ClientExportSettings = {
++  mode: 'audio',
++  container: 'aac',
++  codec: 'avc',
++  quality: 'high',
++  resolution: { width: 1920, height: 1080 },
++  fps: 30,
++}
++it.each([6, 8])(
++  'refuses unknown %s-plane speaker mapping even if the encoder supports the count',
++  async (channels) => {
++    count.value = channels
++    probe.mockClear()
++    output.mockClear()
++    await expect(
++      renderAudioOnly({
++        settings,
++        composition: { fps: 30, durationInFrames: 30, tracks: [] },
++        onProgress: vi.fn(),
++      }),
++    ).rejects.toThrow('Multichannel encoding requires an explicit supported speaker layout')
++    expect(probe).not.toHaveBeenCalled()
++    expect(output).not.toHaveBeenCalled()
++  },
++)
++it.each([1, 2])(
++  'probes actual supported %s-plane mono/stereo output before output creation',
++  async (channels) => {
++    count.value = channels
++    probe.mockClear()
++    output.mockClear()
++    output.mockRejectedValueOnce(new Error('stop before output creation'))
++    await expect(
++      renderAudioOnly({
++        settings,
++        composition: { fps: 30, durationInFrames: 30, tracks: [] },
++        onProgress: vi.fn(),
++      }),
++    ).rejects.toThrow('stop before output creation')
++    expect(probe).toHaveBeenCalledWith(
++      'aac',
++      expect.objectContaining({ numberOfChannels: channels, sampleRate: 48000 }),
++    )
++  },
++)
+diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/features/export/utils/canvas-render-orchestrator.ts
+--- a/src/features/export/utils/canvas-render-orchestrator.ts
++++ b/src/features/export/utils/canvas-render-orchestrator.ts
+@@ -233,14 +233,23 @@
+   }
+ }
+ 
++function assertAudioOutputLayout(channels: number): void {
++  // Plane counts do not identify a surround speaker mapping in the current graph.
++  if (channels !== 1 && channels !== 2) {
++    throw new Error('Multichannel encoding requires an explicit supported speaker layout')
++  }
++}
++
+ async function assertAudioOnlyEncoderSupported(
+   codec: 'mp3' | 'aac' | 'pcm-s16',
+   bitrate: number,
++  numberOfChannels: number,
+ ): Promise<void> {
++  assertAudioOutputLayout(numberOfChannels)
+   if (codec === 'pcm-s16') return
+   const supported = await ensureAudioEncoderSupport(codec, {
+     bitrate,
+-    numberOfChannels: 2,
++    numberOfChannels,
+     sampleRate: 48_000,
+   })
+   if (!supported) {
+@@ -541,6 +550,36 @@
+       })
+     : null
+ 
++  const audioCodec = getDefaultAudioCodec(settings.container)
++  let audioChannels = 0
++  if (compositionHasAudio && !packetAudio) {
++    try {
++      // Select the container-compatible audio codec for the muxer.
++      if (audioCodec !== 'aac' && audioCodec !== 'opus') {
++        throw new Error(
++          `Unsupported audio codec ${audioCodec} for ${settings.container.toUpperCase()} export`,
++        )
++      }
++      audioChannels = await canvasAudio.getAudioOutputChannelCount(composition, signal)
++      assertAudioOutputLayout(audioChannels)
++      const supported = await ensureAudioEncoderSupport(audioCodec, {
++        bitrate: settings.audioBitrate ?? 192_000,
++        numberOfChannels: audioChannels,
++        sampleRate: 48_000,
++      })
++      if (!supported) {
++        throw new Error(
++          `${audioCodec.toUpperCase()} audio encoding is not supported in this browser. ` +
++            'Choose WebM or MKV with Opus audio.',
++        )
++      }
++
++    } catch (error) {
++      await outputTarget.discard()
++      throw error
++    }
++  }
++
+   // Create output
+   const output = new Output({
+     format,
+@@ -661,25 +700,6 @@
+     getLog().info('Audio will be copied without decoding or re-encoding')
+   } else if (compositionHasAudio) {
+     try {
+-      // Select the container-compatible audio codec for the muxer.
+-      const audioCodec = getDefaultAudioCodec(settings.container)
+-      if (audioCodec !== 'aac' && audioCodec !== 'opus') {
+-        throw new Error(
+-          `Unsupported audio codec ${audioCodec} for ${settings.container.toUpperCase()} export`,
+-        )
+-      }
+-      const supported = await ensureAudioEncoderSupport(audioCodec, {
+-        bitrate: settings.audioBitrate ?? 192_000,
+-        numberOfChannels: 2,
+-        sampleRate: 48_000,
+-      })
+-      if (!supported) {
+-        throw new Error(
+-          `${audioCodec.toUpperCase()} audio encoding is not supported in this browser. ` +
+-            'Choose WebM or MKV with Opus audio.',
+-        )
+-      }
+-
+       // Create audio source for encoding
+       audioSource = new AudioSampleSource({
+         codec: audioCodec,
+@@ -690,7 +710,7 @@
+       output.addAudioTrack(audioSource)
+       getLog().info('Audio track added to output', {
+         duration: durationInFrames / fps,
+-        channels: 2,
++        channels: audioChannels,
+         sampleRate: 48_000,
+         codec: audioCodec,
+         windowed: useWindowedAudio,
+@@ -1050,7 +1070,8 @@
+ 
+   const audioCodec = getAudioOnlyCodec(settings.container)
+   const audioBitrate = settings.audioBitrate ?? 192_000
+-  await assertAudioOnlyEncoderSupported(audioCodec, audioBitrate)
++  const audioChannels = await canvasAudio.getAudioOutputChannelCount(composition, signal)
++  await assertAudioOnlyEncoderSupported(audioCodec, audioBitrate, audioChannels)
+ 
+   const mimeType = getMimeType(settings.container)
+   const outputTarget = await createExportOutputTarget(mediabunny, settings.container, mimeType)
+@@ -1070,7 +1091,7 @@
+ 
+   getLog().info('Audio track configured', {
+     duration: durationSeconds,
+-    channels: 2,
++    channels: audioChannels,
+     sampleRate: 48_000,
+     codec: audioCodec,
+     windowed: useWindowedAudio,
+diff --git a/src/infrastructure/audio/time-stretch.test.ts b/src/infrastructure/audio/time-stretch.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/audio/time-stretch.test.ts
+@@ -0,0 +1,78 @@
++// @vitest-environment node
++import { createHash } from 'node:crypto'
++import { describe, expect, it } from 'vite-plus/test'
++import { TimeStretchFilter, TimeStretchProcessor } from './time-stretch'
++
++const settings = [
++  {
++    tempo: 1.5,
++    pitch: 2 ** (3 / 12),
++    legacy: '4d2b97cfb4dd16505ac1c5e39267c624b58ae67ff4de87064e66ccd23ed8bd2e',
++  },
++  {
++    tempo: 0.75,
++    pitch: 2 ** (-4 / 12),
++    legacy: '528ee176278387c3e1d6c8faf157b1845e7673456b393b289248d2172a3f96be',
++  },
++]
++function impulses(channels: number, tempo: number, pitch: number, active?: number) {
++  const frames = 96000
++  const source = {
++    extract(target: Float32Array, count: number, position: number) {
++      count = Math.max(0, Math.min(count, frames - position))
++      for (let i = 0; i < count; i++)
++        for (let c = 0; c < channels; c++) {
++          target[i * channels + c] =
++            (position + i) % 137 === 0 && (active === undefined || active === c) ? (c + 1) / 32 : 0
++        }
++      return count
++    },
++  }
++  const processor = new TimeStretchProcessor(channels)
++  processor.tempo = tempo
++  processor.pitch = pitch
++  processor.rate = 1
++  const filter = new TimeStretchFilter(source, processor)
++  const output = new Float32Array(32768 * channels)
++  expect(filter.extract(output, 32768)).toBe(32768)
++  return output
++}
++
++describe('one shared retiming clock across authored planes', () => {
++  for (const { tempo, pitch, legacy } of settings) {
++    it(`retains original stereo PCM bytes at tempo ${tempo} and pitch ${pitch}`, () => {
++      // Exact original processor bytes, measured before adapting its stereo strides.
++      const output = impulses(2, tempo, pitch)
++      expect(createHash('sha256').update(new Uint8Array(output.buffer)).digest('hex')).toBe(legacy)
++    })
++    it.each([1, 2, 6, 8])(
++      `preserves %s plane impulses on one clock at tempo ${tempo} and pitch ${pitch}`,
++      (channels) => {
++        const output = impulses(channels, tempo, pitch)
++        expect(output.some((sample) => sample !== 0)).toBe(true)
++        let maxError = 0
++        for (let i = 0; i < 32768; i++)
++          for (let c = 0; c < channels; c++) {
++            maxError = Math.max(
++              maxError,
++              Math.abs(output[i * channels + c]! - output[i * channels]! * (c + 1)),
++            )
++          }
++        expect(maxError).toBeLessThan(5e-8)
++        for (let active = 0; active < channels; active++) {
++          const isolated = impulses(channels, tempo, pitch, active)
++          expect(isolated.some((sample) => sample !== 0)).toBe(true)
++          let leaked = false
++          for (let i = 0; i < 32768; i++)
++            for (let c = 0; c < channels; c++) {
++              if (c !== active && isolated[i * channels + c] !== 0) leaked = true
++            }
++          expect(leaked).toBe(false)
++        }
++      },
++    )
++  }
++  it.each([0, -1, 1.5, NaN])('refuses invalid plane count %s', (count) => {
++    expect(() => new TimeStretchProcessor(count)).toThrow('Invalid time-stretch channel count')
++  })
++})
+diff --git a/src/infrastructure/audio/time-stretch.ts b/src/infrastructure/audio/time-stretch.ts
+--- a/src/infrastructure/audio/time-stretch.ts
++++ b/src/infrastructure/audio/time-stretch.ts
+@@ -1,6 +1,7 @@
+ // @ts-nocheck
+ /*
+  * SoundTouch JS v0.2.3 audio processing library
++ * Modified by Frameleaf 2026-10-09: shared retiming for authored PCM planes.
+  * Copyright (c) Olli Parviainen
+  * Copyright (c) Ryan Berdeen
+  * Copyright (c) Jakub Fiala
+@@ -22,7 +23,8 @@
+  */
+ 
+ class FifoSampleBuffer {
+-  constructor() {
++  constructor(channels = 2) {
++    this.channels = channels
+     this._vector = new Float32Array()
+     this._position = 0
+     this._frameCount = 0
+@@ -34,13 +36,13 @@
+     return this._position
+   }
+   get startIndex() {
+-    return this._position * 2
++    return this._position * this.channels
+   }
+   get frameCount() {
+     return this._frameCount
+   }
+   get endIndex() {
+-    return (this._position + this._frameCount) * 2
++    return (this._position + this._frameCount) * this.channels
+   }
+   clear() {
+     this._vector.fill(0)
+@@ -52,11 +54,11 @@
+   }
+   putSamples(samples, position, numFrames = 0) {
+     position = position || 0
+-    const sourceOffset = position * 2
++    const sourceOffset = position * this.channels
+     if (!(numFrames >= 0)) {
+-      numFrames = (samples.length - sourceOffset) / 2
+-    }
+-    const numSamples = numFrames * 2
++      numFrames = (samples.length - sourceOffset) / this.channels
++    }
++    const numSamples = numFrames * this.channels
+     this.ensureCapacity(numFrames + this._frameCount)
+     const destOffset = this.endIndex
+     this.vector.set(samples.subarray(sourceOffset, sourceOffset + numSamples), destOffset)
+@@ -77,18 +79,18 @@
+     this._position += numFrames
+   }
+   receiveSamples(output, numFrames = 0) {
+-    const numSamples = numFrames * 2
++    const numSamples = numFrames * this.channels
+     const sourceOffset = this.startIndex
+     output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples))
+     this.receive(numFrames)
+   }
+   extract(output, position = 0, numFrames = 0) {
+-    const sourceOffset = this.startIndex + position * 2
+-    const numSamples = numFrames * 2
++    const sourceOffset = this.startIndex + position * this.channels
++    const numSamples = numFrames * this.channels
+     output.set(this._vector.subarray(sourceOffset, sourceOffset + numSamples))
+   }
+   ensureCapacity(numFrames = 0) {
+-    const minLength = parseInt(numFrames * 2)
++    const minLength = parseInt(numFrames * this.channels)
+     if (this._vector.length < minLength) {
+       const newVector = new Float32Array(minLength)
+       newVector.set(this._vector.subarray(this.startIndex, this.endIndex))
+@@ -110,10 +112,11 @@
+ }
+ 
+ class AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
++  constructor(createBuffers, channels = 2) {
++    this.channels = channels
+     if (createBuffers) {
+-      this._inputBuffer = new FifoSampleBuffer()
+-      this._outputBuffer = new FifoSampleBuffer()
++      this._inputBuffer = new FifoSampleBuffer(channels)
++      this._outputBuffer = new FifoSampleBuffer(channels)
+     } else {
+       this._inputBuffer = this._outputBuffer = null
+     }
+@@ -137,8 +140,8 @@
+ }
+ 
+ class RateTransposer extends AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
+-    super(createBuffers)
++  constructor(createBuffers, channels = 2) {
++    super(createBuffers, channels)
+     this.reset()
+     this._rate = 1
+   }
+@@ -147,15 +150,14 @@
+   }
+   reset() {
+     this.slopeCount = 0
+-    this.prevSampleL = 0
+-    this.prevSampleR = 0
++    this.previous = new Float32Array(this.channels)
+   }
+   clear() {
+     super.clear()
+     this.reset()
+   }
+   clone() {
+-    const result = new RateTransposer()
++    const result = new RateTransposer(true, this.channels)
+     result.rate = this._rate
+     return result
+   }
+@@ -177,10 +179,10 @@
+     let used = 0
+     let i = 0
+     while (this.slopeCount < 1.0) {
+-      dest[destOffset + 2 * i] =
+-        (1.0 - this.slopeCount) * this.prevSampleL + this.slopeCount * src[srcOffset]
+-      dest[destOffset + 2 * i + 1] =
+-        (1.0 - this.slopeCount) * this.prevSampleR + this.slopeCount * src[srcOffset + 1]
++      for (let channel = 0; channel < this.channels; channel++) {
++        dest[destOffset + this.channels * i + channel] =
++          (1.0 - this.slopeCount) * this.previous[channel] + this.slopeCount * src[srcOffset + channel]
++      }
+       i = i + 1
+       this.slopeCount += this._rate
+     }
+@@ -194,17 +196,19 @@
+             break out
+           }
+         }
+-        const srcIndex = srcOffset + 2 * used
+-        dest[destOffset + 2 * i] =
+-          (1.0 - this.slopeCount) * src[srcIndex] + this.slopeCount * src[srcIndex + 2]
+-        dest[destOffset + 2 * i + 1] =
+-          (1.0 - this.slopeCount) * src[srcIndex + 1] + this.slopeCount * src[srcIndex + 3]
++        const srcIndex = srcOffset + this.channels * used
++        for (let channel = 0; channel < this.channels; channel++) {
++          dest[destOffset + this.channels * i + channel] =
++            (1.0 - this.slopeCount) * src[srcIndex + channel] +
++            this.slopeCount * src[srcIndex + this.channels + channel]
++        }
+         i = i + 1
+         this.slopeCount += this._rate
+       }
+     }
+-    this.prevSampleL = src[srcOffset + 2 * numFrames - 2]
+-    this.prevSampleR = src[srcOffset + 2 * numFrames - 1]
++    for (let channel = 0; channel < this.channels; channel++) {
++      this.previous[channel] = src[srcOffset + this.channels * (numFrames - 1) + channel]
++    }
+     return i
+   }
+ }
+@@ -279,7 +283,7 @@
+     this.callback()
+   }
+   fillInputBuffer(numFrames = 0) {
+-    const samples = new Float32Array(numFrames * 2)
++    const samples = new Float32Array(numFrames * this._pipe.channels)
+     const numFramesExtracted = this.sourceSound.extract(samples, numFrames, this._sourcePosition)
+     this._sourcePosition += numFramesExtracted
+     this.inputBuffer.putSamples(samples, 0, numFramesExtracted)
+@@ -331,8 +335,8 @@
+ const AUTOSEEK_K = (AUTOSEEK_AT_MAX - AUTOSEEK_AT_MIN) / (AUTOSEQ_TEMPO_TOP - AUTOSEQ_TEMPO_LOW)
+ const AUTOSEEK_C = AUTOSEEK_AT_MIN - AUTOSEEK_K * AUTOSEQ_TEMPO_LOW
+ class Stretch extends AbstractFifoSamplePipe {
+-  constructor(createBuffers) {
+-    super(createBuffers)
++  constructor(createBuffers, channels = 2) {
++    super(createBuffers, channels)
+     this._quickSeek = true
+     this.midBufferDirty = false
+     this.midBuffer = null
+@@ -401,8 +405,8 @@
+     newOvl = newOvl < 16 ? 16 : newOvl
+     newOvl -= newOvl % 8
+     this.overlapLength = newOvl
+-    this.refMidBuffer = new Float32Array(this.overlapLength * 2)
+-    this.midBuffer = new Float32Array(this.overlapLength * 2)
++    this.refMidBuffer = new Float32Array(this.overlapLength * this.channels)
++    this.midBuffer = new Float32Array(this.overlapLength * this.channels)
+   }
+   checkLimits(x, mi, ma) {
+     return x < mi ? mi : x > ma ? ma : x
+@@ -427,7 +431,7 @@
+     this._quickSeek = enable
+   }
+   clone() {
+-    const result = new Stretch()
++    const result = new Stretch(true, this.channels)
+     result.tempo = this._tempo
+     result.setParameters(this.sampleRate, this.sequenceMs, this.seekWindowMs, this.overlapMs)
+     return result
+@@ -446,7 +450,7 @@
+     bestOffset = 0
+     bestCorrelation = Number.MIN_VALUE
+     for (; i < this.seekLength; i = i + 1) {
+-      correlation = this.calculateCrossCorrelationStereo(2 * i, this.refMidBuffer)
++      correlation = this.calculateCrossCorrelationStereo(this.channels * i, this.refMidBuffer)
+       if (correlation > bestCorrelation) {
+         bestCorrelation = correlation
+         bestOffset = i
+@@ -473,7 +477,7 @@
+         if (tempOffset >= this.seekLength) {
+           break
+         }
+-        correlation = this.calculateCrossCorrelationStereo(2 * tempOffset, this.refMidBuffer)
++        correlation = this.calculateCrossCorrelationStereo(this.channels * tempOffset, this.refMidBuffer)
+         if (correlation > bestCorrelation) {
+           bestCorrelation = correlation
+           bestOffset = tempOffset
+@@ -490,26 +494,32 @@
+     let temp
+     for (; i < this.overlapLength; i = i + 1) {
+       temp = i * (this.overlapLength - i)
+-      context = i * 2
+-      this.refMidBuffer[context] = this.midBuffer[context] * temp
+-      this.refMidBuffer[context + 1] = this.midBuffer[context + 1] * temp
++      context = i * this.channels
++      for (let channel = 0; channel < this.channels; channel++) {
++        this.refMidBuffer[context + channel] = this.midBuffer[context + channel] * temp
++      }
+     }
+   }
+   calculateCrossCorrelationStereo(mixingPosition, compare) {
+     const mixing = this._inputBuffer.vector
+     mixingPosition += this._inputBuffer.startIndex
+     let correlation = 0
+-    let i = 2
+-    const calcLength = 2 * this.overlapLength
++    let i = this.channels
++    const calcLength = this.channels * this.overlapLength
+     let mixingOffset
+-    for (; i < calcLength; i = i + 2) {
++    for (; i < calcLength; i += this.channels) {
+       mixingOffset = i + mixingPosition
+-      correlation += mixing[mixingOffset] * compare[i] + mixing[mixingOffset + 1] * compare[i + 1]
++      // One overlap decision owns the timing of every source plane.
++      let frameCorrelation = 0
++      for (let channel = 0; channel < this.channels; channel++) {
++        frameCorrelation += mixing[mixingOffset + channel] * compare[i + channel]
++      }
++      correlation += frameCorrelation
+     }
+     return correlation
+   }
+   overlap(overlapPosition) {
+-    this.overlapStereo(2 * overlapPosition)
++    this.overlapStereo(this.channels * overlapPosition)
+   }
+   overlapStereo(inputPosition) {
+     const input = this._inputBuffer.vector
+@@ -526,13 +536,13 @@
+     for (; i < this.overlapLength; i = i + 1) {
+       tempFrame = (this.overlapLength - i) * frameScale
+       fi = i * frameScale
+-      context = 2 * i
++      context = this.channels * i
+       inputOffset = context + inputPosition
+       outputOffset = context + outputPosition
+-      output[outputOffset + 0] =
+-        input[inputOffset + 0] * fi + this.midBuffer[context + 0] * tempFrame
+-      output[outputOffset + 1] =
+-        input[inputOffset + 1] * fi + this.midBuffer[context + 1] * tempFrame
++      for (let channel = 0; channel < this.channels; channel++) {
++        output[outputOffset + channel] =
++          input[inputOffset + channel] * fi + this.midBuffer[context + channel] * tempFrame
++      }
+     }
+   }
+   process() {
+@@ -543,7 +553,7 @@
+       if (this._inputBuffer.frameCount < this.overlapLength) {
+         return
+       }
+-      this.midBuffer = new Float32Array(this.overlapLength * 2)
++      this.midBuffer = new Float32Array(this.overlapLength * this.channels)
+       this._inputBuffer.receiveSamples(this.midBuffer, this.overlapLength)
+     }
+     while (this._inputBuffer.frameCount >= this.sampleReq) {
+@@ -556,8 +566,8 @@
+         this._outputBuffer.putBuffer(this._inputBuffer, offset + this.overlapLength, temp)
+       }
+       const start =
+-        this._inputBuffer.startIndex + 2 * (offset + this.seekWindowLength - this.overlapLength)
+-      this.midBuffer.set(this._inputBuffer.vector.subarray(start, start + 2 * this.overlapLength))
++        this._inputBuffer.startIndex + this.channels * (offset + this.seekWindowLength - this.overlapLength)
++      this.midBuffer.set(this._inputBuffer.vector.subarray(start, start + this.channels * this.overlapLength))
+       this.skipFract += this.nominalSkip
+       overlapSkip = Math.floor(this.skipFract)
+       this.skipFract -= overlapSkip
+@@ -571,12 +581,16 @@
+ }
+ 
+ class SoundTouch {
+-  constructor() {
+-    this.transposer = new RateTransposer(false)
+-    this.stretch = new Stretch(false)
+-    this._inputBuffer = new FifoSampleBuffer()
+-    this._intermediateBuffer = new FifoSampleBuffer()
+-    this._outputBuffer = new FifoSampleBuffer()
++  constructor(channels = 2) {
++    if (!Number.isSafeInteger(channels) || channels < 1) {
++      throw new Error('Invalid time-stretch channel count')
++    }
++    this.channels = channels
++    this.transposer = new RateTransposer(false, channels)
++    this.stretch = new Stretch(false, channels)
++    this._inputBuffer = new FifoSampleBuffer(channels)
++    this._intermediateBuffer = new FifoSampleBuffer(channels)
++    this._outputBuffer = new FifoSampleBuffer(channels)
+     this._rate = 0
+     this._tempo = 0
+     this.virtualPitch = 1.0
+@@ -589,7 +603,7 @@
+     this.stretch.clear()
+   }
+   clone() {
+-    const result = new SoundTouch()
++    const result = new SoundTouch(this.channels)
+     result.rate = this.rate
+     result.tempo = this.tempo
+     return result
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
+@@ -47,8 +47,7 @@
+ const soundTouchWorkletMocks = vi.hoisted(() => ({
+   ensureSoundTouchPreviewWorkletLoaded: vi.fn(),
+   prepareAudioBufferForSoundTouchPreview: vi.fn(async () => ({
+-    leftChannel: new Float32Array(0),
+-    rightChannel: new Float32Array(0),
++    channels: [new Float32Array(0),new Float32Array(0)],
+     frameCount: 0,
+     sampleRate: 48000,
+   })),
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -200,10 +200,11 @@
+             node = new AudioWorkletNode(graph.context, SOUND_TOUCH_PREVIEW_PROCESSOR_NAME, {
+               numberOfInputs: 0,
+               numberOfOutputs: 1,
+-              outputChannelCount: [2],
+-              channelCount: 2,
++              outputChannelCount: [audioBuffer.numberOfChannels],
++              channelCount: audioBuffer.numberOfChannels,
+               channelCountMode: 'explicit',
+-              channelInterpretation: 'speakers',
++              channelInterpretation: 'discrete',
++              processorOptions: { channels: audioBuffer.numberOfChannels },
+             })
+           } catch (error) {
+             log.warn('Failed to construct SoundTouch preview node', { error })
+@@ -240,7 +241,7 @@
+         lastPostedPlayingRef.current = null
+         teardownNode()
+       }
+-    }, [rootClock])
++    }, [rootClock, audioBuffer.numberOfChannels])
+ 
+     useEffect(() => {
+       const resume = () => {
+@@ -319,18 +320,16 @@
+       void prepareAudioBufferForSoundTouchPreview(audioBuffer, graph.context.sampleRate)
+         .then((serialized) => {
+           if (cancelled || nodeRef.current !== node) return
+-          const leftChannel = serialized.leftChannel.buffer as ArrayBuffer
+-          const rightChannel = serialized.rightChannel.buffer as ArrayBuffer
++          const channels = serialized.channels.map(plane => plane.buffer as ArrayBuffer)
+           postMessage(
+             {
+               type: 'append-source',
+               startFrame: Math.max(0, Math.floor(sourceStartOffsetSec * graph.context.sampleRate)),
+-              leftChannel,
+-              rightChannel,
++              channels,
+               frameCount: serialized.frameCount,
+               sampleRate: serialized.sampleRate,
+             },
+-            [leftChannel, rightChannel],
++            channels,
+           )
+         })
+         .catch((error) => {
+diff --git a/src/runtime/composition-runtime/utils/soundtouch-preview-shared.ts b/src/runtime/composition-runtime/utils/soundtouch-preview-shared.ts
+--- a/src/runtime/composition-runtime/utils/soundtouch-preview-shared.ts
++++ b/src/runtime/composition-runtime/utils/soundtouch-preview-shared.ts
+@@ -3,8 +3,7 @@
+ export interface SoundTouchAppendSourceMessage {
+   type: 'append-source'
+   startFrame: number
+-  leftChannel: ArrayBuffer
+-  rightChannel: ArrayBuffer
++  channels: ArrayBuffer[]
+   frameCount: number
+   sampleRate: number
+ }
+diff --git a/src/runtime/composition-runtime/utils/soundtouch-preview-source.test.ts b/src/runtime/composition-runtime/utils/soundtouch-preview-source.test.ts
+--- a/src/runtime/composition-runtime/utils/soundtouch-preview-source.test.ts
++++ b/src/runtime/composition-runtime/utils/soundtouch-preview-source.test.ts
+@@ -7,8 +7,7 @@
+   return {
+     startFrame,
+     frameCount: Math.min(left.length, right.length),
+-    leftChannel: new Float32Array(left),
+-    rightChannel: new Float32Array(right),
++    channels: [new Float32Array(left), new Float32Array(right)],
+   }
+ }
+ 
+@@ -77,3 +76,17 @@
+     expect(Array.from(target)).toEqual([2, 12, 3, 13])
+   })
+ })
++
++
++it.each([1,2,6,8])('queues %s planes in authored order in both directions',channels=>{
++ const source=new QueuedStereoBufferSource(channels)
++ const planes=Array.from({length:channels},(_,c)=>new Float32Array([c+1,10*(c+1),100*(c+1)]))
++ source.append({startFrame:0,frameCount:3,channels:planes})
++ const forward=new Float32Array(3*channels)
++ expect(source.extract(forward,3)).toBe(3)
++ source.setReadDirection(-1,2)
++ const reverse=new Float32Array(3*channels)
++ expect(source.extract(reverse,3)).toBe(3)
++ for(let i=0;i<3;i++)for(let c=0;c<channels;c++){expect(forward[i*channels+c]).toBe(planes[c]![i]);expect(reverse[i*channels+c]).toBe(planes[c]![2-i])}
++ expect(()=>source.append({startFrame:0,frameCount:1,channels:[]})).toThrow('Mismatched preview source planes')
++})
+diff --git a/src/runtime/composition-runtime/utils/soundtouch-preview-source.ts b/src/runtime/composition-runtime/utils/soundtouch-preview-source.ts
+--- a/src/runtime/composition-runtime/utils/soundtouch-preview-source.ts
++++ b/src/runtime/composition-runtime/utils/soundtouch-preview-source.ts
+@@ -1,7 +1,6 @@
+ export interface SoundTouchPreviewSourceChunk {
+   startFrame: number
+-  leftChannel: Float32Array
+-  rightChannel: Float32Array
++  channels: Float32Array[]
+   frameCount: number
+ }
+ 
+@@ -17,11 +16,14 @@
+   private reverseAnchorFrame = 0
+   frameCount = 0
+ 
++  constructor(private readonly channels = 2) {}
++
+   append(chunk: SoundTouchPreviewSourceChunk): void {
++    if (chunk.channels.length !== this.channels) throw new Error('Mismatched preview source planes')
+     const startFrame = Math.max(0, Math.floor(chunk.startFrame))
+     const frameCount = Math.max(
+       0,
+-      Math.min(Math.floor(chunk.frameCount), chunk.leftChannel.length, chunk.rightChannel.length),
++      Math.min(Math.floor(chunk.frameCount), ...chunk.channels.map(plane => plane.length)),
+     )
+     if (frameCount === 0) {
+       return
+@@ -29,8 +31,7 @@
+ 
+     const nextChunk: StoredChunk = {
+       startFrame,
+-      leftChannel: chunk.leftChannel,
+-      rightChannel: chunk.rightChannel,
++      channels: chunk.channels,
+       frameCount,
+       endFrame: startFrame + frameCount,
+       sequence: ++this.sequence,
+@@ -95,8 +96,7 @@
+       const framesToCopy = Math.min(requestedFrames - copiedFrames, availableFrames)
+       for (let i = 0; i < framesToCopy; i++) {
+         const sourceIndex = chunkOffset + i
+-        target[outIndex++] = chunk.leftChannel[sourceIndex] ?? 0
+-        target[outIndex++] = chunk.rightChannel[sourceIndex] ?? 0
++        for (const plane of chunk.channels) target[outIndex++] = plane[sourceIndex] ?? 0
+       }
+ 
+       copiedFrames += framesToCopy
+@@ -128,8 +128,7 @@
+       )
+       for (let i = 0; i < framesToCopy; i += 1) {
+         const sourceIndex = chunkOffset - i
+-        target[outIndex++] = chunk.leftChannel[sourceIndex] ?? 0
+-        target[outIndex++] = chunk.rightChannel[sourceIndex] ?? 0
++        for (const plane of chunk.channels) target[outIndex++] = plane[sourceIndex] ?? 0
+       }
+ 
+       copiedFrames += framesToCopy
+diff --git a/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.test.ts b/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.test.ts
+--- a/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.test.ts
++++ b/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.test.ts
+@@ -26,31 +26,39 @@
+ 
+     expect(serialized.sampleRate).toBe(48000)
+     expect(serialized.frameCount).toBe(3)
+-    expect(Array.from(serialized.leftChannel)).toEqual([0, 0.25, 0.5])
+-    expect(Array.from(serialized.rightChannel)).toEqual([1, 0.75, 0.5])
++    expect(Array.from(serialized.channels[0]!)).toEqual([0, 0.25, 0.5])
++    expect(Array.from(serialized.channels[1]!)).toEqual([1, 0.75, 0.5])
+   })
+ 
+-  it('resamples mono buffers to the target sample rate and duplicates the channel', () => {
++  it('resamples mono buffers to the target sample rate without adding a plane', () => {
+     const buffer = makeAudioBuffer([new Float32Array([0, 1, 0, -1])], 4)
+ 
+     const serialized = serializeAudioBufferForSoundTouchPreview(buffer, 8)
+ 
+     expect(serialized.sampleRate).toBe(8)
+     expect(serialized.frameCount).toBe(8)
+-    expect(serialized.leftChannel.length).toBe(8)
+-    expect(serialized.rightChannel.length).toBe(8)
+-    expect(serialized.rightChannel[3]).toBeCloseTo(serialized.leftChannel[3] ?? 0, 5)
++    expect(serialized.channels[0]!.length).toBe(8)
++    expect(serialized.channels).toHaveLength(1)
++    expect(serialized.channels[0]![3]).toBeCloseTo(0.5, 5)
+   })
+ 
+   it('returns independently transferable channel copies from the prepared-source cache', async () => {
+     const buffer = makeAudioBuffer([new Float32Array([0, 1, 0, -1])], 4)
+ 
+     const first = await prepareAudioBufferForSoundTouchPreview(buffer, 8)
+-    first.leftChannel[0] = 99
++    first.channels[0]![0] = 99
+     const second = await prepareAudioBufferForSoundTouchPreview(buffer, 8)
+ 
+     expect(second.frameCount).toBe(8)
+-    expect(second.leftChannel[0]).toBe(0)
+-    expect(second.leftChannel.buffer).not.toBe(first.leftChannel.buffer)
++    expect(second.channels[0]![0]).toBe(0)
++    expect(second.channels[0]!.buffer).not.toBe(first.channels[0]!.buffer)
+   })
+ })
++
++
++it.each([1,2,6,8])('serializes every one of %s authored planes without changing order', async(count)=>{
++ const planes=Array.from({length:count},(_,c)=>new Float32Array([c+1,0,-(c+1)]))
++ const serialized=await prepareAudioBufferForSoundTouchPreview(makeAudioBuffer(planes,48000),48000)
++ expect(serialized.channels).toHaveLength(count)
++ expect(serialized.channels.map(p=>[...p])).toEqual(planes.map(p=>[...p]))
++})
+diff --git a/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.ts b/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.ts
+--- a/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.ts
++++ b/src/runtime/composition-runtime/utils/soundtouch-preview-worklet.ts
+@@ -6,15 +6,13 @@
+ const pendingWorkletLoads = new WeakMap<AudioContext, Promise<boolean>>()
+ 
+ export interface SerializedSoundTouchPreviewSource {
+-  leftChannel: Float32Array
+-  rightChannel: Float32Array
++  channels: Float32Array[]
+   frameCount: number
+   sampleRate: number
+ }
+ 
+ interface PreparedSoundTouchPreviewSource {
+-  leftChannel: Float32Array
+-  rightChannel: Float32Array
++  channels: Float32Array[]
+   frameCount: number
+   sampleRate: number
+ }
+@@ -46,13 +44,11 @@
+   targetSampleRate: number,
+ ): SerializedSoundTouchPreviewSource {
+   const safeTargetRate = Math.max(1, Math.floor(targetSampleRate))
+-  const leftSource = buffer.getChannelData(0)
+-  const rightSource = buffer.getChannelData(buffer.numberOfChannels > 1 ? 1 : 0)
++  const planes = Array.from({ length: buffer.numberOfChannels }, (_,channel) => buffer.getChannelData(channel))
+ 
+   if (buffer.sampleRate === safeTargetRate) {
+     return {
+-      leftChannel: new Float32Array(leftSource),
+-      rightChannel: new Float32Array(rightSource),
++      channels: planes.map(plane => new Float32Array(plane)),
+       frameCount: buffer.length,
+       sampleRate: buffer.sampleRate,
+     }
+@@ -61,8 +57,7 @@
+   const ratio = safeTargetRate / buffer.sampleRate
+   const targetFrames = Math.max(1, Math.ceil(buffer.length * ratio))
+   return {
+-    leftChannel: resampleChannelLinear(leftSource, targetFrames, ratio),
+-    rightChannel: resampleChannelLinear(rightSource, targetFrames, ratio),
++    channels: planes.map(plane => resampleChannelLinear(plane, targetFrames, ratio)),
+     frameCount: targetFrames,
+     sampleRate: safeTargetRate,
+   }
+@@ -82,8 +77,7 @@
+   const task = (async () => {
+     if (buffer.sampleRate === safeTargetRate) {
+       return {
+-        leftChannel: buffer.getChannelData(0),
+-        rightChannel: buffer.getChannelData(buffer.numberOfChannels > 1 ? 1 : 0),
++        channels: Array.from({ length: buffer.numberOfChannels }, (_,channel) => buffer.getChannelData(channel)),
+         frameCount: buffer.length,
+         sampleRate: buffer.sampleRate,
+       }
+@@ -92,7 +86,7 @@
+     if (typeof OfflineAudioContext !== 'undefined') {
+       const targetFrames = Math.max(1, Math.ceil(buffer.length * (safeTargetRate / buffer.sampleRate)))
+       const context = new OfflineAudioContext(
+-        Math.max(1, Math.min(2, buffer.numberOfChannels)),
++        buffer.numberOfChannels,
+         targetFrames,
+         safeTargetRate,
+       )
+@@ -102,8 +96,7 @@
+       source.start()
+       const rendered = await context.startRendering()
+       return {
+-        leftChannel: rendered.getChannelData(0),
+-        rightChannel: rendered.getChannelData(rendered.numberOfChannels > 1 ? 1 : 0),
++        channels: Array.from({ length: rendered.numberOfChannels }, (_,channel) => rendered.getChannelData(channel)),
+         frameCount: rendered.length,
+         sampleRate: rendered.sampleRate,
+       }
+@@ -131,8 +124,7 @@
+ ): Promise<SerializedSoundTouchPreviewSource> {
+   const prepared = await prepareSoundTouchPreviewSource(buffer, targetSampleRate)
+   return {
+-    leftChannel: new Float32Array(prepared.leftChannel),
+-    rightChannel: new Float32Array(prepared.rightChannel),
++    channels: prepared.channels.map(plane => new Float32Array(plane)),
+     frameCount: prepared.frameCount,
+     sampleRate: prepared.sampleRate,
+   }
+diff --git a/src/runtime/composition-runtime/worklets/soundtouch-preview-processor.worklet.ts b/src/runtime/composition-runtime/worklets/soundtouch-preview-processor.worklet.ts
+--- a/src/runtime/composition-runtime/worklets/soundtouch-preview-processor.worklet.ts
++++ b/src/runtime/composition-runtime/worklets/soundtouch-preview-processor.worklet.ts
+@@ -17,25 +17,25 @@
+ 
+ declare function registerProcessor(
+   name: string,
+-  processorCtor: new (options?: unknown) => AudioWorkletProcessor,
++  processorCtor: new (options?: AudioWorkletNodeOptions) => AudioWorkletProcessor,
+ ): void
+ 
+ class SoundTouchPreviewProcessor extends AudioWorkletProcessor {
+-  private readonly source = new QueuedStereoBufferSource()
+-  private readonly processor = new TimeStretchProcessor()
+-  private readonly filter = new TimeStretchFilter(
+-    this.source as {
+-      extract: (target: Float32Array, numFrames: number, sourcePosition?: number) => number
+-    },
+-    this.processor,
+-  )
++  private readonly source: QueuedStereoBufferSource
++  private readonly processor: InstanceType<typeof TimeStretchProcessor>
++  private readonly filter: InstanceType<typeof TimeStretchFilter>
++  private readonly channels: number
+   private scratch = new Float32Array(256)
+   private playing = false
+   private tempo = 1
+   private pitch = 1
+ 
+-  constructor() {
+-    super()
++  constructor(options?: AudioWorkletNodeOptions) {
++    super(options)
++    this.channels = options?.processorOptions?.channels ?? 2
++    this.source = new QueuedStereoBufferSource(this.channels)
++    this.processor = new TimeStretchProcessor(this.channels)
++    this.filter = new TimeStretchFilter(this.source, this.processor)
+     this.applySettings()
+     this.port.onmessage = (event: MessageEvent<SoundTouchPreviewProcessorMessage>) => {
+       this.handleMessage(event.data)
+@@ -51,12 +51,10 @@
+   private handleMessage(message: SoundTouchPreviewProcessorMessage): void {
+     switch (message.type) {
+       case 'append-source': {
+-        const leftChannel = new Float32Array(message.leftChannel)
+-        const rightChannel = new Float32Array(message.rightChannel)
++        const channels = message.channels.map(plane => new Float32Array(plane))
+         this.source.append({
+           startFrame: message.startFrame,
+-          leftChannel,
+-          rightChannel,
++          channels,
+           frameCount: message.frameCount,
+         })
+         break
+@@ -97,25 +95,22 @@
+     if (!leftOutput) {
+       return true
+     }
+-    const rightOutput = output[1] ?? leftOutput
+-    leftOutput.fill(0)
+-    rightOutput.fill(0)
++    for (const plane of output) plane.fill(0)
++    if (output.length !== this.channels) return true
+ 
+     if (!this.playing || this.source.frameCount === 0) {
+       return true
+     }
+ 
+-    const requiredSamples = leftOutput.length * 2
++    const requiredSamples = leftOutput.length * this.channels
+     if (this.scratch.length < requiredSamples) {
+       this.scratch = new Float32Array(requiredSamples)
+     }
+ 
+     const framesExtracted = this.filter.extract(this.scratch, leftOutput.length)
+-    const isMono = rightOutput === leftOutput
+     for (let i = 0; i < framesExtracted; i++) {
+-      leftOutput[i] = this.scratch[i * 2] ?? 0
+-      if (!isMono) {
+-        rightOutput[i] = this.scratch[i * 2 + 1] ?? 0
++      for (let channel = 0; channel < this.channels; channel++) {
++        output[channel]![i] = this.scratch[i * this.channels + channel] ?? 0
+       }
+     }
+ 

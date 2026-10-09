@@ -529,7 +529,17 @@
       "path": "patches/0109-microphone-monitor-retirement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f099c8f0828114efae58e979802c48cc35712c2f5e0b7750d139d5fe19fca57c"
+    },
+    {
+      "path": "patches/0110-scope-revision-binding.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fc824d7223d3e1c628b0cd76be787f6f039dccfb270d85bdc2bf6846926d977b"
+    },
+    {
+      "path": "patches/0111-multichannel-shared-retiming.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1c28fe3886e8c64ebd0d2ce944fa6ad543032976a73e303cb37f351ad69ac875"
     }
   ],
-  "sourceSha256": "86795b1fd91eca8d7804ce35c00930b36f507d6675287ffce9d621ac5c28b959"
+  "sourceSha256": "7c83bc88923abb5e8995544567d437d260461569ef5dfaf14b893a4d664d9481"
 }
