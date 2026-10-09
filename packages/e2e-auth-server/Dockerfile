@@ -1,4 +1,5 @@
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+FROM ${NODE_IMAGE}
 WORKDIR /usr/src/app
 
 RUN corepack enable

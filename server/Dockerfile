@@ -1,10 +1,12 @@
+ARG STUDIO_NODE_IMAGE=node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
 # BEGIN frameleaf-server-base
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
 # Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
 # markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
 # 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
 # are vendored in server/base-image. server/Dockerfile and server/Dockerfile.dev carry identical
 # copies of this block; docker/frameleaf-delivery.test.mjs fails if they drift apart.
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-build
+FROM ${NODE_IMAGE} AS base-server-build
 ARG DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /usr/src/base-image
@@ -213,7 +215,7 @@ WORKDIR /usr/src/app
 
 # The production base: runtime libraries only, with the media libraries built above. It reproduces
 # base-server-prod from the same base-images revision.
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-prod
+FROM ${NODE_IMAGE} AS base-server-prod
 ARG DEBIAN_FRONTEND=noninteractive
 
 # renovate: datasource=custom.intel-igc depName=intel/intel-graphics-compiler
@@ -416,7 +418,7 @@ ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
 # file against studio/freecut-provenance.json, patched outside the snapshot, installed from the engine
 # lockfile without lifecycle scripts, and built with Frameleaf's adapter into web/static/studio-engine,
 # together with every licence notice it needs (attribution/, notices/).
-FROM node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4 AS studio-engine
+FROM ${STUDIO_NODE_IMAGE} AS studio-engine
 
 WORKDIR /usr/src/app
 COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs

@@ -27,6 +27,7 @@ name: Check OpenAPI
       - scripts/openapi-comparison-base.test.mjs
       - scripts/configure-dockerhub-mirror.sh
       - scripts/dockerhub-mirror.test.mjs
+      - scripts/ci-registry-images.test.mjs
       - .github/workflows/check-openapi.yml
 permissions:
   contents: read
@@ -35,6 +36,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check-openapi:
+    env:
+      OASDIFF_IMAGE: mirror.gcr.io/tufin/oasdiff@sha256:cc59265b995bd19e1e87cf4302ab70b520f730c33ebdf52e3cfa154fe4a3b2fb
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -77,6 +80,6 @@ jobs:
         run: |-
           docker run --rm --network none -e OASDIFF_INTERNAL=1 \
             -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace \
-            tufin/oasdiff:v1.31.0 breaking --format json --fail-on ERR \
+            "$OASDIFF_IMAGE" breaking --format json --fail-on ERR \
             /workspace/.frameleaf-api-base/open-api/immich-openapi-comparison-base.json \
             /workspace/open-api/immich-openapi-specs.json

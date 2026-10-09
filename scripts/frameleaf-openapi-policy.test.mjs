@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.31.0";
 
-// Hosted-only: use the same oasdiff version as the pinned breaking action's Dockerfile.
+// Hosted-only: CI supplies its fixed mirror; local invocation keeps the existing oasdiff version.
 test("SDK operation renames and omissions fail while additive endpoints pass", () => {
-  const fixtures = mkdtempSync(path.join(tmpdir(), "frameleaf-openapi-policy-"));
+  const fixtures = mkdtempSync(
+    path.join(tmpdir(), "frameleaf-openapi-policy-"),
+  );
   const base = {
     openapi: "3.0.3",
     info: { title: "SDK compatibility fixture", version: "1.0.0" },
@@ -64,7 +67,7 @@ test("SDK operation renames and omissions fail while additive endpoints pass", (
           `${fixtures}:/fixtures:ro`,
           "-w",
           policy ? "/workspace" : "/fixtures",
-          "tufin/oasdiff:v1.31.0",
+          oasdiffImage,
           "breaking",
           "--format",
           "json",

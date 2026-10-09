@@ -13,9 +13,11 @@ const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', i
 const globalSetup = async () => {
   const templateName = 'frameleaf';
   // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
-  const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext).build('frameleaf-postgres:medium', {
-    deleteOnExit: false,
-  });
+  const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext)
+    .withBuildArgs(
+      process.env.FRAMELEAF_CI_POSTGRES_IMAGE ? { POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE } : {},
+    )
+    .build('frameleaf-postgres:medium', { deleteOnExit: false });
   const postgresContainer = await postgresImage
     .withExposedPorts(5432)
     .withEnvironment({

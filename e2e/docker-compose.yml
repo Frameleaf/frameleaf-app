@@ -6,6 +6,8 @@ services:
     build:
       context: ../
       dockerfile: packages/e2e-auth-server/Dockerfile
+      args:
+        NODE_IMAGE: ${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
     ports:
       - 2286:2286
 
@@ -21,6 +23,8 @@ services:
         - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
         - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
+        - NODE_IMAGE=${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
+        - STUDIO_NODE_IMAGE=${FRAMELEAF_CI_STUDIO_NODE_IMAGE:-node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4}
         - BUILD_ID=1234567890
         - BUILD_IMAGE=e2e
         - BUILD_SOURCE_REF=e2e
@@ -54,6 +58,8 @@ services:
     build:
       context: ../docker/postgres
       dockerfile: Dockerfile
+      args:
+        POSTGRES_IMAGE: ${FRAMELEAF_CI_POSTGRES_IMAGE:-docker.io/library/postgres:19beta4-bookworm@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9}
     command: -c fsync=off -c shared_preload_libraries=
     environment:
       POSTGRES_PASSWORD: postgres

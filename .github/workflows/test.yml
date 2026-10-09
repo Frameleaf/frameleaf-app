@@ -55,7 +55,7 @@ jobs:
       - name: Validate Frameleaf workflow contracts
         run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
       - name: Validate public Docker Hub mirror configuration
-        run: node --test scripts/dockerhub-mirror.test.mjs
+        run: node --test scripts/dockerhub-mirror.test.mjs scripts/ci-registry-images.test.mjs
       - name: Validate medium native runner contract
         run: node --test docker/medium-runner.test.mjs
       - name: Validate canonical restore fixture mutations
@@ -338,6 +338,10 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
   server-medium-tests:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     name: Medium Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
@@ -360,6 +364,7 @@ jobs:
       - name: Setup native runner builder
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
@@ -369,6 +374,7 @@ jobs:
           context: .
           file: server/Dockerfile
           target: medium-test
+          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
           cache-from: type=gha,scope=server-medium
@@ -393,6 +399,8 @@ jobs:
             --env DOCKER_HOST=unix:///var/run/docker.sock \
             --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
             --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            --env FRAMELEAF_CI_POSTGRES_IMAGE \
+            --env RYUK_CONTAINER_IMAGE \
             "$MEDIUM_IMAGE"
       - name: Remove medium runner after failure or cancellation
         if: always()
@@ -401,6 +409,10 @@ jobs:
         run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
   e2e-tests-server-cli:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
@@ -690,6 +702,10 @@ jobs:
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
   e2e-tests-web:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
@@ -986,7 +1002,7 @@ jobs:
       - name: Start Frameleaf Postgres
         run: |-
           set -euo pipefail
-          docker build -t frameleaf-postgres:ci docker/postgres
+          docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" -t frameleaf-postgres:ci docker/postgres
           docker run -d --name postgres -p 5432:5432 \
             -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=frameleaf \
             frameleaf-postgres:ci \
@@ -1094,4 +1110,5 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
     env:
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
       DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf

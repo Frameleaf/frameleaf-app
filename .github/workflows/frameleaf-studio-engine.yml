@@ -14,6 +14,7 @@ name: Frameleaf Studio engine
       - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
       - scripts/configure-dockerhub-mirror.sh
       - scripts/dockerhub-mirror.test.mjs
+      - scripts/ci-registry-images.test.mjs
       - .github/workflows/frameleaf-studio-engine.yml
   push:
     branches: [fork/main]
@@ -41,6 +42,9 @@ jobs:
   # trash) is measured on the Studio project service with a real PostgreSQL, so this job runs that
   # one medium spec and hands its report to the engine job's evidence step.
   lifecycle-evidence:
+    env:
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
