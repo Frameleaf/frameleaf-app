@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
