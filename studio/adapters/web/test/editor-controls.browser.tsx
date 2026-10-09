@@ -13,6 +13,8 @@ import {
 } from "@/config/editor-layout";
 import { useEditingShortcuts } from "@/features/timeline/hooks/shortcuts/use-editing-shortcuts";
 import { useUIShortcuts } from "@/features/timeline/hooks/shortcuts/use-ui-shortcuts";
+import { useSlipEditPreviewStore } from "@/features/timeline/stores/slip-edit-preview-store";
+import { useLinkedEditPreviewStore } from "@/features/timeline/stores/linked-edit-preview-store";
 import { useItemsStore } from "@/features/timeline/stores/items-store";
 import { useCompositionsStore } from "@/features/timeline/stores/compositions-store";
 import { useCompositionNavigationStore } from "@/features/timeline/stores/composition-navigation-store";
@@ -150,7 +152,10 @@ function NativeEditTimeline() {
       dispose();
     };
   }, []);
-  return <Timeline duration={3} />;
+  const duration = useProjectStore(
+    (state) => state.currentProject?.duration ?? 3,
+  );
+  return <Timeline duration={duration} />;
 }
 function Controls({ surface }: { surface: Surface }) {
   useUIShortcuts({});
@@ -349,6 +354,116 @@ Object.assign(window, {
       document.getElementById("editor")!.style.width = "100%";
       mountEditorControls("edit");
     },
+    // Arrangement only: Slip tool choice, drag, cancellation and history use native input.
+    prepareSlipTimeline: async (projectId: string, lockedCompanion = false) => {
+      const root = await navigator.storage.getDirectory();
+      setWorkspaceRoot(
+        await root.getDirectoryHandle(projectId, { create: true }),
+      );
+      resetTimelineCompositionTestState();
+      useEditorStore.setState({
+        workspace: "edit",
+        linkedSelectionEnabled: true,
+      });
+      useItemsStore.getState().setTracks([
+        makeTimelineTrack({
+          id: "slip-v",
+          name: "V1",
+          kind: "video",
+          syncLock: true,
+          order: 0,
+        }),
+        makeTimelineTrack({
+          id: "slip-a",
+          name: "A1",
+          kind: "audio",
+          syncLock: true,
+          locked: lockedCompanion,
+          order: 1,
+        }),
+        makeTimelineTrack({
+          id: "slip-other",
+          name: "Unrelated",
+          kind: "video",
+          syncLock: true,
+          order: 2,
+        }),
+      ]);
+      const common = {
+        src: "",
+        sourceFps: 30,
+        sourceDuration: 240,
+        originId: "slip-source",
+      };
+      useItemsStore.getState().setItems([
+        ...["A", "B"].flatMap((part) => {
+          const range =
+            part === "A"
+              ? {
+                  from: 0,
+                  durationInFrames: 120,
+                  sourceStart: 0,
+                  sourceEnd: 120,
+                }
+              : {
+                  from: 120,
+                  durationInFrames: 210,
+                  sourceStart: 30,
+                  sourceEnd: 240,
+                };
+          return [
+            makeTimelineVideoItem({
+              ...common,
+              ...range,
+              id: `slip-v-${part}`,
+              trackId: "slip-v",
+              linkedGroupId: `slip-${part}`,
+            }),
+            makeTimelineAudioItem({
+              ...common,
+              ...range,
+              id: `slip-a-${part}`,
+              trackId: "slip-a",
+              linkedGroupId: `slip-${part}`,
+            }),
+          ];
+        }),
+        makeTimelineVideoItem({
+          ...common,
+          id: "slip-unrelated",
+          trackId: "slip-other",
+          originId: "other-source",
+          from: 15,
+          durationInFrames: 45,
+          sourceStart: 15,
+          sourceEnd: 60,
+        }),
+      ]);
+      useSelectionStore.getState().clearSelection();
+      useTimelineCommandStore.getState().clearHistory();
+      const project = await createProject({
+        id: projectId,
+        name: "FL94 isolated linked Slip fixture",
+        description:
+          "30fps source-range oracle; no media decoding or host/API qualification",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        duration: 11,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        metadata: settings,
+        timeline: buildTimelineFromStores(),
+      });
+      useProjectStore.getState().setCurrentProject(project);
+      document.getElementById("editor")!.style.width = "100%";
+      mountEditorControls("edit");
+    },
+    // Read-only evidence that the second gesture reached a real source-range preview.
+    slipPreview: () =>
+      structuredClone({
+        itemId: useSlipEditPreviewStore.getState().itemId,
+        slipDelta: useSlipEditPreviewStore.getState().slipDelta,
+        linkedUpdates: useLinkedEditPreviewStore.getState().updatesById,
+      }),
     saveTouchTimeline: async (projectId: string) => {
       await saveTimeline(projectId);
       return (await getProject(projectId))?.timeline;
