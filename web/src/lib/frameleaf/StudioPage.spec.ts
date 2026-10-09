@@ -192,10 +192,23 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     expect(onRename).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the name as a title when it cannot be renamed', () => {
-    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+  it('shows the read-only project title only after admission', async () => {
+    const engine = stubEngine();
+    let admit!: (resolution: Awaited<ReturnType<typeof engine.load>>) => void;
+    const admission = new Promise<Awaited<ReturnType<typeof engine.load>>>((resolve) => {
+      admit = resolve;
+    });
+    const loadEngine = vi.fn(() => admission);
+    render(StudioHost, { ...baseProps(), loadEngine });
+    await waitFor(() => expect(loadEngine).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('heading', { name: 'frameleaf_studio_title' })).toBeInTheDocument();
+    expect(screen.queryByText(project.name)).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'frameleaf_studio_project_name' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument();
+
+    admit(await engine.load());
+    expect(await screen.findByRole('heading', { name: project.name })).toBeInTheDocument();
+    expect(engine.module.mount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('textbox', { name: 'frameleaf_studio_project_name' })).not.toBeInTheDocument();
   });
 
   it('offers Export only when the route wires it, and says how many jobs are queued', async () => {
