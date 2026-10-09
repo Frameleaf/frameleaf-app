@@ -1,0 +1,1002 @@
+--- a/src/features/timeline/components/filler-removal-dialog.test.tsx
++++ b/src/features/timeline/components/filler-removal-dialog.test.tsx
+@@ -2,6 +2,8 @@
+ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import type { AudioItem } from '@/types/timeline'
++import { useProjectStore } from '@/features/timeline/deps/projects'
++import { captureSnapshot } from '../stores/commands/snapshot'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useItemsStore } from '../stores/items-store'
+@@ -74,13 +76,12 @@
+   fireEvent.blur(screen.getByLabelText('Cut Padding'))
+   fireEvent.click(screen.getByRole('button', { name: 'Update Preview' }))
+   await waitFor(() => expect(analyzeMock).toHaveBeenCalledTimes(1))
+-  await waitFor(() =>
+-    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled(),
+-  )
++  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled())
+ }
+
+ describe('filler removal transaction', () => {
+   beforeEach(() => {
++    useProjectStore.setState({ currentProject: null })
+     analyzeMock.mockReset().mockResolvedValue(ranges)
+     vi.mocked(removeFillerWordsFromItems).mockClear()
+     useTimelineCommandStore.getState().clearHistory()
+@@ -176,4 +177,83 @@
+     expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
+     expect(useTimelineItemOverlayStore.getState().overlaysByItemId['audio-1']).toBeUndefined()
+   })
++  it.each(['unmount', 'project switch'] as const)(
++    'ignores pending dialog preview after %s',
++    async (boundary) => {
++      let finish!: (value: typeof ranges) => void
++      analyzeMock.mockReturnValue(
++        new Promise((resolve) => {
++          finish = resolve
++        }),
++      )
++      const view = render(<RemovalWorkflow />)
++      fireEvent.click(screen.getByRole('button', { name: 'Update Preview' }))
++      if (boundary === 'unmount') view.unmount()
++      else
++        act(() =>
++          useProjectStore.setState({
++            currentProject: { id: 'project-b' } as NonNullable<
++              ReturnType<typeof useProjectStore.getState>['currentProject']
++            >,
++          }),
++        )
++      const before = {
++        snapshot: captureSnapshot(),
++        ranges: useFillerRemovalDialogStore.getState().rangesByMediaId,
++        overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++        undo: useTimelineCommandStore.getState().undoStack,
++        redo: useTimelineCommandStore.getState().redoStack,
++      }
++      await act(async () => finish({ 'media-1': [{ start: 0.2, end: 0.8, text: 'uh' }] }))
++      expect({
++        snapshot: captureSnapshot(),
++        ranges: useFillerRemovalDialogStore.getState().rangesByMediaId,
++        overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++        undo: useTimelineCommandStore.getState().undoStack,
++        redo: useTimelineCommandStore.getState().redoStack,
++      }).toEqual(before)
++    },
++  )
++  it('refuses Apply after project switch without touching the new graph or history', () => {
++    render(<RemovalWorkflow />)
++    act(() =>
++      useProjectStore.setState({
++        currentProject: { id: 'project-b' } as NonNullable<
++          ReturnType<typeof useProjectStore.getState>['currentProject']
++        >,
++      }),
++    )
++    const before = captureSnapshot()
++    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
++    expect(captureSnapshot()).toEqual(before)
++    expect(removeFillerWordsFromItems).not.toHaveBeenCalled()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it('keeps a newer project review usable while rejecting the old pending result', async () => {
++    let finish!: (value: typeof ranges) => void
++    analyzeMock.mockReturnValue(
++      new Promise((resolve) => {
++        finish = resolve
++      }),
++    )
++    render(<RemovalWorkflow />)
++    fireEvent.click(screen.getByRole('button', { name: 'Update Preview' }))
++    const newerRanges = { 'media-1': [{ start: 0.2, end: 0.8, text: 'newer' }] }
++    act(() => {
++      useProjectStore.setState({
++        currentProject: { id: 'project-b' } as NonNullable<
++          ReturnType<typeof useProjectStore.getState>['currentProject']
++        >,
++      })
++      useFillerRemovalDialogStore.getState().open({
++        itemIds: ['audio-1'],
++        rangesByMediaId: newerRanges,
++        summary: { rangeCount: 1, totalSeconds: 0.6 },
++      })
++    })
++    expect(await screen.findByText('newer')).toBeInTheDocument()
++    await act(async () => finish(ranges))
++    expect(useFillerRemovalDialogStore.getState().rangesByMediaId).toEqual(newerRanges)
++    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled()
++  })
+ })
+--- a/src/features/timeline/components/filler-removal-dialog.tsx
++++ b/src/features/timeline/components/filler-removal-dialog.tsx
+@@ -6,6 +6,8 @@
+ import { Label } from '@/components/ui/label'
+ import { toast } from 'sonner'
+ import { useTimelineStore } from '../stores/timeline-store'
++import { useProjectStore } from '../deps/projects'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import { useItemsStore } from '../stores/items-store'
+ import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
+@@ -476,6 +478,44 @@
+   const rangesByMediaId = useFillerRemovalDialogStore((state) => state.rangesByMediaId)
+   const updatePreview = useFillerRemovalDialogStore((state) => state.updatePreview)
+   const close = useFillerRemovalDialogStore((state) => state.close)
++  const requestContextRef = useRef({
++    projectId: useProjectStore.getState().currentProject?.id,
++    items: itemIds.map((id) => useItemsStore.getState().itemById[id]),
++  })
++  const requestActiveRef = useRef(true)
++  const isCurrentRequest = useCallback(
++    () =>
++      requestActiveRef.current &&
++      requestContextRef.current.projectId === useProjectStore.getState().currentProject?.id &&
++      useFillerRemovalDialogStore.getState().itemIds === itemIds &&
++      requestContextRef.current.items.every(
++        (item, index) =>
++          item !== undefined && useItemsStore.getState().itemById[itemIds[index]!] === item,
++      ),
++    [itemIds],
++  )
++  useEffect(() => {
++    requestContextRef.current = {
++      projectId: useProjectStore.getState().currentProject?.id,
++      items: itemIds.map((id) => useItemsStore.getState().itemById[id]),
++    }
++    requestActiveRef.current = true
++    const invalidate = () => {
++      requestActiveRef.current = false
++    }
++    const unsubscribeProject = useProjectStore.subscribe((state, previous) => {
++      if (state.currentProject?.id !== previous.currentProject?.id) invalidate()
++    })
++    const unsubscribeContext = useTimelineCommandStore.subscribe((state, previous) => {
++      if (state.activeContextKey !== previous.activeContextKey) invalidate()
++    })
++    return () => {
++      invalidate()
++      unsubscribeProject()
++      unsubscribeContext()
++    }
++  }, [itemIds])
++
+   const [draft, setDraft] = useState<FillerRemovalSettings>(settings)
+   const [draftPast, setDraftPast] = useState<FillerRemovalSettings[]>([])
+   const [draftFuture, setDraftFuture] = useState<FillerRemovalSettings[]>([])
+@@ -487,7 +527,7 @@
+   const [isAnalyzing, setIsAnalyzing] = useState(false)
+   const [isScoringAudio, setIsScoringAudio] = useState(false)
+   const [hasApplied, setHasApplied] = useState(false)
+-  const wasOpenRef = useRef(false)
++  const wasOpenRef = useRef<typeof itemIds | null>(null)
+   const isOpenRef = useRef(isOpen)
+   const draftPastRef = useRef(draftPast)
+   const draftFutureRef = useRef(draftFuture)
+@@ -519,7 +559,7 @@
+   }, [draftFuture])
+
+   useEffect(() => {
+-    if (isOpen && !wasOpenRef.current) {
++    if (isOpen && wasOpenRef.current !== itemIds) {
+       draftVersionRef.current += 1
+       setDraft(cloneSettings(settings))
+       setDraftPast([])
+@@ -527,9 +567,11 @@
+       setReviewRangesByMediaId(rangesByMediaId)
+       setSelectedRangeIds(createSelectedRangeIds(rangesByMediaId))
+       setHasApplied(false)
+-    }
+-    wasOpenRef.current = isOpen
+-  }, [isOpen, rangesByMediaId, settings])
++      setIsAnalyzing(false)
++      setIsScoringAudio(false)
++    }
++    wasOpenRef.current = isOpen ? itemIds : null
++  }, [isOpen, itemIds, rangesByMediaId, settings])
+
+   const updateDraft = useCallback(
+     (
+@@ -587,11 +629,12 @@
+   const handleClose = useCallback(() => {
+     isOpenRef.current = false
+     draftVersionRef.current += 1
+-    clearFillerPreviewOverlays(itemIds)
++    if (useFillerRemovalDialogStore.getState().itemIds !== itemIds) return
++    if (isCurrentRequest()) clearFillerPreviewOverlays(itemIds)
+     setIsAnalyzing(false)
+     setIsScoringAudio(false)
+     close()
+-  }, [close, itemIds])
++  }, [close, isCurrentRequest, itemIds])
+
+   useEffect(() => {
+     if (!isOpen) return
+@@ -634,7 +677,8 @@
+
+   const handleUpdatePreview = useCallback(() => {
+     const startedVersion = draftVersionRef.current
+-    const isStale = () => !isOpenRef.current || draftVersionRef.current !== startedVersion
++    const isStale = () =>
++      !isCurrentRequest() || !isOpenRef.current || draftVersionRef.current !== startedVersion
+     const run = async () => {
+       setIsAnalyzing(true)
+       try {
+@@ -666,11 +710,12 @@
+     }
+
+     void run()
+-  }, [draft, itemIds, t, updatePreview])
++  }, [draft, isCurrentRequest, itemIds, t, updatePreview])
+
+   const handleScoreAudio = useCallback(() => {
+     const startedVersion = draftVersionRef.current
+-    const isStale = () => !isOpenRef.current || draftVersionRef.current !== startedVersion
++    const isStale = () =>
++      !isCurrentRequest() || !isOpenRef.current || draftVersionRef.current !== startedVersion
+     const run = async () => {
+       setIsScoringAudio(true)
+       try {
+@@ -702,9 +747,10 @@
+     }
+
+     void run()
+-  }, [draft, itemIds, reviewRangesByMediaId, t, updatePreview])
++  }, [draft, isCurrentRequest, itemIds, reviewRangesByMediaId, t, updatePreview])
+
+   const handleApply = useCallback(() => {
++    if (!isCurrentRequest()) return
+     let result: RemoveSilenceResult | null = null
+     try {
+       result = useTimelineStore
+@@ -727,10 +773,11 @@
+
+     toast.success(t('timeline.fillerRemoval.toastRemoved', { count: result.removedItemCount }))
+     handleClose()
+-  }, [handleClose, itemIds, selectedRangesByMediaId, t])
++  }, [handleClose, isCurrentRequest, itemIds, selectedRangesByMediaId, t])
+
+   const handleToggleRange = useCallback(
+     (id: string) => {
++      if (!isCurrentRequest()) return
+       setSelectedRangeIds((current) => {
+         const next = new Set(current)
+         if (next.has(id)) {
+@@ -745,7 +792,7 @@
+         return next
+       })
+     },
+-    [itemIds, reviewRangesByMediaId, settings, updatePreview],
++    [isCurrentRequest, itemIds, reviewRangesByMediaId, settings, updatePreview],
+   )
+
+   if (!isOpen) {
+--- a/src/features/timeline/components/silence-removal-dialog.test.tsx
++++ b/src/features/timeline/components/silence-removal-dialog.test.tsx
+@@ -1,12 +1,16 @@
+ import type { ReactNode } from 'react'
+-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import type { AudioItem } from '@/types/timeline'
+ import { useItemsStore } from '../stores/items-store'
+ import { useSilenceRemovalDialogStore } from '../stores/silence-removal-dialog-store'
+ import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
+ import { DEFAULT_SILENCE_REMOVAL_SETTINGS } from '../utils/silence-removal-preview'
+ import { usePlaybackStore } from '@/shared/state/playback'
++import { useProjectStore } from '@/features/timeline/deps/projects'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
++import { captureSnapshot } from '../stores/commands/snapshot'
++import { useTimelineItemOverlayStore } from '../stores/timeline-item-overlay-store'
+ import { SilenceRemovalDialog } from './silence-removal-dialog'
+
+ const { analyzeSilenceForItemsMock } = vi.hoisted(() => ({
+@@ -53,7 +57,11 @@
+ }
+
+ describe('SilenceRemovalDialog review', () => {
++  afterEach(cleanup)
+   beforeEach(() => {
++    useProjectStore.setState({ currentProject: null })
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineItemOverlayStore.setState({ overlaysByItemId: {} })
+     analyzeSilenceForItemsMock.mockReset()
+     analyzeSilenceForItemsMock.mockResolvedValue({
+       analyzedMediaIds: ['media-1'],
+@@ -122,3 +130,148 @@
+     usePlaybackStore.getState().pause()
+   })
+ })
++
++describe('silence preview ownership', () => {
++  afterEach(cleanup)
++  it.each(['unmount', 'project switch', 'target deletion', 'cancel'] as const)(
++    'rejects late preview after %s without global preview or graph/history writes',
++    async (boundary) => {
++      let finish!: (value: {
++        analyzedMediaIds: string[]
++        failedMediaIds: string[]
++        rangesByMediaId: Record<string, { start: number; end: number }[]>
++      }) => void
++      analyzeSilenceForItemsMock.mockReset().mockReturnValue(
++        new Promise((resolve) => {
++          finish = resolve
++        }),
++      )
++      useProjectStore.setState({ currentProject: null })
++      useTimelineCommandStore.getState().clearHistory()
++      useTimelineItemOverlayStore.setState({ overlaysByItemId: {} })
++      useItemsStore.getState().setItems([makeAudioItem()])
++      useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++      useSilenceRemovalDialogStore.getState().open({ itemIds: ['audio-1'] })
++      useTimelineCommandStore
++        .getState()
++        .execute({ type: 'UPDATE_ITEM' }, () =>
++          useItemsStore.getState()._updateItem('audio-1', { label: 'Edited label' }),
++        )
++      useTimelineCommandStore.getState().undo()
++      expect(useTimelineCommandStore.getState().redoStack).toHaveLength(1)
++      const view = render(<SilenceRemovalDialog />)
++      await waitFor(() => expect(analyzeSilenceForItemsMock).toHaveBeenCalledTimes(1))
++      if (boundary === 'unmount') view.unmount()
++      if (boundary === 'project switch')
++        act(() =>
++          useProjectStore.setState({
++            currentProject: { id: 'project-b' } as NonNullable<
++              ReturnType<typeof useProjectStore.getState>['currentProject']
++            >,
++          }),
++        )
++      if (boundary === 'target deletion') act(() => useItemsStore.getState().setItems([]))
++      if (boundary === 'cancel') fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
++      const before = {
++        snapshot: captureSnapshot(),
++        undo: useTimelineCommandStore.getState().undoStack,
++        redo: useTimelineCommandStore.getState().redoStack,
++        dirty: useTimelineSettingsStore.getState().isDirty,
++        ranges: useSilenceRemovalDialogStore.getState().rangesByMediaId,
++        overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++      }
++      await act(async () =>
++        finish({
++          analyzedMediaIds: ['media-1'],
++          failedMediaIds: [],
++          rangesByMediaId: { 'media-1': [{ start: 1, end: 2 }] },
++        }),
++      )
++      expect({
++        snapshot: captureSnapshot(),
++        undo: useTimelineCommandStore.getState().undoStack,
++        redo: useTimelineCommandStore.getState().redoStack,
++        dirty: useTimelineSettingsStore.getState().isDirty,
++        ranges: useSilenceRemovalDialogStore.getState().rangesByMediaId,
++        overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++      }).toEqual(before)
++    },
++  )
++  it('refuses Apply after project switch without changing source timing or history', async () => {
++    analyzeSilenceForItemsMock.mockResolvedValue({
++      analyzedMediaIds: ['media-1'],
++      failedMediaIds: [],
++      rangesByMediaId: { 'media-1': [{ start: 1, end: 2 }] },
++    })
++    useProjectStore.setState({ currentProject: null })
++    useItemsStore.getState().setItems([makeAudioItem()])
++    useTimelineCommandStore.getState().clearHistory()
++    useSilenceRemovalDialogStore.getState().open({ itemIds: ['audio-1'] })
++    render(<SilenceRemovalDialog />)
++    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled())
++    act(() =>
++      useProjectStore.setState({
++        currentProject: { id: 'project-b' } as NonNullable<
++          ReturnType<typeof useProjectStore.getState>['currentProject']
++        >,
++      }),
++    )
++    const before = captureSnapshot()
++    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
++    expect(captureSnapshot()).toEqual(before)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it('keeps the newer project review when the old analysis completes', async () => {
++    let finish!: (value: {
++      analyzedMediaIds: string[]
++      failedMediaIds: string[]
++      rangesByMediaId: Record<string, { start: number; end: number }[]>
++    }) => void
++    const newer = {
++      analyzedMediaIds: ['media-1'],
++      failedMediaIds: [],
++      rangesByMediaId: { 'media-1': [{ start: 0.2, end: 0.8 }] },
++    }
++    analyzeSilenceForItemsMock
++      .mockReset()
++      .mockReturnValueOnce(
++        new Promise((resolve) => {
++          finish = resolve
++        }),
++      )
++      .mockResolvedValue(newer)
++    useProjectStore.setState({ currentProject: null })
++    useItemsStore.getState().setItems([makeAudioItem()])
++    useSilenceRemovalDialogStore.getState().open({ itemIds: ['audio-1'] })
++    render(<SilenceRemovalDialog />)
++    await waitFor(() => expect(analyzeSilenceForItemsMock).toHaveBeenCalledTimes(1))
++    act(() => {
++      useProjectStore.setState({
++        currentProject: { id: 'project-b' } as NonNullable<
++          ReturnType<typeof useProjectStore.getState>['currentProject']
++        >,
++      })
++      useSilenceRemovalDialogStore.getState().open({ itemIds: ['audio-1'] })
++    })
++    await waitFor(() =>
++      expect(useSilenceRemovalDialogStore.getState().rangesByMediaId).toEqual(
++        newer.rangesByMediaId,
++      ),
++    )
++    const before = {
++      ranges: useSilenceRemovalDialogStore.getState().rangesByMediaId,
++      overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++    }
++    await act(async () =>
++      finish({
++        analyzedMediaIds: ['media-1'],
++        failedMediaIds: [],
++        rangesByMediaId: { 'media-1': [{ start: 1, end: 2 }] },
++      }),
++    )
++    expect({
++      ranges: useSilenceRemovalDialogStore.getState().rangesByMediaId,
++      overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++    }).toEqual(before)
++  })
++})
+--- a/src/features/timeline/components/silence-removal-dialog.tsx
++++ b/src/features/timeline/components/silence-removal-dialog.tsx
+@@ -9,6 +9,8 @@
+ import { ScrollArea } from '@/components/ui/scroll-area'
+ import { toast } from 'sonner'
+ import { useTimelineStore } from '../stores/timeline-store'
++import { useProjectStore } from '../deps/projects'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
+ import { useSilenceRemovalDialogStore } from '../stores/silence-removal-dialog-store'
+ import {
+   analyzeSilenceForItems,
+@@ -138,6 +140,46 @@
+   const analyzedMediaCount = useSilenceRemovalDialogStore((state) => state.analyzedMediaCount)
+   const updatePreview = useSilenceRemovalDialogStore((state) => state.updatePreview)
+   const close = useSilenceRemovalDialogStore((state) => state.close)
++  const requestContextRef = useRef({
++    projectId: useProjectStore.getState().currentProject?.id,
++    items: itemIds.map((id) => useItemsStore.getState().itemById[id]),
++  })
++  const requestActiveRef = useRef(true)
++  const isCurrentRequest = useCallback(
++    () =>
++      requestActiveRef.current &&
++      requestContextRef.current.projectId === useProjectStore.getState().currentProject?.id &&
++      useSilenceRemovalDialogStore.getState().itemIds === itemIds &&
++      requestContextRef.current.items.every(
++        (item, index) =>
++          item !== undefined && useItemsStore.getState().itemById[itemIds[index]!] === item,
++      ),
++    [itemIds],
++  )
++  useEffect(() => {
++    requestContextRef.current = {
++      projectId: useProjectStore.getState().currentProject?.id,
++      items: itemIds.map((id) => useItemsStore.getState().itemById[id]),
++    }
++    requestActiveRef.current = true
++    analyzedCurrentOpenRef.current = false
++    const invalidate = () => {
++      requestActiveRef.current = false
++      analysisAbortRef.current?.abort()
++    }
++    const unsubscribeProject = useProjectStore.subscribe((state, previous) => {
++      if (state.currentProject?.id !== previous.currentProject?.id) invalidate()
++    })
++    const unsubscribeContext = useTimelineCommandStore.subscribe((state, previous) => {
++      if (state.activeContextKey !== previous.activeContextKey) invalidate()
++    })
++    return () => {
++      invalidate()
++      unsubscribeProject()
++      unsubscribeContext()
++    }
++  }, [itemIds])
++
+   const [draft, setDraft] = useState<SilenceRemovalSettings>(settings)
+   const [isAnalyzing, setIsAnalyzing] = useState(false)
+   const [analysisProgress, setAnalysisProgress] = useState(0)
+@@ -219,9 +261,10 @@
+       usePlaybackStore.getState().pause()
+       auditionPlanRef.current = null
+     }
+-    clearSilencePreviewOverlays(itemIds)
++    if (useSilenceRemovalDialogStore.getState().itemIds !== itemIds) return
++    if (isCurrentRequest()) clearSilencePreviewOverlays(itemIds)
+     close()
+-  }, [close, itemIds])
++  }, [close, isCurrentRequest, itemIds])
+
+   useEffect(
+     () =>
+@@ -276,7 +319,7 @@
+             signal: abortController.signal,
+             onProgress: setAnalysisProgress,
+           })
+-          if (abortController.signal.aborted) return
++          if (abortController.signal.aborted || !isCurrentRequest()) return
+           const nextRangesByMediaId = analysis.rangesByMediaId
+           const nextSummary = applySilencePreviewOverlays(itemIds, nextRangesByMediaId)
+           updatePreview({
+@@ -297,7 +340,8 @@
+             toast.info(t('timeline.silenceRemoval.toastNoRemovable'))
+           }
+         } catch (error) {
+-          if (error instanceof DOMException && error.name === 'AbortError') return
++          if (!isCurrentRequest() || (error instanceof DOMException && error.name === 'AbortError'))
++            return
+           logger.warn('Silence preview failed', error)
+           toast.error(
+             error instanceof Error
+@@ -315,7 +359,7 @@
+
+       void run()
+     },
+-    [itemIds, t, updatePreview],
++    [isCurrentRequest, itemIds, t, updatePreview],
+   )
+
+   const handleUpdatePreview = useCallback(() => {
+@@ -343,6 +387,7 @@
+   }, [isOpen, runPreviewAnalysis, settings])
+
+   const handleApply = useCallback(() => {
++    if (!isCurrentRequest()) return
+     if (!areSettingsEqual(draft, settings)) {
+       toast.info(t('timeline.silenceRemoval.toastSettingsChanged'))
+       return
+@@ -362,10 +407,11 @@
+     }
+
+     toast.success(t('timeline.silenceRemoval.toastRemoved', { count: result.removedRangeCount }))
+-  }, [close, draft, itemIds, rangesByMediaId, settings, t])
++  }, [close, draft, isCurrentRequest, itemIds, rangesByMediaId, settings, t])
+
+   const commitReviewedRanges = useCallback(
+     (nextRangesByMediaId: typeof rangesByMediaId) => {
++      if (!isCurrentRequest()) return
+       const nextSummary = applySilencePreviewOverlays(itemIds, nextRangesByMediaId)
+       updatePreview({
+         settings,
+@@ -375,7 +421,7 @@
+         failedMediaCount,
+       })
+     },
+-    [analyzedMediaCount, failedMediaCount, itemIds, settings, updatePreview],
++    [analyzedMediaCount, failedMediaCount, isCurrentRequest, itemIds, settings, updatePreview],
+   )
+
+   const handleKeepRange = useCallback(
+--- /dev/null
++++ b/src/features/timeline/components/timeline-item/use-timeline-item-actions.test.tsx
+@@ -0,0 +1,167 @@
++import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { toast } from 'sonner'
++import type { AudioItem } from '@/types/timeline'
++import { useProjectStore } from '@/features/timeline/deps/projects'
++import { useSelectionStore } from '@/shared/state/selection'
++import { useItemsStore } from '../../stores/items-store'
++import { useTimelineCommandStore } from '../../stores/timeline-command-store'
++import { useTimelineSettingsStore } from '../../stores/timeline-settings-store'
++import { captureSnapshot } from '../../stores/commands/snapshot'
++import { useFillerRemovalDialogStore } from '../../stores/filler-removal-dialog-store'
++import { useTimelineItemOverlayStore } from '../../stores/timeline-item-overlay-store'
++import { useTimelineItemActions } from './use-timeline-item-actions'
++
++const { analyzeMock } = vi.hoisted(() => ({ analyzeMock: vi.fn() }))
++vi.mock('../../utils/filler-word-removal-preview', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('../../utils/filler-word-removal-preview')>()),
++  analyzeFillerWordsForItems: analyzeMock,
++}))
++const ranges = { 'media-1': [{ start: 1, end: 2, text: 'um' }] }
++const item: AudioItem = {
++  id: 'audio-1',
++  type: 'audio',
++  trackId: 'audio-track',
++  from: 0,
++  durationInFrames: 90,
++  label: 'Dialogue.wav',
++  src: 'blob:audio',
++  mediaId: 'media-1',
++  originId: 'origin-1',
++  sourceStart: 0,
++  sourceEnd: 90,
++  sourceDuration: 90,
++  sourceFps: 30,
++}
++function graph() {
++  return {
++    snapshot: captureSnapshot(),
++    undo: useTimelineCommandStore.getState().undoStack,
++    redo: useTimelineCommandStore.getState().redoStack,
++    dirty: useTimelineSettingsStore.getState().isDirty,
++    dialog: useFillerRemovalDialogStore.getState().isOpen,
++    ranges: useFillerRemovalDialogStore.getState().rangesByMediaId,
++    overlays: useTimelineItemOverlayStore.getState().overlaysByItemId,
++  }
++}
++describe('initial filler preview ownership', () => {
++  beforeEach(() => {
++    analyzeMock.mockReset()
++    useProjectStore.setState({ currentProject: null })
++    useItemsStore.getState().setItems([item])
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useTimelineCommandStore.getState().clearHistory()
++    useSelectionStore.getState().clearSelection()
++    useFillerRemovalDialogStore.getState().close()
++    useTimelineItemOverlayStore.setState({ overlaysByItemId: {} })
++  })
++  afterEach(cleanup)
++  it.each(['unmount', 'project switch', 'target deletion'] as const)(
++    'does not publish a late initial result after %s',
++    async (boundary) => {
++      let finish!: (value: typeof ranges) => void
++      analyzeMock.mockReturnValue(
++        new Promise((resolve) => {
++          finish = resolve
++        }),
++      )
++      const view = renderHook(() =>
++        useTimelineItemActions({
++          item,
++          isBroken: false,
++          leftNeighbor: null,
++          rightNeighbor: null,
++          segmentOverlays: [],
++        }),
++      )
++      act(() => view.result.current.handleRemoveFillers())
++      await waitFor(() => expect(analyzeMock).toHaveBeenCalledTimes(1))
++      if (boundary === 'unmount') view.unmount()
++      if (boundary === 'project switch')
++        act(() =>
++          useProjectStore.setState({
++            currentProject: { id: 'project-b' } as NonNullable<
++              ReturnType<typeof useProjectStore.getState>['currentProject']
++            >,
++          }),
++        )
++      if (boundary === 'target deletion') act(() => useItemsStore.getState().setItems([]))
++      const before = graph()
++      await act(async () => finish(ranges))
++      expect(graph()).toEqual(before)
++    },
++  )
++  it('opens review for the original target when only selection changes', async () => {
++    let finish!: (value: typeof ranges) => void
++    analyzeMock.mockReturnValue(
++      new Promise((resolve) => {
++        finish = resolve
++      }),
++    )
++    const view = renderHook(() =>
++      useTimelineItemActions({
++        item,
++        isBroken: false,
++        leftNeighbor: null,
++        rightNeighbor: null,
++        segmentOverlays: [],
++      }),
++    )
++    act(() => view.result.current.handleRemoveFillers())
++    act(() => useSelectionStore.getState().selectItems(['other']))
++    await act(async () => finish(ranges))
++    expect(useFillerRemovalDialogStore.getState()).toMatchObject({
++      isOpen: true,
++      itemIds: ['audio-1'],
++      rangesByMediaId: ranges,
++    })
++    expect(useItemsStore.getState().items).toEqual([item])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it('does not overwrite a newer review opened while initial analysis was pending', async () => {
++    let finish!: (value: typeof ranges) => void
++    analyzeMock.mockReturnValue(
++      new Promise((resolve) => {
++        finish = resolve
++      }),
++    )
++    const view = renderHook(() =>
++      useTimelineItemActions({
++        item,
++        isBroken: false,
++        leftNeighbor: null,
++        rightNeighbor: null,
++        segmentOverlays: [],
++      }),
++    )
++    act(() => view.result.current.handleRemoveFillers())
++    act(() =>
++      useFillerRemovalDialogStore.getState().open({
++        itemIds: ['audio-1'],
++        rangesByMediaId: { 'media-1': [{ start: 0.2, end: 0.8, text: 'newer' }] },
++        summary: { rangeCount: 1, totalSeconds: 0.6 },
++      }),
++    )
++    const before = graph()
++    await act(async () => finish(ranges))
++    expect(graph()).toEqual(before)
++  })
++  it('reports a genuine failure while its originating context is current', async () => {
++    const error = vi.spyOn(toast, 'error')
++    analyzeMock.mockRejectedValue(new Error('Local analysis failed'))
++    const view = renderHook(() =>
++      useTimelineItemActions({
++        item,
++        isBroken: false,
++        leftNeighbor: null,
++        rightNeighbor: null,
++        segmentOverlays: [],
++      }),
++    )
++    act(() => view.result.current.handleRemoveFillers())
++    await waitFor(() => expect(error).toHaveBeenCalledWith('Local analysis failed'))
++    expect(useFillerRemovalDialogStore.getState().isOpen).toBe(false)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    error.mockRestore()
++  })
++})
+--- a/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts
++++ b/src/features/timeline/components/timeline-item/use-timeline-item-actions.ts
+@@ -21,6 +21,8 @@
+ } from '@/features/timeline/deps/media-transcription-service'
+ import { useTimelineStore } from '../../stores/timeline-store'
+ import { useItemsStore } from '../../stores/items-store'
++import { useProjectStore } from '../../deps/projects'
++import { useTimelineCommandStore } from '../../stores/timeline-command-store'
+ import {
+   insertFreezeFrame,
+   linkItems,
+@@ -360,9 +362,28 @@
+
+   const sceneDetectionAbortRef = useRef<AbortController | null>(null)
+   const [isRemovingFillers, setIsRemovingFillers] = useState(false)
++  const fillerRequestVersionRef = useRef(0)
+
+   useEffect(() => {
++    const invalidateFillerRequest = () => {
++      fillerRequestVersionRef.current += 1
++    }
++    const unsubscribeProject = useProjectStore.subscribe((state, previous) => {
++      if (state.currentProject?.id !== previous.currentProject?.id) {
++        invalidateFillerRequest()
++        setIsRemovingFillers(false)
++      }
++    })
++    const unsubscribeContext = useTimelineCommandStore.subscribe((state, previous) => {
++      if (state.activeContextKey !== previous.activeContextKey) {
++        invalidateFillerRequest()
++        setIsRemovingFillers(false)
++      }
++    })
+     return () => {
++      invalidateFillerRequest()
++      unsubscribeProject()
++      unsubscribeContext()
+       sceneDetectionAbortRef.current?.abort()
+     }
+   }, [])
+@@ -551,6 +572,14 @@
+       return
+     }
+
++    const requestVersion = ++fillerRequestVersionRef.current
++    const projectId = useProjectStore.getState().currentProject?.id
++    const priorDialogRequest = useFillerRemovalDialogStore.getState().itemIds
++    const isStale = () =>
++      fillerRequestVersionRef.current !== requestVersion ||
++      useProjectStore.getState().currentProject?.id !== projectId ||
++      useFillerRemovalDialogStore.getState().itemIds !== priorDialogRequest ||
++      targetItems.some((target) => useItemsStore.getState().itemById[target.id] !== target)
+     const run = async () => {
+       setIsRemovingFillers(true)
+       try {
+@@ -559,6 +588,7 @@
+           targetItemIds,
+           DEFAULT_FILLER_REMOVAL_SETTINGS,
+         )
++        if (isStale()) return
+         const summary = applyFillerPreviewOverlays(targetItemIds, rangesByMediaId)
+
+         if (summary.rangeCount === 0) {
+@@ -573,6 +603,7 @@
+           summary,
+         })
+       } catch (error) {
++        if (isStale()) return
+         logger.warn('Remove filler words failed', error)
+         toast.error(
+           error instanceof Error
+@@ -580,7 +611,7 @@
+             : i18n.t('timeline.fillerRemoval.toastPreviewFailed'),
+         )
+       } finally {
+-        setIsRemovingFillers(false)
++        if (fillerRequestVersionRef.current === requestVersion) setIsRemovingFillers(false)
+       }
+     }
+
+--- a/src/features/timeline/stores/actions/range-removal-actions.test.ts
++++ b/src/features/timeline/stores/actions/range-removal-actions.test.ts
+@@ -9,7 +9,11 @@
+ import { useTimelineCommandStore } from '../timeline-command-store'
+ import { useTimelineSettingsStore } from '../timeline-settings-store'
+ import { useTransitionsStore } from '../transitions-store'
+-import { removeSilenceFromItems } from './edit/range-removal-actions'
++import { useCompositionsStore } from '../compositions-store'
++import { useMarkersStore } from '../markers-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { captureSnapshot } from '../commands/snapshot'
++import { removeFillerWordsFromItems, removeSilenceFromItems } from './edit/range-removal-actions'
+
+ function makeVideoItem(overrides: Partial<VideoItem> = {}): VideoItem {
+   return {
+@@ -128,4 +132,151 @@
+     expect(sourceSpans('video')).toHaveLength(2)
+     expect(sourceSpans('audio')).toHaveLength(2)
+   })
++  it.each([removeSilenceFromItems, removeFillerWordsFromItems])(
++    'preserves the full graph through supported removal Undo and Redo (%#)',
++    (removeRanges) => {
++      useItemsStore.getState().setTracks([
++        {
++          id: 'video-track',
++          name: 'V1',
++          kind: 'video',
++          height: 80,
++          order: 0,
++          locked: false,
++          visible: true,
++          muted: false,
++          solo: false,
++          volume: 0,
++          syncLock: true,
++          items: [],
++        },
++        {
++          id: 'audio-track',
++          name: 'A1',
++          kind: 'audio',
++          height: 80,
++          order: 1,
++          locked: false,
++          visible: true,
++          muted: false,
++          solo: false,
++          volume: 0,
++          syncLock: true,
++          items: [],
++        },
++        {
++          id: 'other-track',
++          name: 'A2',
++          kind: 'audio',
++          height: 80,
++          order: 2,
++          locked: false,
++          visible: true,
++          muted: false,
++          solo: false,
++          volume: 0,
++          syncLock: false,
++          items: [],
++        },
++      ])
++      useItemsStore.getState().setItems([
++        makeVideoItem({ linkedGroupId: 'group-1' }),
++        makeAudioItem({ linkedGroupId: 'group-1' }),
++        makeAudioItem({
++          id: 'other',
++          originId: 'other',
++          mediaId: 'other-media',
++          trackId: 'other-track',
++          from: 300,
++          durationInFrames: 60,
++          sourceEnd: 60,
++        }),
++        makeAudioItem({
++          id: 'other-right',
++          originId: 'other-right',
++          mediaId: 'other-media',
++          trackId: 'other-track',
++          from: 360,
++          durationInFrames: 60,
++          sourceEnd: 60,
++        }),
++      ])
++      useTransitionsStore.getState().setTransitions([
++        {
++          id: 'other-transition',
++          type: 'crossfade',
++          leftClipId: 'other',
++          rightClipId: 'other-right',
++          trackId: 'other-track',
++          durationInFrames: 8,
++          timing: 'linear',
++          presentation: 'fade',
++        },
++      ])
++      useKeyframesStore.getState().setKeyframes([
++        {
++          itemId: 'other',
++          properties: [
++            {
++              property: 'opacity',
++              keyframes: [{ id: 'other-key', frame: 10, value: 0.5, easing: 'linear' }],
++            },
++          ],
++        },
++      ])
++      useCompositionsStore.getState().setCompositions([
++        {
++          id: 'held',
++          name: 'Held',
++          items: [],
++          tracks: [],
++          transitions: [],
++          keyframes: [],
++          fps: 30,
++          width: 128,
++          height: 96,
++          durationInFrames: 90,
++        },
++      ])
++      useMarkersStore
++        .getState()
++        .setMarkers([{ id: 'marker', frame: 20, label: 'Keep', color: '#ff0000' }])
++      useMarkersStore.getState().setInPoint(0)
++      useMarkersStore.getState().setOutPoint(200)
++      usePlaybackStore.getState().setMasterAudio({
++        masterBusDb: -6,
++        masterBusMuted: false,
++        masterGainEnvelope: [{ id: 'bus-point', frame: 0, gainDb: -12 }],
++      })
++      // A real previous edit/Undo supplies redo history that Preview must retain,
++      // and only a successful new Apply may invalidate.
++      useTimelineCommandStore
++        .getState()
++        .execute({ type: 'UPDATE_ITEM' }, () =>
++          useItemsStore.getState()._updateItem('other', { label: 'Edited label' }),
++        )
++      useTimelineCommandStore.getState().undo()
++      expect(useTimelineCommandStore.getState().redoStack).toHaveLength(1)
++      const before = captureSnapshot()
++      const result = removeRanges(['video-1', 'audio-1'], { 'media-1': [{ start: 2, end: 4 }] })
++      expect(result.removedItemCount).toBe(2)
++      expect(sourceSpans('video')).toEqual([
++        { from: 0, durationInFrames: 60, sourceStart: 0, sourceEnd: 60 },
++        { from: 60, durationInFrames: 180, sourceStart: 120, sourceEnd: 300 },
++      ])
++      const after = captureSnapshot()
++      expect(after.items.filter((item) => item.trackId === 'other-track')).toEqual(
++        before.items.filter((item) => item.trackId === 'other-track'),
++      )
++      expect(after.transitions).toEqual(before.transitions)
++      expect(after.keyframes).toEqual(before.keyframes)
++      expect(after.compositions).toEqual(before.compositions)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      expect(useTimelineCommandStore.getState().redoStack).toHaveLength(0)
++      useTimelineCommandStore.getState().undo()
++      expect(captureSnapshot()).toEqual(before)
++      useTimelineCommandStore.getState().redo()
++      expect(captureSnapshot()).toEqual(after)
++    },
++  )
+ })
