@@ -184,6 +184,10 @@ describe('FL-159 approved description job → App accounting', () => {
         expect(operation.processedUnits).toBe('1');
         // Current projection intentionally exposes no batch cost; do not call this Activity cost proof.
         expect(operation.cloudJob).toBeNull();
+        // Remote cleanup follows the adoption commit; completion alone does not acknowledge release.
+        const provider = await providerState();
+        expect(provider.lifecycle.jobs).toHaveLength(1);
+        expect(provider.lifecycle.jobs[0]).toMatchObject({ clientRef: `batch-${operationId}`, released: true });
       },
       { timeout: 125_000, interval: 1000 },
     );
