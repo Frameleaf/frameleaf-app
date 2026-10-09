@@ -69,3 +69,23 @@ As of this page's last update, `studio/distribution-gates.json` records these as
   for how long.
 
 Read the gate register itself for the exact reason and enforcement pointer for each.
+
+## Scope capture revision ownership (FL-98)
+
+The web adapter publishes an ephemeral scope owner only after the current editor mount finishes
+loading its timeline. It invalidates that owner before remount loading or disposal, and replaces it
+when the host confirms the same graph at a newer stored revision. This uses the existing editor
+mount and revision authority; no persisted graph, server, or database contract changes.
+
+A scoped capture binds its concrete rendered target frame, known color signal, loaded base revision,
+and local edit inputs before asynchronous pixel production. Producer completion and GPU/CPU scope
+presentation both reject superseded ownership, graph inputs, or seek epochs. The header identifies
+the accepted sample's base revision and local edits; an unavailable owner refuses capture, and an
+older displayed sample is marked stale. A base revision does not claim that unsaved or live preview
+edits are stored in that revision. Still export, thumbnails, eyedroppers, and color wheels retain the
+existing bare-pixel capture callbacks.
+
+Local deferred tests cover capture ownership and presentation interleavings. They do not qualify
+browser/GPU/media behavior or complete the FL-98 acceptance rows: gizmo reachability/hit geometry,
+Clock playback, warming/adaptive preview isolation, 2/4-up edits, all scope measurements, separate
+monitor/master audio, Color workspace, and Bento still require their full conformance evidence.

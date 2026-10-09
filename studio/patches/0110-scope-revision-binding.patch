@@ -1,0 +1,794 @@
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -43,6 +43,7 @@
+       previewFrameEpoch: 0, frameUpdateEpoch: 0, isPlaying: false,
+     })
+     usePreviewBridgeStore.setState({
++      scopeOwner: null, captureScopeSample: null,
+       displayedFrame: null, captureFrame: null,
+       captureFrameImageData: null, captureCanvasSource: null,
+     })
+@@ -61,6 +62,54 @@
+       for (const callback of pending) callback(time)
+     })
+   }
++
++  it('does not present an old revision after the loaded owner changes during capture', async () => {
++    const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => false }
++    const oldCapture = deferred<HTMLCanvasElement>()
++    const source = document.createElement('canvas')
++    const renderer = {
++      setMatrix: vi.fn(), setRange: vi.fn(), setGraticule: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
++      uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(),
++      renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn(),
++    }
++    createRenderer.mockResolvedValue(renderer)
++    usePreviewBridgeStore.setState({
++      scopeOwner: owner,
++      captureCanvasSource: vi.fn().mockReturnValue(oldCapture.promise),
++    } as never)
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    await act(async () => {
++      usePreviewBridgeStore.setState({ scopeOwner: { ...owner, baseRevision: 4 } } as never)
++      oldCapture.resolve(source)
++    })
++    expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++    expect(screen.getByTestId('scope-color-space')).not.toHaveTextContent('base revision 4')
++  })
++
++  it.each(['gpu', 'cpu'] as const)('presents the accepted %s sample identity and refuses a superseded owner', async (path) => {
++    const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => true }
++    const pixels = new ImageData(2, 2)
++    const pending = deferred<import('@/shared/state/preview-bridge').PreviewScopeSample>()
++    const renderer = { setMatrix: vi.fn(), setRange: vi.fn(), setGraticule: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}), uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(), renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn() }
++    const context = { createImageData: (w: number, h: number) => new ImageData(w, h), putImageData: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(), arc: vi.fn() }
++    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never)
++    createRenderer.mockResolvedValue(path === 'cpu' ? null : renderer)
++    const sample = { pixels, frame: 12, color: { workingRange: 'sdr' as const, sdrMonitoring: 'bt2390' as const }, owner: { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', localEdits: true }, isCurrent: () => usePreviewBridgeStore.getState().scopeOwner === owner }
++    usePreviewBridgeStore.setState({ scopeOwner: owner, captureCanvasSource: vi.fn(), captureFrameImageData: vi.fn(), captureScopeSample: vi.fn().mockReturnValue(pending.promise) })
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    await act(async () => { pending.resolve(sample) })
++    const header = screen.getByTestId('scope-color-space')
++    expect(header).toHaveTextContent('frame 12 · base revision 3 · local edits')
++    expect(path === 'cpu' ? context.putImageData : renderer.uploadFromCanvas).toHaveBeenCalled()
++    const calls = (path === 'cpu' ? context.putImageData : renderer.uploadFromCanvas).mock.calls.length
++    await act(async () => { usePreviewBridgeStore.setState({ scopeOwner: { ...owner, baseRevision: 4 } }) })
++    await tick(200)
++    expect(path === 'cpu' ? context.putImageData : renderer.uploadFromCanvas).toHaveBeenCalledTimes(calls)
++    expect(header).not.toHaveTextContent('base revision 4')
++    expect(header).toHaveTextContent('stale (revision unknown)')
++  })
+ 
+   it.each(['gpu-canvas', 'gpu-image', 'cpu'] as const)(
+     'discards a late %s capture when the paused displayed frame changes without a seek',
+@@ -295,6 +344,7 @@
+       previewFrameEpoch: 0, frameUpdateEpoch: 0, isPlaying: false, playbackRate: 1,
+     })
+     usePreviewBridgeStore.setState({
++      scopeOwner: null, captureScopeSample: null,
+       displayedFrame: null, captureFrame: null, captureFrameImageData: null,
+       captureCanvasSource: vi.fn().mockResolvedValue(document.createElement('canvas')),
+       captureFrameSignal: vi.fn().mockImplementation(async () => pqFrame(12)),
+@@ -331,7 +381,7 @@
+       Math.round(pqEncode(1000) * 255),
+     ])
+     expect(renderer.setMatrix).toHaveBeenLastCalledWith(BT2020_COEFFICIENTS.kr, BT2020_COEFFICIENTS.kb)
+-    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12 · revision unknown')
+     // The graticule is in cd/m², with reference white where PQ puts it.
+     expect(document.querySelector('[data-scope-guide="203"]')).not.toBeNull()
+   })
+@@ -344,7 +394,7 @@
+     expect(usePreviewBridgeStore.getState().captureFrameSignal).not.toHaveBeenCalled()
+     expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
+     // Playing: the frame is not named, so the header does not re-render every sample.
+-    expect(label()).toBe('Scopes · Tone-mapped SDR preview (BT.2390) · HDR project')
++    expect(label()).toBe('Scopes · Tone-mapped SDR preview (BT.2390) · HDR project · revision unknown')
+   })
+ 
+   it('reads an SDR project from its display pixels with BT.709 coefficients', async () => {
+@@ -353,7 +403,7 @@
+     await tick(100)
+     expect(usePreviewBridgeStore.getState().captureFrameSignal).not.toHaveBeenCalled()
+     expect(renderer.setMatrix).toHaveBeenLastCalledWith(BT709_COEFFICIENTS.kr, BT709_COEFFICIENTS.kb)
+-    expect(label()).toBe('Scopes · sRGB / Rec.709 display, full range · frame 12')
++    expect(label()).toBe('Scopes · sRGB / Rec.709 display, full range · frame 12 · revision unknown')
+     expect(document.querySelector('[data-scope-guide="203"]')).toBeNull()
+   })
+ 
+@@ -363,7 +413,7 @@
+     await act(async () => { render(<ColorScopesView open />) })
+     await tick(100)
+     expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
+-    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12 · revision unknown')
+     // A failure is remembered for the same frame: the next tick does not render it again.
+     await tick(200)
+     expect(usePreviewBridgeStore.getState().captureFrameSignal).toHaveBeenCalledOnce()
+@@ -381,14 +431,14 @@
+     await act(async () => { render(<ColorScopesView open />) })
+     await tick(100)
+     expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
+-    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12 · revision unknown')
+     now = 1999
+     await tick(200)
+     expect(capture).toHaveBeenCalledOnce()
+     now = 2000
+     await tick(300)
+     expect(capture).toHaveBeenCalledTimes(2)
+-    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12 · revision unknown')
+     expect(renderer.uploadFrame).toHaveBeenCalledOnce()
+   })
+ 
+@@ -409,14 +459,14 @@
+     const view = render(<ColorScopesView open />)
+     await tick(100)
+     expect(context.putImageData).toHaveBeenCalled()
+-    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12 · revision unknown')
+     expect(capture).toHaveBeenCalledOnce()
+     now = 2000
+     await act(async () => { view.rerender(<ColorScopesView open={false} />) })
+     await act(async () => { view.rerender(<ColorScopesView open />) })
+     await tick(200)
+     expect(capture).toHaveBeenCalledTimes(2)
+-    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12 · revision unknown')
+   })
+ 
+   it.each([['gpu', 'media'], ['gpu', 'color'], ['gpu', 'capture'], ['cpu', 'media'], ['cpu', 'color'], ['cpu', 'capture']] as const)('discards an HDR %s sample after its %s input changes', async (path, input) => {
+@@ -456,7 +506,7 @@
+     expect(upload).not.toHaveBeenCalled()
+     await act(async () => { newCapture.resolve(pqFrame(12)) })
+     expect(upload).toHaveBeenCalled()
+-    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12 · revision unknown')
+   })
+ 
+   it('reuses a paused HDR sample until the frame, graph or colour inputs change', async () => {
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -1,7 +1,7 @@
+ import { memo, useCallback, useEffect, useRef, useState } from 'react'
+ import { Activity } from 'lucide-react'
+ import { getResolvedPlaybackFrame, usePlaybackStore } from '@/shared/state/playback'
+-import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { usePreviewBridgeStore, type PreviewScopeSample } from '@/shared/state/preview-bridge'
+ import {
+   useTimelineStore,
+   useCompositionsStore,
+@@ -35,6 +35,7 @@
+   type ScopePixels,
+   type ScopeSignal,
+ } from '../utils/scope-math'
++import { getScopeInputs, isScopeSourceCurrent } from '../utils/scope-capture-inputs'
+ import { canRetainSnapshotForTransformChanges } from '../hooks/use-transform-stable-items-snapshot'
+ 
+ const SAMPLE_WIDTH_PAUSED = 384
+@@ -95,6 +96,9 @@
+     frame,
+     usePlaybackStore.getState().frameUpdateEpoch,
+     ...inputs.source,
++    inputs.epoch,
++    ...inputs.scope,
++    ...inputs.preview,
+     inputs.items,
+     ...inputs.graph,
+     inputs.compositions,
+@@ -120,7 +124,7 @@
+   })
+ }
+ 
+-type HdrSample = { pixels: ScopePixels & { data: Uint8ClampedArray<ArrayBuffer> }; frame: number }
++type HdrSample = { pixels: ScopePixels & { data: Uint8ClampedArray<ArrayBuffer> }; frame: number; identity?: PreviewScopeSample }
+ 
+ /**
+  * An HDR project's paused frame as PQ scope pixels, or null when it cannot be read in float. A
+@@ -149,12 +153,17 @@
+   // started again by the next tick.
+   if (cached && sameKey(cached.key, key) && performance.now() < cached.retryAt) return cached.sample
+   const entry: HdrSampleCache = { key, sample: Promise.resolve(null), retryAt: Number.POSITIVE_INFINITY }
+-  entry.sample = Promise.resolve().then(() => capture('pq', { preferRenderedFrame: true })).then((signal) => {
++  entry.sample = Promise.resolve().then(async () => {
++    const scoped = usePreviewBridgeStore.getState().captureScopeSample
++    const identity = scoped ? await scoped('pq', { preferRenderedFrame: true }) : null
++    const signal = scoped ? identity?.pixels as import('@/shared/state/preview-bridge').PreviewSignalFrame | undefined : await capture('pq', { preferRenderedFrame: true })
++    return { signal, identity }
++  }).then(({ signal, identity }) => {
+     if (!signal) {
+       entry.retryAt = performance.now() + HDR_SAMPLE_RETRY_MS
+       return null
+     }
+-    return { pixels: signalToScopePixels(signal, width, height), frame: signal.frame }
++    return { pixels: signalToScopePixels(signal, width, height), frame: signal.frame, identity: identity ?? undefined }
+   }).catch(() => {
+     entry.retryAt = performance.now() + HDR_SAMPLE_RETRY_MS
+     return null
+@@ -182,27 +191,6 @@
+ 
+ // Capture immutable graph inputs too: store edits can precede React replacing the bridge
+ // callbacks, and nested composition edits keep the parent's callbacks unchanged.
+-function getScopeInputs() {
+-  const source = usePreviewBridgeStore.getState()
+-  const timeline = useTimelineStore.getState()
+-  return {
+-    source: [source.captureCanvasSource, source.captureFrameImageData, source.captureFrame],
+-    color: [source.captureFrameSignal, source.scopeColor, useMediaLibraryStore.getState().mediaById],
+-    items: timeline.items,
+-    graph: [timeline.tracks, timeline.keyframes, timeline.transitions, timeline.fps,
+-      useCompositionNavigationStore.getState().activeCompositionId],
+-    compositions: useCompositionsStore.getState().compositionById,
+-  }
+-}
+-
+-function isScopeSourceCurrent(inputs: ReturnType<typeof getScopeInputs>): boolean {
+-  const current = getScopeInputs()
+-  return current.source.every((input, index) => input === inputs.source[index]) &&
+-    current.color.every((input, index) => input === inputs.color[index]) &&
+-    current.graph.every((input, index) => input === inputs.graph[index]) &&
+-    current.items === inputs.items && current.compositions === inputs.compositions
+-}
+-
+ // ── CPU fallback drawing functions ──────────────────────────────────────────
+ 
+ /**
+@@ -516,22 +504,22 @@
+   const [waveformMode, setWaveformMode] = useState<ScopeViewMode>('luma')
+   const [histogramMode, setHistogramMode] = useState<ScopeViewMode>('rgb')
+   const [stackView, setStackView] = useState<StackScopeView>(() => loadStackView())
+-  // What the scopes last measured, and at which paused frame (FL-98): the header names it.
+-  // While playing the frame is not named, so the header does not re-render every sample.
++  // Name the accepted signal and frame, including the producer-bound frame during playback.
+   // `fallback`: an HDR project's float composite could not be read, so the display was.
+   const [measured, setMeasured] = useState<{
+     signal: ScopeSignal
+     frame: number | null
+     fallback: boolean
+-  }>({ signal: 'rec709-display', frame: null, fallback: false })
++    owner: PreviewScopeSample['owner']
++  }>({ signal: 'rec709-display', frame: null, fallback: false, owner: null })
+   const measuredRef = useRef(measured)
+   const reportMeasured = useCallback(
+-    (signal: ScopeSignal, frame: number | null, fallback = false) => {
++    (signal: ScopeSignal, frame: number | null, fallback = false, owner: PreviewScopeSample['owner'] = null) => {
+       const current = measuredRef.current
+-      if (current.signal === signal && current.frame === frame && current.fallback === fallback) {
++      if (current.signal === signal && current.frame === frame && current.fallback === fallback && JSON.stringify(current.owner) === JSON.stringify(owner)) {
+         return
+       }
+-      measuredRef.current = { signal, frame, fallback }
++      measuredRef.current = { signal, frame, fallback, owner }
+       setMeasured(measuredRef.current)
+     },
+     [],
+@@ -542,6 +530,7 @@
+   const jumpEpochRef = useRef(0)
+ 
+   const isPlaying = usePlaybackStore((s) => s.isPlaying)
++  const publishedOwner = usePreviewBridgeStore((s) => s.scopeOwner)
+   const captureFrameImageData = usePreviewBridgeStore((s) => s.captureFrameImageData)
+   const captureFrame = usePreviewBridgeStore((s) => s.captureFrame)
+   const isEmbeddedStackLayout = embedded && embeddedLayout === 'stack'
+@@ -757,6 +746,7 @@
+         const hdr = color.workingRange === 'hdr'
+         let signal: ScopeSignal = hdr ? hdrDisplaySignal(color.sdrMonitoring) : 'rec709-display'
+         let measuredFrame = captureAtFrame
++        let identity: PreviewScopeSample | null = null
+         const measureFloat = hdr && !capturePlayback.isPlaying
+         const hdrSample = measureFloat
+           ? await captureHdrSample(hdrSampleRef, SAMPLE_WIDTH_PAUSED, SAMPLE_HEIGHT_PAUSED)
+@@ -772,25 +762,31 @@
+         // Try near-zero-copy canvas path first
+         const canvasSourceFn = usePreviewBridgeStore.getState().captureCanvasSource
+         if (hdrSample) {
++          identity = hdrSample.identity ?? null
++          if (identity && !identity.isCurrent()) return
+           renderer.uploadFrame(toImageData(hdrSample.pixels))
+           signal = 'pq-bt2020'
+           measuredFrame = hdrSample.frame
+         } else if (canvasSourceFn) {
+-          const source = await canvasSourceFn({
+-            fresh: isPlayingRef.current,
+-            preferRenderedFrame: true,
+-          })
++          const scoped = usePreviewBridgeStore.getState().captureScopeSample
++          identity = scoped ? await scoped('canvas', { preferRenderedFrame: true }) : null
++          const source = scoped ? identity?.pixels as OffscreenCanvas | HTMLCanvasElement | undefined
++            : await canvasSourceFn({ fresh: isPlayingRef.current, preferRenderedFrame: true })
++          if (identity && !identity.isCurrent()) return
++          if (identity) measuredFrame = identity.frame
+           if (source && !isStale()) {
+             renderer.uploadFromCanvas(source)
+           } else if (!isStale()) {
+             // No source available — try ImageData fallback
+-            await fallbackToImageData(renderer, isStale)
++            identity = await fallbackToImageData(renderer, isStale)
+           }
+         } else {
+-          await fallbackToImageData(renderer, isStale)
+-        }
+-
+-        if (isStale()) return
++          identity = await fallbackToImageData(renderer, isStale)
++        }
++
++        if (isStale() || (identity && !identity.isCurrent())) return
++        if (usePreviewBridgeStore.getState().captureScopeSample && !identity) return
++        if (identity) measuredFrame = identity.frame
+ 
+         // Render each visible scope — hidden scopes have no mounted canvas,
+         // so getGpuCtx returns null and they cost nothing.
+@@ -817,8 +813,9 @@
+ 
+         reportMeasured(
+           signal,
+-          capturePlayback.isPlaying ? null : measuredFrame,
++          identity ? identity.frame : capturePlayback.isPlaying ? null : measuredFrame,
+           measureFloat && !hdrSample,
++          identity?.owner,
+         )
+         setStatus('live')
+       } catch {
+@@ -834,16 +831,15 @@
+ 
+     const fallbackToImageData = async (r: ScopeRenderer, isStale?: () => boolean) => {
+       const captureFn = usePreviewBridgeStore.getState().captureFrameImageData
+-      if (!captureFn) return
++      if (!captureFn) return null
+       const sampleW = isPlayingRef.current ? SAMPLE_WIDTH_PLAYING : SAMPLE_WIDTH_PAUSED
+       const sampleH = isPlayingRef.current ? SAMPLE_HEIGHT_PLAYING : SAMPLE_HEIGHT_PAUSED
+-      const imageData = await captureFn({
+-        width: sampleW,
+-        height: sampleH,
+-        fresh: isPlayingRef.current,
+-        preferRenderedFrame: true,
+-      })
+-      if (imageData && !isStale?.()) r.uploadFrame(imageData)
++      const scoped = usePreviewBridgeStore.getState().captureScopeSample
++      const options = { width: sampleW, height: sampleH, fresh: isPlayingRef.current, preferRenderedFrame: true }
++      const identity = scoped ? await scoped('image', options) : null
++      const imageData = scoped ? identity?.pixels as ImageData | undefined : await captureFn(options)
++      if (imageData && !isStale?.() && (!identity || identity.isCurrent())) r.uploadFrame(imageData)
++      return identity
+     }
+ 
+     requestAnimationFrame(tick)
+@@ -914,6 +910,8 @@
+         const hdr = color.workingRange === 'hdr'
+         let signal: ScopeSignal = hdr ? hdrDisplaySignal(color.sdrMonitoring) : 'rec709-display'
+         let measuredFrame: number | null = requestedFrame
++        let identity: PreviewScopeSample | null = null
++        const scoped = captureSource.captureScopeSample
+ 
+         const measureFloat = hdr && !isPlaying
+         const hdrSample = measureFloat ? await captureHdrSample(hdrSampleRef, sampleW, sampleH) : null
+@@ -921,18 +919,17 @@
+           imageData = hdrSample.pixels
+           signal = 'pq-bt2020'
+           measuredFrame = hdrSample.frame
++          identity = hdrSample.identity ?? null
+         }
+ 
+         if (!imageData && captureFrameImageData) {
+-          imageData = await captureFrameImageData({
+-            width: sampleW,
+-            height: sampleH,
+-            fresh: isPlaying,
+-            preferRenderedFrame: true,
+-          })
+-        }
+-
+-        if (!imageData && captureFrame) {
++          const options = { width: sampleW, height: sampleH, fresh: isPlaying, preferRenderedFrame: true }
++          identity = scoped ? await scoped('image', options) : null
++          imageData = scoped ? (identity?.pixels as ImageData | undefined) ?? null : await captureFrameImageData(options)
++          if (identity) measuredFrame = identity.frame
++        }
++
++        if (!imageData && captureFrame && !scoped) {
+           const dataUrl = await captureFrame({
+             width: sampleW,
+             height: sampleH,
+@@ -966,7 +963,8 @@
+           setStatus('idle')
+           return
+         }
+-        if (!isScopeSourceCurrent(captureInputs)) return
++        if (!isScopeSourceCurrent(captureInputs) || (identity && !identity.isCurrent())) return
++        if (scoped && !identity) return
+         if (
+           usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
+           jumpEpochRef.current !== captureJumpEpoch ||
+@@ -992,7 +990,7 @@
+         if (histCtx && histSize && drawHeavy) {
+           cpuDrawHistogram(imageData, histCtx, signal, histSize.width, histSize.height)
+         }
+-        reportMeasured(signal, isPlaying ? null : measuredFrame, measureFloat && !hdrSample)
++        reportMeasured(signal, identity ? identity.frame : isPlaying ? null : measuredFrame, measureFloat && !hdrSample, identity?.owner)
+         setStatus('live')
+       } catch {
+         const playback = usePlaybackStore.getState()
+@@ -1181,6 +1179,8 @@
+             Scopes · {SCOPE_SIGNAL_LABELS[measured.signal]}
+             {measured.fallback ? ' · float capture unavailable' : ''}
+             {measured.frame !== null ? ` · frame ${measured.frame}` : ''}
++            {measured.owner ? ` · base revision ${measured.owner.baseRevision}${measured.owner.localEdits ? ' · local edits' : ''}` : ' · revision unknown'}
++            {measured.owner && (!publishedOwner || publishedOwner.baseRevision !== measured.owner.baseRevision || publishedOwner.mountGeneration !== measured.owner.mountGeneration || publishedOwner.graphVersion !== measured.owner.graphVersion) ? ' · stale (revision unknown)' : ''}
+           </div>
+           {isEmbeddedStackLayout && (
+             <Select
+--- a/src/features/preview/components/video-preview.sync.test.tsx
++++ b/src/features/preview/components/video-preview.sync.test.tsx
+@@ -3592,6 +3592,114 @@
+     })
+   })
+ 
++  it.each(['same-frame edit', 'preview ABA', 'A-B-A seek', 'echo', 'remount'] as const)(
++    'refuses a scoped producer result after %s while its pixels are deferred', async (change) => {
++      setSingleVideoItemAtFrame({ id: 'scope-owned' })
++      const { renderer } = await renderReadySingleRendererPreview(24, { expectVisible: false })
++      const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => false }
++      act(() => {
++        usePreviewBridgeStore.setState({ scopeOwner: owner, displayedFrame: 25 })
++      })
++      const capture = await waitFor(() => {
++        const fn = usePreviewBridgeStore.getState().captureScopeSample
++        expect(fn).toBeTypeOf('function')
++        return fn!
++      })
++      let finish!: () => void
++      renderer.renderFrame.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
++      const sample = capture('canvas')
++      await waitFor(() => { expect(renderer.renderFrame).toHaveBeenCalledWith(25) })
++      act(() => {
++        if (change === 'same-frame edit') {
++          useGizmoStore.getState().setEffectsPreviewNew({ 'scope-owned': [] })
++        } else if (change === 'preview ABA') {
++          useGizmoStore.getState().setEffectsPreviewNew({ 'scope-owned': [] })
++          useGizmoStore.getState().setEffectsPreviewNew({})
++        } else if (change === 'A-B-A seek') {
++          usePlaybackStore.getState().setCurrentFrame(30)
++          usePlaybackStore.getState().setCurrentFrame(24)
++        } else {
++          usePreviewBridgeStore.setState({ scopeOwner: change === 'remount' ? null : { ...owner, baseRevision: 4 } })
++        }
++      })
++      await act(async () => { finish(); expect(await sample).toBeNull() })
++    },
++  )
++
++  it('refuses a playing A-B-A seek while live renderer pixels are deferred', async () => {
++    setSingleVideoItemAtFrame({ id: 'scope-playing' })
++    await renderReadySingleRendererPreview(24, { expectVisible: false })
++    act(() => {
++      usePreviewBridgeStore.setState({
++        scopeOwner: {
++          baseRevision: 3,
++          graphVersion: 1,
++          mountGeneration: 0,
++          projectId: 'p',
++          hasLocalEdits: () => false,
++        },
++      })
++      usePlaybackStore.setState({ isPlaying: true })
++      mockedPlayerFrame = 25
++    })
++    const capture = usePreviewBridgeStore.getState().captureScopeSample!
++    await capture('canvas')
++    const liveRenderer = rendererMockState.instances.at(-1)!
++    let finish!: () => void
++    liveRenderer.renderFrame.mockImplementationOnce(
++      () =>
++        new Promise<void>((resolve) => {
++          finish = resolve
++        }),
++    )
++    const sample = capture('canvas')
++    await waitFor(() => {
++      expect(finish).toBeTypeOf('function')
++    })
++    act(() => {
++      usePlaybackStore.getState().setCurrentFrame(40)
++      usePlaybackStore.getState().setCurrentFrame(24)
++    })
++    await act(async () => {
++      finish()
++      expect(await sample).toBeNull()
++    })
++  })
++
++  it('refuses an old renderer callback after unmount even with a newly loaded owner', async () => {
++    setSingleVideoItemAtFrame({ id: 'scope-old-mount' })
++    const { unmount } = await renderReadySingleRendererPreview(24, { expectVisible: false })
++    const capture = usePreviewBridgeStore.getState().captureScopeSample!
++    unmount()
++    act(() => {
++      usePreviewBridgeStore.setState({
++        scopeOwner: {
++          baseRevision: 4,
++          graphVersion: 2,
++          mountGeneration: 1,
++          projectId: 'new',
++          hasLocalEdits: () => false,
++        },
++      })
++    })
++    expect(await capture('canvas')).toBeNull()
++  })
++
++  it('binds an accepted scope frame to its loaded base revision and local edit status', async () => {
++    setSingleVideoItemAtFrame({ id: 'scope-accepted' })
++    await renderReadySingleRendererPreview(24, { expectVisible: false })
++    act(() => {
++      usePreviewBridgeStore.setState({ scopeOwner: { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => true } })
++    })
++    const capture = usePreviewBridgeStore.getState().captureScopeSample!
++    const sample = await capture('canvas')
++    expect(sample).toMatchObject({ frame: 24, owner: { baseRevision: 3, localEdits: true } })
++    expect(sample?.isCurrent()).toBe(true)
++    act(() => { usePreviewBridgeStore.setState({ scopeOwner: null }) })
++    expect(sample?.isCurrent()).toBe(false)
++    expect(await capture('canvas')).toBeNull()
++  })
++
+   it('captures a fresh live frame for scopes instead of reusing an in-flight stale sample', async () => {
+     setSingleVideoItemAtFrame({ id: 'item-live-scopes' })
+     const { renderer } = await renderReadySingleRendererPreview(24, { expectVisible: false })
+--- a/src/features/preview/hooks/use-preview-renderer-controller.ts
++++ b/src/features/preview/hooks/use-preview-renderer-controller.ts
+@@ -57,6 +57,7 @@
+   type FrameRange,
+ } from '@/shared/utils/frame-invalidation'
+ import { usePreviewCaptureBridge } from './use-preview-capture-bridge'
++import { getScopeInputs, isScopeSourceCurrent } from '../utils/scope-capture-inputs'
+ import { captureScopeSignal, resolveScopeColor } from '../utils/scope-signal'
+ 
+ const logger = createLogger('VideoPreview')
+@@ -1398,6 +1399,7 @@
+   const resolveCaptureTargetFrame = useCallback(
+     (options?: CaptureOptions) => {
+       const playback = usePlaybackStore.getState()
++      if (options?.scopeFrame !== undefined) return options.scopeFrame
+       if (options?.preferRenderedFrame) {
+         if (playback.isPlaying) {
+           return resolvePreviewCaptureFrame({
+@@ -1438,6 +1440,7 @@
+       if (usePreviewBridgeStore.getState().displayedFrame === null) {
+         return null
+       }
++      if (options.scopeFrame !== undefined && usePreviewBridgeStore.getState().displayedFrame !== options.scopeFrame) return null
+       const displayCanvas = scrubCanvasRef.current
+       if (!displayCanvas || displayCanvas.width <= 0 || displayCanvas.height <= 0) {
+         return null
+@@ -1598,7 +1601,7 @@
+       }
+ 
+       if (captureImageDataInFlightRef.current) {
+-        return captureImageDataInFlightRef.current
++        return options?.scopeFrame !== undefined ? null : captureImageDataInFlightRef.current
+       }
+ 
+       const task = (async () => {
+@@ -1677,7 +1680,7 @@
+       }
+ 
+       if (captureCanvasSourceInFlightRef.current) {
+-        return captureCanvasSourceInFlightRef.current
++        return options?.scopeFrame !== undefined ? null : captureCanvasSourceInFlightRef.current
+       }
+ 
+       const task = (async () => {
+@@ -1828,6 +1831,43 @@
+     [ensureLiveScopeCaptureRenderer, resolveCaptureTargetFrame, scopeColor],
+   )
+ 
++  const captureScopeSample = useCallback<NonNullable<import('@/shared/state/preview-bridge').PreviewBridgeState['captureScopeSample']>>(
++    async (kind, options) => {
++      // A retained callback cannot attribute an old renderer to a replacement mount.
++      if (usePreviewBridgeStore.getState().captureScopeSample !== captureScopeSample) return null
++      const inputs = getScopeInputs()
++      const owner = usePreviewBridgeStore.getState().scopeOwner
++      if (!owner) return null
++      const playback = usePlaybackStore.getState()
++      const frame = resolveCaptureTargetFrame({ ...options, preferRenderedFrame: true })
++      const color = scopeColor()
++      const capturedOwner = owner ? {
++        baseRevision: owner.baseRevision, graphVersion: owner.graphVersion,
++        mountGeneration: owner.mountGeneration, projectId: owner.projectId,
++        localEdits: owner.hasLocalEdits() || inputs.preview.some(Boolean),
++      } : null
++      const isCurrent = () => isScopeSourceCurrent(inputs) &&
++        usePlaybackStore.getState().isPlaying === playback.isPlaying &&
++        (playback.isPlaying || (usePlaybackStore.getState().frameUpdateEpoch === playback.frameUpdateEpoch &&
++          resolveCaptureTargetFrame({ preferRenderedFrame: true }) === frame))
++      const boundOptions = { ...options, preferRenderedFrame: true, fresh: true, scopeFrame: frame }
++      const pixels = kind === 'pq' ? await captureFrameSignal('pq', boundOptions)
++        : kind === 'canvas' ? await captureCanvasSource(boundOptions)
++        : await captureCurrentFrameImageData(boundOptions)
++      return pixels && isCurrent() ? { pixels, frame, color, owner: capturedOwner, isCurrent } : null
++    },
++    [captureCanvasSource, captureCurrentFrameImageData, captureFrameSignal, resolveCaptureTargetFrame, scopeColor],
++  )
++
++  useEffect(() => {
++    usePreviewBridgeStore.setState({ captureScopeSample })
++    return () => {
++      if (usePreviewBridgeStore.getState().captureScopeSample === captureScopeSample) {
++        usePreviewBridgeStore.setState({ captureScopeSample: null })
++      }
++    }
++  }, [captureScopeSample])
++
+   useEffect(() => {
+     const bridge = usePreviewBridgeStore.getState()
+     bridge.setCaptureFrameSignal(captureFrameSignal)
+--- /dev/null
++++ b/src/features/preview/utils/scope-capture-inputs.ts
+@@ -0,0 +1,101 @@
++import { usePlaybackStore } from '@/shared/state/playback'
++import { isPlaybackJump } from './scope-math'
++import { useGizmoStore } from '../stores/gizmo-store'
++import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import {
++  useTimelineStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++} from '@/features/preview/deps/timeline-store'
++import { useMediaLibraryStore } from '@/features/preview/deps/media-library'
++
++let inputEpoch = 0
++let seekEpoch = 0
++let lastPlayingFrame: { frame: number; atMs: number } | null = null
++usePlaybackStore.subscribe((state) => {
++  if (!state.isPlaying) {
++    lastPlayingFrame = null
++    return
++  }
++  if (lastPlayingFrame?.frame === state.currentFrame) return
++  const next = { frame: state.currentFrame, atMs: performance.now() }
++  if (
++    lastPlayingFrame &&
++    isPlaybackJump(
++      lastPlayingFrame,
++      next,
++      useTimelineStore.getState().fps || 30,
++      state.playbackRate,
++    )
++  )
++    seekEpoch += 1
++  lastPlayingFrame = next
++})
++
++export function getScopeInputs() {
++  const source = usePreviewBridgeStore.getState()
++  const timeline = useTimelineStore.getState()
++  const gizmo = useGizmoStore.getState()
++  return {
++    epoch: inputEpoch,
++    seekEpoch,
++    source: [source.captureCanvasSource, source.captureFrameImageData, source.captureFrame],
++    scope: [source.scopeOwner, source.captureScopeSample],
++    color: [
++      source.captureFrameSignal,
++      source.scopeColor,
++      useMediaLibraryStore.getState().mediaById,
++    ],
++    items: timeline.items,
++    preview: [gizmo.preview, gizmo.canvasBackgroundPreview, gizmo.colorGradeBypassed],
++    graph: [
++      timeline.tracks,
++      timeline.keyframes,
++      timeline.transitions,
++      timeline.fps,
++      useCompositionNavigationStore.getState().activeCompositionId,
++    ],
++    compositions: useCompositionsStore.getState().compositionById,
++  }
++}
++
++function sameInputs(
++  current: ReturnType<typeof getScopeInputs>,
++  inputs: ReturnType<typeof getScopeInputs>,
++): boolean {
++  return (
++    current.scope.every((input, index) => input === inputs.scope[index]) &&
++    current.source.every((input, index) => input === inputs.source[index]) &&
++    current.color.every((input, index) => input === inputs.color[index]) &&
++    current.graph.every((input, index) => input === inputs.graph[index]) &&
++    current.preview.every((input, index) => input === inputs.preview[index]) &&
++    current.items === inputs.items &&
++    current.compositions === inputs.compositions
++  )
++}
++
++// Remember intervening edits too: an undo or cancelled live preview can restore the same references.
++let previous = getScopeInputs()
++for (const store of [
++  useTimelineStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++  useMediaLibraryStore,
++  useGizmoStore,
++  usePreviewBridgeStore,
++]) {
++  store.subscribe(() => {
++    const current = getScopeInputs()
++    if (!sameInputs(current, previous)) inputEpoch += 1
++    previous = current
++  })
++}
++
++export function isScopeSourceCurrent(inputs: ReturnType<typeof getScopeInputs>): boolean {
++  const current = getScopeInputs()
++  return (
++    current.epoch === inputs.epoch &&
++    current.seekEpoch === inputs.seekEpoch &&
++    sameInputs(current, inputs)
++  )
++}
+--- a/src/shared/state/playback/types.ts
++++ b/src/shared/state/playback/types.ts
+@@ -2,6 +2,8 @@
+ import type { AudioEqSettings } from '@/types/audio'
+ 
+ export interface CaptureOptions {
++  /** Internal scope capture target, bound before asynchronous pixel production. */
++  scopeFrame?: number
+   width?: number
+   height?: number
+   quality?: number
+--- a/src/shared/state/preview-bridge/index.ts
++++ b/src/shared/state/preview-bridge/index.ts
+@@ -4,4 +4,6 @@
+   PreviewBridgeState,
+   PreviewScopeColor,
+   PreviewSignalFrame,
++  PreviewScopeOwner,
++  PreviewScopeSample,
+ } from './types'
+--- a/src/shared/state/preview-bridge/store.ts
++++ b/src/shared/state/preview-bridge/store.ts
+@@ -31,6 +31,8 @@
+ 
+ export const usePreviewBridgeStore = create<PreviewBridgeState & PreviewBridgeActions>()((set) => ({
+   displayedFrame: null,
++  scopeOwner: null,
++  captureScopeSample: null,
+   captureFrame: null,
+   captureFrameImageData: null,
+   captureCanvasSource: null,
+--- a/src/shared/state/preview-bridge/types.ts
++++ b/src/shared/state/preview-bridge/types.ts
+@@ -20,9 +20,28 @@
+   rgba: Float32Array
+ }
+ 
++/** Ephemeral authority from the adapter's actually loaded editor mount. */
++export interface PreviewScopeOwner {
++  baseRevision: number
++  graphVersion: number
++  mountGeneration: number
++  projectId: string
++  hasLocalEdits: () => boolean
++}
++
++export interface PreviewScopeSample {
++  pixels: OffscreenCanvas | HTMLCanvasElement | ImageData | PreviewSignalFrame
++  frame: number
++  color: PreviewScopeColor
++  owner: Omit<PreviewScopeOwner, 'hasLocalEdits'> & { localEdits: boolean } | null
++  isCurrent: () => boolean
++}
++
+ export interface PreviewBridgeState {
+   /** Frame currently presented to the user in preview output (null when Player path is active) */
+   displayedFrame: number | null
++  scopeOwner: PreviewScopeOwner | null
++  captureScopeSample: ((kind: 'canvas' | 'image' | 'pq', options?: CaptureOptions) => Promise<PreviewScopeSample | null>) | null
+   /** Function to capture the current Player frame as a data URL (set by VideoPreview) */
+   captureFrame: ((options?: CaptureOptions) => Promise<string | null>) | null
+   /** Optional raw capture path that returns ImageData directly (avoids encode/decode overhead) */
