@@ -163,7 +163,7 @@ describe('real large producer selection capture', () => {
               },
             ]
           : []),
-        ...(plan.Plans ?? []).flatMap(contributions),
+        ...(plan.Plans ?? []).flatMap((child) => contributions(child)),
       ];
       const measurements: { predicate: string; examined: number }[] = [];
       for (const [name, predicate] of [
