@@ -33,7 +33,16 @@ export type StudioCommandCapability =
   'analysisWorker' | 'generationWorker' | 'gpuWorker' | 'renderWorker' | 'restorationWorker' | 'transcriptionWorker';
 
 export type StudioPayloadFieldType =
-  'boolean' | 'duration' | 'number' | 'object' | 'object[]' | 'rate' | 'string' | 'string[]' | 'time';
+  | 'Array<{id:string,at:Rational,gainDb:number}>'
+  | 'boolean'
+  | 'duration'
+  | 'number'
+  | 'object'
+  | 'object[]'
+  | 'rate'
+  | 'string'
+  | 'string[]'
+  | 'time';
 
 export type StudioPayloadField = StudioPayloadFieldType | `${StudioPayloadFieldType}?`;
 
@@ -817,6 +826,7 @@ export const studioCommandMirror = {
     payload: {
       ducking: 'boolean?',
       gainDb: 'number?',
+      gainEnvelope: 'Array<{id:string,at:Rational,gainDb:number}>?',
       muted: 'boolean?',
     },
   },

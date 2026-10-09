@@ -1130,8 +1130,8 @@
       "payload": {
         "ducking": "boolean?",
         "gainDb": "number?",
-        "muted": "boolean?",
-        "gainEnvelope": "Array<{id:string,at:Rational,gainDb:number}>?"
+        "gainEnvelope": "Array<{id:string,at:Rational,gainDb:number}>?",
+        "muted": "boolean?"
       },
       "scope": "project",
       "undoable": true
@@ -1446,6 +1446,7 @@
   "engine": "freecut",
   "engineRevision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
   "fieldTypes": [
+    "Array<{id:string,at:Rational,gainDb:number}>",
     "boolean",
     "duration",
     "number",
