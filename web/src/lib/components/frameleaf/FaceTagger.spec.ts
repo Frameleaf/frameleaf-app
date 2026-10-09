@@ -182,6 +182,54 @@ describe('FaceTagger', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it.each([0.96, 1])('maps a drawn region when the sheet scale ends at %s', async (endScale) => {
+    sdkMock.getFaces.mockResolvedValue([]);
+    const asset = assetFactory.build({ ownerId: owner.id, type: AssetTypeEnum.Image, originalFileName: 'draw.jpg' });
+    const { container } = render(FaceTagger, { asset, onClose: vi.fn(), onSaved: vi.fn() });
+    const image = await screen.findByRole('img', { name: 'draw.jpg' });
+    const stage = screen.getByRole('application', { name: en.frameleaf_face_tagger_stage });
+    let scale = 0.96;
+    Object.defineProperties(stage, { clientWidth: { value: 600 }, clientHeight: { value: 400 } });
+    vi.spyOn(stage, 'getBoundingClientRect').mockImplementation(() =>
+      DOMRect.fromRect({ x: 10, y: 20, width: 600 * scale, height: 400 * scale }),
+    );
+    Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
+    await fireEvent.load(image);
+
+    // The overlay is laid out before the sheet's CSS scale is applied.
+    expect(container.querySelector('.ft-image-plane')).toHaveStyle({ width: '500px', height: '400px', left: '50px' });
+    await fireEvent.pointerDown(stage, {
+      pointerId: 1,
+      button: 0,
+      clientX: 10 + 175 * scale,
+      clientY: 20 + 100 * scale,
+    });
+    scale = endScale;
+    await fireEvent.pointerUp(stage, {
+      pointerId: 1,
+      button: 0,
+      clientX: 10 + 275 * scale,
+      clientY: 20 + 180 * scale,
+    });
+    await pickPerson(bailey);
+    await fireEvent.click(save());
+    await waitFor(() =>
+      expect(sdkMock.createFace).toHaveBeenCalledWith({
+        assetFaceCreateDto: {
+          assetId: asset.id,
+          personId: bailey.id,
+          expectedSourceRevision: 'src-1',
+          imageWidth: 1000,
+          imageHeight: 800,
+          x: 250,
+          y: 200,
+          width: 200,
+          height: 160,
+        },
+      }),
+    );
+  });
+
   it('adds a region, edits its position, assigns a person and saves it in pixels', async () => {
     const { asset, onClose, onSaved } = await setup();
 
