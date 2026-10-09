@@ -49,7 +49,7 @@ const StudioExportQualitySchema = z
 const StudioExportSubtitleModeSchema = z
   .enum(STUDIO_EXPORT_SUBTITLE_MODES)
   .describe(
-    'Burn subtitle captions, omit captions, or publish an owner-private SRT sibling; ordinary titles are preserved',
+    'Burn captions, omit captions, publish a private SRT sibling, or embed a qualified MP4 text track; ordinary titles are preserved',
   )
   .meta({ id: 'StudioExportSubtitleMode' });
 

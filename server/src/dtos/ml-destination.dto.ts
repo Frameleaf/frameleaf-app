@@ -287,6 +287,11 @@ const StudioRenderCandidateSchema = z
     outputFormats: z
       .array(StudioExportSettingsDto.schema.shape.format)
       .describe('Output formats whose exact writer and container this session verified'),
+    embeddedOutputFormats: z
+      .array(StudioExportSettingsDto.schema.shape.format)
+      .max(1)
+      .optional()
+      .describe('Output formats whose MP4 mov_text profile and encoder this same session verified'),
     sidecarOutputFormats: z
       .array(StudioExportSettingsDto.schema.shape.format)
       .max(1)

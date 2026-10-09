@@ -30,6 +30,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
     probe: vitest.fn(),
+    probeEmbeddedSubtitles: vitest.fn(),
     probeHdrMastering: vitest.fn().mockResolvedValue([]),
     probePackets: vitest.fn().mockResolvedValue({
       totalDuration: 0,
