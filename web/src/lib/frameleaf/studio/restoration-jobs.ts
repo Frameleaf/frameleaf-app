@@ -99,6 +99,8 @@ export const clipMediaId = (graph: unknown, clipId: string): string | null => {
 
 export interface StudioRestorationHandlerOptions {
   api?: StudioRestorationApi;
+  /** Cancel by durable MediaOperation ID, with the Activity service's ownership and acknowledgment rules. */
+  cancel: (operationId: string) => Promise<void>;
   /** The graph the editor works on, to find a clip's media. */
   graph: () => unknown;
   /** A job was queued; the host points the person at Activity. */
@@ -116,6 +118,7 @@ export interface StudioRestorationHandlerOptions {
 
 export const createStudioRestorationHandlers = ({
   api = sdkStudioRestorationApi,
+  cancel,
   graph,
   onQueued,
   onRefused,
@@ -138,6 +141,11 @@ export const createStudioRestorationHandlers = ({
   };
 
   return {
+    'job.cancel': async (envelope: StudioCommandEnvelope) => {
+      const payload = envelope.payload as StudioCommandPayloads['job.cancel'];
+      await cancel(payload.jobId);
+      return revision();
+    },
     'job.enqueueRestoration': async (envelope: StudioCommandEnvelope) => {
       const payload = envelope.payload as StudioCommandPayloads['job.enqueueRestoration'];
       const assetId = payload.assetId;
