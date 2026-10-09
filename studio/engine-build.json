@@ -554,7 +554,12 @@
       "path": "patches/0114-explicit-seek-scope-currentness.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "84343a37c06cbab32598d0073072dee5e6ea65c0b7d9a7becadf1182b9b1e7fa"
+    },
+    {
+      "path": "patches/0115-caption-order-independent-lookup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "31bcfd1874b2f5de4afff3e9259412ca932e9557928f4d41814d392caf86e51a"
     }
   ],
-  "sourceSha256": "ff526220c0bc944175195faf2fc928c2f7999de89b468717c7159eeb393b9773"
+  "sourceSha256": "2cf0d70dfb6be1a3256738b144f0c7b789deb4d339039c42e73db4776bdc5201"
 }
