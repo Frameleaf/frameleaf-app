@@ -254,7 +254,11 @@ const required = {
     "web-lint",
     /^pnpm exec eslint \. --max-warnings 0 --concurrency 2$/m,
   ],
-  "Medium Tests (Server)": ["test.yml", "server-medium-tests", /docker run --rm/],
+  "Medium Tests (Server)": [
+    "test.yml",
+    "server-medium-tests",
+    /docker run --rm/,
+  ],
   "Unit Test CLI": ["test.yml", "cli-unit-tests", /ci-unit/],
   "SQL Schema Checks": ["test.yml", "sql-schema-up-to-date", /migrations:run/],
   ShellCheck: ["test.yml", "shellcheck", /ludeeus\/action-shellcheck@/],
@@ -1807,4 +1811,40 @@ test("media fixture source is immutable and the owned archive cannot publish", (
       assert.doesNotMatch(JSON.stringify(step.with), /submodules/);
     }
   }
+});
+
+for (const [file, name] of [
+  ["fork-integration.yml", "Generate OpenAPI and TypeScript client"],
+  ["development-validation.yml", "Generate TypeScript API client"],
+]) {
+  test(`canonical TypeScript SDK workflow caller uses adapter: ${file}`, () => {
+    const steps = Object.values(workflow(file).jobs).flatMap(
+      (job) => job.steps ?? [],
+    );
+    const step = steps.find((item) => item.name === name);
+    assert.ok(step, `${file}: generation step exists`);
+    assert.match(step.run, /node scripts\/generate-typescript-sdk\.mjs/u, file);
+    assert.doesNotMatch(step.run, /\boazapfts\s+--/u, file);
+  });
+}
+
+test("canonical TypeScript SDK generation has no workflow or mise raw bypass", () => {
+  for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
+    (name) => /\.ya?ml$/u.test(name),
+  )) {
+    for (const job of Object.values(workflow(file).jobs ?? {})) {
+      for (const step of job.steps ?? []) {
+        if (typeof step.run === "string") {
+          assert.doesNotMatch(
+            step.run,
+            /\boazapfts\s+--/u,
+            `${file}: ${step.name ?? "run"} bypasses canonical SDK adapter`,
+          );
+        }
+      }
+    }
+  }
+  const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
+  assert.match(mise, /node scripts\/generate-typescript-sdk\.mjs/u);
+  assert.doesNotMatch(mise, /oazapfts\s+--/u);
 });

@@ -6518,7 +6518,7 @@ export type ICloudIdentityReuseAuthorityStatusDto = {
     available: boolean;
     enabled: boolean;
     /** Foundation consent does not enable weekly execution or identity reuse */
-    executionAvailable: boolean;
+    executionAvailable: false;
     includeProtected: boolean;
     regrantRequired: boolean;
 };
@@ -6668,7 +6668,7 @@ export type ICloudEditEvidenceResponseDto = {
             receiptId: string;
             role: ICloudEditReceiptRole;
             sha256: string;
-            suggestedAdministrativeLabel: "administrative-original" | null;
+            suggestedAdministrativeLabel: SuggestedAdministrativeLabel | null;
         }[];
     }[];
 };
@@ -29668,6 +29668,9 @@ export enum ICloudEditPublicationChannel {
 export enum ICloudEditReceiptRole {
     Original = "original",
     EditRender = "edit-render"
+}
+export enum SuggestedAdministrativeLabel {
+    AdministrativeOriginal = "administrative-original"
 }
 export enum ICloudIdentityRole {
     Original = "original",
