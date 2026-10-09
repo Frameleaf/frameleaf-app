@@ -1,10 +1,11 @@
 # BEGIN frameleaf-server-base
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
 # Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
 # markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
 # 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
 # are vendored in server/base-image. server/Dockerfile and server/Dockerfile.dev carry identical
 # copies of this block; docker/frameleaf-delivery.test.mjs fails if they drift apart.
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS base-server-build
+FROM ${NODE_IMAGE} AS base-server-build
 ARG DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /usr/src/base-image

@@ -169,6 +169,9 @@ jobs:
         run: .venv/bin/python -m pytest -q
 
   machine-learning-containers:
+    env:
+      FRAMELEAF_CI_PYTHON_IMAGE: mirror.gcr.io/library/python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+      FRAMELEAF_CI_CUDA_IMAGE: mirror.gcr.io/nvidia/cuda@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -184,7 +187,7 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Build ML runtime with locked fork dependencies
-        run: docker build --build-arg DEVICE=${{ matrix.device }} --target prod -t fork-ml-test machine-learning
+        run: docker build --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import immich_ml.models.image_description'
