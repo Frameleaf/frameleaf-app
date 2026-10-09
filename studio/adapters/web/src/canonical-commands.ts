@@ -28,7 +28,7 @@ import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-com
  * and restores it as a new revision (history is append-only, FL-89).
  */
 import type { Project } from '@/types/project'
-import type { TimelineItem, TextItem } from '@/types/timeline'
+import type { TimelineItem, TimelineTrack, TextItem } from '@/types/timeline'
 import type { MediaMetadata } from '@/types/storage'
 import {
   DEFAULT_SPRING_PARAMS,
@@ -206,7 +206,7 @@ export class CommandRejection extends Error {
   }
 }
 
-const invalid = (message: string): never => {
+const invalid: (message: string) => never = (message) => {
   throw new CommandRejection('invalid', message)
 }
 
@@ -390,8 +390,8 @@ export const deterministicUuids = (seed: string): (() => string) => {
   const random = seededRandom(seed)
   return () => {
     const bytes = Array.from({ length: 16 }, () => Math.floor(random() * 256))
-    bytes[6] = (bytes[6] & 0x0f) | 0x40
-    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    bytes[6] = (bytes[6]! & 0x0f) | 0x40
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80
     const hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
   }

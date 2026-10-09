@@ -1,3 +1,5 @@
+import { outputTimeBase, StudioTimingError } from '@frameleaf/host/studio-timing'
+import { rational, toDecimalString } from '@frameleaf/host/rational-time'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
@@ -1305,4 +1307,119 @@ describe('durable media relink', () => {
     expect(graph.timeline!.items[0]!.mediaId).toBe(STILL)
   })
 
+})
+
+
+describe('canonical type narrowing preserves runtime admission', () => {
+  it('refuses invalid boolean payloads atomically and accepts both boolean values', async () => {
+    const start = await applied(project(), [
+      envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(0) }),
+    ])
+    const clip = itemsOf(start.project).find((item) => item.type === 'video')!
+    const before = canonicalJson(start.project)
+    for (const id of ['clip.setAudio', 'clip.update']) {
+      for (const muted of [null, 0, 1, 'true', {}, []]) {
+        const payload =
+          id === 'clip.update'
+            ? { clipId: clip.id, patch: { muted } }
+            : { clipId: clip.id, muted }
+        await expect(
+          applyCanonicalCommands(
+            start.project,
+            [
+              envelope('track.add', { kind: 'audio', name: 'must roll back' }),
+              envelope(id, payload),
+            ],
+            media,
+          ),
+        ).resolves.toMatchObject({
+          status: 'rejected',
+          index: 1,
+          reason: 'invalid',
+          detail:
+            id === 'clip.update'
+              ? 'patch.muted must be a boolean'
+              : 'muted must be a boolean',
+        })
+        expect(canonicalJson(start.project)).toBe(before)
+      }
+      for (const muted of [true, false]) {
+        const payload =
+          id === 'clip.update'
+            ? { clipId: clip.id, patch: { muted } }
+            : { clipId: clip.id, muted }
+        const result = await applied(start.project, [envelope(id, payload)])
+        expect(
+          itemsOf(result.project).find((item) => item.id === clip.id)?.muted,
+        ).toBe(muted)
+        expect(canonicalJson(start.project)).toBe(before)
+      }
+    }
+  })
+
+  it('refuses non-media track kinds without publishing an earlier batch command', async () => {
+    const graph = project()
+    const before = canonicalJson(graph)
+    for (const kind of ['text', 'group', 'lottie', 'Video']) {
+      await expect(
+        applyCanonicalCommands(
+          graph,
+          [
+            envelope('track.add', { kind: 'audio', name: 'must roll back' }),
+            envelope('track.add', { kind }),
+          ],
+          media,
+        ),
+      ).resolves.toMatchObject({
+        status: 'rejected',
+        index: 1,
+        reason: 'invalid',
+        detail: 'kind must be video or audio',
+      })
+      expect(canonicalJson(graph)).toBe(before)
+    }
+    for (const kind of ['video', 'audio']) {
+      const result = await applied(graph, [
+        envelope('track.add', { kind, name: 'supported' }),
+      ])
+      expect(
+        result.project.timeline?.tracks.find(
+          (track) => track.name === 'supported',
+        )?.kind,
+      ).toBe(kind)
+      expect(canonicalJson(graph)).toBe(before)
+    }
+  })
+
+  it('retains the frozen UUID stream, version and variant bits for bounded byte indexes', () => {
+    const next = deterministicUuids('k')
+    expect([next(), next(), next()]).toEqual([
+      '7fb0a270-aaed-404e-a329-db69218b6a66',
+      '27d5bae3-a827-4c69-a3cb-c10d2d45edec',
+      '63e08c1d-a4aa-4e7c-925f-889015961a10',
+    ])
+    const empty = deterministicUuids('')
+    expect(empty()).toBe('f60e8f14-1931-4091-83fa-d5469da9bc9d')
+    const unicode = deterministicUuids('owned-λ')
+    expect(unicode()).toBe('742f52e1-34d6-449d-b995-855252b27b83')
+  })
+
+  it('preserves decimal carry and the exactly-one-source output-grid refusal', () => {
+    expect(toDecimalString(rational(399, 200), 2)).toBe('2.00')
+    expect(toDecimalString(rational(-399, 200), 2)).toBe('-2.00')
+    expect(toDecimalString(rational(1, 2), 0)).toBe('1')
+    const decision = { mode: 'passthrough' as const, cadence: null }
+    expect(outputTimeBase(decision, [{ timeBase: '1/90000' }])).toEqual(
+      rational(1, 90000),
+    )
+    expect(() => outputTimeBase(decision, [])).toThrowError(
+      'Only a single source can pass its timestamps through.',
+    )
+    expect(() =>
+      outputTimeBase(decision, [
+        { timeBase: '1/90000' },
+        { timeBase: '1/90000' },
+      ]),
+    ).toThrowError(StudioTimingError)
+  })
 })

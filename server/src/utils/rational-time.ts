@@ -387,7 +387,7 @@ export const toDecimalString = (value: Rational, decimals: number): string => {
   if (product(rest, 2, 'A rounding comparison') >= value.den) {
     let carry = 1;
     for (let place = digits.length - 1; place >= 0 && carry > 0; place--) {
-      const next = digits[place] + carry;
+      const next = digits[place]! + carry;
       digits[place] = next % 10;
       carry = next >= 10 ? 1 : 0;
     }
