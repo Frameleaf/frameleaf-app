@@ -1177,12 +1177,11 @@ describe(StudioExportService.name, () => {
         data: { status: 'cancelled', versionId: version.id, jobActions: '' },
       });
       expect(repository.acknowledgeRemoteCancel).toHaveBeenCalledWith(render.id, 'worker-1');
+      expect(sut['renderProgressSent'].has(render.id)).toBe(false);
+      repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Cancelled }));
       events.emit.mockClear();
       await sut.onRenderProgress(render, 0.01);
-      expect(events.emit).toHaveBeenCalledWith(
-        'PushNotify',
-        expect.objectContaining({ render: { job: render.id, state: 'running', progress: 0.01 } }),
-      );
+      expect(events.emit).not.toHaveBeenCalled();
     });
 
     it('announces a running cancellation acknowledgement without a prior entry', async () => {
