@@ -113555,6 +113555,14 @@
           "dolbyVision": {
             "type": "boolean"
           },
+          "embeddedOutputFormats": {
+            "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFormat"
+            },
+            "maxItems": 1,
+            "type": "array"
+          },
           "gpuMemoryBytes": {
             "format": "double",
             "nullable": true,
@@ -113577,14 +113585,6 @@
           },
           "sidecarOutputFormats": {
             "description": "Output formats whose versioned paired SRT profile this same session verified",
-            "items": {
-              "$ref": "#/components/schemas/StudioExportFormat"
-            },
-            "maxItems": 1,
-            "type": "array"
-          },
-          "embeddedOutputFormats": {
-            "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
