@@ -311,7 +311,10 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     await page.goto('/favorites');
     await page.waitForURL('**/auth/login**');
     await expect(page).not.toHaveTitle(/Immich/i);
-    await expect(page.getByRole('img', { name: /Frameleaf/ }).first()).toBeVisible();
+    // Light surfaces use a text wordmark; dark surfaces use the named lockup image.
+    await expect(
+      page.getByRole('img', { name: 'Frameleaf', exact: true }).or(page.getByText('Frameleaf', { exact: true })),
+    ).toBeVisible();
 
     await page.getByLabel('Email', { exact: true }).fill(loginDto.admin.email);
     await page.getByLabel('Password', { exact: true }).fill(loginDto.admin.password);

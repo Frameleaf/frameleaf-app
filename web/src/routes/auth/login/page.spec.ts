@@ -82,6 +82,16 @@ beforeEach(() => {
 });
 
 describe('login mandatory-change routing', () => {
+  it('keeps Frameleaf accessible in both sign-in themes', async () => {
+    render(Page, { data: data(false) } as never);
+    expect(screen.getByText('Frameleaf', { exact: true })).toBeVisible();
+    expect(screen.queryByRole('img', { name: 'Frameleaf', exact: true })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+    expect(screen.getByRole('img', { name: 'Frameleaf', exact: true })).toBeVisible();
+    expect(screen.queryByText('Frameleaf', { exact: true })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+  });
+
   it('greets with the hero heading, the brand rule and the logo arriving once (BRAND.md)', () => {
     const { container } = render(Page, { data: data(false) } as never);
     const heading = screen.getByRole('heading', { level: 1, name: 'Welcome back' });
