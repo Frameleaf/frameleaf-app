@@ -257,6 +257,76 @@ test('snapshot commits account for metadata, reject stored corruption and accept
   }
 });
 
+for (const allowedReads of [0, 32, 34]) {
+  test(`snapshot authority refusal stops the scan after ${allowedReads} reads without publication`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'buddy-scan-authority-'));
+    try {
+      const now = Date.now();
+      const vaultId = randomUUID();
+      const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+      const jwk = publicKey.export({ format: 'jwk' });
+      const vault = new BuddyVault(directory, vaultId);
+      const capacity = { quotaBytes: 100_000, freeBytes: 100e9, totalBytes: 200e9 };
+      const objects = [];
+      for (let index = 0; index < 34; index++) {
+        const key = randomBytes(32);
+        const plain = Buffer.from(`object ${index}`);
+        const id = buddyObjectId(key, vaultId, plain);
+        const bytes = encryptBuddyBlock(key, { vaultId, id, keyVersion: 1 }, plain);
+        const receipt = BuddyVault.receipt(id, bytes);
+        await vault.put(receipt, bytes, capacity);
+        objects.push(receipt);
+      }
+      const snapshot = {
+        version: 1,
+        vaultId,
+        id: randomUUID(),
+        sequence: 1,
+        previous: null,
+        createdAt: new Date(now).toISOString(),
+        retainUntil: new Date(now + 31 * 86400_000).toISOString(),
+        keyVersion: 1,
+        manifest: [objects[0].id],
+        objects,
+      };
+      const envelope = {
+        snapshot,
+        signature: sign(null, buddySnapshotBytes(snapshot), privateKey).toString('base64url'),
+      };
+      const catalogPath = join(directory, vaultId, 'catalog.json');
+      const catalog = await readFile(catalogPath);
+      const originalRead = vault.read.bind(vault);
+      const reads = [];
+      vault.read = async (id) => {
+        reads.push(id);
+        return originalRead(id);
+      };
+      await assert.rejects(
+        vault.commit(envelope, jwk, now, capacity, async () => {
+          if (reads.length >= allowedReads) throw new Error('authority refused');
+        }),
+        /authority refused/,
+      );
+      assert.deepEqual(
+        reads,
+        objects.slice(0, allowedReads).map(({ id }) => id),
+      );
+      assert.deepEqual(await readFile(catalogPath), catalog);
+      assert.deepEqual(await vault.snapshots(), []);
+      await assert.rejects(vault.snapshot(snapshot.id), { code: 'ENOENT' });
+      await assert.rejects(readFile(join(directory, vaultId, 'snapshots', snapshot.id)), { code: 'ENOENT' });
+      // A failed scan releases its caller's operation; valid offline work remains usable.
+      await vault.commit(envelope, jwk, now, capacity);
+      assert.deepEqual(await vault.snapshot(snapshot.id), envelope);
+      await vault.commit(envelope, jwk, now + 301_000, capacity, async () => {
+        throw new Error('duplicate must not rescan');
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 test('durable reservations, lost acknowledgements and catalog loss preserve quota and immutable ciphertext', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'buddy-vault-'));
   try {

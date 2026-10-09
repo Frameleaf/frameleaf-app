@@ -19,7 +19,12 @@ export class BuddyBackupPeerController {
     return this.peer.authorize(request, response, vaultId, write ? 'write' : 'read', handshake);
   }
 
-  private async body(request: Request, access: BuddyPeerAccess, maximum = 32_768) {
+  private async body(
+    request: Request,
+    access: BuddyPeerAccess,
+    maximum = 32_768,
+    consume?: (body: unknown) => Promise<unknown>,
+  ) {
     // This private content type bypasses the general JSON parser. Authenticate before allocating a snapshot body.
     if (request.headers['content-type'] !== 'application/vnd.frameleaf.buddy+json')
       throw new BadRequestException('Invalid Buddy content type');
@@ -34,11 +39,13 @@ export class BuddyBackupPeerController {
         await this.peer.assertAccess(access, 'write');
         chunks.push(Buffer.from(chunk));
       }
+      let body: unknown;
       try {
-        return JSON.parse(Buffer.concat(chunks).toString()) as unknown;
+        body = JSON.parse(Buffer.concat(chunks).toString());
       } catch {
         throw new BadRequestException('Invalid Buddy JSON');
       }
+      return consume ? await consume(body) : body;
     } finally {
       clearTimeout(timer);
       await release();
@@ -153,9 +160,11 @@ export class BuddyBackupPeerController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const access = await this.access(request, response, vaultId, true);
-    const envelope = (await this.body(request, access, 256 * 1024 * 1024)) as BuddySignedSnapshot;
-    await this.storage(() => this.peer.commit(access, envelope));
-    return this.reply(access, buddyCommitReceipt(envelope), true);
+    return this.body(request, access, 256 * 1024 * 1024, async (body) => {
+      const envelope = body as BuddySignedSnapshot;
+      await this.storage(() => this.peer.commit(access, envelope));
+      return this.reply(access, buddyCommitReceipt(envelope), true);
+    });
   }
 
   private async storage<T>(action: () => Promise<T>) {
