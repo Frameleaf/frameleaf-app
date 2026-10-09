@@ -1,0 +1,276 @@
+diff --git a/src/features/preview/components/color-scopes-view.test.tsx b/src/features/preview/components/color-scopes-view.test.tsx
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -1,9 +1,14 @@
+-import { act, cleanup, render, screen } from '@testing-library/react'
++import { act, cleanup, render, renderHook, screen } from '@testing-library/react'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { useCustomPlayer } from '../hooks/use-custom-player'
+ import { ColorScopesView } from './color-scopes-view'
+-import { useItemsStore, useCompositionsStore } from '@/features/preview/deps/timeline-store'
++import {
++  useItemsStore,
++  useCompositionsStore,
++  useTimelineSettingsStore,
++} from '@/features/preview/deps/timeline-store'
+ import { useMediaLibraryStore } from '@/features/preview/deps/media-library'
+ import { pqEncode } from '@/shared/graphics/color/managed-color'
+ import { BT2020_COEFFICIENTS, BT709_COEFFICIENTS } from '../utils/scope-math'
+@@ -62,6 +67,88 @@
+       for (const callback of pending) callback(time)
+     })
+   }
++
++  it.each(['explicit seek', 'normal progress'] as const)(
++    'checks a deferred owned GPU sample after short %s',
++    async (change) => {
++      const owner = {
++        baseRevision: 3,
++        graphVersion: 1,
++        mountGeneration: 0,
++        projectId: 'p',
++        hasLocalEdits: () => false,
++      }
++      const pending = deferred<import('@/shared/state/preview-bridge').PreviewScopeSample>()
++      const renderer = {
++        setMatrix: vi.fn(),
++        setRange: vi.fn(),
++        setGraticule: vi.fn(),
++        configureCanvas: vi.fn().mockReturnValue({}),
++        uploadFromCanvas: vi.fn(),
++        uploadFrame: vi.fn(),
++        renderWaveforms: vi.fn(),
++        renderVectorscope: vi.fn(),
++        renderHistogram: vi.fn(),
++        destroy: vi.fn(),
++      }
++      createRenderer.mockResolvedValue(renderer)
++      let playerFrame = 24
++      const playerRef = {
++        current: {
++          seekTo: vi.fn((frame: number) => {
++            playerFrame = frame
++          }),
++          play: vi.fn(),
++          pause: vi.fn(),
++          getCurrentFrame: () => playerFrame,
++          isPlaying: () => true,
++          setPlaybackRate: vi.fn(),
++        },
++      }
++      usePlaybackStore.setState({ currentFrame: 24 })
++      useTimelineSettingsStore.setState({ isTimelineLoading: false })
++      renderHook(() => useCustomPlayer(playerRef))
++      await act(async () => {
++        usePlaybackStore.setState({ isPlaying: true })
++      })
++      usePreviewBridgeStore.setState({
++        scopeOwner: owner,
++        captureCanvasSource: vi.fn(),
++        captureScopeSample: vi.fn().mockReturnValue(pending.promise),
++      })
++      await act(async () => {
++        render(<ColorScopesView open />)
++      })
++      await tick(100)
++      playerRef.current.seekTo.mockClear()
++      await act(async () => {
++        if (change === 'normal progress') playerFrame = 28
++        usePlaybackStore.getState().setCurrentFrame(28)
++        pending.resolve({
++          pixels: document.createElement('canvas'),
++          frame: 24,
++          color: { workingRange: 'sdr', sdrMonitoring: 'bt2390' },
++          owner: {
++            baseRevision: 3,
++            graphVersion: 1,
++            mountGeneration: 0,
++            projectId: 'p',
++            localEdits: false,
++          },
++          isCurrent: () => true,
++        })
++      })
++      if (change === 'explicit seek') {
++        expect(playerRef.current.seekTo).toHaveBeenCalledWith(28)
++        expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++        expect(renderer.renderWaveforms).not.toHaveBeenCalled()
++      } else {
++        expect(playerRef.current.seekTo).not.toHaveBeenCalled()
++        expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
++        expect(renderer.renderWaveforms).toHaveBeenCalled()
++      }
++    },
++  )
+ 
+   it('does not present an old revision after the loaded owner changes during capture', async () => {
+     const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => false }
+diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/features/preview/components/video-preview.sync.test.tsx
+--- a/src/features/preview/components/video-preview.sync.test.tsx
++++ b/src/features/preview/components/video-preview.sync.test.tsx
+@@ -74,6 +74,7 @@
+   setBlobUrl: setMockBlobUrl,
+ } = mockState
+ let mockedPlayerFrame = 0
++let emitMockPlayerFrame: ((frame: number) => void) | undefined
+ let mockedPlayerIsPlaying = false
+ let deferPlayerSeekCompletion = false
+ let completeDeferredPlayerSeek: ((frameOverride?: number) => void) | null = null
+@@ -337,6 +338,7 @@
+ 
+     React.useEffect(() => {
+       onFrameChangeRef.current = onFrameChange
++      emitMockPlayerFrame = onFrameChange as ((frame: number) => void) | undefined
+     }, [onFrameChange])
+ 
+     React.useImperativeHandle(
+@@ -3666,6 +3668,58 @@
+     })
+   })
+ 
++  it.each(['explicit seek', 'normal progress'] as const)(
++    'checks a deferred playing scope sample after short %s',
++    async (change) => {
++      setSingleVideoItemAtFrame({ id: 'scope-playing' })
++      await renderReadySingleRendererPreview(24, { expectVisible: false })
++      act(() => {
++        usePreviewBridgeStore.setState({
++          scopeOwner: {
++            baseRevision: 3,
++            graphVersion: 1,
++            mountGeneration: 0,
++            projectId: 'p',
++            hasLocalEdits: () => false,
++          },
++        })
++        usePlaybackStore.setState({ isPlaying: true })
++        mockedPlayerFrame = 24
++      })
++      const capture = usePreviewBridgeStore.getState().captureScopeSample!
++      await capture('canvas')
++      const liveRenderer = rendererMockState.instances.at(-1)!
++      let finish!: () => void
++      liveRenderer.renderFrame.mockImplementationOnce(
++        () =>
++          new Promise<void>((resolve) => {
++            finish = resolve
++          }),
++      )
++      const sample = capture('canvas')
++      await waitFor(() => {
++        expect(finish).toBeTypeOf('function')
++      })
++      act(() => {
++        if (change === 'normal progress') {
++          mockedPlayerFrame = 28
++          emitMockPlayerFrame?.(28)
++        } else {
++          usePlaybackStore.getState().setCurrentFrame(28)
++        }
++      })
++      await act(async () => {
++        finish()
++        const result = await sample
++        if (change === 'explicit seek') expect(result).toBeNull()
++        else {
++          expect(usePlaybackStore.getState().currentFrame).toBe(28)
++          expect(result?.frame).toBe(24)
++        }
++      })
++    },
++  )
++
+   it('refuses an old renderer callback after unmount even with a newly loaded owner', async () => {
+     setSingleVideoItemAtFrame({ id: 'scope-old-mount' })
+     const { unmount } = await renderReadySingleRendererPreview(24, { expectVisible: false })
+diff --git a/src/features/preview/hooks/use-custom-player.ts b/src/features/preview/hooks/use-custom-player.ts
+--- a/src/features/preview/hooks/use-custom-player.ts
++++ b/src/features/preview/hooks/use-custom-player.ts
+@@ -19,6 +19,7 @@
+   planPlaybackStateCommand,
+   planPreviewFrameSyncCommand,
+ } from '../utils/player-command-planner'
++import { invalidateScopeSeek } from '../utils/scope-capture-inputs'
+ import { createLogger } from '@/shared/logging/logger'
+ 
+ const logger = createLogger('useCustomPlayer')
+@@ -76,6 +77,7 @@
+ 
+       ignorePlayerUpdatesRef.current = true
+       try {
++        invalidateScopeSeek()
+         onPlayerSeek?.(targetFrame)
+         playerRef.current.seekTo(targetFrame)
+         lastSyncedFrameRef.current = targetFrame
+@@ -253,6 +255,7 @@
+     lastSyncedFrameRef.current = initialFrame
+     lastSeekTargetRef.current = initialFrame
+     if (playerFrame !== initialFrame) {
++      invalidateScopeSeek()
+       onPlayerSeek?.(initialFrame)
+     }
+     playerRef.current.seekTo(initialFrame)
+diff --git a/src/features/preview/hooks/use-preview-render-pump-controller.ts b/src/features/preview/hooks/use-preview-render-pump-controller.ts
+--- a/src/features/preview/hooks/use-preview-render-pump-controller.ts
++++ b/src/features/preview/hooks/use-preview-render-pump-controller.ts
+@@ -10,6 +10,7 @@
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+ import type { TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import type { ResolvedTransitionWindow } from '@/shared/timeline/transitions/transition-planner'
++import { invalidateScopeSeek } from '../utils/scope-capture-inputs'
+ import { useGizmoStore } from '../stores/gizmo-store'
+ import { useCornerPinStore } from '../stores/corner-pin-store'
+ import { useMaskEditorStore } from '../stores/mask-editor-store'
+@@ -2636,6 +2637,11 @@
+         if (prevIsPausedInsideTransition && !isPausedInsideTransition) {
+           scrubRequestedFrameRef.current = state.currentFrame
+           void pumpRenderLoop()
++          if (
++            Math.round(playerRef.current?.getCurrentFrame() ?? Number.NaN) !== state.currentFrame
++          ) {
++            invalidateScopeSeek()
++          }
+           playerRef.current?.seekTo(state.currentFrame)
+           return
+         }
+@@ -2653,6 +2659,7 @@
+               void pumpRenderLoop()
+             }
+             if (roundedFrame !== state.currentFrame) {
++              invalidateScopeSeek()
+               trackPlayerSeek(state.currentFrame)
+               playerRef.current?.seekTo(state.currentFrame)
+             }
+@@ -2662,6 +2669,7 @@
+             scrubRequestedFrameRef.current = state.currentFrame
+             void pumpRenderLoop()
+             if (roundedFrame !== state.currentFrame) {
++              invalidateScopeSeek()
+               trackPlayerSeek(state.currentFrame)
+               playerRef.current?.seekTo(state.currentFrame)
+             }
+@@ -2673,6 +2681,7 @@
+             return
+           }
+           if (roundedFrame !== state.currentFrame) {
++            invalidateScopeSeek()
+             trackPlayerSeek(state.currentFrame)
+           }
+           playerRef.current?.seekTo(state.currentFrame)
+diff --git a/src/features/preview/utils/scope-capture-inputs.ts b/src/features/preview/utils/scope-capture-inputs.ts
+--- a/src/features/preview/utils/scope-capture-inputs.ts
++++ b/src/features/preview/utils/scope-capture-inputs.ts
+@@ -11,6 +11,11 @@
+ 
+ let inputEpoch = 0
+ let seekEpoch = 0
++// Explicit primary Player seeks are distinct from ordinary frameupdate progress.
++export function invalidateScopeSeek() {
++  seekEpoch += 1
++}
++
+ let lastPlayingFrame: { frame: number; atMs: number } | null = null
+ usePlaybackStore.subscribe((state) => {
+   if (!state.isPlaying) {
