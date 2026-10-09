@@ -106,7 +106,7 @@ jobs:
         run: |
           pnpm --filter frameleaf build
           pnpm --filter frameleaf exec node dist/bin/sync-open-api.js
-          oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+          node scripts/generate-typescript-sdk.mjs
       - name: Retain generated API artifacts for source reconciliation
         if: ${{ steps.api-generation.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

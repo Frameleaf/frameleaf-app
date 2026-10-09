@@ -147,8 +147,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas \
-            open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts \
+          node scripts/generate-typescript-sdk.mjs \
             2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/api-client.log"
       - name: Generate SQL queries
         timeout-minutes: 5
