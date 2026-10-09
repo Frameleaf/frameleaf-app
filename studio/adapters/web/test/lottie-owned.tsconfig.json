@@ -1,0 +1,9 @@
+{
+  "extends": "./keyframe-browser.tsconfig.json",
+  "include": [
+    "lottie-owned.browser.tsx",
+    "lottie-owned.fixture.d.mts",
+    "../../../engine/src/**/*.d.ts",
+    "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
+  ]
+}
