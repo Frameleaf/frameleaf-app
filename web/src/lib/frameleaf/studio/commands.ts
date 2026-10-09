@@ -162,10 +162,10 @@ export type StudioRetimePolicy = 'keep-time' | 'keep-frames';
  */
 export type StudioOpaqueValue = Readonly<Record<string, unknown>>;
 
-export interface StudioRippleOption {
+export type StudioRippleOption = {
   /** When true later clips on the track follow the edit. */
   ripple?: boolean;
-}
+};
 
 export interface StudioRect {
   x: number;
@@ -210,13 +210,13 @@ export interface StudioCaptionLine {
 }
 
 /** A marked source range placed by the source monitor. */
-export interface StudioSourceEdit {
+export type StudioSourceEdit = {
   trackId: string;
   assetId: string;
   at: StudioTime;
   sourceIn: StudioTime;
   sourceOut: StudioTime;
-}
+};
 
 export interface StudioCommandPayloads {
   'captions.set': { captions: StudioCaptionLine[] };
