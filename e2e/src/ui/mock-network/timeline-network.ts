@@ -8,6 +8,7 @@ import {
   getTimeBucket,
   getTimeBuckets,
   getTimelineHighlights,
+  randomImageFromString,
   randomPreview,
   randomThumbnail,
   TimelineData,
@@ -161,12 +162,29 @@ export const setupTimelineMockApiRoutes = async (
   });
 
   await context.route('**/api/assets/*/thumbnail?size=*', async (route, request) => {
-    const pattern = /\/api\/assets\/(?<assetId>[^/]+)\/thumbnail\?size=(?<size>preview|thumbnail)/;
+    const pattern = /\/api\/assets\/(?<assetId>[^/]+)\/thumbnail\?size=(?<size>preview|thumbnail|fullsize)(?:&|$)/;
     const match = request.url().match(pattern);
     if (!match?.groups) {
       throw new Error(`Invalid URL for thumbnail endpoint: ${request.url()}`);
     }
 
+    if (match.groups.size === 'fullsize') {
+      if (!route.request().serviceWorker()) {
+        return route.continue();
+      }
+      const asset = getAsset(timelineRestData, match.groups.assetId);
+      if (!asset?.exifInfo?.exifImageWidth || !asset.exifInfo.exifImageHeight) {
+        throw new Error(`Missing fullsize dimensions for fixture asset: ${match.groups.assetId}`);
+      }
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'image/jpeg' },
+        body: await randomImageFromString(match.groups.assetId, {
+          width: asset.exifInfo.exifImageWidth,
+          height: asset.exifInfo.exifImageHeight,
+        }),
+      });
+    }
     if (match.groups.size === 'preview') {
       if (!route.request().serviceWorker()) {
         return route.continue();
