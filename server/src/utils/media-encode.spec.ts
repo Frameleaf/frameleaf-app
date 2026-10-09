@@ -62,7 +62,7 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(10);
     expect(plan.filters).toEqual([
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
+      'scale=out_color_matrix=bt2020:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
     expect(plan.args).toEqual(['-pix_fmt', 'yuv420p10le']);
@@ -227,7 +227,7 @@ describe('applyFloatEncodePixelFormat', () => {
     expect(applyFloatEncodePixelFormat(['scale=1920:1080', 'format=yuv420p'], softwarePlan)).toEqual([
       'scale=1920:1080',
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
+      'scale=out_color_matrix=bt2020:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
   });
@@ -236,7 +236,7 @@ describe('applyFloatEncodePixelFormat', () => {
     expect(applyFloatEncodePixelFormat(['scale=1920:1080'], softwarePlan)).toEqual([
       'scale=1920:1080',
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
+      'scale=out_color_matrix=bt2020:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
   });
