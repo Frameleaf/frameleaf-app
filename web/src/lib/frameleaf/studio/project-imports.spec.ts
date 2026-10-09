@@ -21,7 +21,8 @@ describe('Studio project imports (FL-103 / FL-105)', () => {
       name: 'Voiceover 1.webm',
       mimeType: 'audio/webm',
       sizeBytes: 1024,
-      url: expect.stringContaining(`/studio/projects/0198a1c2-0000-7000-8000-0000000000aa/imports/${dto.id}/file`),
+      checksum: dto.checksum,
+      url: `/api/studio/projects/0198a1c2-0000-7000-8000-0000000000aa/imports/${dto.id}/file`,
     });
   });
 
