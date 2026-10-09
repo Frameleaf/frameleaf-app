@@ -87,7 +87,7 @@ export class SqlQueueStore {
     }
   }
 
-  private async insertBatch(intents: QueueIntent[], db: Executor) {
+  private async insertBatch(intents: QueueIntent[], db: Executor, lockedManifestItems?: ReadonlySet<QueueIntent>) {
     // Same lock order as admission/completion, including multi-queue follow-ups.
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
       await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(db);
@@ -133,7 +133,7 @@ export class SqlQueueStore {
             // A stopped producer may still own a durable snapshot/checkpoint. Rewriting it would
             // orphan its original run and retry state; let it settle before scheduling the latest.
             if (deferred) {
-              if (intent.runId && intent.itemKey) {
+              if (intent.runId && intent.itemKey && !lockedManifestItems?.has(intent)) {
                 await this.insertRunItem(intent, db);
               }
               await this.adoptIntentMemberships(intent, db);
@@ -149,7 +149,7 @@ export class SqlQueueStore {
             }
             // Pending replacement transfers ownership to the newest run. Older requests
             // are cancelled explicitly instead of inheriting an output they never requested.
-            if (intent.runId && intent.itemKey) {
+            if (intent.runId && intent.itemKey && !lockedManifestItems?.has(intent)) {
               await this.insertRunItem(intent, db);
             }
             await sql`update job set data = ${JSON.stringify(intent.data)}::text::jsonb,
@@ -165,7 +165,7 @@ export class SqlQueueStore {
           }
           // Runs must never count a deduplicated selection as silently absent.
           if (intent.runId && intent.itemKey) {
-            await this.insertRunItem(intent, db, existing.state);
+            if (!lockedManifestItems?.has(intent)) await this.insertRunItem(intent, db, existing.state);
             await sql`update job_run_item set "jobId" = ${existing.id}::uuid
               where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
               db,
@@ -187,7 +187,7 @@ export class SqlQueueStore {
           continue;
         }
       }
-      if (intent.runId && intent.itemKey) {
+      if (intent.runId && intent.itemKey && !lockedManifestItems?.has(intent)) {
         await this.insertRunItem(intent, db);
       }
       const id = randomUUID();
@@ -307,7 +307,8 @@ export class SqlQueueStore {
 
   async feedManifest(queue: string) {
     await shareSelectionPage(this.db, { queue });
-    return feedManifest(this.db, queue, (intents, tx) => this.enqueue(intents, tx));
+    // The feeder retains these exact canonical tuples under row locks until this transaction commits.
+    return feedManifest(this.db, queue, (intents, tx) => this.insertBatch(intents, tx, new Set(intents)));
   }
 
   async claim(queue: string, workerId: string, maxClaims = QUEUE_BATCH): Promise<QueueClaim[]> {

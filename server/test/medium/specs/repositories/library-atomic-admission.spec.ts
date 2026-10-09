@@ -545,6 +545,14 @@ describe('library atomic source admission', () => {
       sourceClosedAt: expect.any(Date),
     });
     expect(await store.feedManifest(queue)).toBe(0);
+    // BEFORE INSERT also observes attempted ON CONFLICT inserts into retained canonical rows.
+    await sql`create table library_feeder_insert_count(calls integer not null)`.execute(db);
+    await sql`insert into library_feeder_insert_count values (0)`.execute(db);
+    await sql`create function count_library_feeder_insert() returns trigger language plpgsql as $$
+      begin update library_feeder_insert_count set calls = calls + 1; return new; end $$`.execute(db);
+    await sql`create trigger count_library_feeder_insert before insert on job_run_item for each row
+      when (new."runId" = ${sql.lit(operationId)}::uuid and new.stage = ${sql.lit(JobName.SidecarCheck)}
+        and new."selectionId" is null) execute function count_library_feeder_insert()`.execute(db);
     await sql`update job_queue set paused = false where name = ${queue}`.execute(db);
     for (let i = 0; i < 4; i++) {
       expect(await store.feedManifest(queue)).toBe(250);
@@ -552,8 +560,43 @@ describe('library atomic source admission', () => {
     }
     expect(await store.feedManifest(queue)).toBe(0);
     expect(await live()).toBe(1000);
+    expect(
+      (await sql<{ calls: number }>`select calls from library_feeder_insert_count`.execute(db)).rows[0].calls,
+    ).toBe(0);
+    const linked = await sql<{ count: string }>`select count(*)::text as count from job_run_item item
+      join job on job.id = item."jobId" and job."runId" = item."runId"
+        and job."itemKey" = item."itemKey" and job.name = item.stage
+      where item."selectionId" = ${operationId}::uuid and item.state = 'pending' and job.state = 'pending'`.execute(db);
+    expect(Number(linked.rows[0].count)).toBe(1000);
+    expect(await members()).toBe(1250);
     await expect(accept()).rejects.toThrow('not open');
     expect(await new AssetRepository(db).getLibraryAssetCount(library.id)).toBe(1250);
+  });
+
+  it('creates retained membership for an ordinary enqueue without a frozen manifest tuple', async () => {
+    const runId = await store.createRun('ordinary-admission-control', {});
+    const itemKey = randomUUID();
+    await store.enqueue([
+      {
+        queue,
+        name: JobName.SidecarCheck,
+        data: { id: itemKey },
+        runId,
+        itemKey,
+        rootItemKey: itemKey,
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 60_000,
+      },
+    ]);
+    const { rows } = await sql<{ selectionId: string | null; state: string; jobState: string; id: string }>`
+      select item."selectionId", item.state, job.state as "jobState", job.id from job_run_item item
+      join job on job.id = item."jobId" and job."runId" = item."runId"
+        and job."itemKey" = item."itemKey" and job.name = item.stage
+      where item."runId" = ${runId}::uuid and item."itemKey" = ${itemKey} and item.stage = ${JobName.SidecarCheck}`.execute(
+      db,
+    );
+    expect(rows).toEqual([{ selectionId: null, state: 'pending', jobState: 'pending', id: expect.any(String) }]);
   });
 
   it('streams 500000 actual asset/source admissions with no eager pending media and a capped paused/slow feeder', async () => {
