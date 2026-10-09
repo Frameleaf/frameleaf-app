@@ -14,7 +14,7 @@ import {
 } from '$lib/frameleaf/studio/project-session';
 import StudioHost from './StudioHost.svelte';
 
-addMessages('dev', { frameleaf_studio_project_name: 'Project name', frameleaf_studio_read_only: 'Review only' });
+addMessages('dev', { frameleaf_studio_project_name: 'Project name', frameleaf_studio_read_only: 'View only' });
 
 const lease = {
   heldByYou: true,
@@ -156,11 +156,11 @@ describe('project authorization is independent of editor availability (FL-112)',
       expect(view.api.save).not.toHaveBeenCalled();
     });
     for (const member of ['shared', 'viewer']) {
-      it(`${member} sees Review only with ${engine} and cannot rename or acquire a lease`, async () => {
+      it(`${member} sees View only with ${engine} and cannot rename or acquire a lease`, async () => {
         const view = await open(StudioProjectAccess.Reviewer, engine);
         expect(view.getByRole('heading', { level: 1, name: 'FL-112 access' })).toBeVisible();
         expect(view.queryByRole('textbox', { name: 'Project name' })).toBeNull();
-        expect(view.getByText('Review only')).toBeVisible();
+        expect(view.getByText('View only')).toBeVisible();
         expect(view.api.rename).not.toHaveBeenCalled();
         expect(view.api.acquireLease).not.toHaveBeenCalled();
         expect(view.api.save).not.toHaveBeenCalled();
@@ -176,7 +176,7 @@ describe('project chrome authorization transitions', () => {
       await view.refresh(changes);
       expect(view.queryByRole('textbox', { name: 'Project name' })).toBeNull();
       expect(view.queryByRole('heading', { name: 'FL-112 access' })).toBeNull();
-      expect(view.queryByText('Review only')).toBeNull();
+      expect(view.queryByText('View only')).toBeNull();
     }
     expect(view.api.rename).not.toHaveBeenCalled();
   });
@@ -189,7 +189,7 @@ describe('project chrome authorization transitions', () => {
     expect(view.state().status).toBe('forbidden');
     expect(view.queryByRole('textbox', { name: 'Project name' })).toBeNull();
     expect(view.queryByRole('heading', { name: 'FL-112 access' })).toBeNull();
-    expect(view.queryByText('Review only')).toBeNull();
+    expect(view.queryByText('View only')).toBeNull();
     expect(view.api.rename).not.toHaveBeenCalled();
   });
 
@@ -199,7 +199,7 @@ describe('project chrome authorization transitions', () => {
     await waitFor(() => expect(view.instance.dispose).toHaveBeenCalledTimes(1));
     expect(view.queryByRole('textbox', { name: 'Project name' })).toBeNull();
     expect(view.queryByRole('heading', { name: 'FL-112 access' })).toBeNull();
-    expect(view.queryByText('Review only')).toBeNull();
+    expect(view.queryByText('View only')).toBeNull();
     expect(view.getByTestId('studio-state')).toHaveAttribute('data-phase', 'forbidden');
   });
 
