@@ -30,6 +30,105 @@ const excluded = new Set([
   "nsfw-unraid-docker.yml",
 ]);
 
+test("Studio browser provisioning uses the exact official image and fails closed before qualification", () => {
+  const engine = workflow("frameleaf-studio-engine.yml").jobs.engine;
+  const step = engine.steps.find(
+    (step) => step.name === "Install Chromium for compositor readback",
+  );
+  const version = JSON.parse(
+    readFileSync(path.join(root, "studio/engine-package-lock.json"), "utf8"),
+  ).packages["node_modules/playwright"].version;
+  assert.equal(version, "1.60.0");
+  assert.equal(
+    engine.env.PLAYWRIGHT_BROWSERS_PATH,
+    "${{ runner.temp }}/studio-playwright",
+  );
+  assert.equal(step["continue-on-error"], undefined);
+  assert.ok(
+    step.run.includes(
+      `mcr.microsoft.com/playwright:v${version}-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948`,
+    ),
+  );
+  const directory = mkdtempSync(path.join(tmpdir(), "studio-browser-install-"));
+  try {
+    mkdirSync(path.join(directory, "bin"));
+    mkdirSync(path.join(directory, "node_modules/playwright"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(directory, "node_modules/playwright/package.json"),
+      JSON.stringify({ version }),
+    );
+    const calls = path.join(directory, "calls");
+    writeFileSync(
+      path.join(directory, "bin/docker"),
+      `#!/bin/bash
+echo "docker $*" >> "$CALLS"
+case "$1" in
+  create) echo studio-browser-container ;;
+  cp)
+    [ "$FAIL_COPY" != 1 ] || exit 41
+    folder=$(basename "$2")
+    mkdir -p "$3/$folder"
+    touch "$3/$folder/INSTALLATION_COMPLETE"
+    case "$folder" in
+      chromium-1223) executable=chrome-linux64/chrome ;;
+      chromium_headless_shell-1223) executable=chrome-headless-shell-linux64/chrome-headless-shell ;;
+      ffmpeg-1011) executable=ffmpeg-linux ;;
+      *) exit 42 ;;
+    esac
+    [ "$BAD_CACHE" != 1 ] || exit 0
+    mkdir -p "$(dirname "$3/$folder/$executable")"
+    touch "$3/$folder/$executable"
+    chmod +x "$3/$folder/$executable" ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      path.join(directory, "bin/npx"),
+      '#!/bin/bash\necho "npx $*" >> "$CALLS"\n',
+      { mode: 0o755 },
+    );
+    const env = {
+      ...process.env,
+      PATH: `${directory}/bin:${process.env.PATH}`,
+      CALLS: calls,
+      PLAYWRIGHT_BROWSERS_PATH: path.join(directory, "browsers"),
+    };
+    const run = (overrides = {}) =>
+      spawnSync("bash", ["-e", "-c", step.run], {
+        cwd: directory,
+        env: { ...env, ...overrides },
+        encoding: "utf8",
+      });
+    assert.equal(run().status, 0);
+    const success = readFileSync(calls, "utf8");
+    assert.equal((success.match(/docker cp /g) ?? []).length, 3);
+    assert.ok(
+      success.includes("npx --no-install playwright install-deps chromium"),
+    );
+    assert.ok(success.includes("docker rm studio-browser-container"));
+    for (const failure of [{ FAIL_COPY: "1" }, { BAD_CACHE: "1" }]) {
+      rmSync(env.PLAYWRIGHT_BROWSERS_PATH, { recursive: true, force: true });
+      writeFileSync(calls, "");
+      assert.notEqual(run(failure).status, 0);
+      const failed = readFileSync(calls, "utf8");
+      assert.ok(failed.includes("docker rm studio-browser-container"));
+      assert.ok(!failed.includes("npx "));
+    }
+    writeFileSync(calls, "");
+    writeFileSync(
+      path.join(directory, "node_modules/playwright/package.json"),
+      JSON.stringify({ version: "1.61.0" }),
+    );
+    assert.notEqual(run().status, 0);
+    assert.equal(readFileSync(calls, "utf8"), "");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Studio graph recovery preserves the failed gate and generates only genuine fixture answers", () => {
   const steps = workflow("frameleaf-studio-engine.yml").jobs.engine.steps;
   const normal = steps.find((step) => step.id === "adapter_contracts");
