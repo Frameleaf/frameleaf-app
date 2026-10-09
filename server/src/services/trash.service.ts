@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DuplicateUndoClaim } from 'src/repositories/duplicate-undo-authority.js';
 import type { TrashScopeOptions } from 'src/repositories/trash.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -277,6 +278,16 @@ export class TrashService extends BaseService {
     });
     await this.afterChange(auth, TrashReviewAction.Restore, restored, sequenced);
 
+    return { count: restored.length };
+  }
+
+  /** Internal recorded Undo only; the repository revalidates the persisted lease and exact group. */
+  async restoreDuplicateUndo(auth: AuthDto, dto: BulkIdsDto, claim: DuplicateUndoClaim): Promise<TrashResponseDto> {
+    let sequenced: string[] = [];
+    const restored = await this.trashRepository.restoreDuplicateUndo(auth.user.id, dto.ids, claim, (ids) => {
+      sequenced = ids;
+    });
+    await this.afterChange(auth, TrashReviewAction.Restore, restored, sequenced);
     return { count: restored.length };
   }
 
