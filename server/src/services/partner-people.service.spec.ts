@@ -81,6 +81,23 @@ describe(PartnerPeopleService.name, () => {
       Promise.resolve(entries.map((entry) => ({ ...entry, id: 'correction-1' })) as never),
     );
     mocks.partnerOrigin.getPersonMapping.mockResolvedValue(undefined);
+    mocks.partnerOrigin.createPersonCopy.mockImplementation((value) => {
+      people.set(`${value.ownerId}/${NEW_PG}`, person(value.ownerId, NEW_PG, value));
+      links = [
+        ...links.filter(
+          (link) => link.ownerId !== value.ownerId || link.sourcePersonGroupId !== value.sourcePersonGroupId,
+        ),
+        {
+          ownerId: value.ownerId,
+          sourcePersonGroupId: value.sourcePersonGroupId,
+          personGroupId: NEW_PG,
+          kind: 'created',
+          partnerSharedById: value.partnerSharedById,
+          correctionId: null,
+        },
+      ];
+      return Promise.resolve({ personGroupId: NEW_PG });
+    });
     mocks.search.searchFaces.mockResolvedValue([]);
   });
 
@@ -125,8 +142,8 @@ describe(PartnerPeopleService.name, () => {
           correctionId: 'correction-1',
         },
       ]);
-      expect(mocks.person.create).not.toHaveBeenCalled();
-      expect(mocks.partnerOrigin.createPersonOrigin).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
     });
 
     it("never merges into another account's person in the same recognition group", async () => {
@@ -154,18 +171,19 @@ describe(PartnerPeopleService.name, () => {
 
       await sut.copyFaces(copyInput);
 
-      expect(mocks.person.createGroup).toHaveBeenCalledWith(B);
-      expect(mocks.person.create).toHaveBeenCalledWith(
-        expect.objectContaining({ ownerId: B, personGroupId: NEW_PG, name: 'Emma', birthDate: '2015-04-01' }),
+      expect(mocks.partnerOrigin.createPersonCopy).toHaveBeenCalledWith(
+        {
+          ownerId: B,
+          sourceOwnerId: A,
+          sourcePersonGroupId: PG_A,
+          rootOwnerId: A,
+          partnerSharedById: A,
+          name: 'Emma',
+          birthDate: '2015-04-01',
+          isHidden: false,
+        },
+        undefined,
       );
-      expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith({
-        ownerId: B,
-        personGroupId: NEW_PG,
-        sourceOwnerId: A,
-        sourcePersonGroupId: PG_A,
-        rootOwnerId: A,
-        partnerSharedById: A,
-      });
       expect(links[0]).toMatchObject({ personGroupId: NEW_PG, kind: 'created', correctionId: null });
       expect(mocks.person.copyFacesToAsset).toHaveBeenCalledWith(TARGET_ASSET, [
         expect.objectContaining({ sourceFaceId: FACE_1, personGroupId: NEW_PG }),
@@ -229,8 +247,9 @@ describe(PartnerPeopleService.name, () => {
 
       await sut.copyFaces(copyInput);
 
-      expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
+      expect(mocks.partnerOrigin.createPersonCopy).toHaveBeenCalledWith(
         expect.objectContaining({ rootOwnerId: 'root-user', sourceOwnerId: A }),
+        undefined,
       );
     });
 
@@ -263,7 +282,7 @@ describe(PartnerPeopleService.name, () => {
       await sut.copyFaces(copyInput);
 
       expect(mocks.search.searchFaces).not.toHaveBeenCalled();
-      expect(mocks.person.createGroup).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
       expect(links[0]).toMatchObject({ personGroupId: PG_A, kind: 'merged', correctionId: null });
     });
 
@@ -310,28 +329,25 @@ describe(PartnerPeopleService.name, () => {
         correctionId: 'correction-1',
       });
       mocks.person.getPartnerMergedFaceIds.mockResolvedValue(mergedFaceIds);
-      mocks.person.undoPartnerMerge.mockResolvedValue(true);
     });
 
     it("moves the merged faces to a new person of the partner's person, with an origin", async () => {
-      mocks.person.undoPartnerMerge.mockImplementation(() => {
+      const createCopy = mocks.partnerOrigin.createPersonCopy.getMockImplementation()!;
+      mocks.partnerOrigin.createPersonCopy.mockImplementation((value, undo) => {
         expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
         thumbnailSelection.execute.mockResolvedValue([
           { data: { ownerId: B, personGroupId: NEW_PG, selectionFaceId: mergedFaceIds[0] } },
         ]);
-        return Promise.resolve(true);
+        return createCopy(value, undo);
       });
 
       await sut.undoPartnerMerge(authStub.user1, entry);
 
       expect(mocks.person.getPartnerMergedFaceIds).toHaveBeenCalledWith(B, PG_A, PG_B);
-      expect(mocks.person.create).toHaveBeenCalledWith(
-        expect.objectContaining({ ownerId: B, personGroupId: NEW_PG, name: 'Emma' }),
+      expect(mocks.partnerOrigin.createPersonCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: B, sourcePersonGroupId: PG_A, name: 'Emma' }),
+        { correctionId: 'correction-1', personGroupId: PG_B, faceIds: mergedFaceIds },
       );
-      expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
-        expect.objectContaining({ ownerId: B, personGroupId: NEW_PG, sourcePersonGroupId: PG_A }),
-      );
-      expect(mocks.person.undoPartnerMerge).toHaveBeenCalledWith('correction-1', mergedFaceIds, NEW_PG);
       expect(links[0]).toMatchObject({ personGroupId: NEW_PG, kind: 'created', correctionId: null });
       expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, B);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
@@ -353,7 +369,7 @@ describe(PartnerPeopleService.name, () => {
       await expect(sut.undoPartnerMerge(authStub.user1, { ...entry, undoneAt: new Date() })).rejects.toBeInstanceOf(
         ConflictException,
       );
-      expect(mocks.person.create).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.createPersonCopy).not.toHaveBeenCalled();
     });
 
     it('refuses when the mapping is gone', async () => {
@@ -362,7 +378,7 @@ describe(PartnerPeopleService.name, () => {
     });
 
     it('reports a lost race as already undone', async () => {
-      mocks.person.undoPartnerMerge.mockResolvedValue(false);
+      mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ conflict: 'already-undone' });
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
       expect(mocks.person.selectionForThumbnails).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
