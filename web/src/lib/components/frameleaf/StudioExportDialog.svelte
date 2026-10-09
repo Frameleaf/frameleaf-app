@@ -283,6 +283,15 @@
       quality,
     }).supported,
   );
+  const embeddedAvailable = $derived(
+    evaluateStudioRender(renderEvidence, destination, {
+      format,
+      color,
+      resolution,
+      subtitleMode: StudioExportSubtitleMode.Embedded,
+      quality,
+    }).supported,
+  );
   const needsMastering = $derived(
     color === StudioExportColor.Hdr10 || (color === StudioExportColor.Preserve && declarePqMastering),
   );
@@ -442,6 +451,9 @@
           <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
             <option value={StudioExportSubtitleMode.Burn}>{$t('frameleaf_studio_export_subtitles_burn')}</option>
             <option value={StudioExportSubtitleMode.Off}>{$t('frameleaf_studio_export_subtitles_off')}</option>
+            <option value={StudioExportSubtitleMode.Embedded} disabled={!embeddedAvailable}
+              >{$t('frameleaf_studio_export_subtitles_embedded')}</option
+            >
             <option value={StudioExportSubtitleMode.Sidecar} disabled={!sidecarAvailable}
               >{$t('frameleaf_studio_export_subtitles_sidecar')}</option
             >

@@ -34,6 +34,7 @@ import {
 } from 'src/repositories/studio-export.repository.js';
 import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
+import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 
@@ -265,6 +266,7 @@ describe(StudioExportService.name, () => {
   };
   let media: {
     probe: ReturnType<typeof vi.fn>;
+    probeEmbeddedSubtitles: ReturnType<typeof vi.fn>;
     probeHdrMastering: ReturnType<typeof vi.fn<MediaRepository['probeHdrMastering']>>;
     probePackets: ReturnType<typeof vi.fn>;
     inspectImageEncoding: ReturnType<typeof vi.fn>;
@@ -403,6 +405,7 @@ describe(StudioExportService.name, () => {
         return Promise.resolve();
       }),
       probe: vi.fn().mockResolvedValue(renderedOutput()),
+      probeEmbeddedSubtitles: vi.fn(),
       probeHdrMastering: vi.fn<MediaRepository['probeHdrMastering']>().mockResolvedValue([]),
       probePackets: vi.fn().mockResolvedValue(null),
     };
@@ -446,6 +449,66 @@ describe(StudioExportService.name, () => {
       mlDestinations as never,
       events as never,
     );
+  });
+
+  it('independently decodes embedded output and refuses changed cues, missing or mixed stream authority', async () => {
+    const graph = {
+      metadata: { fps: 24 },
+      timeline: {
+        tracks: [{ id: 'c', visible: true }],
+        items: [
+          {
+            id: 'c',
+            type: 'text',
+            textRole: 'caption',
+            captionSource: { type: 'subtitle-import' },
+            trackId: 'c',
+            from: 0,
+            durationInFrames: 48,
+            text: 'Caption',
+          },
+        ],
+        transitions: [],
+        keyframes: [],
+      },
+    };
+    const seal = sealStudioEmbeddedSubtitles(graph, {
+      revisionDigest: 'a'.repeat(64),
+      manifestDigest: 'b'.repeat(64),
+      engineDigest: 'c'.repeat(64),
+    });
+    const version = versionRow({
+      settings: {
+        format: 'mp4-h264',
+        color: 'preserve',
+        resolution: '720p',
+        subtitleMode: 'embedded',
+        embeddedSubtitleSeal: seal,
+      },
+    });
+    const contract = {
+      video: { minBitDepth: 8 as const, transfer: null },
+      audio: { policy: 'preserve' as const, channels: 2, channelLayout: 'stereo', sampleRate: 48_000 },
+      embeddedSubtitles: seal,
+    };
+    const measured = {
+      streams: [{ codec: 'mov_text', language: 'und', default: 1, forced: 0 }],
+      content: '1\n00:00:00,000 --> 00:00:02,000\nCaption\n',
+    };
+    media.probeEmbeddedSubtitles.mockResolvedValue(measured);
+    await expect((sut as any).verifyContract('owned.mp4', version, contract)).resolves.toBeUndefined();
+    expect(media.probeEmbeddedSubtitles).toHaveBeenCalledWith('owned.mp4');
+    for (const failed of [
+      { ...measured, content: measured.content.replace('Caption', 'Changed') },
+      { ...measured, streams: [] },
+      { ...measured, streams: [{ ...measured.streams[0], forced: 1 }] },
+    ]) {
+      media.probeEmbeddedSubtitles.mockResolvedValue(failed);
+      await expect((sut as any).verifyContract('owned.mp4', version, contract)).rejects.toThrow();
+    }
+    await expect(
+      (sut as any).verifyContract('owned.mp4', version, { ...contract, embeddedSubtitles: undefined }),
+    ).rejects.toThrow('immutable authority');
   });
 
   describe('create', () => {
@@ -607,9 +670,71 @@ describe(StudioExportService.name, () => {
         StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode: 'sidecar', subtitleSeal: {} })
           .success,
       ).toBe(false);
-      for (const subtitleMode of ['embedded', null, 10, {}]) {
+      for (const subtitleMode of ['unknown', null, 10, {}]) {
         expect(StudioExportCreateDto.schema.safeParse({ ...(dto as object), subtitleMode }).success).toBe(false);
       }
+    });
+
+    it('queues embedded only with exact session proof and binds canonical cues before creating work', async () => {
+      const graph = {
+        metadata: { fps: 24 },
+        timeline: {
+          tracks: [{ id: 'c', visible: true }],
+          items: [
+            {
+              id: 'c',
+              type: 'text',
+              textRole: 'caption',
+              captionSource: { type: 'subtitle-import' },
+              trackId: 'c',
+              from: 0,
+              durationInFrames: 48,
+              text: 'Caption',
+            },
+          ],
+          transitions: [],
+          keyframes: [],
+        },
+      };
+      studio.authorizeRevision.mockResolvedValue(
+        authorized({
+          revision: { revision: 3, digest: 'a'.repeat(64) },
+          envelope: { graph, engineRevision: 'c'.repeat(64) },
+          manifest: { complete: true, refusedCount: 0, digest: 'b'.repeat(64), entries: [] },
+        }),
+      );
+      const session = liveSession({ codecs: ['webcodecs-avc', 'mov_text'], formats: ['mp4', 'mp4-h264+mov-text-v1'] });
+      renderWorkers.listLiveSessions.mockResolvedValue([session]);
+      renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+      const request = StudioExportCreateDto.schema.parse({ ...dto, resolution: '720p', subtitleMode: 'embedded' });
+      repository.createWithRender.mockResolvedValue({ operation: operation(), version: versionRow() });
+      await sut.create(auth(), PROJECT, request);
+      const [job, version] = repository.createWithRender.mock.calls.at(-1)!;
+      expect(job.settings).toMatchObject({
+        subtitleMode: 'embedded',
+        embeddedSubtitleSeal: { codec: 'mov_text', source: { cueCount: 1 } },
+      });
+      expect(version.settings).toEqual(job.settings);
+      expect((job.snapshot as any).contract.embeddedSubtitles).toEqual((job.settings as any).embeddedSubtitleSeal);
+      expect(job.settings).not.toHaveProperty('subtitleSeal');
+      repository.createWithRender.mockClear();
+      renderWorkers.getSessionCapabilities.mockResolvedValue({ ...session.capabilities, codecs: ['webcodecs-avc'] });
+      await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow();
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+      renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+      for (const style of [
+        { color: '#ff00ff' },
+        { styleTemplate: { fontFamily: 'Inter', fontSize: 48, color: '#00ff00' } },
+      ]) {
+        Object.assign(graph.timeline.items[0], style);
+        await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('without authored styling');
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+        delete (graph.timeline.items[0] as any).color;
+        delete (graph.timeline.items[0] as any).styleTemplate;
+      }
+      graph.timeline.items[0].text = '<b>Styled caption</b>';
+      await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('MP4 timed text requires');
+      expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
     it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {

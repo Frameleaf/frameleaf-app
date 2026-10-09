@@ -10203,6 +10203,7 @@
   "frameleaf_studio_export_subtitles": "Subtitles",
   "frameleaf_studio_export_subtitles_burn": "Burn in",
   "frameleaf_studio_export_subtitles_off": "Off",
+  "frameleaf_studio_export_subtitles_embedded": "Embedded MP4 text track (default)",
   "frameleaf_studio_export_subtitles_sidecar": "Separate SRT file",
   "frameleaf_studio_export_summary": "{format} · {resolution} · renders on {destination}",
   "frameleaf_studio_export_summary_label": "What you will get",
