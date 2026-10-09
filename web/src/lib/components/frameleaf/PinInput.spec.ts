@@ -1,7 +1,20 @@
-import { render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import PinInputTestHarness from './PinInputTestHarness.svelte';
 
 describe('PIN disabled state', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  afterEach(async () => {
+    try {
+      cleanup();
+      // Finish bits-ui autofill callbacks before Vitest restores the global Event constructor.
+      await vi.runOnlyPendingTimersAsync();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the native input and cell styling in sync with field disabling and enabling', async () => {
     const view = render(PinInputTestHarness, { disabled: true });
     const input = screen.getByRole('textbox', { name: 'Recovery code' });
