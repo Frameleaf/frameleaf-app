@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepareOneClaim } from './render-worker-claim.mjs';
+import { muxEmbeddedSubtitles } from './render-worker-embedded-subtitles.mjs';
 import { verifyClaimFileLuts } from './render-worker-lut-inputs.mjs';
 import { deriveClaimVectors } from './render-worker-vector-inputs.mjs';
 import { inventory } from './engine.mjs';
@@ -51,7 +52,10 @@ export async function ownedOutputBytes(folder) {
   let total = 0;
   let directories = 0;
   const seen = new Set();
-  const optional = (error) => { if (error.code !== 'ENOENT') throw error; return null; };
+  const optional = (error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  };
   const count = async (file) => {
     const entry = await lstat(file).catch(optional);
     if (!entry) return;
@@ -77,7 +81,14 @@ export async function ownedOutputBytes(folder) {
 
 /** Immutable visual timeline planning; runtime resource/build/strict-render admission is separate. */
 export function stillRecipe(claim) {
-  const { quality = 'high', range, subtitleMode, subtitleSeal, ...settings } = claim.settings ?? {};
+  const {
+    quality = 'high',
+    range,
+    subtitleMode,
+    subtitleSeal,
+    embeddedSubtitleSeal,
+    ...settings
+  } = claim.settings ?? {};
   const ceiling = (value, cap) => {
     assert.ok(value === null || value === undefined || /^[1-9][0-9]*$/.test(value), 'INVALID_RESOURCE_CEILING');
     return value == null ? cap : Number(BigInt(value) < BigInt(cap) ? BigInt(value) : BigInt(cap));
@@ -95,7 +106,10 @@ export function stillRecipe(claim) {
       'UNSUPPORTED_STILL_EXPORT_SETTINGS',
     );
     assert.ok(
-      quality === 'high' && subtitleMode === undefined && subtitleSeal === undefined,
+      quality === 'high' &&
+        subtitleMode === undefined &&
+        subtitleSeal === undefined &&
+        embeddedSubtitleSeal === undefined,
       'UNSUPPORTED_STILL_EXPORT_SETTINGS',
     );
     assert.equal(claim.checkpoints?.length ?? 0, 0, 'RECOVERY_RECIPE_UNAVAILABLE');
@@ -155,7 +169,11 @@ export function stillRecipe(claim) {
   };
   assert.ok(typeof quality === 'string' && Object.hasOwn(bitrates, quality), 'UNSUPPORTED_EXPORT_QUALITY');
   assert.ok(
-    subtitleMode === undefined || subtitleMode === 'burn' || subtitleMode === 'off' || subtitleMode === 'sidecar',
+    subtitleMode === undefined ||
+      subtitleMode === 'burn' ||
+      subtitleMode === 'off' ||
+      subtitleMode === 'sidecar' ||
+      subtitleMode === 'embedded',
     'UNSUPPORTED_SUBTITLE_MODE',
   );
   assert.deepEqual(
@@ -252,6 +270,32 @@ export function stillRecipe(claim) {
   );
   assert.deepEqual(claim.snapshot.contract.range ?? null, declaredRange, 'RANGE_CONTRACT_CHANGED');
   assert.ok(!claim.snapshot.smoothMotion || claim.snapshot.smoothMotion === 'none', 'SMOOTH_MOTION_UNSUPPORTED');
+  const {
+    embeddedSubtitleSealOf,
+    sealStudioEmbeddedSubtitles,
+  } = require('../../server/dist/utils/studio-embedded-subtitles.js');
+  const embedded = embeddedSubtitleSealOf(claim.settings);
+  let embeddedSubtitle;
+  if (embedded) {
+    assert.equal(quality, 'high', 'UNSUPPORTED_EMBEDDED_QUALITY');
+    const derived = sealStudioEmbeddedSubtitles(
+      graph,
+      {
+        revisionDigest: claim.revisionId,
+        manifestDigest: claim.snapshot.manifestDigest,
+        engineDigest: claim.snapshot.engineDigest,
+      },
+      range,
+    );
+    assert.equal(canonicalJson(embedded), canonicalJson(derived), 'EMBEDDED_SUBTITLE_SEAL_CHANGED');
+    assert.equal(
+      canonicalJson(claim.snapshot.contract.embeddedSubtitles),
+      canonicalJson(embedded),
+      'EMBEDDED_SUBTITLE_CONTRACT_CHANGED',
+    );
+    const plan = buildStudioSidecarSemanticPlan(graph, range);
+    embeddedSubtitle = { seal: embedded, content: plan.content };
+  } else assert.equal(claim.snapshot.contract.embeddedSubtitles, undefined, 'UNEXPECTED_EMBEDDED_CONTRACT');
   const seal = sidecarSealOf(claim.settings);
   let subtitle;
   if (seal) {
@@ -278,6 +322,7 @@ export function stillRecipe(claim) {
     endTicks: String(endTicks),
     range: range ?? null,
     ...(subtitle && { subtitle }),
+    ...(embeddedSubtitle && { embeddedSubtitle }),
     frameBounds: declaredRange
       ? { inPoint: declaredRange.inPoint, outPoint: declaredRange.outPoint }
       : { inPoint: 0, outPoint: end },
@@ -289,7 +334,9 @@ export function stillRecipe(claim) {
       container: 'mp4',
       audioCodec: 'aac',
       quality,
-      ...(subtitleMode !== undefined && { subtitleMode }),
+      ...(subtitleMode !== undefined && {
+        subtitleMode: subtitleMode === 'embedded' ? 'off' : subtitleMode,
+      }),
       resolution: { width: 1280, height: 720 },
       fps: cadence.num / cadence.den,
       videoBitrate: bitrates[quality],
@@ -310,8 +357,20 @@ export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
       },
     ).toString(),
   );
-  assert.equal(result.streams.length, 1, 'UNEXPECTED_AUDIO_OR_STREAM');
-  const video = result.streams[0];
+  const embedded = typeof plan === 'object' ? plan.embeddedSubtitle?.seal : null;
+  assert.equal(result.streams.length, embedded ? 2 : 1, 'UNEXPECTED_AUDIO_OR_STREAM');
+  const video = result.streams.find((stream) => stream.codec_type === 'video');
+  if (embedded) {
+    const subtitles = result.streams.filter((stream) => stream.codec_type === 'subtitle');
+    assert.ok(
+      subtitles.length === 1 &&
+        subtitles[0].codec_name === embedded.codec &&
+        subtitles[0].tags?.language === embedded.language &&
+        subtitles[0].disposition?.default === embedded.default &&
+        subtitles[0].disposition?.forced === embedded.forced,
+      'EMBEDDED_STREAM_MISMATCH',
+    );
+  }
   assert.ok(
     video.codec_type === 'video' &&
       video.codec_name === 'h264' &&
@@ -338,7 +397,7 @@ export function probeStillOutput(file, plan, ffprobe = 'ffprobe') {
     timeBase && rate && video.start_pts === 0 && video.duration_ts === timelineFrameTicks(frames, rate, timeBase),
     'OUTPUT_TIMING_MISMATCH',
   );
-  const packets = result.packets;
+  const packets = result.packets?.filter((packet) => packet.stream_index === video.index);
   const frameTicks = timelineFrameTicks(1, rate, timeBase);
   assert.ok(
     Array.isArray(packets) && packets.length === frames && Number.isSafeInteger(frameTicks) && frameTicks > 0,
@@ -756,6 +815,24 @@ export async function renderStillImage(context, consume) {
       assert.equal(result.effectiveSettings.quality, recipe.settings.quality, 'QUALITY_CHANGED');
       assert.equal(result.effectiveSettings.subtitleMode, recipe.settings.subtitleMode, 'SUBTITLE_MODE_CHANGED');
       assert.equal(result.effectiveSettings.videoBitrate, recipe.settings.videoBitrate, 'BITRATE_CHANGED');
+    }
+    if (recipe.embeddedSubtitle) {
+      probeStillOutput(result.outputPath, {
+        ...recipe,
+        embeddedSubtitle: undefined,
+      });
+      await assertLive();
+      await muxEmbeddedSubtitles({
+        input: result.outputPath,
+        folder,
+        content: recipe.embeddedSubtitle.content,
+        seal: recipe.embeddedSubtitle.seal,
+        maxBytes: recipe.maxBytes,
+        maxMs: Math.max(1, Math.floor(recipe.maxMs - elapsedMs())),
+        signal: abort.signal,
+        assertLive,
+      });
+      await assertLive();
     }
     let subtitle;
     if (recipe.subtitle) {

@@ -75,6 +75,32 @@ describe('Studio render output (FL-42)', () => {
     row.candidates![0].outputFormats = [];
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(false);
   });
+  it('offers embedded only from the exact same admitted profile, preserving legacy Sidecar evidence', () => {
+    const embedded = {
+      format: StudioExportFormat.Mp4H264,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$720P,
+      subtitleMode: 'embedded',
+      quality: 'high',
+    } as StudioRenderSettings;
+    const row = evidence();
+    row.candidates![0].sidecarOutputFormats = [StudioExportFormat.Mp4H264];
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(false);
+    row.candidates![0].embeddedOutputFormats = [StudioExportFormat.Mp4H264];
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(true);
+    for (const patch of [
+      { quality: 'low' },
+      { resolution: StudioExportResolution.$1080P },
+      { format: StudioExportFormat.WebmAv1 },
+      { color: StudioExportColor.Hdr10 },
+    ])
+      expect(
+        evaluateStudioRender([row], MediaOperationDestination.Lan, { ...embedded, ...patch } as StudioRenderSettings)
+          .supported,
+      ).toBe(false);
+    row.candidates![0].outputFormats = [];
+    expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(false);
+  });
   it('accepts a combination a qualified session verified', () => {
     expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
   });

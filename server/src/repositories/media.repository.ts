@@ -420,6 +420,47 @@ export class MediaRepository {
     };
   }
 
+  /** Independently decode the canonical media's one timed-text track, with bounded subprocess output. */
+  async probeEmbeddedSubtitles(input: string) {
+    const data = await probe(input, ['-select_streams', 's']);
+    const streams = data.streams.map((stream) => ({
+      codec: stream.codec_name ?? null,
+      language: stream.tags?.language ?? null,
+      default: stream.disposition?.default ?? 0,
+      forced: stream.disposition?.forced ?? 0,
+    }));
+    if (streams.length !== 1) return { streams, content: '' };
+    const child = spawn(
+      'ffmpeg',
+      ['-v', 'error', '-nostdin', '-threads', '1', '-i', input, '-map', '0:s:0', '-c:s', 'srt', '-f', 'srt', 'pipe:1'],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(child, { signal: executionSignal(), deadlineMs: 10_000 });
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let diagnosticBytes = 0;
+    let failure: Error | undefined;
+    child.stdout.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > 1024 * 1024) lifetime.stop(new Error('Subtitle decode exceeds its resource limit'));
+      else chunks.push(chunk);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      diagnosticBytes += chunk.length;
+      if (diagnosticBytes > 65_536) lifetime.stop(new Error('Subtitle diagnostics exceed their resource limit'));
+    });
+    child.on('error', (error) => {
+      failure = error;
+    });
+    return new Promise<{ streams: typeof streams; content: string }>((resolve, reject) =>
+      child.once('close', (code) => {
+        if (lifetime.error() || failure || code !== 0)
+          return reject(lifetime.error() ?? failure ?? new Error('Subtitle decode refused'));
+        resolve({ streams, content: Buffer.concat(chunks).toString('utf8') });
+      }),
+    );
+  }
+
   /** Read static mastering SEI from the selected output stream's first decoded picture. */
   async probeHdrMastering(input: string, streamIndex: number): Promise<Record<string, unknown>[]> {
     const data = (await probe(input, [

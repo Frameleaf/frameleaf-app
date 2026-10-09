@@ -37,6 +37,10 @@ import {
   rational,
   tryParseRational,
 } from 'src/utils/rational-time.js';
+import {
+  type StudioEmbeddedSubtitleSeal,
+  StudioEmbeddedSubtitleSealSchema,
+} from 'src/utils/studio-embedded-subtitles.js';
 import { type StudioSidecarSeal, StudioSidecarSealSchema } from 'src/utils/studio-subtitle-sidecar.js';
 import {
   type StudioSourceTiming,
@@ -105,6 +109,7 @@ export class StudioExportImageError extends Error {}
 
 export type StudioExportContract = {
   subtitles?: StudioSidecarSeal;
+  embeddedSubtitles?: StudioEmbeddedSubtitleSeal;
   image?: StudioExportImageContract;
   /** Main-timeline frame selection; the output is rebased to zero at this exact cadence. */
   range?: StudioExportRange & { cadence: string };
@@ -503,6 +508,12 @@ export const findStudioExportRangeMismatch = (
 export const parseStudioExportContract = (value: unknown): StudioExportContract | null => {
   const record = asRecord(value);
   const video = asRecord(record.video);
+  if (
+    record.embeddedSubtitles !== undefined &&
+    !StudioEmbeddedSubtitleSealSchema.safeParse(record.embeddedSubtitles).success
+  )
+    return null;
+  if (record.subtitles !== undefined && record.embeddedSubtitles !== undefined) return null;
   if (record.subtitles !== undefined && !StudioSidecarSealSchema.safeParse(record.subtitles).success) return null;
   if (record.image !== undefined && !StudioExportImageContractSchema.safeParse(record.image).success) return null;
   if (video.minBitDepth !== 8 && video.minBitDepth !== 10) {

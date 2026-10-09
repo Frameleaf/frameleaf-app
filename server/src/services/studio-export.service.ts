@@ -87,6 +87,11 @@ import { settleOperationStop, withOperationExecution } from 'src/utils/operation
 import { RenderOutputRequest, evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import { openRenderArtifact } from 'src/utils/render-artifact.js';
 import {
+  embeddedSubtitleSealOf,
+  findEmbeddedSubtitleMismatch,
+  sealStudioEmbeddedSubtitles,
+} from 'src/utils/studio-embedded-subtitles.js';
+import {
   StudioExportContract,
   StudioExportImageContractSchema,
   StudioExportImageError,
@@ -398,7 +403,34 @@ export class StudioExportService {
       }
       contract.subtitles = subtitleSeal;
     }
-    const sealedSettings = { ...settings, ...(subtitleSeal && { subtitleSeal }) };
+    let embeddedSubtitleSeal;
+    if (dto.subtitleMode === 'embedded') {
+      if (dto.format !== 'mp4-h264' || dto.color !== 'preserve')
+        throw new BadRequestException('Embedded captions require qualified local MP4/H.264 timed text output');
+      try {
+        embeddedSubtitleSeal = sealStudioEmbeddedSubtitles(
+          authorized.envelope.graph as Record<string, unknown>,
+          {
+            revisionDigest: authorized.revision.digest,
+            manifestDigest: authorized.manifest.digest,
+            engineDigest: authorized.envelope.engineRevision,
+          },
+          dto.range,
+        );
+      } catch {
+        throw new ConflictException({
+          code: 'studio_export_embedded_unsupported',
+          message:
+            'MP4 timed text requires nonempty plain captions without authored styling, rendering fields or overlapping cues on the root timeline',
+        });
+      }
+      contract.embeddedSubtitles = embeddedSubtitleSeal;
+    }
+    const sealedSettings = {
+      ...settings,
+      ...(subtitleSeal && { subtitleSeal }),
+      ...(embeddedSubtitleSeal && { embeddedSubtitleSeal }),
+    };
     const { operation, version } = await this.repository.createWithRender(
       {
         ownerId: auth.user.id,
@@ -1171,6 +1203,27 @@ export class StudioExportService {
       throw new PublishError('studio_export_output_invalid', 'The render this export came from is gone');
     }
     const staging = this.stagingFolder({ ownerId: version.ownerId, id: version.renderOperationId });
+    const embedded = embeddedSubtitleSealOf(version.settings);
+    if (embedded) {
+      const derived = sealStudioEmbeddedSubtitles(
+        (revision.envelope as { graph: Record<string, unknown> }).graph,
+        {
+          revisionDigest: version.revisionDigest,
+          manifestDigest: embedded.source.manifestDigest,
+          engineDigest: embedded.source.engineDigest,
+        },
+        { inPoint: embedded.source.inPoint, outPoint: embedded.source.outPoint },
+      );
+      if (
+        canonicalJson(derived) !== canonicalJson(embedded) ||
+        canonicalJson(contract?.embeddedSubtitles) !== canonicalJson(embedded) ||
+        version.engineDigest !== embedded.source.engineDigest
+      )
+        throw new StudioExportRefusal(
+          'output-rejected',
+          'The embedded subtitle track has no matching immutable authority',
+        );
+    }
     const seal = sidecarSealOf(version.settings);
     if (seal) {
       const derived = sealStudioSidecar(
@@ -1401,6 +1454,22 @@ export class StudioExportService {
           'The encoded still does not preserve its declared dimensions, format and dynamic range',
         );
       return;
+    }
+    const embedded = embeddedSubtitleSealOf(version.settings);
+    if (
+      (embedded || contract?.embeddedSubtitles) &&
+      (!embedded || canonicalJson(embedded) !== canonicalJson(contract?.embeddedSubtitles))
+    )
+      throw new StudioExportRefusal(
+        'output-rejected',
+        'The embedded subtitle track has no matching immutable authority',
+      );
+    if (embedded) {
+      const measured = await this.media.probeEmbeddedSubtitles(path).catch(() => null);
+      const subtitleMismatch = measured
+        ? findEmbeddedSubtitleMismatch(embedded, measured)
+        : 'The embedded subtitle track could not be decoded';
+      if (subtitleMismatch) throw new StudioExportRefusal('output-rejected', subtitleMismatch);
     }
     const expected = contract ?? buildStudioExportContract(settings, null, []);
     const probe = await this.media.probe(path).catch(() => null);
@@ -1978,7 +2047,11 @@ export class StudioExportService {
       sourceCount?: number;
     };
     const hidden = !!privacy.lockReason && !getLockedOwnerId(auth);
-    const { subtitleSeal: _privateSubtitleSeal, ...publicSettings } = version.settings;
+    const {
+      subtitleSeal: _privateSubtitleSeal,
+      embeddedSubtitleSeal: _privateEmbeddedSubtitleSeal,
+      ...publicSettings
+    } = version.settings;
     const settings = publicSettings as StudioExportVersionDto['settings'];
     const seal = sidecarSealOf(version.settings);
     return {

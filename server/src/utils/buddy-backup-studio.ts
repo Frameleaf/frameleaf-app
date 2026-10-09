@@ -9,6 +9,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetLockReason, MediaOperationDestination, StorageFolder, StudioExportScope } from 'src/enum.js';
 import { readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { studioBundleSourceKeys } from 'src/utils/studio-bundle.js';
+import { embeddedSubtitleSealOf, sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_MAX_PER_PROJECT,
@@ -314,6 +315,21 @@ export const readBuddyStudioProject = (manifest: BuddyManifest, projectId: strin
     )
       throw new Error('Buddy Studio retained resource binding changed');
   for (const row of project.exports) {
+    const embedded = embeddedSubtitleSealOf(row.settings);
+    if (embedded) {
+      const revision = revisions.get(row.revision)!;
+      const derived = sealStudioEmbeddedSubtitles(
+        revision.envelope.graph as Record<string, unknown>,
+        {
+          revisionDigest: row.revisionDigest,
+          manifestDigest: embedded.source.manifestDigest,
+          engineDigest: embedded.source.engineDigest,
+        },
+        { inPoint: embedded.source.inPoint, outPoint: embedded.source.outPoint },
+      );
+      if (canonicalJson(derived) !== canonicalJson(embedded) || row.engineDigest !== embedded.source.engineDigest)
+        throw new Error('Buddy embedded subtitle authority changed');
+    }
     const seal = sidecarSealOf(row.settings);
     if (seal) {
       const revision = revisions.get(row.revision)!;

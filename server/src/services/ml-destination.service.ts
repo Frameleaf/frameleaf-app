@@ -803,6 +803,19 @@ export class MlDestinationService extends BaseService {
                         audio: 'preserve',
                       })!,
                     ) && { sidecarOutputFormats: ['mp4-h264' as const] }),
+                  ...(worker.engineDigest &&
+                    worker.engineDigest === session.engineDigest &&
+                    provesOutput(
+                      capabilities ?? null,
+                      requiredOutput({
+                        format: 'mp4-h264',
+                        subtitleMode: 'embedded',
+                        color: 'preserve',
+                        resolution: '720p',
+                        quality: 'high',
+                        audio: 'preserve',
+                      })!,
+                    ) && { embeddedOutputFormats: ['mp4-h264' as const] }),
                   ...(session.colorPrecision ?? SDR_ONLY),
                 };
               }),

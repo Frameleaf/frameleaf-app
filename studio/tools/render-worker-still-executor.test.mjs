@@ -87,7 +87,7 @@ test('native subtitle modes preserve legacy settings, reject unsupported modes a
     });
     assert.equal(stillRecipe(input).frames, 24);
   }
-  for (const subtitleMode of ['embedded', null, 10, {}]) {
+  for (const subtitleMode of ['unknown', null, 10, {}]) {
     const input = claim();
     input.settings.subtitleMode = subtitleMode;
     assert.throws(() => stillRecipe(input), /UNSUPPORTED_SUBTITLE_MODE/);
@@ -348,7 +348,6 @@ test('exact rational cadence and checkpoint ticks reuse the actual server timing
   assert.throws(() => stillRecipe(input), /PROJECT_CADENCE_CHANGED/);
 });
 
-
 test('whole visual timelines use explicit integer bounds even below the renderer duration floor', () => {
   const input = claim();
   input.snapshot.studio.graph.timeline.items[0].durationInFrames = 4;
@@ -358,7 +357,6 @@ test('whole visual timelines use explicit integer bounds even below the renderer
   assert.deepEqual(result.frameBounds, { inPoint: 0, outPoint: 4 });
   assert.equal(result.range, null);
 });
-
 
 test('private output accounting counts staging, deduplicates publication links and rejects traversal', async () => {
   const { mkdtemp, mkdir, writeFile, link, symlink, rm } = await import('node:fs/promises');
@@ -383,7 +381,9 @@ test('private output accounting counts staging, deduplicates publication links a
     await rm(join(folder, 'unexpected'), { recursive: true });
     await mkdir(join(folder, '.sharp-abc123', 'nested'), { recursive: true });
     await assert.rejects(ownedOutputBytes(folder), /UNEXPECTED_DOWNLOAD_ENTRY/);
-  } finally { await rm(folder, { recursive: true, force: true }); }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });
 
 test('input digest mismatch refuses before engine/build/browser or private output', async () => {
@@ -550,4 +550,54 @@ test('late resource acquisition is independently closed once, and rejected closu
   assert.equal(calls.filter((call) => call === 'pool').length, 1);
   assert.equal(calls.filter((call) => call === 'terminate').length, 3);
   assert.equal(calls.filter((call) => call === 'abort').length, 3);
+});
+
+test('embedded recipe seals MP4 timed text, renders captions off and retains the authored graph', () => {
+  const require = createRequire(import.meta.url);
+  const { sealStudioEmbeddedSubtitles } = require('../../server/dist/utils/studio-embedded-subtitles.js');
+  const input = claim();
+  input.revisionId = 'a'.repeat(64);
+  input.snapshot.manifestDigest = 'b'.repeat(64);
+  input.snapshot.engineDigest = 'c'.repeat(64);
+  input.snapshot.studio.graph.timeline.tracks.push({
+    id: 'c',
+    kind: 'caption',
+    visible: true,
+  });
+  input.snapshot.studio.graph.timeline.items.push({
+    id: 'c',
+    type: 'text',
+    textRole: 'caption',
+    captionSource: { type: 'subtitle-import' },
+    trackId: 'c',
+    from: 0,
+    durationInFrames: 12,
+    text: 'Caption',
+  });
+  const seal = sealStudioEmbeddedSubtitles(input.snapshot.studio.graph, {
+    revisionDigest: input.revisionId,
+    manifestDigest: input.snapshot.manifestDigest,
+    engineDigest: input.snapshot.engineDigest,
+  });
+  input.settings.subtitleMode = 'embedded';
+  input.settings.embeddedSubtitleSeal = seal;
+  input.snapshot.contract.embeddedSubtitles = seal;
+  const before = structuredClone(input);
+  const recipe = stillRecipe(input);
+  assert.equal(recipe.settings.subtitleMode, 'off');
+  assert.equal(recipe.embeddedSubtitle.seal.codec, 'mov_text');
+  assert.equal(recipe.embeddedSubtitle.content, '1\n00:00:00,000 --> 00:00:00,500\nCaption');
+  assert.equal(recipe.subtitle, undefined);
+  assert.deepEqual(input, before);
+  for (const mutate of [
+    (c) => (c.snapshot.studio.graph.timeline.items.at(-1).text = 'Changed'),
+    (c) => (c.settings.embeddedSubtitleSeal.decodedCueDigest = '0'.repeat(64)),
+    (c) => delete c.snapshot.contract.embeddedSubtitles,
+    (c) => (c.settings.quality = 'low'),
+    (c) => (c.settings.subtitleMode = 'burn'),
+  ]) {
+    const changed = structuredClone(input);
+    mutate(changed);
+    assert.throws(() => stillRecipe(changed));
+  }
 });
