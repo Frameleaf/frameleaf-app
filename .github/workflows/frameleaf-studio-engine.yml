@@ -75,7 +75,6 @@ jobs:
     timeout-minutes: 45
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/studio-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -153,11 +152,14 @@ jobs:
         run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs studio/tools/hdr-source-validation.test.mjs
       - name: Install Chromium for compositor readback
         working-directory: studio/engine
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/studio-playwright
         # The CfT CDN redirects to a Google bucket that denied this runner's location.
         # Keep the locked browser bytes and host GPU execution; use Microsoft's official image.
         run: |
           test "$(node -p "require('./node_modules/playwright/package.json').version")" = '1.60.0'
           : "${PLAYWRIGHT_BROWSERS_PATH:?}"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
           container_id=$(docker create --platform linux/amd64 mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948)
           trap 'docker rm "$container_id"' EXIT
           mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"

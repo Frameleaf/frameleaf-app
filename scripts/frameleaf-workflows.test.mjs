@@ -40,9 +40,10 @@ test("Studio browser provisioning uses the exact official image and fails closed
   ).packages["node_modules/playwright"].version;
   assert.equal(version, "1.60.0");
   assert.equal(
-    engine.env.PLAYWRIGHT_BROWSERS_PATH,
+    step.env.PLAYWRIGHT_BROWSERS_PATH,
     "${{ runner.temp }}/studio-playwright",
   );
+  assert.equal(engine.env.PLAYWRIGHT_BROWSERS_PATH, undefined);
   assert.equal(step["continue-on-error"], undefined);
   assert.ok(
     step.run.includes(
@@ -94,6 +95,7 @@ esac
       ...process.env,
       PATH: `${directory}/bin:${process.env.PATH}`,
       CALLS: calls,
+      GITHUB_ENV: path.join(directory, "github-env"),
       PLAYWRIGHT_BROWSERS_PATH: path.join(directory, "browsers"),
     };
     const run = (overrides = {}) =>
@@ -103,6 +105,10 @@ esac
         encoding: "utf8",
       });
     assert.equal(run().status, 0);
+    assert.equal(
+      readFileSync(env.GITHUB_ENV, "utf8"),
+      `PLAYWRIGHT_BROWSERS_PATH=${env.PLAYWRIGHT_BROWSERS_PATH}\n`,
+    );
     const success = readFileSync(calls, "utf8");
     assert.equal((success.match(/docker cp /g) ?? []).length, 3);
     assert.ok(
