@@ -1,0 +1,33 @@
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -8,3 +8,3 @@
+ import type { MaskVertex } from './masks'
+-import type { ShapeStyleFields } from './timeline'
++import type { LottieItem, ShapeStyleFields } from './timeline'
+ import type { CompositionControlOverrides, CompositionControlSchema } from './composition-controls'
+@@ -100,2 +100,3 @@
+         | 'controller'
++        | 'lottie'
+       // Type-specific fields stored as optional for flexibility
+@@ -238,3 +239,20 @@
+       fadeOut?: number
+-    } & TextStyleFields
++    } & TextStyleFields & (
++      | { type: 'video' | 'audio' | 'text' | 'image' | 'shape' | 'composition' | 'adjustment' | 'controller' }
++      | Pick<LottieItem,
++          | 'type'
++          | 'frameRate'
++          | 'totalFrames'
++          | 'loop'
++          | 'reversed'
++          | 'loopMode'
++          | 'segmentStart'
++          | 'segmentEnd'
++          | 'animationId'
++          | 'themeId'
++          | 'textOverrides'
++          | 'colorOverrides'
++          | 'slotOverrides'
++        >
++    )
+   >

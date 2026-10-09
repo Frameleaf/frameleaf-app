@@ -7,6 +7,7 @@ import { mediaLibraryService } from '@/features/media-library/services/media-lib
 import { buildMediaTimelineItem } from '@/features/timeline/utils/media-timeline-item-builder';
 import { resetTimelineCompositionTestState, makeTimelineTrack } from '@/features/timeline/test-helpers';
 import { buildTimelineFromStores, loadTimeline, saveTimeline } from '@/features/timeline/stores/timeline-persistence';
+import { useItemsStore } from '@/features/timeline/stores/items-store';
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store';
 import { usePlaybackStore } from '@/shared/state/playback';
 import { useEditorStore } from '@/shared/state/editor';
@@ -40,14 +41,23 @@ let baselineTimeline: ProjectTimeline;
 let editedTimeline: ProjectTimeline;
 let sourceHash = '';
 const ownedUrls = new Set<string>();
-const check = (condition: unknown, message: string): void => {
+function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
-};
+}
 const hash = async (blob: Blob) => Array.from(new Uint8Array(
   await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()),
 ), (value) => value.toString(16).padStart(2, '0')).join('');
 const timeline = () => buildTimelineFromStores();
-const item = () => timeline().items.find((entry) => entry.type === 'lottie') as LottieItem;
+const item = () => {
+  const clips = useItemsStore.getState().items.filter((entry): entry is LottieItem => entry.type === 'lottie');
+  check(clips.length === 1 && clips[0], 'Exactly one native Lottie item required');
+  return clips[0];
+};
+const mediaIdOf = (clip: LottieItem) => {
+  const mediaId = clip.mediaId;
+  check(typeof mediaId === 'string' && mediaId.length > 0, 'Native Lottie media ID required');
+  return mediaId;
+};
 const graph = () => ({ ...project, timeline: timeline() });
 const portable = (input: ProjectTimeline, mediaIds: ReadonlyMap<string, string> = new Map()) => {
   const copy = structuredClone(input);
@@ -107,11 +117,11 @@ const api = {
     const clip = buildMediaTimelineItem({ media, mediaId: media.id, mediaType: 'lottie',
       label: 'Owned geometric Lottie', projectFps: 30, blobUrl: src!, canvasWidth: 64, canvasHeight: 64,
       placement: { trackId: 'owned-vector', from: 0, durationInFrames: 60 }, originId: 'owned-origin' });
+    check(clip.type === 'lottie', 'Native builder did not return a Lottie item');
     project.timeline = { tracks: [makeTimelineTrack({ id: 'owned-vector', name: 'Owned vector', kind: 'video', order: 0 })],
       items: [clip], currentFrame: 0, zoomLevel: 1, scrollPosition: 0 };
     const normalized = await applyCanonicalCommands(project, [], [media]);
     check(normalized.status === 'applied', 'Native canonical baseline rejected');
-    if (normalized.status !== 'applied') throw new Error(normalized.detail);
     project = normalized.project;
     // Store via the existing project persistence API; load uses its actual media resolver.
     const { updateProject } = await import('@/infrastructure/storage');
@@ -141,15 +151,16 @@ const api = {
       idempotencyKey: `${directoryName}:edit`, issuedAt: 1 }], [media]);
     check(result.status === 'applied', 'Canonical lottie.update rejected');
     check(canonicalJson(input) === before, 'Canonical command mutated its input graph');
-    if (result.status !== 'applied') throw new Error(result.detail);
     project = result.project;
     useProjectStore.getState().setCurrentProject(project);
     editedTimeline = structuredClone(timeline());
     const stripped = structuredClone(editedTimeline);
     for (const entry of stripped.items) {
-      delete (entry as LottieItem).colorOverrides;
-      delete (entry as LottieItem).textOverrides;
-      delete (entry as LottieItem).slotOverrides;
+      if (entry.type === 'lottie') {
+        delete entry.colorOverrides;
+        delete entry.textOverrides;
+        delete entry.slotOverrides;
+      }
     }
     check(canonicalJson(stripped) === canonicalJson(baselineTimeline), 'Edit changed nonedited full timeline graph');
     check(useTimelineCommandStore.getState().undoStack.length === 1, 'Edit did not record exactly one native history entry');
@@ -172,7 +183,7 @@ const api = {
   },
   async strict(frame: number) {
     const clip = item();
-    const source = await mediaLibraryService.getMediaBlobUrl(clip.mediaId);
+    const source = await mediaLibraryService.getMediaBlobUrl(mediaIdOf(clip));
     check(source, 'Strict export source unavailable');
     ownedUrls.add(source!);
     const spec = await resolveLottieRenderSpec(source!, clip, { strict: true });
@@ -263,12 +274,12 @@ const api = {
     check(item().mediaId === importedId, 'Actual bundle reload retained an original or unrelated media reference');
     const reopenedAssociations = await getProjectMediaIds(project.id);
     check(reopenedAssociations.length === 1 && reopenedAssociations[0] === importedId &&
-      (await getMedia(item().mediaId))?.id === importedId && !await getMedia(media.id),
+      (await getMedia(mediaIdOf(item())))?.id === importedId && !await getMedia(media.id),
     'Actual bundle reload lost newly imported metadata/project association');
     check(portable(timeline(), remap) === portable(stored!.timeline!), 'Actual bundle reload changed full timeline graph/maps');
     const reopenedProject = await getProject(project.id);
     check(reopenedProject?.schemaVersion === CURRENT_SCHEMA_VERSION, 'Native bundle migration did not persist current schema');
-    const reopenedSource = await mediaLibraryService.getMediaFile(item().mediaId);
+    const reopenedSource = await mediaLibraryService.getMediaFile(mediaIdOf(item()));
     check(reopenedSource && await hash(reopenedSource) === sourceHash, 'Reopened bundle bytes changed');
     return { bundleHash: await hash(exported.blob!), sourceHash,
       mediaImported: result.mediaImported, originalMediaId: media.id, importedMediaId: importedId,
