@@ -493,6 +493,11 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
         const instance={id:`gated-instance-${name}`,type:'composition',compositionId:nested.id,compositionWidth:16,compositionHeight:16,trackId:'instance',from:0,durationInFrames:60,transform:{x:0,y:0,width:16,height:16,rotation:0,opacity:1}};
         // The nested transition ceiling is intentionally the whole instance.
         await refuseComposition(`nested ${name}`,comp([track(instance,0)]),0);
+        if(name==='transition') {
+          // Top-level additive is supported, but the nested transition ceiling remains.
+          useCompositionsStore.getState().setCompositions([{...nested,transitions:nested.transitions.map(t=>({...t,presentation:'additiveDissolve'}))}]);
+          await refuseComposition('nested additive transition',comp([track(instance,0)]),0);
+        }
       }
     }finally{useCompositionsStore.getState().setCompositions(savedCompositions);CanvasPool.prototype.acquire=acquireCanvas;GpuTexturePool.prototype.acquire=acquireTexture;}
 
@@ -501,7 +506,21 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     const {TransitionPipeline}=await import('/src/infrastructure/gpu-transitions/transition-pipeline.ts');
     const {BLEND_MODE_INDEX}=await import('/src/types/blend-modes.ts');
     const transition=TransitionPipeline.create(device);if(!transition)throw new Error('Transition pipeline unavailable');transition.setWorkingRange('hdr');
-    const gateInput=makeTex(2,2),gateOutput=makeTex(2,2);
+    const gateInput=makeTex(2,2),gateOutput=makeTex(2,2),gateRight=makeTex(2,2);
+    const additive={buffersCreated:0,buffersDestroyed:0,before:poolUsage()};
+    const readAdditive=async()=>{
+      const buffer=device.createBuffer({size:512,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});additive.buffersCreated++;
+      try {
+        const encoder=device.createCommandEncoder();encoder.copyTextureToBuffer({texture:gateOutput},{buffer,bytesPerRow:256},[2,2]);device.queue.submit([encoder.finish()]);
+        await buffer.mapAsync(GPUMapMode.READ);return Array.from(new Float16Array(buffer.getMappedRange(),0,4));
+      }finally{buffer.destroy();additive.buffersDestroyed++;}
+    };
+    const uploadGate=(texture,rgba)=>device.queue.writeTexture({texture},new Float16Array(Array.from({length:4},()=>rgba).flat()),{bytesPerRow:16},[2,2]);
+    const renderAdditive=async(name,left,right,progress,want,inputAlpha='straight',budget=.004)=>{
+      uploadGate(gateInput,left);uploadGate(gateRight,right);
+      if(!transition.renderTexturesToTexture('additiveDissolve',gateInput,gateRight,gateOutput,progress,2,2,undefined,undefined,inputAlpha,'straight'))throw new Error(`${name} additive float route rejected`);
+      record(name,await readAdditive(),want,budget);
+    };
     const refuse=(name,run)=>{let error;try{run();}catch(e){error={name:e.name,message:e.message};}refusals.push({name,error});};
     try {
       const brightness=[{id:'brightness',type:'gpu-brightness',name:'brightness',enabled:true,params:{amount:.125}}];
@@ -532,10 +551,38 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       finally { encodedOutput.destroy(); }
       refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
       for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate','gpu-twirl','gpu-wave','gpu-bulge'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
-      for(const id of GPU_TRANSITION_REGISTRY.keys())refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
+      // Additive has dedicated linear light semantics; every other registry entry
+      // must retain its typed refusal. The oracle is independent of production WGSL.
+      device.pushErrorScope('validation');
+      try {
+        const left=[2,-.5,.25,.5],right=[-.25,3,-1,.25];
+        for(const progress of [0,.5,1]) {
+          const alpha=left[3]*(1-progress)+right[3]*progress;
+          const want=progress===0?left:progress===1?right:left.slice(0,3).map((v,c)=>
+            (v*left[3]*(1-progress)+right[c]*right[3]*progress+(v*left[3]+right[c]*right[3])*.22*Math.sin(Math.PI*progress))/alpha).concat(alpha);
+          await renderAdditive(`additive linear float @${progress}`,left,right,progress,want);
+        }
+        await renderAdditive('additive premultiplied alpha',[1,-.25,.125,.5],[0,0,0,0],.5,[2.88,-.72,.36,.25],'premultiplied');
+        for(const progress of [0,.5,1])await renderAdditive(`additive hidden zero coverage @${progress}`,[100,-100,20,0],[-100,100,-20,0],progress,[0,0,0,0],'straight',0);
+        await renderAdditive('additive reference white flash',[1,1,1,1],[1,1,1,1],.5,[1.44,1.44,1.44,1]);
+        record('additive flash through managed PQ output',sample(await read(gateOutput),2,0),deliver([1.44,1.44,1.44],'pq'));
+        additive.cachedInputsBeforeDestroy=transition.premultipliedInputs.length;
+        additive.uniformBuffersBeforeDestroy=transition.uniformBuffers.size;
+      }finally{const error=await device.popErrorScope();if(error)throw new Error(`Additive GPU validation failed: ${error.message}`);}
+      const legacyLeft=new OffscreenCanvas(2,2),legacyRight=new OffscreenCanvas(2,2);
+      refuse('additive HDR Canvas input',()=>transition.render('additiveDissolve',legacyLeft,legacyRight,.5,2,2));
+      const encodedTransition=device.createTexture({size:[2,2],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT});
+      try{refuse('additive HDR encoded output',()=>transition.renderTexturesToTexture('additiveDissolve',gateInput,gateRight,encodedTransition,.5,2,2));}
+      finally{encodedTransition.destroy();}
+      for(const id of GPU_TRANSITION_REGISTRY.keys())if(id!=='additiveDissolve')refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
-    }finally{gateInput.destroy();gateOutput.destroy();transition.destroy();}
-    output.destroy();gpu.dispose();return {rows,refusals,linear,maskUploadPreview};
+    }finally{
+      gateInput.destroy();gateRight.destroy();gateOutput.destroy();transition.destroy();
+      additive.after=poolUsage();additive.cachedInputsAfterDestroy=transition.premultipliedInputs.length;
+      additive.uniformBuffersAfterDestroy=transition.uniformBuffers.size;
+      additive.pipelineRetained=transition.has('additiveDissolve');
+    }
+    output.destroy();gpu.dispose();return {rows,refusals,linear,maskUploadPreview,additive};
   });
   assert.deepEqual(await testedSource(new URL(import.meta.url)),source,'tested inputs changed during measurement');
   report.source=source;
@@ -545,6 +592,10 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     assert.equal(row.error?.name,'HdrRenderUnavailableError',`${row.name} must refuse through the managed HDR type`);
     if(row.before) {assert.deepEqual(row.before,{canvas:0,texture:0});assert.deepEqual(row.after,row.before,`${row.name} retained pooled resources`);}
   }
+  assert.equal(report.additive.buffersCreated,8);assert.equal(report.additive.buffersDestroyed,report.additive.buffersCreated);
+  assert.equal(report.additive.cachedInputsBeforeDestroy,2);assert(report.additive.uniformBuffersBeforeDestroy>0);
+  assert.equal(report.additive.cachedInputsAfterDestroy,0);assert.equal(report.additive.uniformBuffersAfterDestroy,0);assert.equal(report.additive.pipelineRetained,false);
+  assert.deepEqual(report.additive.before,{canvas:0,texture:0});assert.deepEqual(report.additive.after,report.additive.before);
   const preview=report.maskUploadPreview;
   for(const state of [preview.first,preview.seek]) {assert.equal(state.playerVisibility,'hidden');assert.equal(state.unavailable,true);}
   assert.deepEqual(preview.recovery,{playerVisibility:'visible',unavailable:false,displayedFrame:32});
@@ -552,5 +603,5 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
   assert(preview.failures.every(e=>e.name==='HdrRenderUnavailableError'));
   for(const usage of [preview.before,preview.afterRefusals,preview.after])assert.deepEqual(usage,{canvas:0,texture:0});
   assert(Math.max(...report.linear.pq)>1&&Math.min(...report.linear.pq)<0,'fixture must test signed HDR');
-  console.log(JSON.stringify({check:'linear display-light HDR subtree',comparisons:report.rows.length*3,typedRefusals:report.refusals.length}));
+  console.log(JSON.stringify({check:'linear display-light HDR subtree',comparisons:report.rows.reduce((sum,row)=>sum+row.want.length,0),typedRefusals:report.refusals.length}));
 }finally{await browser.close();}
