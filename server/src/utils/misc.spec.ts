@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { getKeysDeep, globToPostgresRegex, removeOpenApi30IncompatibleKeys, unsetDeep } from 'src/utils/misc.js';
 
+describe('OpenAPI 3.0 literals', () => {
+  it('preserves false and nullable string literals as single-value enums without treating a property named const as a keyword', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        executionAvailable: { type: 'boolean', const: false },
+        suggestedAdministrativeLabel: { type: 'string', const: 'administrative-original', nullable: true },
+        nullOnly: { type: 'string', const: null, nullable: true },
+        const: { type: 'string' },
+      },
+    };
+    removeOpenApi30IncompatibleKeys(schema);
+    expect(schema.properties).toEqual({
+      executionAvailable: { type: 'boolean', enum: [false] },
+      suggestedAdministrativeLabel: { type: 'string', enum: ['administrative-original', null], nullable: true },
+      nullOnly: { type: 'string', enum: [null], nullable: true },
+      const: { type: 'string' },
+    });
+  });
+});
+
 describe('getKeysDeep', () => {
   it('should handle an empty object', () => {
     expect(getKeysDeep({})).toEqual([]);
