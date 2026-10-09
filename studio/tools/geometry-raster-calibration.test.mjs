@@ -494,3 +494,28 @@ test('reviewed additive source retains raster bounds and strict source/browser a
   }
   assert.equal(JSON.stringify(envelope), original)
 })
+
+test('deterministic additive coverage source retains raster policy and strict admission', () => {
+  const source = '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904'
+  const previousSource = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, previousSource))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + '5', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
