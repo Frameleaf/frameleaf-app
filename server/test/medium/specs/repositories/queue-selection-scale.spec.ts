@@ -141,6 +141,8 @@ describe('real large producer selection capture', () => {
         stageTotals: { total: 500_001, failed: 1, needsAttention: 500_000 },
       });
       type Plan = {
+        'Node Type'?: string;
+        'Index Name'?: string;
         'Actual Rows': number;
         'Actual Loops': number;
         'Relation Name'?: string;
@@ -151,12 +153,52 @@ describe('real large producer selection capture', () => {
         (plan['Relation Name']
           ? (plan['Actual Rows'] + (plan['Rows Removed by Filter'] ?? 0)) * plan['Actual Loops']
           : 0) + (plan.Plans ?? []).reduce((total, child) => total + examined(child), 0);
-      for (const predicate of [unfinishedRunItems(sql<string>`${runId}::uuid`), unfinishedQueueItems(queue)]) {
+      const contributions = (plan: Plan): { relation: string; examined: number; node: Plan }[] => [
+        ...(plan['Relation Name']
+          ? [
+              {
+                relation: plan['Relation Name'],
+                examined: (plan['Actual Rows'] + (plan['Rows Removed by Filter'] ?? 0)) * plan['Actual Loops'],
+                node: plan,
+              },
+            ]
+          : []),
+        ...(plan.Plans ?? []).flatMap(contributions),
+      ];
+      const measurements: { predicate: string; examined: number }[] = [];
+      for (const [name, predicate] of [
+        ['unfinishedRunItems', unfinishedRunItems(sql<string>`${runId}::uuid`)],
+        ['unfinishedQueueItems', unfinishedQueueItems(queue)],
+      ] as const) {
         const { rows: plans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
           select ${predicate} unfinished`.execute(controlDb);
+        const plan = plans[0]['QUERY PLAN'][0].Plan;
+        const total = examined(plan);
+        const relations = contributions(plan).sort((left, right) => right.examined - left.examined);
+        // Keep both predicates observable before either budget assertion, without dumping raw plans or SQL.
+        process.stdout.write(
+          `${JSON.stringify({
+            predicate: name,
+            examined: total,
+            relationNodes: relations.slice(0, 12).map(({ relation, examined, node }) => ({
+              relation,
+              nodeType: node['Node Type'],
+              index: node['Index Name'],
+              rows: node['Actual Rows'],
+              loops: node['Actual Loops'],
+              removedByFilter: node['Rows Removed by Filter'] ?? 0,
+              examined,
+            })),
+            omittedRelationNodes: Math.max(0, relations.length - 12),
+            omittedExamined: relations.slice(12).reduce((total, relation) => total + relation.examined, 0),
+          })}\n`,
+        );
+        measurements.push({ predicate: name, examined: total });
+      }
+      for (const measurement of measurements) {
         expect(
-          examined(plans[0]['QUERY PLAN'][0].Plan),
-          'terminal 500k manifest must be skipped by its header',
+          measurement.examined,
+          `${measurement.predicate}: terminal 500k manifest must be skipped by its header`,
         ).toBeLessThan(50);
       }
       expect(await control.retryFailed(queue)).toBe(1);
