@@ -497,6 +497,13 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   PATH="$(mise where github:extism/js-pdk):$(mise where github:webassembly/binaryen)/bin:$PATH" \
   pnpm --filter @frameleaf/plugin-core build
 
+# Medium tests need the same native codec closure as the server, plus its unpruned test dependencies.
+FROM server AS medium-test
+COPY --from=plugins /usr/src/app/packages/plugin-core/dist ./packages/plugin-core/dist
+COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json ./packages/plugin-core/manifest.json
+WORKDIR /usr/src/app/server
+CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run"]
+
 FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
