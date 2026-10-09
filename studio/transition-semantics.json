@@ -6,8 +6,9 @@
   },
   "transitions": {
     "additiveDissolve": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Dedicated linear display-referred BT.709 additive flash: premultiplied RGB base=(1-p)L+pR plus 0.22*sin(pi*p)*(L+R); coverage=(1-p)*aL+p*aR; straight float output, exact endpoints, zero-coverage RGB cleared per texel before filtering. 1.0=reference white (203 cd/m² default); no RGB clamp or tone map. SDR retains the pinned encoded equation and display clamp.",
+      "qualification": "Source-bound Chromium WebGPU float readback and production composition PQ export measured, including distinct endpoints, signed/extended values, unequal coverage, premultiplied ingress, per-texel hidden RGB before fractional filtering, half-subnormal/zero coverage, small positive coverage and failed-float typed refusal. Other browser/device/deployment axes and full FL-97 remain unqualified."
     },
     "blurDissolve": {
       "hdr": "refused",
