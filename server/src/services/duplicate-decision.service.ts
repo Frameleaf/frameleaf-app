@@ -629,7 +629,7 @@ export class DuplicateDecisionService {
       return refusedAll(ids, error);
     }
 
-    await this.repository.markUndone(decision.id);
+    if (!claim || decision.decision !== DuplicateDecisionKind.Keepers) await this.repository.markUndone(decision.id);
     return ok(ids);
   }
 
@@ -692,7 +692,9 @@ export class DuplicateDecisionService {
       const ids = inTrash.map(({ id }) => id);
       if (claim) {
         await this.trash.restoreDuplicateUndo(auth, { ids }, claim);
-      } else if (ids.length > 0) {
+        return; // Recorded Keepers restoration, relink and completion committed together.
+      }
+      if (ids.length > 0) {
         await this.trash.restoreAssets(auth, { ids });
       }
       await this.restoreKeepers(auth, decision);

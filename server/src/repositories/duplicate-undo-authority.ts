@@ -44,7 +44,7 @@ export async function requireDuplicateUndoClaim(
     .select('id')
     .where('id', '=', ownerId)
     .where('deletedAt', 'is', null)
-    .forShare()
+    .forUpdate()
     .executeTakeFirst();
   if (!owner) throw new ForbiddenException('duplicate_undo_owner_required');
   // Read the immutable snapshot hint only to acquire credential locks in owner/key/operation order.
