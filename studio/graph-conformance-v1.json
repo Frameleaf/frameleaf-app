@@ -211,6 +211,109 @@
         "createdAt": 0,
         "updatedAt": 0
       }
+    ],
+    "relink": [
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000001",
+        "storageType": "workspace",
+        "fileName": "surf.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000002",
+        "storageType": "workspace",
+        "fileName": "drone.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000003",
+        "storageType": "workspace",
+        "fileName": "interview.mov",
+        "fileSize": 1,
+        "mimeType": "video/quicktime",
+        "duration": 10,
+        "width": 1920,
+        "height": 1080,
+        "fps": 29.97002997002997,
+        "codec": "hvc1",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000004",
+        "storageType": "workspace",
+        "fileName": "summit.jpg",
+        "fileSize": 1,
+        "mimeType": "image/jpeg",
+        "duration": 0,
+        "width": 4000,
+        "height": 3000,
+        "fps": 0,
+        "codec": "unknown",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000005",
+        "storageType": "workspace",
+        "fileName": "archive.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 12,
+        "width": 1280,
+        "height": 720,
+        "fps": 25,
+        "codec": "avc1.4d401f",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "b7c1d2e3-0000-4000-8000-000000000011",
+        "storageType": "workspace",
+        "fileName": "replacement.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2",
+        "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
     ]
   },
   "seeds": {
@@ -140686,12 +140789,12 @@
       }
     },
     {
-      "id": "not-implemented/media.relink",
-      "story": "FL-309",
+      "id": "media.relink/refuse-linked-audio-missing",
+      "story": "FL-105",
       "covers": [
         "media.relink"
       ],
-      "summary": "The engine refuses media.relink as not-implemented, whatever its payload.",
+      "summary": "Refuse a replacement video without the linked audio reader it must serve.",
       "base": "linked-pair",
       "envelopes": [
         {
@@ -140701,15 +140804,15 @@
             "mediaId": "0198a1c2-0000-7000-8000-000000000001"
           },
           "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/media.relink",
+          "idempotencyKey": "fl105:relink:missing-audio",
           "issuedAt": 1758800000000
         }
       ],
       "expect": {
         "status": "rejected",
         "index": 0,
-        "reason": "not-implemented",
-        "detail": "media.relink is not an engine command"
+        "reason": "invalid",
+        "detail": "The replacement does not contain the media this clip needs"
       }
     },
     {
@@ -155307,6 +155410,143 @@
       "covers": [
         "track.setAudio"
       ]
+    },
+    {
+      "id": "media.relink/linked-readers",
+      "story": "FL-105",
+      "covers": [
+        "media.relink"
+      ],
+      "summary": "Relink synchronized readers to admitted B without changing cuts.",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "media.relink",
+          "payload": {
+            "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+            "assetId": "b7c1d2e3-0000-4000-8000-000000000011"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl105:relink:linked",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "f62043f2bc0292b4a996decf8b1b0cafa84a97b657fab7d614419c3fa32f954c",
+        "envelopeDigest": "9e039af30c8970b1ef3298d4a1d8e62b579d1688dc4e9f677dceb2ff5af69e8c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "b7c1d2e3-0000-4000-8000-000000000011",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "b7c1d2e3-0000-4000-8000-000000000011",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      },
+      "media": "relink",
+      "admission": {
+        "status": "applied"
+      }
     }
   ],
   "history": [
@@ -156703,9 +156943,9 @@
       "section": "8.2"
     },
     "media.relink": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-105",
+      "section": "17"
     },
     "media.remove": {
       "status": "not-implemented",
