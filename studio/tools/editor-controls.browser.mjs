@@ -63,23 +63,57 @@ async function qualifyMonitor(page, url) {
       );
     });
   const settleSeek = async () => {
-    await page.waitForFunction(() => {
-      const state = window.fl98Monitor.state(),
-        observed = window.fl98Monitor.observation();
-      return observed.latest?.epoch.frame === state.currentFrame;
-    });
-    const observed = await observe();
-    assert.deepEqual(
-      observed.latest.forwarded,
-      observed.latest.epoch,
-      "native seek must publish its current epoch, not replay an old one",
-    );
-    await waitAck();
+    try {
+      await page.waitForFunction(() => {
+        const state = window.fl98Monitor.state(),
+          observed = window.fl98Monitor.observation();
+        const requestedTarget = window.fl98Monitor.requestedSeekTarget;
+        return (
+          state.currentFrame === requestedTarget && observed.latest?.epoch.frame === requestedTarget
+        );
+      });
+      const observed = await observe();
+      assert.deepEqual(
+        observed.latest.forwarded,
+        observed.latest.epoch,
+        "native seek must publish its current epoch, not replay an old one",
+      );
+      await page.waitForFunction(() => {
+        const state = window.fl98Monitor.state(),
+          observed = window.fl98Monitor.observation(),
+          requestedTarget = window.fl98Monitor.requestedSeekTarget;
+        return (
+          state.currentFrame === requestedTarget &&
+          observed.latest?.epoch.frame === requestedTarget &&
+          observed.acknowledged &&
+          observed.latest.epoch.running === state.isPlaying
+        );
+      });
+    } catch (error) {
+      console.error(
+        "FL98_SEEK_FAILURE",
+        JSON.stringify({
+          requestedTarget: await page.evaluate(() => window.fl98Monitor.requestedSeekTarget),
+          state: await api(),
+          observation: await observe(),
+        }),
+      );
+      throw error;
+    }
   };
   const seek = async (frame) => {
+    // Oracle metadata only: never writes transport/store/producer/ACK state.
+    await page.evaluate(() => {
+      window.fl98Monitor.requestedSeekTarget = 0;
+    });
     await page.click('button[aria-label="Go To Start"]');
     await settleSeek();
     for (let index = 0; index < frame; index++) {
+      const requestedTarget = index + 1;
+      assert.equal((await api()).currentFrame, index);
+      await page.evaluate((target) => {
+        window.fl98Monitor.requestedSeekTarget = target;
+      }, requestedTarget);
       await page.click('button[aria-label="Next Frame"]');
       await settleSeek();
     }
@@ -165,7 +199,28 @@ async function qualifyMonitor(page, url) {
       };
     });
     await page.drag(drag.from, drag.to);
-    await page.waitForFunction(() => window.fl98Monitor.state().volume === 0.5);
+    try {
+      await page.waitForFunction(() => window.fl98Monitor.state().volume === 0.5);
+    } catch (error) {
+      console.error(
+        "FL98_VOLUME_FAILURE",
+        JSON.stringify({
+          requestedVolume: 0.5,
+          drag,
+          state: await api(),
+          geometry: await page.evaluate(() => {
+            const thumb = document.querySelector('[role="slider"]');
+            const track = thumb?.closest(".touch-none");
+            return {
+              thumb: thumb?.getBoundingClientRect().toJSON(),
+              track: track?.getBoundingClientRect().toJSON(),
+              valueNow: thumb?.getAttribute("aria-valuenow"),
+            };
+          }),
+        }),
+      );
+      throw error;
+    }
     assert.equal(
       (await observe()).epochCount,
       beforeVolume.epochCount,
