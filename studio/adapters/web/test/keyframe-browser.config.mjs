@@ -3,9 +3,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-const require = createRequire(
-  new URL("../../../engine/package.json", import.meta.url),
-);
+const require = createRequire(new URL("../../../engine/package.json", import.meta.url));
 export default async () => {
   const config = await adapterConfig();
   return {
@@ -18,6 +16,8 @@ export default async () => {
         .slice(0, 12)}`,
     ),
     server: {
+      // Qualification inspects every media request; the dev HMR socket is unnecessary.
+      hmr: false,
       fs: { allow: [new URL("../../../../", import.meta.url).pathname] },
     },
     optimizeDeps: {

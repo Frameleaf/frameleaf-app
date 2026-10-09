@@ -481,6 +481,7 @@ Object.assign(window, {
           timeline: buildTimelineFromStores(),
         });
         useProjectStore.getState().setCurrentProject(project);
+        await loadTimeline(projectId);
       }
       masterObservation = observeNativeMaster();
       document.getElementById("editor")!.style.width = "100%";
