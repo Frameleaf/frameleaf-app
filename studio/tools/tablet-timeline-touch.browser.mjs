@@ -47,18 +47,30 @@ assert(
   evidence,
   "STUDIO_TEST_EVIDENCE must identify an owned evidence directory",
 );
+const mutation = process.env.STUDIO_TEST_MUTATION;
+assert(
+  !mutation ||
+    ["missing-touch-hook", "corrupt-retained-history"].includes(mutation),
+);
 const harness = createHarness({ upstream: origin, inspectConnect: true });
 let browser;
 let page;
+let cleanupFailure;
 const projectId = `fl94-touch-${randomUUID()}`;
 const witness = {
+  mutation: mutation ?? null,
   sourceBinding,
   projectId,
   viewport: { width: 1024, height: 768 },
 };
 // Compare the complete serialized edit graph, excluding only the documented view state.
 const editContent = (timeline) => {
-  const { currentFrame, zoomLevel, scrollPosition, ...content } = timeline;
+  const {
+    currentFrame: _currentFrame,
+    zoomLevel: _zoomLevel,
+    scrollPosition: _scrollPosition,
+    ...content
+  } = timeline;
   return JSON.parse(JSON.stringify(content));
 };
 try {
@@ -85,6 +97,8 @@ try {
     projectId,
   );
   await page.waitForFunction(() => window.fl100Editor.touchReady());
+  if (mutation === "missing-touch-hook")
+    await page.evaluate(() => window.fl100Editor.disableTouchForControl());
   await page.evaluate(() => {
     window.fl94TouchEvents = [];
     for (const type of [
@@ -201,6 +215,23 @@ try {
     contentBeforeCancel,
     "cancel must restore the whole edit graph",
   );
+  if (mutation === "corrupt-retained-history") {
+    await page.evaluate(() =>
+      window.fl100Editor.corruptRetainedTouchHistoryForControl(),
+    );
+    witness.corruptedProjection = await state();
+    witness.corruptedContent = editContent(await timeline());
+    assert.deepEqual(
+      witness.corruptedProjection,
+      witness.cancelled,
+      "negative control must retain counts/flags/current state",
+    );
+    assert.deepEqual(
+      witness.corruptedContent,
+      contentBeforeCancel,
+      "negative control must retain the complete visible edit graph",
+    );
+  }
   // Counts cannot prove the retained command still owns the correct snapshots.
   // Exercise that command through the same real shortcut path after cancellation.
   await page.keyboard.press(`${modifier}+z`);
@@ -324,6 +355,18 @@ try {
 } catch (error) {
   witness.result = "FAIL";
   witness.error = String(error?.stack ?? error);
+  if (page && !page.isClosed()) {
+    try {
+      witness.pointerEvents ??= await page.evaluate(
+        () => window.fl94TouchEvents,
+      );
+      witness.failureState = await page.evaluate(() =>
+        window.fl100Editor.state(),
+      );
+    } catch (observationError) {
+      witness.failureObservationError = String(observationError);
+    }
+  }
   throw error;
 } finally {
   try {
@@ -336,18 +379,25 @@ try {
     witness.cleanupError = String(error);
     if (witness.result === "PASS") {
       witness.result = "FAIL";
-      throw error;
+      cleanupFailure = error;
     }
   } finally {
-    witness.requests = harness.observations;
-    await writeFile(
-      path.join(evidence, "observation.json"),
-      JSON.stringify(witness, null, 2),
-    );
-    await browser?.close();
-    await harness.close();
+    try {
+      await browser?.close();
+    } finally {
+      await harness.close();
+      witness.browserConnectedAfterClose = browser?.isConnected() ?? false;
+      witness.harnessClosed = true;
+      witness.requests = harness.observations;
+      await writeFile(
+        path.join(evidence, "observation.json"),
+        JSON.stringify(witness, null, 2),
+      );
+      assert.equal(witness.browserConnectedAfterClose, false);
+    }
   }
 }
-console.log(
-  "PASS trusted tablet touch linked move → history undo/redo → cancel rollback → OPFS save/reopen",
+if (cleanupFailure) throw cleanupFailure;
+process.stdout.write(
+  "PASS trusted tablet touch linked move → history undo/redo → cancel rollback → OPFS save/reopen\n",
 );
