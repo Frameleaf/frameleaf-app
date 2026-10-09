@@ -11,13 +11,14 @@ import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-com
 import { usePlaybackStore } from '@/shared/state/playback';
 import { useEditorStore } from '@/shared/state/editor';
 import { useProjectStore } from '@/features/projects/stores/project-store';
-import { createProject, getProject } from '@/infrastructure/storage';
+import { createProject, getProject, getMedia, getAllMedia, getProjectMediaIds } from '@/infrastructure/storage';
 import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root';
 import { CURRENT_SCHEMA_VERSION } from '@/shared/projects/migrations';
 import { LottieExportProvider, mapTimelineFrameToLottieFrame } from '@/infrastructure/lottie/lottie-frame-provider';
 import { resolveLottieRenderSpec } from '@/infrastructure/lottie/lottie-text';
 import { exportProjectBundle } from '@/features/project-bundle/services/bundle-export-service';
 import { importProjectBundle } from '@/features/project-bundle/services/bundle-import-service';
+import { createProjectUpgradeBackup } from '@/features/projects/services/project-upgrade-service';
 import { unzipSync } from 'fflate';
 import { applyCanonicalCommands, canonicalJson } from '../src/canonical-commands';
 import type { Project, ProjectTimeline } from '@/types/project';
@@ -32,6 +33,7 @@ await i18n.changeLanguage('en');
 const settings = { width: 64, height: 64, fps: 30, backgroundColor: '#000000' };
 const view = createRoot(document.getElementById('editor')!);
 let directoryName = '';
+let importDirectoryName = '';
 let project: Project;
 let media: MediaMetadata;
 let baselineTimeline: ProjectTimeline;
@@ -47,11 +49,12 @@ const hash = async (blob: Blob) => Array.from(new Uint8Array(
 const timeline = () => buildTimelineFromStores();
 const item = () => timeline().items.find((entry) => entry.type === 'lottie') as LottieItem;
 const graph = () => ({ ...project, timeline: timeline() });
-const portable = (input: ProjectTimeline, originalMediaId = media.id) => {
+const portable = (input: ProjectTimeline, mediaIds: ReadonlyMap<string, string> = new Map()) => {
   const copy = structuredClone(input);
   copy.items = copy.items.map((entry) => {
     const { src: _src, thumbnailUrl: _thumbnail, ...rest } = entry;
-    return { ...rest, ...(entry.mediaId ? { mediaId: originalMediaId } : {}) };
+    return { ...rest, ...(entry.mediaId && mediaIds.has(entry.mediaId)
+      ? { mediaId: mediaIds.get(entry.mediaId)! } : {}) };
   });
   return canonicalJson(copy);
 };
@@ -74,11 +77,11 @@ const originalBytes = async () => {
   check(blob, 'Original imported media disappeared');
   return hash(blob!);
 };
-const openStored = async (next: Project) => {
+const openStored = async (next: Project, allowProjectUpgrade = false) => {
   resetTimelineCompositionTestState();
   project = next;
   useProjectStore.getState().setCurrentProject(project);
-  await loadTimeline(project.id);
+  await loadTimeline(project.id, { allowProjectUpgrade });
   useEditorStore.setState({ workspace: 'edit' });
   usePlaybackStore.setState({ currentFrame: 0, isPlaying: false, previewFrame: null });
   mount();
@@ -186,10 +189,12 @@ const api = {
       return { mapped, pixels: pixels(canvas!) };
     } finally { provider.destroy(); }
   },
-  async bundle() {
+  async bundle(remapControl = '') {
+    check(remapControl === '' || remapControl === 'original-id', 'Unknown bundle remapping control');
     check(usePlaybackStore.getState().currentFrame === 0, 'Reset native playhead before bundle capture');
     await saveTimeline(project.id);
     const stored = await getProject(project.id);
+    const itemId = item().id;
     check(stored?.timeline, 'Real saved timeline missing');
     check(portable(stored!.timeline!) === portable(timeline()), 'Persistence changed full timeline graph');
     const exported = await exportProjectBundle(project.id);
@@ -198,19 +203,78 @@ const api = {
     const manifest = JSON.parse(new TextDecoder().decode(zip['manifest.json']));
     check(manifest.media.length === 1, 'Bundle manifest media count changed');
     check(await hash(new Blob([new Uint8Array(zip[manifest.media[0].relativePath]!)])) === sourceHash, 'Bundle changed original bytes');
-    const destination = await (await navigator.storage.getDirectory()).getDirectoryHandle(directoryName);
+    // A separate active workspace makes the original metadata inaccessible to native reload.
+    // Unmount first so the previous PreviewArea cannot retain its source during the switch.
+    flushSync(() => view.render(null));
+    useProjectStore.getState().setCurrentProject(null);
+    resetTimelineCompositionTestState();
+    for (const url of ownedUrls) URL.revokeObjectURL(url);
+    ownedUrls.clear();
+    setWorkspaceRoot(null);
+    importDirectoryName = `${directoryName}-bundle`;
+    const destination = await (await navigator.storage.getDirectory()).getDirectoryHandle(importDirectoryName, { create: true });
+    setWorkspaceRoot(destination);
+    check((await getAllMedia()).length === 0 && !await getMedia(media.id) && !await getProject(stored!.id),
+      'Fresh bundle workspace contains original metadata/project');
     const result = await importProjectBundle(new File([exported.blob!], exported.filename,
       { type: 'application/zip' }), destination, { newProjectName: 'Reopened owned Lottie' });
     check(result.mediaImported === 1 && result.mediaSkipped === 0 && result.conflicts.length === 0,
       'Actual bundle import did not restore all media');
     check(result.project.timeline, 'Restored project has no timeline');
-    check(portable(result.project.timeline!) === portable(stored!.timeline!), 'Bundle restore changed full timeline graph/maps');
-    await openStored(result.project);
-    check(portable(timeline()) === portable(stored!.timeline!), 'Actual bundle reload changed full timeline graph/maps');
+    const associated = await getProjectMediaIds(result.project.id);
+    check(associated.length === 1 && associated[0] !== media.id, 'Bundle must associate exactly one newly imported media ID');
+    const importedId = associated[0]!;
+    const importedMetadata = await getMedia(importedId);
+    check(importedMetadata?.id === importedId && importedMetadata.mimeType === media.mimeType &&
+      importedMetadata.codec === media.codec,
+      'New bundle media reference lacks its newly imported metadata');
+    check((await getAllMedia()).length === 1 && !await getMedia(media.id) && !await getProject(stored!.id),
+      'Bundle workspace can access original metadata/project');
+    const importedClip = result.project.timeline!.items.find((entry) => entry.id === itemId);
+    check(importedClip?.mediaId === importedId, 'Bundle restore retained an original or unrelated media reference');
+    // Normalize only the independently verified importer ID pair, never arbitrary media IDs.
+    const remap = new Map([[importedId, media.id]]);
+    check(portable(result.project.timeline!, remap) === portable(stored!.timeline!), 'Bundle restore changed full timeline graph/maps');
+    // Match the actual import caller: project route navigates to Editor, which
+    // snapshots the original schema before explicitly admitting native migration.
+    const importedSchema = result.project.schemaVersion ?? 1;
+    const requiresUpgrade = importedSchema < CURRENT_SCHEMA_VERSION;
+    let upgradeBackupId: string | undefined;
+    if (requiresUpgrade) {
+      const backup = await createProjectUpgradeBackup(result.project.id,
+        { fromVersion: importedSchema, toVersion: CURRENT_SCHEMA_VERSION });
+      upgradeBackupId = backup.id;
+      check(backup.schemaVersion === result.project.schemaVersion &&
+        canonicalJson(backup.timeline) === canonicalJson(result.project.timeline),
+      'Native upgrade backup changed original schema/timeline');
+      const backupMedia = await getProjectMediaIds(backup.id);
+      check(backupMedia.length === 1 && backupMedia[0] === importedId,
+        'Native upgrade backup lost imported media association');
+    }
+    if (remapControl === 'original-id') {
+      // Fault injection after real import, through real project persistence and native load.
+      // It must fail the exact reload identity assertion, not a missing-file/setup exception.
+      const corrupted = structuredClone(result.project.timeline!);
+      corrupted.items.find((entry) => entry.id === itemId)!.mediaId = media.id;
+      const { updateProject } = await import('@/infrastructure/storage');
+      await updateProject(result.project.id, { timeline: corrupted });
+    }
+    await openStored(result.project, requiresUpgrade);
+    check(item().mediaId === importedId, 'Actual bundle reload retained an original or unrelated media reference');
+    const reopenedAssociations = await getProjectMediaIds(project.id);
+    check(reopenedAssociations.length === 1 && reopenedAssociations[0] === importedId &&
+      (await getMedia(item().mediaId))?.id === importedId && !await getMedia(media.id),
+    'Actual bundle reload lost newly imported metadata/project association');
+    check(portable(timeline(), remap) === portable(stored!.timeline!), 'Actual bundle reload changed full timeline graph/maps');
+    const reopenedProject = await getProject(project.id);
+    check(reopenedProject?.schemaVersion === CURRENT_SCHEMA_VERSION, 'Native bundle migration did not persist current schema');
     const reopenedSource = await mediaLibraryService.getMediaFile(item().mediaId);
     check(reopenedSource && await hash(reopenedSource) === sourceHash, 'Reopened bundle bytes changed');
     return { bundleHash: await hash(exported.blob!), sourceHash,
-      mediaImported: result.mediaImported, timeline: portable(timeline()) };
+      mediaImported: result.mediaImported, originalMediaId: media.id, importedMediaId: importedId,
+      importedProjectId: project.id, associatedMediaIds: reopenedAssociations,
+      importedSchema, reopenedSchema: reopenedProject!.schemaVersion, upgradeBackupId,
+      originalMetadataAbsent: true, importDirectoryName, timeline: portable(timeline(), remap) };
   },
   async dispose() {
     view.unmount();
@@ -219,8 +283,14 @@ const api = {
     for (const url of ownedUrls) URL.revokeObjectURL(url);
     ownedUrls.clear();
     setWorkspaceRoot(null);
-    if (directoryName) await (await navigator.storage.getDirectory()).removeEntry(directoryName, { recursive: true });
+    let cleanupFailure: unknown;
+    for (const name of [directoryName, importDirectoryName].filter(Boolean)) {
+      try { await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true }); }
+      catch (error) { cleanupFailure ??= error; }
+    }
     directoryName = '';
+    importDirectoryName = '';
+    if (cleanupFailure) throw cleanupFailure;
   },
 };
 Object.assign(window, { fl105Lottie: api });

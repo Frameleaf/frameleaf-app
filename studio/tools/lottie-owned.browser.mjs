@@ -14,6 +14,9 @@ const evidence = process.env.STUDIO_TEST_EVIDENCE;
 assert.ok(evidence, 'An owned evidence directory is required');
 const omit = process.env.FL105_LOTTIE_OMIT ?? '';
 assert.ok(['', 'color', 'text', 'scalar', 'vector'].includes(omit));
+const remapControl = process.env.FL105_LOTTIE_REMAP_CONTROL ?? '';
+assert.ok(['', 'original-id'].includes(remapControl));
+assert.ok(!(omit && remapControl), 'Run one fault control at a time');
 const body = Buffer.from(JSON.stringify(animation));
 const sourceHash = createHash('sha256').update(body).digest('hex');
 const harness = createHarness({ upstream: `${origin}/studio-engine/`, inspectConnect: true,
@@ -21,7 +24,7 @@ const harness = createHarness({ upstream: `${origin}/studio-engine/`, inspectCon
     url.pathname === '/__fl105__/owned.json' && request.method === 'GET',
   respond: () => ({ contentType: 'application/json', headers: { 'cache-control': 'no-store' }, body }) }],
 });
-const result = { passed: false, sourceHash, omit, stage: 'startup', witnesses: [] };
+const result = { passed: false, sourceHash, omit, remapControl, stage: 'startup', witnesses: [] };
 let driver;
 let page;
 let failure;
@@ -100,7 +103,7 @@ try {
   assert.deepEqual(edited.history, { undo: 1, redo: 0 });
   await seek(0);
   result.stage = 'real-bundle-export-import-reload';
-  result.bundle = await page.evaluate(() => window.fl105Lottie.bundle());
+  result.bundle = await page.evaluate((value) => window.fl105Lottie.bundle(value), remapControl);
   for (const frame of [0, 30]) await qualify(true, frame, 'bundle-reopened');
   assert.deepEqual((await page.evaluate(() => window.fl105Lottie.state())).maps, edited.maps);
   assertNoProxyErrors(harness, origin, entry);
@@ -141,7 +144,7 @@ try {
   }
   result.requests = harness.observations;
   await mkdir(evidence, { recursive: true });
-  await writeFile(path.join(evidence, `lottie-${omit || 'positive'}.json`), JSON.stringify(result, null, 2));
+  await writeFile(path.join(evidence, `lottie-${omit || remapControl || 'positive'}.json`), JSON.stringify(result, null, 2));
 }
 if (failure) throw failure;
 console.log(JSON.stringify(result));
