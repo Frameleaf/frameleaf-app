@@ -50,6 +50,7 @@ import {
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
 import {
+  MAX_LANDMARK_DAYS_PER_YEAR,
   birthdayAge,
   birthdayOn,
   calendarDayWindow,
@@ -256,13 +257,35 @@ export class MemoryService extends BaseService {
     }
   }
 
+  /** A memory as the API returns it; a landmark story's landmark gains its brand icon when the pack has one. */
+  private mapMemory(...args: Parameters<typeof mapMemory>) {
+    const response = mapMemory(...args);
+    const landmark = 'landmark' in response.data ? response.data.landmark : undefined;
+    if (landmark) {
+      landmark.icon = this.mapRepository.getLandmarkIcons().get(landmark.id);
+    }
+    return response;
+  }
+
   private async createEventStoriesForOwner(ownerId: string, from: DateTime, until: DateTime) {
     const rules = await this.memoryRepository.getShowLess(ownerId);
     if (rules.some(({ kind, value }) => kind === MemoryShowLessKind.Type && value === MemoryType.EventStory)) {
       return;
     }
     const candidates = await this.assetRepository.getEventStoryCandidates(ownerId, from.toJSDate(), until.toJSDate());
-    const stories = groupEventStories(candidates);
+    // FL-356: landmark visits follow the reverse geocoding switch, as every landmark surface does
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    const frequentLandmarkIds = reverseGeocoding.enabled
+      ? new Set(
+          await this.assetRepository.getFrequentLandmarkIds(
+            ownerId,
+            until.minus({ years: 1 }).toJSDate(),
+            until.toJSDate(),
+            MAX_LANDMARK_DAYS_PER_YEAR,
+          ),
+        )
+      : undefined;
+    const stories = groupEventStories(candidates, frequentLandmarkIds);
     if (stories.length === 0) {
       return;
     }
@@ -282,7 +305,7 @@ export class MemoryService extends BaseService {
         continue;
       }
 
-      const label = placeLabel(story.place);
+      const label = story.landmark?.name ?? placeLabel(story.place);
       await this.memoryRepository.create(
         {
           ownerId,
@@ -295,6 +318,7 @@ export class MemoryService extends BaseService {
             dayCount: story.dayCount,
             assetCount: story.totalAssets,
             ...(story.place && { place: story.place }),
+            ...(story.landmark && { landmark: story.landmark }),
             ...(label && { title: label }),
           },
           memoryAt: story.startAt.toISOString(),
@@ -1111,7 +1135,7 @@ export class MemoryService extends BaseService {
       auth.user.id,
       visible.map(({ id }) => id),
     );
-    return visible.map((memory: Memory) => mapMemory(memory, auth, curations.get(memory.id)));
+    return visible.map((memory: Memory) => this.mapMemory(memory, auth, curations.get(memory.id)));
   }
 
   async statistics(auth: AuthDto, dto: MemorySearchDto) {
@@ -1174,7 +1198,7 @@ export class MemoryService extends BaseService {
       throw new NotFoundException('Memory not found');
     }
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
-    return mapMemory(current, auth, curations.get(id));
+    return this.mapMemory(current, auth, curations.get(id));
   }
 
   /** FL-62: the owner's "show less" rules, with the name of each person and pet they name. */
@@ -1271,7 +1295,7 @@ export class MemoryService extends BaseService {
     );
 
     // read back as this session sees it (FL-195 follow-up): the same rules as any other read
-    return mapMemory((await this.findOrFail(memory.id, await this.readOptions(auth))) as Memory, auth);
+    return this.mapMemory((await this.findOrFail(memory.id, await this.readOptions(auth))) as Memory, auth);
   }
 
   async update(auth: AuthDto, id: string, dto: MemoryUpdateDto): Promise<MemoryResponseDto> {
@@ -1316,7 +1340,7 @@ export class MemoryService extends BaseService {
 
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
     const [current] = await this.withCurrentSubjects(auth, [memory as Memory]);
-    return mapMemory(current ?? (memory as Memory), auth, curations.get(id));
+    return this.mapMemory(current ?? (memory as Memory), auth, curations.get(id));
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {

@@ -71644,6 +71644,10 @@
             ],
             "type": "string"
           },
+          "landmark": {
+            "$ref": "#/components/schemas/LandmarkSummaryDto",
+            "description": "The landmark the event was a visit to, when most of it was taken at one"
+          },
           "place": {
             "$ref": "#/components/schemas/MemoryStoryPlaceDto"
           },
@@ -71652,7 +71656,7 @@
             "type": "string"
           },
           "title": {
-            "description": "Place label for the event, when it has one",
+            "description": "Landmark name or place label for the event, when it has one",
             "type": "string"
           },
           "year": {

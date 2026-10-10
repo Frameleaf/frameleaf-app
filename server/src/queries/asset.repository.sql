@@ -103,6 +103,24 @@ where
   and "key" = $2
 commit
 
+-- AssetRepository.getFrequentLandmarkIds
+select
+  "asset_landmark"."landmarkId"
+from
+  "asset_landmark"
+  inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+  and "asset"."localDateTime" >= $2
+  and "asset"."localDateTime" <= $3
+group by
+  "asset_landmark"."landmarkId"
+having
+  count(
+    distinct (asset."localDateTime" at time zone 'UTC')::date
+  ) > $4
+
 -- AssetRepository.getByDayOfYear
 with
   "res" as (

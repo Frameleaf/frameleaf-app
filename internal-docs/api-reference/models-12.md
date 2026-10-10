@@ -2,6 +2,44 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## FrameleafAccountLinkResponseDto
+
+
+```json
+{
+  "properties": {
+    "available": {
+      "description": "Sign in with Frameleaf is available on this server (it is linked)",
+      "type": "boolean"
+    },
+    "email": {
+      "description": "The linked Frameleaf account’s email",
+      "nullable": true,
+      "type": "string"
+    },
+    "lastSignInAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "linked": {
+      "type": "boolean"
+    },
+    "linkedAt": {
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "available",
+    "email",
+    "lastSignInAt",
+    "linked",
+    "linkedAt"
+  ],
+  "type": "object"
+}
+```
+
 ## FrameleafHandoffCreateDto
 
 

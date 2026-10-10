@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { AssetFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -171,6 +172,48 @@ describe('landmark matching', () => {
     const { sut: bare } = setup('/nonexistent/landmarks.ndjson.gz');
     expect(bare.getLandmarkIcons().size).toBe(0);
     expect(bare.getLandmarkIconPath('Q243')).toBeUndefined();
+  });
+
+  it('lists the landmarks of story candidates, and the ones an owner is at often (FL-356)', async () => {
+    const user = await mediumFactory.userWithClusterGroup(db);
+    await new UserRepository(db).create(user);
+    const assets = new AssetRepository(db);
+    const visits = [
+      { day: '2026-06-01', location: inPark },
+      { day: '2026-06-02', location: inPark },
+      { day: '2026-06-03', location: atTower },
+    ];
+    for (const { day, location } of visits) {
+      const asset = mediumFactory.assetInsert({ ownerId: user.id, localDateTime: new Date(`${day}T10:00:00.000Z`) });
+      await assets.create(asset);
+      await db
+        .insertInto('asset_job_status')
+        .values(mediumFactory.assetJobStatusInsert({ assetId: asset.id }))
+        .execute();
+      await db
+        .insertInto('asset_file')
+        .values({ assetId: asset.id, type: AssetFileType.Preview, path: `/preview/${asset.id}`, physicalFileId: null })
+        .execute();
+      await db
+        .insertInto('asset_exif')
+        .values({ assetId: asset.id, ...location })
+        .execute();
+    }
+    const [from, to] = [new Date('2026-01-01T00:00:00.000Z'), new Date('2026-12-31T00:00:00.000Z')];
+
+    const candidates = await assets.getEventStoryCandidates(user.id, from, to);
+    expect(candidates.map(({ landmarks }) => landmarks.map(({ id }) => id).sort())).toEqual([
+      ['Q1516525', 'Q181185'],
+      ['Q1516525', 'Q181185'],
+      ['Q243'],
+    ]);
+    expect(candidates[2].landmarks).toEqual([
+      { id: 'Q243', name: 'Eiffel Tower', kind: 'tower', rank: 200, radiusM: 165 },
+    ]);
+
+    const often = await assets.getFrequentLandmarkIds(user.id, from, to, 1);
+    expect(often.sort()).toEqual(['Q1516525', 'Q181185']);
+    await expect(assets.getFrequentLandmarkIds(user.id, from, to, 2)).resolves.toEqual([]);
   });
 
   it('skips a missing pack without failing', async () => {

@@ -1787,7 +1787,7 @@ Related models: [AssetVisibility](models-06.md#assetvisibility).
 
 ## EventStoryDto
 
-Related models: [MemoryStoryPlaceDto](models-17.md#memorystoryplacedto).
+Related models: [LandmarkSummaryDto](models-15.md#landmarksummarydto), [MemoryStoryPlaceDto](models-17.md#memorystoryplacedto).
 
 ```json
 {
@@ -1815,6 +1815,10 @@ Related models: [MemoryStoryPlaceDto](models-17.md#memorystoryplacedto).
       ],
       "type": "string"
     },
+    "landmark": {
+      "$ref": "#/components/schemas/LandmarkSummaryDto",
+      "description": "The landmark the event was a visit to, when most of it was taken at one"
+    },
     "place": {
       "$ref": "#/components/schemas/MemoryStoryPlaceDto"
     },
@@ -1823,7 +1827,7 @@ Related models: [MemoryStoryPlaceDto](models-17.md#memorystoryplacedto).
       "type": "string"
     },
     "title": {
-      "description": "Place label for the event, when it has one",
+      "description": "Landmark name or place label for the event, when it has one",
       "type": "string"
     },
     "year": {
@@ -2334,44 +2338,6 @@ Related models: [FileTrashItemResponseDto](models-11.md#filetrashitemresponsedto
       "type": "boolean"
     }
   },
-  "type": "object"
-}
-```
-
-## FrameleafAccountLinkResponseDto
-
-
-```json
-{
-  "properties": {
-    "available": {
-      "description": "Sign in with Frameleaf is available on this server (it is linked)",
-      "type": "boolean"
-    },
-    "email": {
-      "description": "The linked Frameleaf account’s email",
-      "nullable": true,
-      "type": "string"
-    },
-    "lastSignInAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "linked": {
-      "type": "boolean"
-    },
-    "linkedAt": {
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "available",
-    "email",
-    "lastSignInAt",
-    "linked",
-    "linkedAt"
-  ],
   "type": "object"
 }
 ```

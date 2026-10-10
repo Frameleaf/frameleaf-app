@@ -1676,7 +1676,7 @@ Get your Frameleaf account link
 
 Permission: `frameleafAccount.read`. Admin only: `false`.
 
-Models: [FrameleafAccountLinkResponseDto](models-11.md#frameleafaccountlinkresponsedto).
+Models: [FrameleafAccountLinkResponseDto](models-12.md#frameleafaccountlinkresponsedto).
 
 Controller access declarations:
 
