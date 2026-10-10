@@ -25,8 +25,10 @@ import {
   DatabaseBackupListResponseDto,
   DatabaseBackupUploadDto,
 } from 'src/dtos/database-backup.dto.js';
+import { FrameleafSetupCodeDto } from 'src/dtos/frameleaf-server-setup.dto.js';
 import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, GetLoginDetails, OriginalTransfer } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
@@ -110,6 +112,7 @@ export class DatabaseBackupController {
   }
 
   @Post('start-restore')
+  @RateLimited(RATE_LIMITS.frameleafSetup)
   @Endpoint({
     summary: 'Start database backup restore flow',
     description: 'Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)',
@@ -117,10 +120,14 @@ export class DatabaseBackupController {
   })
   @Authenticated({ public: true, setup: true })
   async startDatabaseRestoreFlow(
+    @Body() dto: FrameleafSetupCodeDto,
     @GetLoginDetails() loginDetails: LoginDetails,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    const { jwt } = await this.maintenanceService.startRestoreFlow();
+    const { jwt } = await this.maintenanceService.startRestoreFlow(dto, {
+      ip: loginDetails.clientIp,
+      via: loginDetails.via ?? null,
+    });
     return respondWithCookie(res, undefined, {
       isSecure: loginDetails.isSecure,
       values: [{ key: ImmichCookie.MaintenanceToken, value: jwt }],

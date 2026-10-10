@@ -4,6 +4,7 @@ import {
   beginMount,
   cancelMountTimer,
   confirmEcho,
+  editorDraftCommandIds,
   loadFinished,
   markLoaded,
   reconcileHostGraph,
@@ -1154,5 +1155,62 @@ describe('per-mount timers (FL-187)', () => {
       releaseMountTimers(timers)
     }
     expect(timers.size).toBe(0)
+  })
+})
+
+describe('editor drafts name their mask edits as clip.setMask (FL-348)', () => {
+  const graph = (items: unknown[], extra: Record<string, unknown> = {}) => ({
+    id: 'p',
+    metadata: { fps: 30 },
+    timeline: { tracks: [], items },
+    ...extra,
+  })
+  const shape = (fields: Record<string, unknown> = {}) => ({
+    id: 's1',
+    type: 'shape',
+    shapeType: 'path',
+    trackId: 'v1',
+    from: 0,
+    durationInFrames: 30,
+    pathVertices: [{ position: [0, 0], inHandle: [0, 0], outHandle: [0, 0], tangentMode: 'corner' }],
+    ...fields,
+  })
+  const masked = {
+    isMask: true,
+    blendMode: 'normal',
+    maskType: 'clip',
+    maskFeather: 0,
+    maskOpacity: 100,
+    maskInvert: false,
+    pathClosed: true,
+  }
+
+  it('reports turning a shape into a mask, and only that', () => {
+    expect(editorDraftCommandIds(graph([shape()]), graph([shape(masked)]))).toEqual(['clip.setMask'])
+  })
+
+  it('reports a mask setting and a pen edit on a mask', () => {
+    expect(
+      editorDraftCommandIds(graph([shape(masked)]), graph([shape({ ...masked, maskFeather: 20 })])),
+    ).toEqual(['clip.setMask'])
+    const moved = [{ position: [1, 1], inHandle: [0, 0], outHandle: [0, 0], tangentMode: 'corner' }]
+    expect(
+      editorDraftCommandIds(graph([shape(masked)]), graph([shape({ ...masked, pathVertices: moved })])),
+    ).toEqual(['clip.setMask'])
+  })
+
+  it('reports other changes as editor.save, beside the mask edit', () => {
+    expect(
+      editorDraftCommandIds(graph([shape()]), graph([shape({ ...masked, from: 10 })])),
+    ).toEqual(['clip.setMask', 'editor.save'])
+    expect(editorDraftCommandIds(graph([shape()]), graph([shape({ from: 10 })]))).toEqual(['editor.save'])
+    // A pen edit on a shape that is not a mask is a shape edit, not a mask edit.
+    expect(
+      editorDraftCommandIds(graph([shape()]), graph([shape({ pathVertices: [] })])),
+    ).toEqual(['editor.save'])
+  })
+
+  it('falls back to editor.save without a readable previous graph', () => {
+    expect(editorDraftCommandIds(null, graph([shape(masked)]))).toEqual(['editor.save'])
   })
 })

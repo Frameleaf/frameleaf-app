@@ -890,7 +890,7 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
     const status = fixtures.commandStatus[command];
     assert.ok(status, `${command} changes the graph but has no commandStatus entry: specify it in the protocol page and add its fixtures`);
     assert.ok(status.status in labels, `${command}: unknown status ${status.status}`);
-    assert.match(status.story, /^(FL-30[6-9]|FL-111|FL-105)$/, `${command}: story`);
+    assert.match(status.story, /^(FL-30[6-9]|FL-111|FL-105|FL-348)$/, `${command}: story`);
     const own = rows.filter((row) => row.id === command);
     assert.equal(own.length, 1, `${command} has ${own.length} rows in section 8.3 of the protocol page`);
     const [row] = own;
@@ -931,8 +931,8 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 54, host: 2, 'bundle-import': 1, 'not-implemented': 16 });
-  assert.equal(mutating.length, 73);
+  assert.deepEqual(counts, { engine: 56, host: 2, 'bundle-import': 1, 'not-implemented': 15 });
+  assert.equal(mutating.length, 74);
 });
 
 // FL-105 replay is independent of the engine and checks every new positive/negative answer.
@@ -953,7 +953,6 @@ test('Lottie map replacement and refusals match the independent reference', () =
   }
 });
 
-
 test('media relink readers and refusals match the independent source-binding reference', () => {
   const cases = fixtures.cases.filter((entry) => entry.covers.includes('media.relink'));
   assert.ok(cases.some((entry) => entry.expect.status === 'applied'));
@@ -966,5 +965,27 @@ test('media relink readers and refusals match the independent source-binding ref
       assert.deepEqual(actual.graph, entry.expect.graph, entry.id);
       assert.equal(graphDigest(actual.graph), entry.expect.digest, entry.id);
     } else assert.deepEqual(actual, entry.expect, entry.id);
+  }
+});
+
+// FL-348: masks and relinking replay through the independent reference, applied and refused alike.
+test('clip.setMask and clip.relink match the independent reference', () => {
+  const cases = fixtures.cases.filter((entry) => entry.story === 'FL-348');
+  for (const command of ['clip.setMask', 'clip.relink']) {
+    const own = cases.filter((entry) => entry.covers.includes(command));
+    assert.ok(own.some((entry) => entry.expect.status === 'applied'), `${command}: applied`);
+    assert.ok(own.some((entry) => entry.expect.status === 'rejected'), `${command}: rejected`);
+  }
+  for (const entry of cases) {
+    const base = fixtures.bases[entry.base];
+    const outcome = applyBatch(base.graph, entry.envelopes, fixtures.media[entry.media ?? base.media]);
+    if (entry.expect.status === 'applied') {
+      assert.equal(outcome.status, 'applied', entry.id);
+      assert.equal(entry.expect.fixedPoint, true, `${entry.id}: normal form`);
+      assert.deepEqual(outcome.graph, entry.expect.graph, entry.id);
+      assert.equal(graphDigest(outcome.graph), entry.expect.digest, entry.id);
+    } else {
+      assert.deepEqual(outcome, entry.expect, entry.id);
+    }
   }
 });

@@ -123,6 +123,24 @@ const QueueResponseSchema = z
   })
   .meta({ id: 'QueueResponseDto' });
 
+/**
+ * FL-349: the storage template migration — moving originals to the paths the storage template names —
+ * as one status for the native apps' Migration page. It is the `storageTemplateMigration` queue.
+ */
+const StorageMigrationStatusResponseSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether the storage template is turned on; a run moves nothing while it is off'),
+    template: z.string().describe('The storage template originals are moved to'),
+    isActive: z.boolean().describe('Whether a migration is running now'),
+    isPaused: z.boolean().describe('Whether the storage template migration queue is paused'),
+    hasUnfinishedWork: z
+      .boolean()
+      .describe('Whether durable work remains, including delayed, paused and unadmitted work'),
+    statistics: QueueStatisticsSchema,
+  })
+  .meta({ id: 'StorageMigrationStatusResponseDto' });
+
+export class StorageMigrationStatusResponseDto extends createZodDto(StorageMigrationStatusResponseSchema) {}
 export class QueueNameParamDto extends createZodDto(QueueNameParamSchema) {}
 export class QueueCommandDto extends createZodDto(QueueCommandSchemaDto) {}
 export class QueueUpdateDto extends createZodDto(QueueUpdateSchema) {}

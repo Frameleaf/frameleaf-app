@@ -4,55 +4,45 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Injectable,
   Next,
   Param,
   Post,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
 import type { NextFunction, Response } from 'express';
+import type { BundleUploadRequest } from 'src/controllers/studio-bundle.controller.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioBundleUploadInterceptor } from 'src/controllers/studio-bundle.controller.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
 import {
   StudioProjectImportCreateDto,
   StudioProjectImportDto,
   StudioProjectImportParamDto,
 } from 'src/dtos/studio-project-import.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, AuthRequest, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { STUDIO_IMPORT_MAX_BYTES } from 'src/utils/studio-imports.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
-/**
- * Where an upload is written before it is checked: the uploader's own private folder, under a
- * random name. Never a path the client chose, never memory.
- */
-const importUploadStorage = diskStorage({
-  destination: (request, _file, callback) => {
-    const ownerId = (request as unknown as AuthRequest).user?.user.id;
-    if (!ownerId) {
-      callback(new Error('Not authenticated'), '');
-      return;
-    }
-    try {
-      const folder = studioImportIncomingFolder(ownerId);
-      mkdirSync(folder, { recursive: true });
-      callback(null, folder);
-    } catch (error) {
-      callback(error as Error, '');
-    }
-  },
-  filename: (_request, _file, callback) => callback(null, `${randomUUID()}.upload`),
-});
+/** Direct imports share the owner reservation and body timeout used by bundle uploads. */
+@Injectable()
+export class StudioProjectImportUploadInterceptor extends StudioBundleUploadInterceptor {
+  protected readonly maxBytes = STUDIO_IMPORT_MAX_BYTES;
+
+  constructor(service: StudioBundleService) {
+    super(service);
+  }
+}
 
 /**
  * Files uploaded into a Studio project (FL-103 recordings, FL-105 media import). Owner-only: a
@@ -71,9 +61,7 @@ export class StudioProjectImportController {
   @Authenticated()
   @ApiConsumes('multipart/form-data')
   @ApiBody({ description: 'A file to import into the project', type: StudioProjectImportCreateDto })
-  @UseInterceptors(
-    FileInterceptor('file', { storage: importUploadStorage, limits: { files: 1, fileSize: STUDIO_IMPORT_MAX_BYTES } }),
-  )
+  @UseInterceptors(StudioProjectImportUploadInterceptor)
   @Endpoint({
     summary: 'Import a file into a Studio project',
     description:
@@ -87,8 +75,15 @@ export class StudioProjectImportController {
     // Checked by the service, not a pipe: a refused request must still remove the file multer wrote.
     @Body() body: { id?: unknown },
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: BundleUploadRequest,
   ): Promise<StudioProjectImportDto> {
-    return this.service.upload(auth, id, typeof body?.id === 'string' ? body.id : undefined, file);
+    return this.service.upload(
+      auth,
+      id,
+      typeof body?.id === 'string' ? body.id : undefined,
+      file,
+      request.studioBundleUploadId,
+    );
   }
 
   @Get(':id/imports')
@@ -100,6 +95,21 @@ export class StudioProjectImportController {
   })
   getStudioProjectImports(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioProjectImportDto[]> {
     return this.service.list(auth, id);
+  }
+
+  @Get(':id/inventory')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List what a Studio project keeps and uses',
+    description:
+      'The files kept with one of your projects, and the fonts, bundled LUTs and models its current revision names, each with its licence and whether this server may run it (GET /studio/resources lists everything it may).',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioProjectInventory(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<StudioProjectInventoryDto> {
+    return this.service.inventory(auth, id);
   }
 
   @Get(':id/imports/:importId/file')

@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -12,6 +18,7 @@ import {
   StudioProject,
   StudioProjectRepository,
 } from 'src/repositories/studio-project.repository.js';
+import { STUDIO_BUNDLE_DOCUMENT_RESERVATION } from 'src/repositories/studio-storage-admission.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
@@ -262,6 +269,7 @@ describe(StudioBundleService.name, () => {
     allowed = new Map();
 
     operations = {
+      listUnreleasedBundleExports: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockImplementation((row: Record<string, unknown>) =>
         Promise.resolve({
           ...operationOf({}),
@@ -293,12 +301,13 @@ describe(StudioBundleService.name, () => {
         .fn()
         .mockImplementation(() => Promise.resolve({ project: { id: newUuidV7() } as StudioProject, created: true })),
       getByImportOperation: vi.fn().mockResolvedValue(undefined),
-      createUpload: vi.fn(),
+      createUpload: vi.fn().mockResolvedValue({ id: newUuidV7() }),
+      finalizeUpload: vi.fn(),
       getUpload: vi.fn(),
       deleteUpload: vi.fn(),
       markUploadConsumed: vi.fn(),
       deletePurgeable: vi.fn().mockResolvedValue([]),
-      deleteExpiredUploads: vi.fn().mockResolvedValue([]),
+      listExpiredUploads: vi.fn().mockResolvedValue([]),
     };
     assets = { getByIds: vi.fn().mockResolvedValue([]), getByChecksums: vi.fn().mockResolvedValue([]) };
     resources = { resolveProjectResources: resolveLikeFl90() };
@@ -504,6 +513,26 @@ describe(StudioBundleService.name, () => {
         sut.createExport(owner, projectId, { sequenceIds: ['seq-1', 'seq-2'], requestKey: 'subset' }),
       ).resolves.toMatchObject({ id: subset.id });
       expect(operations.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('upload admission', () => {
+    it('reserves bytes before receiving a body and refuses invalid sizes', async () => {
+      const reservation = { id: newUuidV7(), path: '/private/reserved.zip' };
+      projects.createUpload.mockResolvedValue(reservation);
+      await expect(sut.reserveUpload(owner, 123)).resolves.toEqual(reservation);
+      expect(projects.createUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: owner.user.id, sizeBytes: 123, digest: '' }),
+      );
+      await expect(sut.reserveUpload(owner, -1)).rejects.toThrow('Invalid');
+      expect(projects.createUpload).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains the charged upload row when file cleanup fails', async () => {
+      projects.getUpload.mockResolvedValue({ id: 'upload', path: '/private/failed.zip' });
+      fs.storage.unlink.mockRejectedValueOnce(new Error('disk unavailable'));
+      await expect(sut.abortUpload(owner, 'upload')).rejects.toThrow('disk unavailable');
+      expect(projects.deleteUpload).not.toHaveBeenCalled();
     });
   });
 
@@ -1164,7 +1193,7 @@ describe(StudioBundleService.name, () => {
         fs.files.set(row.path, kept[index].bytes);
       }
       projects.listImports = vi.fn().mockResolvedValue(rows);
-      projects.listImportDeclarations.mockResolvedValue(rows.map(({ id }) => ({ id })));
+      projects.listImportDeclarations.mockResolvedValue(rows.map(({ id, sizeBytes }) => ({ id, sizeBytes })));
       projects.getImport = vi.fn().mockResolvedValue(undefined);
       projects.getImportBytes = vi.fn().mockResolvedValue(0);
       projects.registerImport = vi.fn().mockImplementation((item: Record<string, unknown>) => {
@@ -1374,6 +1403,31 @@ describe(StudioBundleService.name, () => {
       expect(lastResult()).toMatchObject({ embeddedVerified: 5, missing: [] });
     });
 
+    it('refuses extraction before opening an output when temporary storage cannot be reserved', async () => {
+      const { bundle, manifest } = handMade([kept[0]]);
+      const upload = uploadOf(bundle, manifest);
+      projects.createUpload.mockRejectedValueOnce(new PayloadTooLargeException('storage quota'));
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        expect.objectContaining({ error: 'storage quota' }),
+      );
+      expect(fs.storage.createWriteStream).not.toHaveBeenCalled();
+    });
+
+    it('stops ZIP output at its admitted byte bound and removes the partial file', async () => {
+      const job = exportJobOf(false, []);
+      job.settings = { storageReservationBytes: STUDIO_BUNDLE_DOCUMENT_RESERVATION + 1 };
+      await sut.run({ operation: job, claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalledWith(
+        job.id,
+        'token',
+        expect.objectContaining({ error: expect.stringContaining('exceeds its storage reservation') }),
+      );
+      expect(fs.files.keys().some((path) => path.includes(job.id))).toBe(false);
+    });
+
     it('carries the bytes out and keeps them with the imported project under the same ids', async () => {
       // --- The exporting server -------------------------------------------------------------
       const exportJob = exportJobOf(
@@ -1440,6 +1494,7 @@ describe(StudioBundleService.name, () => {
           path: join(studioImportProjectFolder(owner.user.id, created), `${item.id}${item.extension}`),
           fileName: item.fileName,
           externalReferences: item.contentType === 'image/svg+xml' ? 0 : null,
+          reservationId: expect.any(String),
         })),
       );
       for (const item of kept) {
@@ -1861,7 +1916,7 @@ describe(StudioBundleService.name, () => {
       fs.files.set('/exports/old.zip', Buffer.from('old'));
       fs.files.set('/library/a.mov', Buffer.from('keep'));
       projects.deletePurgeable.mockResolvedValue([newUuidV7()]);
-      projects.deleteExpiredUploads.mockResolvedValue([{ id: newUuidV7(), path: '/uploads/old.zip' }]);
+      projects.listExpiredUploads.mockResolvedValue([{ id: newUuidV7(), path: '/uploads/old.zip' }]);
       const expired = {
         id: newUuidV7(),
         ownerId: owner.user.id,

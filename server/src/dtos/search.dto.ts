@@ -281,6 +281,12 @@ const searchFilterBranchShape = {
   hasAlbums: BoolFilterSchema,
   hasPeople: BoolFilterSchema,
   hasTags: BoolFilterSchema,
+  // FL-349: panoramas are stills whose EXIF/XMP projection (GPano ProjectionType) is equirectangular or
+  // cylindrical, or an Insta360 .insp file
+  isPanorama: BoolFilterSchema,
+  // FL-349: screenshots are stills named as phones and computers name them (Screenshot_…, Screen Shot …,
+  // Bildschirmfoto …, スクリーンショット …), or a PNG with no camera make and model (how iOS saves them)
+  isScreenshot: BoolFilterSchema,
   city: StringFilterNullableSchema,
   state: StringFilterNullableSchema,
   country: StringFilterNullableSchema,

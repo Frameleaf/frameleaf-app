@@ -2588,15 +2588,16 @@ def test_extract_signal_field_returns_bool_for_non_canonical_values() -> None:
     assert result["is_nsfw_likely"] is True
 
 
-def test_capabilities_endpoint_lists_only_library_workloads(deployed_app: TestClient) -> None:
+def test_capabilities_endpoint_lists_library_workloads_and_transcription(deployed_app: TestClient) -> None:
     response = deployed_app.get("http://localhost:3003/capabilities")
 
     assert response.status_code == 200
     body = response.json()
     assert body["protocol"] == "predict-v1"
-    # The ordinary predict container never claims restoration or Studio workloads.
-    assert body["workloads"] == ["face", "clip", "ocr", "enrichment", "pet-recognition"]
-    assert not {"restoration-faithful", "restoration-creative", "studio-ai"} & set(body["workloads"])
+    # The predict container never claims restoration. It claims Studio AI only for Whisper speech to
+    # text (/transcribe), and only when that runtime is installed.
+    assert body["workloads"] == ["face", "clip", "ocr", "enrichment", "pet-recognition", "studio-ai"]
+    assert not {"restoration-faithful", "restoration-creative"} & set(body["workloads"])
 
 
 def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:

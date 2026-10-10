@@ -21,7 +21,7 @@ const REDACTED = '********';
  */
 const normalize = (name: string) => name.toLowerCase().replaceAll(/[_-]/g, '');
 const SECRET_PART = /password|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode/;
-const SECRET_EXACT = new Set(['key', 'code', 'state', 'slug']);
+const SECRET_EXACT = new Set(['key', 'code', 'state', 'slug', 'appleid']);
 const isSecretName = (name: string) => {
   const normalized = normalize(name);
   return SECRET_PART.test(normalized) || SECRET_EXACT.has(normalized);

@@ -380,7 +380,9 @@ function watchDrafts(state: Session) {
       if (path.join('/') !== projectJsonPath(mount.projectId).join('/')) return
       if (!acceptsWrite(state, mount) || state.relinkCommitting) return
       // Work the host has not taken yet; a remount before it is taken reports it lost (FL-174).
+      state.writeVersion = (state.writeVersion ?? 0) + 1
       state.writePending = true
+      post({ type: 'dirty', dirty: true })
       // A burst of writes debounces into one send; the timer a later write supersedes is dropped
       // from `mountTimers` too, not only cleared, so it does not sit there for the rest of the
       // mount's life (FL-187).
@@ -403,15 +405,16 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
     read: (from) => state.workspace.readText(projectJsonPath(from.projectId)),
     contentOf,
     // The host's graph keeps one Freecut id whichever mount wrote it.
-    stage: (graph, baseRevision, graphVersion) =>
+    stage: (graph, baseRevision, graphVersion, commandIds) =>
       call(
         'stageDraft',
         { ...(storeGeneratedMedia(graph) as object), id: state.engineProjectId },
-        ['editor.save'],
+        commandIds,
         baseRevision,
         graphVersion,
       ),
-    dirty: (dirty) => post({ type: 'dirty', dirty }),
+    dirty: (dirty) =>
+      post({ type: 'dirty', dirty: dirty || useTimelineSettingsStore.getState().isDirty }),
     lost: () => notifySuperseded(state),
   })
 }
@@ -625,7 +628,7 @@ function watchDirty(state: Session) {
   state.unsubscribe.push(
     useTimelineSettingsStore.subscribe((settings, previous) => {
       if (settings.isDirty === previous.isDirty && !settings.isDirty) return
-      post({ type: 'dirty', dirty: settings.isDirty })
+      post({ type: 'dirty', dirty: settings.isDirty || state.writePending || state.pendingSend })
       const mount = state.mount
       if (!settings.isDirty || settings.isTimelineLoading || !acceptsWrite(state, mount)) return
       // Same debounce-supersede rule as `watchDrafts`: drop the superseded timer, don't just clear it
@@ -1002,7 +1005,9 @@ async function revokeGenerated(): Promise<void> {
     currentProject?.id === mount.projectId ? currentProject : state.context.project.graph
   let graph: unknown = null
   try {
-    graph = mount.loaded
+    graph =
+      mount.loaded &&
+      (useTimelineSettingsStore.getState().isDirty || state.writePending || state.pendingSend)
       ? storeGeneratedMedia({
           ...(project as object),
           id: state.engineProjectId,
@@ -1013,14 +1018,23 @@ async function revokeGenerated(): Promise<void> {
     await dispose()
   }
   if (graph) {
-    const result = await call(
-      'stageDraft',
-      graph,
-      ['editor.save'],
-      mount.revision,
-      mount.graphVersion,
-    )
-    if (result.status !== 'staged') post({ type: 'dirty', dirty: true })
+    try {
+      const result = await call(
+        'stageDraft',
+        graph,
+        ['editor.save'],
+        mount.revision,
+        mount.graphVersion,
+      )
+      if (result.status !== 'staged') post({ type: 'dirty', dirty: true })
+    } catch (error) {
+      post({ type: 'dirty', dirty: true })
+      post({
+        type: 'notify',
+        message: error instanceof Error ? error.message : String(error),
+        tone: 'error',
+      })
+    }
   }
 }
 

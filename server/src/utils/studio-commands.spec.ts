@@ -199,6 +199,38 @@ describe('validateStudioCommandEnvelope', () => {
     ).toEqual({ valid: true });
     expect(validateStudioCommandPayload('clip.setGrade', { clipId: 'c', grade: null })).toEqual({ valid: true });
   });
+
+  it('checks the closed shape of a clip.setMask mask (FL-348)', () => {
+    const vertex = { position: [0, 0], inHandle: [0, 0], outHandle: [0.1, 0], tangentMode: 'smooth' };
+    expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c', mask: null })).toEqual({ valid: true });
+    expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c', mask: {} })).toEqual({ valid: true });
+    expect(
+      validateStudioCommandPayload('clip.setMask', {
+        clipId: 'c',
+        mask: { type: 'alpha', feather: 20, opacity: 80, invert: true, path: [vertex, vertex, vertex] },
+      }),
+    ).toEqual({ valid: true });
+    for (const mask of [
+      { type: 'luma' },
+      { feather: 101 },
+      { opacity: -1 },
+      { invert: 'yes' },
+      { colour: 'red' },
+      { path: [vertex, vertex] },
+      { path: [vertex, vertex, { ...vertex, position: [1] }] },
+      { path: [vertex, vertex, { ...vertex, tangentMode: 'spiky' }] },
+      { path: [vertex, vertex, { ...vertex, extra: 1 }] },
+    ]) {
+      expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c', mask })).toMatchObject({ valid: false });
+    }
+    expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c' })).toMatchObject({ valid: false });
+  });
+
+  it('requires both ids of a clip.relink (FL-348)', () => {
+    expect(validateStudioCommandPayload('clip.relink', { clipId: 'c', assetId: 'a' })).toEqual({ valid: true });
+    expect(validateStudioCommandPayload('clip.relink', { clipId: 'c', assetId: '' })).toMatchObject({ valid: false });
+    expect(validateStudioCommandPayload('clip.relink', { clipId: 'c' })).toMatchObject({ valid: false });
+  });
 });
 
 describe('studio batches', () => {

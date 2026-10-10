@@ -395,8 +395,7 @@ export class AuthService extends BaseService {
   }
 
   async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
-    const user = await this.userRepository.getForPinCode(auth.user.id);
-    this.validatePinCode(user, dto);
+    const user = await this.validatePinCode(auth.user.id, dto);
 
     if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, null))) {
       throw new UnauthorizedException('Your PIN or password changed; try again');
@@ -406,8 +405,7 @@ export class AuthService extends BaseService {
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
-    const user = await this.userRepository.getForPinCode(auth.user.id);
-    this.validatePinCode(user, dto);
+    const user = await this.validatePinCode(auth.user.id, dto);
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
@@ -417,7 +415,48 @@ export class AuthService extends BaseService {
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
-  private validatePinCode(
+  private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
+    // Throttle PIN brute-force per user (security.md M5).
+    let now = Date.now();
+    let state = pinAttemptsByUser.get(userId);
+    if (state && state.lockedUntil > now) {
+      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+    }
+
+    const user = await this.userRepository.getForPinCode(userId);
+    // A pending credential read must observe failures from other requests before checking another guess.
+    now = Date.now();
+    state = pinAttemptsByUser.get(userId);
+    if (state && state.lockedUntil > now) {
+      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+    }
+    try {
+      this.validatePinCodeSecret(user, dto);
+    } catch (error) {
+      // Record failure and apply backoff. Failures expire after a quiet window.
+      const prev =
+        state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
+          ? state
+          : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
+      const failureCount = prev.failureCount + 1;
+      const lockoutMs = lookupPinLockoutMs(failureCount);
+      pinAttemptsByUser.set(userId, {
+        failureCount,
+        lastFailureAt: now,
+        lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
+      });
+      throw error;
+    }
+
+    // Successful credential check resets the per-user counter.
+    pinAttemptsByUser.delete(userId);
+
+    return user;
+  }
+
+  private validatePinCodeSecret(
     user: { pinCode: string | null; password: string | null },
     dto: { pinCode?: string; password?: string },
   ) {
@@ -1024,35 +1063,7 @@ export class AuthService extends BaseService {
       throw new BadRequestException('This endpoint can only be used with a session token');
     }
 
-    // Throttle PIN brute-force per user (security.md M5).
-    const now = Date.now();
-    const state = pinAttemptsByUser.get(auth.user.id);
-    if (state && state.lockedUntil > now) {
-      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
-      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
-    }
-
-    const user = await this.userRepository.getForPinCode(auth.user.id);
-    try {
-      this.validatePinCode(user, { pinCode: dto.pinCode });
-    } catch (error) {
-      // Record failure and apply backoff. Failures expire after a quiet window.
-      const prev =
-        state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
-          ? state
-          : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
-      const failureCount = prev.failureCount + 1;
-      const lockoutMs = lookupPinLockoutMs(failureCount);
-      pinAttemptsByUser.set(auth.user.id, {
-        failureCount,
-        lastFailureAt: now,
-        lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
-      });
-      throw error;
-    }
-
-    // Successful unlock — reset the per-user counter.
-    pinAttemptsByUser.delete(auth.user.id);
+    const user = await this.validatePinCode(auth.user.id, { pinCode: dto.pinCode });
 
     // FL-34: conditional on the credentials just checked, so a PIN or password change that lands
     // in between (and locked every session) is not undone by this unlock

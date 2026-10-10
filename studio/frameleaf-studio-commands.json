@@ -137,6 +137,19 @@
     },
     {
       "capability": null,
+      "description": "Point a placed clip and its synchronised linked clips at another library asset.",
+      "id": "clip.relink",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "clipId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
       "description": "Move a clip to another index on its track; the track re-flows contiguously.",
       "id": "clip.reorder",
       "manifestIds": ["readme.timeline-editing.5"],
@@ -1436,7 +1449,7 @@
     }
   ],
   "counts": {
-    "commands": 93,
+    "commands": 94,
     "commandsWithoutManifestRow": 23,
     "manifestRows": 210,
     "manifestRowsDeclaredNonCommand": 28,
@@ -1516,7 +1529,12 @@
       "reason": "Source module inventory row, not an action."
     },
     {
-      "commands": ["media.import", "media.relink", "media.remove"],
+      "commands": [
+        "clip.relink",
+        "media.import",
+        "media.relink",
+        "media.remove"
+      ],
       "id": "module.media-library",
       "reason": "Source module inventory row, not an action."
     },

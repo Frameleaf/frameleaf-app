@@ -4780,6 +4780,16 @@
         "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
         "operationId": "startDatabaseRestoreFlow",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "description": ""
@@ -7108,6 +7118,98 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage-migration": {
+      "get": {
+        "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
+        "operationId": "getStorageMigrationStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get storage migration status",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queue.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.",
+        "operationId": "runStorageMigrationInBackground",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run storage migration in the background",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queue.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -13752,6 +13854,229 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/filmstrip": {
+      "get": {
+        "description": "The index of a filmstrip sprite sheet for a Studio timeline: `count` frames sampled at the centre of equal slices of the video, each `height` pixels high, laid out left to right and top to bottom. Returns each frame timestamp and its position in the sprite; fetch the image from `/assets/{id}/filmstrip/sprite` with the same parameters and `version`. Made on first request from the playback rendition, cached, and remade when the video changes. 404 for anything that is not a video.",
+        "operationId": "getAssetFilmstrip",
+        "parameters": [
+          {
+            "name": "count",
+            "required": false,
+            "in": "query",
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 120,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "jpeg",
+              "$ref": "#/components/schemas/AssetFilmstripFormat"
+            }
+          },
+          {
+            "name": "height",
+            "required": false,
+            "in": "query",
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+            "schema": {
+              "minimum": 32,
+              "maximum": 240,
+              "default": 90,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFilmstripResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get video filmstrip",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/filmstrip/sprite": {
+      "get": {
+        "description": "The filmstrip sprite sheet (JPEG or WebP) the filmstrip index describes, for the same `count`, `height` and `format`. With `version`, 404 when the video changed since that index was read.",
+        "operationId": "viewAssetFilmstripSprite",
+        "parameters": [
+          {
+            "name": "count",
+            "required": false,
+            "in": "query",
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 120,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "jpeg",
+              "$ref": "#/components/schemas/AssetFilmstripFormat"
+            }
+          },
+          {
+            "name": "height",
+            "required": false,
+            "in": "query",
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+            "schema": {
+              "minimum": 32,
+              "maximum": 240,
+              "default": 90,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "required": false,
+            "in": "query",
+            "description": "The `version` from the filmstrip index. When given and the video changed since, 404 is returned",
+            "schema": {
+              "pattern": "^[0-9a-f]{16}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View video filmstrip sprite",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/image-enrichment": {
       "get": {
         "description": "Retrieve private image description, tag, and NSFW detection metadata for a specific asset.",
@@ -15480,6 +15805,100 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/waveform": {
+      "get": {
+        "description": "Minimum and maximum sample per bucket of the video’s first audio track, normalized to -1..1, mono or per channel, for a Studio timeline. A video without audio returns `hasAudio: false` and no channels; anything that is not a video is 404. Made on first request from the playback rendition, cached, and remade when the video changes.",
+        "operationId": "getAssetWaveform",
+        "parameters": [
+          {
+            "name": "buckets",
+            "required": false,
+            "in": "query",
+            "description": "Peak pairs to return per channel (default 1000); fewer are returned for very short audio",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1000,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "channels",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "mono",
+              "$ref": "#/components/schemas/AssetWaveformChannelMode"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetWaveformResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get video audio waveform",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -38782,7 +39201,7 @@
     },
     "/shared-spaces/invitations": {
       "get": {
-        "description": "Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: no assets, and counts that exclude media marked sensitive and Locked media.",
+        "description": "Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: up to 12 preview item ids, and counts that exclude media marked sensitive and Locked media.",
         "operationId": "getSharedSpaceInvitations",
         "parameters": [],
         "responses": {
@@ -39967,7 +40386,7 @@
     },
     "/shared-spaces/{id}/preview": {
       "get": {
-        "description": "What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
+        "description": "What the shared space exposes, for someone holding an invitation to it or already in it. previewAssetIds lists up to 12 of the newest items, never media marked sensitive, hidden media or Locked media; their small thumbnails come from GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail. No file names, people or places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
         "operationId": "getSharedSpacePreview",
         "parameters": [
           {
@@ -40012,9 +40431,84 @@
           {
             "version": "v3",
             "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Updated",
+            "description": "Added previewAssetIds"
           }
         ],
         "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/preview/assets/{assetId}/thumbnail": {
+      "get": {
+        "description": "The small thumbnail of one item listed in previewAssetIds, for someone holding an invitation to the shared space or already in it. Only the ids the preview lists right now are served, and only at thumbnail size; any other item, size or caller gets 404.",
+        "operationId": "viewSharedSpacePreviewThumbnail",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "path",
+            "description": "One of the previewAssetIds of the shared space preview",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a shared space preview thumbnail",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/shared-spaces/{id}/visit": {
@@ -40494,6 +40988,63 @@
         ],
         "x-immich-permission": "stack.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/studio/assets/{id}/media-facts": {
+      "get": {
+        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+        "operationId": "getStudioMediaFacts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMediaFactsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Studio media facts of an asset",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/studio/bundles/exports/{id}/download": {
@@ -42662,6 +43213,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/inventory": {
+      "get": {
+        "description": "The files kept with one of your projects, and the fonts, bundled LUTs and models its current revision names, each with its licence and whether this server may run it (GET /studio/resources lists everything it may).",
+        "operationId": "getStudioProjectInventory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectInventoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List what a Studio project keeps and uses",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/lease": {
       "post": {
         "description": "One editor instance writes at a time. The holder renews with the same call; a free or lapsed lease is taken; a live lease held elsewhere is refused with `409` unless `takeover` is set explicitly.",
@@ -43270,6 +43877,138 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/transcriptions": {
+      "post": {
+        "description": "Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.",
+        "operationId": "createStudioTranscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioTranscriptionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioTranscriptionQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Transcribe a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/transcriptions/{transcriptionId}": {
+      "get": {
+        "description": "Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.",
+        "operationId": "getStudioTranscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "transcriptionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioTranscriptionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio clip transcription",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/trash/restore": {
       "post": {
         "description": "Brings a trashed project back to the shelf it was on. Owner only.",
@@ -43320,6 +44059,51 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/resources": {
+      "get": {
+        "description": "Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.",
+        "operationId": "getStudioResources",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioResourceInventoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the Studio resources this server may use",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -59315,6 +60099,133 @@
         ],
         "type": "string"
       },
+      "AssetFilmstripFormat": {
+        "description": "Sprite sheet image format",
+        "enum": [
+          "jpeg",
+          "webp"
+        ],
+        "type": "string"
+      },
+      "AssetFilmstripFrameDto": {
+        "properties": {
+          "index": {
+            "description": "Frame position, 0-based",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "timeMs": {
+            "description": "Timestamp of the frame in the video, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "x": {
+            "description": "Left edge of the frame in the sprite, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "y": {
+            "description": "Top edge of the frame in the sprite, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "timeMs",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetFilmstripResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "columns": {
+            "description": "Tiles per sprite row",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "durationMs": {
+            "description": "Duration of the video, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/AssetFilmstripFormat"
+          },
+          "frameHeight": {
+            "description": "Height of every frame tile, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "frameWidth": {
+            "description": "Width of every frame tile, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "frames": {
+            "description": "Frames in time order, left to right, top to bottom",
+            "items": {
+              "$ref": "#/components/schemas/AssetFilmstripFrameDto"
+            },
+            "type": "array"
+          },
+          "mimeType": {
+            "description": "Content type of the sprite",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Sprite rows",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "spriteHeight": {
+            "description": "Sprite height, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "spriteWidth": {
+            "description": "Sprite width, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "version": {
+            "description": "Changes whenever the video changes; pass it to the sprite request",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "columns",
+          "durationMs",
+          "format",
+          "frameHeight",
+          "frameWidth",
+          "frames",
+          "mimeType",
+          "rows",
+          "spriteHeight",
+          "spriteWidth",
+          "version"
+        ],
+        "type": "object"
+      },
       "AssetIdErrorReason": {
         "description": "Error reason if failed",
         "enum": [
@@ -60923,6 +61834,90 @@
           "locked"
         ],
         "type": "string"
+      },
+      "AssetWaveformChannelDto": {
+        "properties": {
+          "max": {
+            "description": "Highest sample in each bucket, -1 to 1",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "min": {
+            "description": "Lowest sample in each bucket, -1 to 1",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "max",
+          "min"
+        ],
+        "type": "object"
+      },
+      "AssetWaveformChannelMode": {
+        "description": "mono downmixes every channel into one; all returns each channel (up to 8)",
+        "enum": [
+          "mono",
+          "all"
+        ],
+        "type": "string"
+      },
+      "AssetWaveformResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "bucketCount": {
+            "description": "Peak pairs per channel",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "bucketDurationMs": {
+            "description": "Audio time each bucket covers, in milliseconds",
+            "format": "double",
+            "type": "number"
+          },
+          "channels": {
+            "description": "One entry for mono, otherwise one per channel",
+            "items": {
+              "$ref": "#/components/schemas/AssetWaveformChannelDto"
+            },
+            "type": "array"
+          },
+          "durationMs": {
+            "description": "Duration of the decoded audio, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "hasAudio": {
+            "description": "false for a video without an audio track; channels is then empty",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "Changes whenever the video changes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "bucketCount",
+          "bucketDurationMs",
+          "channels",
+          "durationMs",
+          "hasAudio",
+          "version"
+        ],
+        "type": "object"
       },
       "AudioCodec": {
         "description": "Target audio codec",
@@ -66095,7 +67090,7 @@
             "description": "Preview: the part of the frame to preview"
           },
           "restorationId": {
-            "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings",
+            "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -66212,6 +67207,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "quoteOnly": {
+            "description": "A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full",
+            "type": "boolean"
+          },
           "refusal": {
             "allOf": [
               {
@@ -66272,6 +67271,7 @@
           "perUnit",
           "permission",
           "plannedWorkers",
+          "quoteOnly",
           "refusal",
           "runSeconds",
           "spentTodayUsd",
@@ -80340,6 +81340,7 @@
           "studio_export",
           "studio_preview",
           "studio_reverse_conform",
+          "studio_transcription",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -106694,6 +107695,12 @@
           "isOffline": {
             "$ref": "#/components/schemas/BoolFilter"
           },
+          "isPanorama": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isScreenshot": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
@@ -106807,6 +107814,12 @@
             "$ref": "#/components/schemas/BoolFilter"
           },
           "isOffline": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isPanorama": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
           },
           "lensModel": {
@@ -109393,6 +110406,16 @@
             "$ref": "#/components/schemas/UserResponseDto",
             "description": "Who owns the shared space"
           },
+          "previewAssetIds": {
+            "description": "Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array"
+          },
           "role": {
             "$ref": "#/components/schemas/AlbumUserRole",
             "description": "The role the recipient gets on accept"
@@ -109414,6 +110437,7 @@
           "invitedBy",
           "memberCount",
           "owner",
+          "previewAssetIds",
           "role"
         ],
         "type": "object"
@@ -111023,6 +112047,42 @@
         ],
         "type": "string"
       },
+      "StorageMigrationStatusResponseDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the storage template is turned on; a run moves nothing while it is off",
+            "type": "boolean"
+          },
+          "hasUnfinishedWork": {
+            "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+            "type": "boolean"
+          },
+          "isActive": {
+            "description": "Whether a migration is running now",
+            "type": "boolean"
+          },
+          "isPaused": {
+            "description": "Whether the storage template migration queue is paused",
+            "type": "boolean"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/QueueStatisticsDto"
+          },
+          "template": {
+            "description": "The storage template originals are moved to",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "hasUnfinishedWork",
+          "isActive",
+          "isPaused",
+          "statistics",
+          "template"
+        ],
+        "type": "object"
+      },
       "StraightenParameters": {
         "properties": {
           "angle": {
@@ -112291,6 +113351,104 @@
         ],
         "type": "string"
       },
+      "StudioMediaFactsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "audioCodec": {
+            "description": "The first audio track codec; its presence places a linked audio clip",
+            "nullable": true,
+            "type": "string"
+          },
+          "durationSeconds": {
+            "description": "Length in seconds; 0 for a still; null when unknown",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "fps": {
+            "description": "frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still",
+            "format": "double",
+            "type": "number"
+          },
+          "frameCount": {
+            "description": "Frames in the video stream when the container says; null otherwise",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "frameRate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioRationalDto"
+              }
+            ],
+            "description": "The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown",
+            "nullable": true
+          },
+          "hasAudio": {
+            "description": "Whether the original has an audio track; null when it could not be read",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Display height in pixels, after rotation; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "mimeType": {
+            "description": "The original file type",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioMediaFactsSource"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "videoCodec": {
+            "nullable": true,
+            "type": "string"
+          },
+          "width": {
+            "description": "Display width in pixels, after rotation; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "audioCodec",
+          "durationSeconds",
+          "fps",
+          "frameCount",
+          "frameRate",
+          "hasAudio",
+          "height",
+          "mimeType",
+          "source",
+          "type",
+          "videoCodec",
+          "width"
+        ],
+        "type": "object"
+      },
+      "StudioMediaFactsSource": {
+        "description": "probe: read from the original now; stored: the metadata extraction kept, when the original could not be read",
+        "enum": [
+          "probe",
+          "stored"
+        ],
+        "type": "string"
+      },
       "StudioPreviewDto": {
         "properties": {
           "admissionReleased": {
@@ -113276,6 +114434,58 @@
         ],
         "type": "string"
       },
+      "StudioProjectInventoryDto": {
+        "properties": {
+          "fonts": {
+            "description": "Font families the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "keptFiles": {
+            "description": "Files kept with the project (FL-103, FL-105)",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectImportDto"
+            },
+            "type": "array"
+          },
+          "luts": {
+            "description": "Bundled LUTs the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "models": {
+            "description": "Models the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The head revision the graph references were read from; 0 for an empty project",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fonts",
+          "keptFiles",
+          "luts",
+          "models",
+          "projectId",
+          "revision"
+        ],
+        "type": "object"
+      },
       "StudioProjectLeaseDto": {
         "properties": {
           "autosaveDebounceMs": {
@@ -113356,6 +114566,52 @@
         "required": [
           "items",
           "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectResourceKind": {
+        "description": "What the graph references",
+        "enum": [
+          "font",
+          "lut",
+          "model"
+        ],
+        "type": "string"
+      },
+      "StudioProjectResourceUseDto": {
+        "properties": {
+          "allowed": {
+            "description": "Whether it may run on this server",
+            "type": "boolean"
+          },
+          "detail": {
+            "description": "Why not, when it may not",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioProjectResourceKind"
+          },
+          "license": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "As written in the graph",
+            "type": "string"
+          },
+          "rightsId": {
+            "description": "The rights row it resolves to",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowed",
+          "detail",
+          "kind",
+          "license",
+          "name",
+          "rightsId"
         ],
         "type": "object"
       },
@@ -113738,6 +114994,27 @@
         },
         "type": "object"
       },
+      "StudioRationalDto": {
+        "properties": {
+          "den": {
+            "description": "Denominator, positive; the pair is reduced",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "description": "Numerator",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
+      },
       "StudioRenderCandidateDto": {
         "properties": {
           "dolbyVision": {
@@ -113843,6 +115120,147 @@
           "hdr10",
           "maxBitDepth",
           "sessions"
+        ],
+        "type": "object"
+      },
+      "StudioResourceApprovalDto": {
+        "description": "The owner approval the allowed rows come from",
+        "nullable": true,
+        "properties": {
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvedOn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvedBy",
+          "approvedOn"
+        ],
+        "type": "object"
+      },
+      "StudioResourceInventoryDto": {
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/StudioResourceApprovalDto"
+          },
+          "distributionApproved": {
+            "description": "Whether the engine as a whole may be redistributed; false blocks every redistribution use",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Every reviewed resource, sorted by id",
+            "items": {
+              "$ref": "#/components/schemas/StudioResourceItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "approval",
+          "distributionApproved",
+          "items"
+        ],
+        "type": "object"
+      },
+      "StudioResourceItemDto": {
+        "properties": {
+          "approvedOn": {
+            "description": "The date the owner approved this exact row, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "capability": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioWorkerCapability"
+              }
+            ],
+            "description": "The worker capability that runs it (GET /ml-destinations/capabilities says whether one is available), or null when the editor alone uses it",
+            "nullable": true
+          },
+          "id": {
+            "description": "The rights row id, e.g. font:Roboto or model:onnx-community/whisper-base_timestamped",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioResourceItemKind"
+          },
+          "license": {
+            "description": "The licence, as reviewed; null when the review records none",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name a graph or a job uses: a font family, a model id",
+            "type": "string"
+          },
+          "producers": {
+            "description": "For a model: the generated-file producers it serves (transcript, tts, musicgen)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "restrictions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Why the owner withheld a use, by use name (redistribution, localRuntime, hostedUse)",
+            "type": "object"
+          },
+          "uses": {
+            "$ref": "#/components/schemas/StudioResourceUsesDto"
+          }
+        },
+        "required": [
+          "approvedOn",
+          "capability",
+          "id",
+          "kind",
+          "license",
+          "name",
+          "producers",
+          "restrictions",
+          "uses"
+        ],
+        "type": "object"
+      },
+      "StudioResourceItemKind": {
+        "description": "What the resource is",
+        "enum": [
+          "font",
+          "lut",
+          "audio",
+          "model",
+          "voice",
+          "weights",
+          "tool",
+          "runtime",
+          "asset"
+        ],
+        "type": "string"
+      },
+      "StudioResourceUsesDto": {
+        "properties": {
+          "hostedUse": {
+            "description": "May run on Frameleaf Cloud",
+            "type": "boolean"
+          },
+          "localRuntime": {
+            "description": "May run on this server or a LAN worker",
+            "type": "boolean"
+          },
+          "redistribution": {
+            "description": "May be copied to someone else (a bundle, a download)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hostedUse",
+          "localRuntime",
+          "redistribution"
         ],
         "type": "object"
       },
@@ -114193,6 +115611,225 @@
         ],
         "type": "object"
       },
+      "StudioTranscriptionCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video or audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "The machine-learning destination to run on, named explicitly",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "language": {
+            "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
+            "maxLength": 35,
+            "minLength": 2,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId",
+          "destinationId",
+          "language"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionCue": {
+        "properties": {
+          "end": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "start": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "end",
+          "start",
+          "text"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "language": {
+            "description": "The language asked for (`auto` or a BCP 47 tag)",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioTranscriptionResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "revision": {
+            "description": "The revision whose clip was transcribed",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "clipId",
+          "destinationId",
+          "error",
+          "id",
+          "language",
+          "progress",
+          "projectId",
+          "result",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionResultDto": {
+        "properties": {
+          "cues": {
+            "description": "Ready for `captions.set`: `{ start, end, text }` only",
+            "items": {
+              "$ref": "#/components/schemas/StudioTranscriptionCue"
+            },
+            "type": "array"
+          },
+          "language": {
+            "description": "The Whisper language code the speech was transcribed in",
+            "type": "string"
+          },
+          "languageProbability": {
+            "description": "How sure detection was; 1 when the language was given",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "model": {
+            "description": "The Whisper model the worker used",
+            "type": "string"
+          },
+          "words": {
+            "description": "Word timings, for word-by-word caption styles",
+            "items": {
+              "$ref": "#/components/schemas/StudioTranscriptionWord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cues",
+          "language",
+          "languageProbability",
+          "model",
+          "words"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionTime": {
+        "description": "Exact seconds on the main sequence, reduced",
+        "properties": {
+          "den": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionWord": {
+        "properties": {
+          "cue": {
+            "description": "Index of the cue the word belongs to",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "end": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "start": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cue",
+          "end",
+          "start",
+          "text"
+        ],
+        "type": "object"
+      },
       "StudioUnsupportedSourceDto": {
         "properties": {
           "assetId": {
@@ -114215,6 +115852,18 @@
           "refusal"
         ],
         "type": "object"
+      },
+      "StudioWorkerCapability": {
+        "description": "A Studio worker capability, as the command catalogue names it",
+        "enum": [
+          "analysisWorker",
+          "generationWorker",
+          "gpuWorker",
+          "renderWorker",
+          "restorationWorker",
+          "transcriptionWorker"
+        ],
+        "type": "string"
       },
       "StudioWorkspaceDto": {
         "properties": {

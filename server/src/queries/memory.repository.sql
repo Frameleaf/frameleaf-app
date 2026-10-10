@@ -8,6 +8,89 @@ from
 where
   "deletedAt" is null
   and "ownerId" = $1
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $2 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $3
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
@@ -105,6 +188,89 @@ where
   )
   and "deletedAt" is null
   and "ownerId" = $3
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $4 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $5
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
@@ -284,6 +450,89 @@ from
 where
   "deletedAt" is null
   and "ownerId" = $3
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $4 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $5
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
@@ -474,6 +723,89 @@ where
   )
   and "deletedAt" is null
   and "ownerId" = $5
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $6 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $7
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
@@ -657,6 +989,89 @@ where
   "showAt" > $3
   and "deletedAt" is null
   and "ownerId" = $4
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $5 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $6
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
@@ -843,6 +1258,89 @@ where
   )
   and "deletedAt" is null
   and "ownerId" = $4
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and not exists (
+        select
+          $5 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $6
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
   and (
     not exists (
       select
