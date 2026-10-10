@@ -4780,6 +4780,16 @@
         "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
         "operationId": "startDatabaseRestoreFlow",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupCodeDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""

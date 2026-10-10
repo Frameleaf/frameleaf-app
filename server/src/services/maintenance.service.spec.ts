@@ -160,10 +160,26 @@ describe(MaintenanceService.name, () => {
   });
 
   describe('startRestoreFlow', () => {
+    it('refuses restore without setup proof before starting maintenance', async () => {
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.user.getAdmin.mockResolvedValue(undefined);
+      mocks.systemMetadata.get.mockResolvedValue({ code: 'ABCD2345', locked: false } as never);
+      await expect(sut.startRestoreFlow({ code: '' }, { ip: '192.168.1.2', via: null })).rejects.toMatchObject({
+        response: { code: 'setup_code_required' },
+      });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
+    });
+
     it('should start maintenance mode and return a jwt', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ isMaintenanceMode: false });
 
-      await expect(sut.startRestoreFlow()).resolves.toMatchObject({ jwt: expect.any(String) });
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.user.getAdmin.mockResolvedValue(undefined);
+      mocks.systemMetadata.get.mockResolvedValue({ code: 'ABCD2345', locked: false } as never);
+      await expect(sut.startRestoreFlow({ code: 'ABCD2345' }, { ip: '192.168.1.2', via: null })).resolves.toMatchObject(
+        { jwt: expect.any(String) },
+      );
 
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
         isMaintenanceMode: true,

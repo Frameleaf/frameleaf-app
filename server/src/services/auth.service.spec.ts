@@ -2064,6 +2064,20 @@ describe(AuthService.name, () => {
     });
   });
 
+  it('shares PIN attempt backoff across change, reset and unlock', async () => {
+    const auth = AuthFactory.from().session().build();
+    mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+    mocks.crypto.compareBcrypt.mockReturnValue(false);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(sut.changePinCode(auth, { pinCode: '000000', newPinCode: '654321' })).rejects.toThrow(
+        'Wrong PIN code',
+      );
+    }
+    await expect(sut.resetPinCode(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
+    await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
+    expect(mocks.user.setPinCodeAndLockSessions).not.toHaveBeenCalled();
+  });
+
   describe('unlockSession', () => {
     it('should unlock the session for sixty minutes', async () => {
       vi.useFakeTimers();

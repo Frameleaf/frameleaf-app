@@ -140,6 +140,7 @@ export class AuthController {
   }
 
   @Put('pin-code')
+  @RateLimited(RATE_LIMITS.login)
   @Authenticated({ permission: Permission.PinCodeUpdate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
@@ -152,6 +153,7 @@ export class AuthController {
   }
 
   @Delete('pin-code')
+  @RateLimited(RATE_LIMITS.login)
   @Authenticated({ permission: Permission.PinCodeDelete })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({

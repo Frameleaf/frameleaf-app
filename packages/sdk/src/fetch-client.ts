@@ -17203,11 +17203,14 @@ export function recordBackupRestoreVerification({ backupRestoreVerificationRecor
 /**
  * Start database backup restore flow
  */
-export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", {
+export function startDatabaseRestoreFlow({ frameleafSetupCodeDto }: {
+    frameleafSetupCodeDto: FrameleafSetupCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: frameleafSetupCodeDto
+    })));
 }
 /**
  * Upload database backup
