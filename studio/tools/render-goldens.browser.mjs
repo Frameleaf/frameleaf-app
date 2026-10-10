@@ -6,7 +6,8 @@
 //   GOLDENS_CROSS_CHECK_ARGS='--enable-unsafe-webgpu --use-angle=metal --ignore-gpu-blocklist' \
 //     node studio/tools/render-goldens.browser.mjs --write
 // Without --write it renders on the canonical backend and checks the committed goldens
-// with the native comparison rule (drift gate). The canonical backend is the software
+// with the native comparison rule (drift gate); ASCII atlas cases use the prose CPU oracle
+// with the current platform glyph atlas as input, independently checked against Canvas 2D. The canonical backend is the software
 // WebGPU of FREECUT_CHROME_ARGS_REPLACE (CI's); GOLDENS_CROSS_CHECK_ARGS names a second
 // backend whose differences set the tolerances (render-goldens.mjs, deriveTolerance).
 import assert from 'node:assert/strict';
@@ -14,6 +15,7 @@ import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
 import {
   GOLDENS_FORMAT, GOLDENS_VERSION, EFFECT_SIZE, TRANSITION_SIZE, GPU_TRANSITIONS, PROGRESS_CURVE_CASES,
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
@@ -69,8 +71,11 @@ async function renderAll(args) {
     await page.route(`${origin}/render-goldens`, (route) => route.fulfill({ contentType: 'text/html', body: PAGE }));
     await page.goto(`${origin}/render-goldens`);
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
-    return await page.evaluate(async ({ E, T, effects, transitions, sdrInput, hdrInput, tA, tB, curveCases, gpuIds }) => {
+    return await page.evaluate(async ({ E, T, effects, atlasSpecs, transitions, sdrInput, hdrInput, tA, tB, curveCases, gpuIds }) => {
       const { EffectsPipeline, EFFECT_CLOCK_PARAM } = await import('/src/infrastructure/gpu-effects/index.ts');
+      const { ascii } = await import('/src/infrastructure/gpu-effects/effects/stylize.ts');
+      const { getGpuEffect } = await import('/src/infrastructure/gpu-effects/registry.ts');
+      if (getGpuEffect('gpu-ascii') !== ascii) throw new Error('ASCII atlas capture must use the registered production definition');
       const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
       const { TransitionPipeline } = await import('/src/infrastructure/gpu-transitions/transition-pipeline.ts');
       const { registerBuiltinTransitions } = await import('/src/shared/timeline/transitions/register-builtins.ts');
@@ -110,25 +115,53 @@ async function renderAll(args) {
       // Effects: the production GPU compositor route (rgba16float in and out; SDR or linear HDR working range).
       const inputs = { sdr: upload(sdrInput, E.width, E.height), hdr: upload(hdrInput, E.width, E.height) };
       const effectResults = [];
-      for (const c of effects) {
-        effectsPipeline.setWorkingRange(c.domain);
-        const output = device.createTexture({ size: [E.width, E.height], format: 'rgba16float', usage });
-        const instance = { id: 'fx', type: c.id, name: c.id, enabled: true, params: { ...c.params, [EFFECT_CLOCK_PARAM]: c.clock } };
-        try {
-          device.pushErrorScope('validation');
-          let accepted;
-          try { accepted = effectsPipeline.applyTextureEffectsToTexture(inputs[c.domain], [instance], output, E.width, E.height); }
-          catch (error) {
-            await device.popErrorScope();
-            if (error instanceof HdrRenderUnavailableError && c.domain === 'hdr') { effectResults.push({ outcome: 'refused', error: error.name }); continue; }
-            throw error;
+      const capturedAtlases = new Map();
+      const referenceAtlases = new Map();
+      const buildAtlas = ascii.dataTexture.build;
+      ascii.dataTexture.build = (params) => {
+        const payload = buildAtlas(params);
+        capturedAtlases.set(ascii.dataTexture.key(params), { width: payload.width, height: payload.height, depth: payload.depth, data: Array.from(payload.data) });
+        return payload;
+      };
+      try {
+        for (const [caseIndex, c] of effects.entries()) {
+          const spec = atlasSpecs[caseIndex];
+          if (spec && !referenceAtlases.has(spec.key)) {
+            // Independently rasterize the prose's INPUT, never the production builder or GPU frame.
+            const canvas = new OffscreenCanvas(spec.width, spec.height);
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) throw new Error(`${c.name}: reference atlas needs Canvas 2D`);
+            ctx.clearRect(0, 0, spec.width, spec.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = spec.font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            [...spec.ramp].forEach((glyph, i) => ctx.fillText(glyph, 24 * i + 12, 13));
+            const rgba = ctx.getImageData(0, 0, spec.width, spec.height).data;
+            const data = Array.from(rgba, (_, i) => rgba[(i - i % 4) + 3]);
+            referenceAtlases.set(spec.key, { width: spec.width, height: spec.height, depth: spec.depth, data });
           }
-          const pixels = await readback(output, E.width, E.height);
-          const validation = await device.popErrorScope();
-          if (!accepted || validation) throw new Error(`${c.name}: ${validation?.message ?? 'rejected'}`);
-          effectResults.push({ outcome: 'rendered', pixels });
-        } finally { output.destroy(); }
-      }
+          effectsPipeline.setWorkingRange(c.domain);
+          const output = device.createTexture({ size: [E.width, E.height], format: 'rgba16float', usage });
+          const instance = { id: 'fx', type: c.id, name: c.id, enabled: true, params: { ...c.params, [EFFECT_CLOCK_PARAM]: c.clock } };
+          try {
+            device.pushErrorScope('validation');
+            let accepted;
+            try { accepted = effectsPipeline.applyTextureEffectsToTexture(inputs[c.domain], [instance], output, E.width, E.height); }
+            catch (error) {
+              await device.popErrorScope();
+              if (error instanceof HdrRenderUnavailableError && c.domain === 'hdr') { effectResults.push({ outcome: 'refused', error: error.name }); continue; }
+              throw error;
+            }
+            const pixels = await readback(output, E.width, E.height);
+            const validation = await device.popErrorScope();
+            if (!accepted || validation) throw new Error(`${c.name}: ${validation?.message ?? 'rejected'}`);
+            const atlas = spec ? capturedAtlases.get(spec.key) : undefined;
+            if (spec && !atlas) throw new Error(`${c.name}: production atlas input was not captured`);
+            effectResults.push({ outcome: 'rendered', pixels, ...(spec ? { atlas, referenceAtlas: referenceAtlases.get(spec.key) } : {}) });
+          } finally { output.destroy(); }
+        }
+      } finally { ascii.dataTexture.build = buildAtlas; }
       effectsPipeline.setWorkingRange('sdr');
 
       // Transitions: GPU ids through the GPU compositor route (straight in, straight out, SDR working
@@ -183,6 +216,7 @@ async function renderAll(args) {
     }, {
       E: EFFECT_SIZE, T: TRANSITION_SIZE,
       effects: effectCases(catalogue), transitions: transitionCases(catalogue),
+      atlasSpecs: effectCases(catalogue).map((c) => c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null),
       sdrInput: effectSdrInput(), hdrInput: effectHdrInput(),
       tA: transitionInputs().a, tB: transitionInputs().b,
       curveCases: PROGRESS_CURVE_CASES, gpuIds: GPU_TRANSITIONS,
@@ -209,18 +243,38 @@ const tCases = transitionCases(catalogue);
 if (!write) {
   // Drift gate: the committed goldens must still describe the engine, by the native rule.
   let failures = 0;
+  const atlasEvidence = [];
   for (const [kind, cases, results] of [['effects', eCases, canonical.effectResults], ['transitions', tCases, canonical.transitionResults]]) {
     const goldens = JSON.parse(await readFile(path.join(studio, `spec/goldens/${kind}.json`), 'utf8'));
     validateGoldens(kind, goldens, catalogue);
     goldens.cases.forEach((g, i) => {
       if (g.outcome === 'refused') { if (results[i].outcome !== 'refused') { failures++; console.error(`${g.name}: no longer refused`); } return; }
-      const result = compareCase({ ...g, expected: decodeBuffer(g.output.data, g.output.encoding) }, results[i].pixels);
-      if (!result.pass) { failures++; console.error(`${g.name}: ${result.missed} channels outside tolerance (worst ${result.worst.toFixed(4)})`); }
+      let expected = decodeBuffer(g.output.data, g.output.encoding);
+      if (kind === 'effects' && g.id === 'gpu-ascii' && asciiAtlasSpec(g.params)) {
+        validateAsciiAtlas(results[i].atlas, results[i].referenceAtlas, g.params);
+        const guarded = [];
+        const reference = renderAsciiReference(effectSdrInput(), EFFECT_SIZE.width, EFFECT_SIZE.height, g.params, results[i].atlas, guarded);
+        // Coverage under the transparent-mode division guard: RGB must lie on the equations' own segment.
+        const settled = settleAsciiGuard(reference, results[i].pixels, guarded);
+        expected = settled.expected;
+        atlasEvidence.push({ caseIndex: i, key: asciiAtlasSpec(g.params).key, width: results[i].atlas.width, height: results[i].atlas.height,
+          sha256: sha256(Buffer.from(results[i].atlas.data)), referenceSha256: sha256(Buffer.from(results[i].referenceAtlas.data)),
+          guardPixels: settled.pixels });
+      }
+      const result = compareCase({ ...g, expected }, results[i].pixels);
+      if (!result.pass) {
+        failures++;
+        console.error(`${g.name}: ${result.missed} channels outside tolerance (worst ${result.worst.toFixed(4)})`);
+        console.error(JSON.stringify({ kind, caseIndex: i, name: g.name, params: g.params, tolerance: g.tolerance, ...result,
+          samples: expected.flatMap((want, channel) => Math.abs(want - results[i].pixels[channel]) > g.tolerance.abs
+            ? [{ channel, expected: want, actual: results[i].pixels[channel] }] : []).slice(0, 8) }));
+      }
     });
     if (kind === 'transitions') {
       goldens.progressCurve.forEach((c, i) => assert.equal(canonical.curve[i], c.progress, `progress curve ${i}`));
     }
   }
+  console.log(JSON.stringify({ check: 'ASCII platform atlas input and independent CPU oracle', environment: canonical.environment, cases: atlasEvidence }));
   assert.equal(failures, 0, `${failures} golden cases drifted`);
   console.log('render goldens hold');
   process.exit(0);
