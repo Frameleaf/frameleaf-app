@@ -90,7 +90,7 @@ FROM base-server-build AS base-server-geodata
 # 2026-10-10; the GeoNames captures are from 2026-09-11 and 2026-09-13), not the build time, so amd64 and
 # arm64 builds ship identical data and a new image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
 # GEODATA_DATE together.
-ARG GEODATA_SNAPSHOT=2026-10-10
+ARG GEODATA_SNAPSHOT=2026-10-11
 ARG GEODATA_DATE=2026-10-10T00:00:00+00:00
 COPY server/base-image/geodata/ ./geodata/
 RUN GEODATA_SNAPSHOT="$GEODATA_SNAPSHOT" ./geodata/fetch.sh geodata/geodata.lock /build/geodata && \
