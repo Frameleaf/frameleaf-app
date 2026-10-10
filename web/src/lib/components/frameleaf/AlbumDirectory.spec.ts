@@ -377,7 +377,8 @@ describe('AlbumDirectory', () => {
         }),
       );
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-      expect(await screen.findByText(/“Winter 2026” is now 1 of 2/)).toBeInTheDocument();
+      const announcement = await screen.findByText(/“Winter 2026” is now 1 of 2/);
+      expect(announcement.closest('[role="status"]')).toHaveAttribute('data-testid', 'frameleaf-toast');
       // the moved tile is marked so the eye finds it
       await waitFor(() => expect(screen.getByRole('article', { name: 'Winter 2026' })).toHaveClass('moved'));
     });

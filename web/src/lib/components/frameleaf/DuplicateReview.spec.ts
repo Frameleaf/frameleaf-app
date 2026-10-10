@@ -1,7 +1,13 @@
-import { DuplicateGroupBlock, DuplicateGroupKind } from '@frameleaf/sdk';
+import {
+  DuplicateDecisionKind,
+  DuplicateGroupBlock,
+  DuplicateGroupKind,
+  MediaOperationBulkAction,
+} from '@frameleaf/sdk';
 import { mdiChevronLeft, mdiChevronRight } from '@mdi/js';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import DuplicateReview from '$lib/components/frameleaf/DuplicateReview.svelte';
@@ -145,4 +151,106 @@ describe('DuplicateReview', () => {
     setup({ editable: false, blockedReason: DuplicateGroupBlock.OtherOwner });
     expect(screen.getByText(en.frameleaf_duplicates_blocked_other_owner)).toBeInTheDocument();
   });
+});
+
+it('keeps one accessible active heading focused while the previous group fades away', async () => {
+  const animate = Element.prototype.animate;
+  Element.prototype.animate = () =>
+    ({
+      cancel() {},
+      pause() {},
+      play() {},
+      finished: new Promise(() => {}),
+      currentTime: 0,
+      playState: 'running',
+    }) as unknown as Animation;
+  try {
+    setup();
+    const heading = screen.getByRole('heading', { level: 2 });
+    heading.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await tick();
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 2, name: 'c' })).toHaveFocus();
+  } finally {
+    Element.prototype.animate = animate;
+  }
+});
+
+it('keeps the chosen two contact-sheet copies in the durable decision payload', async () => {
+  const copies = group('copies', ['first', 'second', 'third']);
+  const submit = vi.fn().mockResolvedValue({ id: 'keepers-job' });
+  render(DuplicateReview, {
+    groups: [copies],
+    history: { recent: [], active: [] },
+    gateway: { getReview: vi.fn(), getHistory: vi.fn(), submit, getOperation: vi.fn() },
+    trashEnabled: true,
+    onOpen: vi.fn(),
+    onOpenTrash: vi.fn(),
+  });
+  screen.getByRole('heading', { level: 2 }).focus();
+  await userEvent.keyboard('12');
+  expect(screen.getByRole('checkbox', { name: 'Keep frame 1' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Keep frame 2' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Keep frame 3' })).not.toBeChecked();
+  await userEvent.keyboard('e');
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith(
+      MediaOperationBulkAction.ResolveDuplicates,
+      [
+        {
+          duplicateId: 'copies',
+          decision: DuplicateDecisionKind.Keepers,
+          memberIds: ['first', 'second', 'third'],
+          keepAssetIds: ['first', 'second'],
+        },
+      ],
+      expect.any(String),
+    ),
+  );
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('keeps focus through the virtual window and decides the previously offscreen group', async () => {
+  const groups = Array.from({ length: 40 }, (_, i) => group(`queue-${i}`, [`first-${i}`, `second-${i}`]));
+  const submit = vi.fn().mockResolvedValue({ id: 'offscreen-job' });
+  const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(540);
+  try {
+    const view = render(DuplicateReview, {
+      groups,
+      history: { recent: [], active: [] },
+      gateway: { getReview: vi.fn(), getHistory: vi.fn(), submit, getOperation: vi.fn() },
+      trashEnabled: true,
+      onOpen: vi.fn(),
+      onOpenTrash: vi.fn(),
+    });
+    const queue = view.container.querySelector('.fl-dr-queue-scroll')!;
+    expect(queue.querySelectorAll('.fl-dr-queue-row').length).toBeLessThan(40);
+    expect(queue.textContent).not.toContain('first-25');
+    screen.getByRole('heading', { level: 2 }).focus();
+    for (let i = 1; i <= 25; i++) {
+      await userEvent.keyboard('{ArrowRight}');
+      await tick();
+      expect(screen.getByRole('heading', { level: 2, name: `first-${i}` })).toHaveFocus();
+    }
+    expect(queue.querySelector('[aria-current="true"]')).toHaveTextContent('first-25');
+    await userEvent.keyboard('a');
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(
+        MediaOperationBulkAction.ResolveDuplicates,
+        [
+          {
+            duplicateId: 'queue-25',
+            decision: DuplicateDecisionKind.KeepAll,
+            memberIds: ['first-25', 'second-25'],
+            keepAssetIds: [],
+          },
+        ],
+        expect.any(String),
+      ),
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'first-26' })).toHaveFocus();
+  } finally {
+    height.mockRestore();
+  }
 });

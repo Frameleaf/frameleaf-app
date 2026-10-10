@@ -72,6 +72,7 @@ export const CAPABILITIES = [
  * array or a rational timing extension survives web, server and native.
  */
 export const FIELD_TYPES = [
+  'Array<{id:string,at:Rational,gainDb:number}>',
   'boolean',
   'duration',
   'number',
@@ -1075,7 +1076,12 @@ export const catalogue = [
     undoable: true,
     capability: null,
     manifestIds: ['readme.preview-playback.6'],
-    payload: { gainDb: 'number?', muted: 'boolean?', ducking: 'boolean?' },
+    payload: {
+      gainDb: 'number?',
+      muted: 'boolean?',
+      ducking: 'boolean?',
+      gainEnvelope: 'Array<{id:string,at:Rational,gainDb:number}>?',
+    },
     description: 'Set the project master bus, which is not the monitor or device volume.',
   },
   {

@@ -91,6 +91,12 @@ import { installTimelineTouchEditing } from './timeline-touch'
 import { RemotePreview, frameToTime, localPreviewSupport } from './remote-preview'
 import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
 import { publishScopeOwner, scopeTimelineContent } from './scope-owner'
+import { createMediaFileRelinker, publishRelinkSources, type RelinkCapture } from './media-file-relink'
+import { registerMediaFileRelink } from '@/features/media-library/stores/media-relinking-actions'
+import { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
+import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
+import { associateMediaWithProject } from '@/infrastructure/storage'
 import { timelineEditContent } from './shims/timeline-persistence'
 
 installBrowserShims()
@@ -185,6 +191,11 @@ interface Session extends DraftSendState {
   renderedGeneration: number
   /** Files imported here, sent to the host to keep with the project (FL-103 / FL-105). */
   localImports?: LocalImportWatch
+  relinkController?: AbortController
+  relinkGuardStop?: () => void
+  relinkGuarded?: boolean
+  relinkCommitting?: boolean
+  relinkEpoch?: number
 }
 
 let session: Session | null = null
@@ -330,7 +341,10 @@ function EditorApp({ state, projectId }: { state: Session; projectId: string }) 
   return (
     <ErrorBoundary level="app">
       <TooltipProvider delayDuration={300}>
-        <RouterProvider router={router} />
+        {state.relinkGuarded && <div role="alert">Your replacement is saved. Reload this project before editing.</div>}
+        <div className="contents" inert={state.relinkGuarded || undefined}>
+          <RouterProvider router={router} />
+        </div>
         <GlobalTooltip />
         <RemotePreview context={state.context} call={call} />
         {showToaster && (
@@ -364,7 +378,7 @@ function watchDrafts(state: Session) {
     state.workspace.onWrite((path) => {
       const mount = state.mount
       if (path.join('/') !== projectJsonPath(mount.projectId).join('/')) return
-      if (!acceptsWrite(state, mount)) return
+      if (!acceptsWrite(state, mount) || state.relinkCommitting) return
       // Work the host has not taken yet; a remount before it is taken reports it lost (FL-174).
       state.writeVersion = (state.writeVersion ?? 0) + 1
       state.writePending = true
@@ -386,6 +400,7 @@ function watchDrafts(state: Session) {
 }
 
 function sendDraft(state: Session, mount: EditorMount): Promise<void> {
+  if (state.relinkCommitting) return Promise.resolve()
   return sendEditorDraft(state, mount, {
     read: (from) => state.workspace.readText(projectJsonPath(from.projectId)),
     contentOf,
@@ -435,6 +450,145 @@ function watchLocalImportsFor(state: Session) {
   })
   state.localImports = watch
   state.unsubscribe.push(() => watch.stop())
+}
+
+/** The two engine file controls share the host-backed, checksum-bound relink transaction. */
+function installMediaRelink(state: Session) {
+  const relink = createMediaFileRelinker({
+    workspace: state.workspace,
+    capture() {
+      const mount = state.mount
+      const epoch = state.relinkEpoch ?? 0
+      const controller = new AbortController()
+      state.relinkController?.abort()
+      state.relinkController = controller
+      const project = useProjectStore.getState().currentProject
+      if (!project || !acceptsWrite(state, mount))
+        throw new Error('The project is not ready to relink')
+      const scope = {
+        projectId: state.context.project.id,
+        userId: state.context.auth.userId,
+        graphVersion: mount.graphVersion,
+      }
+      const capture: RelinkCapture = {
+        scope,
+        revision: mount.revision,
+        signal: controller.signal,
+        graph: storeGeneratedMedia({
+          ...project,
+          id: state.engineProjectId,
+          timeline: buildTimelineFromStores(),
+        }) as Project,
+        current: () =>
+          acceptsWrite(state, mount) &&
+          (state.relinkEpoch ?? 0) === epoch &&
+          state.context.auth.userId === scope.userId &&
+          state.context.project.id === scope.projectId &&
+          graphVersionOf(state.context) === scope.graphVersion &&
+          state.context.project.hasLease &&
+          state.context.online &&
+          contentOf({ ...useProjectStore.getState().currentProject, id: state.engineProjectId,
+            timeline: buildTimelineFromStores() }) === contentOf(capture.graph),
+      }
+      return capture
+    },
+    imports: () => state.context.projectImports ?? [],
+    upload: (upload) => call('uploadProjectImport', upload),
+    commit: (graph, captured) =>
+      call('commitEditorDraft', graph, captured.revision, captured.scope),
+    lock(captured) {
+      if (!captured.current()) throw new Error('The editor changed during relink')
+      state.relinkCommitting = true
+      usePlaybackStore.getState().pause()
+      const inert = document.body.inert
+      document.body.inert = true
+      const block = (event: KeyboardEvent) => {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+      document.addEventListener('keydown', block, true)
+      return () => {
+        document.removeEventListener('keydown', block, true)
+        document.body.inert = inert
+        state.relinkCommitting = false
+        if (!state.disposed && !state.relinkGuarded) void update(state.context)
+      }
+    },
+    guard(captured) {
+      if (captured.signal.aborted || state.disposed) return
+      const block = (event: KeyboardEvent) => {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+      document.addEventListener('keydown', block, true)
+      const stop = () => document.removeEventListener('keydown', block, true)
+      state.relinkGuardStop = stop
+      state.unsubscribe.push(stop)
+      state.relinkGuarded = true
+      state.mount.loaded = false
+      usePreviewBridgeStore.setState({ scopeOwner: null })
+      setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
+      state.render()
+    },
+    async publish(graph, media, captured, revision) {
+      const mount = state.mount
+      await associateMediaWithProject(mount.projectId, media.id)
+      if (!captured.current() || captured.signal.aborted)
+        throw new Error('The editor changed before source publication')
+      const snapshot = captureSnapshot()
+      const navigation = useCompositionNavigationStore.getState()
+      const history = useTimelineCommandStore.getState()
+      const priorProject = useProjectStore.getState().currentProject
+      const priorMedia = useMediaLibraryStore.getState()
+      const before = captured.graph
+      try {
+        publishRelinkSources(before, graph)
+        captured.graph = graph
+        state.workspace.putFile(
+          projectJsonPath(mount.projectId),
+          JSON.stringify({ ...graph, id: mount.projectId }),
+        )
+        useProjectStore.getState().setCurrentProject({ ...graph, id: mount.projectId })
+        state.media.kept(media.id)
+        const records = useMediaLibraryStore.getState().mediaItems
+        useMediaLibraryStore.setState({
+          mediaItems: [...records.filter((item) => item.id !== media.id), media],
+          mediaById: { ...useMediaLibraryStore.getState().mediaById, [media.id]: media },
+        })
+        blobUrlManager.invalidate(media.id)
+        useMediaLibraryStore.getState().markMediaHealthy(media.id)
+        mount.revision = revision
+        state.hostContent = contentOf(graph)
+        state.pendingSend = false
+        state.writePending = false
+        useTimelineSettingsStore.getState().markClean()
+        publishScopeOwner(state, timelineEditContent)
+        post({ type: 'dirty', dirty: false })
+      } catch (error) {
+        restoreSnapshot(snapshot)
+        useCompositionNavigationStore.setState(navigation)
+        useTimelineCommandStore.setState(history)
+        useProjectStore.setState({ currentProject: priorProject })
+        useMediaLibraryStore.setState(priorMedia)
+        state.workspace.putFile(
+          projectJsonPath(mount.projectId),
+          JSON.stringify({ ...before, id: mount.projectId }),
+        )
+        captured.graph = before
+        throw error
+      }
+    },
+  })
+  state.unsubscribe.push(
+    registerMediaFileRelink(async (id) => {
+      const success = await relink(id)
+      if (success)
+        useMediaLibraryStore
+          .getState()
+          .showNotification({ type: 'success', message: 'Media relinked and saved' })
+      return success
+    }),
+  )
 }
 
 /** Carry imports a replaced instance finishes to the current mount (`followRetiredImports`). */
@@ -529,6 +683,7 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
  * own project file and are never sent.
  */
 async function remount(state: Session, context: StudioHostContext, incoming: string) {
+  state.relinkController?.abort()
   usePreviewBridgeStore.setState({ scopeOwner: null })
   const replaced = state.mount
   // Edits the old instance made that the host never took are lost with it; the person is told once
@@ -715,7 +870,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   const first = state.mount
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
   setPersistenceGate({
-    mayStartSave: (projectId) => saveMayStart(state, projectId),
+    mayStartSave: (projectId) => !state.relinkCommitting && saveMayStart(state, projectId),
     loadFinished: (projectId, error) => onLoadFinished(state, projectId, error),
   })
 
@@ -738,6 +893,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
+  installMediaRelink(state)
   watchDirty(state)
   watchPlayhead(state)
   watchTransport(state)
@@ -748,8 +904,17 @@ async function update(context: StudioHostContext): Promise<void> {
   const state = session
   if (!state || state.disposed) return
   const previous = state.context
+  const changedOrigin = context.auth.userId !== previous.auth.userId || context.project.id !== previous.project.id ||
+    graphVersionOf(context) !== graphVersionOf(previous) || context.project.hasLease !== previous.project.hasLease ||
+    context.online !== previous.online
+  if (changedOrigin) {
+    state.relinkEpoch = (state.relinkEpoch ?? 0) + 1
+    state.relinkController?.abort()
+  }
   state.context = context
   applyTheme(context)
+  if ((state.relinkCommitting || state.relinkGuarded) && !changedOrigin) return
+  if (changedOrigin) { state.relinkGuarded = false; state.relinkGuardStop?.(); state.relinkGuardStop = undefined }
   if ((context.generatedMedia?.length ?? 0) > 0) {
     await state.media.seed(context.generatedMedia ?? [])
     if (state.disposed) return
@@ -818,6 +983,7 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
+  state.relinkController?.abort()
   setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
   releaseMountTimers(state.mountTimers)
   for (const stop of state.unsubscribe.splice(0)) stop()

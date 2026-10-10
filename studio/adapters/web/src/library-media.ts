@@ -211,6 +211,7 @@ export const projectImportRecord = (item: StudioProjectImportRef, now: number): 
   storageType: 'workspace',
   fileName: item.name.replace(/[\\/:*?"<>|]/g, '_').trim() || item.id,
   fileSize: item.sizeBytes,
+  contentHash: item.checksum,
   mimeType: item.mimeType,
   duration: 0,
   width: 0,

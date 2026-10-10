@@ -1035,8 +1035,33 @@ describe(BulkOperationService.name, () => {
 
       await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId);
 
-      expect(duplicateDecisions.undoGroup).toHaveBeenCalledWith(authStub.user1, operationId, expect.anything());
+      expect(duplicateDecisions.undoGroup).toHaveBeenCalledWith(
+        authStub.user1,
+        operationId,
+        { ...group, keepAssetIds: [group.memberIds[0]] },
+        undefined,
+      );
       expect(duplicateDecisions.applyGroup).not.toHaveBeenCalled();
+    });
+
+    it('passes the claimed operation and exact recorded group to Undo', async () => {
+      const group = { ...groupOf(2), decisionId: newUuid() };
+      const claimToken = newUuid();
+      const snapshot = decisionSnapshot([group], { action: MediaOperationBulkAction.UndoDuplicates, elevated: true });
+      duplicateDecisions.undoGroup.mockResolvedValue(okAll(group.memberIds));
+      await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId, claimToken);
+      expect(duplicateDecisions.undoGroup).toHaveBeenCalledWith(
+        authStub.user1,
+        operationId,
+        { ...group, keepAssetIds: [group.memberIds[0]] },
+        {
+          operationId,
+          claimToken,
+          decisionId: group.decisionId,
+          duplicateId: group.duplicateId,
+          memberIds: group.memberIds,
+        },
+      );
     });
 
     it('never splits a group across two batches', async () => {

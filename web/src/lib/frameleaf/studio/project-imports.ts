@@ -26,6 +26,7 @@ export const toStudioProjectImport = (projectId: string, dto: StudioProjectImpor
   name: dto.fileName,
   mimeType: editorMimeType(dto),
   sizeBytes: dto.sizeBytes,
+  checksum: dto.checksum,
   url: getStudioProjectImportUrl(projectId, dto.id),
 });
 

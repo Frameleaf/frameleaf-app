@@ -40,6 +40,7 @@ import type {
   StudioEngineModule,
   StudioHostContext,
   StudioHostServices,
+  StudioProjectImportRef,
   StudioNavigationTarget,
 } from './host-contract';
 
@@ -213,6 +214,20 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
     }
     const ids = Array.isArray(commandIds) ? commandIds.filter((id): id is string => typeof id === 'string') : [];
     return services.stageDraft(graph, ids, baseRevision, graphVersion);
+  },
+  commitEditorDraft: (services, [graph, baseRevision, scope]) => {
+    if (!services.commitEditorDraft || !isCount(baseRevision) || !scope || typeof scope !== 'object') {
+      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' });
+    }
+    const origin = scope as { projectId?: unknown; userId?: unknown; graphVersion?: unknown };
+    if (typeof origin.projectId !== 'string' || typeof origin.userId !== 'string' || !isCount(origin.graphVersion)) {
+      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' });
+    }
+    return services.commitEditorDraft(graph, baseRevision, {
+      projectId: origin.projectId,
+      userId: origin.userId,
+      graphVersion: origin.graphVersion,
+    });
   },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>
@@ -505,6 +520,7 @@ export const createFrameStudioEngine = ({
         envelopes: readonly StudioCommandEnvelope[],
         assets: readonly StudioAssetRef[],
         projectId?: string,
+        projectImports?: readonly StudioProjectImportRef[],
       ) {
         if (closed) {
           return {
@@ -529,6 +545,7 @@ export const createFrameStudioEngine = ({
           requestId,
           graph: toFrameData(storeGeneratedMedia(graph)),
           generatedMedia: toFrameData(generatedMedia),
+          projectImports: toFrameData(projectImports),
           envelopes: toFrameData([...envelopes]),
           assets: toFrameData([...assets]),
         };

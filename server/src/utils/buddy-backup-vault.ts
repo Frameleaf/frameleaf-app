@@ -481,12 +481,22 @@ export class BuddyVault {
     if (snapshot.sequence !== (existing[0]?.sequence ?? 0) + 1 || snapshot.previous !== (existing[0]?.id ?? null))
       throw new Error('Buddy snapshot rollback or concurrent commit');
     const ids = new Set<string>();
-    for (const receipt of snapshot.objects) {
+    let scannedBytes = 0;
+    for (const [index, receipt] of snapshot.objects.entries()) {
+      // Bound stale-authority work without a database check for every small object.
+      if (index % 32 === 0 || scannedBytes >= 32 * 1024 * 1024) {
+        await authorize?.();
+        scannedBytes = 0;
+      }
       this.checkReceipt(receipt);
       if (ids.has(receipt.id)) throw new Error('Duplicate Buddy object');
       ids.add(receipt.id);
       const [stored] = await this.inventory([receipt.id]);
       if (!stored || stored.bytes !== receipt.bytes || stored.digest !== receipt.digest)
+        throw new Error('Buddy snapshot is incomplete');
+      const bytes = await this.read(receipt.id);
+      scannedBytes += bytes.length;
+      if (bytes.length !== receipt.bytes || buddyDigest(bytes) !== receipt.digest)
         throw new Error('Buddy snapshot is incomplete');
     }
     if (snapshot.manifest.some((id) => !ids.has(id))) throw new Error('Buddy snapshot manifest is missing');

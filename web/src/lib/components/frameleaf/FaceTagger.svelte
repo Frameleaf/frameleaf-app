@@ -317,9 +317,9 @@
   };
 
   const measure = () => {
-    const rect = stage?.getBoundingClientRect();
-    if (rect && (rect.width !== viewport.width || rect.height !== viewport.height)) {
-      viewport = { width: rect.width, height: rect.height };
+    // The sheet animates its scale. Overlay CSS needs layout pixels, not transformed screen pixels.
+    if (stage && (stage.clientWidth !== viewport.width || stage.clientHeight !== viewport.height)) {
+      viewport = { width: stage.clientWidth, height: stage.clientHeight };
     }
   };
 
@@ -445,8 +445,14 @@
     searchInput?.focus();
   };
 
-  const point = (event: PointerEvent, clampToImage = false) =>
-    stage ? imagePoint(event.clientX, event.clientY, stage.getBoundingClientRect(), content, { clampToImage }) : null;
+  const point = (event: PointerEvent, clampToImage = false) => {
+    if (!stage) {
+      return null;
+    }
+    // Pointer coordinates and this rectangle are both in screen pixels, including the current sheet scale.
+    const rect = stage.getBoundingClientRect();
+    return imagePoint(event.clientX, event.clientY, rect, imageContentRect(rect, natural), { clampToImage });
+  };
 
   // FaceTagger.jsx:170-249
   const start = (event: PointerEvent, mode: Gesture['mode'] = 'draw', face?: DraftFace) => {

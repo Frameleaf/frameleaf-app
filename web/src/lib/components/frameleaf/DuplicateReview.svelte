@@ -201,6 +201,11 @@
       card.classList.add(keptIds.has(card.dataset.assetId ?? '') ? 'fl-dr-kept' : 'fl-dr-removed');
     }
   };
+  // The fading group is visual only; assistive technology follows the new group immediately.
+  const leaveGroup = (node: HTMLElement) => {
+    node.setAttribute('aria-hidden', 'true');
+    return motionFade(node, { duration: DURATION.slow });
+  };
   const allEligibleSelected = $derived(
     eligible.length > 0 && eligible.every((group) => selected.includes(group.duplicateId)),
   );
@@ -255,6 +260,7 @@
       return;
     }
     const ids = groups.map((group) => group.duplicateId);
+    focusAfter = ids.length > 1;
     activeId = nextGroupId(ids, active.duplicateId, { direction, wrap: true }) ?? active.duplicateId;
   };
 
@@ -681,12 +687,7 @@
         a fast keyboard session can see each decision register. A crossfade only under Reduce Motion.
       -->
       {#key activeKey}
-        <div
-          class="fl-dr-group"
-          bind:this={groupElement}
-          in:reveal={{ delay: DURATION.fast / 2 }}
-          out:motionFade={{ duration: DURATION.slow }}
-        >
+        <div class="fl-dr-group" bind:this={groupElement} in:reveal={{ delay: DURATION.fast / 2 }} out:leaveGroup>
           {#if active && focused}
             <div class="fl-dr-heading">
               <div>

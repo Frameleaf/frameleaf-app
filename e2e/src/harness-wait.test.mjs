@@ -5,6 +5,76 @@ import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EventJournal, pollRequest, requestOnce, waitUntil, withDeadline } from './harness-wait.ts';
 
+test('cloud accounting joins the exact post-commit release within its existing deadline', async () => {
+  const source = readFileSync(new URL('./specs/cloud/cloud-accounting.spec.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('    // Production cron and 60s poll delay are retained.');
+  const end = source.indexOf('\n    const { body: enrichment }', start);
+  assert.ok(start >= 0 && end > start);
+  const release = Promise.withResolvers();
+  let released = false;
+  let settled = false;
+  let providerReads = 0;
+  const expect = (value) => ({
+    toBe: (expected) => assert.equal(value, expected),
+    toBeNull: () => assert.equal(value, null),
+    toHaveLength: (expected) => assert.equal(value.length, expected),
+    toMatchObject: (expected) => {
+      for (const [key, item] of Object.entries(expected)) assert.deepEqual(value[key], item);
+    },
+  });
+  const pending = new Function(
+    'vi',
+    'request',
+    'app',
+    'auth',
+    'expect',
+    'operationId',
+    'providerState',
+    `return (async () => {${source.slice(start, end)}})();`,
+  )(
+    {
+      waitFor: async (check, options) => {
+        assert.deepEqual(options, { timeout: 125_000, interval: 1000 });
+        try {
+          await check();
+        } catch {
+          await release.promise;
+          await check();
+        }
+      },
+    },
+    () => ({
+      get: () => ({
+        set: () => ({
+          expect: async () => ({
+            body: {
+              status: 'completed',
+              processedUnits: '1',
+              cloudJob: null,
+            },
+          }),
+        }),
+      }),
+    }),
+    'fixture',
+    () => ({}),
+    expect,
+    'operation',
+    async () => {
+      providerReads++;
+      return { lifecycle: { jobs: [{ clientRef: 'batch-operation', released }] } };
+    },
+  ).then(() => {
+    settled = true;
+  });
+  await sleep(0);
+  assert.equal(settled, false, 'operation completion is not provider release');
+  released = true;
+  release.resolve();
+  await pending;
+  assert.ok(providerReads >= 2);
+});
+
 test('job admission refuses an aborted owner and binds the admitted request signal', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  createJob: async');
@@ -518,3 +588,132 @@ test('invalid event wait arguments do not register a callback or accept an unrel
   journal.add('assetHidden', 'asset');
   await waiting;
 });
+
+// Execute the actual browser fixture setup and readiness implementation without a server.
+const documentSource = readFileSync(new URL('./specs/web/documents.e2e-spec.ts', import.meta.url), 'utf8');
+const setupStart = documentSource.indexOf('    const asset = await utils.createAsset');
+const setupEnd = documentSource.indexOf('    await setupPinCode', setupStart);
+assert.ok(setupStart >= 0 && setupEnd > setupStart);
+const setup = new Function(
+  'utils',
+  'user',
+  'admin',
+  'headers',
+  'PNG',
+  'image',
+  'suffix',
+  'lockAssets',
+  'assetReady',
+  stripTypeScriptTypes(`function bind() { return async () => { ${documentSource.slice(setupStart, setupEnd)} }; }`) +
+    '\nreturn bind();',
+);
+const utilsSource = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+const readyStart = utilsSource.indexOf('  waitForAssetReady: async');
+const readyEnd = utilsSource.indexOf('\n\n  poll:', readyStart);
+assert.ok(readyStart >= 0 && readyEnd > readyStart);
+const readiness = utilsSource
+  .slice(readyStart, readyEnd)
+  .trim()
+  .replace(/^waitForAssetReady: /, '')
+  .replace(/,$/, '');
+
+for (const outcome of ['published', 'empty', 'wrong-kind', 'aborted']) {
+  test(`document evidence waits for owner-readable preview before locking: ${outcome}`, async () => {
+    const publication = Promise.withResolvers();
+    const owner = new AbortController();
+    const calls = [];
+    const headers = { Authorization: 'Bearer owner' };
+    const waitForAssetReady = new Function(
+      'ownedWait',
+      'queueWaitTimeout',
+      'QueueName',
+      'waitForQueue',
+      'asBearerAuth',
+      'getAssetInfo',
+      'viewAsset',
+      'AssetMediaSize',
+      stripTypeScriptTypes(`function bind() { return (${readiness}); }`) + '\nreturn bind();',
+    )(
+      withDeadline,
+      () => 1000,
+      { MetadataExtraction: 'metadata', StorageTemplateMigration: 'storage', ThumbnailGeneration: 'thumbnail' },
+      async (token, queue, context) => {
+        assert.equal(token, 'admin');
+        calls.push(queue);
+        if (queue === 'thumbnail') {
+          await Promise.race([
+            publication.promise,
+            new Promise((_, reject) =>
+              context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true }),
+            ),
+          ]);
+        }
+      },
+      () => {
+        throw new Error('Owner read headers required');
+      },
+      async ({ id }, options) => {
+        assert.equal(options.headers, headers);
+        assert.equal(options.signal.aborted, false);
+        calls.push('info');
+        return { id };
+      },
+      async ({ id, size }, options) => {
+        assert.equal(id, 'document');
+        assert.equal(size, 'preview');
+        assert.equal(options.headers, headers);
+        calls.push('preview');
+        return {
+          size: outcome === 'empty' ? 0 : 12,
+          type: outcome === 'wrong-kind' ? 'application/json' : 'image/jpeg',
+        };
+      },
+      { Preview: 'preview' },
+    );
+    const run = setup(
+      {
+        createAsset: async (token) => {
+          assert.equal(token, 'owner');
+          calls.push('upload');
+          return { id: 'document' };
+        },
+        waitForAssetReady,
+      },
+      { accessToken: 'owner' },
+      { accessToken: 'admin' },
+      headers,
+      { sync: { write: () => new Uint8Array([1]) } },
+      {},
+      'fixture',
+      async (body, options) => {
+        assert.deepEqual(body, { bulkIdsDto: { ids: ['document'] } });
+        assert.equal(options.headers, headers);
+        calls.push('lock');
+      },
+      { signal: owner.signal },
+    );
+    const pending = run();
+    // Attach rejection handling before cancellation, then let admission reach the publication barrier.
+    const settled = pending.then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, error }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      calls.includes('lock'),
+      false,
+      'Upload acknowledgement must not admit locked evidence before publication',
+    );
+    if (outcome === 'aborted') owner.abort(new Error('fixture expired'));
+    else publication.resolve();
+    const result = await settled;
+    if (outcome === 'published') {
+      assert.equal(result.ok, true);
+      assert.deepEqual(calls, ['upload', 'metadata', 'storage', 'thumbnail', 'info', 'preview', 'lock']);
+    } else {
+      assert.equal(result.ok, false);
+      assert.match(result.error.message, /Asset readiness failed/);
+      assert.equal(calls.includes('lock'), false);
+    }
+  });
+}

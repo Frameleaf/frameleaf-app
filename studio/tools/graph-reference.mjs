@@ -1281,6 +1281,46 @@ const commands = {
     }
   },
 
+  /* 17: source admission happens before this isolated graph operation. */
+  'media.relink'(state, payload) {
+    const oldId = text(payload, 'mediaId');
+    const newId = text(payload, 'assetId');
+    const source = state.media.get(newId) ?? invalid(`assetId: "${newId}" is not media this session may use`);
+    for (const owner of [{ items: state.items, fps: state.fps }, ...state.compositions]) {
+      for (const item of owner.items) {
+        if (item.mediaId !== oldId) continue;
+        const accepts = item.type === 'lottie' ? source.mimeType === 'application/lottie+json' : item.type === 'image' ? source.mimeType.startsWith('image/')
+          : item.type === 'video' ? source.mimeType.startsWith('video/')
+          : item.type === 'audio' && (source.mimeType.startsWith('audio/') || (source.mimeType.startsWith('video/') && !!source.audioCodec));
+        if (!accepts) invalid('The replacement does not contain the media this clip needs');
+        if (item.type !== 'audio' && (!Number.isFinite(source.width) || source.width <= 0 || !Number.isFinite(source.height) || source.height <= 0)) invalid('The replacement source dimensions could not be read');
+        if (item.type === 'lottie') {
+          const frames = source.duration * source.fps;
+          const start = item.segmentStart ?? 0;
+          const end = item.segmentEnd ?? item.totalFrames - 1;
+          if (!(source.fps > 0 && Number.isFinite(frames) && frames > 0) || item.frameRate !== source.fps) invalid('Choose a replacement with the same animation frame rate to preserve the cuts');
+          if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end >= frames) invalid('The replacement is too short for an existing animation segment');
+          item.frameRate = source.fps;
+          item.totalFrames = Math.round(frames);
+        }
+        if (item.type === 'audio' || item.type === 'video') {
+          const rate = item.sourceFps ?? (source.fps || owner.fps || state.fps);
+          if (!(Number.isFinite(source.duration) && source.duration > 0 && Number.isFinite(rate) && rate > 0)) invalid('The replacement source duration could not be read');
+          if (source.fps > 0 && Math.abs(rate - source.fps) > 1e-6) invalid('Choose a replacement with the same source frame rate to preserve the cuts');
+          const start = item.sourceStart ?? item.trimStart ?? item.offset ?? 0;
+          const end = item.sourceEnd ?? item.sourceDuration ?? start + item.durationInFrames * rate / (owner.fps || state.fps) * Math.abs(item.speed ?? 1);
+          if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end > source.duration * rate + 1e-6) invalid('The replacement is too short for an existing source range');
+          item.sourceDuration = Math.round(source.duration * rate);
+          item.sourceFps = rate;
+        }
+        item.mediaId = newId;
+        item.sourceWidth = source.width;
+        item.sourceHeight = source.height;
+        for (const key of Object.keys(item)) if (key.startsWith('reverseConform') || ['src', 'audioSrc', 'thumbnailUrl', 'waveformData', 'transcriptCaptions'].includes(key)) delete item[key];
+      }
+    }
+  },
+
   'lottie.update'(state, payload) {
     const id = text(payload, 'clipId');
     const clip = state.items.find((entry) => entry.id === id);

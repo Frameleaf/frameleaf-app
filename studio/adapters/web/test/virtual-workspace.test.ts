@@ -40,6 +40,39 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
  * FL-88: Freecut's real storage layer on the host-backed workspace, with no File System Access API.
  */
 describe('virtual workspace', () => {
+  it('seeds root and nested files without notifying engine write listeners', async () => {
+    const workspace = new VirtualWorkspace()
+    const writes = vi.fn()
+    workspace.onWrite(writes)
+    workspace.putFile(['clip.txt'], 'root')
+    workspace.putFile(['media', 'm', 'clip.txt'], 'nested')
+    expect(await workspace.readText(['clip.txt'])).toBe('root')
+    expect(await (await workspace.readFile(['media', 'm', 'clip.txt']))?.text()).toBe('nested')
+    expect(writes).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { label: 'empty path', path: [], message: 'Empty workspace path' },
+    {
+      label: 'sparse terminal',
+      path: Array<string>(1),
+      message: 'Invalid workspace entry name: undefined',
+    },
+    ...['', '.', '..', '/', '\\'].map((name) => ({
+      label: `invalid terminal ${JSON.stringify(name)}`,
+      path: ['media', name],
+      message: `Invalid workspace entry name: ${name}`,
+    })),
+  ])('preserves invalid path behavior for $label', async ({ path, message }) => {
+    const workspace = new VirtualWorkspace()
+    const load = vi.fn(async () => new Blob(['remote']))
+    expect(() => workspace.putFile(path, 'seed')).toThrow(new TypeError(message))
+    expect(() => workspace.putLazyFile(path, load)).toThrow(new TypeError(message))
+    expect(await workspace.readText(path)).toBeNull()
+    expect(await workspace.readFile(path)).toBeNull()
+    expect(load).not.toHaveBeenCalled()
+  })
+
   it('serves Freecut’s own primitives: atomic JSON, blobs, listing and removal', async () => {
     const workspace = new VirtualWorkspace()
     const root = workspace.handle()
@@ -111,6 +144,13 @@ describe('virtual workspace', () => {
       name: 'NotAllowedError',
     })
     expect(await workspace.readText(['index.json'])).toBeNull()
+    expect(() => workspace.putFile([], 'seed')).toThrow(
+      new DOMException('The Studio workspace was released', 'NotAllowedError'),
+    )
+    expect(() => workspace.putLazyFile(Array<string>(1), vi.fn())).toThrow(
+      new DOMException('The Studio workspace was released', 'NotAllowedError'),
+    )
+    expect(await workspace.readFile([])).toBeNull()
   })
 
   it('fills the idle-callback gap Safari leaves', async () => {

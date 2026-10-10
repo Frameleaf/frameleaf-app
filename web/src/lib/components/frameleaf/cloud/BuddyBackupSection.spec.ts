@@ -5,10 +5,15 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import en from '../../../../../../i18n/en.json';
 import BuddyBackupSection from './BuddyBackupSection.svelte';
 
+const cloud = vi.hoisted(() => ({ linked: true, entitled: true }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   cloudManager: {
-    status: { state: 'linked' },
-    license: { entitlements: { cloudBackup: true } },
+    get status() {
+      return { state: cloud.linked ? 'linked' : 'unlinked' };
+    },
+    get license() {
+      return { entitlements: { cloudBackup: cloud.entitled } };
+    },
     listen: () => () => {},
   },
 }));
@@ -21,6 +26,8 @@ vi.mock('./BuddyRestoreSection.svelte', () => ({ default: () => {} }));
 let status: BuddyStatusDto;
 beforeEach(() => {
   vi.resetAllMocks();
+  cloud.linked = true;
+  cloud.entitled = true;
   addMessages('dev', en);
   status = {
     enabled: true,
@@ -109,4 +116,36 @@ it('submits only selected variable names and allows declaration capture to be re
   await fireEvent.click(reopened.getByRole('button', { name: en.frameleaf_buddy_save_hosting_settings }));
   await waitFor(() => expect(sdkMock.configureBuddyBackup).toHaveBeenCalledTimes(2));
   expect(sdkMock.configureBuddyBackup.mock.calls[1][0].buddySettingsDto).not.toHaveProperty('bootConfiguration');
+});
+
+it.each([
+  { linked: false, entitled: false, enabled: false, disabled: true },
+  { linked: false, entitled: true, enabled: true, disabled: true },
+  { linked: true, entitled: false, enabled: true, disabled: true },
+  { linked: true, entitled: true, enabled: false, disabled: true },
+  { linked: true, entitled: true, enabled: true, disabled: false },
+])('keeps unpaired setup visible with gates $linked/$entitled/$enabled', async (gate) => {
+  cloud.linked = gate.linked;
+  cloud.entitled = gate.entitled;
+  Object.assign(status, { enabled: gate.enabled, configured: false, settings: null, pairing: null });
+  render(BuddyBackupSection, { view: 'status' });
+  const outgoing = within(await screen.findByRole('region', { name: 'My backup' }));
+  const setup = outgoing.getByRole('button', { name: 'Set up Buddy Backup' });
+  expect(setup).toBeVisible();
+  if (gate.disabled) {
+    expect(setup).toBeDisabled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(sdkMock.checkBuddyBackupCoverage).not.toHaveBeenCalled();
+  } else {
+    expect(setup).toBeEnabled();
+    await fireEvent.click(setup);
+    expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
+  }
+  if (!gate.linked) {
+    expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
+    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
+  } else if (!gate.entitled) {
+    expect(outgoing.getByText(en.frameleaf_buddy_subscription_required)).toBeVisible();
+    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_plan })).toBeVisible();
+  }
 });

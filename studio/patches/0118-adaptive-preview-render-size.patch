@@ -1,0 +1,410 @@
+diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/features/preview/components/video-preview.sync.test.tsx
+--- a/src/features/preview/components/video-preview.sync.test.tsx
++++ b/src/features/preview/components/video-preview.sync.test.tsx
+@@ -3595,10 +3595,17 @@
+   })
+
+   it.each(['same-frame edit', 'preview ABA', 'A-B-A seek', 'echo', 'remount'] as const)(
+-    'refuses a scoped producer result after %s while its pixels are deferred', async (change) => {
++    'refuses a scoped producer result after %s while its pixels are deferred',
++    async (change) => {
+       setSingleVideoItemAtFrame({ id: 'scope-owned' })
+       const { renderer } = await renderReadySingleRendererPreview(24, { expectVisible: false })
+-      const owner = { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => false }
++      const owner = {
++        baseRevision: 3,
++        graphVersion: 1,
++        mountGeneration: 0,
++        projectId: 'p',
++        hasLocalEdits: () => false,
++      }
+       act(() => {
+         usePreviewBridgeStore.setState({ scopeOwner: owner, displayedFrame: 25 })
+       })
+@@ -3608,9 +3615,16 @@
+         return fn!
+       })
+       let finish!: () => void
+-      renderer.renderFrame.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
++      renderer.renderFrame.mockImplementationOnce(
++        () =>
++          new Promise<void>((resolve) => {
++            finish = resolve
++          }),
++      )
+       const sample = capture('canvas')
+-      await waitFor(() => { expect(renderer.renderFrame).toHaveBeenCalledWith(25) })
++      await waitFor(() => {
++        expect(renderer.renderFrame).toHaveBeenCalledWith(25)
++      })
+       act(() => {
+         if (change === 'same-frame edit') {
+           useGizmoStore.getState().setEffectsPreviewNew({ 'scope-owned': [] })
+@@ -3621,10 +3635,15 @@
+           usePlaybackStore.getState().setCurrentFrame(30)
+           usePlaybackStore.getState().setCurrentFrame(24)
+         } else {
+-          usePreviewBridgeStore.setState({ scopeOwner: change === 'remount' ? null : { ...owner, baseRevision: 4 } })
++          usePreviewBridgeStore.setState({
++            scopeOwner: change === 'remount' ? null : { ...owner, baseRevision: 4 },
++          })
+         }
+       })
+-      await act(async () => { finish(); expect(await sample).toBeNull() })
++      await act(async () => {
++        finish()
++        expect(await sample).toBeNull()
++      })
+     },
+   )
+
+@@ -3743,13 +3762,23 @@
+     setSingleVideoItemAtFrame({ id: 'scope-accepted' })
+     await renderReadySingleRendererPreview(24, { expectVisible: false })
+     act(() => {
+-      usePreviewBridgeStore.setState({ scopeOwner: { baseRevision: 3, graphVersion: 1, mountGeneration: 0, projectId: 'p', hasLocalEdits: () => true } })
++      usePreviewBridgeStore.setState({
++        scopeOwner: {
++          baseRevision: 3,
++          graphVersion: 1,
++          mountGeneration: 0,
++          projectId: 'p',
++          hasLocalEdits: () => true,
++        },
++      })
+     })
+     const capture = usePreviewBridgeStore.getState().captureScopeSample!
+     const sample = await capture('canvas')
+     expect(sample).toMatchObject({ frame: 24, owner: { baseRevision: 3, localEdits: true } })
+     expect(sample?.isCurrent()).toBe(true)
+-    act(() => { usePreviewBridgeStore.setState({ scopeOwner: null }) })
++    act(() => {
++      usePreviewBridgeStore.setState({ scopeOwner: null })
++    })
+     expect(sample?.isCurrent()).toBe(false)
+     expect(await capture('canvas')).toBeNull()
+   })
+@@ -4938,6 +4967,103 @@
+     })
+   })
+
++  it('applies adaptive caps to local backing only and restores quality on pause', async () => {
++    setSingleCompoundItemWithGpuEffectAtFrame(0)
++    const project = { ...DEFAULT_PROJECT }
++    const graphBefore = JSON.stringify({
++      items: useItemsStore.getState().items,
++      compositions: useCompositionsStore.getState().compositions,
++      project,
++    })
++    const rendered = render(
++      <VideoPreview project={project} containerSize={{ width: 1280, height: 720 }} />,
++    )
++    const latestBacking = () => {
++      const calls = createCompositionRendererMock.mock.calls as unknown as Array<
++        [{ width: number; height: number }, HTMLCanvasElement]
++      >
++      return calls.at(-1)!
++    }
++    await waitFor(() => expect(latestBacking()[1].width).toBe(1920))
++    let now = 2000
++    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
++    try {
++      await act(async () => {
++        usePlaybackStore.getState().play()
++        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
++      })
++      for (let frame = 1; frame <= 12; frame += 1) {
++        now += 100
++        mockedPlayerFrame = frame
++        await act(async () => {
++          emitMockPlayerFrame?.(frame)
++          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
++        })
++      }
++      expect(usePlaybackStore.getState().isPlaying).toBe(true)
++      expect(usePlaybackStore.getState().currentFrame).toBe(12)
++      await waitFor(() => expect(latestBacking()[1].width).toBe(960))
++      expect(latestBacking()[1].height).toBe(540)
++      expect(latestBacking()[0]).toMatchObject(project)
++      expect(lastPlayerDimensions).toEqual({ width: 1920, height: 1080 })
++      act(() => usePlaybackStore.getState().setPreviewQuality(0.25))
++      await waitFor(() => expect(latestBacking()[1].width).toBe(480))
++      act(() => usePlaybackStore.getState().setPreviewQuality(1))
++      await waitFor(() => expect(latestBacking()[1].width).toBe(960))
++      for (let frame = 13; frame <= 24; frame += 1) {
++        now += 100
++        mockedPlayerFrame = frame
++        await act(async () => {
++          emitMockPlayerFrame?.(frame)
++          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
++        })
++      }
++      await waitFor(() => expect(latestBacking()[1].width).toBe(640))
++      for (let frame = 25; frame <= 36; frame += 1) {
++        now += 100
++        mockedPlayerFrame = frame
++        await act(async () => {
++          emitMockPlayerFrame?.(frame)
++          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
++        })
++      }
++      await waitFor(() => expect(latestBacking()[1].width).toBe(480))
++      // Recovery stays disabled while playing, even with sustained cheap samples.
++      for (let frame = 37; frame <= 90; frame += 1) {
++        now += 5
++        mockedPlayerFrame = frame
++        await act(async () => {
++          emitMockPlayerFrame?.(frame)
++          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
++        })
++      }
++      expect(latestBacking()[1].width).toBe(480)
++      act(() => usePlaybackStore.getState().pause())
++      await waitFor(() => expect(latestBacking()[1].width).toBe(1920))
++      act(() => usePlaybackStore.getState().setPreviewQuality(0.25))
++      await waitFor(() => expect(latestBacking()[1].width).toBe(480))
++      expect(latestBacking()[1].height).toBe(270)
++      const pausedFrame = usePlaybackStore.getState().currentFrame
++      act(() => usePlaybackStore.getState().setPreviewFrame(42))
++      await waitFor(() => expect(getDisplayedFrame()).toBe(42))
++      act(() => emitMockPlayerFrame?.(99))
++      expect(usePlaybackStore.getState().currentFrame).toBe(pausedFrame)
++      expect(getDisplayedFrame()).toBe(42)
++      expect(latestBacking()[1].width).toBe(480)
++      expect(
++        JSON.stringify({
++          items: useItemsStore.getState().items,
++          compositions: useCompositionsStore.getState().compositions,
++          project,
++        }),
++      ).toBe(graphBefore)
++      expect(lastPlayerDimensions).toEqual({ width: 1920, height: 1080 })
++    } finally {
++      clock.mockRestore()
++      rendered.unmount()
++    }
++  })
++
+   it('keeps Player render geometry fixed when preview quality changes', async () => {
+     render(
+       <VideoPreview
+diff --git a/src/features/preview/components/video-preview.tsx b/src/features/preview/components/video-preview.tsx
+--- a/src/features/preview/components/video-preview.tsx
++++ b/src/features/preview/components/video-preview.tsx
+@@ -1,7 +1,7 @@
+ import { useMemo, useCallback, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+ import { useRafDeferredValue } from '@/shared/hooks/use-raf-deferred-value'
+ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
+-import { usePlaybackStore } from '@/shared/state/playback'
++import { usePlaybackStore, type PreviewQuality } from '@/shared/state/playback'
+ import type { ItemEffect } from '@/types/effects'
+ import type { TimelineItem } from '@/types/timeline'
+ import { GizmoOverlay } from './gizmo-overlay'
+@@ -96,6 +96,7 @@
+   overlayChrome: PreviewOverlayChrome
+   itemsSnapshot: PreviewItemsSnapshot
+ }) {
++  const [adaptiveQualityCap, setAdaptiveQualityCap] = useState<PreviewQuality>(1)
+   const previewRuntimeRefs = usePreviewRuntimeRefs()
+   const colorGradeComparisonMode = useGizmoStore((s) => s.colorGradeComparisonMode)
+   const colorGradeSplitPosition = useGizmoStore((s) => s.colorGradeSplitPosition)
+@@ -312,6 +313,7 @@
+     blobUrlVersion,
+     project,
+     playerSize,
++    adaptiveQualityCap,
+   })
+   const domTextScrubOverlayPlan = useMemo(
+     () => buildDomTextScrubOverlayPlan(fastScrubScaledTracks, fastScrubScaledKeyframes),
+@@ -633,6 +635,7 @@
+     ],
+   )
+   const { handleFrameChange, handlePlayStateChange } = usePreviewPlaybackController({
++    setAdaptiveQualityCap,
+     fps,
+     combinedTracks,
+     keyframes,
+diff --git a/src/features/preview/hooks/use-preview-composition-model.ts b/src/features/preview/hooks/use-preview-composition-model.ts
+--- a/src/features/preview/hooks/use-preview-composition-model.ts
++++ b/src/features/preview/hooks/use-preview-composition-model.ts
+@@ -7,7 +7,7 @@
+ import type { ResolvedTransform } from '@/types/transform'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+ import { isColorGradeEffectType } from '@/infrastructure/gpu-effects'
+-import { usePlaybackStore } from '@/shared/state/playback'
++import { usePlaybackStore, type PreviewQuality } from '@/shared/state/playback'
+ import { resolveEffectiveTrackStates } from '@/features/preview/deps/timeline-utils'
+ import { useCompositionsStore, useItemsStore } from '@/features/preview/deps/timeline-store'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/preview/deps/caption-items'
+@@ -16,6 +16,7 @@
+ import { useMaskEditorStore } from '../stores/mask-editor-store'
+ import { resolveGizmoWorldPreviewAsLocal } from '../utils/gizmo-world-preview'
+ import { resolveProxyUrl } from '../utils/media-resolver'
++import { getEffectivePreviewQuality } from '../utils/adaptive-preview-quality'
+ import { getRealtimePreviewRenderSize } from '../utils/preview-render-size'
+ import {
+   getMediaResolveCost,
+@@ -95,6 +96,7 @@
+   blobUrlVersion: number
+   project: PreviewProject
+   playerSize: PreviewPlayerSize
++  adaptiveQualityCap: PreviewQuality
+ }
+
+ interface UsePreviewCompositionBaseModelParams {
+@@ -209,7 +211,10 @@
+   blobUrlVersion,
+   project,
+   playerSize,
++  adaptiveQualityCap,
+ }: UsePreviewCompositionModelParams) {
++  const userQuality = usePlaybackStore((state) => state.previewQuality)
++  const effectiveQuality = getEffectivePreviewQuality(userQuality, adaptiveQualityCap)
+   const projectWidth = project.width
+   const projectHeight = project.height
+   const playerWidth = playerSize.width
+@@ -217,11 +222,13 @@
+   const calculatedPreviewRenderSize = getRealtimePreviewRenderSize(
+     { width: projectWidth, height: projectHeight },
+     { width: playerWidth, height: playerHeight },
++    undefined,
++    effectiveQuality,
+   )
+   const previewRenderWidth = calculatedPreviewRenderSize.width
+   const previewRenderHeight = calculatedPreviewRenderSize.height
+   // Keep renderer identity stable while the layout changes inside the same
+-  // physical-size bucket (especially <=1080p projects, which stay full-size).
++  // physical-size bucket; authored Player geometry stays independent of quality.
+   const previewRenderSize = useMemo(
+     () => ({ width: previewRenderWidth, height: previewRenderHeight }),
+     [previewRenderHeight, previewRenderWidth],
+diff --git a/src/features/preview/hooks/use-preview-playback-controller.ts b/src/features/preview/hooks/use-preview-playback-controller.ts
+--- a/src/features/preview/hooks/use-preview-playback-controller.ts
++++ b/src/features/preview/hooks/use-preview-playback-controller.ts
+@@ -1,4 +1,4 @@
+-import { useCallback, useState, type MutableRefObject } from 'react'
++import { useCallback, type Dispatch, type SetStateAction, type MutableRefObject } from 'react'
+ import type { PreviewQuality } from '@/shared/state/playback'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import type { ItemKeyframes } from '@/types/keyframe'
+@@ -15,6 +15,7 @@
+ import type { PreviewPerfStats } from './use-preview-diagnostics'
+
+ interface UsePreviewPlaybackControllerParams {
++  setAdaptiveQualityCap: Dispatch<SetStateAction<PreviewQuality>>
+   fps: number
+   combinedTracks: TimelineTrack[]
+   keyframes: ItemKeyframes[]
+@@ -31,6 +32,7 @@
+ }
+
+ export function usePreviewPlaybackController({
++  setAdaptiveQualityCap,
+   fps,
+   combinedTracks,
+   keyframes,
+@@ -45,8 +47,6 @@
+   ignorePlayerUpdatesRef,
+   resolvePendingSeekLatency,
+ }: UsePreviewPlaybackControllerParams) {
+-  const [adaptiveQualityCap, setAdaptiveQualityCap] = useState<PreviewQuality>(1)
+-
+   usePreviewRuntimeGuards({
+     forceFastScrubOverlay,
+     isGizmoInteractingRef,
+@@ -140,6 +140,7 @@
+       isGizmoInteractingRef,
+       previewPerfRef,
+       resolvePendingSeekLatency,
++      setAdaptiveQualityCap,
+     ],
+   )
+
+@@ -156,7 +157,6 @@
+   }, [])
+
+   return {
+-    adaptiveQualityCap,
+     shouldPreferPlayerForPreview,
+     handleFrameChange,
+     handlePlayStateChange,
+diff --git a/src/features/preview/utils/preview-render-size.test.ts b/src/features/preview/utils/preview-render-size.test.ts
+--- a/src/features/preview/utils/preview-render-size.test.ts
++++ b/src/features/preview/utils/preview-render-size.test.ts
+@@ -2,6 +2,42 @@
+ import { getRealtimePreviewRenderSize } from './preview-render-size'
+
+ describe('getRealtimePreviewRenderSize', () => {
++  it.each([
++    [0.5, 960, 540],
++    [0.33, 640, 360],
++    [0.25, 480, 270],
++  ] as const)(
++    'applies quality %s without changing the physical-size bucket',
++    (quality, width, height) => {
++      const project = { width: 1920, height: 1080 }
++      expect(
++        getRealtimePreviewRenderSize(project, { width: 984, height: 554 }, 1, quality),
++      ).toEqual({ width, height })
++      expect(
++        getRealtimePreviewRenderSize(project, { width: 985, height: 555 }, 1, quality),
++      ).toEqual({ width, height })
++      expect(project).toEqual({ width: 1920, height: 1080 })
++    },
++  )
++
++  it('scales the existing 4K physical-size budget rather than the authored coordinates', () => {
++    expect(
++      getRealtimePreviewRenderSize(
++        { width: 3840, height: 2160 },
++        { width: 984, height: 554 },
++        1.5,
++        0.5,
++      ),
++    ).toEqual({ width: 768, height: 432 })
++    expect(
++      getRealtimePreviewRenderSize(
++        { width: 3840, height: 2160 },
++        { width: 985, height: 555 },
++        1.5,
++        0.5,
++      ),
++    ).toEqual({ width: 768, height: 432 })
++  })
+   it('renders a 4K project near the visible device-pixel size', () => {
+     expect(
+       getRealtimePreviewRenderSize({ width: 3840, height: 2160 }, { width: 984, height: 554 }, 1.5),
+diff --git a/src/features/preview/utils/preview-render-size.ts b/src/features/preview/utils/preview-render-size.ts
+--- a/src/features/preview/utils/preview-render-size.ts
++++ b/src/features/preview/utils/preview-render-size.ts
+@@ -1,3 +1,5 @@
++import type { PreviewQuality } from '@/shared/state/playback'
++
+ const MAX_REALTIME_PREVIEW_PIXELS = 1920 * 1080
+ const PREVIEW_WIDTH_BUCKET_PX = 32
+
+@@ -16,11 +18,12 @@
+   projectSize: Size,
+   playerSize: Size,
+   devicePixelRatio = typeof window === 'undefined' ? 1 : Math.max(1, window.devicePixelRatio || 1),
++  quality: PreviewQuality = 1,
+ ): Size {
+   const projectWidth = Math.max(2, Math.round(projectSize.width))
+   const projectHeight = Math.max(2, Math.round(projectSize.height))
+   const projectPixels = projectWidth * projectHeight
+-  if (projectPixels <= MAX_REALTIME_PREVIEW_PIXELS) {
++  if (projectPixels <= MAX_REALTIME_PREVIEW_PIXELS && quality === 1) {
+     return { width: projectWidth, height: projectHeight }
+   }
+
+@@ -31,7 +34,9 @@
+     Math.max(visibleWidth / projectWidth, visibleHeight / projectHeight),
+   )
+   const pixelBudgetScale = Math.min(1, Math.sqrt(MAX_REALTIME_PREVIEW_PIXELS / projectPixels))
+-  const renderScale = Math.min(visibleScale, pixelBudgetScale)
++  const renderScale =
++    (projectPixels <= MAX_REALTIME_PREVIEW_PIXELS ? 1 : Math.min(visibleScale, pixelBudgetScale)) *
++    quality
+
+   const bucketedWidth = Math.min(
+     projectWidth,

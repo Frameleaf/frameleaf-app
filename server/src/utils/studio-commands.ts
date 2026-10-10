@@ -105,6 +105,35 @@ const matchesFieldType = (type: string, value: unknown): boolean => {
     case 'object[]': {
       return Array.isArray(value) && value.every((item) => isRecord(item));
     }
+    case 'Array<{id:string,at:Rational,gainDb:number}>': {
+      if (!Array.isArray(value) || value.length > 4096) {
+        return false;
+      }
+      const ids = new Set<string>();
+      const times = new Set<string>();
+      return value.every((point) => {
+        if (
+          !isRecord(point) ||
+          Object.keys(point).some((key) => !['id', 'at', 'gainDb'].includes(key)) ||
+          typeof point.id !== 'string' ||
+          point.id.length === 0 ||
+          [...point.id].length > 128 ||
+          ids.has(point.id) ||
+          !isRational(point.at) ||
+          point.at.num < 0 ||
+          times.has(`${point.at.num}/${point.at.den}`) ||
+          typeof point.gainDb !== 'number' ||
+          !Number.isFinite(point.gainDb) ||
+          point.gainDb < -60 ||
+          point.gainDb > 12
+        ) {
+          return false;
+        }
+        ids.add(point.id);
+        times.add(`${point.at.num}/${point.at.den}`);
+        return true;
+      });
+    }
     default: {
       return false;
     }
@@ -192,7 +221,7 @@ export const validateStudioCommandPayload = (
     const type = optional ? declaration.slice(0, -1) : declaration;
     const present = Object.hasOwn(payload, name) && payload[name] !== undefined;
     // An optional field given as null clears what it names: no parent, no expression (FL-100).
-    if (optional && present && payload[name] === null) {
+    if (optional && present && payload[name] === null && type !== 'Array<{id:string,at:Rational,gainDb:number}>') {
       continue;
     }
     if (!present) {

@@ -195,7 +195,11 @@ test.describe('Quick editor and Studio continuity', () => {
     await editor.getByRole('menuitem', { name: 'Open in Studio without these edits', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(String.raw`/studio\?assets=${asset.id}&from=${asset.id}`));
 
-    await page.getByRole('button', { name: 'Back to quick edit' }).click();
+    // The waiting-draft notice and the Studio header both offer the same return action.
+    await page
+      .getByTestId('studio-quick-edit-waiting')
+      .getByRole('button', { name: 'Back to quick edit', exact: true })
+      .click();
     await expect(page).toHaveURL(new RegExp(`/photos/${asset.id}$`));
     const back = page.getByRole('dialog', { name: /Edit/ });
     await expect(back.getByRole('slider', { name: 'Exposure' })).toHaveValue('0.5');

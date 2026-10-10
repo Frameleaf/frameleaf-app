@@ -366,8 +366,14 @@
    * connection that drops mid-edit leaves the person in their project with a banner, not locked out.
    */
   const editorUp = $derived(host.mounted && (host.phase === 'ready' || host.phase === 'offline'));
-  /** Studio could not open: the header then shows no project controls that the body contradicts. */
-  const blocked = $derived(!editorUp && host.phase !== 'loading');
+  /** Project permissions come from the session, independently of workers or the editor bundle. */
+  const projectAvailable = $derived(
+    !accessLost &&
+      host.phase !== 'forbidden' &&
+      saveStatus !== 'loading' &&
+      saveStatus !== 'forbidden' &&
+      (editorUp || (hasSavedProject && access !== null)),
+  );
   const showState = $derived(!editorUp);
   const offline = $derived(saveStatus === 'offline' || (!online && editorUp));
   /** The save states the person has to act on; each has its own banner. */
@@ -785,10 +791,10 @@
     {/if}
 
     <div class="fl-studio-project">
-      {#if blocked && !hasSavedProject}
-        <!-- Nothing was opened, so there is no project to name: the header says where the person is. -->
+      {#if !projectAvailable}
+        <!-- Until this session may show the project, the header names only the destination. -->
         <h1>{$t('frameleaf_studio_title')}</h1>
-      {:else if editorUp && onRename && !accessLost}
+      {:else if onRename}
         <h1 class="sr-only">{project.name}</h1>
         <input
           class="fl-studio-project-name"
@@ -802,7 +808,7 @@
       {:else}
         <h1>{project.name}</h1>
       {/if}
-      {#if editorUp}
+      {#if projectAvailable}
         <span class="fl-studio-save" role="status" aria-live="polite" data-state={pill}>
           {#key pill}
             <span class="fl-studio-save-inner" class:settled={pill === 'saved' && settled} in:reveal>

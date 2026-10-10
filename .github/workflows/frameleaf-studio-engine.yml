@@ -205,6 +205,7 @@ jobs:
           node studio/tools/graphics-float.browser.mjs
           node studio/tools/compositor-float.browser.mjs
           node studio/tools/transition-float.browser.mjs
+          STUDIO_ADDITIVE_REPORT="$RUNNER_TEMP/linear-additive-report.json" node studio/tools/linear-additive.browser.mjs
           node studio/tools/nested-float.browser.mjs
           node studio/tools/chroma-key.browser.mjs
           EFFECTS_MATRIX_REPORT="$RUNNER_TEMP/effects-matrix-report.json" node studio/tools/effects-matrix.browser.mjs
@@ -356,6 +357,7 @@ jobs:
             ${{ runner.temp }}/hdr-geometry-report.json
             ${{ runner.temp }}/blend-matrix-report.json
             ${{ runner.temp }}/transition-matrix-report.json
+            ${{ runner.temp }}/linear-additive-report.json
             ${{ runner.temp }}/hdr-signal-browser-report.json
             ${{ runner.temp }}/hdr-source-browser-report.json
             studio/engine/frameleaf-build.json

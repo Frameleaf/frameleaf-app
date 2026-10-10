@@ -35,6 +35,7 @@ import {
 import { studioProjectResourceUses } from 'src/utils/studio-inventory.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
+import { parseStudioLottieDependencies } from 'src/utils/studio-vector-dependencies.js';
 
 const IMPORT_FOLDER = 'studio-imports';
 /** An upload older than this in the incoming folder belongs to a request that never finished. */
@@ -127,6 +128,7 @@ export class StudioProjectImportService {
         const text = new TextDecoder('utf-8', { fatal: true }).decode(await this.storage.readFile(file.path));
         externalReferences = scanStudioVector(type, text) ?? null;
         validateStudioImportText(type, text);
+        if (type.kind === 'vector' && type.contentType !== 'image/svg+xml') parseStudioLottieDependencies(text);
       }
 
       // A retry of an import already kept is answered by it; anything new counts against the quota.

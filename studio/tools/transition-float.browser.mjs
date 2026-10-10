@@ -83,7 +83,7 @@ try {
       const legacy = direct([0.5, 0, 0, 0.5], [0, 0, 0, 0], 0, 'premultiplied', 'rgba8unorm');
       const straightSdr = direct([0.5, 0.25, 0, 0.5], [0, 0, 1, 0], 0, 'straight',
         'rgba8unorm', 'dissolve', undefined, 'straight');
-      const variantIds = ['additiveDissolve', 'nonAdditiveDissolve', 'lightLeakBurn',
+      const variantIds = ['nonAdditiveDissolve', 'lightLeakBurn',
         'filmGateSlip', 'sparkles', 'chromatic', 'lensWarpZoom', 'liquidDistort'];
       const hdr = [2, -0.5, 0.25, 1];
       const properties = { intensity: 0, glow: 0, grain: 0, exposure: 0, spread: 0,
@@ -162,7 +162,7 @@ try {
       assert.ok(Math.abs(pixels[2][channel] - value) < 0.002, `endpoint 1 channel ${channel}: ${pixels[2]}`);
     });
   }
-  assert.equal(result.variants.length, 8);
+  assert.equal(result.variants.length, 7);
   for (const { id, refusals } of result.variants) assert(refusals.length === 3 &&
     refusals.every(value => value.errorType === 'HdrRenderUnavailableError'), `${id}: missing typed HDR endpoint/midpoint refusal`);
   console.log(JSON.stringify({ check: 'SDR transition float alpha and Canvas boundaries; isolated typed HDR refusals', ...result }));

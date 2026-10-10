@@ -73,6 +73,18 @@ test('the published contracts omit private planning metadata', async () => {
   }
 });
 
+test('the generator retains the accepted optional master gain envelope', async () => {
+  const { document } = await generate(repository);
+  const master = document.commands.find((command) => command.id === 'project.setMasterAudio');
+
+  assert.deepEqual(master.payload, {
+    gainDb: 'number?',
+    muted: 'boolean?',
+    ducking: 'boolean?',
+    gainEnvelope: 'Array<{id:string,at:Rational,gainDb:number}>?',
+  });
+});
+
 test('a manifest row that loses its command and its exemption fails the check', async () => {
   const { document } = await generate(repository);
   const context = await inputs();

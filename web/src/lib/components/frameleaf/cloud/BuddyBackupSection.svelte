@@ -342,7 +342,7 @@
             : 'muted'}
       >
         {#if !status.pairing}
-          <!-- One line and one action per state: link first, then a plan, then set up. -->
+          <!-- Link first, then a plan; setup stays visible until every gate is satisfied. -->
           {#if !linked}
             <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
             <div class="fc-actions">
@@ -361,10 +361,10 @@
             <p class="explain">
               {$t('frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off')}
             </p>
-            <Button variant="primary" disabled={busy || !status.enabled} onclick={beginSetup}
-              >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
-            >
           {/if}
+          <Button variant="primary" disabled={busy || !status.enabled || !entitled} onclick={beginSetup}
+            >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+          >
         {:else}
           <dl class="facts">
             <div>
