@@ -11,6 +11,8 @@ export type TileQuickActions = {
   onEdit?: () => void;
   onShare?: () => void;
   onMore?: () => void;
+  /** Right-click: the selection bar's actions as a menu at the pointer. */
+  onContextMenu?: (event: MouseEvent) => void;
 };
 
 export type TileActionContext = {
