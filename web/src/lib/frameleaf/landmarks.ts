@@ -64,6 +64,8 @@ export interface LandmarkCard {
   /** The local days of the first and latest item taken here, as `yyyy-MM-dd`. */
   firstDay: string;
   lastDay: string;
+  latitude: number;
+  longitude: number;
   city: string | null;
   state: string | null;
   country: string | null;
@@ -81,7 +83,16 @@ export const buildLandmarkCards = (landmarks: SearchLandmarkResponseDto[], limit
     coverAssetId: landmark.coverAssetId,
     firstDay: landmark.firstTakenAt.slice(0, 10),
     lastDay: landmark.lastTakenAt.slice(0, 10),
+    latitude: landmark.latitude,
+    longitude: landmark.longitude,
     city: landmark.city,
     state: landmark.state,
     country: landmark.country,
   }));
+
+/**
+ * The id of the Places state a landmark is filed under: where most of its photos were taken, so it sits
+ * beside the towns those same photos are filed under (`buildPlacesTree` in `places.ts` makes the ids).
+ */
+export const landmarkStateId = (landmark: Pick<LandmarkCard, 'state' | 'country'>) =>
+  `state:${landmark.country ?? ''}:${landmark.state ?? ''}`;

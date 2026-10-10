@@ -1,6 +1,7 @@
 import type { AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { buildLandmarkCards } from '$lib/frameleaf/landmarks';
 import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';
 import en from '../../../../../i18n/en.json';
 import PlacesPanel from './PlacesPanel.svelte';
@@ -20,6 +21,23 @@ const counts = new Map([
   ['Lisbon', 12],
   ['Sintra', 5],
   ['Kyoto', 30],
+]);
+
+const landmarks = buildLandmarkCards([
+  {
+    id: 'Q173882',
+    name: 'Belém Tower',
+    kind: 'tower',
+    latitude: 38.6916,
+    longitude: -9.216,
+    assetCount: 7,
+    firstTakenAt: '2026-05-01T10:00:00.000Z',
+    lastTakenAt: '2026-05-01T12:00:00.000Z',
+    coverAssetId: 'tower-cover',
+    city: 'Lisbon',
+    state: 'Lisboa',
+    country: 'Portugal',
+  },
 ]);
 
 describe('PlacesPanel (FL-51)', () => {
@@ -42,6 +60,37 @@ describe('PlacesPanel (FL-51)', () => {
       expect.stringContaining('/map'),
     );
     expect(screen.getByRole('region', { name: 'Japan' })).toBeInTheDocument();
+  });
+
+  it('lists a visited landmark under the region its photos were taken in (FL-354)', () => {
+    render(PlacesPanel, { places, counts, landmarks, unplaced: null });
+
+    const portugal = within(screen.getByRole('region', { name: 'Portugal' }));
+    const card = portugal.getByRole('link', { name: 'Belém Tower, Tower, 7 items' });
+    expect(card).toHaveAttribute('href', expect.stringContaining('landmarkIds'));
+    expect(portugal.getByRole('link', { name: 'Show Belém Tower on the map' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/map#14/38.6916/-9.216'),
+    );
+    expect(within(screen.getByRole('region', { name: 'Japan' })).queryByText('Landmarks & attractions')).toBeNull();
+  });
+
+  it('finds a landmark by name, keeping its region open though none of its towns match', async () => {
+    render(PlacesPanel, { places, counts, landmarks, unplaced: null });
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Find a place' }), { target: { value: 'belem' } });
+
+    const portugal = within(screen.getByRole('region', { name: 'Portugal' }));
+    expect(portugal.getByRole('link', { name: 'Belém Tower, Tower, 7 items' })).toBeInTheDocument();
+    expect(portugal.queryByRole('link', { name: 'Lisbon, 12 items' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Japan' })).toBeNull();
+  });
+
+  it('lists landmarks after the towns when places are not grouped', () => {
+    placesViewSettings.set({ groupBy: PlacesGroupBy.None, collapsedGroups: {} });
+    render(PlacesPanel, { places, counts, landmarks, unplaced: null });
+
+    const section = within(screen.getByRole('region', { name: 'Landmarks & attractions' }));
+    expect(section.getByRole('link', { name: 'Belém Tower, Tower, 7 items' })).toBeInTheDocument();
   });
 
   it('finds a place and says when nothing matches', async () => {
