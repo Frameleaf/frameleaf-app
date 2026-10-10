@@ -299,3 +299,6 @@ await import('./keyframe-goldens.test.mjs');
 
 // The HDR and colour-management page (studio/spec/hdr.md) has its own engine-free checks.
 import './hdr-goldens.test.mjs';
+// The layer and text pages (studio/spec/layers.md, text.md) are checked with this file.
+await import('./layer-goldens.test.mjs');
+await import('./text-goldens.test.mjs');

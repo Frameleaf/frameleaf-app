@@ -13273,6 +13273,44 @@ export type StudioExportVersionDto = {
     /** The version number, once published */
     version: number | null;
 };
+export type StudioFontFileDto = {
+    /** For a ttf file: the sha256 of the woff2 file it was decoded from; null for a woff2 file */
+    decodedFrom: string | null;
+    /** The file name, for display and diagnostics only */
+    file: string;
+    format: StudioFontFormat;
+    /** The API path that serves the bytes, relative to the API root */
+    path: string;
+    /** SHA-256 of the file, lower-case hex; also its id in GET /studio/fonts/{sha256} */
+    sha256: string;
+    /** Length in bytes */
+    size: number;
+    style: StudioFontStyle;
+    /** The Unicode subset the file covers: latin or latin-ext */
+    subset: string;
+    /** CSS weight: 400 normal, 500 medium, 600 semibold, 700 bold */
+    weight: number;
+};
+export type StudioFontFamilyDto = {
+    /** The copyright line of the package's own licence file */
+    copyright: string;
+    /** The family name a Studio graph writes in fontFamily */
+    family: string;
+    /** Every bundled file of the family */
+    files: StudioFontFileDto[];
+    /** SPDX licence identifier, read from the package */
+    license: string;
+    /** The package the files come from */
+    "package": string;
+    /** The Reserved Font Name the licence declares, or null */
+    reservedFontName: string | null;
+    /** The exact package version bundled */
+    version: string;
+};
+export type StudioFontCatalogDto = {
+    /** The title font families bundled with this server */
+    families: StudioFontFamilyDto[];
+};
 export type StudioPreviewStreamOpenDto = {
     /** Studio project to play */
     projectId: string;
@@ -26071,6 +26109,30 @@ export function downloadStudioExportSubtitle({ id }: {
     }));
 }
 /**
+ * List the title fonts bundled with this server
+ */
+export function getStudioFonts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioFontCatalogDto;
+    }>("/studio/fonts", {
+        ...opts
+    }));
+}
+/**
+ * Download a bundled title font file
+ */
+export function getStudioFontFile({ sha256 }: {
+    sha256: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/fonts/${encodeURIComponent(sha256)}`, {
+        ...opts
+    }));
+}
+/**
  * Open a Studio preview stream
  */
 export function openStudioPreviewStream({ studioPreviewStreamOpenDto }: {
@@ -31416,6 +31478,14 @@ export enum StudioExportVersionState {
 }
 export enum Codec {
     Srt = "srt"
+}
+export enum StudioFontFormat {
+    Woff2 = "woff2",
+    Ttf = "ttf"
+}
+export enum StudioFontStyle {
+    Normal = "normal",
+    Italic = "italic"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",

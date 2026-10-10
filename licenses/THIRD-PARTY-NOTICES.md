@@ -91,13 +91,14 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 
 ## Fonts (Studio titles)
 
-google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25; loaded from Google Fonts when a title uses them; not bundled.
+google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25; loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps.
 
 - Roboto — Christian Robertson, ParaType, Font Bureau. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/roboto/OFL.txt
 - Open Sans — Steve Matteson. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/opensans/OFL.txt
 - Google Sans — Google. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/googlesans/OFL.txt
 - Noto Sans JP — Google. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosansjp/OFL.txt
 - Inter — Rasmus Andersson. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inter/OFL.txt
+  Bundled with the server: @fontsource/inter 5.3.0. Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 - Montserrat — Julieta Ulanovsky, Sol Matas, Juan Pablo del Peral, Jacques Le Bailly. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/montserrat/OFL.txt
 - Poppins — Indian Type Foundry, Jonny Pinhorn, Ninad Kale. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/poppins/OFL.txt
 - Lato — Łukasz Dziedzic. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lato/OFL.txt
@@ -110,6 +111,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Nunito — Vernon Adams, Cyreal, Jacques Le Bailly. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nunito/OFL.txt
 - Nunito Sans — Vernon Adams, Jacques Le Bailly, Manvel Shmavonyan, Alexei Vanyashin. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nunitosans/OFL.txt
 - Playfair Display — Claus Eggers Sørensen. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/playfairdisplay/OFL.txt
+  Bundled with the server: @fontsource/playfair-display 5.3.0. Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name "Playfair Display". PlayfairDisplay-Italic[wght].ttf: Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name "Playfair Display".
 - Rubik — Hubert and Fischer, Meir Sadan, Cyreal, Daniel Grumer, Omaima Dajani. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/rubik/OFL.txt
 - Ubuntu — Dalton Maag. Ubuntu Font Licence 1.0. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ufl/ubuntu/UFL.txt
 - Roboto Slab — Christian Robertson. Apache-2.0. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/apache/robotoslab/LICENSE.txt
@@ -131,6 +133,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Inconsolata — Raph Levien. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inconsolata/OFL.txt
 - Barlow — Jeremy Tribby. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/barlow/OFL.txt
 - Bebas Neue — Ryoichi Tsunekawa. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bebasneue/OFL.txt
+  Bundled with the server: @fontsource/bebas-neue 5.3.0. Copyright 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue)
 - Noto Sans TC — Google. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanstc/OFL.txt
 - Archivo Black — Omnibus-Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/archivoblack/OFL.txt
 - Source Sans 3 — Paul D. Hunt. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sourcesans3/OFL.txt
@@ -162,6 +165,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Noto Serif JP — Google. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notoserifjp/OFL.txt
 - Public Sans — USWDS, Dan Williams, Pablo Impallari, Rodrigo Fuenzalida. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/publicsans/OFL.txt
 - Anton — Vernon Adams. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anton/OFL.txt
+  Bundled with the server: @fontsource/anton 5.3.0. Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)
 - Mukta — Ek Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/mukta/OFL.txt
 - Schibsted Grotesk — Bakken & Bæck, Henrik Kongsvoll. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/schibstedgrotesk/OFL.txt
 - Dosis — Impallari Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/dosis/OFL.txt
@@ -174,6 +178,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Noto Sans Telugu — Google. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/notosanstelugu/OFL.txt
 - Nanum Gothic — Sandoll Communication. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/nanumgothic/OFL.txt
 - Space Grotesk — Florian Karsten. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/spacegrotesk/OFL.txt
+  Bundled with the server: @fontsource/space-grotesk 5.3.0. Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
 - Changa One — Eduardo Tunni. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/changaone/OFL.txt
 - Anek Telugu — Ek Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anektelugu/OFL.txt
 - Assistant — Adobe Systems Inc., Ben Nathan. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/assistant/OFL.txt
@@ -191,6 +196,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Sora — Jonathan Barnbrook, Julián Moncada. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/OFL.txt
 - Crimson Text — Sebastian Kosch. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/crimsontext/OFL.txt
 - Inter Tight — Rasmus Andersson. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/intertight/OFL.txt
+  Bundled with the server: @fontsource/inter-tight 5.3.0. Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight) InterTight-Italic[wght].ttf: Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight)
 - Overpass — Delve Withrington, Dave Bailey, Thomas Jockin. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/overpass/OFL.txt
 - Caveat — Impallari Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/caveat/OFL.txt
 - Urbanist — Corey Hu. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/urbanist/OFL.txt
@@ -209,6 +215,7 @@ google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and M
 - Lexend Deca — Bonnie Shaver-Troup, Thomas Jockin, Santiago Orozco, Héctor Gómez, Superunion. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/lexenddeca/OFL.txt
 - Satisfy — Sideshow. Apache-2.0. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/apache/satisfy/LICENSE.txt
 - Orbitron — Matt McInerney. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/orbitron/OFL.txt
+  Bundled with the server: @fontsource/orbitron 5.3.0. Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron)
 - Barlow Semi Condensed — Jeremy Tribby. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/barlowsemicondensed/OFL.txt
 - Domine — Impallari Type. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/domine/OFL.txt
 - Shadows Into Light — Kimberly Geswein. OFL-1.1. https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/shadowsintolight/OFL.txt

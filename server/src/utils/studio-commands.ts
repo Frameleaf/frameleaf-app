@@ -29,7 +29,10 @@
  * the catalogue are graph-shaped and pass through unread, which is what keeps unknown
  * Freecut fields, nulls, arrays and rational timing extensions lossless. The one exception is
  * `clip.setMask` (FL-348): its `mask` is a closed intent, not graph-shaped data, so its fields,
- * ranges and pen-path vertices are checked here as section 17.1 of the graph protocol states.
+ * ranges and pen-path vertices are checked here as section 17.1 of the graph protocol states. The
+ * `style`, `transform`, `mask` and `spans` of `shape.add`, `shape.setStyle` and `title.setStyle` are
+ * closed in the same way (sections 17.4, 17.5 and 14.3.4): everything that can be judged without
+ * the graph is checked here, and the engine checks the rest against the clip.
  */
 
 import { isRational } from 'src/utils/rational-time.js';
@@ -189,6 +192,242 @@ const maskProblem = (mask: Record<string, unknown>): string | undefined => {
   return undefined;
 };
 
+type FieldCheck = (value: unknown) => boolean;
+
+/** `#rrggbb` or `#rrggbbaa`; no other CSS colour form is a command value. */
+const isHexColour: FieldCheck = (value) => typeof value === 'string' && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
+const isBoolean: FieldCheck = (value) => typeof value === 'boolean';
+const within =
+  (min: number, max: number): FieldCheck =>
+  (value) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+const oneOf =
+  (...options: string[]): FieldCheck =>
+  (value) =>
+    options.includes(value as string);
+
+export const STUDIO_SHAPE_TYPES = ['rectangle', 'circle', 'triangle', 'ellipse', 'star', 'polygon', 'heart', 'path'];
+
+/** Section 17.5: each shape style field, the shape types that have it, and whether null may clear it. */
+const SHAPE_STYLE_FIELDS: Record<string, { check: FieldCheck; shapes?: string[]; kept?: boolean }> = {
+  fillColor: { check: isHexColour, kept: true },
+  fillEnabled: { check: isBoolean },
+  fillType: { check: oneOf('solid', 'linear') },
+  gradientStartColor: { check: isHexColour },
+  gradientEndColor: { check: isHexColour },
+  gradientAngle: { check: within(-180, 180) },
+  strokeColor: { check: isHexColour },
+  strokeWidth: { check: within(0, 50) },
+  strokeEnabled: { check: isBoolean },
+  strokeLineCap: { check: oneOf('butt', 'round', 'square') },
+  strokeLineJoin: { check: oneOf('miter', 'round', 'bevel') },
+  strokeMiterLimit: { check: within(1, 20) },
+  trimPathStart: { check: within(0, 100) },
+  trimPathEnd: { check: within(0, 100) },
+  trimPathOffset: { check: within(-360, 360) },
+  taperStartWidth: { check: within(0, 200) },
+  taperEndWidth: { check: within(0, 200) },
+  taperStartLength: { check: within(0, 100) },
+  taperEndLength: { check: within(0, 100) },
+  cornerRadius: { check: within(0, 100), shapes: ['rectangle', 'triangle', 'star', 'polygon'] },
+  direction: { check: oneOf('up', 'down', 'left', 'right'), shapes: ['triangle'] },
+  points: { check: (value) => Number.isSafeInteger(value) && within(3, 12)(value), shapes: ['star', 'polygon'] },
+  innerRadius: { check: within(0.1, 0.9), shapes: ['star'] },
+  pathClosed: { check: isBoolean, shapes: ['path'], kept: true },
+};
+
+const pathProblem = (path: unknown, minimum: number): string | undefined => {
+  if (!Array.isArray(path) || path.length < minimum || path.length > STUDIO_MASK_MAX_VERTICES) {
+    return `a path must have ${minimum} to ${STUDIO_MASK_MAX_VERTICES} vertices`;
+  }
+  for (const vertex of path) {
+    if (!isRecord(vertex) || Object.keys(vertex).some((name) => !VERTEX_FIELDS.has(name))) {
+      return 'a path vertex must be { position, inHandle, outHandle, tangentMode? }';
+    }
+    if (!isPoint(vertex.position) || !isPoint(vertex.inHandle) || !isPoint(vertex.outHandle)) {
+      return 'a path position or handle must be [x, y]';
+    }
+    if (vertex.tangentMode !== undefined && !TANGENT_MODES.has(vertex.tangentMode as string)) {
+      return 'unknown path tangent mode';
+    }
+  }
+  return undefined;
+};
+
+/** Section 17.5. `shapeType` is known for `shape.add`; `shape.setStyle` leaves that check to the engine. */
+const shapeStyleProblem = (style: unknown, shapeType?: string): string | undefined => {
+  if (!isRecord(style)) {
+    return 'style must be an object';
+  }
+  for (const [name, value] of Object.entries(style)) {
+    if (name === 'pathVertices') {
+      if (shapeType !== undefined && shapeType !== 'path') {
+        return 'style.pathVertices needs a path shape';
+      }
+      const problem = pathProblem(value, 2);
+      if (problem) {
+        return problem;
+      }
+      continue;
+    }
+    const field = Object.hasOwn(SHAPE_STYLE_FIELDS, name) ? SHAPE_STYLE_FIELDS[name] : undefined;
+    if (!field) {
+      return `unknown style field ${name}`;
+    }
+    if (shapeType !== undefined && field.shapes && !field.shapes.includes(shapeType)) {
+      return `style.${name} does not apply to a ${shapeType} shape`;
+    }
+    if (value === null ? field.kept : !field.check(value)) {
+      return `style.${name} is outside its type or range`;
+    }
+  }
+  return undefined;
+};
+
+const SHAPE_BOX_FIELDS: Record<string, FieldCheck> = {
+  x: within(-Number.MAX_VALUE, Number.MAX_VALUE),
+  y: within(-Number.MAX_VALUE, Number.MAX_VALUE),
+  width: (value) => within(0, Number.MAX_VALUE)(value) && (value as number) > 0,
+  height: (value) => within(0, Number.MAX_VALUE)(value) && (value as number) > 0,
+  rotation: within(0, 360),
+  opacity: within(0, 1),
+  aspectRatioLocked: isBoolean,
+};
+
+const closedObjectProblem = (
+  what: string,
+  value: unknown,
+  fields: Record<string, FieldCheck>,
+  required = false,
+): string | undefined => {
+  if (!isRecord(value)) {
+    return `${what} must be an object`;
+  }
+  for (const name of Object.keys(value)) {
+    if (!Object.hasOwn(fields, name)) {
+      return `unknown ${what} field ${name}`;
+    }
+  }
+  for (const [name, check] of Object.entries(fields)) {
+    if (value[name] === undefined ? required : !check(value[name])) {
+      return `${what}.${name} is outside its type or range`;
+    }
+  }
+  return undefined;
+};
+
+/** A font family is a catalogue name, never a locator (section 14.3.4); the engine holds the catalogue. */
+const isFontFamilyName: FieldCheck = (value) =>
+  typeof value === 'string' && value.length > 0 && value.length <= 128 && !/[/\\:]/.test(value);
+
+const TITLE_STYLE_FIELDS: Record<string, { check: FieldCheck; kept?: boolean }> = {
+  color: { check: isHexColour, kept: true },
+  fontSize: { check: within(8, 500) },
+  fontFamily: { check: isFontFamilyName },
+  fontWeight: { check: oneOf('normal', 'medium', 'semibold', 'bold') },
+  fontStyle: { check: oneOf('normal', 'italic') },
+  underline: { check: isBoolean },
+  lineHeight: { check: within(0.5, 3) },
+  letterSpacing: { check: within(-20, 100) },
+  textPadding: { check: within(0, 160) },
+  backgroundColor: { check: isHexColour },
+  backgroundRadius: { check: within(0, 999) },
+  textStyleScale: { check: within(0.5, 6), kept: true },
+};
+const TITLE_STYLE_OBJECTS: Record<string, Record<string, FieldCheck>> = {
+  textShadow: { offsetX: within(-100, 100), offsetY: within(-100, 100), blur: within(0, 160), color: isHexColour },
+  stroke: { width: within(0, 24), color: isHexColour },
+};
+const TITLE_SPAN_FIELDS = new Set([
+  'fontSize',
+  'fontFamily',
+  'fontWeight',
+  'fontStyle',
+  'underline',
+  'color',
+  'letterSpacing',
+]);
+export const STUDIO_TITLE_MAX_SPANS = 64;
+
+/** Section 14.3.4: the closed `style`, `spans` and `spanLayout` of `title.setStyle`. */
+const titleStyleProblem = (payload: Record<string, unknown>): string | undefined => {
+  const { style, spans, spanLayout } = payload;
+  if (!isRecord(style)) {
+    return 'style must be an object';
+  }
+  for (const [name, value] of Object.entries(style)) {
+    if (Object.hasOwn(TITLE_STYLE_OBJECTS, name)) {
+      const problem =
+        value === null ? undefined : closedObjectProblem(`style.${name}`, value, TITLE_STYLE_OBJECTS[name], true);
+      if (problem) {
+        return problem;
+      }
+      continue;
+    }
+    const field = Object.hasOwn(TITLE_STYLE_FIELDS, name) ? TITLE_STYLE_FIELDS[name] : undefined;
+    if (!field) {
+      return `unknown style field ${name}`;
+    }
+    if (value === null ? field.kept : !field.check(value)) {
+      return `style.${name} is outside its type or range`;
+    }
+  }
+  if (spans !== undefined && spans !== null) {
+    if (!Array.isArray(spans) || spans.length === 0 || spans.length > STUDIO_TITLE_MAX_SPANS) {
+      return `spans must be null or 1 to ${STUDIO_TITLE_MAX_SPANS} spans`;
+    }
+    for (const span of spans as Record<string, unknown>[]) {
+      if (typeof span.text !== 'string') {
+        return 'a span needs text';
+      }
+      for (const [name, value] of Object.entries(span)) {
+        if (name !== 'text' && (!TITLE_SPAN_FIELDS.has(name) || !TITLE_STYLE_FIELDS[name].check(value))) {
+          return `span ${name} is unknown or outside its type or range`;
+        }
+      }
+    }
+  }
+  if (spanLayout !== undefined && spanLayout !== null && spanLayout !== 'stack' && spanLayout !== 'inline') {
+    return 'spanLayout must be "stack", "inline" or null';
+  }
+  return undefined;
+};
+
+/** Section 17.4: everything of a `shape.add` that does not depend on the graph. */
+const shapeAddProblem = (payload: Record<string, unknown>): string | undefined => {
+  const shapeType = payload.shapeType as string;
+  if (!STUDIO_SHAPE_TYPES.includes(shapeType)) {
+    return 'shapeType is not a shape type';
+  }
+  for (const name of ['trackId', 'style', 'transform', 'mask']) {
+    if (payload[name] === null) {
+      return `${name} cannot be null`;
+    }
+  }
+  if (payload.trackId === '') {
+    return 'trackId must not be empty';
+  }
+  if (shapeType === 'path' && (!isRecord(payload.style) || payload.style.pathVertices === undefined)) {
+    return 'a path needs style.pathVertices';
+  }
+  if (payload.mask !== undefined) {
+    const mask = payload.mask as Record<string, unknown>;
+    if (mask.path !== undefined) {
+      return 'unknown mask field path';
+    }
+    const problem = maskProblem(mask);
+    if (problem) {
+      return problem;
+    }
+  }
+  return (
+    (payload.style === undefined ? undefined : shapeStyleProblem(payload.style, shapeType)) ??
+    (payload.transform === undefined
+      ? undefined
+      : closedObjectProblem('transform', payload.transform, SHAPE_BOX_FIELDS))
+  );
+};
+
 /** Checks the catalogue's field kinds cannot express, for the commands whose payload is closed. */
 const refinedPayloadProblem = (id: StudioCommandId, payload: Record<string, unknown>): string | undefined => {
   switch (id) {
@@ -200,6 +439,15 @@ const refinedPayloadProblem = (id: StudioCommandId, payload: Record<string, unkn
     }
     case 'clip.relink': {
       return payload.clipId === '' || payload.assetId === '' ? 'clipId and assetId must not be empty' : undefined;
+    }
+    case 'shape.add': {
+      return shapeAddProblem(payload);
+    }
+    case 'shape.setStyle': {
+      return payload.clipId === '' ? 'clipId must not be empty' : shapeStyleProblem(payload.style);
+    }
+    case 'title.setStyle': {
+      return payload.clipId === '' ? 'clipId must not be empty' : titleStyleProblem(payload);
     }
     default: {
       return undefined;
