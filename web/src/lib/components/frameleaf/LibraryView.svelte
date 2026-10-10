@@ -714,12 +714,19 @@
           .map((asset) => toBulk(asset)),
   );
 
+  const runGuardedBulk = async (guard: NonNullable<typeof beforeAction>, id: BulkActionId, payload?: BulkPayload) => {
+    try {
+      if (await guard(id)) {
+        dispatchBulk(id, payload);
+      }
+    } catch (error) {
+      handleError(error, $t('error'));
+    }
+  };
+
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
     if (beforeAction) {
-      void Promise.resolve()
-        .then(() => beforeAction(id))
-        .then((allowed) => (allowed ? dispatchBulk(id, payload) : undefined))
-        .catch((error) => handleError(error, $t('error')));
+      void runGuardedBulk(beforeAction, id, payload);
       return;
     }
     dispatchBulk(id, payload);
@@ -868,7 +875,9 @@
   const selectAllMatching = async () => {
     const revision = session.revision;
     const total = await bulk.count(session.state);
-    if (revision !== session.revision) return;
+    if (revision !== session.revision) {
+      return;
+    }
     session.dispatch({ type: 'selection', ids: loadedIds(), allMatching: true });
     if (total !== null) {
       session.applyTotal(total, session.revision);
@@ -1458,7 +1467,9 @@
    * handled here; the rest are handed to the owner of that action.
    */
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (document.querySelector(MODAL_SELECTOR)) return;
+    if (document.querySelector(MODAL_SELECTOR)) {
+      return;
+    }
     // While the viewer is open the keys belong to it. The session's open item outlives the viewer
     // (reopening it resumes it), so it is the viewer itself that decides.
     const surface = assetViewerManager.isViewing ? 'viewer' : 'timeline';
