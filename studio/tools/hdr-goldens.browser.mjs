@@ -84,6 +84,12 @@ async function runAll(args, origin) {
         workingToSignal: color.workingToSignal,
         eetf: color.bt2390Eetf,
         sdrDisplay: (rgb, settings) => color.workingToSdrDisplay(rgb, color.resolveColorManagement(settings)),
+        // H10 stopped at each boundary, from the engine's own functions in the engine's order.
+        ingestLight: (signal, transfer, white) => {
+          const sceneLight = transfer === 'hlg' ? signal.map((v) => color.hlgInverseOetf(v)) : null;
+          const displayLight = sceneLight ? color.hlgOotf(sceneLight) : signal.map((v) => color.pqDecode(v));
+          return { sceneLight, displayLight: Array.from(displayLight), working: Array.from(color.signalToWorking(signal, transfer, white)) };
+        },
         rasterAdmission: (spec) => { try { validateHdrRaster(raster(spec)); return 'admitted'; } catch { return 'rejected'; } },
       };
       const stageResults = stages.map((c) => {

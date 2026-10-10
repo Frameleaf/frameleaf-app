@@ -73,6 +73,22 @@ test('every mask mode, shape type and stage-order case is present', () => {
     const alpha = (64 / 255) * (1 - tau) + tau;
     [1 - tau, 0, tau].forEach((v, c) => assert(Math.abs(v * alpha + (1 - alpha) - fade[(13 * 48 + i) * 4 + c]) <= 2 / 255, `gradient alpha at column ${i}`));
   }
+  // Transitions: the blend mode of a clip is ignored inside the window, and clips in a window do not occlude.
+  const same = (x, y) => compareCase(golden(x), golden(y).expected).pass;
+  assert(same('transition/multiply-inside-window', 'transition/normal-inside-window-does-not-occlude'));
+  assert(same('transition/multiply-before-window', 'blend/multiply') && !same('transition/multiply-before-window', 'transition/normal-before-window-occludes'));
+  assert(same('transition/normal-before-window-occludes', 'blend/normal') && !same('transition/normal-inside-window-does-not-occlude', 'transition/normal-before-window-occludes'));
+  // An absent anchor is half the stored box, not the keyframed one.
+  assert(same('transform/anchor-absent-keyframed-size', 'transform/anchor-static-equivalent') && same('transform/anchor-absent-keyframed-size-rotated', 'transform/anchor-static-equivalent-rotated'));
+  assert(!same('transform/anchor-absent-keyframed-size', 'flip/both-cropped') && !compareCase(golden('transform/anchor-absent-keyframed-size'), referenceFrame({ ...golden('transform/scale-2'), graph: structuredClone(golden('transform/scale-2').graph) })).pass);
+  // Trim: wrapping on an open path, and the unlocked star's own length.
+  has('shape/path/trim-80-20-open', 'shape/polygon/unlocked-trim-0-50');
+  assert(!same('shape/star/unlocked-trim-0-50', 'shape/star/locked-trim-0-50'));
+  // The corner-pin goldens admit the exact projective warp, and say how far the engine's mesh is from it.
+  for (const name of ['corner-pin/image', 'corner-pin/reference-size']) assert(golden(name).reference && golden(name).tolerance.projective?.max > 0, `${name}: projective tolerance`);
+  // Float-route shape shaders: one case per type, rendered on that route.
+  for (const type of SHAPE_TYPES) assert.equal(golden(`float-shape/${type}`).route, 'float');
+  assert(goldens.cases.every((c) => (c.route === 'float') === c.name.startsWith('float-shape/')));
   // Out-of-range values a renderer meets when reading a graph.
   has('shape/star/inner-radius-1.5', 'shape/star/points-5.5', 'shape/star/points-20', 'shape/polygon/points-2', 'shape/rectangle/linear-gradient-405');
   assert(compareCase(golden('shape/rectangle/linear-gradient-45'), golden('shape/rectangle/linear-gradient-405').expected).pass, 'the gradient angle is periodic');

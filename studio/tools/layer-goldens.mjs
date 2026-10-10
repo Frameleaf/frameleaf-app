@@ -90,7 +90,7 @@ const mask = (id, trackId, shapeType, transform, extra = {}) => shape(id, trackI
 const vertex = (x, y, inHandle = [0, 0], outHandle = [0, 0]) => ({ position: [x, y], inHandle, outHandle });
 const graph = (size, tracks, items, extra = {}) => ({
   metadata: { width: size.width, height: size.height, fps: FPS, frameRate: { num: FPS, den: 1 }, ...(extra.backgroundColor !== undefined ? { backgroundColor: extra.backgroundColor } : {}) },
-  timeline: { tracks, items, ...(extra.keyframes ? { keyframes: extra.keyframes } : {}) },
+  timeline: { tracks, items, ...(extra.keyframes ? { keyframes: extra.keyframes } : {}), ...(extra.transitions ? { transitions: extra.transitions } : {}) },
 });
 const BG = '#204060';
 const TWO = () => [track('top', 0), track('bottom', 1)];
@@ -230,8 +230,8 @@ export function layerCases() {
   add('flip/horizontal-rotated', over(T(0, 0.5, 16, 12, { flipHorizontal: true, rotation: 30 })));
 
   // Corner pin.
-  add('corner-pin/image', over(T(0, 0.5, 32, 24), { cornerPin: { topLeft: [4, 2], topRight: [-2, 5], bottomRight: [0, 0], bottomLeft: [6, -3], referenceWidth: 32, referenceHeight: 24 } }));
-  add('corner-pin/reference-size', over(T(0, 0.5, 32, 24), { cornerPin: { topLeft: [2, 1], topRight: [-1, 2.5], bottomRight: [0, 0], bottomLeft: [3, -1.5], referenceWidth: 16, referenceHeight: 12 } }));
+  ref('corner-pin/image', over(T(0, 0.5, 32, 24), { cornerPin: { topLeft: [4, 2], topRight: [-2, 5], bottomRight: [0, 0], bottomLeft: [6, -3], referenceWidth: 32, referenceHeight: 24 } }));
+  ref('corner-pin/reference-size', over(T(0, 0.5, 32, 24), { cornerPin: { topLeft: [2, 1], topRight: [-1, 2.5], bottomRight: [0, 0], bottomLeft: [3, -1.5], referenceWidth: 16, referenceHeight: 12 } }));
 
   // Stage order: the transform precedes the effect stack.
   ref('stage/pixelate-scaled', over(T(1, 0.5, 32, 24), { effects: [effect('px', 'gpu-pixelate', { size: 4 })] }));
@@ -249,6 +249,27 @@ export function layerCases() {
     base('adjust', 'middle', 'adjustment', { effects: [effect('px', 'gpu-pixelate', { size: 4 })] }),
     rect('floor', 'bottom', 0, 0, 48, 27, BG),
   ], { backgroundColor: BG }));
+
+  // Transitions: the two clips of a transition become one layer, blended as normal, and never occlude.
+  const cut = (blendMode, frame) => [graph(SMALL, TWO(), [
+    { ...image('left', 'top', 'layer', T(0, 0, 16, 12), blendMode ? { blendMode } : {}), from: 0, durationInFrames: 20 },
+    { ...image('right', 'top', 'layer', T(0, 0, 16, 12, { flipHorizontal: true }), blendMode ? { blendMode } : {}), from: 20, durationInFrames: 20 },
+    { ...image('under', 'bottom', 'fx', T(0, 0, 16, 12)), durationInFrames: 40 },
+  ], { backgroundColor: BG, transitions: [{ id: 'fade', type: 'crossfade', presentation: 'fade', timing: 'linear', leftClipId: 'left', rightClipId: 'right', trackId: 'top', durationInFrames: 10, alignment: 0.5 }] }), { frame }];
+  add('transition/multiply-before-window', ...cut('multiply', 14));
+  add('transition/multiply-inside-window', ...cut('multiply', 15));
+  add('transition/multiply-mid-window', ...cut('multiply', 20));
+  add('transition/normal-before-window-occludes', ...cut(undefined, 14));
+  add('transition/normal-inside-window-does-not-occlude', ...cut(undefined, 15));
+
+  // An absent anchor is half the static box: it does not follow a keyframed size.
+  const sized = (property, from, to) => ({ property, keyframes: [{ id: `${property}0`, frame: 0, value: from, easing: 'linear' }, { id: `${property}1`, frame: 10, value: to, easing: 'linear' }] });
+  add('transform/anchor-absent-keyframed-size', over(T(0, 0.5, 16, 12, { flipHorizontal: true })), { frame: 10 });
+  cases.at(-1).graph.timeline.keyframes = [{ itemId: 'clip', properties: [sized('width', 16, 32), sized('height', 12, 24)] }];
+  ref('transform/anchor-static-equivalent', over(T(0, 0.5, 32, 24, { flipHorizontal: true, anchorX: 8, anchorY: 6 })));
+  add('transform/anchor-absent-keyframed-size-rotated', over(T(0, 0.5, 16, 12, { rotation: 30 })), { frame: 10 });
+  cases.at(-1).graph.timeline.keyframes = [{ itemId: 'clip', properties: [sized('width', 16, 32), sized('height', 12, 24)] }];
+  add('transform/anchor-static-equivalent-rotated', over(T(0, 0.5, 32, 24, { rotation: 30, anchorX: 8, anchorY: 6 })));
 
   // Masks: a shape with isMask masks the tracks below it.
   const masked = (m, extra = []) => graph(FRAME, THREE(), [m, ...extra, backdrop('bottom')], { backgroundColor: BG });
@@ -336,8 +357,21 @@ export function layerCases() {
   add('shape/rectangle/trim-wraps', one('rectangle', T(0, 0.5, 30, 18), { fillEnabled: false, ...stroke, trimPathStart: 75, trimPathEnd: 25 }));
   add('shape/ellipse/trim-0-50', one('ellipse', T(0, 0.5, 30, 18), { fillEnabled: false, ...stroke, trimPathStart: 0, trimPathEnd: 50 }));
   add('shape/path/trim-20-80', one('path', T(0, 0.5, 30, 20), { pathVertices: PEN_OPEN, pathClosed: false, fillEnabled: false, ...stroke, trimPathStart: 20, trimPathEnd: 80 }));
+  add('shape/path/trim-80-20-open', one('path', T(0, 0.5, 30, 20), { pathVertices: PEN_OPEN, pathClosed: false, fillEnabled: false, ...stroke, trimPathStart: 80, trimPathEnd: 20 }));
+  add('shape/star/unlocked-trim-0-50', one('star', { ...T(0, 0.5, 40, 16), aspectRatioLocked: false }, { fillEnabled: false, ...stroke, strokeWidth: 2, trimPathStart: 0, trimPathEnd: 50 }));
+  add('shape/polygon/unlocked-trim-0-50', one('polygon', { ...T(0, 0.5, 40, 16), aspectRatioLocked: false }, { fillEnabled: false, ...stroke, strokeWidth: 2, trimPathStart: 0, trimPathEnd: 50 }));
+  add('shape/star/locked-trim-0-50', one('star', T(0, 0.5, 40, 16), { fillEnabled: false, ...stroke, strokeWidth: 2, trimPathStart: 0, trimPathEnd: 50 }));
   add('shape/path/taper', one('path', T(0, 0.5, 30, 20), { pathVertices: PEN_OPEN, pathClosed: false, fillEnabled: false, strokeEnabled: true, strokeWidth: 6, strokeColor: '#1c2a6b', taperStartWidth: 0, taperStartLength: 40, taperEndWidth: 50, taperEndLength: 30 }));
   add('shape/rectangle/taper', one('rectangle', T(0, 0.5, 30, 18), { fillEnabled: false, strokeEnabled: true, strokeWidth: 6, strokeColor: '#1c2a6b', taperStartWidth: 0, taperStartLength: 50 }));
+  // The float route's shape shaders (L16), which draw the shapes of an HDR project: rendered on the float route.
+  for (const type of SHAPE_TYPES) {
+    const t = shapeBox[type] ?? T(0, 0.5, 30, 20);
+    const extra = type === 'path' ? { pathVertices: PEN_OPEN, pathClosed: true, strokeLineCap: 'round', strokeLineJoin: 'round' } : {};
+    add(`float-shape/${type}`, graph(FRAME, TWO(), [shape('s', 'top', type, t, { ...extra, ...stroke, strokeWidth: 2 }), backdrop('bottom', 'b')], { backgroundColor: BG }), { route: 'float' });
+  }
+  add('float-shape/rectangle-corner-radius-rotated', graph(FRAME, TWO(), [shape('s', 'top', 'rectangle', T(0, 0.5, 24, 12, { rotation: 30 }), { cornerRadius: 4, strokeEnabled: false }), backdrop('bottom', 'b')], { backgroundColor: BG }), { route: 'float' });
+  add('float-shape/triangle-down', graph(FRAME, TWO(), [shape('s', 'top', 'triangle', T(0, 0.5, 30, 20), { direction: 'down', strokeEnabled: false }), backdrop('bottom', 'b')], { backgroundColor: BG }), { route: 'float' });
+  add('float-shape/star-7-inner-0.3', graph(FRAME, TWO(), [shape('s', 'top', 'star', T(0, 0.5, 30, 22), { points: 7, innerRadius: 0.3, strokeEnabled: false }), backdrop('bottom', 'b')], { backgroundColor: BG }), { route: 'float' });
   return cases;
 }
 
@@ -431,6 +465,32 @@ function cropOf(crop = {}) {
   const [top, bottom] = pair(clamp01(crop.top ?? 0), clamp01(crop.bottom ?? 0));
   return { left, right, top, bottom, softness: clamp(crop.softness ?? 0, -1, 1) };
 }
+// L11: the inverse of the projective map that carries the fitted picture (w x h) to its pinned corners.
+function cornerPinInverse(cornerPin, w, h) {
+  if (!cornerPin) return null;
+  const sx = cornerPin.referenceWidth > 1e-6 ? w / cornerPin.referenceWidth : 1;
+  const sy = cornerPin.referenceHeight > 1e-6 ? h / cornerPin.referenceHeight : 1;
+  const at = (corner, bx, by) => [bx + corner[0] * sx, by + corner[1] * sy];
+  const [q0, q1, q2, q3] = [at(cornerPin.topLeft, 0, 0), at(cornerPin.topRight, w, 0), at(cornerPin.bottomRight, w, h), at(cornerPin.bottomLeft, 0, h)];
+  if ([q0, q1, q2, q3].every((q, n) => q[0] === [0, w, w, 0][n] && q[1] === [0, 0, h, h][n])) return null;
+  const d1 = [q1[0] - q2[0], q1[1] - q2[1]]; const d2 = [q3[0] - q2[0], q3[1] - q2[1]];
+  const sum = [q0[0] - q1[0] + q2[0] - q3[0], q0[1] - q1[1] + q2[1] - q3[1]];
+  const det = d1[0] * d2[1] - d1[1] * d2[0];
+  if (Math.abs(det) < 1e-10) return null;
+  const g = (sum[0] * d2[1] - sum[1] * d2[0]) / det;
+  const k = (d1[0] * sum[1] - d1[1] * sum[0]) / det;
+  // Forward map of the fractions (u, v): X = a u + b v + c, Y = d u + e v + f, Z = g u + k v + 1.
+  const [a, b, c, d, e, f] = [q1[0] - q0[0] + g * q1[0], q3[0] - q0[0] + k * q3[0], q0[0], q1[1] - q0[1] + g * q1[1], q3[1] - q0[1] + k * q3[1], q0[1]];
+  return (x, y) => {
+    // Solve (a - g x) u + (b - k x) v = x - c and (d - g y) u + (e - k y) v = y - f.
+    const m = [a - g * x, b - k * x, d - g * y, e - k * y];
+    const den = m[0] * m[3] - m[1] * m[2];
+    if (Math.abs(den) < 1e-12) return [NaN, NaN];
+    const u = ((x - c) * m[3] - m[1] * (y - f)) / den;
+    const v = (m[0] * (y - f) - (x - c) * m[2]) / den;
+    return g * u + k * v + 1 > 0 ? [u * w, v * h] : [NaN, NaN];
+  };
+}
 function imageLayer(item, box, size, source) {
   assert(axisAligned(box), `reference: ${item.id} is rotated`);
   const { width: W, height: H } = size;
@@ -464,12 +524,15 @@ function imageLayer(item, box, size, source) {
     const a = source.values[at + 3];
     return [source.values[at] * a, source.values[at + 1] * a, source.values[at + 2] * a, a];
   };
-  for (let j = Math.max(0, y0); j < Math.min(H, y1); j++) for (let i = Math.max(0, x0); i < Math.min(W, x1); i++) {
+  const pin = cornerPinInverse(item.cornerPin, mw, mh);
+  for (let j = pin ? 0 : Math.max(0, y0); j < (pin ? H : Math.min(H, y1)); j++) for (let i = pin ? 0 : Math.max(0, x0); i < (pin ? W : Math.min(W, x1)); i++) {
     const cx = i + 0.5;
     const cy = j + 0.5;
-    if (cx < mx || cx >= mx + mw || cy < my || cy >= my + mh) continue;
-    const u = ((cx - mx) / mw) * source.width - 0.5;
-    const v = ((cy - my) / mh) * source.height - 0.5;
+    // L11: a corner pin samples the picture through the inverse of its projective map.
+    const [px0, py0] = pin ? pin(cx - mx, cy - my) : [cx - mx, cy - my];
+    if (!(px0 >= 0 && px0 < mw && py0 >= 0 && py0 < mh)) continue;
+    const u = (px0 / mw) * source.width - 0.5;
+    const v = (py0 / mh) * source.height - 0.5;
     const u0 = Math.floor(u); const v0 = Math.floor(v); const fu = u - u0; const fv = v - v0;
     let ramp = box.opacity;
     if (fl > 0) ramp *= clamp01((cx - x0) / fl);
@@ -716,6 +779,7 @@ export function validateLayerGoldens(goldens) {
     assert.equal(c.class, spec.class);
     assert.equal(c.frame, spec.frame);
     assert.equal(c.reference, spec.reference);
+    assert.equal(c.route ?? 'display', spec.route ?? 'display');
     assert.deepEqual(c.graph, spec.graph, `${c.name}: graph`);
     assert.deepEqual(c.size, { width: spec.graph.metadata.width, height: spec.graph.metadata.height });
     assert.equal(c.outcome, 'rendered');

@@ -45,7 +45,16 @@ So a project becomes HDR on the first frame rendered after such a clip is placed
 
 **Implementation-defined.** Because an export of a range sees only the items that overlap it, a range of an HDR project that touches no HDR clip is rendered and exported as an SDR project. A renderer that is given HDR stills as rasters (H11) is HDR for as long as it holds any, whatever the graph says.
 
-**Native rule.** A native client builds each media record with `colorTransfer` from the same server report the web host uses, and evaluates this rule for every frame.
+**Native rule.** A native client evaluates this rule for every frame, and builds each video's media record with the `colorTransfer` below. The record is the client's own view of the asset (protocol 3.5): no command carries it, it is not in the graph and it is not sent to the server, so the client writes it directly, as the web host does. The value comes from the transfer characteristics of the original's picture stream (ITU-T H.273), read from the stream by a client that can, or from the server's report otherwise:
+
+| Original's picture stream | `colorTransfer` |
+| --- | --- |
+| transfer characteristics 16 (SMPTE ST 2084, PQ) | `"pq"` |
+| transfer characteristics 18 (ARIB STD-B67, HLG) | `"hlg"` |
+| any Dolby Vision profile, whatever its transfer characteristics; or known to be HDR from the server's report alone | `"hdr"` |
+| anything else, including unspecified | `"sdr"`, or the field left out |
+
+The three HDR values are equivalent everywhere on this page: step 4 treats them alike, and the transfer used to convert pixels is the one the intermediate's frames report (H11), never the record's. The engine's own probe writes `"pq"`, `"hlg"` or `"sdr"`; the web host writes only `"hdr"`, for exactly the first three rows, and leaves the field out otherwise. A stream that is both Dolby Vision and PQ or HLG may be marked by either of its rows.
 
 ## The working space
 
@@ -143,7 +152,61 @@ Nothing is clamped after step 1: a saturated BT.2020 colour gives negative BT.70
 
 A raster is admitted only if width and height are positive integers with width × height ≤ 48 000 000; a signal raster's transfer is PQ or HLG and it holds exactly 3 samples per pixel; a linear raster holds exactly 4 values per pixel, its gamut is 0, 1 or 2, W_r is a finite number in [1, 10000], every value is finite, every alpha is in [0, 1], and every colour value v has |v|·W_r ≤ 10000. Anything else is rejected with an error before rendering. Results are stored as binary16.
 
-*HDR sources in an SDR project.* **Not implemented at this revision,** and by H3 it cannot arise for a source whose record says it is HDR: placing it makes the project HDR. The engine has no per-source tone map. A video known to be HDR is never drawn through the 8-bit route; the engine refuses instead (H16). If a record does not say that its original is HDR, the engine draws whatever SDR stream the host gives it, and the tone map inside that stream is the server transcoder's, which this page does not specify. **Native rule:** never decode an HDR original into an SDR project. Mark its record (H3), so the project is HDR.
+*HDR sources in an SDR project.* **Not implemented at this revision.** The engine has no per-source tone map, so this page has no rule that shows an HDR source inside an SDR project, and none is implied. The engine never inspects an original. What it does with a video whose original is HDR follows from two things it can see: the `colorTransfer` of the media record (H3), and whether the host has registered an intermediate for that media.
+
+| Record | Intermediate | What the engine does |
+| --- | --- | --- |
+| marked `"pq"`, `"hlg"` or `"hdr"` | registered and accepted | The project is HDR (H3). The clip is ingested as HDR video, above. The transfer used is the one each decoded frame of the intermediate reports, not the record's. |
+| marked | not registered, or it cannot be decoded, or its layout is not accepted | The project is HDR (H3). The item cannot be drawn and every frame that shows it is refused (H16). No SDR stream is substituted and nothing is tone-mapped. |
+| not marked (no `colorTransfer`, or `"sdr"`) | not registered | The engine does not know that the original is HDR. The item contributes nothing to H3 and is an SDR source in every respect: the engine draws the 8-bit playback stream the host supplies, as it stands in an SDR project and through SRGB⁻¹ in a project that another source has made HDR, where its white lands on reference white. The tone map inside that stream is the server transcoder's. It is outside this page and no golden pins it. |
+| not marked | registered | The web host does not produce this state: it registers an intermediate only for an original it marks in the same step. If it arises, H3 still counts nothing for the item, and the video is known to be HDR, so it is refused on the 8-bit route in any project (H16). In a project that another source has made HDR it is ingested from the intermediate. |
+
+**Implementation-defined.** The web host marks a record when the server's report for a placed video arrives, not when the clip is placed. Between the two the third row holds, and on the first frame after the report the project becomes HDR (H3) and the first or second row holds. The same clip is therefore shown through the server's SDR stream first and as HDR, or refused, afterwards.
+
+**Native rule.** Tone mapping an HDR source into an SDR project is undefined on this page, and no golden pins one. A native client avoids the case instead of rendering it:
+
+1. *The client can read the transfer.* A client that reads the source itself takes the transfer characteristics of its picture stream (the code point of ITU-T H.273, from the codec's colour description or the container) and marks the media record when the clip is placed, by the mapping of H3. The project is then HDR from the first frame (H3), without the server, and the first or second row applies. It never decodes that source, or its intermediate, into an SDR project.
+2. *The client cannot read the transfer.* Only then may it draw the server's SDR playback stream as an SDR source, as the third row does, until the server's report arrives and it marks the record.
+3. *Platform conversion.* A platform conversion of an HDR source to SDR (a decoder or compositor asked for SDR output from PQ or HLG input tone-maps by its own rule) is allowed for one purpose only: a transient preview of a source whose record is not yet marked. The client tells the user that the picture is approximate, and it never uses such a picture for an export. In every other case the conversion is off.
+
+A marked source without a usable intermediate is refused (H16), not shown from the SDR stream and not converted by the platform.
+
+## Signal, scene light and display light
+
+This section adds no rule. It states, for each stage above, which kind of value the stage takes, so that a native client knows which conversions of its platform decoder to turn off and which to apply itself.
+
+- **Signal:** the non-linear values a stream carries, as Y′CbCr codes or as R′G′B′ in [0, 1].
+- **Scene light** exists for HLG only: the linear, normalised result of HLG⁻¹, before the OOTF. Its scale is that of H7: HLG⁻¹(1) is 1 to within 3 × 10⁻⁸ (the constants of H7 are rounded).
+- **Display light:** linear light at the display in cd/m². PQ⁻¹ gives it directly. HLG reaches it only through the OOTF. Working values (H4) are display light divided by W, in BT.709 primaries.
+
+| Stage | Takes | Gives | HLG OOTF |
+| --- | --- | --- | --- |
+| H6, PQ⁻¹ | PQ signal | display light, cd/m², absolute | none: PQ has no OOTF on this page |
+| H7, HLG⁻¹ | HLG signal | scene light, 0 to 1 | not yet applied |
+| H7, OOTF | scene light, BT.2020 triplet | display light, cd/m² | this is it: L_W = 1000, γ = 1.2 |
+| H9 and H11, video | Y′CbCr codes | R′G′B′ signal | none. Chroma is interpolated on codes, before the matrix and before any transfer function |
+| H10 | R′G′B′ signal, BT.2020 | working values | inside step 1: after HLG⁻¹ and before the division by W and the primaries matrix, on BT.2020 components. Applied once, for HLG only |
+| H11, signal raster | 16-bit R′G′B′ signal | working values, by H10 | as H10 |
+| H11, linear raster | display light in its own gamut, 1.0 = W_r cd/m² | working values | none is applied. A supplier that holds HLG scene light applies the OOTF of H7 before it hands the raster over |
+| H11, SDR texels | sRGB-encoded signal, display-referred | working values, by SRGB⁻¹ | none, and no other scene or display adjustment |
+| H12, H13 | working values (display light) | SDR display signal | none |
+| H14, PQ | working values (display light) | PQ signal | none |
+| H14, HLG | working values (display light) | HLG signal | the inverse OOTF at L_W = 1000, applied once before the OETF. The signal is an ordinary HLG signal, and the encoder that receives it adds no OOTF |
+
+So every ingest stage of H10 and H11 takes a **signal**, except the linear raster, which takes **display light**. No stage takes scene light from outside: scene light exists only between HLG⁻¹ and the OOTF inside H10, and between the inverse OOTF and the OETF inside H14.
+
+**Native rule.** A platform decoder may hand a client the frame at any of the three points. Whichever it is, the working values must be those of H10 applied to the signal, and the client enters H10 as follows.
+
+1. **Signal** (codes, or R′G′B′ not yet linearised): apply all of H10, and for planes H9 and the chroma rule of H11 first. Every transfer function, OOTF, tone map and gamut conversion of the platform is off. This is the only entry the `ingest/…` images pin from end to end.
+2. **PQ as display light** (the platform has applied the inverse of PQ): enter H10 at step 2 with the light in cd/m². If the platform normalises its output, undo that first: a value where 1.0 stands for 10 000 cd/m² is multiplied by 10 000, and a value scaled to some reference white is multiplied by that white. The platform must not have limited the light by the source's mastering metadata or by the display.
+3. **HLG as scene light** (the platform has applied HLG⁻¹ but no OOTF): apply the OOTF of H7 at L_W = 1000 to the BT.2020 triplet, then enter H10 at step 2. The scene light must be on the scale of H7, where signal 1.0 gives 1.0 to within 3 × 10⁻⁸; a platform whose scale runs to 12 is divided by 12 first.
+4. **HLG as display light** (the platform has applied an OOTF of its own): this is H10 only if that OOTF is the one of H7, on luminance, with L_W = 1000, γ = 1.2 and zero black. A platform OOTF with another peak, another gamma or a per-channel form is turned off, and the client uses entry 3.
+
+In every entry the OOTF is applied exactly once to HLG and never to PQ, the components stay in BT.2020 until step 3 of H10, and nothing is clamped after step 1. The Android implementation reports that Media3 hands PQ frames as display light and HLG frames as scene light: that is entry 2 for PQ and entry 3 for HLG, so its client applies the OOTF itself for HLG and adds none for PQ.
+
+A platform that hands over R′G′B′ or light has already interpolated the chroma and applied the Y′CbCr matrix by its own rule. The chroma rule of H11 and the clamp of H9 are then the platform's, and the `ingest/video/…` images, which start from planes, do not apply to that path as they stand.
+
+The `ingestLight` stage vectors hold one signal at each boundary: `sceneLight` (HLG only), `displayLight` and `working`. A client that enters at 2 feeds `displayLight` and must reach `working`; a client that enters at 3 feeds `sceneLight`.
 
 ## SDR display of an HDR project
 
@@ -162,19 +225,21 @@ This is the Hermite knee of Report ITU-R BT.2390 on PQ-encoded luminance: light 
 **[H13] SDR display.** This conversion produces what an SDR display shows: the preview canvas, an SDR video export, and an SDR still or signal frame. For a working pixel (r, g, b, α), with the values of H2:
 
 - **SDR project:** each of r, g, b is clamped to [0, 1]. The values are already encoded. The policy is ignored.
-- **HDR project, policy `none`:** each component is clamped to [0, 1], then encoded with SRGB (H5). Light above reference white clips.
+- **HDR project, policy `none`:** each component v becomes 0 if v ≤ 0, 1 if v ≥ 1, and SRGB(v) (H5) otherwise. The two ends are selected, never computed, so they are exact. Light above reference white clips.
 - **HDR project, policy `bt2390`:**
-  1. Y = 0.2126r + 0.7152g + 0.0722b, on the linear working values. If Y ≤ 0, the pixel is converted as under `none`.
+  1. Y = 0.2126r + 0.7152g + 0.0722b, on the linear working values. If Y ≤ 0, the pixel is converted as under `none`, ends included.
   2. L = Y·W. The display peak is T = 2W: one stop of room above reference white. E = EETF(L, P, T).
   3. k = (E / L) / 2. Multiply r, g and b by k.
   4. q = the largest of the three scaled components. If q > 1, divide all three by q.
-  5. Encode each with SRGB, then clamp to [0, 1].
+  5. Encode each with SRGB, then clamp to [0, 1]. This step has no end rule: a scaled component of exactly 1 gives SRGB(1) as computed.
 
   Output alpha is clamp(α, 0, 1), and RGB stays straight.
 
+**Implementation-defined.** SRGB(1) is not 1 when it is computed: 1.055 · 1 − 0.055 is 1 − 2⁻⁵³ in binary64 and 1 − 2⁻²⁴ in binary32. The policy `none` and the Y ≤ 0 case therefore give exactly 1 at and above reference white, while step 5 gives 1 − 2⁻⁵³ for a component that step 4 normalised to 1. "Clamp, then encode" is not the rule of `none`: in binary64 it gives 1 − 2⁻⁵³ where the rule gives 1. The engine's GPU stage, in binary32, does clamp and then encode, and on the canonical backend writes 1 − 2⁻²⁴ there; the image cases allow either, the stage vectors require the selection.
+
 The tone curve is applied to BT.709 luminance, not per channel and not to the largest component, and the pixel's three components share one gain, so chromaticity is kept. Step 4 keeps the chromaticity of a saturated highlight that would otherwise clip in one channel. There is no gamut mapping: a negative component stays negative through steps 3 and 4 and becomes 0 in step 5.
 
-With the defaults (W = 203, P = 1000, T = 406): the knee starts at about 257 cd/m²; reference white is unchanged by the curve, shows at 0.5 linear and encodes to about 0.7354; 812 cd/m² encodes to about 0.9993; the mastering peak and everything above it reach 1.0. When P ≤ 2W the curve only caps at T.
+With the defaults (W = 203, P = 1000, T = 406): the knee starts at about 257 cd/m²; reference white is unchanged by the curve, shows at 0.5 linear and encodes to about 0.7354; 812 cd/m² encodes to about 0.9993; the mastering peak and everything above it reach SRGB(1), one unit in the last place below 1.0. When P ≤ 2W the curve only caps at T.
 
 **Implementation-defined.** The display peak is always twice the reference white; no property of the actual display is read. Reference white therefore shows at half the display's linear range in every HDR project.
 
@@ -214,7 +279,7 @@ Three failures are plain errors, not this class: a rejected raster (H11), a rast
 
 **[H17] Precision.** `goldens/hdr.json` holds two kinds of case, all with expected values produced by the engine.
 
-- **Stage vectors** call the engine's colour functions directly, in binary64: the record resolution (H2), the source rule (H3), raster admission (H11), and each function of H5 to H10 and H12 to H14. A case marked `exact` involves only addition, subtraction, multiplication, division, square roots, comparison and selection; a native implementation in binary64 that follows the order written on this page reproduces it bit for bit. The other cases involve powers, logarithms or exponentials, whose last bits depend on the platform's mathematics library; they pass within max(10⁻¹², 10⁻⁹·|expected|) per number.
+- **Stage vectors** call the engine's colour functions directly, in binary64: the record resolution (H2), the source rule (H3), raster admission (H11), each function of H5 to H10 and H12 to H14, and H10 stopped at each of its boundaries ([Signal, scene light and display light](#signal-scene-light-and-display-light)). A case marked `exact` involves only addition, subtraction, multiplication, division, square roots, comparison and selection, and powers whose base is exactly 0 or 1 (IEEE 754 defines those results as exactly 0 and 1; the PQ end points rely on it); a native implementation in binary64 that follows the order written on this page reproduces it bit for bit. The other cases involve powers, logarithms or exponentials, whose last bits depend on the platform's mathematics library; they pass within max(10⁻¹², 10⁻⁹·|expected|) per number.
 - **Images** push 16 × 12 pictures through the engine's GPU stages, which compute in binary32: the output conversion (H13, H14) for HDR and SDR projects, and the ingest of SDR texels, signal rasters, linear rasters and 10-bit video planes (H11). They are compared with `compareCase` of `README.md`. Their tolerances are measured: the canonical software GPU is compared with a hardware GPU and with a binary64 implementation of this page, and the bound is 1.5 times the largest difference, with a floor of half a 10-bit code value (0.0005) for a PQ or HLG signal, half an 8-bit code value for an SDR display, and 0.004 plus 0.2 % for working values. No case allows outliers.
 
 **Implementation-defined.** Working values are stored as binary16, whose step is 0.0625 between 64 and 128 and 0.125 between 128 and 256. The ingest of PQ light near 10 000 cd/m² differs between the two GPUs by one such step, which is inside the 0.2 % relative bound.
@@ -240,6 +305,7 @@ node --test studio/tools/hdr-goldens.test.mjs
 | `bt709ToBt2020`, `bt2020ToBt709` | H8 |
 | `ycbcrToSignal` | H9 |
 | `signalToWorking` | H10 |
+| `ingestLight` | H10 by boundary: `sceneLight` (HLG⁻¹ of each component; `null` for PQ), `displayLight` (the end of step 1, cd/m², BT.2020) and `working` |
 | `rasterAdmission`, images `ingest/…` | H11 |
 | `eetf` | H12 |
 | `sdrDisplay`, images `output/…/sdr-display…` | H13 |
@@ -255,7 +321,7 @@ These are the places where the engine or its host does something other than the 
 4. **An HDR clip without its intermediate is refused, not tone-mapped.** Until the host has the 10-bit intermediate of a placed HDR original, frames that show that clip do not render (H16).
 5. **The tone map is the engine's own BT.2390 variant** (H12, H13): no black-level step, a display peak fixed at twice reference white, a luminance gain followed by a largest-component normalisation, and no gamut mapping.
 6. **`sdrMonitoring: "none"` clips.** A stored record can switch the SDR display of an HDR project from tone mapping to clipping, although the decision says an SDR display never clips. Nothing writes that value.
-7. **The tone map applies to the composite, never to a source.** An SDR project has no HDR sources to tone-map (H11).
+7. **The tone map applies to the composite, never to a source.** The engine has no rule for an HDR source in an SDR project (H11). A source whose record is not yet marked is shown through the server's SDR stream, with the server's tone map and not BT.2390, until the record is marked.
 
 ## Checks
 
