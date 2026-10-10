@@ -508,6 +508,7 @@ select
   "landmark"."kind",
   "landmark"."latitude",
   "landmark"."longitude",
+  "landmark"."radiusM",
   count(*) as "assetCount",
   min("asset"."localDateTime") as "firstTakenAt",
   max("asset"."localDateTime") as "lastTakenAt",

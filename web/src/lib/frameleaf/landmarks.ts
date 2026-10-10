@@ -71,24 +71,60 @@ export interface LandmarkCard {
   country: string | null;
 }
 
-/** Cards for the visited landmarks, in the order the server lists them: most photographed first. */
+export type Resortable = { id: string; kind: string; latitude: number; longitude: number; radiusM: number };
+
+const metresBetween = (a: Resortable, b: Resortable) => {
+  const toRadians = Math.PI / 180;
+  const x = (b.longitude - a.longitude) * toRadians * Math.cos(((a.latitude + b.latitude) / 2) * toRadians);
+  const y = (b.latitude - a.latitude) * toRadians;
+  return Math.hypot(x, y) * 6_371_000;
+};
+
+/**
+ * The places that sit inside a visited resort, each with that resort's id. The resort stands for them in
+ * a list, and on the map until it is close enough to tell them apart (`SPLIT_ZOOM` in `landmark-pins.ts`).
+ */
+export const resortMembers = (places: Resortable[]): Map<string, string> => {
+  const resorts = places.filter(({ kind }) => kind === 'resort');
+  const members = new Map<string, string>();
+  for (const place of places) {
+    const resort = place.kind === 'resort' ? undefined : resorts.find((r) => metresBetween(r, place) <= r.radiusM);
+    if (resort) {
+      members.set(place.id, resort.id);
+    }
+  }
+  return members;
+};
+
+/** Places for a list: a resort stands for the places inside it, which only the close-up map tells apart. */
+export const withoutResortMembers = <T extends Resortable>(places: T[]): T[] => {
+  const members = resortMembers(places);
+  return places.filter(({ id }) => !members.has(id));
+};
+
+/**
+ * Cards for the visited landmarks, in the order the server lists them: most photographed first. A resort
+ * stands for the places inside it.
+ */
 export const buildLandmarkCards = (landmarks: SearchLandmarkResponseDto[], limit = Infinity): LandmarkCard[] =>
-  landmarks.slice(0, limit).map((landmark) => ({
-    id: landmark.id,
-    label: landmark.name,
-    kind: landmark.kind,
-    icon: landmark.icon,
-    count: landmark.assetCount,
-    href: landmarkHref(landmark.id),
-    coverAssetId: landmark.coverAssetId,
-    firstDay: landmark.firstTakenAt.slice(0, 10),
-    lastDay: landmark.lastTakenAt.slice(0, 10),
-    latitude: landmark.latitude,
-    longitude: landmark.longitude,
-    city: landmark.city,
-    state: landmark.state,
-    country: landmark.country,
-  }));
+  withoutResortMembers(landmarks)
+    .slice(0, limit)
+    .map((landmark) => ({
+      id: landmark.id,
+      label: landmark.name,
+      kind: landmark.kind,
+      icon: landmark.icon,
+      count: landmark.assetCount,
+      href: landmarkHref(landmark.id),
+      coverAssetId: landmark.coverAssetId,
+      firstDay: landmark.firstTakenAt.slice(0, 10),
+      lastDay: landmark.lastTakenAt.slice(0, 10),
+      latitude: landmark.latitude,
+      longitude: landmark.longitude,
+      city: landmark.city,
+      state: landmark.state,
+      country: landmark.country,
+    }));
 
 /**
  * The id of the Places state a landmark is filed under: where most of its photos were taken, so it sits

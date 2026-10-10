@@ -123,6 +123,7 @@ describe(SearchService.name, () => {
       await expect(sut.getVisitedLandmarks(factory.auth({ user }))).resolves.toEqual([
         {
           ...resort,
+          radiusM: 2000,
           assetCount: 2,
           firstTakenAt: '2024-06-03T10:00:00.000Z',
           lastTakenAt: '2024-06-05T10:00:00.000Z',
@@ -133,6 +134,7 @@ describe(SearchService.name, () => {
         },
         {
           ...park,
+          radiusM: 500,
           assetCount: 2,
           firstTakenAt: '2024-06-03T10:00:00.000Z',
           lastTakenAt: '2024-06-05T10:00:00.000Z',
@@ -143,6 +145,7 @@ describe(SearchService.name, () => {
         },
         {
           ...tower,
+          radiusM: 500,
           assetCount: 1,
           firstTakenAt: '2023-01-01T10:00:00.000Z',
           lastTakenAt: '2023-01-01T10:00:00.000Z',

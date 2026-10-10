@@ -29,6 +29,7 @@ vi.mock('svelte-maplibre', async () => ({
   AttributionControl: (await import('@test-data/frameleaf/MapLibreChildStub.svelte')).default,
   GeoJSON: (await import('@test-data/frameleaf/MapLibreChildStub.svelte')).default,
   MarkerLayer: (await import('@test-data/frameleaf/MapLibreChildStub.svelte')).default,
+  Marker: (await import('@test-data/frameleaf/MapLibreChildStub.svelte')).default,
 }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: {
@@ -49,6 +50,7 @@ beforeEach(() => {
   addMessages('dev', en);
   sdkMock.getMapMarkers.mockResolvedValue([]);
   sdkMock.getMapStatistics.mockResolvedValue({ archived: 0, partner: 0, unlocated: 0 });
+  sdkMock.getVisitedLandmarks.mockResolvedValue([]);
 });
 
 describe('MapScreen (FL-193)', () => {
