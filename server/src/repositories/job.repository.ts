@@ -106,6 +106,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetExtractMetadataQueueAll,
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
+  JobName.LandmarkMatchAll,
 ]);
 
 @Injectable()
