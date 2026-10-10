@@ -29,6 +29,16 @@ describe('createLandmarkAlbum', () => {
     expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['a', 'b'] } });
   });
 
+  it("adds a memory's own items, so the album never holds less than the memory", async () => {
+    sdkMock.searchAssets.mockResolvedValue(found(['a', 'b']));
+    sdkMock.createAlbum.mockResolvedValue({ id: 'album' } as never);
+    sdkMock.addAssetsToAlbum.mockResolvedValue([]);
+
+    await createLandmarkAlbum({ ...visit, assetIds: ['b', 'beside'] });
+
+    expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['a', 'b', 'beside'] } });
+  });
+
   it('makes no album when nothing was taken there', async () => {
     sdkMock.searchAssets.mockResolvedValue(found([]));
 

@@ -224,7 +224,13 @@
     const { startDate, endDate } = memory.data;
     const albumName = $memoryHeadline(memory).title;
     try {
-      const albumId = await createLandmarkAlbum({ landmarkId: landmark.id, startDate, endDate, albumName });
+      const albumId = await createLandmarkAlbum({
+        landmarkId: landmark.id,
+        startDate,
+        endDate,
+        albumName,
+        assetIds: memory.assets.map(({ id }) => id),
+      });
       status = albumId ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_search_save_snapshot_empty');
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));

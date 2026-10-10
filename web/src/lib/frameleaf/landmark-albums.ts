@@ -15,14 +15,17 @@ import type { LibraryViewState } from '$lib/frameleaf/library-session';
 
 /**
  * A visit to a landmark as an album (FL-356): every item taken there on a run of local days, which is
- * more than the handful a memory of the visit shows. The days are `yyyy-MM-dd`, both included. Returns
- * the album's id, or null when nothing was taken there on those days.
+ * more than the handful a memory of the visit shows. The days are `yyyy-MM-dd`, both included. `assetIds`
+ * are added whatever their position: a memory's own items, one of which may have been taken just outside
+ * the place, so the album never holds less than the memory it was saved from. Returns the album's id, or
+ * null when there is nothing to put in it.
  */
 export const createLandmarkAlbum = async (visit: {
   landmarkId: string;
   startDate: string;
   endDate: string;
   albumName: string;
+  assetIds?: string[];
 }): Promise<string | null> => {
   const dayAfter = DateTime.fromISO(visit.endDate, { zone: 'utc' }).plus({ days: 1 }).toISODate();
   const state = {
@@ -40,7 +43,8 @@ export const createLandmarkAlbum = async (visit: {
     grouping: 'all',
     view: 'grid',
   };
-  const { ids } = await resolveMatchingIds(state as LibraryViewState, { gateway: { searchAssets, searchSmart } });
+  const taken = await resolveMatchingIds(state as LibraryViewState, { gateway: { searchAssets, searchSmart } });
+  const ids = [...new Set([...taken.ids, ...(visit.assetIds ?? [])])];
   if (ids.length === 0) {
     return null;
   }
