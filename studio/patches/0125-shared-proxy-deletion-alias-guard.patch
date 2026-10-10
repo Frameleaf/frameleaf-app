@@ -1,0 +1,326 @@
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -467,22 +467,16 @@
+     }
+   }
+ 
+-  private async deleteProxySafely(
+-    media: MediaMetadata,
+-    options?: { preserveSharedAliases?: boolean },
+-  ): Promise<void> {
++  private async deleteProxySafely(media: MediaMetadata): Promise<void> {
+     try {
+       const sharedProxyKey = getSharedProxyKey(media)
+-      if (options?.preserveSharedAliases) {
+-        const allMedia = await getAllMediaDB()
+-        const hasSharedAlias = allMedia.some(
+-          (entry) => entry.id !== media.id && getSharedProxyKey(entry) === sharedProxyKey,
+-        )
+-
+-        if (hasSharedAlias) {
+-          proxyService.clearProxyKey(media.id)
+-          return
+-        }
++      const allMedia = await getAllMediaDB()
++      const hasSharedAlias = allMedia.some(
++        (entry) => entry.id !== media.id && getSharedProxyKey(entry) === sharedProxyKey,
++      )
++
++      if (hasSharedAlias) {
++        return
+       }
+ 
+       await proxyService.deleteProxy(media.id, sharedProxyKey)
+@@ -547,7 +541,7 @@
+     await this.clearFilmstripCacheSafely(media.id)
+     await this.clearWaveformCacheSafely(media.id)
+     await deletePreviewAudioConform(media, { clearMetadata: false })
+-    await this.deleteProxySafely(media, { preserveSharedAliases: true })
++    await this.deleteProxySafely(media)
+     await this.deleteOpfsContentIfUnreferenced(media)
+   }
+ 
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -1,6 +1,6 @@
+ // @vitest-environment node
+ 
+-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ 
+ // Preserve import behavior tests after synthetic test-only admission. Production
+@@ -172,12 +172,34 @@
+   isLottieMime: vi.fn(() => false),
+ }))
+ 
+-vi.mock('../utils/proxy-key', () => ({
+-  getSharedProxyKey: vi.fn((media: { id: string }) => `proxy-${media.id}`),
+-}))
++const proxyWorkerMocks = vi.hoisted(() => ({
++  postMessage: vi.fn(),
++  onmessage: null as ((event: MessageEvent) => void) | null,
++}))
++vi.mock('@/shared/utils/managed-worker', () => ({
++  createManagedWorker: vi.fn((options: { setupWorker: (worker: Worker) => () => void }) => {
++    options.setupWorker(proxyWorkerMocks as unknown as Worker)
++    return {
++      getWorker: () => proxyWorkerMocks,
++      peekWorker: () => null,
++      terminate: vi.fn(),
++    }
++  }),
++}))
++vi.mock('@/features/media-library/deps/storage', async (importOriginal) => {
++  const { proxyDir } = await vi.importActual<
++    typeof import('@/infrastructure/storage/workspace-fs/paths')
++  >('@/infrastructure/storage/workspace-fs/paths')
++  return {
++    ...(await importOriginal<typeof import('@/features/media-library/deps/storage')>()),
++    proxyDir,
++    removeWorkspaceCacheEntry: vi.fn(async () => undefined),
++  }
++})
+ 
+ import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
+ import { mediaLibraryService, FileAccessError } from './media-library-service'
++import { getSharedProxyKey } from '../utils/proxy-key'
+ import type { MediaMetadata } from '@/types/storage'
+ import { useMediaPreparationStore } from '../stores/media-preparation-store'
+ 
+@@ -818,6 +840,235 @@
+     })
+   })
+ 
++  describe('FL-105 shared proxy deletion lifetime', () => {
++    let records: Map<string, MediaMetadata>
++    let projects: Map<string, string[]>
++
++    beforeEach(() => {
++      records = new Map()
++      projects = new Map()
++      indexedDbMocks.getMedia.mockImplementation(async (id: string) => records.get(id))
++      indexedDbMocks.getAllMedia.mockImplementation(async () => [...records.values()])
++      indexedDbMocks.deleteMedia.mockImplementation(async (id: string) => {
++        records.delete(id)
++      })
++      indexedDbMocks.getProjectsUsingMedia.mockImplementation(
++        async (id: string) => projects.get(id) ?? [],
++      )
++      indexedDbMocks.removeMediaFromProject.mockImplementation(
++        async (project: string, id: string) => {
++          projects.set(
++            id,
++            (projects.get(id) ?? []).filter((entry) => entry !== project),
++          )
++        },
++      )
++      indexedDbMocks.decrementContentRef.mockResolvedValue(1)
++    })
++
++    afterEach(() => {
++      for (const mock of [
++        indexedDbMocks.getMedia,
++        indexedDbMocks.getAllMedia,
++        indexedDbMocks.deleteMedia,
++        indexedDbMocks.getProjectsUsingMedia,
++        indexedDbMocks.removeMediaFromProject,
++        indexedDbMocks.decrementContentRef,
++        proxyMocks.deleteProxy,
++        proxyMocks.clearProxyKey,
++      ])
++        mock.mockReset()
++    })
++
++    function aliases(contentHash: boolean) {
++      const source = contentHash
++        ? {
++            storageType: 'opfs' as const,
++            contentHash: 'a'.repeat(64),
++            opfsPath: 'content/shared/data',
++          }
++        : { storageType: 'handle' as const, fileLastModified: 1234 }
++      const first = makeMediaMetadata({ ...source, id: 'm1' })
++      const second = makeMediaMetadata({ ...source, id: 'm2' })
++      const unrelated = makeMediaMetadata({ id: 'other', fileName: 'other.mp4', fileSize: 2048 })
++      for (const media of [first, second, unrelated]) records.set(media.id, media)
++      projects.set('m1', ['p1', 'p2'])
++      projects.set('m2', ['p3'])
++      projects.set('other', ['p4'])
++      expect(getSharedProxyKey(first)).toBe(getSharedProxyKey(second))
++      expect(getSharedProxyKey(first)).not.toBe(getSharedProxyKey(unrelated))
++      return { first, second, unrelated }
++    }
++
++    it.each([
++      ['global', true],
++      ['global', false],
++      ['last-project', true],
++      ['last-project', false],
++    ] as const)(
++      'preserves another alias on %s deletion (content hash: %s)',
++      async (path, contentHash) => {
++        const { first, second, unrelated } = aliases(contentHash)
++        const survivorBefore = JSON.stringify([
++          second,
++          unrelated,
++          projects.get('m2'),
++          projects.get('other'),
++        ])
++        if (path === 'global') await mediaLibraryService.deleteMedia('m1')
++        else {
++          projects.set('m1', ['p1'])
++          await mediaLibraryService.deleteMediaFromProject('p1', 'm1')
++        }
++        expect(records.has('m1')).toBe(false)
++        expect(projects.get('m1')).toEqual([])
++        expect(
++          JSON.stringify([
++            records.get('m2'),
++            records.get('other'),
++            projects.get('m2'),
++            projects.get('other'),
++          ]),
++        ).toBe(survivorBefore)
++        expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
++        expect(proxyMocks.clearProxyKey).toHaveBeenCalledWith('m1')
++        expect(proxyMocks.clearProxyKey.mock.calls.every(([id]) => id === 'm1')).toBe(true)
++        expect(indexedDbMocks.deleteTranscript).toHaveBeenCalledExactlyOnceWith('m1')
++        expect(indexedDbMocks.deleteCaptions).toHaveBeenCalledExactlyOnceWith('m1')
++        expect(indexedDbMocks.deleteScenes).toHaveBeenCalledExactlyOnceWith('m1')
++        expect(previewAudioConformMocks.deletePreviewAudioConform).toHaveBeenCalledExactlyOnceWith(
++          first,
++          { clearMetadata: false },
++        )
++        expect(opfsMocks.deleteFile).not.toHaveBeenCalled()
++        expect(indexedDbMocks.deleteContent).not.toHaveBeenCalled()
++        if (contentHash)
++          expect(indexedDbMocks.decrementContentRef).toHaveBeenCalledExactlyOnceWith(
++            first.contentHash,
++          )
++        else expect(indexedDbMocks.decrementContentRef).not.toHaveBeenCalled()
++      },
++    )
++
++    it.each(['global', 'last-project'] as const)(
++      'cleans the last surviving alias on %s deletion',
++      async (path) => {
++        const { first, second, unrelated } = aliases(true)
++        projects.set('m1', ['p1'])
++        projects.set('m2', ['p3'])
++        if (path === 'global') await mediaLibraryService.deleteMedia(first.id)
++        else await mediaLibraryService.deleteMediaFromProject('p1', first.id)
++        expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
++        indexedDbMocks.decrementContentRef.mockResolvedValue(0)
++        if (path === 'global') await mediaLibraryService.deleteMedia(second.id)
++        else await mediaLibraryService.deleteMediaFromProject('p3', second.id)
++        expect(proxyMocks.deleteProxy).toHaveBeenCalledExactlyOnceWith(
++          second.id,
++          getSharedProxyKey(second),
++        )
++        expect(opfsMocks.deleteFile).toHaveBeenCalledExactlyOnceWith(second.opfsPath)
++        expect(indexedDbMocks.deleteContent).toHaveBeenCalledExactlyOnceWith(second.contentHash)
++        expect([...records.values()]).toEqual([unrelated])
++        expect(projects.get('other')).toEqual(['p4'])
++      },
++    )
++
++    it.each(['global', 'last-project'] as const)(
++      'cleans a unique handle proxy on %s deletion without touching original files',
++      async (path) => {
++        const media = makeMediaMetadata({ id: 'unique' })
++        records.set(media.id, media)
++        projects.set(media.id, ['p1'])
++        if (path === 'global') await mediaLibraryService.deleteMedia(media.id)
++        else await mediaLibraryService.deleteMediaFromProject('p1', media.id)
++        expect(proxyMocks.deleteProxy).toHaveBeenCalledExactlyOnceWith(
++          media.id,
++          getSharedProxyKey(media),
++        )
++        expect(records.size).toBe(0)
++        expect(opfsMocks.deleteFile).not.toHaveBeenCalled()
++        expect(indexedDbMocks.decrementContentRef).not.toHaveBeenCalled()
++      },
++    )
++
++    it('keeps all resources while another project still uses the same metadata', async () => {
++      const { first } = aliases(true)
++      await mediaLibraryService.deleteMediaFromProject('p1', 'm1')
++      expect(projects.get('m1')).toEqual(['p2'])
++      expect(records.get('m1')).toEqual(first)
++      expect(indexedDbMocks.deleteMedia).not.toHaveBeenCalled()
++      expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
++      expect(proxyMocks.clearProxyKey).not.toHaveBeenCalled()
++      expect(indexedDbMocks.decrementContentRef).not.toHaveBeenCalled()
++      expect(indexedDbMocks.deleteTranscript).not.toHaveBeenCalled()
++    })
++
++    it('retains missing-media errors without cleanup', async () => {
++      await expect(mediaLibraryService.deleteMedia('missing')).rejects.toThrow(
++        'Media not found: missing',
++      )
++      await expect(mediaLibraryService.deleteMediaFromProject('p1', 'missing')).rejects.toThrow(
++        'Media not found: missing',
++      )
++      expect(indexedDbMocks.removeMediaFromProject).not.toHaveBeenCalled()
++      expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
++      expect(indexedDbMocks.deleteMedia).not.toHaveBeenCalled()
++    })
++
++    it('preserves real pending shared generation when the originating metadata is deleted globally', async () => {
++      const { first, second } = aliases(false)
++      const key = getSharedProxyKey(first)
++      const { proxyService: realProxy } =
++        await vi.importActual<typeof import('./proxy-service')>('./proxy-service')
++      const status = vi.fn()
++      realProxy.onStatusChange(status)
++      proxyMocks.deleteProxy.mockImplementation((id: string, sharedKey: string) =>
++        realProxy.deleteProxy(id, sharedKey),
++      )
++      proxyMocks.clearProxyKey.mockImplementation((id: string) => realProxy.clearProxyKey(id))
++      let finishSource!: (blob: Blob) => void
++      const source = new Promise<Blob>((resolve) => {
++        finishSource = resolve
++      })
++      const loadSource = vi.fn(() => source)
++      realProxy.setProxyKey(second.id, key)
++      realProxy.generateProxy(first.id, loadSource, 1920, 1080, key)
++      try {
++        await vi.waitFor(() => expect(loadSource).toHaveBeenCalledOnce())
++        await mediaLibraryService.deleteMedia(first.id)
++        expect(realProxy.getProxyKey(first.id)).toBeUndefined()
++        expect(realProxy.getProxyKey(second.id)).toBe(key)
++        status.mockClear()
++        // Reattach only after independently proving the surviving mapping was retained.
++        realProxy.clearProxyKey(second.id)
++        realProxy.setProxyKey(second.id, key)
++        expect(status).toHaveBeenCalledWith(second.id, 'generating', 0)
++        expect(proxyMocks.deleteProxy).not.toHaveBeenCalled()
++        finishSource(new Blob(['source'], { type: 'video/mp4' }))
++        await vi.waitFor(() =>
++          expect(proxyWorkerMocks.postMessage).toHaveBeenCalledWith({
++            type: 'generate',
++            mediaId: key,
++            source: expect.any(Blob),
++            sourceWidth: 1920,
++            sourceHeight: 1080,
++          }),
++        )
++        expect(
++          proxyWorkerMocks.postMessage.mock.calls.some(([message]) => message.type === 'cancel'),
++        ).toBe(false)
++      } finally {
++        finishSource(new Blob(['source'], { type: 'video/mp4' }))
++        realProxy.cancelProxy(second.id, key)
++        // Complete the fake worker's cancellation handshake to release the real queue slot.
++        proxyWorkerMocks.onmessage?.({ data: { type: 'cancelled', mediaId: key } } as MessageEvent)
++        realProxy.clearProxyKey(first.id)
++        realProxy.clearProxyKey(second.id)
++        realProxy.onStatusChange(() => undefined)
++      }
++    })
++  })
++
+   describe('deleteMediaFromProject', () => {
+     it('removes association and deletes media when no other projects use it', async () => {
+       const media = makeMediaMetadata({ id: 'm1', storageType: 'handle' })

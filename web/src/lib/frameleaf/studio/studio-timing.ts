@@ -239,7 +239,7 @@ export const outputTimeBase = (
   if (sources.length !== 1) {
     throw new StudioTimingError('Only a single source can pass its timestamps through.');
   }
-  return sourceTimeBase(sources[0]);
+  return sourceTimeBase(sources[0]!);
 };
 
 /** The output tick at which timeline frame `frame` starts, when that instant is on the grid. */

@@ -25,6 +25,9 @@ name: Check OpenAPI
       - scripts/frameleaf-openapi-policy.test.mjs
       - scripts/prepare-openapi-comparison-base.mjs
       - scripts/openapi-comparison-base.test.mjs
+      - scripts/configure-dockerhub-mirror.sh
+      - scripts/dockerhub-mirror.test.mjs
+      - scripts/ci-registry-images.test.mjs
       - .github/workflows/check-openapi.yml
 permissions:
   contents: read
@@ -33,6 +36,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check-openapi:
+    env:
+      OASDIFF_IMAGE: mirror.gcr.io/tufin/oasdiff@sha256:cc59265b995bd19e1e87cf4302ab70b520f730c33ebdf52e3cfa154fe4a3b2fb
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -58,6 +63,9 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
           path: .frameleaf-api-base
           persist-credentials: false
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
       - name: Verify SDK operation compatibility policy
         run: node --test scripts/frameleaf-openapi-policy.test.mjs
       - name: Verify legacy comparison-base equivalence and breaking controls
@@ -69,9 +77,9 @@ jobs:
           .frameleaf-api-base/open-api/immich-openapi-comparison-base.json
       - name: Check for breaking API changes
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved') }}
-        uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93
-        with:
-          base: .frameleaf-api-base/open-api/immich-openapi-comparison-base.json
-          revision: open-api/immich-openapi-specs.json
-          fail-on: ERR
-          review: false
+        run: |-
+          docker run --rm --network none -e OASDIFF_INTERNAL=1 \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace \
+            "$OASDIFF_IMAGE" breaking --format json --fail-on ERR \
+            /workspace/.frameleaf-api-base/open-api/immich-openapi-comparison-base.json \
+            /workspace/open-api/immich-openapi-specs.json
