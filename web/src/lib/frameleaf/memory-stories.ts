@@ -86,6 +86,10 @@ export const eventStoryPlace = (memory: MemoryResponseDto): string | undefined =
   return parts.length > 0 ? parts.join(', ') : undefined;
 };
 
+/** The landmark an event story was a visit to (FL-356), when most of it was taken at one. */
+export const eventStoryLandmark = (memory: MemoryResponseDto) =>
+  isEventStory(memory) ? memory.data.landmark : undefined;
+
 /**
  * Formats an event story's local day range. `yyyy-MM-dd` strings are parsed as plain
  * calendar dates — never as instants — so the day never shifts under the viewer's zone.
@@ -233,8 +237,13 @@ const generatedHeadline = (
   const count = t('frameleaf_memories_item_count', { values: { count: memory.assets.length } });
   if (isEventStory(memory)) {
     const range = formatLocalDateRange(memory.data.startDate, memory.data.endDate, locale);
+    const { landmark, dayCount } = memory.data;
     return {
-      title: eventStoryPlace(memory) ?? range,
+      // FL-356: one day at a landmark reads as the outing it was; a longer stay is named for the place
+      title:
+        landmark && dayCount === 1
+          ? t('frameleaf_memories_landmark_day', { values: { name: landmark.name } })
+          : (eventStoryPlace(memory) ?? range),
       subtitle: [range, t('frameleaf_memories_story_days', { values: { count: memory.data.dayCount } })].join(' · '),
     };
   }
