@@ -1017,6 +1017,8 @@ Sets a clip's playback speed by changing its length. Payload: `clipId`, `speed` 
 
 **Draws:** none.
 
+**Sound and picture of a retimed clip.** A speed change always preserves pitch: the engine time-stretches the clip's sound to the new length, in preview and in export, and the result sounds at the source's pitch. The graph has no field that turns this off. The only pitch control is the clip's own shift (`pitchSemitones` and `pitchCents` of `clip.setAudio`, 13.9), which is applied in the same pass; a client that wants the pitch to rise and fall with the speed writes a shift of 12 × log2(speed) semitones, rounded to cents, within the range of 13.9. Each output frame of a retimed clip shows one decoded source frame: the engine has no frame blending and no optical-flow interpolation, and the graph has no field for either. **Native rule:** a native client plays and exports a retimed clip the same way: pitch preserved, no blended or synthesised frames.
+
 **Implementation-defined.** A speed above 10 is accepted, but loading clamps `speed` to 0.1..10 (2.6), so the result is not in normal form (`clip.setSpeed/above-ten`, marked `outsideNormalForm`). **Native rule:** a native client must refuse a speed above 10.
 
 In and out points are clamped (12.2.7).
