@@ -33,7 +33,7 @@ The shape is mirror-symmetric about x = cx. The top of each lobe is at v = −0.
 See shared section.
 
 ## Edges
-Clip edges decided at pixel centres [T6]; Bézier flattening must keep the outline within 0.25 px of the curve.
+Clip edges decided at pixel centres [T6]. The four cubics are curved outlines: flatten each to chords within 1/16 pixel of the true curve and scan-convert as T6 says. How the canonical backend flattens them is not specifiable; against the goldens the true curve differs in at most 4 pixels of a case (`heartShape/p=0.25`), all on the outline and inside the case's outlier allowance.
 
 ## Alpha
 See shared section.

@@ -1482,7 +1482,7 @@ Every command has fixtures named `<command>/<case>` in `studio/graph-conformance
 - The five consequences of part 2 are the same for all twelve commands and are not repeated. **Linked:** none; only the named clip changes. **Locks:** not checked by any of the twelve. That is implementation-defined, and the native rule of 12.2.2 holds: a native client treats a lock as binding. Each command has a `…/locked-track-is-not-checked` fixture. **Sync lock** and **Overlap:** none; no clip moves. **Transitions:** only `clip.setTransition` writes them, and no repair runs. The keyframe commands read them (13.2.3).
 - The server checks the top-level fields of a payload (7.1). It does not read inside a payload object (`transition`, `value`, `modifier`, `motion`, `kenBurns`, `bezier`, `spring`). A field inside such an object that these rules do not name is ignored or dropped, as each command says.
 - "A number in a..b" includes both ends. "Finite number" rules out every value that is not a JSON number.
-- **Engine arithmetic.** A few answers hold values that the engine computes with floating-point sines, cosines, arctangents, or keyframe interpolation. IEEE 754 fixes the result of `+`, `−`, `×`, `÷` and of rounding, so every other value on this page is reproducible bit for bit. It does not fix those functions, so this protocol does not specify these values. The fixtures mark such a case `"engineArithmetic": true` (section 10). **Native rule:** a native client must not offer an edit of this kind unless it reproduces every marked fixture bit for bit. Otherwise it refuses the edit and leaves it to the web editor. The edits are: `property.bakeModifier` when it writes keyframes (13.6.3), and `clip.setTransformParent` on a clip that is animated or already parented (13.2.7).
+- **Engine arithmetic.** A few answers hold values that the engine computes with floating-point sines, cosines, arctangents, or keyframe interpolation. IEEE 754 fixes the result of `+`, `−`, `×`, `÷` and of rounding, so every other value on this page is reproducible bit for bit. It does not fix those functions, so this protocol does not specify these values. (What keyframe interpolation computes when a frame is drawn is specified separately, in `studio/spec/keyframes.md`, and is bit-exact except where a spring, a velocity handle with a stated speed or a colour is involved; the marked fixtures remain the test for the edits below.) The fixtures mark such a case `"engineArithmetic": true` (section 10). **Native rule:** a native client must not offer an edit of this kind unless it reproduces every marked fixture bit for bit. Otherwise it refuses the edit and leaves it to the web editor. The edits are: `property.bakeModifier` when it writes keyframes (13.6.3), and `clip.setTransformParent` on a clip that is animated or already parented (13.2.7).
 
 ### 13.2 Shared rules
 
@@ -1562,15 +1562,15 @@ When a clip's two regions together are longer than the clip, the engine shrinks 
 { itemId, animationVersion: 2, properties, vectorProperties, separatedVectorProperties, propertyLinks, expressions }
 ```
 
-| Field                       | Contents                                                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `itemId`                    | The clip.                                                                                                                      |
-| `animationVersion`          | `2`.                                                                                                                           |
-| `properties`                | Always present. One **group** `{ property, keyframes }` for each scalar property, in the order the properties were first used. |
-| `vectorProperties`          | Present only when not empty. One group for each vector property.                                                               |
-| `expressions`               | Present only when not empty. `{ type: "expression", targetProperty, source, enabled }` (13.6.1).                               |
-| `propertyLinks`             | Present only when not empty. Links to a property of another clip. No command writes them. Preserve them.                       |
-| `separatedVectorProperties` | Present only when not empty. Vector properties shown as two scalar ones. No command writes it. Preserve it.                    |
+| Field                       | Contents                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `itemId`                    | The clip.                                                                                                                                                                                                                                                                                 |
+| `animationVersion`          | `2`. Rendering does not read it.                                                                                                                                                                                                                                                          |
+| `properties`                | Always present. One **group** `{ property, keyframes }` for each scalar property, in the order the properties were first used.                                                                                                                                                            |
+| `vectorProperties`          | Present only when not empty. One group for each vector property.                                                                                                                                                                                                                          |
+| `expressions`               | Present only when not empty. `{ type: "expression", targetProperty, source, enabled }` (13.6.1).                                                                                                                                                                                          |
+| `propertyLinks`             | Present only when not empty. Links to a property of another clip. No command writes them. Preserve them.                                                                                                                                                                                  |
+| `separatedVectorProperties` | Present only when not empty. Vector properties shown as two scalar ones. No command writes it. Preserve it. It does not change the rendered value: a vector group with a keyframe always supplies both fields, and the scalar groups of those fields are then not read (render spec K15). |
 
 A scalar keyframe is `{ id, frame, value, easing }`, plus `easingConfig` for a bezier or a spring (13.2.6). When the engine writes a graph it keeps **only these five fields** of a scalar keyframe. A vector keyframe is `{ id, frame, value: { x, y }, easing }` plus, optionally, `easingConfig`, `temporalEase` and `spatial` (13.5.3). Its other fields are kept.
 
@@ -1617,14 +1617,18 @@ A keyframe's easing shapes the motion **from that keyframe to the next** one of 
 | `cubic-bezier` | `{ type: "cubic-bezier", bezier: { x1, y1, x2, y2 } }`. `x1` and `x2` are numbers in 0..1. `y1` and `y2` are any finite numbers. |
 | `spring`       | `{ type: "spring", spring: { tension, friction, mass } }`: `tension` in 0..500, `friction` in 0..100, `mass` in 0.1..10.         |
 
+What each easing computes, and the value of a group at a frame, are specified in `studio/spec/keyframes.md` (rules K2 to K12), with engine values in `studio/spec/goldens/keyframes.json`. `ease-in`, `ease-out` and `ease-in-out` are quadratics, not the CSS curves of those names. When `easingConfig` is present its `type` selects the curve; the keyframe's `easing` is then read only for a vector keyframe's `hold`.
+
+A spring with `tension` 0 or `friction` 0 interpolates to a value that is not a number on every frame inside its segment (K6). **Native rule:** never write `tension` 0 or `friction` 0.
+
 The spring defaults are tension `170`, friction `26` and mass `1`. The catalogue's `easing.bezierDefault` (`0.42, 0, 0.58, 1`) is what the web editor offers first; no command writes it by itself.
 
 `easingConfig` is present exactly when a command stored parameters, and its `type` equals the keyframe's `easing`. `keyframe.add` can store `cubic-bezier` or `spring` with no `easingConfig` (13.5.1). **Native rule:** set a bezier or a spring with `keyframe.setEasing`, which always stores the parameters.
 
 A vector keyframe may also carry:
 
-- `temporalEase: { in, out }`: velocity handles. Each is `{ speed, influence }`, with `influence` a percentage in 0.1..100. Either may be absent.
-- `spatial: { inTangent, outTangent, continuous }` (position only): the path's tangents at the keyframe, each `{ x, y }`. `continuous: true` records that the tangents mirror each other.
+- `temporalEase: { in, out }`: velocity handles. Each is `{ speed, influence }`, with `speed` in property units per second and `influence` a percentage in 0.1..100. Either may be absent. The segment from a keyframe to the next is shaped by the earlier keyframe's `out` and the later keyframe's `in`; when either is present they replace that segment's `easing` and `easingConfig` (K11).
+- `spatial: { inTangent, outTangent, continuous }` (position only): the path's tangents at the keyframe, each `{ x, y }`: offsets from the keyframe's value to the Bezier control points of the path into and out of it. Progress along the path is the curve parameter, not arc length, and a `spatial` with zero tangents still changes the motion (K12). `continuous: true` records that the tangents mirror each other; it is an editing constraint and is not read when drawing (K13).
 
 #### 13.2.7 What part 2 commands do with effects and animation
 
@@ -1763,7 +1767,7 @@ Adds a keyframe, or replaces the one on that frame. Payload: `clipId`, `property
 
 - A scalar `property` and its value are not checked (13.2.5).
 - A scalar `easing` is stored as sent: any string is accepted, where a vector property checks it. No fixture records an unknown easing, because its graph breaks the schema. **Native rule:** send one of the seven types, or none.
-- `cubic-bezier` and `spring` are stored without parameters (`keyframe.add/easing-without-parameters`). **Native rule:** add the keyframe, then send `keyframe.setEasing`.
+- `cubic-bezier` and `spring` are stored without parameters (`keyframe.add/easing-without-parameters`); such a keyframe draws with the defaults 0.42, 0, 0.58, 1 and 170, 26, 1 (K3). **Native rule:** add the keyframe, then send `keyframe.setEasing`.
 - A keyframe that a transition later covered cannot be replaced by `keyframe.add` (`…/rejects-replace-inside-transition-region`), though `keyframe.update` can give it a value.
 
 #### 13.5.2 `keyframe.remove`
@@ -2679,7 +2683,8 @@ This protocol says which effects and transitions a graph may name, and with whic
 | `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                 |
 | `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                           |
 | `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                         |
-| `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, and the progress-curve table.                                                                                                           |
+| `studio/spec/keyframes.md`        | Keyframe interpolation: what each easing computes, the value of a keyframed property at a frame, velocity handles and path tangents (13.2.6).                                                                                  |
+| `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, the progress-curve table, the keyframe values and the ASCII glyph atlases the goldens were rendered with.                               |
 
 **Native rules.**
 

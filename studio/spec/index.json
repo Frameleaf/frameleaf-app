@@ -176,8 +176,8 @@
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 20,
-        "pixel": 19,
+        "cases": 24,
+        "pixel": 23,
         "edge": 0,
         "statistical": 0,
         "refused": 1
@@ -320,8 +320,8 @@
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 10,
-        "pixel": 10,
+        "cases": 18,
+        "pixel": 18,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -720,10 +720,10 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 7,
+        "cases": 14,
         "pixel": 0,
         "edge": 0,
-        "statistical": 6,
+        "statistical": 13,
         "refused": 1
       }
     },
@@ -1048,9 +1048,9 @@
       "spec": "transitions/radialWipe.md",
       "route": "canvas",
       "hdr": "refused",
-      "status": "full",
+      "status": "partial",
       "notSpecifiable": [
-        "With an odd height, the centre row's membership at the start and end of each quarter sweep depends on float rounding of the arc endpoints."
+        "The row (H odd) or column (W odd) of pixel centres through the frame centre depends on the sign of a binary32 rounding error in the arc end point, which changes with p (README T6); the page gives a native rule."
       ],
       "goldens": {
         "cases": 5,
@@ -1234,8 +1234,10 @@
       "spec": "transitions/eyeIris.md",
       "route": "canvas",
       "hdr": "refused",
-      "status": "full",
-      "notSpecifiable": [],
+      "status": "partial",
+      "notSpecifiable": [
+        "How the canonical rasteriser flattens the two cubic Bezier curves into chords (README T6); the true curves differ from the goldens in at most 13 pixels of a case, inside the outlier allowance."
+      ],
       "goldens": {
         "cases": 6,
         "pixel": 3,
@@ -1268,8 +1270,10 @@
       "spec": "transitions/ovalIris.md",
       "route": "canvas",
       "hdr": "refused",
-      "status": "full",
-      "notSpecifiable": [],
+      "status": "partial",
+      "notSpecifiable": [
+        "How the canonical rasteriser flattens the ellipse into chords (README T6); the true ellipse differs from the goldens in at most 12 pixels of a case, inside the outlier allowance."
+      ],
       "goldens": {
         "cases": 6,
         "pixel": 5,
@@ -1353,8 +1357,10 @@
       "spec": "transitions/heartShape.md",
       "route": "canvas",
       "hdr": "refused",
-      "status": "full",
-      "notSpecifiable": [],
+      "status": "partial",
+      "notSpecifiable": [
+        "How the canonical rasteriser flattens the four cubic Bezier curves into chords (README T6); the true curves differ from the goldens in at most 4 pixels of a case, inside the outlier allowance."
+      ],
       "goldens": {
         "cases": 5,
         "pixel": 3,
@@ -1605,8 +1611,8 @@
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 7,
-        "pixel": 7,
+        "cases": 9,
+        "pixel": 9,
         "edge": 0,
         "statistical": 0,
         "refused": 0

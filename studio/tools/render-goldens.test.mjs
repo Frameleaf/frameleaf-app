@@ -7,10 +7,14 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { asciiAtlasSpec } from './ascii-reference.mjs';
+import { asciiAtlasSpec, ASCII_ATLASES_FORMAT, decodeAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
+import {
+  CLIP_TRANSITIONS, CURVED_CLIPS, STROKE_TRANSITIONS, renderClipTransition, renderStrokeTransition, outgoingCoverage,
+} from './clip-reference.mjs';
 import {
   validateGoldens, compareCase, decodeBuffer, effectCases, transitionCases, GPU_TRANSITIONS, LINEAR_HDR_EFFECTS,
   toHalfBits, fromHalfBits, encodeBuffer, buildIndex, renderIndexMarkdown, replaceIndexMarkdown,
+  effectSdrInput, transitionInputs, EFFECT_SIZE, TRANSITION_SIZE, EFFECT_EXTRA_CASES, TRANSITION_EXTRA_CASES,
 } from './render-goldens.mjs';
 
 const studio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -167,6 +171,131 @@ test('ASCII coverage keeps 23 platform-atlas cases, five shape goldens and the H
   assert.equal(custom.length, 2);
   assert.notEqual(asciiAtlasSpec(custom[0].params).key, asciiAtlasSpec(custom[1].params).key);
 });
+
+// ---- README T6, from the prose alone (clip-reference.mjs) ----
+const { width: TW, height: TH } = TRANSITION_SIZE;
+const eightBit = (values) => values.map((v) => Math.round(v * 255) / 255);
+const clipInputs = { a: eightBit(transitionInputs().a), b: eightBit(transitionInputs().b) };
+// A pixel differs when any channel is more than the SDR floor of 2/255 from the golden (the
+// canvas rounds premultiplied 8-bit values, so a translucent blend can sit two steps away).
+const differingPixels = (expected, actual) => {
+  let count = 0;
+  for (let k = 0; k < expected.length; k += 4) {
+    if ([0, 1, 2, 3].some((ch) => Math.abs(expected[k + ch] - actual[k + ch]) > 2.01 / 255)) count++;
+  }
+  return count;
+};
+
+test('T6: the fixed-point scan conversion reproduces every straight-edged clip golden exactly', () => {
+  const cases = transitions.cases.filter((c) => CLIP_TRANSITIONS.includes(c.id) && !CURVED_CLIPS.includes(c.id));
+  assert.equal(new Set(cases.map((c) => c.id)).size, 18);
+  assert(cases.length >= 100, 'straight-edged clip cases unexpectedly few');
+  for (const c of cases) {
+    const expected = decodeBuffer(c.output.data, c.output.encoding);
+    const actual = renderClipTransition(c, clipInputs.a, clipInputs.b, TW, TH);
+    // The centre row of radialWipe at p = 0.25 is implementation-defined (README T6): 24 pixels.
+    const allowed = c.name === 'radialWipe/p=0.25' ? 24 : 0;
+    assert.equal(differingPixels(expected, actual), allowed, `${c.name}: pixels that differ from the engine`);
+    assert(compareCase({ ...c, expected }, actual).pass, `${c.name}: outside tolerance`);
+  }
+});
+
+test('T6: the centre row of radialWipe follows the native rule except where the goldens record the engine', () => {
+  for (const p of [0.25, 0.5, 0.75]) {
+    const keep = outgoingCoverage('radialWipe', p, TW, TH);
+    const row = Array.from({ length: TW }, (_, i) => keep[13 * TW + i]);
+    assert.deepEqual(row, Array.from({ length: TW }, (_, i) => (i >= TW / 2 ? 1 : 0)), `p=${p}: right of the centre A, left of it B`);
+  }
+  const golden = transitions.cases.find((c) => c.name === 'radialWipe/p=0.25');
+  const expected = decodeBuffer(golden.output.data, golden.output.encoding);
+  for (let i = TW / 2; i < TW; i++) {
+    const at = (13 * TW + i) * 4;
+    assert.deepEqual(expected.slice(at, at + 3), clipInputs.b.slice(at, at + 3), `engine pixel (${i}, 13) at p=0.25 shows B`);
+  }
+});
+
+test('T6: curved clip outlines, tested as true curves, stay inside the measured pixel counts and the tolerances', () => {
+  const worst = { ovalIris: 0, eyeIris: 0, heartShape: 0 };
+  for (const c of transitions.cases.filter((x) => CURVED_CLIPS.includes(x.id))) {
+    const expected = decodeBuffer(c.output.data, c.output.encoding);
+    const actual = renderClipTransition(c, clipInputs.a, clipInputs.b, TW, TH);
+    worst[c.id] = Math.max(worst[c.id], differingPixels(expected, actual));
+    assert(compareCase({ ...c, expected }, actual).pass, `${c.name}: outside tolerance`);
+  }
+  assert.deepEqual(worst, { ovalIris: 12, eyeIris: 13, heartShape: 4 }, 'the pages state these counts');
+});
+
+test('T6: stroke coverage as area fraction passes every spiralWipe and xWipe golden', () => {
+  const cases = transitions.cases.filter((c) => STROKE_TRANSITIONS.includes(c.id));
+  assert.equal(cases.length, 10);
+  for (const c of cases) {
+    const expected = decodeBuffer(c.output.data, c.output.encoding);
+    assert(compareCase({ ...c, expected }, renderStrokeTransition(c, clipInputs.a, clipInputs.b, TW, TH)).pass, `${c.name}: outside tolerance`);
+  }
+});
+
+test('the published ASCII atlases are the ones the font-atlas goldens were rendered with', async () => {
+  const published = await readJson('spec/goldens/ascii-atlases.json');
+  assert.equal(published.format, ASCII_ATLASES_FORMAT);
+  const cases = effects.cases.filter((c) => c.id === 'gpu-ascii' && c.outcome === 'rendered' && asciiAtlasSpec(c.params));
+  assert.equal(cases.length, 23);
+  assert.equal(published.atlases.length, new Set(cases.map((c) => asciiAtlasSpec(c.params).key)).size);
+  assert.equal(published.atlases.reduce((n, entry) => n + entry.cases.length, 0), 23);
+  for (const c of cases) {
+    const spec = asciiAtlasSpec(c.params);
+    const entry = published.atlases.find((x) => x.key === spec.key);
+    assert(entry, `${c.name}: no published atlas for ${spec.key}`);
+    for (const field of ['ramp', 'width', 'height']) assert.equal(entry[field], spec[field], `${spec.key}: ${field}`);
+    assert.equal(entry.cssFont, spec.font);
+    assert(entry.cases.includes(c.name));
+    const guarded = [];
+    const reference = renderAsciiReference(effectSdrInput(), EFFECT_SIZE.width, EFFECT_SIZE.height, c.params, decodeAsciiAtlas(entry), guarded);
+    const expected = decodeBuffer(c.output.data, c.output.encoding);
+    // The stored engine frame must be what the equations give for the published strip.
+    assert(compareCase({ ...c, expected }, settleAsciiGuard(reference, expected, guarded).expected).pass, `${c.name}: the published atlas does not give the golden`);
+  }
+});
+
+test('extra cases: absent and non-finite keys, the block glitch that glitches, the radial blur tap count', () => {
+  const byName = (name) => effects.cases.filter((c) => c.name === name);
+  const pixels = (c) => decodeBuffer(c.output.data, c.output.encoding);
+  const same = (x, y) => compareCase({ ...x, expected: pixels(x) }, pixels(y)).pass;
+  const one = (name) => { const found = byName(name); assert.equal(found.length, 1, name); return found[0]; };
+  // Curves: four keys present but not finite draw the default two-point curve, the identity.
+  const notFinite = one('gpu-curves/sdr/master-keys-not-finite');
+  assert.equal(notFinite.params.masterShadowX, null);
+  assert(same(one('gpu-curves/sdr/default'), notFinite));
+  assert(!same(one('gpu-curves/sdr/default'), one('gpu-curves/sdr/master-one-finite-key')));
+  const legacy = one('gpu-curves/sdr/master-keys-absent-legacy');
+  assert(!('masterShadowX' in legacy.params) && legacy.params.shadows === 40);
+  assert(!same(one('gpu-curves/sdr/default'), legacy), 'legacy sliders must be read when the four keys are absent');
+  // Motion blur: 360 with any other key, 180 for an empty object or a present non-finite value.
+  for (const domain of ['sdr', 'hdr']) {
+    const at = (name) => one(`gpu-motion-blur/${domain}/${name}`);
+    assert.deepEqual(at('empty-parameters').params, {});
+    assert.deepEqual(at('only-an-undeclared-key').params, { note: 1 });
+    assert(same(at('default'), at('empty-parameters')), `${domain}: an empty object draws the 180 degree default`);
+    assert(same(at('default'), at('shutterAngle-not-finite')), `${domain}: a present non-finite shutter is the default`);
+    assert(same(at('shutterAngle-absent'), at('only-an-undeclared-key')), `${domain}: an undeclared key counts as another key`);
+    assert(!same(at('default'), at('shutterAngle-absent')), `${domain}: an absent shutter with other keys is 360`);
+  }
+  // Block glitch: the extra cases change the picture, and the wrapped step repeats the pattern.
+  const input = eightBit(effectSdrInput());
+  const glitched = effects.cases.filter((c) => c.id === 'gpu-block-glitch' && c.params.blockSize === 8);
+  assert.equal(glitched.length, EFFECT_EXTRA_CASES['gpu-block-glitch'].length - 1);
+  for (const c of glitched) assert(differingPixels(input, pixels(c)) >= 24, `${c.name}: the glitch must be visible`);
+  // Step 70 wraps to step 6: the frame at 8.75 s is the frame of the same block at 0.75 s.
+  assert.deepEqual(one('gpu-block-glitch/sdr/coverage=1@t=8.75').output, one('gpu-block-glitch/sdr/coverage=0.65').output);
+  // Radial blur: the hidden tap count changes the picture.
+  assert.equal(TRANSITION_EXTRA_CASES.radialBlur.length, 2);
+  const blur = (name) => transitions.cases.find((c) => c.name === name);
+  const twelve = blur('radialBlur/p=0.5/blurStrength=3');
+  const five = blur('radialBlur/p=0.5/blurStrength=3,samples=5');
+  assert(!compareCase({ ...twelve, expected: pixels(twelve) }, pixels(five)).pass, 'five taps must not pass as twelve');
+});
+
+// The keyframe page and its goldens (studio/spec/keyframes.md) are checked with this file.
+await import('./keyframe-goldens.test.mjs');
 
 // The HDR and colour-management page (studio/spec/hdr.md) has its own engine-free checks.
 import './hdr-goldens.test.mjs';

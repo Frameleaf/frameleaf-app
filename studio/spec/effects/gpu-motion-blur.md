@@ -20,7 +20,7 @@ Smears the frame along a straight line through each pixel, centred on the pixel,
 | shutterAngle | number | 0..360 (step 1, animatable) | 180 | degrees | exposure fraction |
 
 Mapping (after [C9]):
-- Shutter default rule (pinned, legacy compatibility): if `shutterAngle` is absent from the instance, it is taken as **360** when the instance's parameter object contains at least one other key, and **180** only when the parameter object is completely empty. All other absent parameters take their catalogue default. A present value is used as sanitised.
+- Shutter default rule (pinned, legacy compatibility): if `shutterAngle` is **absent** from the stored parameter object, it is taken as **360** when the object has at least one key of any name, and **180** only when the object has no key at all. "Another key" is any own key, whatever its value: a declared parameter (`amount`, `angle`, `samples`), or a key the catalogue does not declare for this effect, which sanitising passes through [C9]. Motion blur is not temporal, so the engine adds no clock key to the object [C8]: an object stored as `{}` stays empty and draws at 180. All other absent parameters take their catalogue default. A `shutterAngle` that is present is used as sanitised: a finite number is clamped to 0..360, and a value that is not a finite number (`null`, a string) is **180**, the catalogue default, not 360. Goldens: `shutterAngle-absent` (360), `only-an-undeclared-key` (360), `empty-parameters` (180), `shutterAngle-not-finite` (180), each in SDR and HDR.
 - exposure e = clamp(shutterAngle / 360, 0, 1).
 - half-length L = min(max(amount, 0) · e, 0.2). The cap 0.2 is a fixed constant (normalised units).
 - N = trunc(clamp(samples, 4, 32)).
