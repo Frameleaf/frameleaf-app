@@ -238,7 +238,8 @@ it.each(['bound-missing-run', 'bound-missing-marker', 'unbound-markerless'] as c
       db,
       {} as never,
       {} as never,
-      {} as never,
+      // starting setup records each queue's failed count as its baseline
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
       { hasAdmin: vi.fn().mockResolvedValue(false) } as never,
       {} as never,
       {} as never,
