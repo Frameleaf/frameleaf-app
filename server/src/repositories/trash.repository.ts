@@ -292,7 +292,7 @@ export class TrashRepository {
             .execute();
         const refreshed = await associatedSeeds(tx, userId, selected);
         requireEditFamilyCoverage(tx, refreshed, refreshed.items.length > 0);
-        const live = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
+        const live = auth.session && !auth.system ? await currentAuth(tx, userId, auth.session.id, false) : auth;
         if (!live) throw new ForbiddenException('trash_owner_session_required');
         const freshOptions = { lockedOwnerId: getLockedOwnerId(live), privacy: getHiddenContentQueryOptions(live) };
         const eligible = await this.scope(tx, userId, source, freshOptions)
@@ -349,7 +349,7 @@ export class TrashRepository {
             stacks: snapshots,
           });
           // A stream counter wait must not preserve expired elevation or stale privacy at COMMIT.
-          const finalAuth = auth.session ? await currentAuth(tx, userId, auth.session.id, false) : auth;
+          const finalAuth = auth.session && !auth.system ? await currentAuth(tx, userId, auth.session.id, false) : auth;
           if (!finalAuth) throw new ForbiddenException('trash_owner_session_required');
           const safe = await this.scope(tx, userId, target, {
             lockedOwnerId: getLockedOwnerId(finalAuth),

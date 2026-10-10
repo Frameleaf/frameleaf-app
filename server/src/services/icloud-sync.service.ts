@@ -313,7 +313,8 @@ export class ICloudSyncService {
 
   async update(auth: AuthDto, id: string, dto: ICloudConnectionUpdateDto): Promise<ICloudConnectionResponseDto> {
     const connection = await this.owned(auth, id);
-    const config = dto.config ? { ...connection.config, ...dto.config } : undefined;
+    const merged = dto.config ? { ...connection.config, ...dto.config } : undefined;
+    const config = merged && canonicalJson(merged) !== canonicalJson(connection.config) ? merged : undefined;
     if (config) {
       if (config.includeHidden) {
         requireElevatedPermission(auth);
@@ -1025,6 +1026,10 @@ export class ICloudSyncService {
     });
   }
 
+  private async finishResource(resource: ICloudResource, status: string, error: string | null = null) {
+    await this.repository.finish(resource, status, error, (current) => this.staging.cleanup(current));
+  }
+
   private async transfer(connection: ICloudConnection, resource: ICloudResource, claim: Claim): Promise<void> {
     try {
       if (resource.status !== 'committed') {
@@ -1036,7 +1041,7 @@ export class ICloudSyncService {
         };
         const reused = await this.recovery.verifyMapped(authority);
         if (reused && reused.outcome !== 'reused') {
-          await this.repository.finish(resource, reused.outcome, reused.reason ?? null);
+          await this.finishResource(resource, reused.outcome, reused.reason ?? null);
           return;
         }
         if (!reused) {
@@ -1060,14 +1065,14 @@ export class ICloudSyncService {
             resourceLeaseToken: resource.leaseToken!,
           });
           if (adopted === 'retry') {
-            await this.repository.finish(resource, 'retry', 'identity_adoption_unavailable');
+            await this.finishResource(resource, 'retry', 'identity_adoption_unavailable');
             return;
           }
           if (adopted === 'miss') {
             const path = await this.staging.download(connection, resource);
             const type = resource.source.type;
             if (type !== AssetType.Image && type !== AssetType.Video) {
-              await this.repository.finish(resource, 'unsupported', 'media_type_unsupported');
+              await this.finishResource(resource, 'unsupported', 'media_type_unsupported');
               return;
             }
             const result = await this.recovery.reconcile({
@@ -1081,7 +1086,7 @@ export class ICloudSyncService {
                 typeof resource.source.fileCreatedAt === 'string' ? new Date(resource.source.fileCreatedAt) : undefined,
             });
             if (!['imported', 'reused', 'repaired-missing', 'repaired-corrupt'].includes(result.outcome)) {
-              await this.repository.finish(resource, result.outcome, result.reason ?? null);
+              await this.finishResource(resource, result.outcome, result.reason ?? null);
               return;
             }
           }
@@ -1124,7 +1129,7 @@ export class ICloudSyncService {
             ? error.code
             : 'icloud_transfer_failed');
       const current = await this.repository.resource(resource.id);
-      await this.repository.finish(
+      await this.finishResource(
         resource,
         current?.status === 'committed' ? 'committed' : editReason ? 'needs-review' : 'retry',
         reason,

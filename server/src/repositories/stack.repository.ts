@@ -148,7 +148,7 @@ export class StackRepository {
           if (!sequenced) return;
           if (!auth || auth.sharedLink || auth.user.id !== ownerId || !auth.session)
             throw new ForbiddenException('edit_owner_session_required');
-          const live = await currentAuth(tx, ownerId, auth.session.id, false);
+          const live = auth.system ? auth : await currentAuth(tx, ownerId, auth.session.id, false);
           if (!live) throw new ForbiddenException('edit_owner_session_required');
           const safe = await tx
             .selectFrom('asset')

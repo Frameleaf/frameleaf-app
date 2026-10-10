@@ -170,7 +170,7 @@ export class BulkOperationService {
   private active?: Promise<void>;
   private stopping = false;
   private readonly workerId = `bulk-${randomUUID()}`;
-  /** Stands in for a session on the worker's auth; nothing on these paths reads it back. */
+  /** Internal worker session carries elevation; system authority skips persisted-session lookup. */
   private readonly sessionId = randomUUID();
 
   constructor(
@@ -553,6 +553,7 @@ export class BulkOperationService {
         quotaUsageInBytes: user.quotaUsageInBytes,
         quotaSizeInBytes: user.quotaSizeInBytes,
       },
+      system: true,
       session: { id: this.sessionId, hasElevatedPermission: true },
     };
   }

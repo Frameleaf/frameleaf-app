@@ -152,7 +152,10 @@ export class PetService {
 
   async getObservations(auth: AuthDto, id: string): Promise<PetObservationResponseDto[]> {
     await this.findOrFail(auth, id);
-    const observations = await this.petRepository.getObservations(auth.user.id, id, getLockedVisibilityOptions(auth));
+    const observations = await this.petRepository.getObservations(auth.user.id, id, {
+      ...getLockedVisibilityOptions(auth),
+      ...getHiddenContentQueryOptions(auth),
+    });
     return observations.map((observation) => mapPetObservation(observation));
   }
 
@@ -379,7 +382,10 @@ export class PetService {
       throw new NotFoundException('Pet not found');
     }
 
-    const pet = await this.petRepository.getById(auth.user.id, id, getLockedVisibilityOptions(auth));
+    const pet = await this.petRepository.getById(auth.user.id, id, {
+      ...getLockedVisibilityOptions(auth),
+      ...getHiddenContentQueryOptions(auth),
+    });
     if (!pet) {
       throw new NotFoundException('Pet not found');
     }

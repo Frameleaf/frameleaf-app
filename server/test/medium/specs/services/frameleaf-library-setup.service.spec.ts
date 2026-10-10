@@ -330,7 +330,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     otherSession = randomUUID();
   const auth = { user: { id: randomUUID() }, session: { id: session } } as AuthDto;
   const other = { user: { id: randomUUID() }, session: { id: otherSession } } as AuthDto;
-  const counts = { active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 };
+  const counts = { active: 0, waiting: 0, delayed: 0, paused: 0, failed: 3 };
   let acknowledged = false;
   let sidecarWaiting = 0;
   const make = () =>
@@ -367,6 +367,10 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
       value->>'origin' AS origin FROM system_metadata WHERE key=${key}`.execute(db);
     expect(persisted.rows).toEqual([{ type: 'object', origin: 'new_library' }]);
     expect((await first.status(auth)).canFinish).toBe(false);
+    counts.failed = 4;
+    expect((await first.status(auth)).phase).toBe('needs-attention');
+    await first.begin(true);
+    expect((await first.status(auth)).phase).toBe('verifying');
     await sql`UPDATE system_metadata SET value=jsonb_set(value, '{quietSince}', to_jsonb(${Date.now() - 20_000}::bigint)) WHERE key=${key}`.execute(
       db,
     );

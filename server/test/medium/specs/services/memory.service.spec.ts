@@ -486,6 +486,17 @@ describe(MemoryService.name, () => {
   });
 
   describe('memories holding hidden items (FL-195 follow-up)', () => {
+    it('counts only memories containing an item search can return', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+      await expect(sut.search(auth, {})).resolves.toEqual([]);
+      await expect(sut.statistics(auth, {})).resolves.toEqual({ total: 0 });
+    });
+
     const withPreview = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string) => {
       await Promise.all([
         ctx.newExif({ assetId, make: 'Canon' }),
