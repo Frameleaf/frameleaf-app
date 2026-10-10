@@ -5983,6 +5983,7 @@
   "frameleaf_jobs_name_integrity_untracked_files": "Check for untracked files",
   "frameleaf_jobs_name_integrity_untracked_files_queue_all": "Find untracked files",
   "frameleaf_jobs_name_integrity_untracked_refresh": "Recheck untracked-file findings",
+  "frameleaf_jobs_name_landmark_match_all": "Match photos to landmarks",
   "frameleaf_jobs_name_library_delete": "Remove a library",
   "frameleaf_jobs_name_library_delete_check": "Find libraries due for removal",
   "frameleaf_jobs_name_library_remove_asset": "Remove an item from a library",
