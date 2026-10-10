@@ -12,6 +12,8 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 | --- | --- |
 | `effects/<id>.md` | One page per effect of the parameter catalogue (54). |
 | `transitions/<id>.md` | One page per transition of the parameter catalogue (44). |
+| `hdr.md` | HDR and colour management: the `metadata.colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals (rules H1 to H17). |
+| `goldens/hdr.json` | Its goldens: stage vectors and small images from the real engine; `../tools/hdr-goldens.{mjs,browser.mjs,test.mjs}` define, generate and check them. |
 | `index.json` | Machine-readable index: every id, its page, `full` or `partial`, what is not specifiable, its route and its golden counts. |
 | `goldens/effects.json` | Effect goldens: inputs, cases and outputs rendered by the real engine, with tolerances. |
 | `goldens/transitions.json` | Transition goldens, plus the progress-curve table of T1. |

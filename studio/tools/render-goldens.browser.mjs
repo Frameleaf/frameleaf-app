@@ -22,6 +22,7 @@ import {
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
   encodeBuffer, decodeBuffer, roundHalf, sha256, deriveTolerance, compareCase, validateGoldens,
 } from './render-goldens.mjs';
+import { runHdrGoldens } from './hdr-goldens.browser.mjs';
 
 const studio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(studio, 'engine/package.json'));
@@ -282,6 +283,7 @@ if (!write) {
   assert.equal(failures, 0, `${failures} golden cases drifted`);
   console.log('render goldens hold');
   await runKeyframeGoldens({ write: false, origin });
+  await runHdrGoldens({ write: false }); // studio/spec/hdr.md
   process.exit(0);
 }
 
@@ -376,3 +378,4 @@ await writeFile(path.join(studio, 'spec/goldens/ascii-atlases.json'), `${JSON.st
 }, null, 2)}\n`);
 await runKeyframeGoldens({ write: true, origin });
 console.log('wrote studio/spec/goldens/effects.json, transitions.json, ascii-atlases.json, keyframes.json, index.json and the README index');
+await runHdrGoldens({ write: true });
