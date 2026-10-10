@@ -15,6 +15,7 @@ import {
   up as upLibrarySources,
 } from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 it('retains downstream stages published before a late shared membership is copied', async () => {
@@ -1140,7 +1141,7 @@ describe('durable selected-job descendant lineage', () => {
     expect((await sql`select id from job_selection_lineage`.execute(db)).rows).toEqual([]);
   });
 
-  it('copies 500000 retained descendants in bounded pages with near-tail progress and responsive control work', async () => {
+  scaleIt('copies %i retained descendants in bounded pages with responsive control work', 0.24, async () => {
     const f = await lateShare();
     const controlDb = await controlConnection();
     const control = new SqlQueueStore(controlDb);
@@ -1152,16 +1153,16 @@ describe('durable selected-job descendant lineage', () => {
       } = await sql<{ id: string }>`select id from job_selection where "runId" = ${f.runs[0]}::uuid`.execute(db);
       // Seed retained outcomes, not media executions. Each actual copy below uses the production
       // protocol and the unchanged 5s statement/3s lock budget on a separate two-connection client.
-      for (let offset = 0; offset < 500_000; offset += 10_000) {
+      for (let offset = 0; offset < SCALE_ITEMS; offset += 5000) {
         await sql`with retained as (
           insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
           select ${f.runs[0]}::uuid, 'history-' || lpad(n::text, 6, '0'), 'z', 'child', ${f.queue}, '{}'::jsonb, 'completed'
-          from generate_series(${offset + 1}::int, ${offset + 10_000}::int) n returning "runId", "itemKey", stage
+          from generate_series(${offset + 1}::int, ${offset + 5000}::int) n returning "runId", "itemKey", stage
         ) insert into job_selection_lineage("selectionId", "runId", "itemKey", stage)
           select ${selection.id}::uuid, "runId", "itemKey", stage from retained`.execute(controlDb);
       }
       // One source now belongs to a completed replacement; its old entitlement is cancelled.
-      await sql`update job_selection_lineage set superseded = true where id = 500000`.execute(controlDb);
+      await sql`update job_selection_lineage set superseded = true where id = ${SCALE_ITEMS}`.execute(controlDb);
       await sql`analyze job_selection_lineage`.execute(db);
       await sql`analyze job_run_item`.execute(db);
       type Plan = {
@@ -1208,13 +1209,17 @@ describe('durable selected-job descendant lineage', () => {
         plans[0]['QUERY PLAN'][0].Plan,
       );
       expect(JSON.stringify(plans)).toContain('Index Scan');
-      const { rows: firstPlans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
+      const { rows: firstPlans } = await sql<{
+        'QUERY PLAN': [{ Plan: Plan }];
+      }>`explain (analyze, buffers, format json)
         ${selectionLineageSource(selection.id, '0')}`.execute(controlDb);
       const { descendantRows: firstRows, selectionRows: firstSelectionRows } = assertBoundedPlan(
         firstPlans[0]['QUERY PLAN'][0].Plan,
       );
-      const { rows: emptyPlans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
-        ${selectionLineageSource(selection.id, '500000')}`.execute(controlDb);
+      const { rows: emptyPlans } = await sql<{
+        'QUERY PLAN': [{ Plan: Plan }];
+      }>`explain (analyze, buffers, format json)
+        ${selectionLineageSource(selection.id, String(SCALE_ITEMS))}`.execute(controlDb);
       const { descendantRows: emptyTailRows, selectionRows: emptyTailSelectionRows } = assertBoundedPlan(
         emptyPlans[0]['QUERY PLAN'][0].Plan,
       );
@@ -1240,7 +1245,7 @@ describe('durable selected-job descendant lineage', () => {
         maxControlMs = Math.max(maxControlMs, performance.now() - probeStarted);
         expect(maxControlMs).toBeLessThan(1000);
       };
-      for (let visit = 0; visit < 2002; visit++) {
+      for (let visit = 0; visit < SCALE_ITEMS / 250 + 2; visit++) {
         const pageStarted = performance.now();
         const [copied] = await Promise.all([
           shareSelectionPage(controlDb, { producerId: f.replay.id }),
@@ -1265,8 +1270,8 @@ describe('durable selected-job descendant lineage', () => {
         latestCursor = cursor.after;
         if (cursor.complete) break;
       }
-      expect(pages).toBe(2001);
-      expect(latestCursor).toBe(500_000);
+      expect(pages).toBe(SCALE_ITEMS / 250 + 1);
+      expect(latestCursor).toBe(SCALE_ITEMS);
       const {
         rows: [after],
       } = await sql<{ count: number }>`select count(*)::int count from job where queue = ${f.queue}`.execute(db);
@@ -1277,11 +1282,13 @@ describe('durable selected-job descendant lineage', () => {
             db,
           )
         ).rows,
-      ).toEqual([{ count: 500_000 }]);
+      ).toEqual([{ count: SCALE_ITEMS }]);
       expect(
         (
           await sql`select state, "jobId", selection from job_run_item
-        where "runId" = ${f.runs[1]}::uuid and "itemKey" = 'history-500000' and stage = 'child'`.execute(controlDb)
+        where "runId" = ${f.runs[1]}::uuid and "itemKey" = ${`history-${String(SCALE_ITEMS).padStart(6, '0')}`} and stage = 'child'`.execute(
+            controlDb,
+          )
         ).rows,
       ).toEqual([{ state: 'cancelled', jobId: null, selection: {} }]);
       // This new origin is lexically before every retained child, after the durable cursor reached its tail.
@@ -1305,10 +1312,10 @@ describe('durable selected-job descendant lineage', () => {
       ).toEqual([{ itemKey: '000-future', state: 'pending' }]);
       expect((await sql`select id from job where name = 'future'`.execute(db)).rows).toHaveLength(1);
       process.stdout.write(
-        `${JSON.stringify({ retainedDescendants: 500_000, pages, maxCopied, maxPageMs, maxControlMs, firstRows, tailRows, emptyTailRows, firstSelectionRows, tailSelectionRows, emptyTailSelectionRows, copyMs: performance.now() - started, statementTimeoutMs: 5000, lockTimeoutMs: 3000, mediaExecutions: 0 })}\n`,
+        `${JSON.stringify({ retainedDescendants: SCALE_ITEMS, pages, maxCopied, maxPageMs, maxControlMs, firstRows, tailRows, emptyTailRows, firstSelectionRows, tailSelectionRows, emptyTailSelectionRows, copyMs: performance.now() - started, statementTimeoutMs: 5000, lockTimeoutMs: 3000, mediaExecutions: 0 })}\n`,
       );
     } finally {
       await controlDb.destroy();
     }
-  }, 120_000);
+  });
 });

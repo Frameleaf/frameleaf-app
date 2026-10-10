@@ -13,6 +13,7 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { PostgresImportFixture } from 'test/medium/specs/immich-import/postgres-transport.fixture.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -544,8 +545,8 @@ describe('offline import derived-work durable ownership', () => {
     },
   );
 
-  it('transfers 500k roots and 2M stage memberships with bounded pages, then caps each queue at 1000', async () => {
-    await seed(500_000);
+  scaleIt('transfers %i roots and four stages each in bounded pages, then caps each queue at 1000', 0.6, async () => {
+    await seed(SCALE_ITEMS);
     const observed = observe();
     const started = performance.now();
     await repositoryFor(db.withPlugin(observed.plugin)).dispatchImportedWork();
@@ -553,9 +554,9 @@ describe('offline import derived-work durable ownership', () => {
     expect(await counts()).toEqual({
       runs: 1,
       stages: 5,
-      roots: 500_000,
-      memberships: 2_000_000,
-      acknowledged: 2_000_000,
+      roots: SCALE_ITEMS,
+      memberships: 4 * SCALE_ITEMS,
+      acknowledged: 4 * SCALE_ITEMS,
       pending: 0,
       jobs: 0,
     });
@@ -579,9 +580,9 @@ describe('offline import derived-work durable ownership', () => {
     expect(await store.feedManifest(queue)).toBe(QUEUE_BATCH);
     expect(await store.feedManifest(queue)).toBe(0);
     process.stdout.write(
-      `Import manifest: roots=500000 stages=2000000 transferMs=${Math.round(transferredMs)} maxRows=${observed.maximumRows()} queueCap=${QUEUE_HIGH_WATER}\n`,
+      `Import manifest: roots=${SCALE_ITEMS} stages=${4 * SCALE_ITEMS} transferMs=${Math.round(transferredMs)} maxRows=${observed.maximumRows()} queueCap=${QUEUE_HIGH_WATER}\n`,
     );
-  }, 300_000);
+  });
 });
 
 it.each(['independent-copy', 'manager-in-place'] as const)(
