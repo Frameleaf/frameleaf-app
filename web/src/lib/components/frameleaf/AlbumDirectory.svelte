@@ -1298,8 +1298,9 @@
     scale: 1.02;
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .albums {
-      padding: 14px 16px 64px;
+      padding: 14px var(--fl-space-2) 64px;
     }
     .head {
       flex-direction: column;

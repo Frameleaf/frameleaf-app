@@ -845,8 +845,9 @@
     }
   }
   @media (max-width: 600px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .explore-library {
-      padding: 22px 16px 30px;
+      padding: 22px var(--fl-space-2) 30px;
     }
     .el-people {
       gap: 13px;

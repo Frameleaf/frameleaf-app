@@ -815,8 +815,9 @@
     border: 0;
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .sl-screen {
-      padding: 18px 16px 32px;
+      padding: 18px var(--fl-space-2) 32px;
     }
     .sl-head {
       flex-direction: column;
@@ -832,10 +833,16 @@
       width: 100%;
       overflow-x: auto;
     }
+    /*
+     * Each tab keeps its label on one line and shares the spare width, so all three fit from 360px
+     * up; narrower than that the row scrolls.
+     */
     .sl-tab {
-      flex: 1;
+      flex: 1 0 auto;
       justify-content: center;
       min-height: 40px;
+      padding-inline: var(--fl-space-2);
+      white-space: nowrap;
     }
   }
 </style>

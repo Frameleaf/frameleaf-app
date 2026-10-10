@@ -7,7 +7,7 @@
    * "Find a tag" looks through every tag, nested ones included, and shows the matches as one flat
    * set that says where each sits. Cards or List and the order are remembered on this device, like
    * the Albums page's view. Creating, renaming, recolouring and deleting go through `TagDialog`;
-   * moving a tag and tagging photos are on the tag's own page.
+   * moving or merging a tag and tagging photos are on the tag's own page.
    *
    * Counts and covers come from `GET /tags/statistics`: Timeline items only, and a tag hidden while
    * the session is locked is not in the list at all.
@@ -424,8 +424,9 @@
     color: var(--fl-danger);
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .tags {
-      padding: 14px 16px 64px;
+      padding: 14px var(--fl-space-2) 64px;
     }
     .head {
       flex-direction: column;

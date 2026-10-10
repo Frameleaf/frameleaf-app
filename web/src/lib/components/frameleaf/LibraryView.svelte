@@ -1917,8 +1917,16 @@
     flex: 1 1 auto;
     min-width: 0;
   }
+  /*
+   * Under a page's own header (an album, a person, a tag) the tabs take a row of their own and end
+   * on the photos' edge, as the prototype draws them. Beside a title, or alone, they stay where they are.
+   */
+  .fl-library-header:not(.has-title) > .fl-library-header-content:has(> :global(*)) {
+    flex-basis: 100%;
+  }
   .fl-library-header > :global(.fl-layouts) {
     margin-block: 8px 0;
+    margin-inline-start: auto;
   }
   /* The tabs' underline stays clear of the toolbar band (prototype `.collection-header.compact`, 8px). */
   .fl-library-header:has(> :global(.fl-layouts)) {

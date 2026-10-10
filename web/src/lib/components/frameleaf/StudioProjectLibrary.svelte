@@ -990,6 +990,10 @@
     row-gap: var(--fl-space-3);
   }
   @media (max-width: 640px) {
+    /* With the page's own 8px, the 16px phone gutter. */
+    .fl-studio-library {
+      padding-inline: var(--fl-space-2);
+    }
     .filters {
       justify-content: flex-start;
       width: 100%;
