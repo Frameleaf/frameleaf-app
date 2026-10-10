@@ -1,29 +1,39 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import { isEqual } from 'lodash-es';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { TagMergeResult } from 'src/repositories/tag.repository.js';
+import type { SavedSearch } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   TagBulkAssetsDto,
   TagBulkAssetsResponseDto,
   TagCreateDto,
+  TagMergeDto,
   TagResponseDto,
   TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
   mapTag,
 } from 'src/dtos/tag.dto.js';
-import { AssetVisibility, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus, Permission, QueueName, UserMetadataKey } from 'src/enum.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
-import { requireEntityAccess } from 'src/utils/access.js';
+import { isGranted, requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
+import {
+  type FrameleafUserPreferences,
+  changesSyncVisibility,
+  getPreferences,
+  getPreferencesPartial,
+} from 'src/utils/preferences.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
@@ -133,6 +143,61 @@ export class TagService extends BaseService {
     // TODO sync tag changes for affected assets
 
     await this.tagRepository.delete(id);
+  }
+
+  /**
+   * Merges a tag into another of the caller's tags and answers the tag that stays.
+   *
+   * The tags, their items, the smart album rules and the account's preferences change in one
+   * transaction, under the lock a preferences save takes: nothing is left naming the tag that went.
+   * A Locked rule on it moves to the tag it was merged into, so nothing the rule hid is shown because
+   * of the merge, and a saved search for it searches for that tag instead.
+   *
+   * Every item involved then gets what tagging and untagging give it: its tag list (kept locked, so
+   * the next metadata read cannot bring the old tag back), its sidecar written again, the "tagged"
+   * workflows for an item that gained a tag, and its partner copies told.
+   */
+  async merge(auth: AuthDto, id: string, dto: TagMergeDto): Promise<TagResponseDto> {
+    // The route asks an API key for the permission to delete, for the tag that goes; the tag it goes
+    // into changes too.
+    if (auth.apiKey && !isGranted({ requested: [Permission.TagUpdate], current: auth.apiKey.permissions })) {
+      throw new ForbiddenException(`Missing required permission: ${Permission.TagUpdate}`);
+    }
+    await this.requireTag(auth, Permission.TagDelete, id);
+    await this.requireTag(auth, Permission.TagUpdate, dto.targetId);
+
+    const userId = auth.user.id;
+    const { result, rulesChanged } = await this.databaseRepository.withUserPreferencesLock(userId, async (tx) => {
+      // the self, descendant and owner checks run with the owner's tags locked (see TagRepository.merge)
+      const result = await this.tagRepository.merge(tx, id, dto.targetId);
+      const previous = getPreferences(await this.userRepository.getMetadata(userId, tx));
+      const updated = followMergedTags(previous, result.merged);
+      if (!updated) {
+        return { result, rulesChanged: false };
+      }
+      await this.userRepository.upsertMetadata(
+        userId,
+        { key: UserMetadataKey.Preferences, value: getPreferencesPartial(updated) },
+        tx,
+      );
+      return { result, rulesChanged: changesSyncVisibility(previous, updated) };
+    });
+    if (rulesChanged) {
+      // FL-218: the Locked rules filter the whole sync stream, so every session reads it again
+      await this.sessionRepository.requestSyncResetForUser(userId);
+    }
+
+    const tagged = new Set(result.taggedAssetIds);
+    for (const assetId of result.assetIds) {
+      await this.updateTags(assetId);
+      // An item that gained no tag lost one or carries one under a new path: only its sidecar follows.
+      await (tagged.has(assetId)
+        ? this.eventRepository.emit('AssetTag', { assetId, userId })
+        : this.eventRepository.emit('AssetUntag', { assetId }));
+    }
+    await this.recordTagEdit(auth, result.assetIds);
+
+    return mapTag(result.tag);
   }
 
   async bulkTagAssets(auth: AuthDto, dto: TagBulkAssetsDto): Promise<TagBulkAssetsResponseDto> {
@@ -246,3 +311,44 @@ export class TagService extends BaseService {
 }
 
 const getSucceededIds = (results: BulkIdResponseDto[]) => results.filter(({ success }) => success).map(({ id }) => id);
+
+/**
+ * The account's preferences with every merged tag replaced by the tag it was merged into, in the
+ * Locked rules and in saved searches; undefined when neither names one.
+ *
+ * A saved search is the client's own search body, so a merged tag is looked for anywhere in it, as
+ * `withoutLockedSavedSearches` does when it hides one. A list never names the same tag twice.
+ */
+export const followMergedTags = (
+  preferences: FrameleafUserPreferences,
+  merged: TagMergeResult['merged'],
+): FrameleafUserPreferences | undefined => {
+  const targets = new Map(merged.map(({ id, targetId }) => [id.toLowerCase(), targetId]));
+  const targetOf = (value: unknown) => (typeof value === 'string' ? targets.get(value.toLowerCase()) : undefined);
+  const follow = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      const followed = value.map((item) => follow(item));
+      return value.some((item) => targetOf(item)) ? [...new Set(followed)] : followed;
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, follow(item)]));
+    }
+    return targetOf(value) ?? value;
+  };
+
+  const { suppression } = preferences.privacy;
+  const tagIds = follow(suppression.tagIds) as string[];
+  const savedSearches = preferences.savedSearches.map(({ name, query }) => ({
+    name,
+    query: follow(query) as SavedSearch['query'],
+  }));
+  if (isEqual(tagIds, suppression.tagIds) && isEqual(savedSearches, preferences.savedSearches)) {
+    return;
+  }
+
+  return {
+    ...preferences,
+    privacy: { ...preferences.privacy, suppression: { ...suppression, tagIds } },
+    savedSearches,
+  };
+};

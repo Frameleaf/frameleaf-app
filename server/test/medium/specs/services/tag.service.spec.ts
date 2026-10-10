@@ -1,19 +1,33 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetLockReason, AssetVisibility, JobStatus } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetVisibility,
+  ClassificationMatchDecision,
+  ClassificationRuleAction,
+  JobStatus,
+  SyncEntityType,
+  SyncRequestType,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagService } from 'src/services/tag.service.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { upsertTags } from 'src/utils/tag.js';
-import { newMediumService } from 'test/medium.factory.js';
+import { SyncTestContext, newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -22,10 +36,28 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(TagService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, TagRepository, AccessRepository, SearchRepository],
+    // a merge also writes the account's preferences, under their lock, and may ask sessions to sync again
+    real: [
+      AssetRepository,
+      TagRepository,
+      AccessRepository,
+      SearchRepository,
+      DatabaseRepository,
+      UserRepository,
+      SessionRepository,
+    ],
     mock: [EventRepository, LoggingRepository],
   });
 };
+
+/** Every closure row that ends at one of these tags, as `ancestor>descendant`. */
+const closureOf = (ctx: ReturnType<typeof setup>['ctx'], ids: string[]) =>
+  ctx.database
+    .selectFrom('tag_closure')
+    .select(['id_ancestor', 'id_descendant'])
+    .where('id_descendant', 'in', ids)
+    .execute()
+    .then((rows) => rows.map((row) => `${row.id_ancestor}>${row.id_descendant}`).toSorted());
 
 /** A tag owned by one user, plus another user's auth to attempt access with */
 const newTagOfAnotherUser = async (ctx: ReturnType<typeof setup>['ctx']) => {
@@ -113,14 +145,6 @@ describe(TagService.name, () => {
     });
 
     describe('moving a tag (FL-46)', () => {
-      const closureOf = (ctx: ReturnType<typeof setup>['ctx'], ids: string[]) =>
-        ctx.database
-          .selectFrom('tag_closure')
-          .select(['id_ancestor', 'id_descendant'])
-          .where('id_descendant', 'in', ids)
-          .execute()
-          .then((rows) => rows.map((row) => `${row.id_ancestor}>${row.id_descendant}`).toSorted());
-
       const nestedTags = async (ctx: ReturnType<typeof setup>['ctx']) => {
         const { user } = await ctx.newUser();
         const [a, b, c, d] = await upsertTags(ctx.get(TagRepository), {
@@ -245,6 +269,604 @@ describe(TagService.name, () => {
 
       await expect(sut.remove(otherAuth, tag.id)).rejects.toThrow('Tag not found');
       await expect(sut.get(auth, tag.id)).resolves.toEqual(expect.objectContaining({ id: tag.id }));
+    });
+  });
+
+  describe('merge', () => {
+    type Context = ReturnType<typeof setup>['ctx'];
+
+    const newOwner = async (ctx: Context) => {
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      return { user, auth: factory.auth({ user }) };
+    };
+    /** The tags at these paths, in the order given. */
+    const newTags = async (ctx: Context, userId: string, paths: string[]) => {
+      await upsertTags(ctx.get(TagRepository), { userId, tags: paths });
+      const tags = [];
+      for (const path of paths) {
+        tags.push((await ctx.get(TagRepository).getByValue(userId, path))!);
+      }
+      return tags;
+    };
+    const newAssets = async (ctx: Context, ownerId: string, count: number) => {
+      const ids: string[] = [];
+      for (let index = 0; index < count; index++) {
+        ids.push((await ctx.newAsset({ ownerId })).asset.id);
+      }
+      return ids;
+    };
+    const pathsOf = (ctx: Context, userId: string) =>
+      ctx.database
+        .selectFrom('tag')
+        .select(['id', 'value', 'parentId'])
+        .where('userId', '=', userId)
+        .orderBy('value')
+        .execute();
+    const itemsOf = (ctx: Context, tagId: string) =>
+      ctx.database
+        .selectFrom('tag_asset')
+        .select('assetId')
+        .where('tagId', '=', tagId)
+        .execute()
+        .then((rows) => rows.map(({ assetId }) => assetId).toSorted());
+    const exifOf = (ctx: Context, assetId: string) =>
+      ctx.database
+        .selectFrom('asset_exif')
+        .select(['tags', 'lockedProperties'])
+        .where('assetId', '=', assetId)
+        .executeTakeFirst();
+    const auditedTags = (ctx: Context, ids: string[]) =>
+      ctx.database
+        .selectFrom('tag_audit')
+        .select('tagId')
+        .where('tagId', 'in', ids)
+        .execute()
+        .then((rows) => rows.map(({ tagId }) => tagId).toSorted());
+    const auditedItems = (ctx: Context, tagId: string) =>
+      ctx.database
+        .selectFrom('tag_asset_audit')
+        .select('assetId')
+        .where('tagId', '=', tagId)
+        .execute()
+        .then((rows) => rows.map(({ assetId }) => assetId).toSorted());
+    /** Everything a merge may touch for one account, to compare before and after a refusal. */
+    const snapshot = async (ctx: Context, userId: string) => {
+      const tags = await ctx.database
+        .selectFrom('tag')
+        .select(['id', 'value', 'parentId', 'color', 'updateId'])
+        .where('userId', '=', userId)
+        .orderBy('id')
+        .execute();
+      const ids = tags.map(({ id }) => id);
+      const items = await ctx.database
+        .selectFrom('tag_asset')
+        .select(['tagId', 'assetId', 'updateId'])
+        .where('tagId', 'in', ids)
+        .orderBy('tagId')
+        .orderBy('assetId')
+        .execute();
+      const exif = await ctx.database
+        .selectFrom('asset_exif')
+        .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+        .select(['asset_exif.assetId', 'asset_exif.tags'])
+        .where('asset.ownerId', '=', userId)
+        .orderBy('asset_exif.assetId')
+        .execute();
+      const preferences = await ctx.get(UserRepository).getMetadata(userId);
+      return {
+        tags,
+        items,
+        closure: await closureOf(ctx, ids),
+        audited: await auditedTags(ctx, ids),
+        exif,
+        preferences,
+      };
+    };
+    const savePreferences = (ctx: Context, userId: string, value: object) =>
+      ctx.get(UserRepository).upsertMetadata(userId, { key: UserMetadataKey.Preferences, value });
+    const storedPreferences = async (ctx: Context, userId: string) =>
+      getPreferences(await ctx.get(UserRepository).getMetadata(userId));
+    const emitted = (ctx: Context) => ctx.getMock(EventRepository).emit.mock.calls.map(([name, data]) => [name, data]);
+
+    it('gives every item the other tag once, whatever its state, and removes the merged tag', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [hike, outdoors, hiking] = await newTags(ctx, user.id, ['Hike', 'Outdoors', 'Outdoors/Hiking']);
+      await ctx.get(TagRepository).update(hiking.id, { color: '#3fb46a' });
+      const [onlyHike, both, onlyHiking] = await newAssets(ctx, user.id, 3);
+      const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const carried = [onlyHike, both, archived.id, trashed.id, locked.id];
+      await ctx.newTagAsset({ tagIds: [hike.id], assetIds: carried });
+      await ctx.newTagAsset({ tagIds: [hiking.id], assetIds: [both, onlyHiking] });
+
+      // the session that merges cannot see the archived, trashed and Locked items; they move all the same
+      await expect(sut.merge(auth, hike.id, { targetId: hiking.id })).resolves.toEqual(
+        expect.objectContaining({
+          id: hiking.id,
+          name: 'Hiking',
+          value: 'Outdoors/Hiking',
+          parentId: outdoors.id,
+          color: '#3fb46a',
+        }),
+      );
+
+      await expect(pathsOf(ctx, user.id)).resolves.toEqual([
+        { id: outdoors.id, value: 'Outdoors', parentId: null },
+        { id: hiking.id, value: 'Outdoors/Hiking', parentId: outdoors.id },
+      ]);
+      await expect(itemsOf(ctx, hiking.id)).resolves.toEqual([...carried, onlyHiking].toSorted());
+      await expect(itemsOf(ctx, hike.id)).resolves.toEqual([]);
+      await expect(sut.getAll(auth)).resolves.toEqual([
+        expect.objectContaining({ id: outdoors.id }),
+        expect.objectContaining({ id: hiking.id }),
+      ]);
+      // Timeline items only, as the Tags screen counts them
+      expect((await sut.getStatistics(auth)).find(({ id }) => id === hiking.id)).toMatchObject({ count: 3, total: 3 });
+
+      // what deleting the tag and untagging its items by hand would have recorded
+      await expect(auditedTags(ctx, [hike.id])).resolves.toEqual([hike.id]);
+      await expect(auditedItems(ctx, hike.id)).resolves.toEqual(carried.toSorted());
+      // and what tagging gives an item: its tag list, kept locked so a metadata read cannot bring "Hike" back
+      for (const assetId of carried) {
+        await expect(exifOf(ctx, assetId), assetId).resolves.toEqual({
+          tags: ['Outdoors/Hiking'],
+          lockedProperties: ['tags'],
+        });
+      }
+      await expect(exifOf(ctx, onlyHiking)).resolves.toBeUndefined();
+      // "tagged" for an item that gained the tag, and only a sidecar write for the one that had both
+      expect(emitted(ctx)).toEqual(
+        expect.arrayContaining([
+          ...[onlyHike, archived.id, trashed.id, locked.id].map((assetId) => [
+            'AssetTag',
+            { assetId, userId: user.id },
+          ]),
+          ['AssetUntag', { assetId: both }],
+        ]),
+      );
+      expect(emitted(ctx)).toHaveLength(5);
+    });
+
+    it('moves the tags inside under the other tag with their items, paths and closure', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [trips, rockies, banff, travel, norway] = await newTags(ctx, user.id, [
+        'Trips',
+        'Trips/Rockies',
+        'Trips/Rockies/Banff',
+        'Travel',
+        'Travel/Norway',
+      ]);
+      const [onTrips, onRockies, onBanff, onNorway] = await newAssets(ctx, user.id, 4);
+      await ctx.newTagAsset({ tagIds: [trips.id], assetIds: [onTrips] });
+      await ctx.newTagAsset({ tagIds: [rockies.id], assetIds: [onRockies] });
+      await ctx.newTagAsset({ tagIds: [banff.id], assetIds: [onBanff] });
+      await ctx.newTagAsset({ tagIds: [norway.id], assetIds: [onNorway] });
+
+      await sut.merge(auth, trips.id, { targetId: travel.id });
+
+      // the same tags, by id, at their new paths
+      await expect(pathsOf(ctx, user.id)).resolves.toEqual([
+        { id: travel.id, value: 'Travel', parentId: null },
+        { id: norway.id, value: 'Travel/Norway', parentId: travel.id },
+        { id: rockies.id, value: 'Travel/Rockies', parentId: travel.id },
+        { id: banff.id, value: 'Travel/Rockies/Banff', parentId: rockies.id },
+      ]);
+      await expect(closureOf(ctx, [travel.id, rockies.id, banff.id])).resolves.toEqual(
+        [
+          `${travel.id}>${travel.id}`,
+          `${travel.id}>${rockies.id}`,
+          `${rockies.id}>${rockies.id}`,
+          `${travel.id}>${banff.id}`,
+          `${rockies.id}>${banff.id}`,
+          `${banff.id}>${banff.id}`,
+        ].toSorted(),
+      );
+      await expect(
+        ctx.database.selectFrom('tag_closure').select('id_ancestor').where('id_ancestor', '=', trips.id).execute(),
+      ).resolves.toEqual([]);
+      await expect(itemsOf(ctx, travel.id)).resolves.toEqual([onTrips]);
+      await expect(itemsOf(ctx, rockies.id)).resolves.toEqual([onRockies]);
+      await expect(itemsOf(ctx, banff.id)).resolves.toEqual([onBanff]);
+
+      // as the Tags screen reads them
+      expect((await sut.getAll(auth)).map(({ value, parentId }) => [value, parentId])).toEqual([
+        ['Travel', undefined],
+        ['Travel/Norway', travel.id],
+        ['Travel/Rockies', travel.id],
+        ['Travel/Rockies/Banff', rockies.id],
+      ]);
+      const statistics = new Map((await sut.getStatistics(auth)).map((row) => [row.id, row]));
+      expect(statistics.size).toBe(4);
+      expect(statistics.get(travel.id)).toMatchObject({ count: 1, total: 4 });
+      expect(statistics.get(rockies.id)).toMatchObject({ count: 1, total: 2 });
+      expect(statistics.get(banff.id)).toMatchObject({ count: 1, total: 1 });
+      expect(statistics.get(norway.id)).toMatchObject({ count: 1, total: 1 });
+
+      // an item whose tag only took a new path has its tag list and sidecar brought up to date too
+      await expect(exifOf(ctx, onRockies)).resolves.toEqual({ tags: ['Travel/Rockies'], lockedProperties: ['tags'] });
+      await expect(exifOf(ctx, onBanff)).resolves.toEqual({
+        tags: ['Travel/Rockies/Banff'],
+        lockedProperties: ['tags'],
+      });
+      expect(emitted(ctx)).toEqual(
+        expect.arrayContaining([
+          ['AssetTag', { assetId: onTrips, userId: user.id }],
+          ['AssetUntag', { assetId: onRockies }],
+          ['AssetUntag', { assetId: onBanff }],
+        ]),
+      );
+      expect(emitted(ctx)).toHaveLength(3);
+      await expect(auditedTags(ctx, [trips.id, rockies.id, banff.id])).resolves.toEqual([trips.id]);
+    });
+
+    it('merges a tag that meets one of its own name there, all the way down', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [old, oldCanada, oldBanff, oldJasper, oldJapan] = await newTags(ctx, user.id, [
+        'Old',
+        'Old/Canada',
+        'Old/Canada/Banff',
+        'Old/Canada/Jasper',
+        'Old/Japan',
+      ]);
+      const [fresh, canada, banff, yoho] = await newTags(ctx, user.id, [
+        'New',
+        'New/Canada',
+        'New/Canada/Banff',
+        'New/Canada/Yoho',
+      ]);
+      const [inOldCanada, inOldBanff, inBothBanffs, inBanff, inOldJasper] = await newAssets(ctx, user.id, 5);
+      await ctx.newTagAsset({ tagIds: [oldCanada.id], assetIds: [inOldCanada] });
+      await ctx.newTagAsset({ tagIds: [oldBanff.id], assetIds: [inOldBanff, inBothBanffs] });
+      await ctx.newTagAsset({ tagIds: [banff.id], assetIds: [inBothBanffs, inBanff] });
+      await ctx.newTagAsset({ tagIds: [oldJasper.id], assetIds: [inOldJasper] });
+
+      await sut.merge(auth, old.id, { targetId: fresh.id });
+
+      // one Canada and one Banff: the ones that were there; Jasper and Japan moved in as they were
+      await expect(pathsOf(ctx, user.id)).resolves.toEqual([
+        { id: fresh.id, value: 'New', parentId: null },
+        { id: canada.id, value: 'New/Canada', parentId: fresh.id },
+        { id: banff.id, value: 'New/Canada/Banff', parentId: canada.id },
+        { id: oldJasper.id, value: 'New/Canada/Jasper', parentId: canada.id },
+        { id: yoho.id, value: 'New/Canada/Yoho', parentId: canada.id },
+        { id: oldJapan.id, value: 'New/Japan', parentId: fresh.id },
+      ]);
+      await expect(itemsOf(ctx, canada.id)).resolves.toEqual([inOldCanada]);
+      await expect(itemsOf(ctx, banff.id)).resolves.toEqual([inOldBanff, inBothBanffs, inBanff].toSorted());
+      await expect(itemsOf(ctx, oldJasper.id)).resolves.toEqual([inOldJasper]);
+      await expect(closureOf(ctx, [oldJasper.id, oldJapan.id])).resolves.toEqual(
+        [
+          `${fresh.id}>${oldJasper.id}`,
+          `${canada.id}>${oldJasper.id}`,
+          `${oldJasper.id}>${oldJasper.id}`,
+          `${fresh.id}>${oldJapan.id}`,
+          `${oldJapan.id}>${oldJapan.id}`,
+        ].toSorted(),
+      );
+      await expect(auditedTags(ctx, [old.id, oldCanada.id, oldBanff.id, oldJasper.id, oldJapan.id])).resolves.toEqual(
+        [old.id, oldCanada.id, oldBanff.id].toSorted(),
+      );
+      await expect(exifOf(ctx, inBothBanffs)).resolves.toEqual({
+        tags: ['New/Canada/Banff'],
+        lockedProperties: ['tags'],
+      });
+      expect((await sut.getStatistics(auth)).find(({ id }) => id === fresh.id)?.total).toBe(5);
+    });
+
+    it('merges a tag into a tag above it, even when a tag inside it takes over its path', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [trips, year, sameName, summer, tripsSummer, deep] = await newTags(ctx, user.id, [
+        'Trips',
+        'Trips/2019',
+        'Trips/2019/2019',
+        'Trips/2019/Summer',
+        'Trips/Summer',
+        'Trips/2019/2019/Deep',
+      ]);
+      const [onYear, onSameName, onSummer, onTripsSummer] = await newAssets(ctx, user.id, 4);
+      await ctx.newTagAsset({ tagIds: [year.id], assetIds: [onYear] });
+      await ctx.newTagAsset({ tagIds: [sameName.id], assetIds: [onSameName] });
+      await ctx.newTagAsset({ tagIds: [summer.id], assetIds: [onSummer] });
+      await ctx.newTagAsset({ tagIds: [tripsSummer.id], assetIds: [onTripsSummer] });
+
+      await expect(sut.merge(auth, year.id, { targetId: trips.id })).resolves.toEqual(
+        expect.objectContaining({ id: trips.id, value: 'Trips' }),
+      );
+
+      // "Trips/2019" is now the tag that was inside it, with what it held; the two Summers are one
+      await expect(pathsOf(ctx, user.id)).resolves.toEqual([
+        { id: trips.id, value: 'Trips', parentId: null },
+        { id: sameName.id, value: 'Trips/2019', parentId: trips.id },
+        { id: deep.id, value: 'Trips/2019/Deep', parentId: sameName.id },
+        { id: tripsSummer.id, value: 'Trips/Summer', parentId: trips.id },
+      ]);
+      await expect(itemsOf(ctx, trips.id)).resolves.toEqual([onYear]);
+      await expect(itemsOf(ctx, sameName.id)).resolves.toEqual([onSameName]);
+      await expect(itemsOf(ctx, tripsSummer.id)).resolves.toEqual([onSummer, onTripsSummer].toSorted());
+      await expect(closureOf(ctx, [sameName.id, deep.id])).resolves.toEqual(
+        [
+          `${trips.id}>${sameName.id}`,
+          `${sameName.id}>${sameName.id}`,
+          `${trips.id}>${deep.id}`,
+          `${sameName.id}>${deep.id}`,
+          `${deep.id}>${deep.id}`,
+        ].toSorted(),
+      );
+      await expect(exifOf(ctx, onSameName)).resolves.toEqual({ tags: ['Trips/2019'], lockedProperties: ['tags'] });
+      await expect(exifOf(ctx, onYear)).resolves.toEqual({ tags: ['Trips'], lockedProperties: ['tags'] });
+    });
+
+    it("refuses a merge into the tag itself, a tag inside it, or anything but the caller's own tags, and changes nothing", async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [parent, child, grandchild, other] = await newTags(ctx, user.id, [
+        'Parent',
+        'Parent/Child',
+        'Parent/Child/Grandchild',
+        'Other',
+      ]);
+      const [asset] = await newAssets(ctx, user.id, 1);
+      await ctx.newTagAsset({ tagIds: [parent.id, grandchild.id], assetIds: [asset] });
+      const { user: stranger } = await ctx.newUser();
+      const strangerAuth = factory.auth({ user: stranger });
+      const [theirs] = await newTags(ctx, stranger.id, ['Theirs']);
+      const before = await snapshot(ctx, user.id);
+      const theirsBefore = await snapshot(ctx, stranger.id);
+
+      const refusal = (promise: Promise<unknown>) => promise.then(() => null).catch((error) => error);
+      const own = 'A tag cannot be merged into itself or one of its descendants';
+      for (const targetId of [parent.id, child.id, grandchild.id]) {
+        const error = await refusal(sut.merge(auth, parent.id, { targetId }));
+        expect(error, targetId).toBeInstanceOf(BadRequestException);
+        expect(error.message).toBe(own);
+      }
+
+      // somebody else's tag, in either place, answers exactly like an id that does not exist
+      const missing = '00000000-0000-4000-8000-000000000000';
+      const notFound = await refusal(sut.merge(auth, parent.id, { targetId: missing }));
+      expect(notFound).toBeInstanceOf(NotFoundException);
+      for (const attempt of [
+        () => sut.merge(auth, parent.id, { targetId: theirs.id }),
+        () => sut.merge(auth, theirs.id, { targetId: other.id }),
+        () => sut.merge(auth, missing, { targetId: other.id }),
+        () => sut.merge(strangerAuth, parent.id, { targetId: theirs.id }),
+        () => sut.merge(strangerAuth, theirs.id, { targetId: other.id }),
+      ]) {
+        const error = await refusal(attempt());
+        expect(error).toBeInstanceOf(NotFoundException);
+        expect(error.getResponse()).toEqual(notFound.getResponse());
+      }
+
+      await expect(snapshot(ctx, user.id)).resolves.toEqual(before);
+      await expect(snapshot(ctx, stranger.id)).resolves.toEqual(theirsBefore);
+      expect(emitted(ctx)).toEqual([]);
+    });
+
+    it('rolls the whole merge back when a later step of the same transaction fails', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [from, inside, into, twin] = await newTags(ctx, user.id, ['From', 'From/Inside', 'Into', 'Into/Inside']);
+      const [first, second] = await newAssets(ctx, user.id, 2);
+      await ctx.newTagAsset({ tagIds: [from.id], assetIds: [first] });
+      await ctx.newTagAsset({ tagIds: [inside.id], assetIds: [second] });
+      // a Locked rule on the merged tag, so the merge has preferences to write after the tags
+      await savePreferences(ctx, user.id, { privacy: { suppression: { tagIds: [from.id] } } });
+      const before = await snapshot(ctx, user.id);
+      const write = vi.spyOn(ctx.get(UserRepository), 'upsertMetadata').mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(sut.merge(auth, from.id, { targetId: into.id })).rejects.toThrow('disk full');
+      expect(write).toHaveBeenCalledTimes(1);
+      write.mockRestore();
+
+      await expect(snapshot(ctx, user.id)).resolves.toEqual(before);
+      await expect(itemsOf(ctx, into.id)).resolves.toEqual([]);
+      await expect(itemsOf(ctx, twin.id)).resolves.toEqual([]);
+      await expect(auditedItems(ctx, from.id)).resolves.toEqual([]);
+      expect(emitted(ctx)).toEqual([]);
+    });
+
+    it('moves a Locked rule and a saved search to the tag merged into, and has every session sync again', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const { session } = await ctx.newSession({ userId: user.id });
+      const [secret, family, other] = await newTags(ctx, user.id, ['Private', 'Family', 'Other']);
+      const [hidden, shown] = await newAssets(ctx, user.id, 2);
+      await ctx.newTagAsset({ tagIds: [secret.id], assetIds: [hidden] });
+      await ctx.newTagAsset({ tagIds: [family.id], assetIds: [shown] });
+      await savePreferences(ctx, user.id, {
+        tags: { sidebarWeb: false },
+        privacy: { suppression: { tagIds: [secret.id, other.id], scope: 'visible' } },
+        savedSearches: [
+          { name: 'Both', query: { tagIds: [secret.id, family.id], isFavorite: true } },
+          { name: 'Nested', query: { any: [{ tagIds: [secret.id.toUpperCase()] }, { city: 'Banff' }] } },
+          { name: 'Untouched', query: { tagIds: [other.id] } },
+        ],
+      });
+
+      await sut.merge(auth, secret.id, { targetId: family.id });
+
+      const preferences = await storedPreferences(ctx, user.id);
+      // the rule follows, so nothing it hid is shown because of the merge; the rest of the preferences stay
+      expect(preferences.privacy.suppression).toEqual({
+        tagIds: [family.id, other.id],
+        personIds: [],
+        petIds: [],
+        scope: 'visible',
+      });
+      expect(preferences.tags.sidebarWeb).toBe(false);
+      expect(preferences.savedSearches).toEqual([
+        { name: 'Both', query: { tagIds: [family.id], isFavorite: true } },
+        { name: 'Nested', query: { any: [{ tagIds: [family.id] }, { city: 'Banff' }] } },
+        { name: 'Untouched', query: { tagIds: [other.id] } },
+      ]);
+      await expect(
+        ctx.database.selectFrom('session').select('isPendingSyncReset').where('id', '=', session.id).execute(),
+      ).resolves.toEqual([{ isPendingSyncReset: true }]);
+
+      // a session that is not unlocked sees neither the tag nor the items, the one that was open before included
+      const locked = lockedAuth(user.id, preferences.privacy.suppression.tagIds);
+      await expect(sut.getAll(locked)).resolves.toEqual([]);
+      await expect(sut.get(locked, family.id)).rejects.toThrow('Tag not found');
+      await expect(sut.getStatistics(locked)).resolves.toEqual([]);
+    });
+
+    it('leaves the preferences and the sessions alone when nothing names a merged tag', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const { session } = await ctx.newSession({ userId: user.id });
+      const [from, into, other] = await newTags(ctx, user.id, ['From', 'Into', 'Other']);
+      await savePreferences(ctx, user.id, {
+        privacy: { suppression: { tagIds: [other.id] } },
+        savedSearches: [{ name: 'Into', query: { tagIds: [into.id] } }],
+      });
+      const stored = () =>
+        ctx.database
+          .selectFrom('user_metadata')
+          .select(['value', 'updateId'])
+          .where('userId', '=', user.id)
+          .where('key', '=', UserMetadataKey.Preferences)
+          .executeTakeFirstOrThrow();
+      const before = await stored();
+
+      await sut.merge(auth, from.id, { targetId: into.id });
+
+      await expect(stored()).resolves.toEqual(before);
+      await expect(
+        ctx.database.selectFrom('session').select('isPendingSyncReset').where('id', '=', session.id).execute(),
+      ).resolves.toEqual([{ isPendingSyncReset: false }]);
+    });
+
+    it('keeps what a Locked rule hid hidden when a session that is not unlocked merges around it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await newOwner(ctx);
+      const [album, hiddenChild, shelf, twin] = await newTags(ctx, user.id, [
+        'Album',
+        'Album/Secret',
+        'Shelf',
+        'Shelf/Secret',
+      ]);
+      const [secretItem, openItem] = await newAssets(ctx, user.id, 2);
+      await ctx.newTagAsset({ tagIds: [hiddenChild.id], assetIds: [secretItem] });
+      await ctx.newTagAsset({ tagIds: [album.id], assetIds: [openItem] });
+      await savePreferences(ctx, user.id, { privacy: { suppression: { tagIds: [hiddenChild.id] } } });
+      const locked = lockedAuth(user.id, [hiddenChild.id]);
+      // the session sees "Album" but not the tag inside it, and can make a tag of the same name elsewhere
+      expect((await sut.getAll(locked)).map(({ value }) => value)).toEqual(['Album', 'Shelf', 'Shelf/Secret']);
+
+      await sut.merge(locked, album.id, { targetId: shelf.id });
+
+      // the hidden tag met the one of its name: its items are on that tag now, and so is its rule
+      await expect(itemsOf(ctx, twin.id)).resolves.toEqual([secretItem]);
+      const { suppression } = (await storedPreferences(ctx, user.id)).privacy;
+      expect(suppression.tagIds).toEqual([twin.id]);
+      const after = lockedAuth(user.id, suppression.tagIds);
+      expect((await sut.getAll(after)).map(({ value }) => value)).toEqual(['Shelf']);
+      expect(await sut.getStatistics(after)).toEqual([
+        expect.objectContaining({ id: shelf.id, count: 1, total: 1, coverAssetIds: [openItem] }),
+      ]);
+    });
+
+    it('points smart album rules at the tag merged into', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const [from, into, third, added] = await newTags(ctx, user.id, ['From', 'Into', 'Third', 'Added']);
+      const [asset] = await newAssets(ctx, user.id, 1);
+      const rules = ctx.get(ClassificationRepository);
+      const newRule = async (values: { tagIds: string[]; tagId: string | null }) => {
+        const { album } = await ctx.newAlbum({ ownerId: user.id });
+        const rule = await rules.createRule({
+          ownerId: user.id,
+          albumId: album.id,
+          action: values.tagId ? ClassificationRuleAction.Tag : ClassificationRuleAction.Review,
+          ...values,
+        });
+        await ctx.database
+          .insertInto('classification_match')
+          .values({
+            ruleId: rule.id,
+            assetId: asset,
+            decision: ClassificationMatchDecision.Matched,
+            tagContributed: !!values.tagId,
+          })
+          .execute();
+        return rule.id;
+      };
+      const matchesOn = await newRule({ tagIds: [from.id, third.id, into.id], tagId: null });
+      const adds = await newRule({ tagIds: [third.id], tagId: from.id });
+      const wouldFeedItself = await newRule({ tagIds: [into.id], tagId: from.id });
+      const matchesOnAndAdds = await newRule({ tagIds: [from.id], tagId: into.id });
+      const untouched = await newRule({ tagIds: [third.id], tagId: added.id });
+      const read = async (id: string) => {
+        const rule = await ctx.database
+          .selectFrom('classification_rule')
+          .select(['tagIds', 'tagId', 'updatedAt'])
+          .where('id', '=', id)
+          .executeTakeFirstOrThrow();
+        const match = await ctx.database
+          .selectFrom('classification_match')
+          .select('tagContributed')
+          .where('ruleId', '=', id)
+          .executeTakeFirstOrThrow();
+        return { ...rule, ...match };
+      };
+      const untouchedBefore = await read(untouched);
+
+      await sut.merge(auth, from.id, { targetId: into.id });
+
+      // a rule that matched on the merged tag matches on the other one, named once
+      await expect(read(matchesOn)).resolves.toMatchObject({ tagIds: [into.id, third.id], tagId: null });
+      // a rule that added it adds the other one, and no longer answers for the tags it added before
+      await expect(read(adds)).resolves.toMatchObject({ tagIds: [third.id], tagId: into.id, tagContributed: false });
+      // a rule may not add the tag it matches on: it stops adding one, as when its tag is deleted
+      await expect(read(wouldFeedItself)).resolves.toMatchObject({
+        tagIds: [into.id],
+        tagId: null,
+        tagContributed: false,
+      });
+      await expect(read(matchesOnAndAdds)).resolves.toMatchObject({
+        tagIds: [into.id],
+        tagId: null,
+        tagContributed: false,
+      });
+      await expect(read(untouched)).resolves.toEqual(untouchedBefore);
+    });
+
+    it('reaches a device as the tag deleted, the tags inside it changed and its items retagged', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const sync = new SyncTestContext(defaultDatabase);
+      const { auth, user } = await sync.newSyncAuthUser();
+      const [old, kept, fresh] = await newTags(ctx, user.id, ['Old', 'Old/Kept', 'New']);
+      const [onOld, onKept, onBoth] = await newAssets(ctx, user.id, 3);
+      await ctx.newTagAsset({ tagIds: [old.id], assetIds: [onOld, onBoth] });
+      await ctx.newTagAsset({ tagIds: [kept.id], assetIds: [onKept] });
+      await ctx.newTagAsset({ tagIds: [fresh.id], assetIds: [onBoth] });
+      const types = [SyncRequestType.TagsV1, SyncRequestType.AssetTagsV1];
+      await sync.syncAckAll(auth, await sync.syncStream(auth, types));
+      await sync.assertSyncIsComplete(auth, types);
+
+      await sut.merge(auth, old.id, { targetId: fresh.id });
+
+      const changes = (await sync.syncStream(auth, types))
+        .filter(({ type }) => type !== SyncEntityType.SyncCompleteV1)
+        .map(({ type, data }) => [type, data]);
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          [SyncEntityType.TagDeleteV1, { tagId: old.id }],
+          [SyncEntityType.TagV1, expect.objectContaining({ id: kept.id, value: 'New/Kept', parentId: fresh.id })],
+          [SyncEntityType.AssetTagDeleteV1, { tagId: old.id, assetId: onOld }],
+          [SyncEntityType.AssetTagDeleteV1, { tagId: old.id, assetId: onBoth }],
+          [SyncEntityType.AssetTagV1, { tagId: fresh.id, assetId: onOld }],
+        ]),
+      );
+      // nothing else: the tag merged into and the items that stayed where they were are not sent again
+      expect(changes).toHaveLength(5);
     });
   });
 

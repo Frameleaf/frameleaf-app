@@ -14195,6 +14195,10 @@ export type TagUpdateDto = {
     /** Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path */
     parentId?: string | null;
 };
+export type TagMergeDto = {
+    /** The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag */
+    targetId: string;
+};
 export type TakeoutAlbumDto = {
     /** Items in the folder */
     count: number;
@@ -27251,6 +27255,22 @@ export function tagAssets({ id, bulkIdsDto }: {
         ...opts,
         method: "PUT",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Merge a tag into another
+ */
+export function mergeTag({ id, tagMergeDto }: {
+    id: string;
+    tagMergeDto: TagMergeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagResponseDto;
+    }>(`/tags/${encodeURIComponent(id)}/merge`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: tagMergeDto
     })));
 }
 /**

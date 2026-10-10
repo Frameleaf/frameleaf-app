@@ -46328,6 +46328,73 @@
         "x-immich-state": "Stable"
       }
     },
+    "/tags/{id}/merge": {
+      "post": {
+        "description": "Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.",
+        "operationId": "mergeTag",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagMergeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Merge a tag into another",
+        "tags": [
+          "Tags"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "tag.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/takeout": {
       "get": {
         "operationId": "listTakeoutImports",
@@ -119394,6 +119461,20 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "TagMergeDto": {
+        "properties": {
+          "targetId": {
+            "description": "The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetId"
         ],
         "type": "object"
       },
