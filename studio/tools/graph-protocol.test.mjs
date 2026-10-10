@@ -931,7 +931,7 @@ test('8.3: every graph-changing command of the catalogue has a protocol row and 
   assert.deepEqual(Object.keys(fixtures.commandStatus).sort(), mutating.toSorted(), 'commandStatus and the catalogue list different commands');
   assert.equal(rows.length, mutating.length);
   // 8.1: the tally the page states.
-  assert.deepEqual(counts, { engine: 59, host: 2, 'bundle-import': 1, 'not-implemented': 15 });
+  assert.deepEqual(counts, { engine: 60, host: 2, 'bundle-import': 1, 'not-implemented': 14 });
   assert.equal(mutating.length, 77);
 });
 
@@ -972,7 +972,7 @@ test('media relink readers and refusals match the independent source-binding ref
 // applied and refused alike.
 test('clip.setMask, clip.relink, shape.add, shape.setStyle and title.setStyle match the independent reference', () => {
   const cases = fixtures.cases.filter((entry) => entry.story === 'FL-348');
-  for (const command of ['clip.setMask', 'clip.relink', 'shape.add', 'shape.setStyle', 'title.setStyle']) {
+  for (const command of ['clip.setMask', 'clip.relink', 'clip.setCrop', 'shape.add', 'shape.setStyle', 'title.setStyle']) {
     const own = cases.filter((entry) => entry.covers.includes(command));
     assert.ok(own.some((entry) => entry.expect.status === 'applied'), `${command}: applied`);
     assert.ok(own.some((entry) => entry.expect.status === 'rejected'), `${command}: rejected`);

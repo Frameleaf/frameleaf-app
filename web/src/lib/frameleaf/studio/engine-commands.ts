@@ -40,6 +40,7 @@ export const studioEngineCommandIds = [
   'clip.reorder',
   'clip.roll',
   'clip.setAudio',
+  'clip.setCrop',
   'clip.setKenBurns',
   'clip.setLink',
   'clip.setMask',

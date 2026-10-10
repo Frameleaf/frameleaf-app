@@ -356,8 +356,9 @@ export const catalogue = [
       pitchSemitones: 'number?',
       pitchCents: 'number?',
       eq: 'object?',
+      ducking: 'object?',
     },
-    description: 'Set clip volume, mute, fades, pitch shift and the clip EQ stage.',
+    description: 'Set clip volume, mute, fades, pitch shift, the clip EQ stage and sidechain ducking of other audio.',
   },
   {
     id: 'clip.setBlendMode',

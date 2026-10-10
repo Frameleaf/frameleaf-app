@@ -166,6 +166,27 @@ export type StudioRetimePolicy = 'keep-time' | 'keep-frames';
  */
 export type StudioOpaqueValue = Readonly<Record<string, unknown>>;
 
+/** `audioDucking` of a duck-source clip: dB at or below 0, ramps in seconds, optional target tracks. */
+export type StudioDucking = {
+  duckOthersDb: number;
+  attackSec?: number;
+  releaseSec?: number;
+  targetTrackIds?: string[];
+};
+
+/** Crop sides as fractions 0..1 of the source; softness -1..1. */
+export type StudioCrop = { left?: number; right?: number; top?: number; bottom?: number; softness?: number };
+
+/** Corner offsets in pixels of a reference box of the given size. */
+export type StudioCornerPin = {
+  topLeft: [number, number];
+  topRight: [number, number];
+  bottomRight: [number, number];
+  bottomLeft: [number, number];
+  referenceWidth: number;
+  referenceHeight: number;
+};
+
 export type StudioShapeType = 'rectangle' | 'circle' | 'triangle' | 'ellipse' | 'star' | 'polygon' | 'heart' | 'path';
 
 /** A pen-path vertex: position 0..1 of the shape's box, handles relative to the vertex. */
@@ -331,9 +352,12 @@ export interface StudioCommandPayloads {
     pitchSemitones?: number;
     pitchCents?: number;
     eq?: StudioOpaqueValue | null;
+    /** Graph protocol 13.9: this clip turns the other audio down while it sounds. */
+    ducking?: StudioDucking | null;
   };
   'clip.setBlendMode': { clipId: string; blendMode: string; opacity?: number };
-  'clip.setCrop': { clipId: string; crop?: StudioOpaqueValue | null; cornerPin?: StudioOpaqueValue | null };
+  /** Graph protocol 17.6. */
+  'clip.setCrop': { clipId: string; crop?: StudioCrop | null; cornerPin?: StudioCornerPin | null };
   'clip.setGrade': { clipId: string; grade: StudioGradeIntent | null };
   'clip.setKenBurns': { clipId: string; kenBurns: { from: StudioRect; to: StudioRect } | null };
   'clip.setLink': { clipIds: string[]; linked: boolean };

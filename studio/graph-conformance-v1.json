@@ -142074,35 +142074,6 @@
       }
     },
     {
-      "id": "not-implemented/clip.setCrop",
-      "story": "FL-309",
-      "covers": [
-        "clip.setCrop"
-      ],
-      "summary": "The engine refuses clip.setCrop as not-implemented, whatever its payload.",
-      "base": "linked-pair",
-      "envelopes": [
-        {
-          "id": "clip.setCrop",
-          "payload": {
-            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
-            "crop": {
-              "left": 0.1
-            }
-          },
-          "revision": 1,
-          "idempotencyKey": "fl309:not-implemented/clip.setCrop",
-          "issuedAt": 1758800000000
-        }
-      ],
-      "expect": {
-        "status": "rejected",
-        "index": 0,
-        "reason": "not-implemented",
-        "detail": "clip.setCrop is not an engine command"
-      }
-    },
-    {
       "id": "not-implemented/clip.setGrade",
       "story": "FL-309",
       "covers": [
@@ -144307,7 +144278,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq or muted"
+        "detail": "clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq, ducking or muted"
       }
     },
     {
@@ -188596,6 +188567,3895 @@
         "reason": "invalid",
         "detail": "title.setStyle: style.color must be a #rrggbb or #rrggbbaa colour"
       }
+    },
+    {
+      "id": "clip.setCrop/crop-sides",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-sides",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "crop": {
+              "left": 0.1,
+              "right": 0.2,
+              "top": 0.05,
+              "bottom": 0.15,
+              "softness": 0.25
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-sides",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "182e3b85358ee91851b1ed45044422bae26bf9b75a26b6e22e7fc4e491699714",
+        "envelopeDigest": "e19d377748caea2556c4efa22b5794ab0d643943217b65f7a736b585f2fed95d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "crop": {
+                  "left": 0.1,
+                  "right": 0.2,
+                  "top": 0.05,
+                  "bottom": 0.15,
+                  "softness": 0.25
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-one-side",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-one-side",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-one-side",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "c5ec3dfd684ad00216b2ed09155f058bd07b9ad784ccc26190b726141ca6a32b",
+        "envelopeDigest": "c6156c30670e3c8cfb03d2512471f68afadeb6a5952782c09a15d43306b9cd28",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "crop": {
+                  "left": 0.1,
+                  "right": 0,
+                  "top": 0,
+                  "bottom": 0,
+                  "softness": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-negative-softness",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-negative-softness",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "top": 0.3,
+              "softness": -0.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-negative-softness",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "27689e060c609a7d04b930a26421288059d27e905db552cbbee6ae6dea05c52a",
+        "envelopeDigest": "a030ee253e565aa90aa041dcfc549a6692b4d3f48787b27fcad61fbc9c926ed2",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "crop": {
+                  "left": 0,
+                  "right": 0,
+                  "top": 0.3,
+                  "bottom": 0,
+                  "softness": -0.5
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-without-sides-is-removed",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-without-sides-is-removed",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.2
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-without-sides-is-removed:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "softness": 0.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-without-sides-is-removed:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "e3d3590a30711c8731676f5d1f34a3dce0f523038141acc37378b9d9f94435c0",
+        "envelopeDigest": "eea6e3b0659919ee07654c0c163a5cf6bc68d2b6d4832c07286e03fcfb1b70c6",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-cleared",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-cleared",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.2,
+              "bottom": 0.2
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-cleared:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-cleared:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "e3d3590a30711c8731676f5d1f34a3dce0f523038141acc37378b9d9f94435c0",
+        "envelopeDigest": "eea6e3b0659919ee07654c0c163a5cf6bc68d2b6d4832c07286e03fcfb1b70c6",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "0fa44cf2713a587cfd2c8092b5fd1a88f2c4fcb7b341d747b79416faf8c317d4",
+        "envelopeDigest": "1d756bddfc52f012f877d375692f719d39cadbccf0c79994680759fb4b54afd1",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "cornerPin": {
+                  "topLeft": [
+                    10,
+                    5
+                  ],
+                  "topRight": [
+                    -20,
+                    0
+                  ],
+                  "bottomRight": [
+                    0,
+                    -12.5
+                  ],
+                  "bottomLeft": [
+                    4,
+                    4
+                  ],
+                  "referenceWidth": 1920,
+                  "referenceHeight": 1080
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-on-a-title",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-on-a-title",
+      "base": "title-over-still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "4274fcda-28f4-4b97-b4ef-0eadbdaded43",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 800,
+              "referenceHeight": 300
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-on-a-title",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "8412837f6e268b4bb9322f0b74055fe2acf16f072009dba76ca907366cb95312",
+        "envelopeDigest": "a35eb0212a96f5fa6e358d40cfd7da2e191eeb7537bad8446a4049cf2f2aee3d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V2",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "track-edd2e08b-74c4-4a7d-b6e5-0b86dbe16b92",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "syncLock": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "volume": 0,
+                "order": 0.5,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "4274fcda-28f4-4b97-b4ef-0eadbdaded43",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 80,
+                "cornerPin": {
+                  "topLeft": [
+                    10,
+                    5
+                  ],
+                  "topRight": [
+                    -20,
+                    0
+                  ],
+                  "bottomRight": [
+                    0,
+                    -12.5
+                  ],
+                  "bottomLeft": [
+                    4,
+                    4
+                  ],
+                  "referenceWidth": 800,
+                  "referenceHeight": 300
+                }
+              },
+              {
+                "id": "3df28bc3-b926-465b-afc2-206346f5522f",
+                "trackId": "track-edd2e08b-74c4-4a7d-b6e5-0b86dbe16b92",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "6e763761-7ce1-410f-b5c8-6072815478d6",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-on-a-composition",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-on-a-composition",
+      "base": "compound",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "8c3e933e-86db-468e-af52-6375abcdc48c",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-on-a-composition",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "5f75868a987879fcce2ad3e8f843124fad5b77e12ff83cddaeb6597b8feeb77b",
+        "envelopeDigest": "7fb1cc2c7f9f0876699025497776f97abcd6992a5eb45233481c31b2b7cf6fed",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "c068d2a5-9502-42aa-93b3-4ffaa99cd3c2",
+                "trackId": "v1",
+                "from": 120,
+                "durationInFrames": 60,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "2b93b2c5-9f5d-4498-8874-e9d6a22f0c69",
+                "sourceStart": 0,
+                "sourceEnd": 60,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "8c3e933e-86db-468e-af52-6375abcdc48c",
+                "type": "composition",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "Scene",
+                "compositionId": "aa7c3087-53c1-47ed-b845-2ea2eccf216a",
+                "linkedGroupId": "a0152467-1f99-4492-8953-398052361aba",
+                "compositionWidth": 1920,
+                "compositionHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 120,
+                "sourceFps": 30,
+                "speed": 1,
+                "cornerPin": {
+                  "topLeft": [
+                    10,
+                    5
+                  ],
+                  "topRight": [
+                    -20,
+                    0
+                  ],
+                  "bottomRight": [
+                    0,
+                    -12.5
+                  ],
+                  "bottomLeft": [
+                    4,
+                    4
+                  ],
+                  "referenceWidth": 1920,
+                  "referenceHeight": 1080
+                }
+              },
+              {
+                "id": "f9f7738d-66a4-4122-8045-b89fb1073bee",
+                "type": "audio",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "Scene",
+                "compositionId": "aa7c3087-53c1-47ed-b845-2ea2eccf216a",
+                "linkedGroupId": "a0152467-1f99-4492-8953-398052361aba",
+                "src": "",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 120,
+                "sourceFps": 30,
+                "speed": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0,
+            "compositions": [
+              {
+                "id": "aa7c3087-53c1-47ed-b845-2ea2eccf216a",
+                "name": "Scene",
+                "editorKind": "sequence",
+                "items": [
+                  {
+                    "id": "9616a803-9af5-4e8d-8bdc-a489ffeeef8a",
+                    "trackId": "59cb70e3-97ed-48da-9ab4-bcb66858ac6a",
+                    "from": 0,
+                    "durationInFrames": 60,
+                    "label": "drone.mp4",
+                    "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                    "originId": "c341c4eb-807c-4265-955e-09fc45ead303",
+                    "sourceStart": 0,
+                    "sourceEnd": 60,
+                    "sourceDuration": 240,
+                    "sourceFps": 30,
+                    "trimStart": 0,
+                    "trimEnd": 0,
+                    "type": "video",
+                    "src": "",
+                    "sourceWidth": 1920,
+                    "sourceHeight": 1080,
+                    "transform": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 1920,
+                      "height": 1080,
+                      "rotation": 0
+                    }
+                  },
+                  {
+                    "id": "91c4a9e5-91fc-45b0-809b-284b28bcef92",
+                    "trackId": "59cb70e3-97ed-48da-9ab4-bcb66858ac6a",
+                    "from": 60,
+                    "durationInFrames": 60,
+                    "label": "drone.mp4",
+                    "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                    "originId": "249f4c41-8e93-475f-9bde-9471457fd701",
+                    "sourceStart": 0,
+                    "sourceEnd": 60,
+                    "sourceDuration": 240,
+                    "sourceFps": 30,
+                    "trimStart": 0,
+                    "trimEnd": 0,
+                    "type": "video",
+                    "src": "",
+                    "sourceWidth": 1920,
+                    "sourceHeight": 1080,
+                    "transform": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 1920,
+                      "height": 1080,
+                      "rotation": 0
+                    }
+                  }
+                ],
+                "tracks": [
+                  {
+                    "id": "59cb70e3-97ed-48da-9ab4-bcb66858ac6a",
+                    "name": "V1",
+                    "kind": "video",
+                    "height": 100,
+                    "locked": false,
+                    "visible": true,
+                    "muted": false,
+                    "solo": false,
+                    "volume": 0,
+                    "order": 0,
+                    "items": [
+                      {
+                        "id": "9616a803-9af5-4e8d-8bdc-a489ffeeef8a",
+                        "trackId": "59cb70e3-97ed-48da-9ab4-bcb66858ac6a",
+                        "from": 0,
+                        "durationInFrames": 60,
+                        "label": "drone.mp4",
+                        "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                        "originId": "c341c4eb-807c-4265-955e-09fc45ead303",
+                        "sourceStart": 0,
+                        "sourceEnd": 60,
+                        "sourceDuration": 240,
+                        "sourceFps": 30,
+                        "trimStart": 0,
+                        "trimEnd": 0,
+                        "type": "video",
+                        "src": "",
+                        "sourceWidth": 1920,
+                        "sourceHeight": 1080,
+                        "transform": {
+                          "x": 0,
+                          "y": 0,
+                          "width": 1920,
+                          "height": 1080,
+                          "rotation": 0
+                        }
+                      },
+                      {
+                        "id": "91c4a9e5-91fc-45b0-809b-284b28bcef92",
+                        "trackId": "59cb70e3-97ed-48da-9ab4-bcb66858ac6a",
+                        "from": 60,
+                        "durationInFrames": 60,
+                        "label": "drone.mp4",
+                        "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                        "originId": "249f4c41-8e93-475f-9bde-9471457fd701",
+                        "sourceStart": 0,
+                        "sourceEnd": 60,
+                        "sourceDuration": 240,
+                        "sourceFps": 30,
+                        "trimStart": 0,
+                        "trimEnd": 0,
+                        "type": "video",
+                        "src": "",
+                        "sourceWidth": 1920,
+                        "sourceHeight": 1080,
+                        "transform": {
+                          "x": 0,
+                          "y": 0,
+                          "width": 1920,
+                          "height": 1080,
+                          "rotation": 0
+                        }
+                      }
+                    ],
+                    "syncLock": true
+                  }
+                ],
+                "fps": 30,
+                "width": 1920,
+                "height": 1080,
+                "durationInFrames": 120
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-and-corner-pin",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-and-corner-pin",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "crop": {
+              "right": 0.25
+            },
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-and-corner-pin",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "77735465abfd682874ab7e9e2e4092f253299568b26ad5634985be8d6ed2da9e",
+        "envelopeDigest": "578318c57198dd4f43935e7b0e4094e73c216f9b6f5e908f95431f31227a79e5",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "crop": {
+                  "left": 0,
+                  "right": 0.25,
+                  "top": 0,
+                  "bottom": 0,
+                  "softness": 0
+                },
+                "cornerPin": {
+                  "topLeft": [
+                    10,
+                    5
+                  ],
+                  "topRight": [
+                    -20,
+                    0
+                  ],
+                  "bottomRight": [
+                    0,
+                    -12.5
+                  ],
+                  "bottomLeft": [
+                    4,
+                    4
+                  ],
+                  "referenceWidth": 1920,
+                  "referenceHeight": 1080
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-cleared",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-cleared",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.1
+            },
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-cleared:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "cornerPin": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-cleared:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "c5ec3dfd684ad00216b2ed09155f058bd07b9ad784ccc26190b726141ca6a32b",
+        "envelopeDigest": "c6156c30670e3c8cfb03d2512471f68afadeb6a5952782c09a15d43306b9cd28",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "crop": {
+                  "left": 0.1,
+                  "right": 0,
+                  "top": 0,
+                  "bottom": 0,
+                  "softness": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setCrop/unknown-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "unknown-field",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.1
+            },
+            "refit": true
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:unknown-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: unknown field"
+      }
+    },
+    {
+      "id": "clip.setCrop/missing-clip",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "missing-clip",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "missing",
+            "crop": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:missing-clip",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clipId: clip \"missing\" does not exist"
+      }
+    },
+    {
+      "id": "clip.setCrop/needs-crop-or-corner-pin",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "needs-crop-or-corner-pin",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:needs-crop-or-corner-pin",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop needs crop or cornerPin"
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-on-audio",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-on-audio",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "crop": {
+              "left": 0.1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-on-audio",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: crop applies to video and image clips"
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-on-a-shape",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-on-a-shape",
+      "base": "styles",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "rect",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-on-a-shape",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: cornerPin applies to video, image, composition and text clips"
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-is-array",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-is-array",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-is-array",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: crop must be an object or null"
+      }
+    },
+    {
+      "id": "clip.setCrop/unknown-crop-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "unknown-crop-field",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.1,
+              "refit": true
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:unknown-crop-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: unknown crop field"
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-side-out-of-range",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-side-out-of-range",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 1.1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-side-out-of-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: crop.left must be a number from 0 to 1"
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-softness-out-of-range",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-softness-out-of-range",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.1,
+              "softness": 1.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-softness-out-of-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: crop.softness must be a number from -1 to 1"
+      }
+    },
+    {
+      "id": "clip.setCrop/crop-sides-leave-nothing",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "crop-sides-leave-nothing",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "crop": {
+              "left": 0.5,
+              "right": 0.5
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:crop-sides-leave-nothing",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: opposite crop sides must leave part of the picture"
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-missing-corner",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-missing-corner",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "cornerPin": {
+              "topLeft": [
+                0,
+                0
+              ],
+              "topRight": [
+                0,
+                0
+              ],
+              "bottomRight": [
+                0,
+                0
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-missing-corner",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: cornerPin.bottomLeft must be [x, y]"
+      }
+    },
+    {
+      "id": "clip.setCrop/corner-pin-without-reference",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "corner-pin-without-reference",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "cornerPin": {
+              "topLeft": [
+                1,
+                1
+              ],
+              "topRight": [
+                0,
+                0
+              ],
+              "bottomRight": [
+                0,
+                0
+              ],
+              "bottomLeft": [
+                0,
+                0
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:corner-pin-without-reference",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: cornerPin.referenceWidth must be a positive number"
+      }
+    },
+    {
+      "id": "clip.setCrop/unknown-corner-pin-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "unknown-corner-pin-field",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080,
+              "tl": [
+                0,
+                0
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:unknown-corner-pin-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "clip.setCrop: unknown cornerPin field"
+      }
+    },
+    {
+      "id": "clip.setCrop/locked-track",
+      "story": "FL-348",
+      "covers": [
+        "clip.setCrop"
+      ],
+      "summary": "locked-track",
+      "base": "styles",
+      "envelopes": [
+        {
+          "id": "clip.setCrop",
+          "payload": {
+            "clipId": "locked-title",
+            "cornerPin": {
+              "topLeft": [
+                10,
+                5
+              ],
+              "topRight": [
+                -20,
+                0
+              ],
+              "bottomRight": [
+                0,
+                -12.5
+              ],
+              "bottomLeft": [
+                4,
+                4
+              ],
+              "referenceWidth": 1920,
+              "referenceHeight": 1080
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setCrop:locked-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "failed"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "failed",
+        "detail": "clip.setCrop: a clip it would change is on a locked track"
+      }
+    },
+    {
+      "id": "clip.setTransform/flip",
+      "story": "FL-348",
+      "covers": [
+        "clip.setTransform"
+      ],
+      "summary": "flip",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setTransform",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "transform": {
+              "flipHorizontal": true,
+              "flipVertical": true
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setTransform:flip",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "442bab1c74ef81435600644ef89bf6d4d099eaa3cb72cf5206f30486b260cf43",
+        "envelopeDigest": "efa5e199c73db34f71c09044c9b75e16b8b7d414f5370c3e05a87c78f70f1d1a",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0,
+                  "flipHorizontal": true,
+                  "flipVertical": true
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setTransform/flip-off",
+      "story": "FL-348",
+      "covers": [
+        "clip.setTransform"
+      ],
+      "summary": "flip-off",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setTransform",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "transform": {
+              "flipHorizontal": true
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setTransform:flip-off:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setTransform",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "transform": {
+              "flipHorizontal": false,
+              "x": 10
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setTransform:flip-off:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "95c2f5a51ce1cec6dafcd308b30e7533378ec1ef9f372d92a336896d99cb34a9",
+        "envelopeDigest": "1875452d775b5b7bca52f9e7b340d63fda4bd4678154f5c38f7069f7382cec40",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "summit.jpg",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000004",
+                "originId": "a0a106c9-bad7-4f86-a3e0-d67af8348cc3",
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "image",
+                "src": "",
+                "sourceWidth": 4000,
+                "sourceHeight": 3000,
+                "transform": {
+                  "x": 10,
+                  "y": 0,
+                  "width": 1440,
+                  "height": 1080,
+                  "rotation": 0,
+                  "flipHorizontal": false
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setTransform/flip-not-a-boolean",
+      "story": "FL-348",
+      "covers": [
+        "clip.setTransform"
+      ],
+      "summary": "flip-not-a-boolean",
+      "base": "still",
+      "envelopes": [
+        {
+          "id": "clip.setTransform",
+          "payload": {
+            "clipId": "a5d55fd9-8db3-4a00-bf1b-789eaa0c227d",
+            "transform": {
+              "flipVertical": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setTransform:flip-not-a-boolean",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "transform.flipVertical must be a boolean"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -12
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "2d5201c52858f9febf7c3207c2a93c77cad66572cc6cda9c81a3b30ebac98ad9",
+        "envelopeDigest": "62c533641b1a5e98266a6176d76028e95d731af9faaf22770c7813102361e488",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": "",
+                "audioDucking": {
+                  "duckOthersDb": -12
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-all-fields",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-all-fields",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "bb9df995-6ea6-4812-80b8-694930c9b606",
+            "ducking": {
+              "duckOthersDb": -18.5,
+              "attackSec": 0.05,
+              "releaseSec": 0.4,
+              "targetTrackIds": [
+                "a1"
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-all-fields",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "febf7d116fcd18e202974c5428bb6c1bd19a17f6a8cc38a755a94651fcf57faa",
+        "envelopeDigest": "789e619aaff8b552ee5bdba73808a7772957370ac917e75de12c1dd892ea8e91",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                },
+                "audioDucking": {
+                  "duckOthersDb": -18.5,
+                  "attackSec": 0.05,
+                  "releaseSec": 0.4,
+                  "targetTrackIds": [
+                    "a1"
+                  ]
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-cleared",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-cleared",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -6
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-cleared:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": null
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-cleared:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "applied"
+      },
+      "expect": {
+        "status": "applied",
+        "digest": "c0f809f437f5e25938cc67f88dddd2e3bf34ed8cc44a00fd4d44037051f351ca",
+        "envelopeDigest": "f33df606084679abcdb76dbef96098bbb7d1dcc9410c91c00aaaeb986653363f",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [],
+          []
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "bb9df995-6ea6-4812-80b8-694930c9b606",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              },
+              {
+                "id": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+                "trackId": "a1",
+                "from": 0,
+                "durationInFrames": 120,
+                "label": "surf.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000001",
+                "originId": "e1e905c6-3761-4f71-a68b-6e77930a1804",
+                "linkedGroupId": "2262041f-291b-4d86-8806-210fc4b1d40b",
+                "sourceStart": 0,
+                "sourceEnd": 120,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "audio",
+                "src": ""
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-above-zero",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-above-zero",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": 3
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-above-zero",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking.duckOthersDb must be in -60..0 dB"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-missing-amount",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-missing-amount",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "attackSec": 0.1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-missing-amount",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking.duckOthersDb must be in -60..0 dB"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-attack-out-of-range",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-attack-out-of-range",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -6,
+              "attackSec": 6
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-attack-out-of-range",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking.attackSec must be in 0..5 seconds"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-unknown-track",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-unknown-track",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -6,
+              "targetTrackIds": [
+                "missing"
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-unknown-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking.targetTrackIds: track \"missing\" does not exist"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-repeats-a-track",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-repeats-a-track",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -6,
+              "targetTrackIds": [
+                "v1",
+                "v1"
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-repeats-a-track",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking.targetTrackIds repeats a track"
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-unknown-field",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-unknown-field",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": {
+              "duckOthersDb": -6,
+              "sourceTrackIds": [
+                "v1"
+              ]
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-unknown-field",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking: unknown field \"sourceTrackIds\""
+      }
+    },
+    {
+      "id": "clip.setAudio/ducking-is-array",
+      "story": "FL-348",
+      "covers": [
+        "clip.setAudio"
+      ],
+      "summary": "ducking-is-array",
+      "base": "linked-pair",
+      "envelopes": [
+        {
+          "id": "clip.setAudio",
+          "payload": {
+            "clipId": "6c4aab49-538b-4e8e-94b1-5790c31a0986",
+            "ducking": []
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.setAudio:ducking-is-array",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "admission": {
+        "status": "rejected",
+        "reason": "invalid"
+      },
+      "expect": {
+        "status": "rejected",
+        "index": 0,
+        "reason": "invalid",
+        "detail": "ducking must be an object or null"
+      }
+    },
+    {
+      "id": "clip.group/effect-inside-a-mask",
+      "story": "FL-309",
+      "covers": [
+        "clip.group",
+        "effect.add"
+      ],
+      "summary": "effect-inside-a-mask",
+      "base": "styles",
+      "settlesOnLoad": true,
+      "envelopes": [
+        {
+          "id": "effect.add",
+          "payload": {
+            "clipId": "keyed",
+            "effect": "gpu-gaussian-blur",
+            "params": {
+              "radius": 12
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:effect-inside-a-mask:0",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "clip.group",
+          "payload": {
+            "clipIds": [
+              "pen-mask",
+              "keyed"
+            ],
+            "name": "Blurred region"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:effect-inside-a-mask:1",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "a8cddd753be8aee5f0d0024dc78eb7e343f2bb978e14b4c638b01e3ad9939866",
+        "envelopeDigest": "4cf90722699bd2323ef031bf61b44e7d8afca6167876cc8ec6060807fe9cd833",
+        "fixedPoint": false,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "8714a0be-d6cc-4736-9560-6f212e6a0e20",
+              "at": [
+                "timeline.compositions[0].items[1].effects[0].id",
+                "timeline.compositions[0].tracks[1].items[0].effects[0].id"
+              ]
+            }
+          ],
+          [
+            {
+              "draw": 0,
+              "id": "b4b8d689-12df-4ded-816a-c70bee684e75",
+              "at": [
+                "timeline.compositions[0].items[0].trackId",
+                "timeline.compositions[0].tracks[0].id",
+                "timeline.compositions[0].tracks[0].items[0].trackId"
+              ]
+            },
+            {
+              "draw": 1,
+              "id": "6599ae77-631f-4615-b64a-fe16feac4853",
+              "at": [
+                "timeline.compositions[0].items[1].trackId",
+                "timeline.compositions[0].tracks[1].id",
+                "timeline.compositions[0].tracks[1].items[0].trackId"
+              ]
+            },
+            {
+              "draw": 2,
+              "id": "61d59e5f-9fee-4ee9-801f-b79e607143be",
+              "at": [
+                "timeline.compositions[0].items[0].id",
+                "timeline.compositions[0].tracks[0].items[0].id"
+              ]
+            },
+            {
+              "draw": 3,
+              "id": "97b48b1e-02e7-4f8c-8b95-16ed7a64a24c",
+              "at": [
+                "timeline.compositions[0].items[1].id",
+                "timeline.compositions[0].keyframes[0].itemId",
+                "timeline.compositions[0].tracks[1].items[0].id"
+              ]
+            },
+            {
+              "draw": 4,
+              "id": "e92efded-d01c-4987-b3e0-9b3fc7381f10",
+              "at": [
+                "timeline.compositions[0].id",
+                "timeline.items[8].compositionId"
+              ]
+            },
+            {
+              "draw": 5,
+              "id": "955794c5-7846-4d2a-9e06-4b8042061c9e",
+              "at": [
+                "timeline.items[8].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v2",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "v3",
+                "name": "",
+                "kind": "video",
+                "height": 100,
+                "locked": true,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 2,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              },
+              {
+                "id": "a1",
+                "name": "",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 3,
+                "items": [],
+                "syncLock": true,
+                "volume": 0
+              }
+            ],
+            "items": [
+              {
+                "id": "rect",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "rect",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "star",
+                "trackId": "v1",
+                "from": 100,
+                "durationInFrames": 90,
+                "label": "star",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "star",
+                "points": 5,
+                "innerRadius": 0.5,
+                "cornerRadius": 4
+              },
+              {
+                "id": "pen",
+                "trackId": "v1",
+                "from": 200,
+                "durationInFrames": 90,
+                "label": "pen",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "path",
+                "pathClosed": true,
+                "fillEnabled": true,
+                "strokeEnabled": true,
+                "strokeWidth": 4,
+                "strokeColor": "#3b82f6",
+                "strokeLineCap": "butt",
+                "strokeLineJoin": "miter",
+                "strokeMiterLimit": 4,
+                "pathVertices": [
+                  {
+                    "position": [
+                      0,
+                      0
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  },
+                  {
+                    "position": [
+                      1,
+                      0
+                    ],
+                    "inHandle": [
+                      -0.1,
+                      0
+                    ],
+                    "outHandle": [
+                      0.1,
+                      0
+                    ],
+                    "tangentMode": "smooth"
+                  },
+                  {
+                    "position": [
+                      0.5,
+                      1
+                    ],
+                    "inHandle": [
+                      0,
+                      0
+                    ],
+                    "outHandle": [
+                      0,
+                      0
+                    ],
+                    "tangentMode": "corner"
+                  }
+                ]
+              },
+              {
+                "id": "locked-shape",
+                "trackId": "v3",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "locked-shape",
+                "type": "shape",
+                "fillColor": "#3b82f6",
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 400,
+                  "height": 300,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "shapeType": "rectangle"
+              },
+              {
+                "id": "title",
+                "trackId": "v2",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "title",
+                "type": "text",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 80
+              },
+              {
+                "id": "preset-title",
+                "trackId": "v2",
+                "from": 100,
+                "durationInFrames": 90,
+                "label": "preset-title",
+                "type": "text",
+                "text": "Summit",
+                "color": "#e2e8f0",
+                "fontSize": 50,
+                "fontFamily": "Inter",
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundColor": "#0f172a",
+                "backgroundRadius": 999,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1,
+                "letterSpacing": 2,
+                "textPadding": 18,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 4,
+                  "blur": 14,
+                  "color": "#020617"
+                },
+                "stroke": {
+                  "width": 1,
+                  "color": "#38bdf8"
+                },
+                "textStylePresetId": "outline-pill",
+                "textStyleScale": 1
+              },
+              {
+                "id": "spanned",
+                "trackId": "v2",
+                "from": 200,
+                "durationInFrames": 90,
+                "label": "spanned",
+                "type": "text",
+                "text": "Ada Lovelace\nMathematician",
+                "color": "#ffffff",
+                "fontSize": 80,
+                "textSpans": [
+                  {
+                    "text": "Ada Lovelace",
+                    "fontWeight": "bold"
+                  },
+                  {
+                    "text": "Mathematician",
+                    "fontSize": 40,
+                    "color": "#cbd5e1"
+                  }
+                ]
+              },
+              {
+                "id": "locked-title",
+                "trackId": "v3",
+                "from": 100,
+                "durationInFrames": 90,
+                "label": "locked-title",
+                "type": "text",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 80
+              },
+              {
+                "id": "955794c5-7846-4d2a-9e06-4b8042061c9e",
+                "type": "composition",
+                "trackId": "v2",
+                "from": 300,
+                "durationInFrames": 90,
+                "label": "Blurred region",
+                "compositionId": "e92efded-d01c-4987-b3e0-9b3fc7381f10",
+                "compositionWidth": 1920,
+                "compositionHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "rotation": 0,
+                  "opacity": 1
+                },
+                "sourceStart": 0,
+                "sourceEnd": 90,
+                "sourceDuration": 90,
+                "sourceFps": 30,
+                "speed": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0,
+            "compositions": [
+              {
+                "id": "e92efded-d01c-4987-b3e0-9b3fc7381f10",
+                "name": "Blurred region",
+                "editorKind": "composite-2d",
+                "items": [
+                  {
+                    "id": "61d59e5f-9fee-4ee9-801f-b79e607143be",
+                    "trackId": "b4b8d689-12df-4ded-816a-c70bee684e75",
+                    "from": 0,
+                    "durationInFrames": 90,
+                    "label": "pen-mask",
+                    "type": "shape",
+                    "fillColor": "#3b82f6",
+                    "transform": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 400,
+                      "height": 300,
+                      "rotation": 0,
+                      "opacity": 1
+                    },
+                    "shapeType": "path",
+                    "pathClosed": true,
+                    "fillEnabled": true,
+                    "strokeEnabled": true,
+                    "strokeWidth": 4,
+                    "strokeColor": "#3b82f6",
+                    "strokeLineCap": "butt",
+                    "strokeLineJoin": "miter",
+                    "strokeMiterLimit": 4,
+                    "pathVertices": [
+                      {
+                        "position": [
+                          0,
+                          0
+                        ],
+                        "inHandle": [
+                          0,
+                          0
+                        ],
+                        "outHandle": [
+                          0,
+                          0
+                        ],
+                        "tangentMode": "corner"
+                      },
+                      {
+                        "position": [
+                          1,
+                          0
+                        ],
+                        "inHandle": [
+                          -0.1,
+                          0
+                        ],
+                        "outHandle": [
+                          0.1,
+                          0
+                        ],
+                        "tangentMode": "smooth"
+                      },
+                      {
+                        "position": [
+                          0.5,
+                          1
+                        ],
+                        "inHandle": [
+                          0,
+                          0
+                        ],
+                        "outHandle": [
+                          0,
+                          0
+                        ],
+                        "tangentMode": "corner"
+                      }
+                    ],
+                    "isMask": true,
+                    "blendMode": "normal",
+                    "maskType": "clip",
+                    "maskFeather": 0,
+                    "maskOpacity": 100,
+                    "maskInvert": false
+                  },
+                  {
+                    "id": "97b48b1e-02e7-4f8c-8b95-16ed7a64a24c",
+                    "trackId": "6599ae77-631f-4615-b64a-fe16feac4853",
+                    "from": 0,
+                    "durationInFrames": 90,
+                    "label": "keyed",
+                    "type": "text",
+                    "text": "Summit",
+                    "color": "#ffffff",
+                    "fontSize": 80,
+                    "effects": [
+                      {
+                        "id": "8714a0be-d6cc-4736-9560-6f212e6a0e20",
+                        "effect": {
+                          "type": "gpu-effect",
+                          "gpuEffectType": "gpu-gaussian-blur",
+                          "params": {
+                            "radius": 12
+                          }
+                        },
+                        "enabled": true
+                      }
+                    ]
+                  }
+                ],
+                "tracks": [
+                  {
+                    "id": "b4b8d689-12df-4ded-816a-c70bee684e75",
+                    "name": "",
+                    "kind": "video",
+                    "height": 100,
+                    "locked": false,
+                    "visible": true,
+                    "muted": false,
+                    "solo": false,
+                    "volume": 0,
+                    "order": 0,
+                    "items": [
+                      {
+                        "id": "61d59e5f-9fee-4ee9-801f-b79e607143be",
+                        "trackId": "b4b8d689-12df-4ded-816a-c70bee684e75",
+                        "from": 0,
+                        "durationInFrames": 90,
+                        "label": "pen-mask",
+                        "type": "shape",
+                        "fillColor": "#3b82f6",
+                        "transform": {
+                          "x": 0,
+                          "y": 0,
+                          "width": 400,
+                          "height": 300,
+                          "rotation": 0,
+                          "opacity": 1
+                        },
+                        "shapeType": "path",
+                        "pathClosed": true,
+                        "fillEnabled": true,
+                        "strokeEnabled": true,
+                        "strokeWidth": 4,
+                        "strokeColor": "#3b82f6",
+                        "strokeLineCap": "butt",
+                        "strokeLineJoin": "miter",
+                        "strokeMiterLimit": 4,
+                        "pathVertices": [
+                          {
+                            "position": [
+                              0,
+                              0
+                            ],
+                            "inHandle": [
+                              0,
+                              0
+                            ],
+                            "outHandle": [
+                              0,
+                              0
+                            ],
+                            "tangentMode": "corner"
+                          },
+                          {
+                            "position": [
+                              1,
+                              0
+                            ],
+                            "inHandle": [
+                              -0.1,
+                              0
+                            ],
+                            "outHandle": [
+                              0.1,
+                              0
+                            ],
+                            "tangentMode": "smooth"
+                          },
+                          {
+                            "position": [
+                              0.5,
+                              1
+                            ],
+                            "inHandle": [
+                              0,
+                              0
+                            ],
+                            "outHandle": [
+                              0,
+                              0
+                            ],
+                            "tangentMode": "corner"
+                          }
+                        ],
+                        "isMask": true,
+                        "blendMode": "normal",
+                        "maskType": "clip",
+                        "maskFeather": 0,
+                        "maskOpacity": 100,
+                        "maskInvert": false
+                      }
+                    ]
+                  },
+                  {
+                    "id": "6599ae77-631f-4615-b64a-fe16feac4853",
+                    "name": "",
+                    "kind": "video",
+                    "height": 100,
+                    "locked": false,
+                    "visible": true,
+                    "muted": false,
+                    "solo": false,
+                    "volume": 0,
+                    "order": 1,
+                    "items": [
+                      {
+                        "id": "97b48b1e-02e7-4f8c-8b95-16ed7a64a24c",
+                        "trackId": "6599ae77-631f-4615-b64a-fe16feac4853",
+                        "from": 0,
+                        "durationInFrames": 90,
+                        "label": "keyed",
+                        "type": "text",
+                        "text": "Summit",
+                        "color": "#ffffff",
+                        "fontSize": 80,
+                        "effects": [
+                          {
+                            "id": "8714a0be-d6cc-4736-9560-6f212e6a0e20",
+                            "effect": {
+                              "type": "gpu-effect",
+                              "gpuEffectType": "gpu-gaussian-blur",
+                              "params": {
+                                "radius": 12
+                              }
+                            },
+                            "enabled": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "keyframes": [
+                  {
+                    "itemId": "97b48b1e-02e7-4f8c-8b95-16ed7a64a24c",
+                    "animationVersion": 2,
+                    "properties": [
+                      {
+                        "property": "fontSize",
+                        "keyframes": [
+                          {
+                            "id": "4a6cc634-7473-423b-beac-4e821eeb0b9c",
+                            "frame": 0,
+                            "value": 60,
+                            "easing": "linear"
+                          },
+                          {
+                            "id": "5955eafb-2337-423b-827f-dec5e3f1320c",
+                            "frame": 30,
+                            "value": 120,
+                            "easing": "linear"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "fps": 30,
+                "width": 1920,
+                "height": 1080,
+                "durationInFrames": 90
+              }
+            ]
+          }
+        },
+        "settled": {
+          "digest": "c5ce641bd203e7aa53d5632225a87315b8a3ef7e1e20292208e91cd8d5989251",
+          "envelopeDigest": "1a695e3640ef0128a9ce7db04f4d73da9a398790527ba240ce593dff0961e356",
+          "fixedPoint": true
+        }
+      }
     }
   ],
   "history": [
@@ -189826,14 +193686,14 @@
       "section": "13.8.4"
     },
     "clip.setCrop": {
-      "status": "not-implemented",
-      "story": "FL-306",
-      "section": "8.2"
+      "status": "engine",
+      "story": "FL-348",
+      "section": "17.6"
     },
     "clip.setGrade": {
       "status": "not-implemented",
       "story": "FL-306",
-      "section": "8.2"
+      "section": "13.8.6"
     },
     "clip.setKenBurns": {
       "status": "engine",
