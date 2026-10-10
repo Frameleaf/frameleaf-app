@@ -2463,11 +2463,10 @@ describe(CloudBackupService.name, () => {
       keys.read.mockResolvedValue(keyFileOf());
       index.listKeptManifests.mockResolvedValue([kept]);
       store.get = vi.fn().mockResolvedValue(manifestBody);
-      store.download = vi
-        .fn()
-        .mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
-          Promise.resolve({ size: 1, sha256 }),
-        );
+      store.download = vi.fn().mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
+        // the restorer checks the staged copy against the manifest: its size as well as its hash
+        Promise.resolve({ size: sha256 === SHA_SIDECAR ? 5 : 100, sha256 }),
+      );
     });
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
@@ -2510,8 +2509,13 @@ describe(CloudBackupService.name, () => {
         expect.objectContaining({ bucket: s3.bucket }),
         `o/${SHA_A}`,
         key,
-        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
+        // downloaded beside the target, published by a rename only once its size and hash match
+        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/\.cloud-restore-[\da-f-]+\.tmp$/),
         SHA_A,
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        vi.mocked(store.download).mock.calls[0][3],
+        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
       );
       expect(operations.complete).toHaveBeenCalledWith(
         'restore-1',
