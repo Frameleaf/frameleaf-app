@@ -226,6 +226,56 @@ describe('validateStudioCommandEnvelope', () => {
     expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c' })).toMatchObject({ valid: false });
   });
 
+  it('checks the closed crop and corner pin of a clip.setCrop (graph protocol 17.6)', () => {
+    const pin = {
+      topLeft: [10, 5],
+      topRight: [-20, 0],
+      bottomRight: [0, -12.5],
+      bottomLeft: [4, 4],
+      referenceWidth: 1920,
+      referenceHeight: 1080,
+    };
+    const valid = (payload: Record<string, unknown>) => validateStudioCommandPayload('clip.setCrop', payload);
+    expect(valid({ clipId: 'c', crop: { left: 0.1, softness: -0.5 } })).toEqual({ valid: true });
+    expect(valid({ clipId: 'c', crop: null, cornerPin: pin })).toEqual({ valid: true });
+    expect(valid({ clipId: 'c', cornerPin: null })).toEqual({ valid: true });
+    for (const payload of [
+      { clipId: 'c' },
+      { clipId: '', crop: null },
+      { clipId: 'c', crop: [] },
+      { clipId: 'c', crop: { left: 1.1 } },
+      { clipId: 'c', crop: { left: 0.1, refit: true } },
+      { clipId: 'c', crop: { left: 0.5, right: 0.5 } },
+      { clipId: 'c', crop: { left: 0.1, softness: 2 } },
+      { clipId: 'c', cornerPin: { ...pin, bottomLeft: [1] } },
+      { clipId: 'c', cornerPin: { ...pin, referenceWidth: 0 } },
+      { clipId: 'c', cornerPin: { ...pin, tl: [0, 0] } },
+      { clipId: 'c', crop: null, mask: {} },
+    ]) {
+      expect(valid(payload), JSON.stringify(payload)).toMatchObject({ valid: false });
+    }
+  });
+
+  it('checks the closed ducking of a clip.setAudio (graph protocol 13.9)', () => {
+    const valid = (ducking: unknown) => validateStudioCommandPayload('clip.setAudio', { clipId: 'c', ducking });
+    expect(valid({ duckOthersDb: -12 })).toEqual({ valid: true });
+    expect(valid({ duckOthersDb: -18.5, attackSec: 0.05, releaseSec: 0.4, targetTrackIds: ['a1'] })).toEqual({
+      valid: true,
+    });
+    expect(valid(null)).toEqual({ valid: true });
+    for (const ducking of [
+      {},
+      { duckOthersDb: 3 },
+      { duckOthersDb: -6, attackSec: 6 },
+      { duckOthersDb: -6, targetTrackIds: [] },
+      { duckOthersDb: -6, targetTrackIds: ['a1', 'a1'] },
+      { duckOthersDb: -6, sourceTrackIds: ['v1'] },
+      [],
+    ]) {
+      expect(valid(ducking), JSON.stringify(ducking)).toMatchObject({ valid: false });
+    }
+  });
+
   it('checks the closed payload of a shape.add (graph protocol 17.4)', () => {
     const at = { num: 1, den: 1 };
     const vertex = { position: [0, 0], inHandle: [0, 0], outHandle: [0.1, 0], tangentMode: 'smooth' };
