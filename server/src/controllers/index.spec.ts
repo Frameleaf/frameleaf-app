@@ -105,9 +105,13 @@ const SHARED_LINK_ROUTES = new Set([
   'GET albums/:id',
   'GET albums/:id/map-markers',
   'GET assets/:id',
+  // Studio timeline filmstrips and waveforms follow the thumbnail's access
+  'GET assets/:id/filmstrip',
+  'GET assets/:id/filmstrip/sprite',
   'GET assets/:id/original',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
+  'GET assets/:id/waveform',
   'GET assets/:id/video/stream/:sessionId/:variantIndex/:filename',
   'GET assets/:id/video/stream/:sessionId/:variantIndex/playlist.m3u8',
   'GET assets/:id/video/stream/main.m3u8',
@@ -153,11 +157,14 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
  * derived files.
  */
 const RELAY_MEDIA_ROUTES = [
+  'GET assets/:id/filmstrip',
+  'GET assets/:id/filmstrip/sprite',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
   'GET assets/:id/video/stream/main.m3u8',
   'GET people/:id/thumbnail',
   'GET preservation/packages/:id/manifest',
+  'GET assets/:id/waveform',
   'GET users/:id/profile-image',
 ];
 
