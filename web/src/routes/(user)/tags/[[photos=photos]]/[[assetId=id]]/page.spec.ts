@@ -20,7 +20,16 @@ const run = (path?: string) =>
 describe('tags page load', () => {
   beforeEach(() => {
     vi.mocked(getAllTags).mockResolvedValue(tags);
-    vi.mocked(getTagStatistics).mockResolvedValue([{ id: 'trips', count: 1, total: 2 }]);
+    vi.mocked(getTagStatistics).mockResolvedValue([
+      {
+        id: 'trips',
+        count: 1,
+        total: 2,
+        coverAssetIds: ['a', 'b'],
+        startDate: '2026-08-02T00:00:00.000Z',
+        endDate: '2026-08-09T00:00:00.000Z',
+      },
+    ]);
   });
 
   it('loads the tags and their counts for the overview and for a deep link', async () => {
