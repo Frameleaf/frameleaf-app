@@ -13782,6 +13782,62 @@ export type StudioProjectDiffDto = {
     /** More paths changed than are listed */
     truncated: boolean;
 };
+export type StudioTranscriptionCreateDto = {
+    /** A video or audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The machine-learning destination to run on, named explicitly */
+    destinationId: string;
+    /** A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language */
+    language: string;
+};
+export type StudioTranscriptionQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioTranscriptionTime = {
+    den: number;
+    num: number;
+};
+export type StudioTranscriptionCue = {
+    end: StudioTranscriptionTime;
+    start: StudioTranscriptionTime;
+    text: string;
+};
+export type StudioTranscriptionWord = {
+    /** Index of the cue the word belongs to */
+    cue: number;
+    end: StudioTranscriptionTime;
+    start: StudioTranscriptionTime;
+    text: string;
+};
+export type StudioTranscriptionResultDto = {
+    /** Ready for `captions.set`: `{ start, end, text }` only */
+    cues: StudioTranscriptionCue[];
+    /** The Whisper language code the speech was transcribed in */
+    language: string;
+    /** How sure detection was; 1 when the language was given */
+    languageProbability: number;
+    /** The Whisper model the worker used */
+    model: string;
+    /** Word timings, for word-by-word caption styles */
+    words: StudioTranscriptionWord[];
+};
+export type StudioTranscriptionDto = {
+    clipId: string;
+    destinationId: string;
+    error: string | null;
+    id: string;
+    /** The language asked for (`auto` or a BCP 47 tag) */
+    language: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed */
+    result: (StudioTranscriptionResultDto) | null;
+    /** The revision whose clip was transcribed */
+    revision: number;
+    status: MediaOperationStatus;
+};
 export type StudioResourceApprovalDto = {
     approvedBy: string;
     approvedOn: string;
@@ -26570,6 +26626,36 @@ export function diffStudioProjectRevision({ against, id, revision }: {
     }));
 }
 /**
+ * Transcribe a Studio clip
+ */
+export function createStudioTranscription({ id, studioTranscriptionCreateDto }: {
+    id: string;
+    studioTranscriptionCreateDto: StudioTranscriptionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioTranscriptionQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioTranscriptionCreateDto
+    })));
+}
+/**
+ * Get a Studio clip transcription
+ */
+export function getStudioTranscription({ id, transcriptionId }: {
+    id: string;
+    transcriptionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioTranscriptionDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions/${encodeURIComponent(transcriptionId)}`, {
+        ...opts
+    }));
+}
+/**
  * Restore a Studio project from the trash
  */
 export function restoreStudioProjectFromTrash({ id }: {
@@ -28999,6 +29085,7 @@ export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
     StudioReverseConform = "studio_reverse_conform",
+    StudioTranscription = "studio_transcription",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",

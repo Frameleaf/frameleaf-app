@@ -34,6 +34,7 @@ class ModelTask(StrEnum):
     NSFW_DETECTION = "nsfw-detection"
     SEMANTIC_MASK = "semantic-mask"
     INPAINT = "inpaint"
+    TRANSCRIBE = "transcribe"
 
 
 class ModelType(StrEnum):
@@ -42,6 +43,7 @@ class ModelType(StrEnum):
     RECOGNITION = "recognition"
     TEXTUAL = "textual"
     VISUAL = "visual"
+    AUDIO = "audio"
 
 
 class ModelFormat(StrEnum):
@@ -243,6 +245,17 @@ class InpaintOptions(_OptionsBase):
     """Options for the inpaint task (Clean Up Remove fills). The server sends none today."""
 
 
+class TranscribeOptions(_OptionsBase):
+    """Options for the transcribe task (Studio captions, Whisper).
+
+    `language` is a Whisper language code (`en`, `de`, `yue`); absent means detect it from the audio.
+    The server maps the request's BCP 47 tag (or `auto`) to it.
+    """
+
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")
+    wordTimestamps: bool = True
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -255,6 +268,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.NSFW_DETECTION, ModelType.CLASSIFICATION): NsfwDetectionOptions,
     (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
+    (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
 }
 
 
