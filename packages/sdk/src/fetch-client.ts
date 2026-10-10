@@ -7807,10 +7807,12 @@ export type EventStoryDto = {
     endDate: string;
     /** Discriminator for an event story */
     kind: Kind4;
+    /** The landmark the event was a visit to, when most of it was taken at one */
+    landmark?: LandmarkSummaryDto;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
-    /** Place label for the event, when it has one */
+    /** Landmark name or place label for the event, when it has one */
     title?: string;
     /** Year the event started */
     year: number;

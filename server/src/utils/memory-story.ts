@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { LANDMARK_WIDE_RADIUS_M } from 'src/constants.js';
 
 /**
  * Event-story grouping (FL-62).
@@ -29,6 +30,17 @@ export const MAX_EVENT_ASSETS = 60;
 /** two captures closer together than this are treated as the same moment (burst) */
 export const BURST_SECONDS = 20;
 
+/** a visit to a landmark is a story on a single day, with this many assets (FL-356) */
+export const MIN_LANDMARK_ASSETS = 5;
+
+/** the share of an event's assets a landmark has to hold for the event to be a visit to it */
+export const LANDMARK_SHARE = 0.6;
+
+/** a landmark photographed on more local days than this in a year is part of home, not a visit */
+export const MAX_LANDMARK_DAYS_PER_YEAR = 6;
+
+export type StoryLandmark = { id: string; name: string; kind: string; rank: number; radiusM: number };
+
 export type StoryCandidate = {
   id: string;
   /** the asset's local wall clock, stored as a UTC instant */
@@ -36,6 +48,8 @@ export type StoryCandidate = {
   city: string | null;
   state: string | null;
   country: string | null;
+  /** every landmark the asset was taken at, in any order */
+  landmarks?: StoryLandmark[];
 };
 
 export type StoryPlace = {
@@ -54,6 +68,8 @@ export type EventStoryGroup = {
   /** number of distinct local days the event covers */
   dayCount: number;
   place: StoryPlace | null;
+  /** the landmark the event was a visit to, when most of it was taken at one (FL-356) */
+  landmark?: Pick<StoryLandmark, 'id' | 'name' | 'kind'>;
   /** the assets the story keeps, in capture order */
   assetIds: string[];
   /** how many candidates the event held before the diversity pass */
@@ -229,12 +245,50 @@ export const dominantPlace = (candidates: StoryCandidate[]): StoryPlace | null =
 };
 
 /**
+ * The landmark an event was a visit to: one that holds most of its assets. Where several do, the
+ * choice is the one a single photo is labelled with (`mostSpecificLandmark` in the search
+ * repository): a specific spot before the wide area around it, then the most famous. A day split
+ * between two parks of one resort is therefore a day at the resort.
+ */
+export const dominantLandmark = (candidates: StoryCandidate[]): StoryLandmark | null => {
+  const counts = new Map<string, { landmark: StoryLandmark; count: number }>();
+  for (const { landmarks } of candidates) {
+    for (const landmark of landmarks ?? []) {
+      const entry = counts.get(landmark.id);
+      if (entry) {
+        entry.count++;
+      } else {
+        counts.set(landmark.id, { landmark, count: 1 });
+      }
+    }
+  }
+
+  const wide = (landmark: StoryLandmark) => Number(landmark.radiusM > LANDMARK_WIDE_RADIUS_M);
+  const [best] = counts
+    .values()
+    .filter(({ count }) => count >= candidates.length * LANDMARK_SHARE)
+    .map(({ landmark }) => landmark)
+    .toArray()
+    .toSorted(
+      (a, b) => wide(a) - wide(b) || b.rank - a.rank || a.radiusM - b.radiusM || a.id.localeCompare(b.id, 'en'),
+    );
+  return best ?? null;
+};
+
+/**
  * Splits a single owner's candidates into multi-day events.
  *
  * `candidates` must be that one owner's assets in ascending `localDateTime` order; the
  * caller owns the access check, because nothing here can tell whose assets these are.
+ *
+ * Landmarks count only when `frequentLandmarkIds` is given (FL-356). A visit to a landmark is then
+ * a story even on a single day, unless the landmark is one of those: a place the owner is at all
+ * year is not an outing.
  */
-export const groupEventStories = (candidates: StoryCandidate[]): EventStoryGroup[] => {
+export const groupEventStories = (
+  candidates: StoryCandidate[],
+  frequentLandmarkIds?: ReadonlySet<string>,
+): EventStoryGroup[] => {
   if (candidates.length === 0) {
     return [];
   }
@@ -269,7 +323,12 @@ export const groupEventStories = (candidates: StoryCandidate[]): EventStoryGroup
     const deduplicated = suppressBursts(entries);
     const days = new Set(deduplicated.map(({ localDateTime }) => localDay(localDateTime)));
 
-    if (days.size < MIN_EVENT_DAYS || deduplicated.length < MIN_EVENT_ASSETS) {
+    const landmark = frequentLandmarkIds ? dominantLandmark(deduplicated) : null;
+    const isTrip = days.size >= MIN_EVENT_DAYS && deduplicated.length >= MIN_EVENT_ASSETS;
+    // ponytail: a visit is found only as its own run; one on a day of other photos in the same town
+    // is missed. Look for visits per local day if that turns out to matter.
+    const isVisit = !!landmark && deduplicated.length >= MIN_LANDMARK_ASSETS && !frequentLandmarkIds?.has(landmark.id);
+    if (!isTrip && !isVisit) {
       continue;
     }
 
@@ -284,6 +343,7 @@ export const groupEventStories = (candidates: StoryCandidate[]): EventStoryGroup
       endAt: last.localDateTime,
       dayCount: days.size,
       place: dominantPlace(deduplicated),
+      ...(landmark && { landmark: { id: landmark.id, name: landmark.name, kind: landmark.kind } }),
       assetIds: kept.map(({ id }) => id),
       totalAssets: deduplicated.length,
     });
