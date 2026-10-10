@@ -87,6 +87,7 @@ export class StudioProjectImportService {
     projectId: string,
     rawId: string | undefined,
     file: Express.Multer.File | undefined,
+    reservationId?: string,
   ): Promise<StudioProjectImportDto> {
     let textLabel = 'The file';
     try {
@@ -137,6 +138,7 @@ export class StudioProjectImportService {
       const folder = studioImportProjectFolder(project.ownerId, project.id);
       const path = join(folder, `${id}${type.extension}`);
       const stored = await this.projects.registerImport({
+        ...(reservationId && { reservationId }),
         projectId: project.id,
         id,
         ownerId: project.ownerId,
