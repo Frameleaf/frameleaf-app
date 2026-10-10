@@ -41,5 +41,6 @@ Alpha unchanged. RGB at alpha = 0 is multiplied like any other pixel.
 SDR: multiplicative on sRGB-encoded values [C3], unclamped (cannot raise values). HDR: refused [C4].
 
 ## Notes
+- **Required precision.** o, ω and (v + o)·ω are binary32, one rounding per operation, and the sine is reduced as [C6] says (turns = argument × R in binary32, fraction only). The sine is used at face value, so an error δ in it changes m by at most opacity·δ/2: the canonical sine's error of 1.9 × 10⁻⁴ and any sine accurate to 10⁻³ are far inside the `pixel` floor, and both pass every golden. Unlike the HASH effects, these cases are `pixel` cases.
 - **Long-clip precision (implementation-defined):** o is not wrapped. With speed > 0 the sine argument grows as t · speed · density · 10; at t = 1 h, speed = 5, density = 20 it is ≈ 3.6 million radians, where binary32 resolution of the argument is ≈ 0.25 rad and GPU sin error is implementation-specific. Line phase therefore becomes imprecise on long clips; the visible pattern stays a line pattern but its exact phase is not reproducible. With speed = 0 (default) the argument is at most ω ≈ 2000 rad and the result is stable.
 - Line count does not depend on resolution; line thickness in pixels does.

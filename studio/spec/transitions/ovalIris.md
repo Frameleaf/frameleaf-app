@@ -28,7 +28,7 @@ Aperture: a full ellipse (true ellipse, 0 to 2π, no rotation) centred at (cx, c
 See shared section.
 
 ## Edges
-Clip edges decided at pixel centres [T6].
+Clip edges decided at pixel centres [T6]. The ellipse is a curved outline: flatten it to chords within 1/16 pixel of the true ellipse (or test the true ellipse) and scan-convert as T6 says. How the canonical backend flattens it is not specifiable; against the goldens the true ellipse differs in at most 12 pixels of a case (`ovalIris/p=0.25`), all on the outline and inside the case's outlier allowance.
 
 ## Alpha
 See shared section.

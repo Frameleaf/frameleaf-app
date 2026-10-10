@@ -36,7 +36,7 @@ Each stroke covers the band of points whose perpendicular distance to its diagon
 Output: B (source-over, alpha 1), then the erased-A scratch layer source-over. Per pixel: out = A·(1 − c) + B·(1 − α_A·(1 − c)), c = union stroke coverage.
 
 ## Edges
-Stroke edges are anti-aliased by coverage (strokes, unlike clips, are anti-aliased on the canonical backend [T6]); ±1 px. No feather.
+Stroke edges are anti-aliased by coverage [T6, Strokes]: c is the fraction of the pixel's area within w/2 of either diagonal (between the diagonal's ends), the union counted once. A pixel wholly inside a band has c = 1 and shows B exactly; a pixel wholly outside both has c = 0 and shows A exactly; only the pixels a band edge crosses are blended. The canonical backend's c differs from the exact area by at most 0.006 on average over the frame and by up to 0.16 at single pixels on a band's edge (0.18 for the hairline at p = 0, 0.25 at the corner caps at p = 1); the goldens allow this. No feather.
 
 ## Alpha
 Background transparent. Opaque inputs → opaque output.
