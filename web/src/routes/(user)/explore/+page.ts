@@ -6,6 +6,7 @@ import {
   getAllPeople,
   getBestPhotos,
   getTimeBuckets,
+  getVisitedLandmarks,
   MemorySearchOrder,
   searchAssetStatistics,
   searchAssets,
@@ -26,6 +27,7 @@ import {
   type ExploreBestPhotosPreview,
   type ExploreShortcutCounts,
 } from '$lib/frameleaf/explore';
+import { buildLandmarkCards, EXPLORE_LANDMARK_LIMIT } from '$lib/frameleaf/landmarks';
 import { memoryManager } from '$lib/managers/memory-manager.svelte';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
@@ -68,6 +70,7 @@ export const load = (async ({ url }) => {
     bestPhotos,
     facets,
     recentCaptures,
+    landmarks,
   ] = await Promise.all([
     // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
     // only that section says it could not load (`failed` below) instead of the whole page erroring.
@@ -104,6 +107,8 @@ export const load = (async ({ url }) => {
     })
       .then(({ assets }) => assets.items)
       .catch(() => null),
+    // FL-354: the landmarks and attractions the account has photos at, most photographed first.
+    getVisitedLandmarks().catch(() => null),
   ]);
   const $t = await getFormatter();
 
@@ -127,10 +132,12 @@ export const load = (async ({ url }) => {
       memories: memories === null,
       albums: albums === null,
       recents: recentCaptures === null,
+      landmarks: landmarks === null,
     },
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
+    landmarks: buildLandmarkCards(landmarks ?? [], EXPLORE_LANDMARK_LIMIT),
     libraryTotal: facets ? facets.total : null,
     recentCaptures: recentCaptures ?? [],
     albums: albums ? previewAlbums(albums) : [],

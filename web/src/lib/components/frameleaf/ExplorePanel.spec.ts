@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildExplorePeople, buildExplorePlaces, buildExploreThings } from '$lib/frameleaf/explore';
+import { buildLandmarkCards } from '$lib/frameleaf/landmarks';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
@@ -52,6 +53,42 @@ describe('ExplorePanel', () => {
     const thing = things.getByRole('link', { name: /beach/ });
     expect(thing).toHaveTextContent('1 item');
     expect(thing.getAttribute('href')).toContain('tagIds');
+  });
+
+  it('lists visited landmarks with their kind, count and dates, each opening its search (FL-354)', () => {
+    const landmarks = buildLandmarkCards([
+      {
+        id: 'Q181185',
+        name: 'Disneyland Park',
+        kind: 'theme_park',
+        latitude: 33.8121,
+        longitude: -117.919,
+        assetCount: 14,
+        firstTakenAt: '2026-06-03T10:00:00.000Z',
+        lastTakenAt: '2026-06-03T21:30:00.000Z',
+        coverAssetId: 'park-cover',
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States of America',
+        icon: { background: '#ffffff', tile: false },
+      },
+    ]);
+    render(ExplorePanel, props({ landmarks }));
+
+    const section = within(screen.getByRole('region', { name: 'Landmarks & attractions' }));
+    const card = section.getByRole('link', { name: /Disneyland Park, Theme park, 14 items/ });
+    expect(card).toHaveTextContent('Theme park');
+    expect(card).toHaveTextContent('14 items');
+    expect(card).toHaveTextContent('2026');
+    expect(card.getAttribute('href')).toContain('landmarkIds');
+    // its own brand icon, in a circle of the icon's background colour
+    const icon = card.querySelector(':scope .lm-badge-brand img');
+    expect(icon?.getAttribute('src')).toContain('/search/landmarks/Q181185/icon');
+  });
+
+  it('shows no landmarks section for an account that has been to none', () => {
+    render(ExplorePanel, props());
+    expect(screen.queryByRole('region', { name: 'Landmarks & attractions' })).toBeNull();
   });
 
   it('opens the same search the person and place counts came from', () => {
