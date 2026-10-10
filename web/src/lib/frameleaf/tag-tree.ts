@@ -1,15 +1,15 @@
 import type { TagResponseDto, TagStatisticsResponseDto } from '@frameleaf/sdk';
 
 /**
- * Client-side tag tree adapter for the Frameleaf Tags browser (FL-46).
+ * Client-side tag tree adapter for the Frameleaf Tags screen (FL-46, redesigned as "tags as
+ * collections").
  *
- * Ported from the approved prototype (`design/frameleaf/template/src/Tags.jsx`,
- * `discovery-data.mjs` `tagTree`), but built directly from the production tag API instead of the
- * prototype's slash-path/localStorage-override simulation: every tag carries a real `parentId` and
- * `color`, set by `POST /tags` and changed (name, colour, parent) by `PUT /tags/:id`. Counts come
- * from `GET /tags/statistics`: `count` is the Timeline items carrying exactly the tag and `total`
- * those carrying it or any tag under it, which is also what "Show all" opens, because the tag filter
- * matches a tag's whole subtree. Nothing archived, Locked or hidden is ever counted.
+ * Built directly from the production tag API: every tag carries a real `parentId` and `color`, set
+ * by `POST /tags` and changed (name, colour, parent) by `PUT /tags/:id`. Counts, covers and the
+ * capture-date range come from `GET /tags/statistics`: `count` is the Timeline items carrying
+ * exactly the tag, and `total`, the covers and the dates cover those carrying it or any tag under
+ * it, which is also what the tag's page shows, because the tag filter matches a tag's whole
+ * subtree. Nothing archived, Locked or hidden is ever counted or shown as a cover.
  *
  * Mirrors the cycle-guarding of `album-tree.ts` so both trees behave the same way.
  */
@@ -31,6 +31,11 @@ export interface FrameleafTagNode {
   count: number;
   /** Timeline items tagged with this tag or any tag under it (prototype `total`). */
   total: number;
+  /** Up to four items for the cover, newest capture first, from the same items as `total`. */
+  covers: string[];
+  /** Capture date of the oldest and the newest item in `total`; null for a tag without items. */
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface FrameleafTagTree {
@@ -38,7 +43,7 @@ export interface FrameleafTagTree {
   byId: Map<string, FrameleafTagNode>;
 }
 
-/** Prototype `sortNodes`: busiest first, then by name. */
+/** Busiest first, then by name: the order the tree is built in. */
 const compareNodes = (a: FrameleafTagNode, b: FrameleafTagNode) =>
   b.total - a.total || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
@@ -70,6 +75,10 @@ export function buildTagTree(
       depth: 0,
       count: row?.count ?? 0,
       total: row?.total ?? 0,
+      // A server from before the covers existed sends none; the card then shows its empty tile.
+      covers: (row?.coverAssetIds ?? []).slice(0, 4),
+      startDate: row?.startDate ?? null,
+      endDate: row?.endDate ?? null,
     });
   }
 
@@ -173,7 +182,7 @@ export const tagAncestorIds = (node: FrameleafTagNode): string[] =>
     .slice(0, -1)
     .map((ancestor) => ancestor.id);
 
-/** The node's id plus every descendant's id, for an "any of these tags" query filter. */
+/** The node's id plus every descendant's id. */
 export const tagAndDescendantIds = (node: FrameleafTagNode): string[] => {
   const ids: string[] = [node.id];
   for (const child of node.children) {
@@ -181,6 +190,9 @@ export const tagAndDescendantIds = (node: FrameleafTagNode): string[] => {
   }
   return ids;
 };
+
+/** How many tags sit under the node at any depth: what deleting it takes along. */
+export const tagDescendantCount = (node: FrameleafTagNode): number => tagAndDescendantIds(node).length - 1;
 
 export const flattenTagTree = (tree: FrameleafTagTree): FrameleafTagNode[] => {
   const out: FrameleafTagNode[] = [];
@@ -196,11 +208,41 @@ export const flattenTagTree = (tree: FrameleafTagTree): FrameleafTagNode[] => {
   return out;
 };
 
-/** Visible rows in tree order, honoring which node ids are expanded. */
-export const visibleTagRows = (tree: FrameleafTagTree, expanded: ReadonlySet<string>): FrameleafTagNode[] => {
+/**
+ * How the index orders tags: busiest first (the tree's own order), by name, or by the capture date
+ * of the newest item. "Newest" is the newest photo carrying the tag, not when the tag was last
+ * applied, which the server does not record.
+ */
+export const TAG_SORTS = ['used', 'name', 'newest'] as const;
+export type TagSort = (typeof TAG_SORTS)[number];
+
+export const isTagSort = (value: unknown): value is TagSort => TAG_SORTS.includes(value as TagSort);
+
+const compareNames = (a: FrameleafTagNode, b: FrameleafTagNode) =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id);
+
+const tagComparators: Record<TagSort, (a: FrameleafTagNode, b: FrameleafTagNode) => number> = {
+  used: compareNodes,
+  name: compareNames,
+  // ISO dates compare as text; a tag without items has no date and goes last.
+  newest: (a, b) => (b.endDate ?? '').localeCompare(a.endDate ?? '') || compareNames(a, b),
+};
+
+/** A copy of the tags in the chosen order; the tree itself stays busiest first. */
+export const sortTagNodes = (nodes: readonly FrameleafTagNode[], sort: TagSort): FrameleafTagNode[] =>
+  [...nodes].sort(tagComparators[sort]);
+
+/**
+ * The list view's rows: every level in the chosen order, and a branch's tags only while it is open.
+ */
+export const visibleTagRows = (
+  tree: FrameleafTagTree,
+  expanded: ReadonlySet<string>,
+  sort: TagSort = 'used',
+): FrameleafTagNode[] => {
   const out: FrameleafTagNode[] = [];
   const visit = (nodes: FrameleafTagNode[]) => {
-    for (const node of nodes) {
+    for (const node of sortTagNodes(nodes, sort)) {
       out.push(node);
       if (node.children.length > 0 && expanded.has(node.id)) {
         visit(node.children);
@@ -211,37 +253,69 @@ export const visibleTagRows = (tree: FrameleafTagTree, expanded: ReadonlySet<str
   return out;
 };
 
-/** Every branch id, for "Expand all" (prototype `Tags.jsx:305-316`). */
+/** Every tag that has tags inside it: the "groups" of the counts line, and what "Expand all" opens. */
 export const expandableTagIds = (tree: FrameleafTagTree): string[] =>
   flattenTagTree(tree)
     .filter((node) => node.children.length > 0)
     .map((node) => node.id);
 
-/** Prototype "Find a tag": a case-insensitive match on the tag's own name. */
+/** "Find a tag": a case-insensitive match on the tag's own name. */
 export const tagMatches = (node: FrameleafTagNode, query: string): boolean => {
   const needle = query.trim().toLowerCase();
   return needle !== '' && node.name.toLowerCase().includes(needle);
 };
 
-/** Searching opens every ancestor of a match so it can be seen (prototype `Tags.jsx:206-216`). */
-export const tagIdsRevealingMatches = (tree: FrameleafTagTree, query: string): string[] => {
-  const ids = new Set<string>();
-  for (const node of tree.byId.values()) {
-    if (tagMatches(node, query)) {
-      for (const id of tagAncestorIds(node)) {
-        ids.add(id);
-      }
-    }
-  }
-  return [...ids];
+/** "Find a tag" results: every matching tag, nested ones included, as one flat list in the chosen order. */
+export const findTags = (tree: FrameleafTagTree, query: string, sort: TagSort = 'used'): FrameleafTagNode[] =>
+  sortTagNodes(
+    flattenTagTree(tree).filter((node) => tagMatches(node, query)),
+    sort,
+  );
+
+/** Where a nested tag sits: its ancestors' names, outermost first; empty for a top-level tag. */
+export const tagTrail = (node: FrameleafTagNode): string[] => node.path.slice(0, -1);
+
+/** The card's "tags inside" line: the first few names (busiest first) and how many more there are. */
+export const tagInsideSummary = (node: FrameleafTagNode, limit = 3): { names: string[]; more: number } => {
+  const names = node.children.slice(0, limit).map((child) => child.name);
+  return { names, more: node.children.length - names.length };
 };
 
-/** Prototype "Most used": tags carrying items themselves, busiest (with subtags) first, at most 12. */
-export const mostUsedTags = (tree: FrameleafTagTree, limit = 12): FrameleafTagNode[] =>
-  [...tree.byId.values()]
-    .filter((node) => node.count > 0)
-    .sort((a, b) => b.total - a.total || a.path.join('/').localeCompare(b.path.join('/')))
-    .slice(0, limit);
+/** Whether `node` is `ancestor` or sits anywhere under it. */
+const isWithinTag = (node: FrameleafTagNode, ancestor: FrameleafTagNode): boolean => {
+  for (let current: FrameleafTagNode | null = node; current; current = current.parent) {
+    if (current.id === ancestor.id) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/** Where a tag may be moved: every tag except itself and the tags inside it, in tree order. */
+export const tagMoveTargets = (tree: FrameleafTagTree, node: FrameleafTagNode): FrameleafTagNode[] =>
+  flattenTagTree(tree).filter((candidate) => !isWithinTag(candidate, node));
+
+export type TagMoveProblem = 'same-place' | 'inside-itself' | 'name-taken';
+
+/**
+ * Why a tag cannot be moved under `parentId` (null for the top level), or null when it can: it is
+ * there already, the target is the tag itself or one inside it, or a tag with its name is there.
+ * The server refuses the same moves; checking here says why before anything is sent.
+ */
+export const tagMoveProblem = (
+  tree: FrameleafTagTree,
+  node: FrameleafTagNode,
+  parentId: string | null,
+): TagMoveProblem | null => {
+  if ((node.parent?.id ?? null) === parentId) {
+    return 'same-place';
+  }
+  const target = parentId ? tree.byId.get(parentId) : undefined;
+  if (target && isWithinTag(target, node)) {
+    return 'inside-itself';
+  }
+  return tagNameTaken(tree, parentId, node.name, node.id) ? 'name-taken' : null;
+};
 
 /**
  * Prototype "Give the tag a name without slashes." (`discovery-data.mjs` `tagName`): trimmed, 1–60
