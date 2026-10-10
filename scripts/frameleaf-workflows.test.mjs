@@ -1816,6 +1816,7 @@ test("media fixture source is immutable and the owned archive cannot publish", (
   );
   for (const [file, id] of [
     ["test.yml", "server-medium-tests"],
+    ["test.yml", "server-medium-scale-tests"],
     ["test.yml", "e2e-tests-server-cli"],
     ["test.yml", "e2e-tests-web"],
     ["fork-integration.yml", "integration"],

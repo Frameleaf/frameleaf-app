@@ -26,6 +26,7 @@ const workflows = {
   "manager.yml": ["manager"],
   "test.yml": [
     "server-medium-tests",
+    "server-medium-scale-tests",
     "e2e-tests-server-cli",
     "e2e-tests-web",
     "sql-schema-up-to-date",
