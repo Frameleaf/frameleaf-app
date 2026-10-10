@@ -1,7 +1,7 @@
 name: Frameleaf Studio engine
 'on':
   pull_request:
-    branches: [fork/main]
+    branches: [fork/main, master/frameleaf-implementation]
     paths:
       - studio/**
       - web/src/lib/frameleaf/studio/**

@@ -102,12 +102,14 @@ describe.skipIf(!hasFfmpeg)('StudioMediaService on real media', () => {
   });
 
   it('makes a sprite whose layout matches its index, and reuses it', async () => {
+    // a request is served from the next canonical size up (20 frames, 90 px), so 6x54 is a 20x90 sprite
     const index = await sut.getFilmstrip(authStub.admin, assetId, { count: 6, height: 54, format: 'webp' });
-    expect(index).toMatchObject({ frameWidth: 96, frameHeight: 54, columns: 6, rows: 1, spriteWidth: 576 });
+    expect(index).toMatchObject({ frameWidth: 160, frameHeight: 90, columns: 20, rows: 1, spriteWidth: 3200 });
+    expect(index.frames).toHaveLength(20);
     expect(index.durationMs).toBeGreaterThanOrEqual(3990);
     expect(index.durationMs).toBeLessThan(4100);
     expect(index.frames.map(({ timeMs }) => timeMs)).toEqual(
-      [0, 1, 2, 3, 4, 5].map((slice) => Math.round((index.durationMs * (slice + 0.5)) / 6)),
+      Array.from({ length: 20 }, (_, slice) => Math.round((index.durationMs * (slice + 0.5)) / 20)),
     );
 
     const sprite = await sut.viewFilmstripSprite(authStub.admin, assetId, {
@@ -121,19 +123,26 @@ describe.skipIf(!hasFfmpeg)('StudioMediaService on real media', () => {
 
     const folder = getStudioMediaFolder(ownerId, assetId);
     expect(readdirSync(folder).toSorted()).toEqual([
-      `filmstrip-${index.version}-6x54.webp`,
-      `filmstrip-${index.version}-6x54.webp.json`,
+      `filmstrip-${index.version}-20x90.webp`,
+      `filmstrip-${index.version}-20x90.webp.json`,
     ]);
     await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 6, height: 54, format: 'webp' })).resolves.toEqual(
       index,
     );
+    // the canonical request is the same sprite, not a second variant
+    await expect(sut.getFilmstrip(authStub.admin, assetId, { count: 20, height: 90, format: 'webp' })).resolves.toEqual(
+      index,
+    );
+    expect(readdirSync(folder)).toHaveLength(2);
   });
 
   it('lays a portrait video out in narrow JPEG tiles', async () => {
     const index = await sut.getFilmstrip(authStub.admin, silentId, { count: 3, height: 64 });
-    expect(index).toMatchObject({ frameWidth: 36, frameHeight: 64, mimeType: 'image/jpeg' });
+    // 3 frames at 64 px round up to 4 frames at 90 px
+    expect(index).toMatchObject({ frameWidth: 50, frameHeight: 90, columns: 4, rows: 1, mimeType: 'image/jpeg' });
+    expect(index.frames).toHaveLength(4);
     const sprite = await sut.viewFilmstripSprite(authStub.admin, silentId, { count: 3, height: 64 });
-    expect(await sharp(sprite.path).metadata()).toMatchObject({ format: 'jpeg', width: 108, height: 64 });
+    expect(await sharp(sprite.path).metadata()).toMatchObject({ format: 'jpeg', width: 200, height: 90 });
   });
 
   it('measures the tone on the left channel and silence on the right', async () => {
