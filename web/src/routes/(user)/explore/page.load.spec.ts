@@ -30,6 +30,7 @@ vi.mock('@frameleaf/sdk', async (original) => {
       facets: [{ fieldName: 'city', counts: [{ value: 'Paris', count: 2, coverAssetId: 'newest' }] }],
     })),
     searchAssets: vi.fn(async () => ({ assets: { items: [] }, albums: { items: [] } })),
+    getVisitedLandmarks: vi.fn(async () => []),
   };
 });
 vi.mock('$lib/managers/memory-manager.svelte', () => ({
@@ -90,7 +91,14 @@ describe('the Explore loader', () => {
 
     const data = await open();
 
-    expect(data.failed).toEqual({ people: true, places: true, memories: false, albums: true, recents: false });
+    expect(data.failed).toEqual({
+      people: true,
+      places: true,
+      landmarks: false,
+      memories: false,
+      albums: true,
+      recents: false,
+    });
     expect(data.peopleCards).toEqual([]);
     expect(data.albums).toEqual([]);
     expect(data.libraryTotal).toBeNull();
