@@ -65,10 +65,12 @@
       const response = await getBestPhotos({ page, limit: 100 });
       const known = new Set(assets.map(({ id }) => id));
       for (const asset of response.items) {
-        if (!known.has(asset.id)) {
-          known.add(asset.id);
-          assets.push(asset);
+        if (known.has(asset.id)) {
+          continue;
         }
+
+        known.add(asset.id);
+        assets.push(asset);
       }
       total = response.total;
       page = Number(response.nextPage) || 0;

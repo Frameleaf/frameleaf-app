@@ -664,8 +664,15 @@ export class JobRepository {
     );
   }
 
-  /** Snapshot source identity before I/O, then recheck it under the accepted publication lock. */
-  async guardAssetSource(assetId: string) {
+  /**
+   * Snapshot source identity before I/O, then recheck it under the accepted publication lock.
+   *
+   * `derivatives: false` fences only the asset's original, owner, privacy and lock. It is for a
+   * publication that owns its derived files and recipe and re-validates them in its own
+   * transaction (a retained video version): another save or a regenerated thumbnail while it
+   * renders is decided there (superseded or published), not refused here and rendered again.
+   */
+  async guardAssetSource(assetId: string, { derivatives = true }: { derivatives?: boolean } = {}) {
     if (!queueExecution.getStore()) {
       return;
     }
@@ -677,9 +684,9 @@ export class JobRepository {
           'visibility', a.visibility, 'deletedAt', a."deletedAt",
           'lock', (select to_jsonb(l) from asset_lock l where l."assetId" = a.id),
           'files', (select jsonb_agg(jsonb_build_array(f.id, f.path, f.type, f."isEdited") order by f.id)
-            from asset_file f where f."assetId" = a.id),
+            from asset_file f where f."assetId" = a.id and ${derivatives}::boolean),
           'edits', (select jsonb_agg(jsonb_build_array(e.sequence, e.action, e.parameters) order by e.sequence, e.id)
-            from asset_edit e where e."assetId" = a.id)) revision
+            from asset_edit e where e."assetId" = a.id and ${derivatives}::boolean)) revision
         from asset a where a.id = ${assetId}::uuid`.execute(publicationTransaction.getStore() ?? this.store.db);
       return row;
     };
