@@ -1,5 +1,6 @@
 {
   "locales": ["en", "es", "fr", "de", "it", "pt", "nl", "ja", "ko", "zh"],
+  "settlement": "Q486972",
   "classes": [
     { "qid": "Q194195", "kind": "theme_park", "radius": 400, "min": 10, "minWithArea": 0 },
     { "qid": "Q43501", "kind": "zoo", "radius": 300, "min": 10, "minWithArea": 0 },
@@ -13,7 +14,7 @@
     { "qid": "Q2977", "kind": "religious", "radius": 80, "min": 10 },
     { "qid": "Q44539", "kind": "religious", "radius": 80, "min": 10 },
     { "qid": "Q32815", "kind": "religious", "radius": 80, "min": 10 },
-    { "qid": "Q44613", "kind": "religious", "radius": 120, "min": 10 },
+    { "qid": "Q44613", "kind": "religious", "radius": 120, "min": 10, "settlements": true },
     { "qid": "Q12518", "kind": "tower", "radius": 100, "min": 10 },
     { "qid": "Q11303", "kind": "tower", "radius": 100, "min": 10 },
     { "qid": "Q12280", "kind": "bridge", "radius": 150, "min": 10 },
@@ -29,6 +30,7 @@
     { "qid": "Q2319498", "kind": "landmark", "radius": 100, "min": 10 },
     { "qid": "Q570116", "kind": "landmark", "radius": 100, "min": 10 }
   ],
-  "deny": [],
-  "mustHave": ["Q181185", "Q1229066", "Q10285", "Q243", "Q351", "Q19675", "Q206859", "Q9202"]
+  "deny": ["Q16869"],
+  "mustHave": ["Q181185", "Q1229066", "Q10285", "Q243", "Q351", "Q19675", "Q206859", "Q9202", "Q43332", "Q676203", "Q5788", "Q22647", "Q6343", "Q75459"],
+  "mustNotHave": ["Q1524", "Q365", "Q85", "Q12996", "Q2833"]
 }

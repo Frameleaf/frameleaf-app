@@ -23,6 +23,7 @@ const MAX_RADIUS_M = 200_000;
 // A boundary smaller than this is matched as a circle, so a photo beside a tower still counts.
 const MIN_AREA_RADIUS_M = 150;
 const GPS_BUFFER_M = 75;
+const MAX_RUIN_RADIUS_M = 10_000;
 
 const sparql = async (endpoint, query) => {
   for (let attempt = 1; ; attempt++) {
@@ -121,27 +122,67 @@ const round = (value) => Math.round(value * 1e5) / 1e5;
 
 // 1. Places per class, most specific class first.
 const places = new Map();
-for (const { qid, kind, radius, min, minWithArea = min } of config.classes) {
+// A living town reaches these classes too ("ancient city" is a kind of archaeological site, "seaside
+// resort" a kind of resort), and would match every photo taken there. So a place counts through a class
+// that is not itself a kind of settlement (Pompeii is also an archaeological site), or, failing that, only
+// when it has no population (Troy stays, Athens goes). A class marked `settlements` (monastery) is a
+// settlement in Wikidata's own tree and is taken as it is.
+const settlementOnly = [];
+for (const { qid, kind, radius, min, minWithArea = min, settlements = false } of config.classes) {
+  const prefixes = `PREFIX wd: <http://www.wikidata.org/entity/> PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+     PREFIX wikibase: <http://wikiba.se/ontology#>`;
+  const item = `?item wdt:P31 ?c . ?item wikibase:sitelinks ?sl . ?item wdt:P625 ?coord`;
+  const town = `?c wdt:P279* wd:${config.settlement}`;
   // FILTER on the sitelink count returns nothing on this endpoint, so it is applied here.
   const rows = await sparql(
     WIKIDATA,
-    `PREFIX wd: <http://www.wikidata.org/entity/> PREFIX wdt: <http://www.wikidata.org/prop/direct/>
-     PREFIX wikibase: <http://wikiba.se/ontology#>
-     SELECT ?item ?sl ?coord WHERE { ?c wdt:P279* wd:${qid} . ?item wdt:P31 ?c . ?item wikibase:sitelinks ?sl . ?item wdt:P625 ?coord }`,
+    `${prefixes} SELECT ?item ?sl ?coord WHERE { ?c wdt:P279* wd:${qid} . ${item} . ${settlements ? '' : `MINUS { ${town} }`} }`,
   );
-  let added = 0;
-  for (const [item, sitelinks, coord] of rows) {
-    const id = qidOf(item);
+  const candidate = ([iri, sitelinks, coord], least) => {
+    const id = qidOf(iri);
     const point = /POINT\((-?[\d.]+) (-?[\d.]+)\)/.exec(coord);
     const rank = Number(sitelinks);
-    if (!point || rank < minWithArea || places.has(id) || config.deny.includes(id)) {
-      continue;
+    return point && rank >= least && !places.has(id) && !config.deny.includes(id)
+      ? { id, kind, rank, min, radius, lon: +point[1], lat: +point[2] }
+      : null;
+  };
+  let added = 0;
+  for (const row of rows) {
+    const place = candidate(row, minWithArea);
+    if (place) {
+      places.set(place.id, place);
+      added++;
     }
-    places.set(id, { id, kind, rank, min, radius, lon: +point[1], lat: +point[2] });
-    added++;
+  }
+  if (!settlements) {
+    const towns = await sparql(
+      WIKIDATA,
+      `${prefixes} SELECT ?item ?sl ?coord WHERE { ?c wdt:P279* wd:${qid} . ${town} . ${item} }`,
+    );
+    settlementOnly.push(...towns.map((row) => candidate(row, min)).filter(Boolean));
   }
   console.error(`${qid} ${kind}: ${rows.length} rows, ${added} candidates`);
 }
+const unpopulated = settlementOnly.filter((place) => !places.has(place.id));
+const populated = new Set();
+for (const batch of chunks([...new Set(unpopulated.map(({ id }) => id))], 600)) {
+  const rows = await sparql(
+    WIKIDATA,
+    `PREFIX wd: <http://www.wikidata.org/entity/> PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+     SELECT DISTINCT ?item WHERE { VALUES ?item { ${batch.map((id) => `wd:${id}`).join(' ')} } ?item wdt:P1082 ?population }`,
+  );
+  for (const [iri] of rows) {
+    populated.add(qidOf(iri));
+  }
+}
+let ruins = 0;
+for (const place of unpopulated) {
+  if (!populated.has(place.id) && !places.has(place.id)) {
+    places.set(place.id, { ...place, ruin: true });
+    ruins++;
+  }
+}
+console.error(`settlements: ${populated.size} living towns left out, ${ruins} without a population considered`);
 
 // 2. Boundaries from OpenStreetMap, the widest tagged object per place.
 const ids = [...places.keys()];
@@ -179,6 +220,11 @@ for (const [index, batch] of chunks(ids, 300).entries()) {
 const kept = [];
 for (const place of places.values()) {
   const { shape } = place;
+  // An ancient city kept for having no population must also be a mapped site of modest size: that leaves
+  // out names for the old centre of a living city (Londinium) and whole islands that were once city-states.
+  if (place.ruin && (!shape || shape.extent > MAX_RUIN_RADIUS_M)) {
+    continue;
+  }
   const isArea = shape && shape.rings.length > 0 && shape.extent >= MIN_AREA_RADIUS_M;
   if (place.rank < (isArea ? 0 : place.min)) {
     continue;
@@ -243,6 +289,10 @@ const lines = kept
 const missing = config.mustHave.filter((id) => !lines.some((line) => line.id === id));
 if (missing.length > 0) {
   throw new Error(`well-known places are missing from the pack: ${missing.join(', ')}`);
+}
+const towns = config.mustNotHave.filter((id) => lines.some((line) => line.id === id));
+if (towns.length > 0) {
+  throw new Error(`towns are in the pack: ${towns.join(', ')}`);
 }
 
 mkdirSync(outDir, { recursive: true });
