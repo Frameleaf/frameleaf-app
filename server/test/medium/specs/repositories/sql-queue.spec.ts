@@ -34,6 +34,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { BaseService } from 'src/services/base.service.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
+import { PIPELINE_MEDIA } from 'test/medium/scale.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -1173,10 +1174,17 @@ describe('PostgreSQL queue', () => {
     }
   }, 15_000);
 
-  it('executes 15,000 selected media through synthetic metadata, thumbnail, video and ML stages via the production facade', async ({
+  it('executes the selected media through synthetic metadata, thumbnail, video and ML stages via the production facade', async ({
     signal,
     onTestFinished,
   }) => {
+    // Every item is four real facade executions, about 20 ms each on a hosted runner, so the size is
+    // what the behaviour needs and no more: three times the 1,000-job high-water mark (the manifest
+    // must hold a backlog through several refills), well past the twentieth batch where the facade
+    // is replaced a second time, and enough for three poisoned and six transient items.
+    const media = PIPELINE_MEDIA;
+    const poisoned = Math.floor(media / 1000);
+    const transient = Math.floor(media / 499);
     const caseQueue = queue;
     const caseWorkerA = workerA;
     const caseWorkerB = workerB;
@@ -1243,8 +1251,8 @@ describe('PostgreSQL queue', () => {
           label: 'synthetic-metadata-selection',
           handler: async () => {
             const checkpoint = await next.prepareCheckpoint('selection', async () => {
-              await artifacts.insertInto(checkpoints).values({ name: 'selection', requested: 15_000 }).execute();
-              return { requested: 15_000 };
+              await artifacts.insertInto(checkpoints).values({ name: 'selection', requested: media }).execute();
+              return { requested: media };
             });
             // A new facade must recover this committed setup, not insert it twice.
             if (queueExecution.getStore()!.claim.attempt === 1) throw new Error('interrupted producer fixture');
@@ -1292,7 +1300,7 @@ describe('PostgreSQL queue', () => {
         return next;
       };
       let executor = makeExecutor();
-      const runId = await executor.createRun('synthetic-four-stage-pipeline', { requested: 15_000 }, () =>
+      const runId = await executor.createRun('synthetic-four-stage-pipeline', { requested: media }, () =>
         executor.queue({ name: JobName.AssetExtractMetadataQueueAll, data: {} }),
       );
       await store.setConcurrency(caseQueue, concurrency);
@@ -1334,11 +1342,11 @@ describe('PostgreSQL queue', () => {
         activeClaims = [];
         if (completedProducer) {
           expect(await readRun()).toMatchObject({
-            total: 15_000,
+            total: media,
             enumerationDone: true,
             completed: 0,
-            waiting: 15_000,
-            stageTotals: { total: 15_001, completed: 1 },
+            waiting: media,
+            stageTotals: { total: media + 1, completed: 1 },
           });
           expect(await scheduled()).toBe(0); // the entire selection is still manifest-only
         }
@@ -1366,20 +1374,27 @@ describe('PostgreSQL queue', () => {
       expect(final).toMatchObject({
         state: 'completed_with_errors',
         enumerationDone: true,
-        total: 15_000,
-        completed: 14_985,
-        failed: 15,
+        total: media,
+        completed: media - poisoned,
+        failed: poisoned,
         active: 0,
         waiting: 0,
         delayed: 0,
         retrying: 0,
-        stageTotals: { total: 59_971, completed: 59_956, failed: 15 },
+        // every item's first two stages, the last two of those not poisoned, and the producer
+        stageTotals: {
+          total: 4 * media - 2 * poisoned + 1,
+          completed: 4 * media - 3 * poisoned + 1,
+          failed: poisoned,
+        },
       });
       expect(final.finishedAt).not.toBeNull();
       const { rows: outputs } = await sql<{ stage: string; count: number }>`select stage, count(*)::int count
         from ${sql.id(table)} group by stage`.execute(db);
       expect(outputs).toEqual(
-        expect.arrayContaining(stages.map((stage, index) => ({ stage, count: index === 0 ? 15_000 : 14_985 }))),
+        expect.arrayContaining(
+          stages.map((stage, index) => ({ stage, count: index === 0 ? media : media - poisoned })),
+        ),
       );
       expect(outputs).toHaveLength(4);
       const { rows: edges } = await sql<{ stage: string; predecessor: string; count: number; invalid: number }>`
@@ -1390,26 +1405,30 @@ describe('PostgreSQL queue', () => {
         group by c.name, p.name`.execute(db);
       expect(edges).toEqual(
         expect.arrayContaining([
-          { stage: stages[1], predecessor: stages[0], count: 15_000, invalid: 0 },
-          { stage: stages[2], predecessor: stages[1], count: 14_985, invalid: 0 },
-          { stage: stages[3], predecessor: stages[2], count: 14_985, invalid: 0 },
+          { stage: stages[1], predecessor: stages[0], count: media, invalid: 0 },
+          { stage: stages[2], predecessor: stages[1], count: media - poisoned, invalid: 0 },
+          { stage: stages[3], predecessor: stages[2], count: media - poisoned, invalid: 0 },
         ]),
       );
       expect(edges).toHaveLength(3);
       expect(await artifacts.selectFrom(checkpoints).selectAll().execute()).toEqual([
-        { name: 'selection', requested: 15_000 },
+        { name: 'selection', requested: media },
       ]);
       const {
         rows: [publications],
       } = await sql<{ total: number; outputs: number; retries: number }>`
         select count(*)::int total, count(distinct output)::int outputs,
           count(*) filter(where attempt = 2)::int retries from ${sql.id(table)}`.execute(db);
-      expect(publications).toEqual({ total: 59_955, outputs: 59_955, retries: 30 });
+      expect(publications).toEqual({
+        total: 4 * media - 3 * poisoned,
+        outputs: 4 * media - 3 * poisoned,
+        retries: transient,
+      });
       const {
         rows: [attempts],
       } = await sql<{ maximum: number; retried: number }>`select max(attempt)::int maximum,
         count(*) filter (where attempt = 2)::int retried from job where "runId" = ${runId}::uuid`.execute(db);
-      expect(attempts).toEqual({ maximum: 2, retried: 46 }); // producer +15 poison +30 transient ML
+      expect(attempts).toEqual({ maximum: 2, retried: 1 + poisoned + transient }); // producer + poison + transient ML
       const {
         rows: [poison],
       } = await sql<{ count: number }>`select count(*)::int count from ${sql.id(table)}
@@ -1427,7 +1446,7 @@ describe('PostgreSQL queue', () => {
     }
     // Whole-batch validation budget, not an application deadline. Stall/recovery deadlines
     // are asserted separately; a progressing 60,000-stage run can exceed 15 minutes locally.
-  }, 1_800_000);
+  }, 900_000);
 
   it('fences a partitioned executor and defers retry until its actual stop is confirmed', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'queue-partition-'));
