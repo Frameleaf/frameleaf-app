@@ -79,10 +79,7 @@ describe(StudioMediaService.name, () => {
   it('bounds the generation wait queue and releases it after failures', async () => {
     const limited = (work: () => Promise<void>) =>
       (sut as unknown as { limited: (work: () => Promise<void>) => Promise<void> }).limited(work);
-    let finish!: () => void;
-    const held = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const { promise: held, resolve: finish } = Promise.withResolvers<void>();
     const work = vi.fn(() => held);
     const accepted = Array.from({ length: 10 }, () => limited(work));
     await expect(limited(work)).rejects.toThrow('Studio media generation is busy');
