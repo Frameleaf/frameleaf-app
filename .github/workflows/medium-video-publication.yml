@@ -1,0 +1,77 @@
+name: Retained video publication medium regression
+'on':
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  medium-publication:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    name: Retained video publication (native PostgreSQL medium)
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Setup native runner builder
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build medium native runner
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: medium-test
+          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
+          load: true
+          tags: frameleaf-medium:${{ github.sha }}
+          cache-from: type=gha,scope=server-medium
+          cache-to: type=gha,scope=server-medium,mode=max
+          secrets: mise_github_token=${{ github.token }}
+      - name: Run fixed retained-video publication regression and controls
+        if: ${{ !cancelled() }}
+        working-directory: .
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker_cli=$(readlink -f "$(command -v docker)")
+          test -S /var/run/docker.sock
+          docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
+            --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+            --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/src",dst=/usr/src/app/e2e/src,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/test-assets",dst=/usr/src/app/e2e/test-assets,readonly \
+            --env DOCKER_HOST=unix:///var/run/docker.sock \
+            --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            --env FRAMELEAF_CI_POSTGRES_IMAGE \
+            --env RYUK_CONTAINER_IMAGE \
+            "$MEDIUM_IMAGE" bash -ec 'docker version --format "{{.Client.Version}} {{.Server.Version}}"; node -e "console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())"; test -f test/medium/specs/repositories/video-publication.spec.ts; test -f test/medium/specs/repositories/retained-video-entry-publication.spec.ts; pnpm run test:medium --run test/medium/specs/repositories/video-publication.spec.ts test/medium/specs/repositories/retained-video-entry-publication.spec.ts'
+      - name: Remove medium runner after failure or cancellation
+        if: always()
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
+    timeout-minutes: 90

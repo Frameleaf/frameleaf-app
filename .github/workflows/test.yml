@@ -7,6 +7,11 @@ name: Test
         required: false
         default: false
         type: boolean
+      medium_publication_regression:
+        description: Run only the retained-video publication native PostgreSQL medium regression and controls
+        required: false
+        default: false
+        type: boolean
   pull_request:
     branches:
       - fork/main
@@ -20,20 +25,25 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  medium-publication-regression:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.medium_publication_regression }}
+    uses: ./.github/workflows/medium-video-publication.yml
+    permissions:
+      contents: read
   development-validation:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.development_validation && github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.development_validation && !inputs.medium_publication_regression && github.repository == 'Frameleaf/frameleaf-app' }}
     uses: ./.github/workflows/development-validation.yml
     permissions:
       contents: read
   cloud-consumer-tests:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     permissions:
       contents: read
       packages: read
     uses: ./.github/workflows/frameleaf-cloud-consumers.yml
   script-unit-tests:
     name: Scripts unit tests
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -87,7 +97,7 @@ jobs:
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -130,7 +140,7 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests:
     name: Unit Test CLI
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -153,7 +163,7 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -184,7 +194,7 @@ jobs:
     timeout-minutes: 60
   web-lint:
     name: Lint Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -224,7 +234,7 @@ jobs:
     timeout-minutes: 60
   web-unit-tests:
     name: Test Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -267,7 +277,7 @@ jobs:
     timeout-minutes: 60
   i18n-tests:
     name: Test i18n
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -303,7 +313,7 @@ jobs:
     timeout-minutes: 60
   e2e-tests-lint:
     name: End-to-End Lint
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -343,7 +353,7 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     name: Medium Tests (Server)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -414,7 +424,7 @@ jobs:
       FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Server & CLI)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -707,7 +717,7 @@ jobs:
       FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Web)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -841,7 +851,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) && always() }}
     steps:
       - name: Verify required E2E jobs succeeded
         env:
@@ -855,7 +865,7 @@ jobs:
     timeout-minutes: 60
   ml-unit-tests:
     name: Unit Test ML
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -877,7 +887,7 @@ jobs:
     timeout-minutes: 60
   github-files-formatting:
     name: .github Files Formatting
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -916,7 +926,7 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
   shellcheck:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     name: ShellCheck
     runs-on: ubuntu-24.04
     permissions:
@@ -931,7 +941,7 @@ jobs:
           ignore_paths: '**/open-api/** **/openapi** **/node_modules/**'
     timeout-minutes: 60
   generated-api-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     name: OpenAPI Clients
     runs-on: ubuntu-24.04
     permissions:
@@ -983,7 +993,7 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
   sql-schema-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !(inputs.development_validation || inputs.medium_publication_regression)) }}
     name: SQL Schema Checks
     runs-on: ubuntu-24.04
     permissions:
