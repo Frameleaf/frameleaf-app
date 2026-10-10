@@ -40,21 +40,23 @@ import { asStreamableFile } from 'src/utils/file.js';
 import { STUDIO_BUNDLE_MAX_BYTES } from 'src/utils/studio-bundle.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
-type BundleUploadRequest = AuthRequest & { studioBundleUploadId?: string };
+export type BundleUploadRequest = AuthRequest & { studioBundleUploadId?: string };
 
 /** Admission precedes Multer, so concurrent request bodies consume a reserved owner budget. */
 @Injectable()
 export class StudioBundleUploadInterceptor implements NestInterceptor {
+  protected readonly maxBytes = STUDIO_BUNDLE_MAX_BYTES;
+
   constructor(private service: StudioBundleService) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     const request = context.switchToHttp().getRequest<BundleUploadRequest>();
     const auth = request.user;
     if (!auth) throw new ForbiddenException();
-    const length = Number(request.headers['content-length'] ?? STUDIO_BUNDLE_MAX_BYTES);
-    if (!Number.isSafeInteger(length) || length < 1 || length > STUDIO_BUNDLE_MAX_BYTES + 1024 ** 2)
+    const length = Number(request.headers['content-length'] ?? this.maxBytes);
+    if (!Number.isSafeInteger(length) || length < 1 || length > this.maxBytes + 1024 ** 2)
       throw new PayloadTooLargeException('Studio bundle is too large');
-    const reserved = Math.min(length, STUDIO_BUNDLE_MAX_BYTES);
+    const reserved = Math.min(length, this.maxBytes);
     const upload = await this.service.reserveUpload(auth, reserved);
     request.studioBundleUploadId = upload.id;
     const storage = diskStorage({
