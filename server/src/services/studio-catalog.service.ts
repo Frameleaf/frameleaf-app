@@ -105,8 +105,8 @@ export class StudioCatalogService {
     return new ImmichFileResponse({
       path,
       contentType: STUDIO_FONT_MEDIA_TYPES[found.file.format],
-      // The URL is the content hash, so the answer for it never changes.
-      cacheControl: CacheControl.PrivateImmutable,
+      // The controller sets the immutable Cache-Control: the URL is the content hash.
+      cacheControl: CacheControl.None,
       fileName: found.file.file,
     });
   }
