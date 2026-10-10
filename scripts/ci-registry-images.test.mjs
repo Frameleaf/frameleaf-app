@@ -48,11 +48,11 @@ function checkRoutes(workflows) {
     step(api, "Check for breaking API changes").run,
     /"\$OASDIFF_IMAGE" breaking/,
   );
-  for (const name of ["manager", "medium"]) {
-    const job =
-      name === "manager"
-        ? workflows.manager.jobs.manager
-        : workflows.tests.jobs["server-medium-tests"];
+  for (const job of [
+    workflows.manager.jobs.manager,
+    workflows.tests.jobs["server-medium-tests"],
+    workflows.tests.jobs["server-medium-scale-tests"],
+  ]) {
     env(job, "FRAMELEAF_CI_NODE_IMAGE", "node");
     env(job, "FRAMELEAF_CI_POSTGRES_IMAGE", "postgres");
     const bootstrap = job.steps.find((entry) =>
@@ -77,12 +77,21 @@ function checkRoutes(workflows) {
     step(manager, "Build PostgreSQL from the owned pinned source").run,
     /--build-arg POSTGRES_IMAGE="\$FRAMELEAF_CI_POSTGRES_IMAGE"/,
   );
-  const medium = workflows.tests.jobs["server-medium-tests"];
-  env(medium, "RYUK_CONTAINER_IMAGE", "ryuk");
-  const nested = step(medium, "Run all medium tests in the native runner").run;
-  assert.match(nested, /--env FRAMELEAF_CI_POSTGRES_IMAGE/);
-  assert.match(nested, /--env RYUK_CONTAINER_IMAGE/);
-  assert.doesNotMatch(nested, /RYUK_DISABLED/);
+  for (const [id, name] of [
+    ["server-medium-tests", "Run all medium tests in the native runner"],
+    [
+      "server-medium-scale-tests",
+      "Run the medium scale suite in the native runner",
+    ],
+  ]) {
+    const medium = workflows.tests.jobs[id];
+    env(medium, "RYUK_CONTAINER_IMAGE", "ryuk");
+    const nested = step(medium, name).run;
+    assert.match(nested, /--env FRAMELEAF_CI_POSTGRES_IMAGE/);
+    assert.match(nested, /--env RYUK_CONTAINER_IMAGE/);
+    assert.match(nested, /--env FRAMELEAF_MEDIUM_SUITE/);
+    assert.doesNotMatch(nested, /RYUK_DISABLED/);
+  }
   for (const name of ["e2e-tests-server-cli", "e2e-tests-web"]) {
     const job = workflows.tests.jobs[name];
     env(job, "FRAMELEAF_CI_NODE_IMAGE", "node");
