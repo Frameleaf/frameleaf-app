@@ -1,6 +1,8 @@
 // Independent CPU implementation of spec/effects/gpu-ascii.md's atlas path.
 // Glyph coverage is a platform INPUT; no engine math or GPU output enters this oracle.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import { roundHalf } from './render-goldens.mjs';
 
 const RAMPS = { ascii: '@%#*+=-:. ', dense: '@WB#$oahkbn+=-:. ', binary: '01', symbols: '#@&$%*+!=;:-. ' };
@@ -34,6 +36,25 @@ export function validateAsciiAtlas(actual, reference, params) {
     assert.equal(actual.data[i], reference.data[i], `ASCII atlas byte ${i} differs from independently rasterized ramp/font/layout`);
   }
   return true;
+}
+
+// spec/goldens/ascii-atlases.json: the glyph strips the committed font-atlas goldens were
+// rendered with. One coverage byte per texel, row-major, raw DEFLATE, base64.
+export const ASCII_ATLASES_FORMAT = 'frameleaf-studio-ascii-atlases';
+export function encodeAsciiAtlas(spec, font, atlas) {
+  checkAtlas(atlas, spec);
+  const coverage = Buffer.from(Array.from({ length: spec.width * spec.height }, (_, i) => atlas.data[i * 4 + 3]));
+  const data = deflateRawSync(coverage, { level: 9 }).toString('base64');
+  return { key: spec.key, ramp: spec.ramp, font, cssFont: spec.font, glyphs: [...spec.ramp].length, width: spec.width, height: spec.height,
+    encoding: 'coverage8-deflate-base64', sha256: createHash('sha256').update(coverage).digest('hex'), data };
+}
+/** The atlas in the form renderAsciiReference takes: RGBA bytes, coverage in every channel. */
+export function decodeAsciiAtlas(entry) {
+  assert.equal(entry.encoding, 'coverage8-deflate-base64');
+  const coverage = inflateRawSync(Buffer.from(entry.data, 'base64'));
+  assert.equal(coverage.length, entry.width * entry.height, `${entry.key}: atlas size`);
+  assert.equal(createHash('sha256').update(coverage).digest('hex'), entry.sha256, `${entry.key}: atlas digest`);
+  return { width: entry.width, height: entry.height, depth: 1, data: Array.from({ length: coverage.length * 4 }, (_, i) => coverage[i >> 2]) };
 }
 
 const clamp = (x, low = 0, high = 1) => Math.min(high, Math.max(low, x));
