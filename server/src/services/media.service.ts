@@ -1328,7 +1328,21 @@ export class MediaService extends BaseService {
   }
 
   private async renderVideoEdit(id: string, versionId: string | undefined, run?: EditOperationRun): Promise<JobStatus> {
-    await this.jobRepository.guardAssetSource(id);
+    // Every save, revert and export is a retained version. The
+    // job renders the requested (or the named export) version into its own master and proxy, and
+    // publication decides — transactionally — whether it is still the one to show. A version is an
+    // immutable row, so it is read before the entry guard: its render is not refused because a later
+    // save changed the recipe or another job replaced a thumbnail while it was encoding.
+    let version: VideoEditVersion | undefined;
+    let versionError: any;
+    try {
+      version = versionId
+        ? await this.assetEditRepository.getVideoVersion(id, versionId)
+        : await this.assetEditRepository.getRequestedVideoVersion(id);
+    } catch (error: any) {
+      versionError = error ?? new Error('Video version is unavailable');
+    }
+    await this.jobRepository.guardAssetSource(id, { derivatives: !version });
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -1350,16 +1364,10 @@ export class MediaService extends BaseService {
     };
     const config = await this.getConfig({ withCache: true });
 
-    // Every save, revert and export is a retained version. The
-    // job renders the requested (or the named export) version into its own master and proxy, and
-    // publication decides — transactionally — whether it is still the one to show.
-    let version: VideoEditVersion | undefined;
-    try {
-      version = versionId
-        ? await this.assetEditRepository.getVideoVersion(id, versionId)
-        : await this.assetEditRepository.getRequestedVideoVersion(id);
-    } catch (error: any) {
-      this.logger.error(`Refusing to render a video version for asset ${asset.id}: ${error?.message ?? error}`);
+    if (versionError) {
+      this.logger.error(
+        `Refusing to render a video version for asset ${asset.id}: ${versionError?.message ?? versionError}`,
+      );
       return JobStatus.Failed;
     }
     if (versionId && !version) {

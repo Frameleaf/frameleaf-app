@@ -405,7 +405,9 @@
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());
   const deleteKey = () => perform(trash || locked ? 'delete-permanently' : 'delete');
   const guardShortcut = (action: () => void) => (event: KeyboardEvent) => {
-    if (isTypingTarget(event.target) || document.querySelector(MODAL_SELECTOR)) return;
+    if (isTypingTarget(event.target) || document.querySelector(MODAL_SELECTOR)) {
+      return;
+    }
     event.preventDefault();
     action();
   };
