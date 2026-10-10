@@ -32,7 +32,7 @@ The upper curve is x(t) = cx + rx·(−(1−t)³ − 1.5(1−t)²t + 1.5(1−t)t
 See shared section.
 
 ## Edges
-Clip edges decided at pixel centres [T6]; Bézier flattening must keep the outline within 0.25 px of the curve.
+Clip edges decided at pixel centres [T6]. The two cubics are curved outlines: flatten each to chords within 1/16 pixel of the true curve and scan-convert as T6 says. How the canonical backend flattens them is not specifiable; against the goldens the true curve differs in at most 13 pixels of a case (`eyeIris/p=0.5`), all on the outline and inside the case's outlier allowance. A coarser flattening than 1/16 pixel is not allowed: it moves the sharp ends.
 
 ## Alpha
 See shared section.

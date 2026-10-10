@@ -19,7 +19,9 @@ Both clips get a combined zoom-and-spin blur about the frame centre that peaks a
 
 Sanitised per [T4]; absent → 1 and 0.3.
 
-**Hidden parameter (not in the catalogue):** samples, default 12. The shader reads it if present as a finite number (undeclared properties are kept per [T4]); N = conversion of samples to an unsigned integer (truncation toward zero; negative values become 0).
+**Tap count.** N = 12 for every transition the protocol's commands write: the catalogue declares no tap parameter, and a native client draws 12 taps. `radialBlur/p=0.5/blurStrength=3` pins this (11 or 13 taps fail it).
+
+**Hidden parameter (not in the catalogue):** samples. The shader reads it if the stored properties hold it as a finite number (undeclared properties are kept per [T4]); then N = samples converted to an unsigned integer (truncation toward zero; negative values become 0). A native client never writes it, and honours it when a graph has it (`radialBlur/p=0.5/blurStrength=3,samples=5`).
 
 ## Progress curve
 p is used as received (**not clamped**). env = sin(π p).
