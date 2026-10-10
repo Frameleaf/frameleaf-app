@@ -11,8 +11,8 @@
  * `gpuWorker` and `renderWorker` come from render worker admission (FL-95, FL-104, FL-42):
  * the server reports them only while an admitted worker session is live, unrevoked and still
  * backed by fresh conformance evidence on the engine digest its worker is qualified with; it
- * never infers one from an ML endpoint. A request failure reports every capability as absent,
- * because a capability the server did not confirm is not one the route may claim.
+ * never infers one from an ML endpoint. An initial request failure reports every capability as absent,
+ * while a failed refresh keeps the last confirmed snapshot.
  */
 import { getMlCapabilities, type StudioCapabilitiesDto } from '@frameleaf/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities, type StudioRenderEvidence } from './host-contract';
@@ -67,18 +67,21 @@ export const toStudioRenderEvidence = (studio: Pick<StudioCapabilitiesDto, 'rend
       ),
   );
 
-/** Capabilities and render evidence from one request; a failure reports neither. */
+/** Capabilities and render evidence from one request; a failure preserves the last confirmed snapshot, or reports neither. */
 export interface StudioHostSnapshot {
   capabilities: StudioCapabilities;
   renderEvidence: StudioRenderEvidence[];
 }
 
-export const probeStudioHost = async (signal?: AbortSignal): Promise<StudioHostSnapshot> => {
+export const probeStudioHost = async (
+  signal?: AbortSignal,
+  previous?: StudioHostSnapshot,
+): Promise<StudioHostSnapshot> => {
   try {
     const { studio } = await getMlCapabilities(signal ? { signal } : undefined);
     return { capabilities: toStudioCapabilities(studio), renderEvidence: toStudioRenderEvidence(studio) };
   } catch {
-    return { capabilities: emptyStudioCapabilities(), renderEvidence: [] };
+    return previous ?? { capabilities: emptyStudioCapabilities(), renderEvidence: [] };
   }
 };
 
@@ -92,6 +95,7 @@ export const createStudioHostRefresh = ({
   onChange: (snapshot: StudioHostSnapshot) => void;
   probe?: typeof probeStudioHost;
 }) => {
+  let previous: StudioHostSnapshot | undefined;
   let generation = 0;
   let disposed = false;
   let pending: { generation: number; controller: AbortController; done: Promise<boolean> } | null = null;
@@ -112,11 +116,12 @@ export const createStudioHostRefresh = ({
       }
       const current = ++generation;
       const controller = new AbortController();
-      const done = probe(controller.signal)
+      const done = probe(controller.signal, previous)
         .then((snapshot) => {
           if (disposed || current !== generation || !hasAccess()) {
             return false;
           }
+          previous = snapshot;
           onChange(snapshot);
           return true;
         })

@@ -540,6 +540,28 @@ describe(TrashService.name, () => {
   });
 
   describe('move to trash', () => {
+    it('accepts durable worker authority without a persisted session for trash and restore', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: own() });
+      const repository = ctx.get(TrashRepository);
+      const auth = {
+        ...factory.auth({ user }),
+        system: true as const,
+        session: { id: randomUUID(), hasElevatedPermission: true },
+      };
+      await expect(
+        repository.applyReviewed(user.id, TrashReviewAction.Trash, [asset.id], {}, () => true, auth),
+      ).resolves.toEqual([asset.id]);
+      await expect(
+        repository.applyReviewed(user.id, TrashReviewAction.Restore, [asset.id], {}, () => true, auth),
+      ).resolves.toEqual([asset.id]);
+      const ordinary = { ...auth, system: undefined };
+      await expect(
+        repository.applyReviewed(user.id, TrashReviewAction.Trash, [asset.id], {}, () => true, ordinary),
+      ).rejects.toThrow('trash_owner_session_required');
+    });
+
     it('should move reviewed library items to the trash and refuse ones already there', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

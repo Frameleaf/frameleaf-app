@@ -9,6 +9,7 @@
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
+  let setupCode = $state('');
   let restart: AbortController | undefined;
   onDestroy(() => restart?.abort());
 
@@ -19,7 +20,7 @@
     const owner = new AbortController();
     restart = owner;
     try {
-      await startDatabaseRestoreFlow({ signal: owner.signal });
+      await startDatabaseRestoreFlow({ frameleafSetupCodeDto: { code: setupCode.trim() } }, { signal: owner.signal });
       owner.signal.throwIfAborted();
       websocketStore.serverRestarting.set({
         isMaintenanceMode: true,
@@ -44,6 +45,19 @@
       <Button href={Route.register()} size="large" shape="round">
         <span class="px-2 font-semibold">{$t('getting_started')}</span>
       </Button>
+      <label for="restore-setup-code">{$t('frameleaf_setup_claim_code')}</label>
+      <input
+        id="restore-setup-code"
+        class="rounded border p-2"
+        autocomplete="one-time-code"
+        autocapitalize="characters"
+        spellcheck="false"
+        maxlength="9"
+        placeholder="XXXX-XXXX"
+        aria-describedby="restore-setup-code-note"
+        bind:value={setupCode}
+      />
+      <p id="restore-setup-code-note">{$t('frameleaf_setup_claim_code_note')}</p>
       <Button size="small" shape="round" variant="ghost" onclick={switchToMaintenance}>
         <span class="px-2 font-semibold">{$t('maintenance_restore_from_backup')}</span>
       </Button>

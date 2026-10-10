@@ -116,6 +116,9 @@ describe(ICloudSyncService.name, () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    repository.finish.mockImplementation(async (item, status, _error, cleanup) => {
+      if (['needs-review', 'preserve-trashed', 'unsupported', 'failed'].includes(status)) await cleanup(item);
+    });
     repository.get.mockResolvedValue(connection);
     repository.withSession.mockImplementation(async (_id, _owner, callback) => {
       const result = await callback(connection);
@@ -239,6 +242,17 @@ describe(ICloudSyncService.name, () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE-SENTINEL');
   });
 
+  it('preserves inventory when a preference save sends the unchanged config', async () => {
+    await sut.update({ user: { id: connection.ownerId }, session: {} } as never, connection.id, {
+      label: 'Renamed',
+      config: { ...connection.config },
+    });
+    expect(repository.update).toHaveBeenCalledWith(connection.id, connection.ownerId, {
+      label: 'Renamed',
+      config: undefined,
+    });
+  });
+
   it('patches only supplied config fields and validates the merged settings', async () => {
     const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: true } } as never;
     const config = ICloudConfigSchema.parse({
@@ -324,14 +338,24 @@ describe(ICloudSyncService.name, () => {
       adoption.adopt.mockResolvedValue('retry');
       await sut.run(operation(), 'token');
       expect(staging.download).not.toHaveBeenCalled();
-      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'identity_adoption_unavailable');
+      expect(repository.finish).toHaveBeenCalledWith(
+        resource,
+        'retry',
+        'identity_adoption_unavailable',
+        expect.any(Function),
+      );
       expect(repository.finalize).not.toHaveBeenCalled();
     });
 
     it('retains backpressure on an already mapped exact-receipt resource without staging or relabelling it', async () => {
       recovery.verifyMapped.mockResolvedValue({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
       await sut.run(operation(), 'token');
-      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'identity_adoption_unavailable');
+      expect(repository.finish).toHaveBeenCalledWith(
+        resource,
+        'retry',
+        'identity_adoption_unavailable',
+        expect.any(Function),
+      );
       expect(adoption.adopt).not.toHaveBeenCalled();
       expect(staging.download).not.toHaveBeenCalled();
       expect(recovery.reconcile).not.toHaveBeenCalled();
@@ -367,7 +391,7 @@ describe(ICloudSyncService.name, () => {
       expect(staging.download).not.toHaveBeenCalled();
       expect(repository.waitForClaim).toHaveBeenCalledWith(resource, until);
       expect(adoption.adopt).not.toHaveBeenCalled();
-      expect(repository.finish).not.toHaveBeenCalledWith(resource, 'retry', expect.anything());
+      expect(repository.finish).not.toHaveBeenCalledWith(resource, 'retry', expect.anything(), expect.any(Function));
     });
 
     it('records real progress from resources settled out of those known, never an invented figure', async () => {
@@ -390,8 +414,13 @@ describe(ICloudSyncService.name, () => {
       repository.claim.mockResolvedValueOnce(resource);
       recovery.verifyMapped.mockResolvedValue({ outcome: 'preserve-trashed', reason: 'destination_not_active' });
       await sut.run(operation(), 'token');
-      expect(repository.finish).toHaveBeenLastCalledWith(resource, 'preserve-trashed', 'destination_not_active');
-      expect(staging.cleanup).not.toHaveBeenCalled();
+      expect(repository.finish).toHaveBeenLastCalledWith(
+        resource,
+        'preserve-trashed',
+        'destination_not_active',
+        expect.any(Function),
+      );
+      expect(staging.cleanup).toHaveBeenCalledOnce();
     });
 
     it('retains committed state and good staging when follow-up dispatch fails', async () => {
@@ -399,7 +428,12 @@ describe(ICloudSyncService.name, () => {
       await sut.run(operation(), 'token');
       expect(staging.cleanup).not.toHaveBeenCalled();
       expect(repository.clearOutbox).not.toHaveBeenCalled();
-      expect(repository.finish).toHaveBeenCalledWith(resource, 'committed', 'icloud_transfer_failed');
+      expect(repository.finish).toHaveBeenCalledWith(
+        resource,
+        'committed',
+        'icloud_transfer_failed',
+        expect.any(Function),
+      );
     });
 
     it('preserves a committed edited receipt and retries its local wake before finalization', async () => {
@@ -413,12 +447,22 @@ describe(ICloudSyncService.name, () => {
       repository.resource.mockResolvedValue(committed);
       recovery.reconcile.mockRejectedValueOnce(new LocalEffectsPendingError());
       await sut.run(operation(), 'token');
-      expect(repository.finish).toHaveBeenLastCalledWith(resource, 'committed', 'local_effects_pending');
+      expect(repository.finish).toHaveBeenLastCalledWith(
+        resource,
+        'committed',
+        'local_effects_pending',
+        expect.any(Function),
+      );
       expect(staging.cleanup).not.toHaveBeenCalled();
       repository.claim.mockResolvedValueOnce(committed);
       relations.enqueue.mockRejectedValueOnce(new Error('wake still unavailable'));
       await sut.run(operation(), 'token');
-      expect(repository.finish).toHaveBeenLastCalledWith(committed, 'committed', 'local_effects_pending');
+      expect(repository.finish).toHaveBeenLastCalledWith(
+        committed,
+        'committed',
+        'local_effects_pending',
+        expect.any(Function),
+      );
       expect(staging.cleanup).not.toHaveBeenCalled();
       repository.claim.mockResolvedValueOnce(committed);
       relations.enqueue.mockResolvedValueOnce(1);
@@ -443,7 +487,7 @@ describe(ICloudSyncService.name, () => {
       staging.download.mockRejectedValueOnce(new ICloudTransportError('resource_changed'));
       repository.resource.mockResolvedValueOnce(resource);
       await sut.run(operation(), 'token');
-      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'resource_changed');
+      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'resource_changed', expect.any(Function));
       expect(repository.refreshResource).toHaveBeenCalledWith(resource);
       expect(repository.invalidateCursor).not.toHaveBeenCalled();
       expect(repository.block).not.toHaveBeenCalled();
@@ -686,6 +730,9 @@ describe(ICloudSyncService.name, () => {
       expect(repository.queueOperation).not.toHaveBeenCalled();
 
       transport.authenticate.mockResolvedValue({ state: 'connected', session: {} });
+      repository.finish.mockImplementation(async (item, status, _error, cleanup) => {
+        if (['needs-review', 'preserve-trashed', 'unsupported', 'failed'].includes(status)) await cleanup(item);
+      });
       repository.get.mockResolvedValue(connection);
       repository.queueOperation.mockResolvedValue({ outcome: 'created', operation: operation() });
       await sut.authenticate(auth, 'connection', { action: 'two-factor', code: '123456' }, true);

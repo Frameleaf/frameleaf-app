@@ -283,6 +283,33 @@ export class AlbumUserRepository {
       .orderBy('createdAt', 'asc')
       .execute();
   }
+  async acceptInvite({ albumId, userId }: AlbumPermissionId): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const invite = await tx
+        .deleteFrom('shared_space_invite')
+        .where('albumId', '=', albumId)
+        .where('userId', '=', userId)
+        .returning(['role'])
+        .executeTakeFirst();
+      if (!invite) {
+        return false;
+      }
+      const member = await tx
+        .insertInto('album_user')
+        .values({ albumId, userId, role: invite.role })
+        .onConflict((oc) => oc.columns(['albumId', 'userId']).doNothing())
+        .returning('userId')
+        .executeTakeFirst();
+      if (member) {
+        await tx
+          .insertInto('shared_space_event')
+          .values({ albumId, actorId: userId, type: SharedSpaceEventType.MemberJoined, targetUserId: userId })
+          .execute();
+      }
+      return true;
+    });
+  }
+
   async deleteInvite({ albumId, userId }: AlbumPermissionId): Promise<void> {
     await this.db
       .deleteFrom('shared_space_invite')

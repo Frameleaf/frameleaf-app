@@ -207,9 +207,10 @@
   /* Following durable work                                            */
   /* ---------------------------------------------------------------- */
 
+  let destroyed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
-    if (timer === null && (active || jobs.size > 0)) {
+    if (!destroyed && timer === null && (active || jobs.size > 0)) {
       timer = setTimeout(() => {
         timer = null;
         void poll().then(schedule);
@@ -217,6 +218,7 @@
     }
   };
   onDestroy(() => {
+    destroyed = true;
     if (timer !== null) {
       clearTimeout(timer);
     }

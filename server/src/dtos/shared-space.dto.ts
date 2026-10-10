@@ -41,8 +41,19 @@ const SharedSpacePreviewResponseSchema = z
       .meta({ format: 'date-time' })
       .optional()
       .describe('Latest item date, sensitive and Locked media excluded'),
+    previewAssetIds: z
+      .array(z.uuidv4())
+      .max(12)
+      .describe(
+        'Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation.',
+      ),
   })
   .meta({ id: 'SharedSpacePreviewResponseDto' });
+
+const SharedSpacePreviewAssetParamSchema = z.object({
+  id: z.uuidv4().describe('Shared space ID'),
+  assetId: z.uuidv4().describe('One of the previewAssetIds of the shared space preview'),
+});
 
 /** One person in a shared space, whether they have joined yet or not. */
 const SharedSpaceMemberResponseSchema = z
@@ -385,6 +396,7 @@ export class SharedSpaceCommentCreateDto extends createZodDto(SharedSpaceComment
 export class SharedSpaceCommentUpdateDto extends createZodDto(SharedSpaceCommentUpdateSchema) {}
 export class SharedSpaceCommentParamDto extends createZodDto(SharedSpaceCommentParamSchema) {}
 export class SharedSpacePreviewResponseDto extends createZodDto(SharedSpacePreviewResponseSchema) {}
+export class SharedSpacePreviewAssetParamDto extends createZodDto(SharedSpacePreviewAssetParamSchema) {}
 export class SharedSpaceMemberResponseDto extends createZodDto(SharedSpaceMemberResponseSchema) {}
 export class SharedSpaceMembersResponseDto extends createZodDto(SharedSpaceMembersResponseSchema) {}
 export class SharedSpaceAlbumResponseDto extends createZodDto(SharedSpaceAlbumResponseSchema) {}

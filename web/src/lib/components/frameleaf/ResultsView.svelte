@@ -169,7 +169,9 @@
    * session carries a query the server can resolve on its own (`selectAllMode: 'matching'`).
    */
   const selectAllMatching = async () => {
+    const revision = session.revision;
     const total = await bulk.count(session.state);
+    if (revision !== session.revision) return;
     session.dispatch({ type: 'selection', ids: assets.map((asset) => asset.id), allMatching: true });
     if (total !== null) {
       session.applyTotal(total, session.revision);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import handlebar from 'handlebars';
 import { DateTime } from 'luxon';
 import path from 'node:path';
@@ -9,6 +9,7 @@ import type { JobOf, StorageAsset } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
+import { StorageMigrationStatusResponseDto } from 'src/dtos/queue.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -132,6 +133,45 @@ export class StorageTemplateService extends BaseService {
 
   getStorageTemplateOptions(): ConfigTemplateStorageOptionDto {
     return { ...storageTokens, presetOptions: storagePresets };
+  }
+
+  /** FL-349: where the storage template migration stands, for the admin Migration page. */
+  async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    const name = QueueName.StorageTemplateMigration;
+    const [isActive, isPaused, hasUnfinishedWork, statistics] = await Promise.all([
+      this.jobRepository.isActive(name),
+      this.jobRepository.isPaused(name),
+      this.jobRepository.hasUnfinishedWork(name),
+      this.jobRepository.getJobCounts(name),
+    ]);
+    return {
+      enabled: storageTemplate.enabled,
+      template: storageTemplate.template,
+      isActive,
+      isPaused,
+      hasUnfinishedWork,
+      statistics,
+    };
+  }
+
+  /**
+   * FL-349: start the storage template migration in the background — the same job as starting the
+   * `storageTemplateMigration` queue. Refused while the template is off (the run would move nothing)
+   * or while a migration is already running.
+   */
+  async runMigration(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    if (!storageTemplate.enabled) {
+      throw new BadRequestException('The storage template is turned off');
+    }
+    const name = QueueName.StorageTemplateMigration;
+    if (await this.jobRepository.isActive(name)) {
+      throw new ConflictException('A storage migration is already running');
+    }
+    await this.eventRepository.emit('QueueStart', { name });
+    await this.jobRepository.queue({ name: JobName.StorageTemplateMigration });
+    return this.getMigrationStatus();
   }
 
   @OnEvent({ name: 'AssetMetadataExtracted' })
@@ -336,11 +376,9 @@ export class StorageTemplateService extends BaseService {
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
-        // universal storage: a non-primary asset's sidecar is its own owner's metadata. It goes to this
-        // asset's own template path, never beside the shared original, where the primary's sidecar lives.
-        const sidecarTargetIsShared = isSharedNonCanonical && newPath === oldPath;
+        // A shared copy cannot reserve a template original path; keep its per-asset sidecar path.
         // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
-        if (sidecarPath && moved && !sidecarTargetIsShared) {
+        if (sidecarPath && moved && !isSharedNonCanonical) {
           await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,

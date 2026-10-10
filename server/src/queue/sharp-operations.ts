@@ -526,6 +526,55 @@ export class SharpOperations {
       .toFile(output);
   }
 
+  /**
+   * Studio timeline filmstrip: lay frames of one video out left-to-right, top-to-bottom in equal
+   * tiles of `tileWidth` x `tileHeight` (each frame cover-cropped to the tile) and encode the sheet
+   * as JPEG or WebP. Inputs past `columns * rows` are ignored.
+   */
+  async composeFilmstrip(
+    inputs: string[],
+    options: {
+      columns: number;
+      rows: number;
+      tileWidth: number;
+      tileHeight: number;
+      format: 'jpeg' | 'webp';
+      quality: number;
+      output: string;
+    },
+  ): Promise<void> {
+    const { columns, rows, tileWidth, tileHeight, format, quality, output } = options;
+    const composites = [];
+    for (const [index, path] of inputs.slice(0, columns * rows).entries()) {
+      const input = await sharp(path, { limitInputPixels: this.maxPixels })
+        .resize(tileWidth, tileHeight, { fit: 'cover' })
+        .removeAlpha()
+        .raw()
+        .toBuffer();
+      composites.push({
+        input,
+        raw: { width: tileWidth, height: tileHeight, channels: 3 as const },
+        left: (index % columns) * tileWidth,
+        top: Math.floor(index / columns) * tileHeight,
+      });
+      this.progress();
+    }
+
+    const sheet = sharp({
+      create: {
+        width: columns * tileWidth,
+        height: rows * tileHeight,
+        channels: 3,
+        background: { r: 0, g: 0, b: 0 },
+      },
+    }).composite(composites);
+    await (
+      format === 'webp'
+        ? sheet.webp({ quality, effort: 2 })
+        : sheet.jpeg({ quality, chromaSubsampling: '4:2:0', progressive: false })
+    ).toFile(output);
+  }
+
   private getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {
     let pipeline = sharp(input, {
       // some invalid images can still be processed by sharp, but we want to fail on them by default to avoid crashes

@@ -149,7 +149,7 @@ const announce = async (deps: SetupGateDeps, code: string, reason: 'start' | 're
  * administrator, shown on the console; once an administrator exists, nothing is kept.
  */
 export const prepareSetup = async (deps: SetupGateDeps, reason: 'start' | 'replaced' = 'start') => {
-  if (await deps.userRepository.getAdmin()) {
+  if (!deps.configRepository.getEnv().setup.allow || (await deps.userRepository.getAdmin())) {
     await deps.systemMetadataRepository.delete(SystemMetadataKey.FrameleafSetupCode);
     return;
   }
@@ -177,7 +177,7 @@ const requireClaimable = async (deps: SetupGateDeps, client: SetupClient) => {
     deps.logger.warn(`Refused a setup request from outside the home network (${client.ip})`);
     throw setupRefusal(FrameleafSetupErrorCode.LanOnly);
   }
-  if (await deps.userRepository.getAdmin()) {
+  if (!deps.configRepository.getEnv().setup.allow || (await deps.userRepository.getAdmin())) {
     throw setupRefusal(FrameleafSetupErrorCode.Complete);
   }
 };

@@ -89,6 +89,8 @@ export interface DraftSendState {
    * host already holds it, and by `beginMount`.
    */
   writePending?: boolean
+  /** Monotonic write version: acknowledging an older send cannot clear a newer write. */
+  writeVersion?: number
   /** The mount generation whose lost edits were last reported, so the person is told once per mount. */
   lostReportedFor?: number
   /** What that instance showed when it was reported; a later edit there is reported again. */
@@ -234,6 +236,8 @@ export interface DraftSendIo {
     graph: unknown,
     baseRevision: number,
     graphVersion: number,
+    /** What the draft holds, as revision summary ids (`editorDraftCommandIds`). */
+    commandIds: string[],
   ) => Promise<{ status: string; reason?: string }>
   dirty: (dirty: boolean) => void
   /** A refused edit's mount was replaced by the host's graph before it could go again (FL-174). */
@@ -253,6 +257,7 @@ export async function sendEditorDraft(
   io: DraftSendIo,
 ): Promise<void> {
   if (!acceptsWrite(state, mount)) return
+  const writeVersion = state.writeVersion
   const base = mount.revision
   // Taken before the read, like the base: the graph read next was built on this version or a newer one.
   const version = mount.graphVersion
@@ -266,11 +271,20 @@ export async function sendEditorDraft(
   }
   const content = io.contentOf(graph)
   if (content === state.hostContent) {
-    if (state.mount === mount) state.writePending = false
+    if (state.mount === mount && state.writeVersion === writeVersion) {
+      state.writePending = false
+      io.dirty(false)
+    }
     return
   }
+  let previous: unknown = null
+  try {
+    previous = JSON.parse(state.hostContent)
+  } catch {
+    previous = null
+  }
   const result: { status: string; reason?: string } = await io
-    .stage(graph, base, version)
+    .stage(graph, base, version, editorDraftCommandIds(previous, graph))
     .catch(() => ({ status: 'rejected' }))
   // A remount meanwhile owns hostContent and pendingSend now; the host judged this draft on its base.
   if (!acceptsWrite(state, mount)) {
@@ -282,8 +296,8 @@ export async function sendEditorDraft(
     state.hostContent = content
     state.pendingSend = false
     state.pendingSuperseded = false
-    state.writePending = false
-    io.dirty(false)
+    state.writePending = state.writeVersion !== writeVersion
+    io.dirty(state.writePending)
   } else if (isSuperseded(result) && mount.graphVersion > version) {
     // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
     // built on the host's change: send that instead.
@@ -300,4 +314,75 @@ export async function sendEditorDraft(
     state.pendingSuperseded = isSuperseded(result)
     io.dirty(true)
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* What an editor draft holds (FL-348)                                  */
+/* ------------------------------------------------------------------ */
+
+/** The fields the editor's mask controls write on a shape: exactly those of `clip.setMask`. */
+const MASK_FIELDS = ['isMask', 'maskType', 'maskFeather', 'maskOpacity', 'maskInvert'] as const
+/** Written beside them when a shape becomes a mask or stops being one, and by the pen on a mask. */
+const MASK_COMPANION_FIELDS = ['blendMode', 'pathClosed', 'pathVertices'] as const
+
+type GraphItem = Record<string, unknown> & { id?: unknown; type?: unknown }
+
+const stable = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stable(entry)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+const mainItems = (graph: unknown): GraphItem[] => {
+  const items = (graph as { timeline?: { items?: unknown } } | null)?.timeline?.items
+  return Array.isArray(items) ? (items.filter((item) => item && typeof item === 'object') as GraphItem[]) : []
+}
+
+const maskView = (item: GraphItem): string =>
+  stable({
+    ...Object.fromEntries(MASK_FIELDS.map((field) => [field, item[field]])),
+    // A pen edit counts as a mask edit only while the shape is a mask.
+    ...(item.isMask === true ? { pathVertices: item.pathVertices } : {}),
+  })
+
+/**
+ * The revision summary ids of an editor draft. The editor writes the graph directly, so its mask
+ * edits carry no envelope; each main-timeline shape whose `clip.setMask` fields changed is reported
+ * as one `clip.setMask`, and any other change as `editor.save`, so a web revision reads like the
+ * same edit made through the canonical command by a native client.
+ */
+export function editorDraftCommandIds(before: unknown, after: unknown): string[] {
+  const previous = new Map(
+    mainItems(before)
+      .filter((item) => item.type === 'shape' && typeof item.id === 'string')
+      .map((item) => [item.id as string, item]),
+  )
+  const masked = new Set<string>()
+  for (const item of mainItems(after)) {
+    if (item.type !== 'shape' || typeof item.id !== 'string') continue
+    const earlier = previous.get(item.id)
+    if (earlier && maskView(earlier) !== maskView(item)) masked.add(item.id)
+  }
+  const strip = (graph: unknown): string => {
+    if (!graph || typeof graph !== 'object') return stable(graph)
+    const timeline = (graph as { timeline?: Record<string, unknown> }).timeline
+    if (!timeline || masked.size === 0) return stable(graph)
+    const items = mainItems(graph).map((item) =>
+      typeof item.id === 'string' && masked.has(item.id)
+        ? Object.fromEntries(
+            Object.entries(item).filter(
+              ([key]) => !(MASK_FIELDS as readonly string[]).includes(key) && !(MASK_COMPANION_FIELDS as readonly string[]).includes(key),
+            ),
+          )
+        : item,
+    )
+    return stable({ ...(graph as object), timeline: { ...timeline, items } })
+  }
+  const other = strip(before) !== strip(after)
+  return [...[...masked].map(() => 'clip.setMask'), ...(other || masked.size === 0 ? ['editor.save'] : [])]
 }

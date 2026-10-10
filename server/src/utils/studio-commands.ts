@@ -27,7 +27,9 @@
  * command is implemented yet. Those belong to the story that owns the command, with the
  * graph, the lease and the access rules in hand. Values typed `object` or `object[]` in
  * the catalogue are graph-shaped and pass through unread, which is what keeps unknown
- * Freecut fields, nulls, arrays and rational timing extensions lossless.
+ * Freecut fields, nulls, arrays and rational timing extensions lossless. The one exception is
+ * `clip.setMask` (FL-348): its `mask` is a closed intent, not graph-shaped data, so its fields,
+ * ranges and pen-path vertices are checked here as section 17.1 of the graph protocol states.
  */
 
 import { isRational } from 'src/utils/rational-time.js';
@@ -138,6 +140,73 @@ const matchesFieldType = (type: string, value: unknown): boolean => {
   }
 };
 
+const MASK_FIELDS = new Set(['type', 'feather', 'opacity', 'invert', 'path']);
+const VERTEX_FIELDS = new Set(['position', 'inHandle', 'outHandle', 'tangentMode']);
+const TANGENT_MODES = new Set(['corner', 'smooth', 'continuous', 'broken']);
+export const STUDIO_MASK_MAX_VERTICES = 1000;
+
+const isPoint = (value: unknown): boolean =>
+  Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+const percent = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+
+/** Section 17.1 of the Studio graph protocol: the closed shape of a `clip.setMask` mask. */
+const maskProblem = (mask: Record<string, unknown>): string | undefined => {
+  for (const name of Object.keys(mask)) {
+    if (!MASK_FIELDS.has(name)) {
+      return `unknown mask field ${name}`;
+    }
+  }
+  if (mask.type !== undefined && mask.type !== 'clip' && mask.type !== 'alpha') {
+    return 'mask type must be "clip" or "alpha"';
+  }
+  for (const name of ['feather', 'opacity']) {
+    if (mask[name] !== undefined && !percent(mask[name])) {
+      return `mask ${name} must be a number from 0 to 100`;
+    }
+  }
+  if (mask.invert !== undefined && typeof mask.invert !== 'boolean') {
+    return 'mask invert must be a boolean';
+  }
+  if (mask.path !== undefined) {
+    const path = mask.path;
+    if (!Array.isArray(path) || path.length < 3 || path.length > STUDIO_MASK_MAX_VERTICES) {
+      return `mask path must have 3 to ${STUDIO_MASK_MAX_VERTICES} vertices`;
+    }
+    for (const vertex of path) {
+      if (!isRecord(vertex) || Object.keys(vertex).some((name) => !VERTEX_FIELDS.has(name))) {
+        return 'a mask path vertex must be { position, inHandle, outHandle, tangentMode? }';
+      }
+      if (!isPoint(vertex.position) || !isPoint(vertex.inHandle) || !isPoint(vertex.outHandle)) {
+        return 'a mask path position or handle must be [x, y]';
+      }
+      if (vertex.tangentMode !== undefined && !TANGENT_MODES.has(vertex.tangentMode as string)) {
+        return 'unknown mask path tangent mode';
+      }
+    }
+  }
+  return undefined;
+};
+
+/** Checks the catalogue's field kinds cannot express, for the commands whose payload is closed. */
+const refinedPayloadProblem = (id: StudioCommandId, payload: Record<string, unknown>): string | undefined => {
+  switch (id) {
+    case 'clip.setMask': {
+      if (!Object.hasOwn(payload, 'mask')) {
+        return 'missing required field mask (null removes the mask)';
+      }
+      return payload.mask === null ? undefined : maskProblem(payload.mask as Record<string, unknown>);
+    }
+    case 'clip.relink': {
+      return payload.clipId === '' || payload.assetId === '' ? 'clipId and assetId must not be empty' : undefined;
+    }
+    default: {
+      return undefined;
+    }
+  }
+};
+
 export const validateStudioCommandPayload = (
   id: StudioCommandId,
   payload: unknown,
@@ -173,6 +242,11 @@ export const validateStudioCommandPayload = (
       // unknown keys are preserved.
       return { valid: false, detail: `${id}: unknown field ${name}` };
     }
+  }
+
+  const problem = refinedPayloadProblem(id, payload);
+  if (problem) {
+    return { valid: false, detail: `${id}: ${problem}` };
   }
 
   return { valid: true };

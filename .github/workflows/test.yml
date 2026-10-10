@@ -82,6 +82,8 @@ jobs:
           node --test studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Validate the Studio graph protocol fixtures (FL-306)
         run: node --test studio/tools/graph-protocol.test.mjs
+      - name: Validate the Studio render spec and goldens
+        run: node --test studio/tools/render-goldens.test.mjs
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server
@@ -437,6 +439,7 @@ jobs:
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
       # Deploy workflow on fork/main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -721,6 +724,7 @@ jobs:
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
       # Deploy workflow on fork/main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io

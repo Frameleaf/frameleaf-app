@@ -49,27 +49,52 @@ async function execute(request: SharpRequest) {
     if (raw) {
       assertSharpPixels(raw.width, raw.height, maxPixels);
     }
-    if (operation === 'renderDevelopGeometry') {
-      const plan = args[2] as { oriented: { width: number; height: number }; straighten: number };
-      const { width, height } = plan.oriented;
-      assertSharpPixels(width, height, maxPixels);
-      if (plan.straighten !== 0) {
-        const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
-        assertSharpPixels(
-          Math.ceil(width * Math.cos(theta) + height * Math.sin(theta)),
-          Math.ceil(width * Math.sin(theta) + height * Math.cos(theta)),
-          maxPixels * 2,
-        );
+    switch (operation) {
+      case 'renderDevelopGeometry': {
+        const plan = args[2] as { oriented: { width: number; height: number }; straighten: number };
+        const { width, height } = plan.oriented;
+        assertSharpPixels(width, height, maxPixels);
+        if (plan.straighten !== 0) {
+          const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
+          assertSharpPixels(
+            Math.ceil(width * Math.cos(theta) + height * Math.sin(theta)),
+            Math.ceil(width * Math.sin(theta) + height * Math.cos(theta)),
+            maxPixels * 2,
+          );
+        }
+
+        break;
       }
-    } else if (operation === 'composeImageGrid') {
-      const { cols, rows, cellSize } = args[1] as { cols: number; rows: number; cellSize: number };
-      if ([cols, rows, cellSize].some((value) => !(Number.isSafeInteger(value) && value > 0))) {
-        throw new SharpResourceLimitError('invalid grid dimensions');
+      case 'composeImageGrid': {
+        const { cols, rows, cellSize } = args[1] as { cols: number; rows: number; cellSize: number };
+        if ([cols, rows, cellSize].some((value) => !(Number.isSafeInteger(value) && value > 0))) {
+          throw new SharpResourceLimitError('invalid grid dimensions');
+        }
+        assertSharpPixels(cols * cellSize, rows * cellSize, maxPixels);
+        if (cols * rows > 1024) {
+          throw new SharpResourceLimitError('grid exceeds 1024 cells');
+        }
+
+        break;
       }
-      assertSharpPixels(cols * cellSize, rows * cellSize, maxPixels);
-      if (cols * rows > 1024) {
-        throw new SharpResourceLimitError('grid exceeds 1024 cells');
+      case 'composeFilmstrip': {
+        const { columns, rows, tileWidth, tileHeight } = args[1] as {
+          columns: number;
+          rows: number;
+          tileWidth: number;
+          tileHeight: number;
+        };
+        if ([columns, rows, tileWidth, tileHeight].some((value) => !(Number.isSafeInteger(value) && value > 0))) {
+          throw new SharpResourceLimitError('invalid filmstrip dimensions');
+        }
+        assertSharpPixels(columns * tileWidth, rows * tileHeight, maxPixels);
+        if (columns * rows > 1024 || columns * tileWidth > 16_383 || rows * tileHeight > 16_383) {
+          throw new SharpResourceLimitError('filmstrip exceeds its bounds');
+        }
+
+        break;
       }
+      // No default
     }
     let completed = 0;
     const operations = new SharpOperations(

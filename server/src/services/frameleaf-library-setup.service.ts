@@ -24,6 +24,7 @@ type SetupState = {
   origin: 'new_import' | 'new_library' | 'restored_library';
   phase: 'awaiting-account' | 'rescanning' | 'verifying' | 'needs-attention' | 'complete';
   startedAt: string;
+  failedBaseline?: Record<string, number>;
   libraries: string[];
   scans: Record<string, string>;
   revision: string | null;
@@ -39,6 +40,14 @@ type ImportRunSelection = {
   managerSetup?: { installation: string; operationId: string; preparedAt: string | null; startedAt: string | null };
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
+const SETUP_QUEUES = [
+  QueueName.Library,
+  QueueName.Sidecar,
+  QueueName.MetadataExtraction,
+  QueueName.ThumbnailGeneration,
+  QueueName.VideoConversion,
+  QueueName.MediaHealth,
+];
 const KEY = 'frameleaf-manager-library-setup';
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
 
@@ -146,6 +155,11 @@ export class FrameleafLibrarySetupService {
         revision: null,
         quietSince: null,
         processingChoiceApplied,
+        failedBaseline: Object.fromEntries(
+          await Promise.all(
+            SETUP_QUEUES.map(async (queue) => [queue, (await this.jobs.getJobCounts(queue)).failed] as const),
+          ),
+        ),
       };
       await this.write(this.key(), state, db);
       await this.startImportedRegeneration(state, db);
@@ -405,19 +419,11 @@ export class FrameleafLibrarySetupService {
         );
         // Sidecar completion enqueues metadata, which enqueues derivatives. An idle downstream
         // queue alone cannot establish a final sync revision.
-        const queues = await Promise.all(
-          [
-            QueueName.Library,
-            QueueName.Sidecar,
-            QueueName.MetadataExtraction,
-            QueueName.ThumbnailGeneration,
-            QueueName.VideoConversion,
-            QueueName.MediaHealth,
-          ].map((q) => this.jobs.getJobCounts(q)),
-        );
-        const idle = queues.every(
-          (q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0 && q.failed === 0,
-        );
+        const queues = await Promise.all(SETUP_QUEUES.map((q) => this.jobs.getJobCounts(q)));
+        if (queues.some((q, i) => q.failed > (state.failedBaseline?.[SETUP_QUEUES[i]] ?? 0))) {
+          state.phase = 'needs-attention';
+        }
+        const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
         if (!scansFinished || !healthFinished || !idle || state.phase === 'needs-attention') {
           state.quietSince = null;
         } else {

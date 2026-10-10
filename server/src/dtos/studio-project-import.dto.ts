@@ -25,7 +25,7 @@ const StudioProjectImportCreateSchema = z
 
 export class StudioProjectImportCreateDto extends createZodDto(StudioProjectImportCreateSchema) {}
 
-const StudioProjectImportSchema = z
+export const StudioProjectImportSchema = z
   .object({
     id: z.uuid().describe('Import id; clips reference it as `importId`'),
     kind: z

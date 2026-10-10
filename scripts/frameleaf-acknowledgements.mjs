@@ -64,6 +64,7 @@ export const libraryModelIds = ({ constants, description, serverConfig }) => {
     ...pythonCollection(constants, '_INSIGHTFACE_MODELS').map((name) => `ml:insightface:${name}`),
     ...pythonCollection(constants, '_PADDLE_MODELS').map((name) => `ml:paddle:${name}`),
     ...pythonCollection(constants, '_INPAINT_MODELS').map((name) => `ml:inpaint:${name}`),
+    ...pythonCollection(constants, '_TRANSCRIBE_MODELS').map((name) => `ml:transcribe:${name}`),
     ...pythonCollection(description, 'OPENVINO_MODEL_ALIASES', true).map((name) => `ml:description:${name}`),
     ...pythonCollection(description, 'FLORENCE_MODEL_NAMES').map((name) => `ml:description:${name}`),
   ];

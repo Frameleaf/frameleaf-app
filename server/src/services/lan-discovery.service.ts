@@ -128,7 +128,7 @@ export class LanDiscoveryService extends BaseService {
       systemMetadataRepository: this.systemMetadataRepository,
     });
     return {
-      setup: admin ? 'complete' : 'needed',
+      setup: admin || !this.configRepository.getEnv().setup.allow ? 'complete' : 'needed',
       linked: String(linked),
       cloud: this.configRepository.getEnv().frameleafCloud.url ? 'available' : 'unavailable',
     };
