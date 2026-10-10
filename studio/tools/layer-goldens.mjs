@@ -787,6 +787,7 @@ export function validateLayerGoldens(goldens) {
     const values = decodeBuffer(c.output.data, c.output.encoding);
     assert.equal(values.length, c.size.width * c.size.height * 4, `${c.name}: output size`);
     assert(c.tolerance && c.tolerance.abs > 0 && c.tolerance.abs <= 0.25 && Number.isInteger(c.tolerance.outliers) && c.tolerance.meanAbs > 0 && ['pixel', 'edge', 'statistical'].includes(c.tolerance.class), `${c.name}: tolerance`);
+    assert(Number.isInteger(c.tolerance.codes) && c.tolerance.codes >= 2 && (c.tolerance.abs === 0.25 || Math.abs(c.tolerance.abs - (c.tolerance.codes + 0.5) / 255) < 1e-12), `${c.name}: tolerance is not in whole codes`);
     assert(compareCase({ ...c, expected: values }, values).pass);
     channels += values.length;
   });
