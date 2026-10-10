@@ -15,9 +15,14 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 | `index.json` | Machine-readable index: every id, its page, `full` or `partial`, what is not specifiable, its route and its golden counts. |
 | `goldens/effects.json` | Effect goldens: inputs, cases and outputs rendered by the real engine, with tolerances. |
 | `goldens/transitions.json` | Transition goldens, plus the progress-curve table of T1. |
+| `layers.md` | Layer compositing: frame assembly, layer order, background, transform and parents, opacity, blend modes, crop, corner radius, masks and shapes. |
+| `goldens/layers.json` | Layer goldens: small project frames rendered by the engine's frame renderer. |
+| `text.md` | Titles and text: style fields, layout, spans, text motion, colours and alpha, and the bundled font files. |
+| `goldens/text.json` | Text goldens: layout and motion values and small frames, made with the bundled fonts it names by hash. |
 | `../tools/render-goldens.mjs` | The inputs, case list, buffer encodings and comparison rule, without the engine. |
 | `../tools/render-goldens.browser.mjs` | Renders every case through the engine; `--write` regenerates the goldens. |
 | `../tools/render-goldens.test.mjs` | Engine-free checks: coverage, inputs, the progress curve, the comparison rule and the clean-room lint. |
+| `../tools/layer-goldens.*`, `../tools/text-goldens.*` | Cases and prose references, engine runs and engine-free checks of the layer and text pages; run from the two render-goldens files. |
 
 The five colour effects that had numeric oracles before this spec (brightness, contrast, exposure, saturation, levels) keep `../tools/photometric-goldens.mjs` as an independent equation check; their pages restate those equations.
 

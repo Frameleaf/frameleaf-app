@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ACKNOWLEDGEMENTS_PATH = 'licenses/acknowledgements.json';
+export const BUNDLED_FONTS_PATH = 'server/src/utils/studio-fonts.generated.ts';
 export const DOCS_PATH = 'docs/docs/overview/acknowledgements.md';
 export const NOTICES_PATH = 'licenses/THIRD-PARTY-NOTICES.md';
 const ATTRIBUTION_PATH = 'studio/dependency-attribution.json';
@@ -83,7 +84,7 @@ const matches = (pattern, id) =>
   new RegExp(`^${pattern.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')}$`).test(id);
 
 /** Check the list; returns the problems found (empty when all is well). */
-export const checkAcknowledgements = ({ acknowledgements, attribution, provenance, libraryIds, files }) => {
+export const checkAcknowledgements = ({ acknowledgements, attribution, provenance, libraryIds, files, bundledFonts }) => {
   const problems = [];
   const entries = acknowledgements.components ?? [];
   const seen = new Set();
@@ -164,6 +165,32 @@ export const checkAcknowledgements = ({ acknowledgements, attribution, provenanc
   for (const file of acknowledgements.fonts?.noticeFiles ?? []) {
     if (!files.has(file)) {
       problems.push(`fonts: notice file ${file} does not exist`);
+    }
+  }
+  // Bundled title fonts: the register names exactly the families the server ships, with the
+  // package, version and copyright line the generated font catalogue read from the package.
+  const bundled = new Map((bundledFonts ?? []).map((font) => [font.family, font]));
+  for (const family of acknowledgements.fonts?.families ?? []) {
+    const shipped = bundled.get(family.name);
+    if (!shipped && !family.bundled) {
+      continue;
+    }
+    if (!shipped || !family.bundled) {
+      problems.push(`font:${family.name}: the register and the server's bundled font catalogue disagree on whether it is bundled`);
+      continue;
+    }
+    if (family.licence !== 'OFL-1.1' || shipped.license !== 'OFL-1.1') {
+      problems.push(`font:${family.name}: a bundled family must be OFL-1.1`);
+    }
+    for (const key of ['package', 'version', 'copyright', 'reservedFontName']) {
+      if (family.bundled[key] !== shipped[key]) {
+        problems.push(`font:${family.name}: bundled ${key} differs from ${BUNDLED_FONTS_PATH}`);
+      }
+    }
+  }
+  for (const name of bundled.keys()) {
+    if (!(acknowledgements.fonts?.families ?? []).some((family) => family.name === name)) {
+      problems.push(`font:${name}: bundled by the server but not in the register`);
     }
   }
   return problems;
@@ -255,7 +282,7 @@ export const buildDocs = (acknowledgements, files) => {
     ...table(
       ['Family', 'Designer', 'Licence'],
       acknowledgements.fonts.families.map((family) => [
-        link(family.name, family.link),
+        family.bundled ? `${link(family.name, family.link)} (bundled)` : link(family.name, family.link),
         mdx(family.designer),
         `[${family.licence}](${family.licenceFile})`,
       ]),
@@ -326,6 +353,11 @@ export const buildNotices = (acknowledgements, files) => {
   lines.push(`## ${acknowledgements.groups.fonts}`, '', `${acknowledgements.fonts.source}; ${acknowledgements.fonts.shipped}.`, '');
   for (const family of acknowledgements.fonts.families) {
     lines.push(`- ${family.name} — ${family.designer}. ${family.licence}. ${family.licenceFile}`);
+    if (family.bundled) {
+      lines.push(
+        `  Bundled with the server: ${family.bundled.package} ${family.bundled.version}. ${family.bundled.copyright}`,
+      );
+    }
   }
   lines.push('', '# Licence texts', '');
   const texts = [...new Set([...acknowledgements.components.flatMap((entry) => entry.noticeFiles), ...acknowledgements.fonts.noticeFiles])].sort();
@@ -367,7 +399,12 @@ export async function load(root) {
       files.set(file, bytes);
     }
   }
-  return { acknowledgements, attribution, provenance, libraryIds, files };
+  // The generated catalogue is a TypeScript literal of plain data: read it as one.
+  const generated = (await read(BUNDLED_FONTS_PATH)).toString('utf8');
+  const bundledFonts = new Function(
+    `return ${generated.slice(generated.indexOf('['), generated.lastIndexOf(']') + 1)};`,
+  )();
+  return { acknowledgements, attribution, provenance, libraryIds, files, bundledFonts };
 }
 
 export async function main(argv, root) {

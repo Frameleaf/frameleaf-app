@@ -688,7 +688,7 @@
   ],
   "fonts": {
     "source": "google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25",
-    "shipped": "loaded from Google Fonts when a title uses them; not bundled",
+    "shipped": "loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps",
     "noticeFiles": [
       "licenses/texts/ofl-1.1.txt",
       "licenses/texts/apache-2.0.txt",
@@ -731,7 +731,13 @@
         "designer": "Rasmus Andersson",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Inter",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inter/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inter/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/inter",
+          "version": "5.3.0",
+          "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Montserrat",
@@ -815,7 +821,13 @@
         "designer": "Claus Eggers Sørensen",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Playfair+Display",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/playfairdisplay/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/playfairdisplay/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/playfair-display",
+          "version": "5.3.0",
+          "copyright": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\". PlayfairDisplay-Italic[wght].ttf: Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\".",
+          "reservedFontName": "Playfair Display"
+        }
       },
       {
         "name": "Rubik",
@@ -962,7 +974,13 @@
         "designer": "Ryoichi Tsunekawa",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Bebas+Neue",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bebasneue/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/bebasneue/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/bebas-neue",
+          "version": "5.3.0",
+          "copyright": "Copyright 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Noto Sans TC",
@@ -1179,7 +1197,13 @@
         "designer": "Vernon Adams",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Anton",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anton/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/anton/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/anton",
+          "version": "5.3.0",
+          "copyright": "Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Mukta",
@@ -1263,7 +1287,13 @@
         "designer": "Florian Karsten",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Space+Grotesk",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/spacegrotesk/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/spacegrotesk/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/space-grotesk",
+          "version": "5.3.0",
+          "copyright": "Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Changa One",
@@ -1382,7 +1412,13 @@
         "designer": "Rasmus Andersson",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Inter+Tight",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/intertight/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/intertight/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/inter-tight",
+          "version": "5.3.0",
+          "copyright": "Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight) InterTight-Italic[wght].ttf: Copyright 2022 The Inter Project Authors (https://github.com/rsms/inter-tight)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Overpass",
@@ -1508,7 +1544,13 @@
         "designer": "Matt McInerney",
         "licence": "OFL-1.1",
         "link": "https://fonts.google.com/specimen/Orbitron",
-        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/orbitron/OFL.txt"
+        "licenceFile": "https://github.com/google/fonts/blob/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/orbitron/OFL.txt",
+        "bundled": {
+          "package": "@fontsource/orbitron",
+          "version": "5.3.0",
+          "copyright": "Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron)",
+          "reservedFontName": null
+        }
       },
       {
         "name": "Barlow Semi Condensed",

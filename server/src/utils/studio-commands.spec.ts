@@ -226,6 +226,129 @@ describe('validateStudioCommandEnvelope', () => {
     expect(validateStudioCommandPayload('clip.setMask', { clipId: 'c' })).toMatchObject({ valid: false });
   });
 
+  it('checks the closed payload of a shape.add (graph protocol 17.4)', () => {
+    const at = { num: 1, den: 1 };
+    const vertex = { position: [0, 0], inHandle: [0, 0], outHandle: [0.1, 0], tangentMode: 'smooth' };
+    const valid = (payload: Record<string, unknown>) => validateStudioCommandPayload('shape.add', payload);
+    expect(valid({ shapeType: 'rectangle', at })).toEqual({ valid: true });
+    expect(
+      valid({
+        shapeType: 'star',
+        at,
+        duration: { num: 5, den: 2 },
+        trackId: 'v1',
+        style: { fillColor: '#11223380', strokeWidth: null, points: 8, innerRadius: 0.3, cornerRadius: 6 },
+        transform: { x: -200, y: 120, width: 640, height: 360, rotation: 15, opacity: 0.5, aspectRatioLocked: false },
+        mask: { type: 'alpha', feather: 40, opacity: 75, invert: true },
+      }),
+    ).toEqual({ valid: true });
+    expect(valid({ shapeType: 'path', at, style: { pathVertices: [vertex, vertex], pathClosed: false } })).toEqual({
+      valid: true,
+    });
+    for (const payload of [
+      { shapeType: 'hexagon', at },
+      { shapeType: 'rectangle' },
+      { shapeType: 'rectangle', at, colour: 'red' },
+      { shapeType: 'rectangle', at, trackId: '' },
+      { shapeType: 'rectangle', at, style: null },
+      { shapeType: 'rectangle', at, style: { shadow: 1 } },
+      { shapeType: 'rectangle', at, style: { fillColor: 'red' } },
+      { shapeType: 'rectangle', at, style: { fillColor: '#fff' } },
+      { shapeType: 'rectangle', at, style: { fillColor: '#1122334' } },
+      { shapeType: 'rectangle', at, style: { fillColor: 'rgba(0, 0, 0, 0.5)' } },
+      { shapeType: 'rectangle', at, style: { fillColor: null } },
+      { shapeType: 'rectangle', at, style: { strokeWidth: 51 } },
+      { shapeType: 'rectangle', at, style: { innerRadius: 0.5 } },
+      { shapeType: 'rectangle', at, style: { pathVertices: [vertex, vertex, vertex] } },
+      { shapeType: 'star', at, style: { points: 5.5 } },
+      { shapeType: 'path', at },
+      { shapeType: 'path', at, style: { pathVertices: [vertex] } },
+      { shapeType: 'path', at, style: { pathVertices: [vertex, { ...vertex, position: [1] }] } },
+      { shapeType: 'rectangle', at, transform: { scale: 2 } },
+      { shapeType: 'rectangle', at, transform: { width: 0 } },
+      { shapeType: 'rectangle', at, transform: { rotation: 361 } },
+      { shapeType: 'rectangle', at, mask: { feather: 101 } },
+      { shapeType: 'rectangle', at, mask: { path: [vertex, vertex, vertex] } },
+    ]) {
+      expect(valid(payload), JSON.stringify(payload)).toMatchObject({ valid: false });
+    }
+  });
+
+  it('checks the closed style of a shape.setStyle (graph protocol 17.5)', () => {
+    const valid = (payload: Record<string, unknown>) => validateStudioCommandPayload('shape.setStyle', payload);
+    expect(valid({ clipId: 'c', style: {} })).toEqual({ valid: true });
+    expect(valid({ clipId: 'c', style: { strokeColor: null, trimPathEnd: 50, direction: 'left' } })).toEqual({
+      valid: true,
+    });
+    for (const payload of [
+      { clipId: 'c' },
+      { clipId: '', style: {} },
+      { clipId: 'c', style: null },
+      { clipId: 'c', style: { isMask: true } },
+      { clipId: 'c', style: { taperStartWidth: 201 } },
+      { clipId: 'c', style: { pathClosed: null } },
+      { clipId: 'c', style: {}, mask: {} },
+    ]) {
+      expect(valid(payload), JSON.stringify(payload)).toMatchObject({ valid: false });
+    }
+  });
+
+  it('checks the closed style and spans of a title.setStyle (graph protocol 14.3.4)', () => {
+    const valid = (payload: Record<string, unknown>) => validateStudioCommandPayload('title.setStyle', payload);
+    expect(valid({ clipId: 'c', style: {} })).toEqual({ valid: true });
+    expect(
+      valid({
+        clipId: 'c',
+        style: {
+          color: '#ffcc00',
+          fontSize: 64,
+          fontFamily: 'Playfair Display',
+          fontWeight: 'semibold',
+          fontStyle: 'italic',
+          underline: null,
+          lineHeight: 1.4,
+          letterSpacing: -2,
+          textPadding: 24,
+          backgroundColor: null,
+          backgroundRadius: 999,
+          textShadow: { offsetX: 2, offsetY: 4, blur: 8, color: '#11111199' },
+          stroke: null,
+          textStyleScale: 1.5,
+        },
+        spans: [
+          { text: 'Grace Hopper', fontWeight: 'bold' },
+          { text: 'Rear admiral', fontSize: 40 },
+        ],
+        spanLayout: 'inline',
+      }),
+    ).toEqual({ valid: true });
+    expect(valid({ clipId: 'c', style: {}, spans: null, spanLayout: null })).toEqual({ valid: true });
+    for (const payload of [
+      { clipId: 'c' },
+      { clipId: '', style: {} },
+      { clipId: 'c', style: [] },
+      { clipId: 'c', style: { textAlign: 'left' } },
+      { clipId: 'c', style: { color: null } },
+      { clipId: 'c', style: { color: 'red' } },
+      { clipId: 'c', style: { backgroundColor: 'rgba(0, 0, 0, 0.55)' } },
+      { clipId: 'c', style: { fontSize: 501 } },
+      { clipId: 'c', style: { fontFamily: 'https://fonts.example/inter.woff2' } },
+      { clipId: 'c', style: { fontFamily: '../inter.woff2' } },
+      { clipId: 'c', style: { fontWeight: 700 } },
+      { clipId: 'c', style: { textStyleScale: null } },
+      { clipId: 'c', style: { textStyleScale: 7 } },
+      { clipId: 'c', style: { textShadow: { offsetX: 0, offsetY: 4, color: '#000000' } } },
+      { clipId: 'c', style: { stroke: { width: 25, color: '#000000' } } },
+      { clipId: 'c', style: {}, spans: [] },
+      { clipId: 'c', style: {}, spans: [{ fontSize: 40 }] },
+      { clipId: 'c', style: {}, spans: [{ text: 'A', lineHeight: 1 }] },
+      { clipId: 'c', style: {}, spanLayout: 'grid' },
+      { clipId: 'c', style: {}, position: 'tl' },
+    ]) {
+      expect(valid(payload), JSON.stringify(payload)).toMatchObject({ valid: false });
+    }
+  });
+
   it('requires both ids of a clip.relink (FL-348)', () => {
     expect(validateStudioCommandPayload('clip.relink', { clipId: 'c', assetId: 'a' })).toEqual({ valid: true });
     expect(validateStudioCommandPayload('clip.relink', { clipId: 'c', assetId: '' })).toMatchObject({ valid: false });

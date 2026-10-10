@@ -2937,6 +2937,139 @@ function dissolve(state, wrapper, draw) {
   if (!read) state.compositions = state.compositions.filter((other) => other.id !== composition.id);
 }
 
+/* 17.4, 17.5 and 14.3.4: shape and title style fields */
+
+const plainRecord = (value) => !!value && typeof value === 'object' && !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+/** A field's check with the words of its refusal. */
+const rule = (check, expects) => ({ check, expects });
+const colour = rule((value) => typeof value === 'string' && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value), 'a #rrggbb or #rrggbbaa colour');
+const bool = rule((value) => typeof value === 'boolean', 'a boolean');
+const between = (min, max) => rule((value) => finite(value, min, max), `a number from ${min} to ${max}`);
+const among = (...options) => rule((value) => options.includes(value), `one of ${options.join(', ')}`);
+
+/** 17.5: each shape field, in the order of the table: its rule, the shapes that have it, and whether null may clear it. */
+const SHAPE_FIELDS = [
+  ['fillColor', colour, null, false],
+  ['fillEnabled', bool],
+  ['fillType', among('solid', 'linear')],
+  ['gradientStartColor', colour],
+  ['gradientEndColor', colour],
+  ['gradientAngle', between(-180, 180)],
+  ['strokeColor', colour],
+  ['strokeWidth', between(0, 50)],
+  ['strokeEnabled', bool],
+  ['strokeLineCap', among('butt', 'round', 'square')],
+  ['strokeLineJoin', among('miter', 'round', 'bevel')],
+  ['strokeMiterLimit', between(1, 20)],
+  ['trimPathStart', between(0, 100)],
+  ['trimPathEnd', between(0, 100)],
+  ['trimPathOffset', between(-360, 360)],
+  ['taperStartWidth', between(0, 200)],
+  ['taperEndWidth', between(0, 200)],
+  ['taperStartLength', between(0, 100)],
+  ['taperEndLength', between(0, 100)],
+  ['cornerRadius', between(0, 100), ['rectangle', 'triangle', 'star', 'polygon']],
+  ['direction', among('up', 'down', 'left', 'right'), ['triangle']],
+  ['points', rule((value) => Number.isInteger(value) && value >= 3 && value <= 12, 'an integer from 3 to 12'), ['star', 'polygon']],
+  ['innerRadius', between(0.1, 0.9), ['star']],
+  ['pathClosed', bool, ['path'], false],
+];
+const KEPT_ON_A_PATH = ['fillEnabled', 'strokeEnabled', 'strokeLineCap', 'strokeLineJoin', 'strokeMiterLimit'];
+
+/** 17.1: pen-path vertices, each written with its four keys. */
+function pathVertices(value, command, least) {
+  if (!Array.isArray(value) || value.length < least || value.length > 1000) invalid(`${command}: path must have ${least} to 1000 vertices`);
+  const pair = (entry) => {
+    if (!Array.isArray(entry) || entry.length !== 2 || !entry.every((n) => typeof n === 'number' && Number.isFinite(n))) invalid(`${command}: a vertex position or handle must be [x, y]`);
+    return [entry[0], entry[1]];
+  };
+  return value.map((vertex) => {
+    if (!plainRecord(vertex)) invalid(`${command}: a vertex must be an object`);
+    for (const key of Object.keys(vertex)) if (!['position', 'inHandle', 'outHandle', 'tangentMode'].includes(key)) invalid(`${command}: unknown vertex field`);
+    const position = pair(vertex.position);
+    const inHandle = pair(vertex.inHandle);
+    const outHandle = pair(vertex.outHandle);
+    if (vertex.tangentMode !== undefined && !['corner', 'smooth', 'continuous', 'broken'].includes(vertex.tangentMode)) invalid(`${command}: unknown tangent mode`);
+    return { position, inHandle, outHandle, tangentMode: vertex.tangentMode ?? ([...inHandle, ...outHandle].every((n) => n === 0) ? 'corner' : 'smooth') };
+  });
+}
+
+/** 17.5: the shape a `style` leaves behind. A cleared field is removed. */
+function styledShape(command, style, shape) {
+  if (!plainRecord(style)) invalid(`${command}: style must be an object`);
+  for (const key of Object.keys(style)) {
+    if (key !== 'pathVertices' && !SHAPE_FIELDS.some(([name]) => name === key)) invalid(`${command}: unknown style field "${key}"`);
+  }
+  const isPath = shape.shapeType === 'path';
+  let next = { ...shape };
+  for (const [name, { check, expects }, shapes, clearable = true] of SHAPE_FIELDS) {
+    const given = style[name];
+    if (given === undefined) continue;
+    if (shapes && !shapes.includes(shape.shapeType)) invalid(`${command}: style.${name} does not apply to a ${shape.shapeType} shape`);
+    if (given === null) {
+      if (!clearable || (isPath && KEPT_ON_A_PATH.includes(name))) invalid(`${command}: style.${name} cannot be cleared`);
+      next = without(next, name);
+    } else {
+      if (!check(given)) invalid(`${command}: style.${name} must be ${expects}`);
+      next[name] = given;
+    }
+  }
+  if (style.pathVertices !== undefined) {
+    if (style.pathVertices === null) invalid(`${command}: style.pathVertices cannot be cleared`);
+    if (!isPath) invalid(`${command}: path needs a path shape`);
+    next.pathVertices = pathVertices(style.pathVertices, command, 2);
+  }
+  if (isPath) {
+    const closed = next.pathClosed ?? true;
+    if (!closed && next.isMask === true) invalid(`${command}: a mask path is closed`);
+    if (closed && (next.pathVertices?.length ?? 0) < 3) invalid(`${command}: a closed path needs 3 vertices`);
+    if (!closed) {
+      if (style.fillEnabled === true) invalid(`${command}: an open path has no fill`);
+      next.fillEnabled = false;
+    }
+  }
+  if (next.strokeEnabled === true && (next.strokeWidth ?? 0) < 1) next.strokeWidth = 1;
+  return next;
+}
+
+/** 14.3.4: the title fields, in the order of the table. */
+const fonts = catalogue.fonts.families.map((entry) => entry.family);
+const font = rule((value) => fonts.includes(value), "a family of the engine's font catalogue");
+const weight = among('normal', 'medium', 'semibold', 'bold');
+const slant = among('normal', 'italic');
+const TITLE_FIELDS = [
+  ['color', colour, false],
+  ['fontSize', between(8, 500)],
+  ['fontFamily', font],
+  ['fontWeight', weight],
+  ['fontStyle', slant],
+  ['underline', bool],
+  ['lineHeight', between(0.5, 3)],
+  ['letterSpacing', between(-20, 100)],
+  ['textPadding', between(0, 160)],
+  ['backgroundColor', colour],
+  ['backgroundRadius', between(0, 999)],
+];
+const TITLE_OBJECTS = [
+  ['textShadow', [['offsetX', between(-100, 100)], ['offsetY', between(-100, 100)], ['blur', between(0, 160)], ['color', colour]]],
+  ['stroke', [['width', between(0, 24)], ['color', colour]]],
+];
+const SPAN_FIELDS = [['fontSize', between(8, 500)], ['fontFamily', font], ['fontWeight', weight], ['fontStyle', slant], ['underline', bool], ['color', colour], ['letterSpacing', between(-20, 100)]];
+
+/** 14.3.4: a preset's fields at a scale. */
+function scaledStyle(state, presetId, scale) {
+  const { set, remove } = titleStyle(state, presetId);
+  const scaled = { ...set, textStyleScale: scale };
+  scaled.fontSize = Math.round(set.fontSize * scale);
+  if (set.backgroundRadius !== 999) scaled.backgroundRadius = Math.round(set.backgroundRadius * scale);
+  scaled.letterSpacing = set.letterSpacing * scale;
+  scaled.textPadding = Math.round(set.textPadding * scale);
+  if (set.textShadow) scaled.textShadow = { offsetX: set.textShadow.offsetX * scale, offsetY: set.textShadow.offsetY * scale, blur: set.textShadow.blur * scale, color: set.textShadow.color };
+  if (set.stroke) scaled.stroke = { ...set.stroke, width: set.stroke.width * scale };
+  return { set: scaled, remove };
+}
+
 /* 14.3: titles */
 
 const STYLE_FIELDS_A_PRESET_MAY_OMIT = ['backgroundColor', 'textShadow', 'stroke'];
@@ -3276,6 +3409,168 @@ Object.assign(commands, {
   },
 
   /* 14.3.1 */
+  /* 17.4 */
+  'shape.add'(state, payload, draw) {
+    const command = 'shape.add';
+    for (const key of Object.keys(payload)) if (!['shapeType', 'at', 'duration', 'trackId', 'style', 'transform', 'mask'].includes(key)) invalid(`${command}: unknown field`);
+    const { shapeType } = payload;
+    if (!['rectangle', 'circle', 'triangle', 'ellipse', 'star', 'polygon', 'heart', 'path'].includes(shapeType)) invalid(`${command}: shapeType is not a shape type`);
+    const from = time(state, payload, 'at');
+    const length = payload.duration === undefined ? framesOf({ num: 60, den: 1 }, state.rate) : time(state, payload, 'duration');
+    if (length < 1) invalid('duration must be at least one frame');
+    let track;
+    if (payload.trackId !== undefined) {
+      const trackId = text(payload, 'trackId');
+      track = state.tracks.find((candidate) => candidate.id === trackId) ?? invalid(`trackId: track "${trackId}" does not exist`);
+      if (track.isGroup) invalid(`trackId: track "${trackId}" is a group`);
+      if ((track.kind ?? 'video') !== 'video') invalid('trackId: a shape needs a video track');
+    }
+    const isPath = shapeType === 'path';
+    const side = Math.min(state.canvas.width, state.canvas.height) * 0.25;
+    const id = draw();
+    let shape = { id, type: 'shape', trackId: track?.id, from, durationInFrames: length, label: isPath ? 'Path' : shapeType[0].toUpperCase() + shapeType.slice(1), shapeType, fillColor: '#3b82f6' };
+    if (isPath) {
+      Object.assign(shape, { fillEnabled: false, strokeColor: '#3b82f6', strokeWidth: 4, strokeEnabled: true, strokeLineCap: 'round', strokeLineJoin: 'round', strokeMiterLimit: 4, pathClosed: true });
+    } else {
+      shape.strokeWidth = 0;
+      if (shapeType === 'rectangle') shape.cornerRadius = 0;
+      if (shapeType === 'triangle') shape.direction = 'up';
+      if (shapeType === 'star') Object.assign(shape, { points: 5, innerRadius: 0.5 });
+      if (shapeType === 'polygon') shape.points = 6;
+    }
+    if (isPath && (!plainRecord(payload.style) || payload.style.pathVertices === undefined)) invalid(`${command}: a path needs style.pathVertices`);
+    if (payload.mask !== undefined) {
+      const { mask } = payload;
+      if (!plainRecord(mask)) invalid(`${command}: mask must be an object`);
+      for (const key of Object.keys(mask)) if (!['type', 'feather', 'opacity', 'invert'].includes(key)) invalid(`${command}: unknown mask field`);
+      if (mask.type !== undefined && mask.type !== 'clip' && mask.type !== 'alpha') invalid(`${command}: mask type must be "clip" or "alpha"`);
+      for (const name of ['feather', 'opacity']) if (mask[name] !== undefined && !finite(mask[name], 0, 100)) invalid(`${command}: mask ${name} must be a number from 0 to 100`);
+      if (mask.invert !== undefined && typeof mask.invert !== 'boolean') invalid(`${command}: mask invert must be a boolean`);
+      const type = mask.type ?? 'clip';
+      Object.assign(shape, { isMask: true, blendMode: 'normal', maskType: type, maskFeather: mask.feather ?? (type === 'alpha' ? 10 : 0), maskOpacity: mask.opacity ?? 100, maskInvert: mask.invert ?? false, pathClosed: true });
+    }
+    if (payload.style !== undefined) shape = styledShape(command, payload.style, shape);
+    const transform = { x: 0, y: 0, width: side, height: side, rotation: 0, opacity: 1, aspectRatioLocked: !isPath };
+    if (payload.transform !== undefined) {
+      const box = payload.transform;
+      if (!plainRecord(box)) invalid(`${command}: transform must be an object`);
+      const checks = { x: finite, y: finite, width: (n) => finite(n) && n > 0, height: (n) => finite(n) && n > 0, rotation: between(0, 360).check, opacity: between(0, 1).check, aspectRatioLocked: bool.check };
+      for (const key of Object.keys(box)) if (!Object.hasOwn(checks, key)) invalid(`${command}: unknown transform field "${key}"`);
+      for (const [key, check] of Object.entries(checks)) {
+        if (box[key] === undefined) continue;
+        if (!check(box[key])) invalid(`${command}: transform.${key} is outside its type or range`);
+        transform[key] = box[key];
+      }
+    }
+    shape.transform = transform;
+    if (track) {
+      if (track.locked) failed(`${command}: the track is locked`);
+      // The place, as for a title (14.3.1).
+      let start = from;
+      for (const other of state.items.filter((item) => item.trackId === track.id).sort((a, b) => a.from - b.from)) {
+        if (end(other) <= start) continue;
+        if (other.from >= start + length) break;
+        start = end(other);
+      }
+      state.items.push({ ...shape, from: start });
+      return;
+    }
+    // A new layer above every video track.
+    const byOrder = state.tracks.toSorted((a, b) => a.order - b.order);
+    const kindOf = (candidate) => candidate.kind ?? (/^V\d+$/i.test(candidate.name) ? 'video' : /^A\d+$/i.test(candidate.name) ? 'audio' : null);
+    const anchor = byOrder.find((candidate) => kindOf(candidate) === 'video') ?? byOrder.find((candidate) => kindOf(candidate) === 'audio');
+    const layer = newTrack(state, 'video', anchor ? anchor.order - 1 : 0, draw);
+    state.tracks = writeTracks([...state.tracks, layer]);
+    state.items.push({ ...shape, trackId: layer.id });
+  },
+
+  /* 17.5 */
+  'shape.setStyle'(state, payload) {
+    const command = 'shape.setStyle';
+    for (const key of Object.keys(payload)) if (key !== 'clipId' && key !== 'style') invalid(`${command}: unknown field`);
+    const clipId = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === clipId) ?? invalid(`clipId: clip "${clipId}" does not exist`);
+    if (clip.type !== 'shape') invalid(`${command} requires a shape clip`);
+    if (!plainRecord(payload.style)) invalid(`${command}: style must be an object`);
+    refuseLocked(state, [clip.id], command);
+    replace(state, styledShape(command, payload.style, clip));
+  },
+
+  /* 14.3.4 */
+  'title.setStyle'(state, payload) {
+    const command = 'title.setStyle';
+    for (const key of Object.keys(payload)) if (!['clipId', 'style', 'spans', 'spanLayout'].includes(key)) invalid(`${command}: unknown field`);
+    const clipId = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === clipId) ?? invalid(`clipId: clip "${clipId}" does not exist`);
+    if (clip.type !== 'text') invalid(`${command} requires a title`);
+    const { style, spans, spanLayout } = payload;
+    if (!plainRecord(style)) invalid(`${command}: style must be an object`);
+    refuseLocked(state, [clip.id], command);
+    for (const key of Object.keys(style)) {
+      if (key !== 'textStyleScale' && ![...TITLE_FIELDS, ...TITLE_OBJECTS].some(([name]) => name === key)) invalid(`${command}: unknown style field "${key}"`);
+    }
+    let next = { ...clip };
+    if (style.textStyleScale !== undefined) {
+      if (!finite(style.textStyleScale, 0.5, 6)) invalid(`${command}: style.textStyleScale must be a number from 0.5 to 6`);
+      if (!clip.textStylePresetId) invalid(`${command}: style.textStyleScale needs a title with a style preset`);
+      const { set, remove } = scaledStyle(state, clip.textStylePresetId, style.textStyleScale);
+      next = { ...without(next, ...remove), ...set };
+    }
+    for (const [name, { check, expects }, clearable = true] of TITLE_FIELDS) {
+      const given = style[name];
+      if (given === undefined) continue;
+      if (given === null) {
+        if (!clearable) invalid(`${command}: style.${name} cannot be cleared`);
+        next = without(next, name);
+      } else {
+        if (!check(given)) invalid(`${command}: style.${name} must be ${expects}`);
+        next[name] = given;
+      }
+    }
+    for (const [name, fields] of TITLE_OBJECTS) {
+      const given = style[name];
+      if (given === undefined) continue;
+      if (given === null) {
+        next = without(next, name);
+        continue;
+      }
+      if (!plainRecord(given)) invalid(`${command}: style.${name} must be an object or null`);
+      for (const key of Object.keys(given)) if (!fields.some(([field]) => field === key)) invalid(`${command}: unknown style.${name} field "${key}"`);
+      const written = {};
+      for (const [field, { check, expects }] of fields) {
+        if (!check(given[field])) invalid(`${command}: style.${name}.${field} must be ${expects}`);
+        written[field] = given[field];
+      }
+      next[name] = written;
+    }
+    if (spans === null) {
+      next = without(next, 'textSpans');
+    } else if (spans !== undefined) {
+      if (!Array.isArray(spans) || spans.length < 1 || spans.length > 64) invalid(`${command}: spans must be null or 1 to 64 spans`);
+      const written = spans.map((span) => {
+        if (!plainRecord(span)) invalid(`${command}: a span must be an object`);
+        for (const key of Object.keys(span)) if (key !== 'text' && !SPAN_FIELDS.some(([name]) => name === key)) invalid(`${command}: unknown span field "${key}"`);
+        if (typeof span.text !== 'string') invalid(`${command}: a span needs text`);
+        const entry = { text: span.text };
+        for (const [name, { check, expects }] of SPAN_FIELDS) {
+          if (span[name] === undefined) continue;
+          if (!check(span[name])) invalid(`${command}: span ${name} must be ${expects}`);
+          entry[name] = span[name];
+        }
+        return entry;
+      });
+      const words = written.map((span) => span.text).join('\n');
+      Object.assign(next, { textSpans: written, text: words, label: words.split('\n')[0].trim() || 'Text' });
+    }
+    if (spanLayout === null) {
+      next = without(next, 'spanLayout');
+    } else if (spanLayout !== undefined) {
+      if (spanLayout !== 'stack' && spanLayout !== 'inline') invalid(`${command}: spanLayout must be "stack", "inline" or null`);
+      next.spanLayout = spanLayout;
+    }
+    replace(state, next);
+  },
+
   'title.add'(state, payload, draw) {
     const words = text(payload, 'text');
     const from = time(state, payload, 'at');

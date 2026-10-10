@@ -123,3 +123,56 @@ const StudioMediaFactsSchema = z
   .meta({ id: 'StudioMediaFactsDto' });
 
 export class StudioMediaFactsDto extends createZodDto(StudioMediaFactsSchema) {}
+
+const StudioFontFileSchema = z
+  .object({
+    sha256: z.string().describe('SHA-256 of the file, lower-case hex; also its id in GET /studio/fonts/{sha256}'),
+    file: z.string().describe('The file name, for display and diagnostics only'),
+    weight: z.int().describe('CSS weight: 400 normal, 500 medium, 600 semibold, 700 bold'),
+    style: z.enum(['normal', 'italic']).meta({ id: 'StudioFontStyle' }),
+    subset: z.string().describe('The Unicode subset the file covers: latin or latin-ext'),
+    format: z
+      .enum(['woff2', 'ttf'])
+      .describe(
+        'woff2: the file as its package ships it; ttf: the same font decompressed to sfnt, nothing else changed',
+      )
+      .meta({ id: 'StudioFontFormat' }),
+    decodedFrom: z
+      .string()
+      .nullable()
+      .describe('For a ttf file: the sha256 of the woff2 file it was decoded from; null for a woff2 file'),
+    size: z.int().describe('Length in bytes'),
+    path: z.string().describe('The API path that serves the bytes, relative to the API root'),
+  })
+  .meta({ id: 'StudioFontFileDto' });
+
+const StudioFontFamilySchema = z
+  .object({
+    family: z.string().describe('The family name a Studio graph writes in fontFamily'),
+    package: z.string().describe('The package the files come from'),
+    version: z.string().describe('The exact package version bundled'),
+    license: z.string().describe('SPDX licence identifier, read from the package'),
+    copyright: z.string().describe("The copyright line of the package's own licence file"),
+    reservedFontName: z.string().nullable().describe('The Reserved Font Name the licence declares, or null'),
+    files: z.array(StudioFontFileSchema).describe('Every bundled file of the family'),
+  })
+  .meta({ id: 'StudioFontFamilyDto' });
+
+const StudioFontCatalogSchema = z
+  .object({
+    families: z.array(StudioFontFamilySchema).describe('The title font families bundled with this server'),
+  })
+  .meta({ id: 'StudioFontCatalogDto' });
+
+export class StudioFontCatalogDto extends createZodDto(StudioFontCatalogSchema) {}
+
+const StudioFontParamSchema = z
+  .object({
+    sha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe('SHA-256 of a catalogue file, lower-case hex'),
+  })
+  .meta({ id: 'StudioFontParamDto' });
+
+export class StudioFontParamDto extends createZodDto(StudioFontParamSchema) {}

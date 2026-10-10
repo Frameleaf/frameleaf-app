@@ -28,7 +28,7 @@ import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-com
  * and restores it as a new revision (history is append-only, FL-89).
  */
 import type { Project } from '@/types/project'
-import type { TimelineItem, TimelineTrack, TextItem } from '@/types/timeline'
+import type { ShapeItem, TextSpan, TimelineItem, TimelineTrack, TextItem } from '@/types/timeline'
 import type { MediaMetadata } from '@/types/storage'
 import {
   DEFAULT_SPRING_PARAMS,
@@ -125,6 +125,7 @@ import {
 import {
   closeAllGapsOnTrack,
   closeGapAtPosition,
+  addItemOnNewTrack,
   linkItems,
   trackPushItems,
   unlinkItems,
@@ -164,6 +165,10 @@ import {
   type TextStylePresetId,
 } from '@/shared/typography/text-style-preset-ids'
 import { applyTextStylePresetToItem } from '@/shared/typography/text-style-presets'
+import { FONT_CATALOG } from '@/shared/typography/font-catalog'
+import { buildTextItemLabelFromText } from '@/shared/utils/text-item-spans'
+import { createDefaultShapeItem } from '@/features/timeline/utils/generated-layer-items'
+import { createOverlayLayerTrack } from '@/features/timeline/utils/new-track-zone-media'
 import {
   TEXT_MOTION_IN_PRESET_IDS,
   TEXT_MOTION_OUT_PRESET_IDS,
@@ -244,6 +249,10 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   // FL-348: masks and relinking for the native Studio.
   'clip.setMask': ['readme.effects-masks-compositing.7'],
   'clip.relink': ['readme.media-import.4'],
+  // Shapes and title styles for the native Studio (protocol 17.4, 17.5 and 14.3.4).
+  'shape.add': ['command.addItem'],
+  'shape.setStyle': ['command.updateItem'],
+  'title.setStyle': ['command.updateItem'],
   'title.add': ['command.addText'],
   'track.add': ['command.addTrack'],
   // FL-94: the linked edit tools, source edits, tracks and markers of readme.timeline-editing.
@@ -485,26 +494,26 @@ const MAX_MASK_VERTICES = 1000
  * `clip.setMask`'s pen path (FL-348): the vertices of a closed path shape, normalised 0..1 to the
  * shape's box, each written with its tangent mode as loading would infer it.
  */
-const maskPathOf = (value: unknown, shape: { shapeType?: string }) => {
-  if (shape.shapeType !== 'path') invalid('clip.setMask: path needs a path shape')
-  if (!Array.isArray(value) || value.length < 3 || value.length > MAX_MASK_VERTICES)
-    invalid(`clip.setMask: path must have 3 to ${MAX_MASK_VERTICES} vertices`)
+const maskPathOf = (value: unknown, shape: { shapeType?: string }, command = 'clip.setMask', minimum = 3) => {
+  if (shape.shapeType !== 'path') invalid(`${command}: path needs a path shape`)
+  if (!Array.isArray(value) || value.length < minimum || value.length > MAX_MASK_VERTICES)
+    invalid(`${command}: path must have ${minimum} to ${MAX_MASK_VERTICES} vertices`)
   const pair = (entry: unknown): [number, number] => {
     if (!Array.isArray(entry) || entry.length !== 2 || !entry.every((n) => typeof n === 'number' && Number.isFinite(n)))
-      invalid('clip.setMask: a vertex position or handle must be [x, y]')
+      invalid(`${command}: a vertex position or handle must be [x, y]`)
     return [entry[0], entry[1]] as [number, number]
   }
   return (value as unknown[]).map((vertex) => {
-    if (!isPlainRecord(vertex)) invalid('clip.setMask: a vertex must be an object')
+    if (!isPlainRecord(vertex)) invalid(`${command}: a vertex must be an object`)
     const fields = vertex as Record<string, unknown>
     for (const key of Object.keys(fields)) {
-      if (!['position', 'inHandle', 'outHandle', 'tangentMode'].includes(key)) invalid('clip.setMask: unknown vertex field')
+      if (!['position', 'inHandle', 'outHandle', 'tangentMode'].includes(key)) invalid(`${command}: unknown vertex field`)
     }
     const position = pair(fields.position)
     const inHandle = pair(fields.inHandle)
     const outHandle = pair(fields.outHandle)
     if (fields.tangentMode !== undefined && !MASK_TANGENT_MODES.includes(fields.tangentMode as never))
-      invalid('clip.setMask: unknown tangent mode')
+      invalid(`${command}: unknown tangent mode`)
     const tangentMode =
       (fields.tangentMode as (typeof MASK_TANGENT_MODES)[number] | undefined) ??
       ([...inHandle, ...outHandle].every((n) => n === 0) ? 'corner' : 'smooth')
@@ -518,6 +527,291 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' &&
   !Array.isArray(value) &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+
+/* ------------------------------------------------------------------ */
+/* Shape and title style fields (protocol 17.4, 17.5 and 14.3.4)        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One style field of a `shape.add`, `shape.setStyle` or `title.setStyle` payload: the values the
+ * editor's own control for it can write. `shapes` limits a field to the shape types that draw it;
+ * `kept` marks a field the graph always carries, which `null` therefore cannot clear.
+ */
+interface StyleFieldRule {
+  ok: (value: unknown) => boolean
+  expects: string
+  shapes?: readonly string[]
+  kept?: boolean
+}
+
+/** `#rrggbb`, or `#rrggbbaa` with its alpha; stored as given. No other CSS colour form is a command value. */
+const hexColour = (value: unknown) => typeof value === 'string' && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value)
+const isBoolean = (value: unknown) => typeof value === 'boolean'
+const within = (min: number, max: number) => (value: unknown) => finiteIn(value, min, max)
+const oneOf = (...options: string[]) => (value: unknown) => options.includes(value as string)
+const numberRule = (min: number, max: number, extra: Partial<StyleFieldRule> = {}): StyleFieldRule => ({
+  ok: within(min, max),
+  expects: `a number from ${min} to ${max}`,
+  ...extra,
+})
+const colourRule = (extra: Partial<StyleFieldRule> = {}): StyleFieldRule => ({ ok: hexColour, expects: 'a #rrggbb or #rrggbbaa colour', ...extra })
+const booleanRule = (extra: Partial<StyleFieldRule> = {}): StyleFieldRule => ({ ok: isBoolean, expects: 'a boolean', ...extra })
+const choiceRule = (options: string[], extra: Partial<StyleFieldRule> = {}): StyleFieldRule => ({
+  ok: oneOf(...options),
+  expects: `one of ${options.join(', ')}`,
+  ...extra,
+})
+
+export const SHAPE_TYPES = ['rectangle', 'circle', 'triangle', 'ellipse', 'star', 'polygon', 'heart', 'path'] as const
+
+/** The shape fields a command may write, in the order they are checked. `pathVertices` is checked apart. */
+export const SHAPE_STYLE_RULES: Readonly<Record<string, StyleFieldRule>> = {
+  fillColor: colourRule({ kept: true }),
+  fillEnabled: booleanRule(),
+  fillType: choiceRule(['solid', 'linear']),
+  gradientStartColor: colourRule(),
+  gradientEndColor: colourRule(),
+  gradientAngle: numberRule(-180, 180),
+  strokeColor: colourRule(),
+  strokeWidth: numberRule(0, 50),
+  strokeEnabled: booleanRule(),
+  strokeLineCap: choiceRule(['butt', 'round', 'square']),
+  strokeLineJoin: choiceRule(['miter', 'round', 'bevel']),
+  strokeMiterLimit: numberRule(1, 20),
+  trimPathStart: numberRule(0, 100),
+  trimPathEnd: numberRule(0, 100),
+  trimPathOffset: numberRule(-360, 360),
+  taperStartWidth: numberRule(0, 200),
+  taperEndWidth: numberRule(0, 200),
+  taperStartLength: numberRule(0, 100),
+  taperEndLength: numberRule(0, 100),
+  cornerRadius: numberRule(0, 100, { shapes: ['rectangle', 'triangle', 'star', 'polygon'] }),
+  direction: choiceRule(['up', 'down', 'left', 'right'], { shapes: ['triangle'] }),
+  points: {
+    ok: (value) => Number.isInteger(value) && finiteIn(value, 3, 12),
+    expects: 'an integer from 3 to 12',
+    shapes: ['star', 'polygon'],
+  },
+  innerRadius: numberRule(0.1, 0.9, { shapes: ['star'] }),
+  pathClosed: booleanRule({ shapes: ['path'], kept: true }),
+}
+
+/** Loading gives a path shape these fields when they are absent, so `null` cannot clear them there. */
+const PATH_KEPT_FIELDS: readonly string[] = ['fillEnabled', 'strokeEnabled', 'strokeLineCap', 'strokeLineJoin', 'strokeMiterLimit']
+const MIN_ENABLED_STROKE_WIDTH = 1
+
+/**
+ * The item fields a shape `style` writes on `shape` (`undefined` removes a field). Checked in the
+ * fixed order of the protocol page, then against the shape the fields would leave behind.
+ */
+const shapeStyleOf = (command: string, value: unknown, shape: Partial<ShapeItem>): Record<string, unknown> => {
+  if (!isPlainRecord(value)) invalid(`${command}: style must be an object`)
+  const style = value as Record<string, unknown>
+  for (const key of Object.keys(style)) {
+    if (key !== 'pathVertices' && !Object.hasOwn(SHAPE_STYLE_RULES, key)) invalid(`${command}: unknown style field "${key}"`)
+  }
+  const isPath = shape.shapeType === 'path'
+  const updates: Record<string, unknown> = {}
+  for (const [name, rule] of Object.entries(SHAPE_STYLE_RULES)) {
+    const given = style[name]
+    if (given === undefined) continue
+    if (rule.shapes && !rule.shapes.includes(shape.shapeType as string))
+      invalid(`${command}: style.${name} does not apply to a ${shape.shapeType} shape`)
+    if (given === null) {
+      if (rule.kept || (isPath && PATH_KEPT_FIELDS.includes(name))) invalid(`${command}: style.${name} cannot be cleared`)
+      updates[name] = undefined
+      continue
+    }
+    if (!rule.ok(given)) invalid(`${command}: style.${name} must be ${rule.expects}`)
+    updates[name] = given
+  }
+  if (style.pathVertices !== undefined) {
+    if (style.pathVertices === null) invalid(`${command}: style.pathVertices cannot be cleared`)
+    updates.pathVertices = maskPathOf(style.pathVertices, shape, command, 2)
+  }
+  const next = { ...shape, ...updates } as Partial<ShapeItem>
+  if (isPath) {
+    const closed = next.pathClosed ?? true
+    if (!closed && next.isMask === true) invalid(`${command}: a mask path is closed`)
+    if (closed && (next.pathVertices?.length ?? 0) < 3) invalid(`${command}: a closed path needs 3 vertices`)
+    if (!closed) {
+      if (style.fillEnabled === true) invalid(`${command}: an open path has no fill`)
+      // Loading writes this for an open path; write it now so the graph stays in normal form.
+      if (next.fillEnabled !== false) updates.fillEnabled = false
+    }
+  }
+  if (next.strokeEnabled === true && (next.strokeWidth ?? 0) < MIN_ENABLED_STROKE_WIDTH) {
+    updates.strokeWidth = MIN_ENABLED_STROKE_WIDTH
+  }
+  return updates
+}
+
+/** The mask fields of 17.1 without the pen path, for a shape that is not yet a mask. */
+const newMaskOf = (command: string, value: unknown): Record<string, unknown> => {
+  if (!isPlainRecord(value)) invalid(`${command}: mask must be an object`)
+  const fields = value as Record<string, unknown>
+  for (const key of Object.keys(fields)) {
+    if (!['type', 'feather', 'opacity', 'invert'].includes(key)) invalid(`${command}: unknown mask field`)
+  }
+  if (fields.type !== undefined && fields.type !== 'clip' && fields.type !== 'alpha')
+    invalid(`${command}: mask type must be "clip" or "alpha"`)
+  for (const name of ['feather', 'opacity'] as const) {
+    if (fields[name] !== undefined && !finiteIn(fields[name], 0, 100))
+      invalid(`${command}: mask ${name} must be a number from 0 to 100`)
+  }
+  if (fields.invert !== undefined && typeof fields.invert !== 'boolean') invalid(`${command}: mask invert must be a boolean`)
+  const type = (fields.type as 'clip' | 'alpha' | undefined) ?? 'clip'
+  return {
+    isMask: true,
+    blendMode: 'normal',
+    maskType: type,
+    maskFeather: (fields.feather as number | undefined) ?? (type === 'alpha' ? 10 : 0),
+    maskOpacity: (fields.opacity as number | undefined) ?? 100,
+    maskInvert: (fields.invert as boolean | undefined) ?? false,
+    pathClosed: true,
+  }
+}
+
+/** The box of a new shape: any of the transform fields the shape tool itself writes. */
+const shapeBoxOf = (command: string, value: unknown): Partial<TransformProperties> => {
+  if (!isPlainRecord(value)) invalid(`${command}: transform must be an object`)
+  const fields = value as Record<string, unknown>
+  const rules: Record<string, (entry: unknown) => boolean> = {
+    x: within(-Number.MAX_VALUE, Number.MAX_VALUE),
+    y: within(-Number.MAX_VALUE, Number.MAX_VALUE),
+    width: (entry) => finiteIn(entry, 0, Number.MAX_VALUE) && entry > 0,
+    height: (entry) => finiteIn(entry, 0, Number.MAX_VALUE) && entry > 0,
+    rotation: within(0, 360),
+    opacity: within(0, 1),
+    aspectRatioLocked: isBoolean,
+  }
+  for (const key of Object.keys(fields)) {
+    if (!Object.hasOwn(rules, key)) invalid(`${command}: unknown transform field "${key}"`)
+  }
+  const box: Record<string, unknown> = {}
+  for (const [name, ok] of Object.entries(rules)) {
+    if (fields[name] === undefined) continue
+    if (!ok(fields[name])) invalid(`${command}: transform.${name} is outside its type or range`)
+    box[name] = fields[name]
+  }
+  return box as Partial<TransformProperties>
+}
+
+/** The families the engine's font catalogue names: the only values `fontFamily` may hold. */
+export const TITLE_FONT_FAMILIES: readonly string[] = FONT_CATALOG.map((font) => font.value)
+const fontFamilyRule: StyleFieldRule = {
+  ok: (value) => TITLE_FONT_FAMILIES.includes(value as string),
+  expects: "a family of the engine's font catalogue",
+}
+const fontWeightRule = choiceRule(['normal', 'medium', 'semibold', 'bold'])
+const fontStyleRule = choiceRule(['normal', 'italic'])
+
+/** The scalar title fields `title.setStyle` may write, in the order they are checked. */
+export const TITLE_STYLE_RULES: Readonly<Record<string, StyleFieldRule>> = {
+  color: colourRule({ kept: true }),
+  fontSize: numberRule(8, 500),
+  fontFamily: fontFamilyRule,
+  fontWeight: fontWeightRule,
+  fontStyle: fontStyleRule,
+  underline: booleanRule(),
+  lineHeight: numberRule(0.5, 3),
+  letterSpacing: numberRule(-20, 100),
+  textPadding: numberRule(0, 160),
+  backgroundColor: colourRule(),
+  backgroundRadius: numberRule(0, 999),
+}
+/** `textShadow` and `stroke` are written whole: every field of the object is required. */
+export const TITLE_STYLE_OBJECT_RULES: Readonly<Record<string, Readonly<Record<string, StyleFieldRule>>>> = {
+  textShadow: { offsetX: numberRule(-100, 100), offsetY: numberRule(-100, 100), blur: numberRule(0, 160), color: colourRule() },
+  stroke: { width: numberRule(0, 24), color: colourRule() },
+}
+/** The style a span may carry over the title's own; an absent field inherits. */
+export const TITLE_SPAN_RULES: Readonly<Record<string, StyleFieldRule>> = {
+  fontSize: TITLE_STYLE_RULES.fontSize!,
+  fontFamily: fontFamilyRule,
+  fontWeight: fontWeightRule,
+  fontStyle: fontStyleRule,
+  underline: booleanRule(),
+  color: colourRule(),
+  letterSpacing: TITLE_STYLE_RULES.letterSpacing!,
+}
+export const TITLE_STYLE_SCALE = { min: 0.5, max: 6 } as const
+export const MAX_TITLE_SPANS = 64
+
+const titleStyleFieldsOf = (item: TextItem, value: unknown): Record<string, unknown> => {
+  const command = 'title.setStyle'
+  const style = value as Record<string, unknown>
+  for (const key of Object.keys(style)) {
+    if (key !== 'textStyleScale' && !Object.hasOwn(TITLE_STYLE_RULES, key) && !Object.hasOwn(TITLE_STYLE_OBJECT_RULES, key))
+      invalid(`${command}: unknown style field "${key}"`)
+  }
+  const updates: Record<string, unknown> = {}
+  if (style.textStyleScale !== undefined) {
+    if (!finiteIn(style.textStyleScale, TITLE_STYLE_SCALE.min, TITLE_STYLE_SCALE.max))
+      invalid(`${command}: style.textStyleScale must be a number from ${TITLE_STYLE_SCALE.min} to ${TITLE_STYLE_SCALE.max}`)
+    if (!item.textStylePresetId) invalid(`${command}: style.textStyleScale needs a title with a style preset`)
+    // The editor's scale control: the title's own preset, written whole at the new scale.
+    const { text: _text, textSpans: _spans, label: _label, ...scaled } = applyTextStylePresetToItem(
+      item,
+      item.textStylePresetId!,
+      canvas(),
+      style.textStyleScale as number,
+    )
+    Object.assign(updates, scaled)
+  }
+  for (const [name, rule] of Object.entries(TITLE_STYLE_RULES)) {
+    const given = style[name]
+    if (given === undefined) continue
+    if (given === null) {
+      if (rule.kept) invalid(`${command}: style.${name} cannot be cleared`)
+      updates[name] = undefined
+      continue
+    }
+    if (!rule.ok(given)) invalid(`${command}: style.${name} must be ${rule.expects}`)
+    updates[name] = given
+  }
+  for (const [name, rules] of Object.entries(TITLE_STYLE_OBJECT_RULES)) {
+    const given = style[name]
+    if (given === undefined) continue
+    if (given === null) {
+      updates[name] = undefined
+      continue
+    }
+    if (!isPlainRecord(given)) invalid(`${command}: style.${name} must be an object or null`)
+    const fields = given as Record<string, unknown>
+    for (const key of Object.keys(fields)) {
+      if (!Object.hasOwn(rules, key)) invalid(`${command}: unknown style.${name} field "${key}"`)
+    }
+    const written: Record<string, unknown> = {}
+    for (const [field, rule] of Object.entries(rules)) {
+      if (!rule.ok(fields[field])) invalid(`${command}: style.${name}.${field} must be ${rule.expects}`)
+      written[field] = fields[field]
+    }
+    updates[name] = written
+  }
+  return updates
+}
+
+const titleSpansOf = (value: unknown): TextSpan[] => {
+  const command = 'title.setStyle'
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TITLE_SPANS)
+    invalid(`${command}: spans must be null or 1 to ${MAX_TITLE_SPANS} spans`)
+  return (value as unknown[]).map((entry) => {
+    if (!isPlainRecord(entry)) invalid(`${command}: a span must be an object`)
+    const fields = entry as Record<string, unknown>
+    for (const key of Object.keys(fields)) {
+      if (key !== 'text' && !Object.hasOwn(TITLE_SPAN_RULES, key)) invalid(`${command}: unknown span field "${key}"`)
+    }
+    if (typeof fields.text !== 'string') invalid(`${command}: a span needs text`)
+    const span: Record<string, unknown> = { text: fields.text }
+    for (const [name, rule] of Object.entries(TITLE_SPAN_RULES)) {
+      if (fields[name] === undefined) continue
+      if (!rule.ok(fields[name])) invalid(`${command}: span ${name} must be ${rule.expects}`)
+      span[name] = fields[name]
+    }
+    return span as TextSpan
+  })
+}
 
 /** A procedural modifier from a payload, with every field inside the range the evaluator reads. */
 const modifierField = (value: unknown): MotionModifier => {
@@ -1841,6 +2135,107 @@ const handlers: Record<string, Handler> = {
       }
       updateItem(target.id, updates as Partial<TimelineItem>)
     }
+  },
+
+  // Protocol 17.4: a shape as the editor's shape tool makes it, or a pen path, optionally a mask.
+  'shape.add'(payload, { cadence }) {
+    const command = 'shape.add'
+    for (const key of Object.keys(payload)) {
+      if (!['shapeType', 'at', 'duration', 'trackId', 'style', 'transform', 'mask'].includes(key))
+        invalid(`${command}: unknown field`)
+    }
+    const shapeType = payload.shapeType as ShapeItem['shapeType']
+    if (!(SHAPE_TYPES as readonly unknown[]).includes(shapeType)) invalid(`${command}: shapeType is not a shape type`)
+    const from = timeField(payload, 'at', cadence)
+    const duration = optionalTime(payload, 'duration', cadence) ?? secondsToFrames({ num: 60, den: 1 }, cadence)
+    if (duration < 1) invalid('duration must be at least one frame')
+    const target = payload.trackId === undefined ? undefined : requireTrack(stringField(payload, 'trackId'))
+    if (target && (target.kind ?? 'video') !== 'video') invalid('trackId: a shape needs a video track')
+    const size = canvas()
+    const isPath = shapeType === 'path'
+    // The editor's own defaults: the shape tool's for a primitive, the pen's for a path.
+    const made = createDefaultShapeItem({
+      trackId: target?.id ?? '',
+      from,
+      durationInFrames: duration,
+      canvasWidth: size.width,
+      canvasHeight: size.height,
+      shapeType,
+    })
+    const base: ShapeItem = isPath
+      ? {
+          ...made,
+          label: 'Path',
+          fillEnabled: false,
+          strokeColor: '#3b82f6',
+          strokeWidth: 4,
+          strokeEnabled: true,
+          strokeLineCap: 'round',
+          strokeLineJoin: 'round',
+          pathClosed: true,
+          transform: { ...made.transform!, aspectRatioLocked: false },
+        }
+      : made
+    if (isPath && (!isPlainRecord(payload.style) || payload.style.pathVertices === undefined))
+      invalid(`${command}: a path needs style.pathVertices`)
+    const mask = payload.mask === undefined ? undefined : newMaskOf(command, payload.mask)
+    const style = payload.style === undefined ? {} : shapeStyleOf(command, payload.style, { ...base, ...mask })
+    const box = payload.transform === undefined ? {} : shapeBoxOf(command, payload.transform)
+    if (target?.locked) failed(`${command}: the track is locked`)
+    const shaped = { ...base, ...mask, ...style, transform: { ...base.transform!, ...box } } as ShapeItem
+    for (const key of Object.keys(shaped)) {
+      if ((shaped as Record<string, unknown>)[key] === undefined) delete (shaped as Record<string, unknown>)[key]
+    }
+    if (target) {
+      addItem(shaped)
+      return
+    }
+    // No track named: a new layer above every video track, as the editor's shape tool adds one.
+    const layer = createOverlayLayerTrack({ tracks: tracks(), activeTrackId: null })
+    if (!layer) failed(`${command}: no layer can be added`)
+    addItemOnNewTrack({ ...shaped, trackId: layer!.trackId }, layer!.tracks)
+  },
+
+  // Protocol 17.5: the fill, stroke, geometry and pen-path fields of a shape already in the graph.
+  'shape.setStyle'(payload) {
+    const command = 'shape.setStyle'
+    for (const key of Object.keys(payload)) {
+      if (key !== 'clipId' && key !== 'style') invalid(`${command}: unknown field`)
+    }
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'shape') invalid(`${command} requires a shape clip`)
+    if (!isPlainRecord(payload.style)) invalid(`${command}: style must be an object`)
+    assertUnlocked([item.id], command)
+    const updates = shapeStyleOf(command, payload.style, item as ShapeItem)
+    if (Object.keys(updates).length > 0) updateItem(item.id, updates as Partial<TimelineItem>)
+  },
+
+  // Protocol 14.3.4: single style fields and spans of a title, beside the named styles of 14.3.2.
+  'title.setStyle'(payload) {
+    const command = 'title.setStyle'
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'style', 'spans', 'spanLayout'].includes(key)) invalid(`${command}: unknown field`)
+    }
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'text') invalid(`${command} requires a title`)
+    if (!isPlainRecord(payload.style)) invalid(`${command}: style must be an object`)
+    assertUnlocked([item.id], command)
+    const updates = titleStyleFieldsOf(item as TextItem, payload.style)
+    if (payload.spans === null) {
+      updates.textSpans = undefined
+    } else if (payload.spans !== undefined) {
+      const spans = titleSpansOf(payload.spans)
+      const text = spans.map((span) => span.text).join('\n')
+      Object.assign(updates, { textSpans: spans, text, label: buildTextItemLabelFromText(text) })
+    }
+    if (payload.spanLayout === null) {
+      updates.spanLayout = undefined
+    } else if (payload.spanLayout !== undefined) {
+      if (payload.spanLayout !== 'stack' && payload.spanLayout !== 'inline')
+        invalid(`${command}: spanLayout must be "stack", "inline" or null`)
+      updates.spanLayout = payload.spanLayout
+    }
+    if (Object.keys(updates).length > 0) updateItem(item.id, updates as Partial<TimelineItem>)
   },
 
   'composition.add'(payload) {
