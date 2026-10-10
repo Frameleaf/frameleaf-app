@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Gathers one small square brand icon for every landmark that has a brand presence on Wikidata.
+// Gathers one small square brand icon for every landmark that has an official website or a brand presence
+// on Wikidata.
 //   node build-icons.mjs [--force] [--retry] [--limit N] [--only Q1,Q2] [landmarks.ndjson.gz] [output-dir]
 //   node build-icons.mjs --self-test
 // The pictures are third-party marks collected automatically for a person to review (see README.md).
@@ -34,8 +35,9 @@ const SIZE = 128;
 const MARGIN = 10; // about 8% on each side
 // Wider than this (longer side : shorter side) is a wordmark, not an icon.
 const WIDE = 1.6;
-// A website icon smaller than this does not displace a Commons wordmark.
-const MIN_SITE_ICON = 64;
+// A square website icon this small or larger displaces a Commons wordmark: soft but recognisable beats a
+// wordmark nobody can read in a 38 px circle. Below it the wordmark stays.
+const MIN_SITE_ICON = 32;
 const TIMEOUT_MS = 15_000;
 const HTML_CAP = 2 * 1024 * 1024;
 const IMAGE_CAP = 1024 * 1024;
@@ -47,9 +49,39 @@ const SOCIAL = ['instagram.com', 'facebook.com', 'fb.com', 'fb.me', 'twitter.com
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 // Pictures that are a platform's stock icon and nobody's mark, by the hash of their decoded pixels (the
 // `hash` the manifest shows for every picture). A site serving one is treated as having no icon there.
+// Each was seen on unrelated websites, or is a site builder's own logo served from the builder's address.
 const PLATFORM_DEFAULTS = new Map([
   ['b252389ea4f4bf82', 'WordPress "W", grey, 80 px'],
   ['90f4f47fd6926130', 'WordPress "W", blue, 80 px'],
+  ['c5298779ade9c694', 'ASP.NET template page icon'],
+  ['c83e24b6381e7152', 'Blogger'],
+  ['fa7763f15da84c26', 'Squarespace cube'],
+  ['99f3b67a9ba6890e', 'Joomla'],
+  ['5dd055ffc623901c', 'HugeDomains, a parked domain'],
+  ['dad4e65082539d57', 'Plone'],
+  ['1fdb44076bdd3011', 'grey globe placeholder'],
+  ['7232a185fef86996', 'HTML5 Boilerplate'],
+  ['e2ac9b6a34ff8e9d', 'Webnode'],
+  ['f64eb7ba86962e0b', 'ISPsystem hosting panel'],
+  ['c569ae567dfa87f1', 'uCoz'],
+  ['924ab73d03374c6b', 'Joomla, black'],
+  ['f10fb82d4acb7eb6', 'Porto theme'],
+  ['d3938e15e92283ea', 'Joomla, YOOtheme'],
+  ['d2ab3b1ffac3cedb', 'Next.js triangle'],
+  ['275ba08a43244e45', 'RU-TLD registrar parking'],
+  ['1d17f4f3f7bac820', 'React'],
+  ['da75255433e81f3a', 'hijacked domain, imgbersama'],
+  ['e655218519385b8c', 'Wix'],
+  ['71fb8968cbc18d99', 'WordPress.com'],
+  ['ed6526a20e785ca0', 'Drupal'],
+  ['b62dad8f382bf42e', 'Weebly W'],
+  ['e59bac809a6b619c', 'hosting panel gears'],
+  ['e407151a96790333', 'hijacked domain, streaming site'],
+  ['b8439ba2c3f8e6da', 'GoDaddy site builder'],
+  ['923ffe412511ace3', 'Google Sites'],
+  ['d8ed6a5b9fb7342f', 'Weebly'],
+  ['982166ba9e810d72', 'Drupal drop'],
+  ['b5308eac5fa92461', 'Joomla, touch icon'],
 ]);
 const DEFAULT_ICON = 'platform default icon';
 const CLEAR = { r: 0, g: 0, b: 0, alpha: 0 };
@@ -65,6 +97,7 @@ const MEASURED = ['width', 'height', 'aspect', 'mostlyLight', 'mostlyDark', 'til
   'background',
   'backgroundFrom',
   'backgroundUniform',
+  'cornerArt',
   'lowContrast',
 ]);
 
@@ -185,6 +218,12 @@ const once = async (url, { accept, cap, truncate }) => {
   return { bytes: Buffer.concat(parts) };
 };
 
+const strikes = new Map();
+// Nothing is asked for twice in one run: an operator's homepage, manifest and icon are the same for every
+// one of its places.
+const answers = new Map();
+const memo = (key, task) => answers.get(key) ?? answers.set(key, task()).get(key);
+
 // Follows redirects by hand so that every hop is checked and waits its turn on its own host.
 const get = async (start, options) => {
   let url = new URL(start);
@@ -195,14 +234,23 @@ const get = async (start, options) => {
     }
     const current = url;
     const answer = await queued(current, async () => {
+      // A host that has just refused or ignored three requests in a row is left alone for the rest of the
+      // run: one operator's site can be the official website of a hundred places.
+      if (strikes.get(current.host) >= 3) {
+        throw new Error('host refused or timed out three times, not asked again');
+      }
       for (let attempt = 1; ; attempt++) {
         try {
-          return await once(current, options);
+          const answered = await once(current, options);
+          strikes.set(current.host, 0);
+          return answered;
         } catch (error) {
           // One retry for a hiccup; a site that says no, or does not answer in time, is recorded as failed.
           const hiccup = error.status === 429 || error.status >= 500 || error.name === 'TypeError';
           const tries = current.hostname.endsWith('.wikimedia.org') ? 4 : 2;
           if (!hiccup || attempt === tries || timedOut(error) || error.cause?.code === 'ENOTFOUND') {
+            const shut = [401, 403, 429].includes(error.status) || timedOut(error);
+            strikes.set(current.host, shut ? (strikes.get(current.host) ?? 0) + 1 : 0);
             throw error;
           }
           await sleep(error.status === 429 ? attempt * 20_000 : 2000);
@@ -425,6 +473,20 @@ const render = async (bytes) => {
   const background = tile ? edge : paleMark ? NEAR_BLACK : WHITE;
   // Hard to read: a tile with next to nothing on it, or a mark of which much is lost against its backing.
   const lowContrast = standsOut(background) < (tile ? 0.02 : LEGIBLE);
+  // A tile is drawn edge to edge and clipped to a circle. `cornerArt` says the clip costs it part of the
+  // mark: at least 5% of what lies outside the circle is something other than the background.
+  const radius = Math.max(box.width, box.height) / 2;
+  const outside = (x, y) => (x - left - (box.width - 1) / 2) ** 2 + (y - top - (box.height - 1) / 2) ** 2 > radius ** 2;
+  let [corners, art] = [0, 0];
+  for (let y = top; tile && y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const offset = (y * width + x) * 4;
+      const differs = data[offset + 3] >= 128 && background.some((value, i) => Math.abs(value - data[offset + i]) > 48);
+      corners += outside(x, y) ? 1 : 0;
+      art += outside(x, y) && differs ? 1 : 0;
+    }
+  }
+  const cornerArt = art > 0 && art >= corners * 0.05;
 
   const inner = SIZE - 2 * MARGIN;
   const png = await sharp(data, { raw: { width, height, channels: 4 } })
@@ -447,7 +509,7 @@ const render = async (bytes) => {
       tile,
       background: hex(background),
       backgroundFrom: tile ? 'edge' : 'contrast',
-      ...(tile ? { backgroundUniform: rimUniform } : {}),
+      ...(tile ? { backgroundUniform: rimUniform, cornerArt } : {}),
       lowContrast,
       // Of the decoded pixels, so the same picture is recognised whatever the size of the icon made from it.
       hash,
@@ -627,13 +689,29 @@ const commonsCandidate = (iri, source) => {
 const pickSite = (sites) =>
   [...sites].sort((a, b) => b.startsWith('https:') - a.startsWith('https:') || a.length - b.length)[0];
 
+// The official website's homepage: where it ended up after redirects, and the icons it declares.
+const homepage = async (site) => {
+  const html = { accept: 'text/html,application/xhtml+xml', cap: HTML_CAP, truncate: true };
+  const page = await get(site, html).catch((error) => {
+    // Some hosts no longer answer on plain http at all; a browser would have tried https by itself.
+    if (error.status || !site.startsWith('http:')) {
+      throw error;
+    }
+    return get(site.replace('http:', 'https:'), html).catch(() => {
+      throw error;
+    });
+  });
+  return { url: page.url, declared: declaredIcons(page.bytes.toString('utf8'), page.url) };
+};
+
 // Everything known about one place: each candidate found, and for the ones fetched, what they turned out to be.
 const gather = async (id, fact) => {
   let downloads = 0;
   const fetchInto = async (candidate) => {
     let bytes;
     try {
-      ({ bytes } = await get(candidate.url, { accept: 'image/*', cap: IMAGE_CAP }));
+      const picture = { accept: 'image/*', cap: IMAGE_CAP };
+      ({ bytes } = await memo(`picture ${candidate.url}`, () => get(candidate.url, picture)));
     } catch (error) {
       candidate.error = why(error);
       return false;
@@ -675,26 +753,23 @@ const gather = async (id, fact) => {
     if (!site) {
       return 'no website on Wikidata';
     }
-    const html = { accept: 'text/html,application/xhtml+xml', cap: HTML_CAP, truncate: true };
     let page;
     try {
-      page = await get(site, html);
+      page = await memo(`page ${site}`, () => homepage(site));
     } catch (error) {
-      // Some hosts no longer answer on plain http at all; a browser would have tried https by itself.
-      const secure = !error.status && site.startsWith('http:') && site.replace('http:', 'https:');
-      page = secure ? await get(secure, html).catch(() => undefined) : undefined;
-      if (!page) {
-        return `homepage: ${why(error)}`;
-      }
+      return `homepage: ${why(error)}`;
     }
-    // Every declared icon is recorded; they are fetched best first, and only until one decodes.
-    const declared = declaredIcons(page.bytes.toString('utf8'), page.url);
+    // Every declared icon is recorded; they are fetched best first, and only until one decodes. The lists are
+    // copied, because another place with the same website fills in its own.
+    const copies = (icons) => icons.map((icon) => ({ ...icon }));
+    const declared = { ...page.declared, touch: copies(page.declared.touch), icons: copies(page.declared.icons) };
     onSite.push(...declared.touch, ...declared.icons);
     if (await firstThatWorks(declared.touch)) {
       return;
     }
     if (declared.manifest) {
-      const listed = await manifestIcons(declared.manifest).catch(() => []);
+      const listing = () => manifestIcons(declared.manifest).catch(() => []);
+      const listed = copies(await memo(`manifest ${declared.manifest}`, listing));
       onSite.push(...listed);
       if (await firstThatWorks(listed)) {
         return;
@@ -742,7 +817,7 @@ const choose = (candidates) => {
   const [site] = usable
     .filter((candidate) => candidate.source.startsWith('site-'))
     .sort((a, b) => sitePreference(a) - sitePreference(b) || smallerSide(b) - smallerSide(a));
-  const siteIsAnIcon = site && site.aspect <= WIDE && smallerSide(site) >= MIN_SITE_ICON && !site.sharedAcrossSites;
+  const siteIsAnIcon = site && site.aspect <= WIDE && smallerSide(site) >= MIN_SITE_ICON;
   return commons && (commons.aspect <= WIDE || !siteIsAnIcon) ? commons : site;
 };
 
@@ -761,10 +836,14 @@ const contactSheet = (entries) => {
       entry.sharedWith && `same image as ${entry.sharedWith} other`,
       entry.sharedAcrossSites && 'SHARED ACROSS SITES',
     ];
-    const warnings = [entry.backgroundUniform === false && 'edge not one colour', entry.lowContrast && 'low contrast'];
+    const warnings = [
+      entry.backgroundUniform === false && 'edge not one colour',
+      entry.cornerArt && 'art in the corners',
+      entry.lowContrast && 'low contrast',
+    ];
     const flags = warnings.filter(Boolean).map((warning) => `<em>${warning}</em> · `);
     // As the app draws it: one circle filled with the icon's own background, the icon clipped to it.
-    return `<li><span class="c" style="background:${escapeHtml(entry.background)}"><img src="icons/${entry.id}.png" width="38" height="38" alt="" loading="lazy"></span><div><b>${escapeHtml(entry.name)}</b>
+    return `<li><span class="c" style="background:${escapeHtml(entry.background)}"><img${entry.tile ? ' class="t"' : ''} src="icons/${entry.id}.png" width="38" height="38" alt="" loading="lazy"></span><div><b>${escapeHtml(entry.name)}</b>
 <small>${escapeHtml(notes.filter(Boolean).join(' · '))} · ${flags.join('')}<a href="https://www.wikidata.org/wiki/${entry.id}">${entry.id}</a></small></div></li>`;
   };
   const row = (entry) =>
@@ -780,6 +859,7 @@ const contactSheet = (entries) => {
   .c { flex: none; width: 38px; height: 38px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 1px #0003; }
   em { color: #c0262d; font-style: normal; font-weight: 600; }
   img { display: block; }
+  .t { transform: scale(${SIZE / (SIZE - 2 * MARGIN)}); }
   b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   small { display: block; }
   li div { min-width: 0; }
@@ -789,8 +869,8 @@ const contactSheet = (entries) => {
 </style>
 <h1>Landmark brand icons</h1>
 <p>${done.length} icons, ${failed.length} places without one. Third-party marks gathered automatically for review;
-each is shown as the app draws it, in a 38 px circle filled with the icon's own background colour, most famous
-first. The hairline ring is only there so that a white circle shows on this page.</p>
+each is shown as the app draws it, in a 38 px circle filled with the icon's own background colour, a tile edge
+to edge, most famous first. The hairline ring is only there so that a white circle shows on this page.</p>
 <ul>
 ${done.map(card).join('\n')}
 </ul>
@@ -826,10 +906,11 @@ if (unasked.length > 0) {
   Object.assign(facts, await lookUp(unasked));
   writeFileSync(factsPath, JSON.stringify(facts));
 }
+// Every place with an official website (P856), a logo, a small icon or an Instagram account, most famous first.
 const branded = pack
-  .filter(({ id }) => facts[id] && facts[id].P154.length + facts[id].P8972.length + facts[id].P2003.length > 0)
+  .filter(({ id }) => ['P856', 'P154', 'P8972', 'P2003'].some((property) => facts[id][property].length > 0))
   .sort((a, b) => b.rank - a.rank || Number(a.id.slice(1)) - Number(b.id.slice(1)));
-console.error(`${branded.length} of ${pack.length} places have a logo, an icon or an Instagram account`);
+console.error(`${branded.length} of ${pack.length} places have a website, a logo, an icon or an Instagram account`);
 
 // One line per finished place, appended as it finishes, so an interrupted run picks up where it stopped.
 const logPath = join(outDir, 'gathered.ndjson');
@@ -840,6 +921,7 @@ for (const line of existsSync(logPath) ? readFileSync(logPath, 'utf8').split('\n
 }
 // What each download turned out to be is worked out again from the file on every run, so a change to the
 // decoding, or a newly listed platform default, applies to everything already fetched.
+// One at a time: drawing several untrusted pictures at once aborted the whole process.
 for (const { candidates } of gathered.values()) {
   for (const candidate of candidates.filter(({ raw }) => raw)) {
     await inspect(candidate, readFileSync(join(rawDir, candidate.raw)));
@@ -873,29 +955,30 @@ await Promise.all(
   }),
 );
 
-// The same picture served by different websites is not an attraction's own mark: it is a CMS or hosting
-// default, or the mark of an operator that runs several sites. Those are flagged and never displace a
-// Commons picture. The same picture on one website (every park on a park service's site) is only counted.
+// The same picture served by different websites is not an attraction's own mark: it is the mark of an
+// operator that runs several sites, or a platform default not yet in the list above. It is flagged for the
+// hand-pick and otherwise used like any other icon: an operator's mark is still a fair badge.
 const records = branded.filter(({ id }) => gathered.has(id)).map((place) => ({ ...place, ...gathered.get(place.id) }));
-const places = new Map();
 const sites = new Map();
 for (const { site, candidates } of records) {
-  for (const { hash, source } of candidates.filter((candidate) => candidate.hash)) {
-    places.set(hash, (places.get(hash) ?? 0) + 1);
-    if (source.startsWith('site-')) {
-      sites.set(hash, (sites.get(hash) ?? new Set()).add(siteOf(site)));
-    }
+  for (const { hash } of candidates.filter((candidate) => candidate.hash && candidate.source.startsWith('site-'))) {
+    sites.set(hash, (sites.get(hash) ?? new Set()).add(siteOf(site)));
   }
+}
+// The choice for each place, then how many places ended up with the same picture.
+const places = new Map();
+for (const record of records) {
+  for (const candidate of record.candidates) {
+    candidate.sharedAcrossSites = (sites.get(candidate.hash)?.size ?? 0) > 1 && candidate.source.startsWith('site-');
+  }
+  record.chosen = choose(record.candidates);
+  places.set(record.chosen?.hash, (places.get(record.chosen?.hash) ?? 0) + 1);
 }
 
 rmSync(iconDir, { recursive: true, force: true });
 mkdirSync(iconDir, { recursive: true });
 const entries = [];
-for (const { id, name, kind, rank, site, siteNote, candidates } of records) {
-  for (const candidate of candidates) {
-    candidate.sharedAcrossSites = (sites.get(candidate.hash)?.size ?? 0) > 1 && candidate.source.startsWith('site-');
-  }
-  const chosen = choose(candidates);
+for (const { id, name, kind, rank, site, siteNote, candidates, chosen } of records) {
   const others = candidates
     .filter((candidate) => candidate !== chosen)
     .map(({ sharedAcrossSites, ...rest }) => ({ ...rest, ...(sharedAcrossSites ? { sharedAcrossSites } : {}) }));
@@ -931,7 +1014,7 @@ for (const { id, name, kind, rank, site, siteNote, candidates } of records) {
     tile: chosen.tile,
     background: chosen.background,
     backgroundFrom: chosen.backgroundFrom,
-    ...(chosen.tile ? { backgroundUniform: chosen.backgroundUniform } : {}),
+    ...(chosen.tile ? { backgroundUniform: chosen.backgroundUniform, cornerArt: chosen.cornerArt } : {}),
     lowContrast: chosen.lowContrast,
     hash: chosen.hash,
     ...(places.get(chosen.hash) > 1 ? { sharedWith: places.get(chosen.hash) - 1 } : {}),
@@ -972,5 +1055,14 @@ console.error(
   'background',
   tally(withIcon.map((entry) => `${entry.backgroundFrom} ${entry.tile ? '' : entry.background}`.trim())),
   `${withIcon.filter((entry) => entry.backgroundUniform === false).length} edges not one colour, ` +
+    `${withIcon.filter((entry) => entry.cornerArt).length} with art in the corners, ` +
     `${withIcon.filter((entry) => entry.lowContrast).length} low contrast`,
+);
+// An operator's or a portal's icon turns up on many places. The owner decides whether those keep it.
+const groups = Map.groupBy(withIcon, (entry) => entry.hash);
+const crowded = [...groups.values()].filter((group) => group.length > 10).sort((a, b) => b.length - a.length);
+console.error(
+  `${crowded.reduce((sum, group) => sum + group.length, 0)} places share their icon with ten or more others, ` +
+    `in ${crowded.length} groups:`,
+  crowded.slice(0, 12).map((group) => `${group.length} ${group[0].site ? siteOf(group[0].site) : group[0].source}`),
 );
