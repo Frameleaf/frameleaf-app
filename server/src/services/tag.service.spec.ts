@@ -47,13 +47,42 @@ describe(TagService.name, () => {
   describe('getStatistics (FL-46)', () => {
     it("should count the owner's Timeline items per tag, with and without subtags", async () => {
       mocks.search.searchTagStatistics.mockResolvedValue([
-        { tagId: 'tag-1', count: 1, total: 3 },
-        { tagId: 'tag-2', count: 2, total: 2 },
+        {
+          tagId: 'tag-1',
+          count: 1,
+          total: 3,
+          coverAssetIds: ['asset-3', 'asset-2', 'asset-1'],
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2026-03-09'),
+        },
+        {
+          tagId: 'tag-2',
+          count: 2,
+          total: 2,
+          coverAssetIds: ['asset-2', 'asset-1'],
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2024-06-01'),
+        },
       ]);
 
+      // the cover keeps the order the query gave it, and the dates read like an album's
       await expect(sut.getStatistics(authStub.admin)).resolves.toEqual([
-        { id: 'tag-1', count: 1, total: 3 },
-        { id: 'tag-2', count: 2, total: 2 },
+        {
+          id: 'tag-1',
+          count: 1,
+          total: 3,
+          coverAssetIds: ['asset-3', 'asset-2', 'asset-1'],
+          startDate: '2024-06-01T00:00:00.000Z',
+          endDate: '2026-03-09T00:00:00.000Z',
+        },
+        {
+          id: 'tag-2',
+          count: 2,
+          total: 2,
+          coverAssetIds: ['asset-2', 'asset-1'],
+          startDate: '2024-06-01T00:00:00.000Z',
+          endDate: '2024-06-01T00:00:00.000Z',
+        },
       ]);
       expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
         {

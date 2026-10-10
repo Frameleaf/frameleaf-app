@@ -71946,6 +71946,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: the newest captures directly in this folder",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endDate": {
+            "description": "End date (latest original in this folder)",
+            "format": "date-time",
+            "type": "string"
+          },
           "path": {
             "description": "Folder path, without a trailing slash",
             "type": "string"
@@ -71955,12 +71969,20 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "startDate": {
+            "description": "Start date (earliest original in this folder)",
+            "format": "date-time",
+            "type": "string"
           }
         },
         "required": [
           "count",
+          "coverAssetIds",
+          "endDate",
           "path",
-          "size"
+          "size",
+          "startDate"
         ],
         "type": "object"
       },
@@ -109810,9 +109832,24 @@
             "description": "Allow uploads",
             "type": "boolean"
           },
+          "assetCount": {
+            "description": "Number of assets the link shares: its own for an individual link, the album's for an album link",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "assets": {
             "items": {
               "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
             },
             "type": "array"
           },
@@ -109882,7 +109919,9 @@
         "required": [
           "allowDownload",
           "allowUpload",
+          "assetCount",
           "assets",
+          "coverAssetIds",
           "createdAt",
           "description",
           "expiresAt",
@@ -119410,10 +119449,29 @@
             "minimum": 0,
             "type": "integer"
           },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endDate": {
+            "description": "End date (latest of the `total` items)",
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "description": "Tag ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "startDate": {
+            "description": "Start date (earliest of the `total` items)",
+            "format": "date-time",
             "type": "string"
           },
           "total": {
@@ -119425,7 +119483,10 @@
         },
         "required": [
           "count",
+          "coverAssetIds",
+          "endDate",
           "id",
+          "startDate",
           "total"
         ],
         "type": "object"

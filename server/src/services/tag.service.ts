@@ -21,6 +21,7 @@ import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
+import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { upsertTags } from 'src/utils/tag.js';
@@ -40,7 +41,8 @@ export class TagService extends BaseService {
    * Timeline items (tags only ever carry their owner's items), so nothing archived or Locked — except
    * (FL-195) the owner's own marks and detections in an unlocked session, which the Timeline shows too —
    * and never a hidden or suppressed item. A tag the session may not see
-   * (suppressed, or nested under a suppressed tag, while locked) is left out entirely.
+   * (suppressed, or nested under a suppressed tag, while locked) is left out entirely. A tag's cover
+   * and dates come from the same items as its total.
    */
   async getStatistics(auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
     const rows = await this.searchRepository.searchTagStatistics(
@@ -54,7 +56,12 @@ export class TagService extends BaseService {
       },
       { viewerId: auth.user.id, suppressedTagIds: auth.hiddenContent?.tagIds ?? [] },
     );
-    return rows.map(({ tagId, count, total }) => ({ id: tagId, count, total }));
+    return rows.map(({ tagId, startDate, endDate, ...row }) => ({
+      id: tagId,
+      ...row,
+      startDate: asDateTimeString(startDate),
+      endDate: asDateTimeString(endDate),
+    }));
   }
 
   async get(auth: AuthDto, id: string): Promise<TagResponseDto> {

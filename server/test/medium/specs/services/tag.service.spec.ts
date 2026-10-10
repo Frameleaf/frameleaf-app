@@ -3,6 +3,7 @@ import { Kysely } from 'kysely';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetLockReason, AssetVisibility, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -10,6 +11,7 @@ import { SearchRepository } from 'src/repositories/search.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagService } from 'src/services/tag.service.js';
+import { asDateTimeString } from 'src/utils/date.js';
 import { upsertTags } from 'src/utils/tag.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -32,6 +34,12 @@ const newTagOfAnotherUser = async (ctx: ReturnType<typeof setup>['ctx']) => {
   const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['tag-1'] });
 
   return { tag, auth: factory.auth({ user }), otherAuth: factory.auth({ user: otherUser }) };
+};
+
+/** An item captured at this local date and time */
+const capturedAt = (dateTime: string) => {
+  const date = new Date(dateTime);
+  return { localDateTime: date, fileCreatedAt: date };
 };
 
 /** A session that is not unlocked while its owner suppresses these tags (owner decision, September 22, 2026) */
@@ -250,12 +258,21 @@ describe(TagService.name, () => {
       const rockies = byValue.get('trips/rockies')!;
       const family = byValue.get('family')!;
 
-      const { asset: onTrip } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: onTripToo } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: tripsOnly } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
-      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
-      const { asset: locked } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: onTrip } = await ctx.newAsset({ ownerId: user.id, ...capturedAt('2024-06-01T10:00:00.000Z') });
+      const { asset: onTripToo } = await ctx.newAsset({ ownerId: user.id, ...capturedAt('2025-01-15T08:00:00.000Z') });
+      const { asset: tripsOnly } = await ctx.newAsset({ ownerId: user.id, ...capturedAt('2026-03-09T12:00:00.000Z') });
+      // the newest and the oldest captures are the ones that never count: neither may lead a cover or move a date
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: user.id,
+        visibility: AssetVisibility.Archive,
+        ...capturedAt('2030-01-01T00:00:00.000Z'),
+      });
+      const { asset: trashed } = await ctx.newAsset({
+        ownerId: user.id,
+        deletedAt: new Date(),
+        ...capturedAt('2000-01-01T00:00:00.000Z'),
+      });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, ...capturedAt('2010-05-05T09:00:00.000Z') });
       await ctx.database
         .insertInto('asset_lock')
         .values({ assetId: locked.id, reason: AssetLockReason.Marked, lockedBy: null })
@@ -270,9 +287,24 @@ describe(TagService.name, () => {
       expect(statistics).toHaveLength(2);
       expect(statistics).toEqual(
         expect.arrayContaining([
-          // trips: two items tagged "trips" itself; three distinct items with "trips/rockies"
-          { id: trips.id, count: 2, total: 3 },
-          { id: rockies.id, count: 2, total: 2 },
+          // trips: two items tagged "trips" itself; three distinct items with "trips/rockies", and the
+          // one carrying both tags is on the cover once
+          {
+            id: trips.id,
+            count: 2,
+            total: 3,
+            coverAssetIds: [tripsOnly.id, onTripToo.id, onTrip.id],
+            startDate: '2024-06-01T00:00:00.000Z',
+            endDate: '2026-03-09T00:00:00.000Z',
+          },
+          {
+            id: rockies.id,
+            count: 2,
+            total: 2,
+            coverAssetIds: [onTripToo.id, onTrip.id],
+            startDate: '2024-06-01T00:00:00.000Z',
+            endDate: '2025-01-15T00:00:00.000Z',
+          },
         ]),
       );
       expect(statistics.find(({ id }) => id === family.id)).toBeUndefined();
@@ -285,8 +317,22 @@ describe(TagService.name, () => {
       expect(unlocked).toHaveLength(2);
       expect(unlocked).toEqual(
         expect.arrayContaining([
-          { id: trips.id, count: 2, total: 4 },
-          { id: rockies.id, count: 3, total: 3 },
+          {
+            id: trips.id,
+            count: 2,
+            total: 4,
+            coverAssetIds: [tripsOnly.id, onTripToo.id, onTrip.id, locked.id],
+            startDate: '2010-05-05T00:00:00.000Z',
+            endDate: '2026-03-09T00:00:00.000Z',
+          },
+          {
+            id: rockies.id,
+            count: 3,
+            total: 3,
+            coverAssetIds: [onTripToo.id, onTrip.id, locked.id],
+            startDate: '2010-05-05T00:00:00.000Z',
+            endDate: '2025-01-15T00:00:00.000Z',
+          },
         ]),
       );
     });
@@ -297,15 +343,106 @@ describe(TagService.name, () => {
       const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['private/nested', 'public'] });
       const byValue = new Map(tags.map((tag) => [tag.value, tag]));
       const parent = (await ctx.get(TagRepository).getByValue(user.id, 'private'))!;
-      const { asset: privateAsset } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: publicAsset } = await ctx.newAsset({ ownerId: user.id });
+      // the hidden item is the newer capture, so it would lead the cover and end the dates if it counted
+      const { asset: privateAsset } = await ctx.newAsset({
+        ownerId: user.id,
+        ...capturedAt('2026-03-09T12:00:00.000Z'),
+      });
+      const { asset: publicAsset } = await ctx.newAsset({
+        ownerId: user.id,
+        ...capturedAt('2024-06-01T10:00:00.000Z'),
+      });
       await ctx.newTagAsset({ tagIds: [byValue.get('private/nested')!.id], assetIds: [privateAsset.id] });
       // an item that also carries the suppressed tag is hidden, so it never counts for "public"
       await ctx.newTagAsset({ tagIds: [byValue.get('public')!.id], assetIds: [privateAsset.id, publicAsset.id] });
 
       await expect(sut.getStatistics(lockedAuth(user.id, [parent.id]))).resolves.toEqual([
-        { id: byValue.get('public')!.id, count: 1, total: 1 },
+        {
+          id: byValue.get('public')!.id,
+          count: 1,
+          total: 1,
+          coverAssetIds: [publicAsset.id],
+          startDate: '2024-06-01T00:00:00.000Z',
+          endDate: '2024-06-01T00:00:00.000Z',
+        },
       ]);
+    });
+
+    it("covers a tag with its four newest captures, its subtags' included, in a stable order", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['travel/canada/banff'] });
+      const banff = tags[0];
+      const canada = (await ctx.get(TagRepository).getByValue(user.id, 'travel/canada'))!;
+      const travel = (await ctx.get(TagRepository).getByValue(user.id, 'travel'))!;
+
+      const newAssetAt = async (dateTime: string) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, ...capturedAt(dateTime) });
+        return asset.id;
+      };
+      const oldest = await newAssetAt('2021-07-04T09:00:00.000Z');
+      const old = await newAssetAt('2022-07-04T09:00:00.000Z');
+      const middle = await newAssetAt('2023-07-04T09:00:00.000Z');
+      // two captures in the same instant: the lower id comes first
+      const [tiedFirst, tiedSecond] = [
+        await newAssetAt('2024-07-04T09:00:00.000Z'),
+        await newAssetAt('2024-07-04T09:00:00.000Z'),
+      ].toSorted();
+      const newest = await newAssetAt('2025-07-04T09:00:00.000Z');
+      await ctx.newTagAsset({ tagIds: [banff.id], assetIds: [oldest, middle, tiedSecond, newest] });
+      await ctx.newTagAsset({ tagIds: [canada.id], assetIds: [old, tiedFirst] });
+
+      const statistics = await sut.getStatistics(factory.auth({ user }));
+      const byId = new Map(statistics.map((row) => [row.id, row]));
+      expect(statistics).toHaveLength(3);
+      expect(byId.get(banff.id)).toEqual({
+        id: banff.id,
+        count: 4,
+        total: 4,
+        coverAssetIds: [newest, tiedSecond, middle, oldest],
+        startDate: '2021-07-04T00:00:00.000Z',
+        endDate: '2025-07-04T00:00:00.000Z',
+      });
+      // six items through the closure, four on the cover
+      const nested = {
+        total: 6,
+        coverAssetIds: [newest, tiedFirst, tiedSecond, middle],
+        startDate: '2021-07-04T00:00:00.000Z',
+        endDate: '2025-07-04T00:00:00.000Z',
+      };
+      expect(byId.get(canada.id)).toEqual({ id: canada.id, count: 2, ...nested });
+      expect(byId.get(travel.id)).toEqual({ id: travel.id, count: 0, ...nested });
+    });
+
+    it('dates a tag by the local capture day, exactly as an album of the same items is dated', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['evenings'] });
+      // late evening where it was taken, already the next day in UTC
+      const { asset: first } = await ctx.newAsset({
+        ownerId: user.id,
+        localDateTime: new Date('2024-06-01T23:30:00.000Z'),
+        fileCreatedAt: new Date('2024-06-02T06:30:00.000Z'),
+      });
+      const { asset: last } = await ctx.newAsset({
+        ownerId: user.id,
+        localDateTime: new Date('2024-12-31T23:59:00.000Z'),
+        fileCreatedAt: new Date('2025-01-01T04:59:00.000Z'),
+      });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [first.id, last.id] });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [first.id, last.id]);
+
+      const [statistics] = await sut.getStatistics(factory.auth({ user }));
+      expect(statistics).toMatchObject({
+        id: tag.id,
+        coverAssetIds: [last.id, first.id],
+        startDate: '2024-06-01T00:00:00.000Z',
+        endDate: '2024-12-31T00:00:00.000Z',
+      });
+
+      const [metadata] = await ctx.get(AlbumRepository).getMetadataForIds([album.id]);
+      expect(statistics.startDate).toBe(asDateTimeString(metadata.startDate));
+      expect(statistics.endDate).toBe(asDateTimeString(metadata.endDate));
     });
   });
 
@@ -424,7 +561,10 @@ describe(TagService.name, () => {
       // the unlocked owner sees one tag with both items
       const owner = unlockedAuth(user.id);
       await expect(sut.getAll(owner)).resolves.toEqual([expect.objectContaining({ id: hidden.id, value: 'Alice' })]);
-      await expect(sut.getStatistics(owner)).resolves.toEqual([{ id: hidden.id, count: 2, total: 2 }]);
+      const [statistics, ...others] = await sut.getStatistics(owner);
+      expect(others).toEqual([]);
+      expect(statistics).toMatchObject({ id: hidden.id, count: 2, total: 2 });
+      expect(statistics.coverAssetIds.toSorted()).toEqual([photo.id, secret.id].toSorted());
     });
 
     it('reuses a tag that is only on locked items when a locked session creates or upserts it', async () => {
@@ -507,7 +647,10 @@ describe(TagService.name, () => {
         await expect(sut.get(auth, byValue.get(value)!.id), value).rejects.toThrow('Tag not found');
       }
       await expect(sut.get(auth, parent.id)).rejects.toThrow('Tag not found');
-      await expect(sut.getStatistics(auth)).resolves.toEqual([{ id: byValue.get('mixed')!.id, count: 1, total: 1 }]);
+      // its cover is the visible item alone, never the locked one beside it
+      await expect(sut.getStatistics(auth)).resolves.toEqual([
+        expect.objectContaining({ id: byValue.get('mixed')!.id, count: 1, total: 1, coverAssetIds: [visible.id] }),
+      ]);
 
       const all = (await sut.getAll(unlockedAuth(user.id))).map(({ value }) => value).toSorted();
       expect(all).toEqual(['detected', 'empty', 'marked', 'mixed', 'moved', 'parent', 'parent/child']);

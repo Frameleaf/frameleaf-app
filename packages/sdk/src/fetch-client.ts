@@ -12786,7 +12786,11 @@ export type SharedLinkResponseDto = {
     allowDownload: boolean;
     /** Allow uploads */
     allowUpload: boolean;
+    /** Number of assets the link shares: its own for an individual link, the album's for an album link */
+    assetCount: number;
     assets: AssetResponseDto[];
+    /** Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first */
+    coverAssetIds: string[];
     /** Creation date */
     createdAt: string;
     /** Link description */
@@ -14172,8 +14176,14 @@ export type TagBulkAssetsResponseDto = {
 export type TagStatisticsResponseDto = {
     /** Timeline items tagged with exactly this tag */
     count: number;
+    /** Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it */
+    coverAssetIds: string[];
+    /** End date (latest of the `total` items) */
+    endDate: string;
     /** Tag ID */
     id: string;
+    /** Start date (earliest of the `total` items) */
+    startDate: string;
     /** Timeline items tagged with this tag or any tag nested under it */
     total: number;
 };
@@ -14803,10 +14813,16 @@ export type CreateProfileImageResponseDto = {
 export type FolderSummaryResponseDto = {
     /** Originals directly in this folder */
     count: number;
+    /** Up to four assets for a cover: the newest captures directly in this folder */
+    coverAssetIds: string[];
+    /** End date (latest original in this folder) */
+    endDate: string;
     /** Folder path, without a trailing slash */
     path: string;
     /** Bytes of the originals directly in this folder */
     size: number;
+    /** Start date (earliest original in this folder) */
+    startDate: string;
 };
 export type WorkflowIssueDto = {
     code: WorkflowIssueCode;
