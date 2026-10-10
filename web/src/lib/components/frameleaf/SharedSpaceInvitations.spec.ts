@@ -39,6 +39,7 @@ const invitation = (overrides: Partial<SharedSpacePreviewResponseDto> = {}): Sha
   accepted: false,
   memberCount: 3,
   assetCount: 42,
+  previewAssetIds: [],
   ...overrides,
 });
 

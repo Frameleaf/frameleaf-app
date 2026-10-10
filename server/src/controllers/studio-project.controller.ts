@@ -36,11 +36,18 @@ import {
   StudioReverseConformEnqueueDto,
   StudioReverseConformQueuedDto,
 } from 'src/dtos/studio-reverse-conform.dto.js';
+import {
+  StudioTranscriptionCreateDto,
+  StudioTranscriptionDto,
+  StudioTranscriptionParamDto,
+  StudioTranscriptionQueuedDto,
+} from 'src/dtos/studio-transcription.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
+import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
 /**
@@ -61,6 +68,7 @@ export class StudioProjectController {
     private service: StudioProjectService,
     private bundles: StudioBundleService,
     private reverse: StudioReverseConformCommandService,
+    private transcriptions: StudioTranscriptionService,
   ) {}
 
   @Get()
@@ -227,6 +235,38 @@ export class StudioProjectController {
     @Body() dto: StudioReverseConformApplyDto,
   ): Promise<StudioProjectSaveResponseDto> {
     return this.reverse.apply(auth, id, dto.clientId, dto.operationId);
+  }
+
+  @Post(':id/transcriptions')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Transcribe a Studio clip',
+    description:
+      'Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  createStudioTranscription(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioTranscriptionCreateDto,
+  ): Promise<StudioTranscriptionQueuedDto> {
+    return this.transcriptions.create(auth, id, dto);
+  }
+
+  @Get(':id/transcriptions/:transcriptionId')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Get a Studio clip transcription',
+    description:
+      'Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioTranscription(
+    @Auth() auth: AuthDto,
+    @Param() { id, transcriptionId }: StudioTranscriptionParamDto,
+  ): Promise<StudioTranscriptionDto> {
+    return this.transcriptions.get(auth, id, transcriptionId);
   }
 
   @Post(':id/lease')

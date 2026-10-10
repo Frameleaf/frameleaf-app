@@ -1,19 +1,7 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Next,
-  Param,
-  Post,
-  Query,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { NextFunction, Request, Response } from 'express';
+import { pipeline } from 'node:stream/promises';
+import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -27,7 +15,6 @@ import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
-import { sendFile } from 'src/utils/file.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
 /**
@@ -95,7 +82,6 @@ export class StudioPreviewController {
     @Query() dto: StudioPreviewScopeQueryDto,
     @Req() req: Request,
     @Res() res: Response,
-    @Next() next: NextFunction,
   ) {
     const ifNoneMatch = req.headers['if-none-match'];
     const result = await this.service.getFrame(auth, id, {
@@ -109,10 +95,10 @@ export class StudioPreviewController {
       return;
     }
 
-    // Set before `sendFile` so the validator travels with the bytes; the client revalidates
-    // every time, because the revision can be superseded between two paints.
     res.setHeader('ETag', result.etag);
-    await sendFile(res, next, () => Promise.resolve(result.file), this.logger);
+    res.setHeader('Content-Type', result.file.contentType);
+    res.setHeader('Cache-Control', 'private, no-cache, no-transform');
+    await pipeline(result.stream, res);
   }
 
   @Delete(':id')

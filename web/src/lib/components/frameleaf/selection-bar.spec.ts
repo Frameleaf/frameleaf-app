@@ -43,6 +43,46 @@ describe('Frameleaf selection bar', () => {
     expect(screen.getByRole('region', { name: 'Selected items', hidden: true })).toHaveAttribute('inert');
   });
 
+  it.each(['search', 'number', 'url', 'tel', 'contenteditable'])(
+    'keeps Backspace and Delete in a %s field',
+    async (type) => {
+      mount();
+      const field = document.createElement(type === 'contenteditable' ? 'div' : 'input');
+      field.setAttribute(
+        type === 'contenteditable' ? 'contenteditable' : 'type',
+        type === 'contenteditable' ? 'true' : type,
+      );
+      document.body.append(field);
+      try {
+        for (const key of ['Backspace', 'Delete']) {
+          expect(await fireEvent.keyDown(field, { key })).toBe(true);
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+          expect(onAction).not.toHaveBeenCalled();
+        }
+      } finally {
+        field.remove();
+      }
+    },
+  );
+
+  it.each([{ key: 'Escape' }, { key: 'Delete' }, { key: 'Backspace' }, { key: 'D', ctrlKey: true }])(
+    'leaves $key to an external modal while items are selected',
+    async (key) => {
+      mount();
+      const dialog = document.createElement('dialog');
+      dialog.open = true;
+      document.body.append(dialog);
+      try {
+        expect(await fireEvent.keyDown(dialog, key)).toBe(true);
+        expect(onClear).not.toHaveBeenCalled();
+        expect(onAction).not.toHaveBeenCalled();
+        expect(screen.getByText('2 selected')).toBeInTheDocument();
+      } finally {
+        dialog.remove();
+      }
+    },
+  );
+
   it('announces the count and deselects', async () => {
     mount();
     expect(screen.getByText('2 selected')).toBeInTheDocument();

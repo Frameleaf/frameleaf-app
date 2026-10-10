@@ -147,7 +147,7 @@ export class ServerService extends BaseService {
       id,
       linked,
       name: config.server.name?.trim() || 'Frameleaf server',
-      setup: admin ? 'complete' : 'needed',
+      setup: admin || !this.configRepository.getEnv().setup.allow ? 'complete' : 'needed',
       cloud: this.configRepository.getEnv().frameleafCloud.url ? 'available' : 'unavailable',
     };
   }

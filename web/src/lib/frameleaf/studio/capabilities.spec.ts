@@ -175,6 +175,20 @@ describe('event-driven Studio host refresh authority', () => {
     gate.dispose();
   });
 
+  it('retains the last confirmed snapshot when a reconnect probe fails', async () => {
+    sdkMock.getMlCapabilities
+      .mockResolvedValueOnce(healthySnapshot as never)
+      .mockRejectedValueOnce(new Error('offline'));
+    const onChange = vi.fn();
+    const gate = createStudioHostRefresh({ hasAccess: () => true, onChange });
+    await gate.refresh();
+    const confirmed = onChange.mock.calls[0][0];
+    await gate.refresh();
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual(confirmed);
+    expect(confirmed.capabilities.renderWorker).toBe(true);
+    gate.dispose();
+  });
+
   it('keeps continued refusal truthful and clears render evidence on a fresh request failure', async () => {
     sdkMock.getMlCapabilities.mockRejectedValueOnce(new Error('still refused'));
     const published: unknown[] = [];

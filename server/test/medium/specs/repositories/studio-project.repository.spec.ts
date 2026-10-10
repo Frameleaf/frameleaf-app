@@ -10,6 +10,12 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationCreate, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
+import {
+  STUDIO_BUNDLE_MAX_EXPORTS,
+  STUDIO_BUNDLE_MAX_UPLOADS,
+  STUDIO_REVISION_MAX_BYTES,
+  STUDIO_REVISION_MAX_COUNT,
+} from 'src/repositories/studio-storage-admission.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
@@ -78,6 +84,153 @@ describe(StudioProjectRepository.name, () => {
       .set({ leaseExpiresAt: new Date(Date.now() - 1000) })
       .where('id', '=', projectId)
       .execute();
+
+  describe('Studio storage admission', () => {
+    const upload = (ownerId: string, sizeBytes = 1) => ({
+      ownerId,
+      path: `/private/${randomUUID()}.zip`,
+      sizeBytes,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+
+    it('serializes concurrent upload count and quota admission', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const attempts = await Promise.allSettled(
+        Array.from({ length: STUDIO_BUNDLE_MAX_UPLOADS + 2 }, () => sut.createUpload(upload(user.id))),
+      );
+      expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(STUDIO_BUNDLE_MAX_UPLOADS);
+      const { user: limited } = await ctx.newUser();
+      await ctx.database
+        .updateTable('user')
+        .set({ quotaSizeInBytes: 100, quotaUsageInBytes: 0 })
+        .where('id', '=', limited.id)
+        .execute();
+      const quota = await Promise.allSettled([
+        sut.createUpload(upload(limited.id, 60)),
+        sut.createUpload(upload(limited.id, 60)),
+      ]);
+      expect(quota.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    });
+
+    it('counts bundle reservations against import quota under the same owner lock', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Quota' });
+      await ctx.database
+        .updateTable('user')
+        .set({ quotaSizeInBytes: 100, quotaUsageInBytes: 0 })
+        .where('id', '=', user.id)
+        .execute();
+      await sut.createUpload(upload(user.id, 80));
+      await expect(
+        sut.registerImport({
+          ownerId: user.id,
+          projectId: project.id,
+          id: randomUUID(),
+          checksum: 'a'.repeat(64),
+          contentType: 'audio/wav',
+          sizeBytes: 30,
+          path: '/private/voice.wav',
+          fileName: 'voice.wav',
+          externalReferences: null,
+        }),
+      ).rejects.toThrow('storage quota');
+    });
+
+    it('transfers an extraction reservation into an import without double charging quota', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Quota transfer' });
+      await ctx.database
+        .updateTable('user')
+        .set({ quotaSizeInBytes: 100, quotaUsageInBytes: 0 })
+        .where('id', '=', user.id)
+        .execute();
+      await sut.createUpload(upload(user.id, 20));
+      const temporary = await sut.createUpload(upload(user.id, 50));
+      await sut.registerImport({
+        ownerId: user.id,
+        projectId: project.id,
+        id: randomUUID(),
+        checksum: 'b'.repeat(64),
+        contentType: 'audio/wav',
+        sizeBytes: 50,
+        path: '/private/voice-transfer.wav',
+        fileName: 'voice.wav',
+        externalReferences: null,
+        reservationId: temporary.id,
+      });
+      expect(await sut.getUpload(temporary.id, user.id)).toBeUndefined();
+      expect(await sut.getImportBytes(user.id)).toBe(50);
+    });
+
+    it('reuses identical running exports atomically and bounds distinct selections', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await sut.create({ ownerId: user.id, name: 'Export' });
+      const operations = ctx.get(MediaOperationRepository);
+      const operation: MediaOperationCreate = {
+        ownerId: user.id,
+        kind: MediaOperationKind.StudioBundleExport,
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        label: 'Export',
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: project.id,
+        revisionId: null,
+        snapshot: { projectId: project.id, revision: 1, includeMedia: false, sequenceIds: null, requestKey: null },
+        settings: { storageReservationBytes: 32 * 1024 ** 2 },
+        estimate: null,
+        totalUnits: null,
+        maxAttempts: 2,
+      };
+      const [first, duplicate] = await Promise.all([operations.create(operation), operations.create(operation)]);
+      expect(first.id).toBe(duplicate.id);
+      for (let index = 1; index < STUDIO_BUNDLE_MAX_EXPORTS; index++)
+        await operations.create({
+          ...operation,
+          snapshot: { ...operation.snapshot, sequenceIds: [`sequence-${index}`] },
+        });
+      await expect(
+        operations.create({ ...operation, snapshot: { ...operation.snapshot, includeMedia: true } }),
+      ).rejects.toThrow('storage limit');
+      await expect(operations.create(operation)).resolves.toMatchObject({ id: first.id });
+      await expect(operations.createRetry({ ...operation, retryOfId: first.id })).rejects.toThrow('storage limit');
+    });
+
+    it('refuses a revision at the history budget without moving the head or deleting history', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const project = await leasedProject(sut, user.id);
+      await expect(
+        sut.appendRevision(append(project.id, user.id, { graphBytes: STUDIO_REVISION_MAX_BYTES + 1 })),
+      ).rejects.toThrow('revision history limit');
+      await ctx.database
+        .insertInto('studio_project_revision')
+        .values(
+          Array.from({ length: STUDIO_REVISION_MAX_COUNT }, (_, i) => ({
+            projectId: project.id,
+            revision: i + 1,
+            authorId: user.id,
+            envelope: {},
+            digest: `digest-${i}`,
+            graphBytes: 1,
+            summary: {},
+            requestKey: null,
+          })),
+        )
+        .execute();
+      await expect(sut.appendRevision(append(project.id, user.id))).rejects.toThrow('revision history limit');
+      expect((await sut.getById(project.id))!.currentRevision).toBe(0);
+      expect((await sut.listRevisions(project.id, { take: 1, skip: 0 })).total).toBe(STUDIO_REVISION_MAX_COUNT);
+    });
+  });
 
   describe('appendRevision', () => {
     it('lets exactly one of two concurrent saves against the same head win', async () => {

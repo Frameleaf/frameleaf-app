@@ -22,6 +22,8 @@ dependencies = [
     "tokenizers>=0.15.0,<1.0",
     "uvicorn[standard]>=0.22.0,<1.0",
     "rapidocr>=3.1.0",
+    # Studio captions (owner decision 2026-10-09): Whisper through CTranslate2. See dependency-metadata.
+    "faster-whisper==1.2.1",
 ]
 
 [dependency-groups]
@@ -75,6 +77,15 @@ rocm = ["onnxruntime-migraphx>=1.23.2,<2"]
 compile-bytecode = true
 # CPU and CUDA wheels are mutually exclusive; other device images keep their existing stacks.
 conflicts = [[{extra = "cpu"}, {extra = "cuda"}]]
+
+# faster-whisper declares the plain `onnxruntime` wheel (for its Silero VAD), which would be installed
+# over onnxruntime-gpu, -openvino or -migraphx and break those images. Every device extra already
+# provides an `onnxruntime` module, which faster-whisper imports only when it filters silence, so its
+# metadata is restated here without it.
+[[tool.uv.dependency-metadata]]
+name = "faster-whisper"
+version = "1.2.1"
+requires-dist = ["ctranslate2>=4.0,<5", "huggingface-hub>=0.21", "tokenizers>=0.13,<1", "av>=11", "tqdm"]
 
 [tool.uv.sources]
 torch = [{index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'"}]

@@ -78,6 +78,16 @@ describe(FrameleafServerSetupService.name, () => {
     mocks.crypto.hashSha256.mockImplementation((value: string | Buffer) => createHash('sha256').update(value).digest());
   });
 
+  it('does not announce a code or accept a claim when setup is disabled', async () => {
+    const env = mockEnvData({});
+    mocks.config.getEnv.mockReturnValue({ ...env, setup: { ...env.setup, allow: false } });
+    await sut.onBootstrap();
+    expect(state()).toBeUndefined();
+    expect(printed()).toBe('');
+    await expect(sut.issueTicket({ code: 'ABCD2345' }, phone)).rejects.toEqual(refusal('setup_complete'));
+    await expect(sut.getState()).resolves.toMatchObject({ setup: 'complete' });
+  });
+
   it('shows a new code with its QR code on the console at every start, while there is no administrator', async () => {
     await sut.onBootstrap();
     const first = state()!.code;

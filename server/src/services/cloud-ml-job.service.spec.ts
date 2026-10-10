@@ -695,6 +695,33 @@ describe(CloudMlJobService.name, () => {
       expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
     });
 
+    it('quotes the whole file without a reviewed preview, and refuses to confirm the quote (FL-348)', async () => {
+      const quote = () => preview({ stage: 'full', mode: AssetRestorationMode.Faithful, upscale: 2 });
+      await expect(sut.estimate(owner, quote(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing' }),
+      });
+      await prepared();
+
+      const estimate = await sut.estimate(owner, quote(), now);
+      expect(estimate.quoteOnly).toBe(true);
+      // no preview decided the model, so the whole slider is offered
+      expect(estimate.models.length).toBeGreaterThanOrEqual(1);
+      expect(estimates().at(-1)!.restorationId).toBeNull();
+      const confirmed = await sut
+        .create(
+          owner,
+          { estimateId: estimate.estimateId, consentVersion: '2026-09-26.1', acknowledgeDataLeaves: true },
+          now,
+        )
+        .catch((error_: unknown) => error_);
+      expect(confirmed).toBeInstanceOf(ConflictException);
+      expect((confirmed as ConflictException).getResponse()).toMatchObject({ code: 'quote-only' });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+
+      const reviewed = await sut.estimate(owner, full(), now);
+      expect(reviewed.quoteOnly).toBe(false);
+    });
+
     it('prepares one video per person at a time', async () => {
       // the first video is still being prepared while the second is asked for
       const { promise: held, resolve: release } = Promise.withResolvers<void>();

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { basename, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StudioProjectImportDto } from 'src/dtos/studio-project-import.dto.js';
 import { CacheControl, StorageFolder } from 'src/enum.js';
@@ -31,6 +32,7 @@ import {
   studioImportKind,
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
+import { studioProjectResourceUses } from 'src/utils/studio-inventory.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { parseStudioLottieDependencies } from 'src/utils/studio-vector-dependencies.js';
@@ -86,6 +88,7 @@ export class StudioProjectImportService {
     projectId: string,
     rawId: string | undefined,
     file: Express.Multer.File | undefined,
+    reservationId?: string,
   ): Promise<StudioProjectImportDto> {
     let textLabel = 'The file';
     try {
@@ -137,6 +140,7 @@ export class StudioProjectImportService {
       const folder = studioImportProjectFolder(project.ownerId, project.id);
       const path = join(folder, `${id}${type.extension}`);
       const stored = await this.projects.registerImport({
+        ...(reservationId && { reservationId }),
         projectId: project.id,
         id,
         ownerId: project.ownerId,
@@ -175,6 +179,28 @@ export class StudioProjectImportService {
   async list(auth: AuthDto, projectId: string): Promise<StudioProjectImportDto[]> {
     const project = await this.requireOwnedProject(auth, projectId);
     return (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+  }
+
+  /**
+   * FL-348: what a project keeps and uses. The files kept with it, and the fonts, bundled LUTs and
+   * models its head graph names, each with whether it may run on this server. Owner only, like the
+   * kept files themselves.
+   */
+  async inventory(auth: AuthDto, projectId: string): Promise<StudioProjectInventoryDto> {
+    const project = await this.requireOwnedProject(auth, projectId);
+    const keptFiles = (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+    const head =
+      project.currentRevision > 0 ? await this.projects.getRevision(project.id, project.currentRevision) : undefined;
+    const graph = (head?.envelope as { graph?: unknown } | undefined)?.graph ?? null;
+    const uses = studioProjectResourceUses(graph);
+    return {
+      projectId: project.id,
+      revision: head ? project.currentRevision : 0,
+      keptFiles,
+      fonts: uses.filter((use) => use.kind === 'font'),
+      luts: uses.filter((use) => use.kind === 'lut'),
+      models: uses.filter((use) => use.kind === 'model'),
+    };
   }
 
   async getFile(auth: AuthDto, projectId: string, importId: string): Promise<ImmichFileResponse> {

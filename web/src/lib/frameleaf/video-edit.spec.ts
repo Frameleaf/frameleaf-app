@@ -36,6 +36,8 @@ describe('video quick editor edit (FL-113)', () => {
   it('matches the prototype helpers for the timeline', () => {
     expect(filmstripTimes(12, 4)).toEqual([1.5, 4.5, 7.5, 10.5]);
     expect(preciseTime(75.25)).toBe('01:15.3');
+    expect(preciseTime(59.96)).toBe('01:00.0');
+    expect(preciseTime(3599.96)).toBe('60:00.0');
     const clip = edit({ speed: 2, speedSegments: [{ start: 4, end: 8, speed: 0.5 }] });
     expect(speedAt(clip, 5)).toBe(0.5);
     expect(speedAt(clip, 10)).toBe(2);

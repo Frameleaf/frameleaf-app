@@ -1,5 +1,8 @@
 import { Kysely, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StudioPreviewCancelQueryDto } from 'src/dtos/studio-preview.dto.js';
 import {
@@ -35,6 +38,12 @@ import { StudioDestination } from 'src/utils/studio-resources.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { automock, getKyselyDB } from 'test/utils.js';
+
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  open: vi.fn(),
+  realpath: vi.fn((path) => Promise.resolve(String(path))),
+}));
 
 let database: Kysely<DB>;
 beforeAll(async () => {
@@ -109,6 +118,11 @@ const setup = async () => {
   const storage = automock(StorageRepository, { args: [ctx.getMock(LoggingRepository)], strict: false });
   storage.unlinkDir.mockResolvedValue();
   storage.stat.mockResolvedValue({ isFile: () => true, size: 2048 } as never);
+  vi.mocked(open).mockResolvedValue({
+    stat: () => storage.stat('/preview/frame.png'),
+    createReadStream: () => Readable.from([Buffer.alloc(2048)]),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as never);
   const makeService = () =>
     new StudioPreviewService(
       ctx.getMock(LoggingRepository),
@@ -432,7 +446,7 @@ it('late completion/failure and privacy revocation cannot erase a claimed cleanu
   await expect(
     f.sut.onRenderCompleted(claim, {
       path: `${studioPreviewFrameFolder(f.user.id, frame.id)}/frame.png`,
-      checksum: 'c'.repeat(64),
+      checksum: createHash('sha256').update(Buffer.alloc(2048)).digest('hex'),
       sizeInBytes: '2048',
       contentType: 'image/png',
     }),
@@ -750,7 +764,7 @@ it('retirement during the final recency await denies delivery while retaining th
   expect(
     await f.sut.onRenderCompleted(claim, {
       path: outputPath,
-      checksum: 'd'.repeat(64),
+      checksum: createHash('sha256').update(Buffer.alloc(2048)).digest('hex'),
       sizeInBytes: '2048',
       contentType: 'image/png',
     }),

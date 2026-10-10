@@ -327,7 +327,7 @@ export class TrashRepository {
         requireEditFamilyCoverage(tx, refreshed, refreshed.items.length > 0);
         const live = duplicateUndo
           ? undefined
-          : auth!.session
+          : auth!.session && !auth!.system
             ? await currentAuth(tx, userId, auth!.session.id, false)
             : auth;
         if (!duplicateUndo && !live) throw new ForbiddenException('trash_owner_session_required');
@@ -407,7 +407,7 @@ export class TrashRepository {
           // A stream counter wait must not preserve expired elevation or stale privacy at COMMIT.
           const finalAuth = duplicateUndo
             ? undefined
-            : auth!.session
+            : auth!.session && !auth!.system
               ? await currentAuth(tx, userId, auth!.session.id, false)
               : auth;
           if (!duplicateUndo && !finalAuth) throw new ForbiddenException('trash_owner_session_required');

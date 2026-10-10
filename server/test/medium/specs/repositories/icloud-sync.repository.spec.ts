@@ -65,6 +65,44 @@ describe(ICloudSyncRepository.name, () => {
     connection.state = 'connected';
   });
 
+  it.each(['needs-review', 'preserve-trashed', 'unsupported', 'failed'])(
+    'releases unstaged terminal reservations for %s',
+    async (status) => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const resource = (await repository.claim(connection.id, 1000))!;
+      expect(resource).toBeDefined();
+      await repository.finish(resource, status);
+      const finished = await repository.resource(resource.id);
+      expect(Number(finished!.reservedBytes)).toBe(0);
+      expect(finished!.status).toBe(status);
+    },
+  );
+
+  it('repairs historic unstaged terminal reservations before admitting another claim', async () => {
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    await repository.materialize(connection, 'library', library);
+    const resource = (await repository.claim(connection.id, 1000))!;
+    await sql`UPDATE icloud_resource SET status='failed',"leaseToken"=NULL,"leaseExpiresAt"=NULL
+      WHERE id=${resource.id}::uuid`.execute(db);
+    await repository.claim(connection.id, 1000);
+    expect(Number((await repository.resource(resource.id))!.reservedBytes)).toBe(0);
+  });
+
+  it('cleans staged terminal files before releasing their reservation and retains it on cleanup failure', async () => {
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    await repository.materialize(connection, 'library', library);
+    const resource = (await repository.claim(connection.id, 1000))!;
+    await repository.progress(resource, { stagingPath: '/private/staged' });
+    const cleanup = vi.fn().mockRejectedValueOnce(new Error('disk unavailable')).mockResolvedValueOnce(undefined);
+    await expect(repository.finish(resource, 'unsupported', null, cleanup)).rejects.toThrow('disk unavailable');
+    expect(Number((await repository.resource(resource.id))!.reservedBytes)).toBeGreaterThan(0);
+    await repository.finish(resource, 'unsupported', null, cleanup);
+    expect(cleanup).toHaveBeenLastCalledWith(expect.objectContaining({ stagingPath: '/private/staged' }));
+    expect(await repository.resource(resource.id)).toMatchObject({ stagingPath: null, status: 'unsupported' });
+    expect(Number((await repository.resource(resource.id))!.reservedBytes)).toBe(0);
+  });
+
   it('stores opaque materialization names as strings across keyset resume and empty pages', async () => {
     const records = Array.from({ length: 101 }, (_, index) => ({
       ...asset,

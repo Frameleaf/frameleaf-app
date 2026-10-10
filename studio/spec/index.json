@@ -1,0 +1,1702 @@
+{
+  "format": "frameleaf-studio-render-spec-index",
+  "version": 1,
+  "contract": "studio/spec/README.md",
+  "engine": {
+    "name": "freecut",
+    "revision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+  },
+  "effects": [
+    {
+      "id": "gpu-brightness",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-brightness.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-contrast",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-contrast.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-exposure",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-exposure.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 8,
+        "pixel": 8,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-hue-shift",
+      "category": "color",
+      "temporal": true,
+      "spec": "effects/gpu-hue-shift.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 4,
+        "edge": 1,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-invert",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-invert.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 2,
+        "pixel": 2,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-levels",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-levels.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 7,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-saturation",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-saturation.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-temperature",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-temperature.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 8,
+        "pixel": 8,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-grayscale",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-grayscale.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-sepia",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-sepia.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-curves",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-curves.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 20,
+        "pixel": 19,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-color-wheels",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-color-wheels.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 28,
+        "pixel": 27,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-secondary-qualifier",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-secondary-qualifier.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 18,
+        "pixel": 14,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-power-window",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-power-window.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 16,
+        "pixel": 15,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-vibrance",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-vibrance.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-gradient-map",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-gradient-map.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 13,
+        "pixel": 12,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-lut",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-lut.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-gaussian-blur",
+      "category": "blur",
+      "temporal": false,
+      "spec": "effects/gpu-gaussian-blur.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-box-blur",
+      "category": "blur",
+      "temporal": false,
+      "spec": "effects/gpu-box-blur.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-motion-blur",
+      "category": "blur",
+      "temporal": false,
+      "spec": "effects/gpu-motion-blur.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 10,
+        "pixel": 10,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-radial-blur",
+      "category": "blur",
+      "temporal": false,
+      "spec": "effects/gpu-radial-blur.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-zoom-blur",
+      "category": "blur",
+      "temporal": false,
+      "spec": "effects/gpu-zoom-blur.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-pixelate",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-pixelate.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 4,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-rgb-split",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-rgb-split.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-twirl",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-twirl.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 10,
+        "pixel": 10,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-wave",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-wave.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 10,
+        "pixel": 10,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-trigger-wave",
+      "category": "distort",
+      "temporal": true,
+      "spec": "effects/gpu-trigger-wave.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 13,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-bulge",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-bulge.md",
+      "hdr": "linear-display-bt709-v1",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 10,
+        "pixel": 10,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "gpu-kaleidoscope",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-kaleidoscope.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-mirror",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-mirror.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-fluted-glass",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-fluted-glass.md",
+      "hdr": "refused",
+      "status": "partial",
+      "notSpecifiable": [
+        "The contour distortion raises a negative base to the power 6 on the left half of each flute, which is undefined on GPUs (NaN or the even power); the page gives the even power as the native rule.",
+        "GPUs with fine screen-space derivatives differ from the coarse quads of C10 at flute seams.",
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 29,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 28,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-ripple-glass",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-ripple-glass.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "GPUs with fine screen-space derivatives differ slightly from the coarse quads of C10 in the seam highlight width."
+      ],
+      "goldens": {
+        "cases": 13,
+        "pixel": 12,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-glass-mosaic",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-glass-mosaic.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "GPUs with fine screen-space derivatives differ from the coarse quads of C10 in seam quads."
+      ],
+      "goldens": {
+        "cases": 9,
+        "pixel": 0,
+        "edge": 4,
+        "statistical": 4,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-blocks",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-blocks.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-droste",
+      "category": "distort",
+      "temporal": false,
+      "spec": "effects/gpu-droste.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Pixels near the fold boundary and the wrap seams flip with small differences in GPU log/atan precision."
+      ],
+      "goldens": {
+        "cases": 7,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-vignette",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-vignette.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-grain",
+      "category": "stylize",
+      "temporal": true,
+      "spec": "effects/gpu-grain.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 6,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 5,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-sharpen",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-sharpen.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-posterize",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-posterize.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 3,
+        "pixel": 0,
+        "edge": 2,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-glow",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-glow.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 8,
+        "pixel": 7,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-edge-detect",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-edge-detect.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-scanlines",
+      "category": "stylize",
+      "temporal": true,
+      "spec": "effects/gpu-scanlines.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-color-glitch",
+      "category": "stylize",
+      "temporal": true,
+      "spec": "effects/gpu-color-glitch.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 5,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 4,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-block-glitch",
+      "category": "stylize",
+      "temporal": true,
+      "spec": "effects/gpu-block-glitch.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 7,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 6,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-crt",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-crt.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-halftone",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-halftone.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 16,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 15,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-dither",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-dither.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 23,
+        "pixel": 22,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-ascii",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-ascii.md",
+      "hdr": "refused",
+      "status": "partial",
+      "notSpecifiable": [
+        "Glyph coverage of the font-atlas character sets (ascii, dense, binary, symbols, custom) comes from the platform font rasteriser; the cell grid, character choice, colours and opacity mixing are exact."
+      ],
+      "goldens": {
+        "cases": 29,
+        "pixel": 28,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-threshold",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-threshold.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 3,
+        "pixel": 2,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-vhs",
+      "category": "stylize",
+      "temporal": true,
+      "spec": "effects/gpu-vhs.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 8,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 7,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-ink",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-ink.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 9,
+        "pixel": 8,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-pixel-sort",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-pixel-sort.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 9,
+        "pixel": 8,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-pixel-sort-hq",
+      "category": "stylize",
+      "temporal": false,
+      "spec": "effects/gpu-pixel-sort-hq.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-chroma-key",
+      "category": "keying",
+      "temporal": false,
+      "spec": "effects/gpu-chroma-key.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "fade",
+      "category": "basic",
+      "directions": [],
+      "spec": "transitions/fade.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "barnDoor",
+      "category": "motion",
+      "directions": [],
+      "spec": "transitions/barnDoor.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "split",
+      "category": "motion",
+      "directions": [],
+      "spec": "transitions/split.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "wipe",
+      "category": "motion",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/wipe.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 14,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "bandWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/bandWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 1,
+        "statistical": 2,
+        "refused": 0
+      }
+    },
+    {
+      "id": "centerWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/centerWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "clockWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/clockWipe.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "edgeWipe",
+      "category": "wipe",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/edgeWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 14,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "radialWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/radialWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "With an odd height, the centre row's membership at the start and end of each quarter sweep depends on float rounding of the arc endpoints."
+      ],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 0,
+        "statistical": 3,
+        "refused": 0
+      }
+    },
+    {
+      "id": "spiralWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/spiralWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Stroke edges are anti-aliased by the platform rasteriser (T6) and are specified to ±1 px."
+      ],
+      "goldens": {
+        "cases": 5,
+        "pixel": 1,
+        "edge": 1,
+        "statistical": 3,
+        "refused": 0
+      }
+    },
+    {
+      "id": "venetianBlindWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/venetianBlindWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 0,
+        "statistical": 3,
+        "refused": 0
+      }
+    },
+    {
+      "id": "xWipe",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/xWipe.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Stroke edges are anti-aliased by the platform rasteriser (T6) and are specified to ±1 px."
+      ],
+      "goldens": {
+        "cases": 5,
+        "pixel": 0,
+        "edge": 5,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "slide",
+      "category": "motion",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/slide.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 14,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "flip",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/flip.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 14,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "iris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/iris.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "arrowIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/arrowIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 1,
+        "edge": 5,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "crossIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/crossIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 3,
+        "edge": 2,
+        "statistical": 1,
+        "refused": 0
+      }
+    },
+    {
+      "id": "diamondIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/diamondIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 3,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "eyeIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/eyeIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 3,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "hexagonIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/hexagonIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 1,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "ovalIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/ovalIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 1,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "pentagonIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/pentagonIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 1,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "squareIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/squareIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 5,
+        "edge": 1,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "triangleIris",
+      "category": "iris",
+      "directions": [],
+      "spec": "transitions/triangleIris.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 2,
+        "edge": 4,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "boxShape",
+      "category": "shape",
+      "directions": [],
+      "spec": "transitions/boxShape.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "heartShape",
+      "category": "shape",
+      "directions": [],
+      "spec": "transitions/heartShape.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 3,
+        "edge": 2,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "starShape",
+      "category": "shape",
+      "directions": [],
+      "spec": "transitions/starShape.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "triangleLeftShape",
+      "category": "shape",
+      "directions": [],
+      "spec": "transitions/triangleLeftShape.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "triangleRightShape",
+      "category": "shape",
+      "directions": [],
+      "spec": "transitions/triangleRightShape.md",
+      "route": "canvas",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 2,
+        "edge": 3,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "dissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/dissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "additiveDissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/additiveDissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "blurDissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/blurDissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "dipToColorDissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/dipToColorDissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "nonAdditiveDissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/nonAdditiveDissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "smoothCut",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/smoothCut.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 6,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 6,
+        "refused": 0
+      }
+    },
+    {
+      "id": "sparkles",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/sparkles.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 9,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 9,
+        "refused": 0
+      }
+    },
+    {
+      "id": "glitch",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/glitch.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 8,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 8,
+        "refused": 0
+      }
+    },
+    {
+      "id": "pixelate",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/pixelate.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "chromatic",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/chromatic.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 16,
+        "pixel": 16,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "radialBlur",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/radialBlur.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 7,
+        "pixel": 7,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "liquidDistort",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/liquidDistort.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 20,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 20,
+        "refused": 0
+      }
+    },
+    {
+      "id": "lensWarpZoom",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/lensWarpZoom.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "partial",
+      "notSpecifiable": [
+        "The ring term raises a possibly negative base to the power 2, which WGSL leaves undefined; the page specifies plain squaring as the native rule."
+      ],
+      "goldens": {
+        "cases": 11,
+        "pixel": 11,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "lightLeakBurn",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/lightLeakBurn.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 19,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 19,
+        "refused": 0
+      }
+    },
+    {
+      "id": "filmGateSlip",
+      "category": "custom",
+      "directions": [],
+      "spec": "transitions/filmGateSlip.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [
+        "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
+      ],
+      "goldens": {
+        "cases": 12,
+        "pixel": 0,
+        "edge": 0,
+        "statistical": 12,
+        "refused": 0
+      }
+    }
+  ]
+}

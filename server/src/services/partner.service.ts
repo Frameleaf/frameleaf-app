@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Partner } from 'src/database.js';
 import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
 import { mapUser } from 'src/dtos/user.dto.js';
-import { Permission, PushEventType } from 'src/enum.js';
+import { AssetVisibility, Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-copy.service.js';
@@ -11,6 +11,13 @@ import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-c
 @Injectable()
 export class PartnerService extends BaseService {
   async create(auth: AuthDto, { sharedWithId }: PartnerCreateDto): Promise<PartnerResponseDto> {
+    if (!auth.session?.hasElevatedPermission) {
+      const credentials = await this.userRepository.getForPinCode(auth.user.id);
+      const locked = await this.assetRepository.getStatistics(auth.user.id, { visibility: AssetVisibility.Locked });
+      if (credentials.pinCode || Object.values(locked).some((count) => Number(count) > 0)) {
+        throw new ForbiddenException('Unlock your session before sharing your library');
+      }
+    }
     const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId };
     const exists = await this.partnerRepository.get(partnerId);
     if (exists) {

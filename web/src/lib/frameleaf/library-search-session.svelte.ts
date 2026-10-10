@@ -85,7 +85,13 @@ export class LibrarySearchSession {
       if (this.#request !== request) {
         return;
       }
-      this.assets.push(...response.assets.items);
+      const known = new Set(this.assets.map(({ id }) => id));
+      for (const asset of response.assets.items) {
+        if (!known.has(asset.id)) {
+          known.add(asset.id);
+          this.assets.push(asset);
+        }
+      }
       this.albums.push(...response.albums.items);
       this.askResponse = askResponse;
       this.nextPage = Number(response.assets.nextPage) || null;

@@ -476,6 +476,26 @@ describe('studio project session', () => {
       expect(last()).toMatchObject({ status: 'saved', project: { revision: 5 } });
     });
 
+    it('flush waits for an in-flight save and saves the newer staged draft', async () => {
+      let resolveSave!: (value: StudioProjectSaveResponseDto) => void;
+      api.save.mockReturnValueOnce(new Promise<StudioProjectSaveResponseDto>((resolve) => (resolveSave = resolve)));
+      api.save.mockResolvedValueOnce(saved(5));
+      const session = create();
+      await session.open();
+      session.stage({ v: 1 }, ['clip.add']);
+      const first = session.flush();
+      session.stage({ v: 2 }, ['clip.move']);
+      const latest = session.flush();
+      resolveSave(saved(4));
+      await Promise.all([first, latest]);
+      expect(api.save).toHaveBeenCalledTimes(2);
+      expect(api.save.mock.calls.at(-1)?.[1]).toMatchObject({
+        expectedRevision: 4,
+        envelope: expect.objectContaining({ graph: { v: 2 } }),
+      });
+      expect(last()).toMatchObject({ status: 'saved', project: { revision: 5 }, hasDraft: false });
+    });
+
     it('holds the draft while offline and sends it when the connection returns', async () => {
       api.save.mockResolvedValue(saved(4));
       const session = create();

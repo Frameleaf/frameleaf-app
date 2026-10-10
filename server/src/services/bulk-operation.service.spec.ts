@@ -151,6 +151,7 @@ describe(BulkOperationService.name, () => {
       const auth = await sut.authFor(ownerId);
 
       expect(auth?.user.id).toBe(ownerId);
+      expect(auth?.system).toBe(true);
       expect(auth?.session?.hasElevatedPermission).toBe(true);
       expect(auth?.apiKey).toBeUndefined();
       expect(auth?.sharedLink).toBeUndefined();
