@@ -1104,7 +1104,7 @@
         },
         "command": {
           "status": "blocked",
-          "reason": "Missing command-axis case(s): idempotence, normal, undo (FL-112)."
+          "reason": "All command-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "graph": {
           "status": "not-tested"
@@ -1734,7 +1734,7 @@
         },
         "command": {
           "status": "blocked",
-          "reason": "Missing command-axis case(s): idempotence, normal, undo (FL-112)."
+          "reason": "All command-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "graph": {
           "status": "not-tested"
@@ -9268,7 +9268,7 @@
         },
         "command": {
           "status": "blocked",
-          "reason": "Missing command-axis case(s): idempotence, normal, undo (FL-112)."
+          "reason": "All command-axis cases covered; awaiting the CI measured-conformance artifact (FL-112)."
         },
         "graph": {
           "status": "not-tested"
