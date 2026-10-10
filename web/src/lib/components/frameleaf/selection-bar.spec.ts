@@ -65,6 +65,24 @@ describe('Frameleaf selection bar', () => {
     },
   );
 
+  it.each([{ key: 'Escape' }, { key: 'Delete' }, { key: 'Backspace' }, { key: 'D', ctrlKey: true }])(
+    'leaves $key to an external modal while items are selected',
+    async (key) => {
+      mount();
+      const dialog = document.createElement('dialog');
+      dialog.open = true;
+      document.body.append(dialog);
+      try {
+        expect(await fireEvent.keyDown(dialog, key)).toBe(true);
+        expect(onClear).not.toHaveBeenCalled();
+        expect(onAction).not.toHaveBeenCalled();
+        expect(screen.getByText('2 selected')).toBeInTheDocument();
+      } finally {
+        dialog.remove();
+      }
+    },
+  );
+
   it('announces the count and deselects', async () => {
     mount();
     expect(screen.getByText('2 selected')).toBeInTheDocument();
