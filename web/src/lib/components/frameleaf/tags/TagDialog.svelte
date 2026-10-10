@@ -5,7 +5,7 @@
   /** What the dialog is asked to do. A new tag may start inside a tag (`parentId`). */
   export type TagDialogRequest =
     | { type: 'create'; parentId: string | null }
-    | { type: 'rename' | 'color' | 'move' | 'delete'; node: FrameleafTagNode };
+    | { type: 'rename' | 'color' | 'move' | 'merge' | 'delete'; node: FrameleafTagNode };
 </script>
 
 <script lang="ts">
@@ -13,6 +13,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import TagSwatches from '$lib/components/frameleaf/tags/TagSwatches.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { lockedRulesFrom } from '$lib/frameleaf/locked-rules';
   import {
     DEFAULT_TAG_COLOR,
     cleanTagName,
@@ -20,6 +21,9 @@
     tagColorHex,
     tagColorId,
     tagDescendantCount,
+    tagMergeLockedEffect,
+    tagMergePreview,
+    tagMergeProblem,
     tagMoveProblem,
     tagMoveTargets,
     tagNameTaken,
@@ -27,15 +31,18 @@
     type TagColorId,
   } from '$lib/frameleaf/tag-tree';
   import { handleError } from '$lib/utils/handle-error';
-  import { createTag, deleteTag, updateTag } from '@frameleaf/sdk';
+  import { createTag, deleteTag, getMyPreferences, mergeTag, updateTag } from '@frameleaf/sdk';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
    * One dialog for every tag change that needs a form or a confirmation: New tag, Rename, Colour,
-   * Move and Delete. It checks what can be checked here (a name without slashes, no tag of that name
-   * in the same place, no move into the tag itself), writes through the tag API, and reports what
-   * was done; the page decides where to go next.
+   * Move, Merge and Delete. It checks what can be checked here (a name without slashes, no tag of that
+   * name in the same place, no move or merge into the tag itself), writes through the tag API, and
+   * reports what was done; the page decides where to go next.
+   *
+   * A merge cannot be undone, so once a tag to merge into is chosen the dialog says what will happen
+   * in the numbers the Tags screen shows before anything is sent.
    *
    * A refused or failed write keeps the dialog open with the reason, so nothing typed is lost.
    */
@@ -62,6 +69,7 @@
   let error = $state('');
   let name = $state(initial.type === 'rename' ? initial.node.name : '');
   let parentId = $state(startParent ?? '');
+  let targetId = $state('');
   // A new tag starts in the colour of the tag it goes inside, like the tags already there.
   let color = $state<TagColorId | null>(
     initial.type === 'create'
@@ -75,6 +83,22 @@
   // Indented under their parents, the way the list view draws the same tree.
   const optionLabel = (option: FrameleafTagNode) => `${'— '.repeat(option.depth)}${option.name}`;
   const pathOf = (target: FrameleafTagNode) => target.path.join(' › ');
+  const mergeTarget = $derived(targetId ? tree.byId.get(targetId) : undefined);
+  const mergePreview = $derived(node && mergeTarget ? tagMergePreview(node, mergeTarget) : null);
+  // The Locked ids are never kept in shared state (locked-rules.ts), so a merge reads them for as long
+  // as its dialog is open. Without them the merge still works; the dialog only cannot say what changes.
+  let lockedTagIds = $state<ReadonlySet<string>>(new Set());
+  const loadLockedTagIds = async () => {
+    try {
+      lockedTagIds = new Set(lockedRulesFrom(await getMyPreferences()).tagIds);
+    } catch {
+      // no note; the server still keeps hidden what a rule hid
+    }
+  };
+  if (initial.type === 'merge') {
+    void loadLockedTagIds();
+  }
+  const mergeLocked = $derived(node && mergeTarget ? tagMergeLockedEffect(node, mergeTarget, lockedTagIds) : null);
 
   const title = $derived.by(() => {
     switch (initial.type) {
@@ -91,6 +115,9 @@
       case 'move': {
         return $t('frameleaf_tags_move_title', { values: { name: initial.node.name } });
       }
+      case 'merge': {
+        return $t('frameleaf_tags_merge_title', { values: { name: initial.node.name } });
+      }
       default: {
         return $t('delete_tag');
       }
@@ -98,9 +125,14 @@
   });
 
   const submitLabel = $derived(
-    { create: $t('create'), rename: $t('save'), color: $t('save'), move: $t('move'), delete: $t('delete') }[
-      initial.type
-    ],
+    {
+      create: $t('create'),
+      rename: $t('save'),
+      color: $t('save'),
+      move: $t('move'),
+      merge: $t('merge'),
+      delete: $t('delete'),
+    }[initial.type],
   );
 
   /** The typed name, cleaned, or null after saying what is wrong with it. */
@@ -173,6 +205,20 @@
           tag: await updateTag({ id: initial.node.id, tagUpdateDto: { parentId: under } }),
         };
       }
+      case 'merge': {
+        const problem = tagMergeProblem(tree, initial.node, targetId || null);
+        if (problem) {
+          error = $t(
+            problem === 'no-target' ? 'frameleaf_tags_merge_choose_first' : 'frameleaf_tags_merge_inside_itself',
+          );
+          return null;
+        }
+        return {
+          type: 'merged',
+          tag: await mergeTag({ id: initial.node.id, tagMergeDto: { targetId } }),
+          node: initial.node,
+        };
+      }
       default: {
         await deleteTag({ id: initial.node.id });
         return { type: 'deleted', node: initial.node };
@@ -195,7 +241,11 @@
         // Said here rather than in a toast: the dialog is still open and covers the page behind it.
         // `handleError` words it for the customer (never the server's own message) without toasting.
         const fallback = $t(
-          initial.type === 'delete' ? 'errors.frameleaf_tags_unable_to_delete' : 'errors.frameleaf_tags_unable_to_save',
+          initial.type === 'delete'
+            ? 'errors.frameleaf_tags_unable_to_delete'
+            : initial.type === 'merge'
+              ? 'errors.frameleaf_tags_unable_to_merge'
+              : 'errors.frameleaf_tags_unable_to_save',
         );
         error = handleError(error_, fallback, { notify: false }) ?? fallback;
         return;
@@ -242,6 +292,57 @@
     {/if}
     {#if initial.type === 'create' || initial.type === 'color'}
       <TagSwatches value={color} initialFocus={initial.type === 'color'} onChange={(next) => (color = next)} />
+    {/if}
+    {#if initial.type === 'merge'}
+      {@const tag = initial.node.name}
+      <p>
+        <FormatMessage key="frameleaf_tags_merge_intro" values={{ tag }}>
+          {#snippet children({ message })}<strong>{message}</strong>{/snippet}
+        </FormatMessage>
+      </p>
+      <label>
+        {$t('frameleaf_tags_merge_into')}
+        <!-- A choice answers "Choose the tag to merge into", so that reminder goes as soon as one is made. -->
+        <select
+          bind:value={targetId}
+          data-initial-focus
+          aria-invalid={error && !targetId ? true : undefined}
+          onchange={() => (error = '')}
+        >
+          <option value="">{$t('frameleaf_tags_merge_choose')}</option>
+          {#each parents as option (option.id)}
+            <option value={option.id}>{optionLabel(option)}</option>
+          {/each}
+        </select>
+      </label>
+      <!-- Always there, so what a choice will do is read out when it appears. -->
+      <div class="outcome" aria-live="polite">
+        {#if mergeTarget && mergePreview}
+          {@const target = mergeTarget.name}
+          <ul>
+            <li>{$t('frameleaf_tags_merge_items', { values: { count: mergePreview.items, tag, target } })}</li>
+            {#if mergePreview.inside > 0}
+              <li>
+                {$t('frameleaf_tags_merge_inside', { values: { count: mergePreview.inside, tag, target } })}
+                {#if mergePreview.sameName > 0}
+                  {$t('frameleaf_tags_merge_same_name', { values: { count: mergePreview.sameName, target } })}
+                {/if}
+              </li>
+            {/if}
+            {#if mergeLocked}
+              <li class="locked-effect">
+                {$t(
+                  mergeLocked === 'locks' ? 'frameleaf_tags_merge_locks_target' : 'frameleaf_tags_merge_reveals_items',
+                  {
+                    values: { tag, target },
+                  },
+                )}
+              </li>
+            {/if}
+            <li>{$t('frameleaf_tags_merge_removed', { values: { tag } })}</li>
+          </ul>
+        {/if}
+      </div>
     {/if}
     {#if initial.type === 'delete'}
       {@const inside = tagDescendantCount(initial.node)}
@@ -302,6 +403,25 @@
   p {
     margin: 0;
     line-height: 1.55;
+  }
+  /* With nothing chosen the region keeps no row (or gap) of its own; it stays in the form to be announced. */
+  .outcome:empty {
+    margin-block-start: calc(var(--fl-space-4) * -1);
+  }
+  .outcome ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: var(--fl-space-3) var(--fl-space-4);
+    list-style: none;
+    line-height: 1.55;
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-control);
+  }
+  /* What the merge changes about Locked content is the line not to miss. */
+  .locked-effect {
+    font-weight: 600;
   }
   .error {
     color: var(--fl-danger);

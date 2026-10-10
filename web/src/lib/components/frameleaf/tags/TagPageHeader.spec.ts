@@ -115,13 +115,13 @@ describe('TagPageHeader', () => {
       expect(header('To sort').querySelector('.summary')).toHaveTextContent(/^0 items$/);
     });
 
-    it('offers Tag photos, Colour, Move and a "…" menu with New tag inside and Delete tag', async () => {
+    it('offers Tag photos, Colour, Move, Merge and a "…" menu with New tag inside and Delete tag', async () => {
       renderHeader('canada');
       expect(
         within(toolbar())
           .getAllByRole('button')
           .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-      ).toEqual(['Tag photos', 'Colour', 'Move', 'More tag actions']);
+      ).toEqual(['Tag photos', 'Colour', 'Move', 'Merge', 'More tag actions']);
       const menu = await openMore();
       expect(
         within(menu)
@@ -376,6 +376,133 @@ describe('TagPageHeader', () => {
     });
   });
 
+  describe('merge', () => {
+    const openMerge = async (name: string) => {
+      await fireEvent.click(within(toolbar()).getByRole('button', { name: 'Merge' }));
+      const dialog = screen.getByRole('dialog', { name: `Merge “${name}”` });
+      return { dialog, into: within(dialog).getByRole('combobox', { name: 'Merge into' }) as HTMLSelectElement };
+    };
+    const outcome = (dialog: HTMLElement) =>
+      within(dialog)
+        .queryAllByRole('listitem')
+        .map((line) => line.textContent?.replaceAll(/\s+/g, ' ').trim());
+
+    it('explains the merge and offers every tag except the tag itself and the tags inside it', async () => {
+      renderHeader('canada');
+      const { dialog, into } = await openMerge('Canada');
+      expect(dialog).toHaveTextContent(
+        'Everything tagged Canada will carry the tag you choose instead, and Canada is removed. Tags inside it move across too.',
+      );
+      expect(into).toHaveValue('');
+      expect([...into.options].map((option) => option.textContent)).toEqual([
+        'Choose a tag',
+        'Travel',
+        '— Norway',
+        'Nature',
+        '— canada',
+        'To sort',
+      ]);
+      // nothing is promised before a tag is chosen
+      expect(outcome(dialog)).toEqual([]);
+    });
+
+    it('says what will happen, in numbers, once a tag is chosen', async () => {
+      renderHeader('canada');
+      const { dialog, into } = await openMerge('Canada');
+      await fireEvent.change(into, { target: { value: 'norway' } });
+      expect(outcome(dialog)).toEqual([
+        '98 items tagged Canada will be tagged Norway instead.',
+        'The 2 tags inside Canada move into Norway with their items.',
+        'Canada is then removed. This can’t be undone.',
+      ]);
+      expect(dialog.querySelector('.outcome')).toHaveAttribute('aria-live', 'polite');
+    });
+
+    it('says so when the tag has no items of its own, one tag inside, or nothing inside', async () => {
+      const { unmount } = renderHeader('nature');
+      let { dialog, into } = await openMerge('Nature');
+      await fireEvent.change(into, { target: { value: 'sort' } });
+      expect(outcome(dialog)).toEqual([
+        'No items are tagged Nature itself.',
+        'The tag inside Nature moves into To sort with its items.',
+        'Nature is then removed. This can’t be undone.',
+      ]);
+      unmount();
+
+      renderHeader('banff');
+      ({ dialog, into } = await openMerge('Banff'));
+      await fireEvent.change(into, { target: { value: 'jasper' } });
+      expect(outcome(dialog)).toEqual([
+        '30 items tagged Banff will be tagged Jasper instead.',
+        'Banff is then removed. This can’t be undone.',
+      ]);
+    });
+
+    it('says when a tag inside meets one of its own name and the two become one', async () => {
+      const twins = buildTagTree(
+        [...tags, tag({ id: 'old', name: 'Old' }), tag({ id: 'old-canada', name: 'Canada', parentId: 'old' })],
+        statistics,
+      );
+      render(TagPageHeader, { node: twins.byId.get('old')!, tree: twins });
+      const { dialog, into } = await openMerge('Old');
+      await fireEvent.change(into, { target: { value: 'travel' } });
+      expect(outcome(dialog)).toEqual([
+        'No items are tagged Old itself.',
+        'The tag inside Old moves into Travel with its items. 1 tag has the same name as one already in Travel, so the two become one tag.',
+        'Old is then removed. This can’t be undone.',
+      ]);
+    });
+
+    it('asks for a tag before merging, and drops the reminder once one is chosen', async () => {
+      renderHeader('canada');
+      const { dialog, into } = await openMerge('Canada');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Choose the tag to merge into.');
+      expect(into).toHaveAttribute('aria-invalid', 'true');
+      expect(sdkMock.mergeTag).not.toHaveBeenCalled();
+
+      await fireEvent.change(into, { target: { value: 'sort' } });
+      expect(within(dialog).queryByRole('alert')).toBeNull();
+      expect(into).not.toHaveAttribute('aria-invalid');
+    });
+
+    it('merges into the chosen tag, goes to that tag and says so in a toast', async () => {
+      sdkMock.mergeTag.mockResolvedValue(
+        tag({ id: 'norway', name: 'Norway', parentId: 'travel', value: 'Travel/Norway' }),
+      );
+      renderHeader('canada');
+      const { dialog, into } = await openMerge('Canada');
+      await fireEvent.change(into, { target: { value: 'norway' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
+      await waitFor(() =>
+        expect(sdkMock.mergeTag).toHaveBeenCalledWith({ id: 'canada', tagMergeDto: { targetId: 'norway' } }),
+      );
+      // the old address is gone, so it is replaced; the tags, counts and covers are read again on the way
+      await waitFor(() =>
+        expect(navigation.goto).toHaveBeenCalledWith('/tags?path=Travel%2FNorway', {
+          replaceState: true,
+          invalidateAll: true,
+        }),
+      );
+      await waitFor(() => expect(toastManager.primary).toHaveBeenCalledWith('Merged Canada into Norway.'));
+      expect(sdkMock.updateTag).not.toHaveBeenCalled();
+      expect(sdkMock.deleteTag).not.toHaveBeenCalled();
+    });
+
+    it('keeps the dialog open with the reason when the merge fails, and goes nowhere', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      sdkMock.mergeTag.mockRejectedValue(new Error('offline'));
+      renderHeader('canada');
+      const { dialog, into } = await openMerge('Canada');
+      await fireEvent.change(into, { target: { value: 'sort' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Unable to merge tags');
+      expect(into).toHaveValue('sort');
+      expect(navigation.goto).not.toHaveBeenCalled();
+      expect(toastManager.primary).not.toHaveBeenCalled();
+    });
+  });
+
   describe('new tags and delete', () => {
     it('creates a tag inside this one from the menu or the "New tag here" tile, and stays here', async () => {
       sdkMock.createTag.mockResolvedValue(
@@ -465,7 +592,7 @@ describe('TagPageHeader', () => {
       })) as never);
     });
 
-    it('keeps Tag photos in the row and moves Colour and Move into "…"', async () => {
+    it('keeps Tag photos in the row and moves Colour, Move and Merge into "…"', async () => {
       renderHeader('canada');
       expect(
         within(toolbar())
@@ -477,11 +604,19 @@ describe('TagPageHeader', () => {
         within(menu)
           .getAllByRole('menuitem')
           .map((item) => item.textContent?.trim()),
-      ).toEqual(['Colour', 'Move', 'New tag inside', 'Delete tag']);
+      ).toEqual(['Colour', 'Move', 'Merge', 'New tag inside', 'Delete tag']);
       await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Colour' }));
       const dialog = screen.getByRole('dialog', { name: 'Tag colour' });
       expect(within(dialog).getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true');
       expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    });
+
+    it('opens the merge dialog from "…"', async () => {
+      renderHeader('canada');
+      await fireEvent.click(within(await openMore()).getByRole('menuitem', { name: 'Merge' }));
+      const dialog = screen.getByRole('dialog', { name: 'Merge “Canada”' });
+      expect(within(dialog).getByRole('combobox', { name: 'Merge into' })).toHaveValue('');
+      expect(within(dialog).getByRole('button', { name: 'Merge' })).toBeInTheDocument();
     });
   });
 });

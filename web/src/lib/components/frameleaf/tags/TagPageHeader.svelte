@@ -7,9 +7,10 @@
    * `design/frameleaf/template/src/TagsV2.jsx`.
    *
    * The tag's address is its full name (`?path=`), so renaming or moving it replaces the address
-   * rather than leaving the old one behind in history, and deleting it goes up one level.
+   * rather than leaving the old one behind in history, deleting it goes up one level, and merging
+   * it into another tag goes to that tag.
    *
-   * On a phone only "Tag photos" stays in the row; Colour and Move join the "…" menu.
+   * On a phone only "Tag photos" stays in the row; Colour, Move and Merge join the "…" menu.
    */
   import { goto, invalidateAll } from '$app/navigation';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
@@ -33,6 +34,7 @@
   import { updateTag } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
+    mdiCallMerge,
     mdiChevronRight,
     mdiDeleteOutline,
     mdiDotsHorizontal,
@@ -112,6 +114,13 @@
         await follow(result.tag.value);
         break;
       }
+      case 'merged': {
+        // The tag it went into has everything now; its counts and covers are read again on the way.
+        await goto(Route.tags({ path: result.tag.value }), { replaceState: true, invalidateAll: true });
+        // This page is gone with its tag, so the confirmation travels as a toast.
+        toastManager.primary(tagResultMessage($t, result));
+        return;
+      }
       case 'deleted': {
         const parent = result.node.parent;
         await goto(parent ? Route.tags({ path: parent.value }) : Route.tags(), {
@@ -179,6 +188,10 @@
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden />
         <span>{$t('move')}</span>
       </button>
+      <button type="button" class="action" onclick={() => (request = { type: 'merge', node })}>
+        <Icon icon={mdiCallMerge} size="18" aria-hidden />
+        <span>{$t('merge')}</span>
+      </button>
     {/if}
     <span class="spacer"></span>
     <Menu label={$t('frameleaf_tags_more_actions')} align={compact ? 'start' : 'end'}>
@@ -191,6 +204,9 @@
         </MenuItem>
         <MenuItem onSelect={() => (request = { type: 'move', node })}>
           <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden />{$t('move')}
+        </MenuItem>
+        <MenuItem onSelect={() => (request = { type: 'merge', node })}>
+          <Icon icon={mdiCallMerge} size="18" aria-hidden />{$t('merge')}
         </MenuItem>
       {/if}
       <MenuItem onSelect={() => (request = { type: 'create', parentId: node.id })}>
