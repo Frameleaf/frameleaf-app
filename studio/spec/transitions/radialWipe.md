@@ -35,11 +35,14 @@ So in quadrant k, A remains in the angular range [σ_k + p·π/2, σ_k + π/2] a
 Source-over, global alpha 1.
 
 ## Edges
-The four straight hand edges radiate from the centre; they are clip edges, decided at pixel centres [T6]. The arc lies outside the frame and is never visible. At p = 0 every hand lies exactly on the quadrant boundary.
+The four straight hand edges radiate from the centre; they are clip edges, scan-converted as T6 says. The arc lies outside the frame and is never visible: T6 step 1 replaces everything beyond the frame by edges on the frame's sides. At p = 0 every hand lies exactly on the quadrant boundary.
+
+Each sector is closed by the straight line from the arc's end back to the centre. For sectors 0 and 2 that line is horizontal, along y = cy; for sectors 1 and 3 it is vertical, along x = cx. When H is odd, y = cy is the height of a row of pixel centres, and T6 gives the rule for that row ("The row and column through the centre"): with the exact arc end, for 0 < p < 1 the row's pixels right of the centre show A and those left of it show B. When W is odd the same holds for the centre column: above the centre A, below it B.
 
 ## Alpha
 Background transparent. Opaque inputs → opaque output.
 
 ## Notes
 - The arc is a true circular arc in Canvas 2D; since it lies entirely outside the frame (R exceeds the half-diagonal), any polygonal approximation that stays outside the frame gives identical pixels.
-- When H is odd, the pixel row through the centre lies exactly on the horizontal hand at the start and end of each quarter sweep. Whether that row's pixels fall inside is decided by float rounding of the arc endpoints and can change with p; it is not specifiable, and the goldens allow it as outliers.
+- **The centre row (implementation-defined).** The canonical backend computes each arc's end point in binary32, 10⁻⁶ pixel or so from the exact point, and the sign of that error decides the centre row (H odd) or column (W odd) as T6 explains. It changes with p. In the goldens (48 × 27, row 13): at p = 0.25 the right half of the row shows B where the exact end point gives A (24 pixels); at p = 0.5 and 0.75 the row is as the native rule says. A native client uses the exact end point; the 24 pixels are inside the outlier allowance of `radialWipe/p=0.25`.
+- With the native rule, the reference of T6 reproduces every other pixel of all five cases exactly.

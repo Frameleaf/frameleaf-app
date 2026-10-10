@@ -49,7 +49,7 @@ R / 3.8 is the radial spacing between successive turns; at p = 1 the stroke is 1
 Output: B (source-over, alpha 1), then the erased-A scratch layer source-over. See the machinery section.
 
 ## Edges
-Stroke edges are anti-aliased by coverage (strokes, unlike clips, are anti-aliased on the canonical backend [T6]); ±1 px. The polyline has 57.9 segments per turn; its corners are rounded by the round join. A smooth-curve substitute deviates from the polyline by up to about R·(1 − cos(π·3.8/220)) ≈ 0.0015·R, which is above 1 px for large frames — use the polyline.
+Stroke edges are anti-aliased by coverage [T6, Strokes]: c is the fraction of the pixel's area within w/2 of any segment of the polyline, overlaps counted once (this is the round-capped, round-joined stroke exactly). The canonical backend's c differs from the exact area by at most 0.007 on average over the frame and by up to 0.15 at single pixels on the stroke's edge (0.025 on average and up to 0.4 for the hairline at p = 0); the goldens allow this. The polyline has 57.9 segments per turn; its corners are rounded by the round join. A smooth-curve substitute deviates from the polyline by up to about R·(1 − cos(π·3.8/220)) ≈ 0.0015·R, which is above 1 px for large frames — use the polyline.
 
 ## Alpha
 Background transparent. Where A is erased, output = B. Opaque inputs → opaque output.

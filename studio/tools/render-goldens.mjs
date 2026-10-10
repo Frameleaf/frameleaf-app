@@ -105,10 +105,21 @@ export function lutFixture() {
 }
 
 // Extra effect cases for parameters the one-at-a-time sweep cannot reach meaningfully.
+// `params` are laid over the defaults; `omit` removes keys so the stored parameter object lacks
+// them (README C9: a graph written by another client can lack keys); `clock` sets the effect
+// clock of a temporal effect. A `null` value is a key that is present but not a finite number.
 export const EFFECT_EXTRA_CASES = {
   'gpu-curves': [
     { name: 'points', params: { masterPoints: '[[0,0],[0.3,0.15],[0.7,0.9],[1,1]]', redPoints: '[[0,0.1],[1,0.9]]' } },
     { name: 'points-invalid-json', params: { masterPoints: 'not json' } },
+    // The four master keys are present but none is a finite number: C9 draws each at its default (two-point mode).
+    { name: 'master-keys-not-finite', params: { masterShadowX: null, masterShadowY: null, masterHighlightX: null, masterHighlightY: null } },
+    // One finite key among non-finite ones.
+    { name: 'master-one-finite-key', params: { masterShadowX: null, masterShadowY: 0.5, masterHighlightX: null, masterHighlightY: null } },
+    // The four master keys are absent: legacy mode reads the undeclared sliders.
+    { name: 'master-keys-absent-legacy', params: { shadows: 40, midtones: -20, highlights: 30, contrast: 25 },
+      omit: ['masterShadowX', 'masterShadowY', 'masterHighlightX', 'masterHighlightY'] },
+    { name: 'red-keys-absent-legacy', params: { red: 60 }, omit: ['redShadowX', 'redShadowY', 'redHighlightX', 'redHighlightY'] },
   ],
   'gpu-gradient-map': [{ name: 'custom-stops', params: { preset: 'custom', customStops: '#ff0000, #00ff00, #0000ff' } }],
   'gpu-lut': [
@@ -117,6 +128,35 @@ export const EFFECT_EXTRA_CASES = {
   ],
   'gpu-ascii': [{ name: 'charSet=custom', params: { charSet: 'custom', customChars: ' .:#' } }],
   'gpu-temperature': [{ name: 'temperature=-0.375,tint=0.625', params: { temperature: -0.375, tint: 0.625 } }],
+  // The shutter rule of the page: an absent shutterAngle is 360 when the stored object has any
+  // other key, declared or not, and 180 only when the object is empty.
+  'gpu-motion-blur': [
+    { name: 'shutterAngle-absent', params: {}, omit: ['shutterAngle'] },
+    { name: 'only-an-undeclared-key', params: { note: 1 }, omit: ['amount', 'angle', 'samples', 'shutterAngle'] },
+    { name: 'empty-parameters', params: {}, omit: ['amount', 'angle', 'samples', 'shutterAngle'] },
+    { name: 'shutterAngle-not-finite', params: { shutterAngle: null } },
+  ],
+  // The 16 x 12 frame is one block at the default block size. These cases use the smallest
+  // block (2 x 1.5 blocks) so that blocks glitch, shift, split and corrupt. Coverage is 1 in every
+  // one: which blocks a lower coverage picks differs between builds of the canonical backend (C6).
+  'gpu-block-glitch': [
+    { name: 'coverage=1,blockSize=8', params: { coverage: 1, blockSize: 8 } },
+    { name: 'coverage=1,blockSize=8,intensity=1@t=0.3', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 0.3 },
+    { name: 'coverage=1,blockSize=8,intensity=1@t=1.1', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 1.1 },
+    { name: 'coverage=1,blockSize=8,intensity=1@t=2.5', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 2.5 },
+    { name: 'coverage=1,blockSize=8,speed=4@t=2.5', params: { coverage: 1, blockSize: 8, speed: 4 }, clock: 2.5 },
+    { name: 'coverage=1@t=8.75', params: { coverage: 1 }, clock: 8.75 },
+  ],
+};
+
+// Extra transition cases: properties the sweep does not reach, at p = 0.5 in the first direction.
+export const TRANSITION_EXTRA_CASES = {
+  // The tap count: the largest blur separates 12 taps from its neighbours, and the hidden
+  // `samples` property (T4) is read when a graph carries it.
+  radialBlur: [
+    { name: 'blurStrength=3', properties: { blurStrength: 3 } },
+    { name: 'blurStrength=3,samples=5', properties: { blurStrength: 3, samples: 5 } },
+  ],
 };
 
 const COLOR_VARIANT = '#3366cc';
@@ -145,7 +185,8 @@ export function effectCases(catalogue) {
     list.push(...(EFFECT_EXTRA_CASES[effect.id] ?? []));
     for (const entry of list) {
       const params = { ...defaults, ...entry.params };
-      const clocks = effect.temporal && entry.name === 'default' ? EFFECT_CLOCKS : [EFFECT_CLOCKS[0]];
+      for (const key of entry.omit ?? []) delete params[key];
+      const clocks = entry.clock !== undefined ? [entry.clock] : effect.temporal && entry.name === 'default' ? EFFECT_CLOCKS : [EFFECT_CLOCKS[0]];
       for (const clock of clocks) {
         const suffix = effect.temporal && entry.name === 'default' ? `@t=${clock}` : '';
         cases.push({ name: `${effect.id}/sdr/${entry.name}${suffix}`, id: effect.id, domain: 'sdr', params, clock });
@@ -177,6 +218,9 @@ export function transitionCases(catalogue) {
       else if (p.type === 'color') value = [0.2, 0.4, 0.8];
       else continue;
       cases.push({ name: `${t.id}${tag(directions[0])}/p=0.5/${p.name}=${JSON.stringify(value)}`, id: t.id, route, direction: directions[0], progress: 0.5, properties: { [p.name]: value } });
+    }
+    for (const extra of TRANSITION_EXTRA_CASES[t.id] ?? []) {
+      cases.push({ name: `${t.id}${tag(directions[0])}/p=0.5/${extra.name}`, id: t.id, route, direction: directions[0], progress: 0.5, properties: extra.properties });
     }
   }
   return cases;
