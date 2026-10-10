@@ -265,7 +265,7 @@ export class MediaOperationRepository {
           .where('kind', '=', operation.kind)
           .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
           .$if(!!operation.retryOfId, (qb) => qb.where('retryOfId', '=', operation.retryOfId!))
-          .where(sql<boolean>`snapshot = ${JSON.stringify(operation.snapshot)}::jsonb`)
+          .where(sql<boolean>`snapshot = ${JSON.stringify(operation.snapshot)}::text::jsonb`)
           .executeTakeFirst();
         if (existing) return existing;
         const key = operation.snapshot?.requestKey;

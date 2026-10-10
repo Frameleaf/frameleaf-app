@@ -8,6 +8,175 @@ import { assertResetExecutionsStopped, drainAfterExecutorStop } from './harness-
 import { resetWhilePaused } from './harness-reset.ts';
 import { waitUntil, withDeadline } from './harness-wait.ts';
 
+test('reset joins unsafe edits while preserving bounded refusals and cleanup', async (t) => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const expression = source
+    .slice(source.indexOf('  drainQueues: async'), source.indexOf('\n\n  resetDatabase:'))
+    .trim()
+    .replace(/^drainQueues: /, '')
+    .replace(/,$/, '');
+  const cases = [
+    ...['photo_edit', 'video_edit', 'video_export'].map((edit) => ({ name: edit, edit, behavior: 'retry' })),
+    { name: 'unfinished edit hits the owned deadline', edit: 'video_edit', behavior: 'deadline' },
+    { name: 'originally paused work is never resumed', edit: 'video_edit', behavior: 'paused' },
+    { name: 'owner abort is joined', edit: 'video_edit', behavior: 'abort' },
+    { name: 'photo versions retain API cancellation', edit: 'photo_version', behavior: 'cancel' },
+    { name: 'queued-to-claimed refusal remains fatal', edit: 'video_edit', behavior: 'race' },
+    { name: 'unexpected authentication refusal remains fatal', edit: 'photo_version', behavior: 'auth' },
+    { name: 'retained executor-stop refusal remains fatal', edit: 'photo_version', behavior: 'stop' },
+    { name: 'restoration error is reported after genuine quiescence', edit: 'video_edit', behavior: 'cleanup' },
+  ];
+  for (const { name, edit, behavior } of cases) {
+    await t.test(name, async () => {
+      let reads = 0;
+      let settled = false;
+      let paused = behavior === 'paused';
+      const initiallyPaused = paused;
+      const owner = new AbortController();
+      const order = [];
+      const operation = {
+        id: 'started-edit',
+        ownerId: 'owner',
+        kind: 'quick_edit',
+        settings: { edit },
+        status: behavior === 'race' ? 'queued' : 'rendering',
+        claimed: behavior !== 'race',
+        remotePending: false,
+        cancelRequestedAt: null,
+      };
+      const bindings = {
+        pg: {
+          Client: class {
+            on() {
+              return this;
+            }
+            async connect() {}
+            async query(text) {
+              if (text.includes("SELECT 'attempt' AS kind")) {
+                return { rows: behavior === 'stop' ? [{ kind: 'operation', id: operation.id, active: false }] : [] };
+              }
+              if (text === 'SELECT name, paused FROM job_queue ORDER BY name FOR UPDATE') {
+                return { rows: [{ name: 'videoConversion', paused }] };
+              }
+              if (text === 'UPDATE job_queue SET paused = true') {
+                if (edit !== 'photo_version' && behavior !== 'race') {
+                  assert.equal(settled, true, 'a retry must remain runnable until the edit settles');
+                }
+                paused = true;
+                order.push('paused');
+              }
+              if (text.startsWith('UPDATE job SET') && edit !== 'photo_version' && behavior !== 'race') {
+                assert.equal(settled, true, 'the running edit must not receive blanket job cancellation');
+              }
+              if (text.includes('UPDATE job_queue q SET paused')) {
+                if (behavior === 'cleanup') throw new Error('owned restoration failed');
+                paused = initiallyPaused;
+                order.push('restored');
+              }
+              if (text.includes('FROM media_operation')) {
+                assert.match(text, /SELECT id, "ownerId", kind, settings, status/);
+                reads++;
+                if (behavior === 'abort' && reads === 2) owner.abort(new Error('owned reset aborted'));
+                if (behavior === 'race' && reads === 2) {
+                  operation.status = 'rendering';
+                  operation.claimed = true;
+                }
+                if (behavior === 'retry' || behavior === 'cleanup') {
+                  if (reads === 2) {
+                    operation.status = 'queued';
+                    operation.claimed = false;
+                  } else if (reads === 3) {
+                    operation.status = 'rendering';
+                    operation.claimed = true;
+                  } else if (reads === 4) operation.status = 'completed';
+                  else if (reads === 5) {
+                    operation.claimed = false;
+                    operation.remotePending = true;
+                  } else if (reads === 6) {
+                    assert.equal(paused, false);
+                    settled = true;
+                    order.push('settled');
+                  }
+                }
+                return { rows: settled ? [] : [operation] };
+              }
+              return { rows: text.startsWith('SELECT id FROM "user"') ? [{ id: 'owner' }] : [] };
+            }
+            async end() {
+              order.push('closed');
+            }
+          },
+        },
+        dbUrl: 'owned-disposable-fixture',
+        createHash,
+        randomBytes,
+        randomUUID,
+        asBearerAuth: () => ({}),
+        cancelMediaOperation: async () => {
+          order.push('cancel');
+          assert.equal(paused, true);
+          if (behavior === 'race') throw new Error('400: started edit cannot be cancelled');
+          if (behavior === 'auth') throw new Error('401: owner authentication refused');
+          assert.equal(edit, 'photo_version', 'started unsafe edits must not reach API cancellation');
+          settled = true;
+        },
+        readQueues: async () => [],
+        ownedWait: (description, timeout, run, signal) =>
+          withDeadline(description, ['deadline', 'paused'].includes(behavior) ? 80 : timeout, run, signal),
+        withDeadline,
+        resetWhilePaused,
+        waitUntil,
+        drainAfterExecutorStop,
+        assertResetExecutionsStopped,
+      };
+      const drain = new Function(
+        'bindings',
+        `
+        const { ${Object.keys(bindings).join(', ')} } = bindings;
+        let resetting = false; let resetFailure;
+        return (${stripTypeScriptTypes(expression)});
+      `,
+      )(bindings);
+      const mutation = async () => {
+        assert.equal(settled, true);
+        assert.equal(paused, true);
+        order.push('mutated');
+      };
+      if (behavior === 'retry' || behavior === 'cancel') {
+        await drain(mutation, owner.signal);
+        assert.deepEqual(
+          order,
+          behavior === 'retry'
+            ? ['settled', 'paused', 'mutated', 'restored', 'closed']
+            : ['paused', 'cancel', 'mutated', 'restored', 'closed'],
+        );
+      } else {
+        let failure;
+        await assert.rejects(drain(mutation, owner.signal), (error) => {
+          failure = error;
+          return /Reset failed/.test(error.message);
+        });
+        assert.equal(order.includes('mutated'), behavior === 'cleanup');
+        assert.equal(order.at(-1), 'closed');
+        if (['deadline', 'paused', 'abort'].includes(behavior)) {
+          assert.deepEqual(order, ['closed']);
+          assert.equal(paused, initiallyPaused);
+        }
+        if (behavior === 'abort') assert.equal(owner.signal.aborted, true);
+        if (behavior === 'race' || behavior === 'auth') {
+          assert.deepEqual(order, ['paused', 'cancel', 'restored', 'closed']);
+          assert.match(failure.cause.cause.message, behavior === 'race' ? /400/ : /401/);
+        }
+        if (behavior === 'stop') {
+          assert.deepEqual(order, ['paused', 'cancel', 'restored', 'closed']);
+          assert.match(failure.cause.message, /executor stop is unconfirmed/);
+        }
+        if (behavior === 'cleanup') assert.match(failure.cause.message, /owned restoration failed/);
+      }
+    });
+  }
+});
+
 test('configuration reset authenticates without existing work, then drains admitted jobs before mutation', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const expression = source

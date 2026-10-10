@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
 import { JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -19,7 +20,8 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const services = newMediumService(PartnerService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, PartnerOriginRepository, PartnerRepository, UserRepository],
+    // a library with a PIN or locked items is shared only from an unlocked session, read from the real tables
+    real: [AccessRepository, AssetRepository, PartnerOriginRepository, PartnerRepository, UserRepository],
     // FL-54: removing a partner tells both people's open pages; FL-228: and pushes the access change;
     // FL-326: a new partnership queues its backfill
     mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
