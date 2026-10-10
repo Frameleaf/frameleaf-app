@@ -4703,6 +4703,40 @@ export type AssetEditKeyframesResponseDto = {
     /** Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point. */
     keyframesMs: number[];
 };
+export type AssetFilmstripFrameDto = {
+    /** Frame position, 0-based */
+    index: number;
+    /** Timestamp of the frame in the video, in milliseconds */
+    timeMs: number;
+    /** Left edge of the frame in the sprite, in pixels */
+    x: number;
+    /** Top edge of the frame in the sprite, in pixels */
+    y: number;
+};
+export type AssetFilmstripResponseDto = {
+    assetId: string;
+    /** Tiles per sprite row */
+    columns: number;
+    /** Duration of the video, in milliseconds */
+    durationMs: number;
+    format: AssetFilmstripFormat;
+    /** Height of every frame tile, in pixels */
+    frameHeight: number;
+    /** Width of every frame tile, in pixels */
+    frameWidth: number;
+    /** Frames in time order, left to right, top to bottom */
+    frames: AssetFilmstripFrameDto[];
+    /** Content type of the sprite */
+    mimeType: string;
+    /** Sprite rows */
+    rows: number;
+    /** Sprite height, in pixels */
+    spriteHeight: number;
+    /** Sprite width, in pixels */
+    spriteWidth: number;
+    /** Changes whenever the video changes; pass it to the sprite request */
+    version: string;
+};
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
     appliedTags: boolean;
@@ -4945,6 +4979,27 @@ export type AssetRestorationOptionsDto = {
     sourceWidth: number;
     upscale: number;
     workload: MlWorkload;
+};
+export type AssetWaveformChannelDto = {
+    /** Highest sample in each bucket, -1 to 1 */
+    max: number[];
+    /** Lowest sample in each bucket, -1 to 1 */
+    min: number[];
+};
+export type AssetWaveformResponseDto = {
+    assetId: string;
+    /** Peak pairs per channel */
+    bucketCount: number;
+    /** Audio time each bucket covers, in milliseconds */
+    bucketDurationMs: number;
+    /** One entry for mono, otherwise one per channel */
+    channels: AssetWaveformChannelDto[];
+    /** Duration of the decoded audio, in milliseconds */
+    durationMs: number;
+    /** false for a video without an audio track; channels is then empty */
+    hasAudio: boolean;
+    /** Changes whenever the video changes */
+    version: string;
 };
 export type SignUpDto = {
     /** User email */
@@ -19139,6 +19194,56 @@ export function getAssetEditKeyframes({ id }: {
     }));
 }
 /**
+ * Get video filmstrip
+ */
+export function getAssetFilmstrip({ count, format, height, id, key, slug }: {
+    count?: number;
+    format?: AssetFilmstripFormat;
+    height?: number;
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFilmstripResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/filmstrip${QS.query(QS.explode({
+        count,
+        format,
+        height,
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View video filmstrip sprite
+ */
+export function viewAssetFilmstripSprite({ count, format, height, id, key, slug, version }: {
+    count?: number;
+    format?: AssetFilmstripFormat;
+    height?: number;
+    id: string;
+    key?: string;
+    slug?: string;
+    version?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/filmstrip/sprite${QS.query(QS.explode({
+        count,
+        format,
+        height,
+        key,
+        slug,
+        version
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Get image enrichment metadata
  */
 export function getAssetImageEnrichment({ id }: {
@@ -19519,6 +19624,28 @@ export function playStudioHdrVideo({ id }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/video/studio-hdr`, {
+        ...opts
+    }));
+}
+/**
+ * Get video audio waveform
+ */
+export function getAssetWaveform({ buckets, channels, id, key, slug }: {
+    buckets?: number;
+    channels?: AssetWaveformChannelMode;
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetWaveformResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/waveform${QS.query(QS.explode({
+        buckets,
+        channels,
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }
@@ -29459,6 +29586,10 @@ export enum DecodeRefusal {
     UnsupportedBitDepth = "unsupportedBitDepth",
     UnusableGeometry = "unusableGeometry"
 }
+export enum AssetFilmstripFormat {
+    Jpeg = "jpeg",
+    Webp = "webp"
+}
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
     IdentityChanged = "identity-changed",
@@ -29529,6 +29660,10 @@ export enum AssetMediaSize {
     Fullsize = "fullsize",
     Preview = "preview",
     Thumbnail = "thumbnail"
+}
+export enum AssetWaveformChannelMode {
+    Mono = "mono",
+    All = "all"
 }
 export enum ClassificationMatchDecision {
     Matched = "matched",
