@@ -193,6 +193,7 @@ export const studioCommandMirror = {
     capability: null,
     payload: {
       clipId: 'string',
+      ducking: 'object?',
       eq: 'object?',
       fadeIn: 'duration?',
       fadeOut: 'duration?',
