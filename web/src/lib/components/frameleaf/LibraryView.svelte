@@ -714,19 +714,18 @@
           .map((asset) => toBulk(asset)),
   );
 
-  const runGuardedBulk = async (guard: NonNullable<typeof beforeAction>, id: BulkActionId, payload?: BulkPayload) => {
-    try {
-      if (await guard(id)) {
-        dispatchBulk(id, payload);
-      }
-    } catch (error) {
-      handleError(error, $t('error'));
-    }
-  };
-
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
-    if (beforeAction) {
-      void runGuardedBulk(beforeAction, id, payload);
+    const guard = beforeAction;
+    if (guard) {
+      void (async () => {
+        try {
+          if (await guard(id)) {
+            dispatchBulk(id, payload);
+          }
+        } catch (error) {
+          handleError(error, $t('error'));
+        }
+      })();
       return;
     }
     dispatchBulk(id, payload);
