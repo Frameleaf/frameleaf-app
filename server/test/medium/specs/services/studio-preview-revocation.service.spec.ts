@@ -1,12 +1,8 @@
+import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 
-vi.mock('node:fs/promises', async (original) => ({
-  ...(await original<typeof import('node:fs/promises')>()),
-  open: vi.fn(),
-}));
-import { Kysely } from 'kysely';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AlbumKind, AlbumUserRole, AssetType, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -31,6 +27,12 @@ import { StudioDestination } from 'src/utils/studio-resources.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { automock, getKyselyDB } from 'test/utils.js';
+
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  open: vi.fn(),
+  realpath: vi.fn((path) => Promise.resolve(String(path))),
+}));
 
 let database: Kysely<DB>;
 beforeAll(async () => {

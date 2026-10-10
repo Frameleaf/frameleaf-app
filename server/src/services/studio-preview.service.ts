@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
-import { join } from 'node:path';
+import { open, realpath } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -140,6 +141,27 @@ const staleRevision = (currentRevision: number) =>
  * - **It does not talk to the client's SDK.** The browser reaches it only through the Svelte
  *   host; the React engine has no API dependency at all.
  */
+const openVerifiedPreview = async (folder: string, path: string, size: string, checksum: string) => {
+  if (!isInsideFolder(folder, path) || (await realpath(path).catch(() => null)) !== resolve(path)) {
+    throw new BadRequestException('The frame must be inside its assigned directory without symlinks');
+  }
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
+  if (!handle) throw new BadRequestException('The frame is missing or is not a regular file');
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || String(stat.size) !== size) {
+      throw new BadRequestException('The frame is missing or its size does not match');
+    }
+    const hash = createHash('sha256');
+    for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk);
+    if (hash.digest('hex') !== checksum) throw new BadRequestException('The frame does not match its checksum');
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+};
+
 @Injectable()
 export class StudioPreviewService {
   private sweepHandle?: ReturnType<typeof setInterval>;
@@ -328,7 +350,7 @@ export class StudioPreviewService {
     auth: AuthDto,
     id: string,
     options: { ifNoneMatch?: string; consumerRequestId?: string },
-  ): Promise<{ file: ImmichFileResponse; etag: string } | { notModified: true; etag: string }> {
+  ): Promise<{ file: ImmichFileResponse; stream: Readable; etag: string } | { notModified: true; etag: string }> {
     const frame = await this.findOwned(auth, id, options);
 
     /**
@@ -396,11 +418,7 @@ export class StudioPreviewService {
       etag,
     });
 
-    if (isConsumerPreview(frame.cacheKey) && decision.deliver) {
-      if (!(await this.repository.markConsumerAccessed(frame, new Date()))) {
-        throw new GoneException('This preview admission was retired');
-      }
-    } else if (!decision.deliver && isConsumerPreview(frame.cacheKey) && decision.outcome === 'not-modified') {
+    if (!decision.deliver && isConsumerPreview(frame.cacheKey) && decision.outcome === 'not-modified') {
       const current = await this.repository.getForOwner(frame.id, frame.ownerId);
       if (
         !current ||
@@ -414,20 +432,34 @@ export class StudioPreviewService {
     }
 
     if (decision.deliver) {
-      // Recency drives eviction, so the read has to record itself.
-      if (!isConsumerPreview(frame.cacheKey)) {
-        await this.repository.markAccessed(frame.id, new Date());
+      const handle = await openVerifiedPreview(
+        studioPreviewFrameFolder(frame.ownerId, frame.id),
+        frame.framePath as string,
+        String(frame.sizeInBytes),
+        frame.frameChecksum ? Buffer.from(frame.frameChecksum).toString('hex') : '',
+      );
+      try {
+        // Keep the final admission fence after file I/O, then stream this verified descriptor.
+        if (isConsumerPreview(frame.cacheKey)) {
+          if (!(await this.repository.markConsumerAccessed(frame, new Date()))) {
+            throw new GoneException('This preview admission was retired');
+          }
+        } else {
+          await this.repository.markAccessed(frame.id, new Date());
+        }
+        return {
+          etag,
+          stream: handle.createReadStream({ start: 0 }),
+          file: new ImmichFileResponse({
+            path: frame.framePath as string,
+            contentType: frame.contentType ?? 'image/png',
+            cacheControl: CacheControl.PrivateWithoutCache,
+          }),
+        };
+      } catch (error) {
+        await handle.close();
+        throw error;
       }
-      return {
-        etag,
-        file: new ImmichFileResponse({
-          path: frame.framePath as string,
-          contentType: frame.contentType ?? 'image/png',
-          // A preview frame is private and bound to a revision that can be superseded at any
-          // moment, so the browser must revalidate rather than reuse it on its own authority.
-          cacheControl: CacheControl.PrivateWithoutCache,
-        }),
-      };
     }
 
     if (decision.outcome === 'not-modified') {
@@ -556,21 +588,8 @@ export class StudioPreviewService {
     if (!isInsideFolder(folder, output.path)) {
       throw new BadRequestException('The frame must be inside the directory this render was given');
     }
-    const handle = await open(output.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
-    if (!handle) throw new BadRequestException('The frame is missing or is not a regular file');
-    try {
-      const stat = await handle.stat();
-      if (!stat.isFile() || String(stat.size) !== output.sizeInBytes) {
-        throw new BadRequestException('The frame is missing or its size does not match');
-      }
-      const hash = createHash('sha256');
-      for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk);
-      if (hash.digest('hex') !== output.checksum) {
-        throw new BadRequestException('The frame does not match its checksum');
-      }
-    } finally {
-      await handle.close();
-    }
+    const handle = await openVerifiedPreview(folder, output.path, output.sizeInBytes, output.checksum);
+    await handle.close();
 
     const frame = await this.repository.getForOwner(frameId, operation.ownerId);
     if (!frame || frame.operationId !== operation.id) {
