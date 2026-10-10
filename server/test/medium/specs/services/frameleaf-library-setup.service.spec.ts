@@ -202,7 +202,8 @@ it('applies the initial machine learning choice once through normal settings and
     db,
     {} as never,
     {} as never,
-    {} as never,
+    // starting setup records each queue's failed count as its baseline
+    { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
     { hasAdmin: vi.fn().mockResolvedValue(false) } as never,
     {} as never,
     {} as never,
@@ -370,6 +371,9 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     counts.failed = 4;
     expect((await first.status(auth)).phase).toBe('needs-attention');
     await first.begin(true);
+    // a retry starts over with today's failures as its baseline: the first poll commits the
+    // integrity-scan admission again, the next one verifies
+    expect((await first.status(auth)).phase).toBe('rescanning');
     expect((await first.status(auth)).phase).toBe('verifying');
     await sql`UPDATE system_metadata SET value=jsonb_set(value, '{quietSince}', to_jsonb(${Date.now() - 20_000}::bigint)) WHERE key=${key}`.execute(
       db,

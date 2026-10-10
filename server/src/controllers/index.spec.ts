@@ -171,11 +171,16 @@ const RELAY_MEDIA_ROUTES = [
 /** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
 const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST auth/login': RATE_LIMITS.login,
+  // Changing or removing the PIN takes the password or the current PIN: bounded per address like a sign-in.
+  'PUT auth/pin-code': RATE_LIMITS.login,
+  'DELETE auth/pin-code': RATE_LIMITS.login,
   // FL-292: the setup code is tried only a few times per address
   'POST auth/admin-sign-up': RATE_LIMITS.frameleafSetup,
   'POST server/setup/code': RATE_LIMITS.frameleafSetup,
   'POST server/setup/link': RATE_LIMITS.frameleafSetup,
   'POST server/setup/admin': RATE_LIMITS.frameleafSetup,
+  // Starting a restore on an unclaimed server takes the setup code too.
+  'POST admin/database-backups/start-restore': RATE_LIMITS.frameleafSetup,
   'POST oauth/callback': RATE_LIMITS.oauthCallback,
   'POST oauth/link': RATE_LIMITS.oauthCallback,
   'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
