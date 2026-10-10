@@ -89,6 +89,8 @@ export interface DraftSendState {
    * host already holds it, and by `beginMount`.
    */
   writePending?: boolean
+  /** Monotonic write version: acknowledging an older send cannot clear a newer write. */
+  writeVersion?: number
   /** The mount generation whose lost edits were last reported, so the person is told once per mount. */
   lostReportedFor?: number
   /** What that instance showed when it was reported; a later edit there is reported again. */
@@ -255,6 +257,7 @@ export async function sendEditorDraft(
   io: DraftSendIo,
 ): Promise<void> {
   if (!acceptsWrite(state, mount)) return
+  const writeVersion = state.writeVersion
   const base = mount.revision
   // Taken before the read, like the base: the graph read next was built on this version or a newer one.
   const version = mount.graphVersion
@@ -268,7 +271,10 @@ export async function sendEditorDraft(
   }
   const content = io.contentOf(graph)
   if (content === state.hostContent) {
-    if (state.mount === mount) state.writePending = false
+    if (state.mount === mount && state.writeVersion === writeVersion) {
+      state.writePending = false
+      io.dirty(false)
+    }
     return
   }
   let previous: unknown = null
@@ -290,8 +296,8 @@ export async function sendEditorDraft(
     state.hostContent = content
     state.pendingSend = false
     state.pendingSuperseded = false
-    state.writePending = false
-    io.dirty(false)
+    state.writePending = state.writeVersion !== writeVersion
+    io.dirty(state.writePending)
   } else if (isSuperseded(result) && mount.graphVersion > version) {
     // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
     // built on the host's change: send that instead.

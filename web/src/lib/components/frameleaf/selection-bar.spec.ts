@@ -43,6 +43,28 @@ describe('Frameleaf selection bar', () => {
     expect(screen.getByRole('region', { name: 'Selected items', hidden: true })).toHaveAttribute('inert');
   });
 
+  it.each(['search', 'number', 'url', 'tel', 'contenteditable'])(
+    'keeps Backspace and Delete in a %s field',
+    async (type) => {
+      mount();
+      const field = document.createElement(type === 'contenteditable' ? 'div' : 'input');
+      field.setAttribute(
+        type === 'contenteditable' ? 'contenteditable' : 'type',
+        type === 'contenteditable' ? 'true' : type,
+      );
+      document.body.append(field);
+      try {
+        for (const key of ['Backspace', 'Delete']) {
+          expect(await fireEvent.keyDown(field, { key })).toBe(true);
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+          expect(onAction).not.toHaveBeenCalled();
+        }
+      } finally {
+        field.remove();
+      }
+    },
+  );
+
   it('announces the count and deselects', async () => {
     mount();
     expect(screen.getByText('2 selected')).toBeInTheDocument();

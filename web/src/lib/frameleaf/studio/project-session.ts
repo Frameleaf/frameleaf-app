@@ -653,9 +653,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
 
   /** One save attempt for the current draft. Serialized: a second call waits for the first. */
   const flush = async (): Promise<void> => {
-    if (saving) {
+    while (saving) {
+      const current = inflightDraft;
       await saving;
-      return;
+      if (draft === current) return;
     }
     if (!draft || disposed) {
       return;
