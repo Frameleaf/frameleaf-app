@@ -12,6 +12,8 @@ const CHANNEL = 'frameleaf-socket.io';
 const HEARTBEAT_MS = 1000;
 const DISCOVERY_MS = 5000;
 const transports = new WeakMap<Server, PostgresSocketTransport>();
+/** Adapter 0.5.0 keeps its LISTEN client, with the reconnect timer, on a property its types do not expose. */
+type AdapterPubSub = { client?: { close: () => void } };
 
 /** Own the small restart/ACK messages whose Socket.IO emit methods discard publication promises. */
 export const withSocketPublication = async (server: Server, action: (workerId: string) => unknown): Promise<void> => {
@@ -229,8 +231,9 @@ export class PostgresSocketTransport {
       await this.pool.query('DELETE FROM public.frameleaf_websocket_worker WHERE id = $1', [this.workerId]);
     } finally {
       await closeSharedServicePool(this.pool, this.clients);
-      // Clear a reconnect scheduled by an in-flight failed adapter initialization during teardown.
-      await this.server?.sockets.adapter.close();
+      // Clear a reconnect scheduled by an in-flight failed adapter initialization during teardown. Not with
+      // adapter.close(): it also publishes the departure again, which the closed pool can only reject.
+      (this.server?.sockets.adapter as AdapterPubSub | undefined)?.client?.close();
     }
   }
 }
