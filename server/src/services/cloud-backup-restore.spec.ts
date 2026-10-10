@@ -96,6 +96,20 @@ describe('cloud backup restore (FL-164)', () => {
       expect(files).toHaveLength(4);
     });
 
+    it('keeps untrusted file roles inside the asset restore directory', () => {
+      const tampered = structuredClone(manifest);
+      tampered.assets['asset-1'].files[0].role = '../../../../escape';
+      const { files } = restorePlan({
+        manifest: tampered,
+        scope: 'files',
+        assetIds: ['asset-1'],
+        operationId: 'op-1',
+        mediaLocation: MEDIA,
+        currentOriginals: new Map(),
+      });
+      expect(files[0].target).toBe('/data/frameleaf/restore/op-1/asset-1/escape-IMG_1.jpg');
+    });
+
     it('restores no files for a database restore', () => {
       expect(plan('database').files).toEqual([]);
     });
@@ -154,7 +168,13 @@ describe('cloud backup restore (FL-164)', () => {
       store = {
         download: vi.fn().mockImplementation((_connection, _key, _bucketKey, target: string, sha256: string | null) => {
           present.set(target, sha256!);
-          return Promise.resolve({ size: 1, sha256 });
+          const size =
+            [
+              ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+              ...Object.values(manifest.profiles),
+              manifest.database!,
+            ].find((file) => file.sha256 === sha256)?.size ?? 1;
+          return Promise.resolve({ size, sha256 });
         }),
       };
       storage = {
@@ -288,6 +308,7 @@ describe('cloud backup restore (FL-164)', () => {
       const { files, destination } = plan('asset', ['asset-1']);
       present.set(files[0].target, hex('occupied'));
       const publish = vi.fn();
+      store.download.mockResolvedValueOnce({ size: 1, sha256: files[0].sha256 });
       await expect(
         sut.restore({
           bucket,
@@ -477,7 +498,7 @@ describe('cloud backup restore (FL-164)', () => {
         bucket.connection,
         `o/${hex('one')}`,
         bucket.bucketKey,
-        '/data/frameleaf/restore/op-1/asset-1/original-IMG_1.jpg',
+        expect.stringMatching(/\/asset-1\/\.cloud-restore-.*\.tmp$/),
         hex('one'),
       );
       expect(result).toMatchObject({ phase: 'done', files: 2, filesTotal: 2, bytesTotal: 105, skipped: 0 });
@@ -505,7 +526,7 @@ describe('cloud backup restore (FL-164)', () => {
         bucket.connection,
         manifest.database!.key,
         bucket.bucketKey,
-        '/data/backups/cloud-restore-immich-db-backup-20260926T030000-v3.2.0-pg16.4.sql.gz',
+        expect.stringMatching(/\/backups\/\.cloud-restore-.*\.tmp$/),
         hex('dump'),
       );
       expect(result).toMatchObject({
@@ -519,6 +540,19 @@ describe('cloud backup restore (FL-164)', () => {
 
       await expect(restore('files', ['asset-1'])).rejects.toThrow(`o/${hex('one')} does not match its checksum`);
       expect(store.download).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      new CloudBackupStoreError('missing', 404, 'NoSuchKey'),
+      new CloudBackupStoreError('mismatch', null, 'ChecksumMismatch'),
+      new Error('cancelled'),
+    ])('preserves the occupied admin target when download fails: %s', async (error) => {
+      const target = '/data/library/owner-1/2026/IMG_1.jpg';
+      present.set(target, hex('existing'));
+      store.download.mockRejectedValueOnce(error);
+      await expect(restore('asset', ['asset-1'])).rejects.toThrow();
+      expect(present.get(target)).toBe(hex('existing'));
+      expect(storage.rename).not.toHaveBeenCalled();
     });
 
     it('stops at an object that is missing from the bucket', async () => {
@@ -554,7 +588,13 @@ describe('cloud backup restore (FL-164)', () => {
         .mockImplementation((_connection, key: string, _bucketKey, target: string, sha256: string | null) => {
           order.push(key.startsWith('db/') ? 'database' : 'file');
           present.set(target, sha256!);
-          return Promise.resolve({ size: 1, sha256 });
+          const size =
+            [
+              ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+              ...Object.values(manifest.profiles),
+              manifest.database!,
+            ].find((file) => file.sha256 === sha256)?.size ?? 1;
+          return Promise.resolve({ size, sha256 });
         });
       const library = vi.fn().mockImplementation((result) => {
         order.push('library');

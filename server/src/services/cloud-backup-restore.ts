@@ -181,7 +181,7 @@ export const restorePlan = (options: {
     }
     for (const [index, file] of asset.files.entries()) {
       const fileKey = `${assetId}:${String(index).padStart(3, '0')}`;
-      const name = `${file.role}-${safeName(file.path, file.sha256)}`;
+      const name = `${safeName(file.role, 'file')}-${safeName(file.path, file.sha256)}`;
       const inFolder = join(restoreRoot, safeName(assetId, 'asset'), name);
       let target = inFolder;
       if (inPlace) {
@@ -343,7 +343,7 @@ export class CloudBackupRestorer {
 
   /**
    * One file: left alone when it is already there with the backed-up content; otherwise whatever is there
-   * is moved aside and the object is downloaded and verified in its place.
+   * is moved aside only after the object has been downloaded and verified beside the target.
    */
   private async restoreFile(
     bucket: CloudBackupBucket | undefined,
@@ -420,12 +420,17 @@ export class CloudBackupRestorer {
     if (present === file.sha256) {
       return 'skipped';
     }
-    if (present !== null) {
-      await this.moveAside(file.target, options.mediaLocation, options.operationId);
-    }
     this.storage.mkdirSync(dirname(file.target));
+    const staged = join(dirname(file.target), `.cloud-restore-${randomUUID()}.tmp`);
     try {
-      await download(key, file.target, file.sha256);
+      const downloaded = await download(key, staged, file.sha256);
+      if (downloaded.size !== file.size || downloaded.sha256 !== file.sha256) {
+        throw new Error('Restore staging size or checksum mismatch');
+      }
+      if (present !== null) {
+        await this.moveAside(file.target, options.mediaLocation, options.operationId);
+      }
+      await this.storage.rename(staged, file.target);
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {
@@ -438,6 +443,8 @@ export class CloudBackupRestorer {
         });
       }
       throw error;
+    } finally {
+      if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
     }
     return present === null ? 'written' : 'replaced';
   }

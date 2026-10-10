@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -38,6 +38,7 @@ import {
 const MAX_FILMSTRIP_VARIANTS = 8;
 /** Generations running at once across the server; ffmpeg is the expensive part. */
 const MAX_CONCURRENT_GENERATIONS = 2;
+const MAX_WAITING_GENERATIONS = 8;
 
 type StudioMediaSource = {
   assetId: string;
@@ -148,8 +149,10 @@ export class StudioMediaService extends BaseService {
     source: StudioMediaSource,
     dto: AssetFilmstripOptionsDto,
   ): Promise<{ index: AssetFilmstripResponseDto; spritePath: string }> {
-    const count = dto.count ?? FILMSTRIP_COUNT.default;
-    const height = dto.height ?? FILMSTRIP_HEIGHT.default;
+    const requestedCount = dto.count ?? FILMSTRIP_COUNT.default;
+    const requestedHeight = dto.height ?? FILMSTRIP_HEIGHT.default;
+    const count = [1, 2, 4, 20, 60, 120].find((value) => value >= requestedCount) ?? FILMSTRIP_COUNT.max;
+    const height = [32, 90, 180, 240].find((value) => value >= requestedHeight) ?? FILMSTRIP_HEIGHT.max;
     const format: FilmstripFormat = dto.format ?? 'jpeg';
     const base = join(source.folder, `filmstrip-${source.version}-${count}x${height}`);
     const spritePath = `${base}.${format === 'webp' ? 'webp' : 'jpg'}`;
@@ -347,6 +350,9 @@ export class StudioMediaService extends BaseService {
 
   private async limited<T>(work: () => Promise<T>): Promise<T> {
     while (this.running >= MAX_CONCURRENT_GENERATIONS) {
+      if (this.waiting.length >= MAX_WAITING_GENERATIONS) {
+        throw new ServiceUnavailableException('Studio media generation is busy; try again later');
+      }
       await new Promise<void>((resolve) => {
         this.waiting.push(resolve);
       });
