@@ -74,6 +74,15 @@ describe(SearchService.name, () => {
   describe('landmarks (FL-353)', () => {
     const park = { id: 'Q181185', name: 'Disneyland', kind: 'theme_park', latitude: 33.8121, longitude: -117.919 };
     const tower = { id: 'Q243', name: 'Eiffel Tower', kind: 'tower', latitude: 48.8584, longitude: 2.2945 };
+    // A wide area around the park, and a lesser monument within reach of every photo of the tower.
+    const resort = {
+      id: 'Q1229066',
+      name: 'Disneyland Resort',
+      kind: 'resort',
+      latitude: 33.809,
+      longitude: -117.9195,
+    };
+    const plaque = { id: 'Q999001', name: 'Tower plaque', kind: 'monument', latitude: 48.8584, longitude: 2.2945 };
     const inPark = { latitude: 33.8121, longitude: -117.919, city: 'Anaheim', state: 'California', country: 'USA' };
     const atTower = { latitude: 48.8584, longitude: 2.2945, city: 'Paris', state: null, country: 'France' };
 
@@ -81,7 +90,11 @@ describe(SearchService.name, () => {
       await defaultDatabase.deleteFrom('landmark').execute();
       await defaultDatabase
         .insertInto('landmark')
-        .values([park, tower].map((place) => ({ ...place, radiusM: 500, rank: 50 })))
+        .values([
+          ...[park, tower].map((place) => ({ ...place, radiusM: 500, rank: 50 })),
+          { ...resort, radiusM: 2000, rank: 30 },
+          { ...plaque, radiusM: 500, rank: 10 },
+        ])
         .execute();
     });
 
@@ -103,7 +116,19 @@ describe(SearchService.name, () => {
       await at(stranger.id, inPark);
       await at(user.id, { latitude: 40, longitude: -100 });
 
+      // The resort is listed as the wide area it is; the plaque never is, because the tower is always the
+      // better label for the same photo.
       await expect(sut.getVisitedLandmarks(factory.auth({ user }))).resolves.toEqual([
+        {
+          ...resort,
+          assetCount: 2,
+          firstTakenAt: '2024-06-03T10:00:00.000Z',
+          lastTakenAt: '2024-06-05T10:00:00.000Z',
+          coverAssetId: latest.id,
+          city: 'Anaheim',
+          state: 'California',
+          country: 'USA',
+        },
         {
           ...park,
           assetCount: 2,
@@ -125,6 +150,20 @@ describe(SearchService.name, () => {
           country: 'France',
         },
       ]);
+    });
+
+    it('names the best label for a photo first: the famous spot, then lesser ones, then the area around it', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: paris } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: paris.id, ...atTower });
+      const { asset: disney } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: disney.id, ...inPark });
+      const names = async (assetId: string) =>
+        (await ctx.get(SearchRepository).getAssetLandmarks(assetId)).map(({ name }) => name);
+
+      await expect(names(paris.id)).resolves.toEqual(['Eiffel Tower', 'Tower plaque']);
+      await expect(names(disney.id)).resolves.toEqual(['Disneyland', 'Disneyland Resort']);
     });
 
     it('filters a search to, or away from, landmarks', async () => {

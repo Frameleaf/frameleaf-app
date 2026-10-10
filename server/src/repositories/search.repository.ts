@@ -13,6 +13,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { LANDMARK_WIDE_RADIUS_M } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
@@ -348,6 +349,13 @@ const asUuidLiteral = (id: string) => sql`${id}::uuid`;
 
 const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
 
+/**
+ * How well a landmark labels a photo taken at it: a specific spot before the wide area around it
+ * (Disneyland before its resort), and among specific spots the most famous (the Parthenon before the
+ * lesser temples within reach of the same photo).
+ */
+const mostSpecificLandmark = sql`(landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}), landmark.rank desc, landmark."radiusM", landmark.id`;
+
 @Injectable()
 export class SearchRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
@@ -681,13 +689,33 @@ export class SearchRepository {
   /**
    * Landmarks the viewer has media at (FL-353), with the same owners and privacy rules as
    * `getCityAssetCounts`. The cover is the latest item; the place names are the most common among the items.
+   *
+   * Around a famous site a photo matches every minor monument within reach of it, so a landmark is listed
+   * only when it is the best label for at least one item, or is a wide area (a park, a resort) that
+   * contains items. Its count is still every item taken there.
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getVisitedLandmarks(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
     return this.db
-      .selectFrom('asset_landmark')
-      .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
-      .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+      .with('matched', (qb) =>
+        qb
+          .selectFrom('asset_landmark')
+          .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+          .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId'])
+          .select(
+            sql<number>`row_number() over (partition by asset_landmark."assetId" order by ${mostSpecificLandmark})`.as(
+              'position',
+            ),
+          )
+          .where('asset.ownerId', '=', anyUuid(userIds))
+          .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+          .where('asset.deletedAt', 'is', null)
+          .$call((qb) => withHiddenContentFilter(qb, options)),
+      )
+      .selectFrom('matched')
+      .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
+      .innerJoin('asset', 'asset.id', 'matched.assetId')
       .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.latitude', 'landmark.longitude'])
       .select((eb) => [
@@ -699,17 +727,14 @@ export class SearchRepository {
         sql<string | null>`mode() within group (order by asset_exif.state)`.as('state'),
         sql<string | null>`mode() within group (order by asset_exif.country)`.as('country'),
       ])
-      .where('asset.ownerId', '=', anyUuid(userIds))
-      .where(isTimelineVisible('asset', options.revealLockedOwnerId))
-      .where('asset.deletedAt', 'is', null)
-      .$call((qb) => withHiddenContentFilter(qb, options))
       .groupBy('landmark.id')
+      .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
       .orderBy('assetCount', 'desc')
       .orderBy('landmark.id')
       .execute();
   }
 
-  /** The landmarks one asset was taken at, the most specific (smallest) first. */
+  /** The landmarks one asset was taken at, the best label for it first. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getAssetLandmarks(assetId: string) {
     return this.db
@@ -717,8 +742,7 @@ export class SearchRepository {
       .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
       .select(['landmark.id', 'landmark.name', 'landmark.kind'])
       .where('asset_landmark.assetId', '=', assetId)
-      .orderBy('landmark.radiusM')
-      .orderBy('landmark.id')
+      .orderBy(mostSpecificLandmark)
       .execute();
   }
 

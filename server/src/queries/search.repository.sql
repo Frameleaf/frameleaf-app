@@ -469,6 +469,39 @@ order by
   "asset_exif"."city"
 
 -- SearchRepository.getVisitedLandmarks
+with
+  "matched" as (
+    select
+      "asset_landmark"."assetId",
+      "asset_landmark"."landmarkId",
+      row_number() over (
+        partition by
+          asset_landmark."assetId"
+        order by
+          (landmark."radiusM" > $1),
+          landmark.rank desc,
+          landmark."radiusM",
+          landmark.id
+      ) as "position"
+    from
+      "asset_landmark"
+      inner join "landmark" on "landmark"."id" = "asset_landmark"."landmarkId"
+      inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
+    where
+      "asset"."ownerId" = any ($2::uuid[])
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+  )
 select
   "landmark"."id",
   "landmark"."name",
@@ -498,26 +531,15 @@ select
       asset_exif.country
   ) as "country"
 from
-  "asset_landmark"
-  inner join "landmark" on "landmark"."id" = "asset_landmark"."landmarkId"
-  inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
+  "matched"
+  inner join "landmark" on "landmark"."id" = "matched"."landmarkId"
+  inner join "asset" on "asset"."id" = "matched"."assetId"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
-where
-  "asset"."ownerId" = any ($1::uuid[])
-  and (
-    "asset"."visibility" = 'timeline'
-    and not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-  )
-  and "asset"."deletedAt" is null
 group by
   "landmark"."id"
+having
+  bool_or(matched.position = 1)
+  or landmark."radiusM" > $3
 order by
   "assetCount" desc,
   "landmark"."id"
@@ -533,8 +555,10 @@ from
 where
   "asset_landmark"."assetId" = $1
 order by
-  "landmark"."radiusM",
-  "landmark"."id"
+  (landmark."radiusM" > $2),
+  landmark.rank desc,
+  landmark."radiusM",
+  landmark.id
 
 -- SearchRepository.getStates
 select distinct
