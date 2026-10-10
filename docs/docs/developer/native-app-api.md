@@ -183,6 +183,22 @@ fewer buckets than asked for (`bucketCount` says how many; at most 100 a second)
 }
 ```
 
+## Studio captions on the server (October 9)
+
+Studio captions can now be made by the server with Whisper (owner decision
+2026-10-09; protocol section 15.1). A native editor submits
+`POST /studio/projects/{id}/transcriptions` with
+`{ "clipId": "...", "language": "auto" | "<BCP 47>", "destinationId": "<ML destination id>" }`
+and gets `201 { id, status }`. Pick the destination from
+`GET /ml-destinations` (a local or LAN destination allowed `studio-ai`;
+`transcriptionWorker` in `GET /ml-destinations/capabilities` says one is
+available). Follow progress and cancel through `GET /media-operations/{id}` and
+`POST /media-operations/{id}/cancel` (kind `studio_transcription`). When it has
+completed, `GET /studio/projects/{id}/transcriptions/{transcriptionId}` returns
+`result.cues` (exact rational seconds on the sequence) and `result.words`; send
+`cues` unchanged as the `captions.set` payload. The server never edits the
+graph.
+
 ## Server issues found by the live tests
 
 ### FL-330: default smart-search model missing from the model mirror

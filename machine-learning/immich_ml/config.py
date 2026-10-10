@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     image_description: ImageDescriptionRuntimeSettings = ImageDescriptionRuntimeSettings()
     # Opt in after qualifying the local CUDA runtime; auto retains a CPU-only host fallback.
     semantic_mask_device: Literal["cpu", "cuda", "auto"] = "cpu"
+    # Studio captions: the Whisper model `frameleaf-transcribe` stands for. Unset picks
+    # whisper-large-v3-turbo on a CUDA GPU and whisper-small otherwise (models/constants.py).
+    transcription_model: str | None = None
     openvino_precision: ModelPrecision = ModelPrecision.FP32
     rocm_precision: ModelPrecision = ModelPrecision.FP32
 
