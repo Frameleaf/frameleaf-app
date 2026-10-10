@@ -172,7 +172,7 @@ jobs:
           test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1011/ffmpeg-linux"
           npx --no-install playwright install-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
-        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/ascii-reference.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Build shared server contracts for render-worker tests
         run: |
           mise run //server:install

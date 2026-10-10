@@ -7,6 +7,7 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { asciiAtlasSpec } from './ascii-reference.mjs';
 import {
   validateGoldens, compareCase, decodeBuffer, effectCases, transitionCases, GPU_TRANSITIONS, LINEAR_HDR_EFFECTS,
   toHalfBits, fromHalfBits, encodeBuffer, buildIndex, renderIndexMarkdown, replaceIndexMarkdown,
@@ -154,4 +155,15 @@ test('buffer encodings round-trip and binary16 conversion rounds to nearest even
 test('case lists are deterministic', () => {
   assert.deepEqual(effectCases(catalogue), effectCases(catalogue));
   assert.deepEqual(transitionCases(catalogue), transitionCases(catalogue));
+});
+
+test('ASCII coverage keeps 23 platform-atlas cases, five shape goldens and the HDR refusal', () => {
+  const cases = effectCases(catalogue).filter((c) => c.id === 'gpu-ascii');
+  const atlas = cases.filter((c) => c.domain === 'sdr' && asciiAtlasSpec(c.params));
+  assert.equal(atlas.length, 23);
+  assert.equal(cases.filter((c) => c.domain === 'sdr' && !asciiAtlasSpec(c.params)).length, 5);
+  assert.equal(cases.filter((c) => c.refused).length, 1);
+  const custom = atlas.filter((c) => c.name === 'gpu-ascii/sdr/charSet=custom');
+  assert.equal(custom.length, 2);
+  assert.notEqual(asciiAtlasSpec(custom[0].params).key, asciiAtlasSpec(custom[1].params).key);
 });
