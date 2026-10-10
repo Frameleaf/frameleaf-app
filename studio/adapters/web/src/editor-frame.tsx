@@ -403,11 +403,11 @@ function sendDraft(state: Session, mount: EditorMount): Promise<void> {
     read: (from) => state.workspace.readText(projectJsonPath(from.projectId)),
     contentOf,
     // The host's graph keeps one Freecut id whichever mount wrote it.
-    stage: (graph, baseRevision, graphVersion) =>
+    stage: (graph, baseRevision, graphVersion, commandIds) =>
       call(
         'stageDraft',
         { ...(storeGeneratedMedia(graph) as object), id: state.engineProjectId },
-        ['editor.save'],
+        commandIds,
         baseRevision,
         graphVersion,
       ),

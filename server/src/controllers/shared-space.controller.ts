@@ -1,5 +1,19 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
@@ -23,11 +37,14 @@ import {
   SharedSpacePeopleResponseDto,
   SharedSpacePersonLinkDto,
   SharedSpacePersonParamDto,
+  SharedSpacePreviewAssetParamDto,
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 /**
@@ -39,7 +56,10 @@ import { UUIDParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.SharedSpaces)
 @Controller('shared-spaces')
 export class SharedSpaceController {
-  constructor(private service: SharedSpaceService) {}
+  constructor(
+    private service: SharedSpaceService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Get('recipient-groups')
   @Authenticated({ permission: Permission.AlbumRead })
@@ -101,7 +121,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'List shared space invitations',
     description:
-      'Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: no assets, and counts that exclude media marked sensitive and Locked media.',
+      'Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: up to 12 preview item ids, and counts that exclude media marked sensitive and Locked media.',
     history: new HistoryBuilder().added('v3'),
   })
   getSharedSpaceInvitations(@Auth() auth: AuthDto): Promise<SharedSpacePreviewResponseDto[]> {
@@ -113,11 +133,29 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'Preview a shared space',
     description:
-      'What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.',
-    history: new HistoryBuilder().added('v3'),
+      'What the shared space exposes, for someone holding an invitation to it or already in it. previewAssetIds lists up to 12 of the newest items, never media marked sensitive, hidden media or Locked media; their small thumbnails come from GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail. No file names, people or places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.',
+    history: new HistoryBuilder().added('v3').updated('v3.2.1', 'Added previewAssetIds'),
   })
   getSharedSpacePreview(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpacePreviewResponseDto> {
     return this.service.getPreview(auth, id);
+  }
+
+  @Get(':id/preview/assets/:assetId/thumbnail')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'View a shared space preview thumbnail',
+    description:
+      'The small thumbnail of one item listed in previewAssetIds, for someone holding an invitation to the shared space or already in it. Only the ids the preview lists right now are served, and only at thumbnail size; any other item, size or caller gets 404.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  async viewSharedSpacePreviewThumbnail(
+    @Auth() auth: AuthDto,
+    @Param() { id, assetId }: SharedSpacePreviewAssetParamDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.getPreviewThumbnail(auth, id, assetId), this.logger);
   }
 
   @Get(':id/members')

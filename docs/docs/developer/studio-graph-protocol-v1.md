@@ -24,7 +24,7 @@ The page is delivered in four parts:
 | 3    | FL-308 (NAPI-019) | Effects, transitions, keyframes, easing, blends and parameter schemas.          |
 | 4    | FL-309 (NAPI-020) | Compositions, titles, sequence and project settings, and full command coverage. |
 
-Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
+Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Sections 15 to 17 add captions (FL-111), Lottie maps (FL-105) and masks and relinking (FL-348). Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
 
 ## 1. Where the graph lives
 
@@ -195,7 +195,7 @@ Commands that place library media read a **media record** for each asset. This i
 | `fps`             | The video's frame rate (0 for a still). It becomes `sourceFps`.                                     |
 | `audioCodec`      | Present when the video has sound. Its presence alone decides whether a linked audio item is placed. |
 
-A native client builds the record from the asset's metadata, as the web host does when it probes the asset. The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
+A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
 
 ## 4. Ids
 
@@ -300,14 +300,14 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 ### 8.1 Status of every graph-changing command
 
-The catalogue has 73 commands with `mutatesGraph: true`.
+The catalogue has 74 commands with `mutatesGraph: true`.
 
-- **Engine (54):** the engine gives them meaning. Their mutation rules are in parts 2 to 4 and captions: sections 12 to 17.
+- **Engine (56):** the engine gives them meaning. Their mutation rules are in parts 2 to 4, captions, Lottie maps, masks and relinking: sections 12 to 18.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (16):** the remaining 16 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (15):** the remaining 15 are refused by the engine as `not-implemented` (8.2).
 
-`commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 73.
+`commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 74.
 
 | Status                                           | Commands                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -320,7 +320,8 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Engine: Lottie maps                              | `lottie.update`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Engine: media source relink                      | `media.relink`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                                              |
+| Engine: masks and relinking                      | `clip.setMask`, `clip.relink`                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                                              |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
@@ -330,7 +331,7 @@ At this engine revision the web engine refuses these 16 commands as `not-impleme
 
 ### 8.3 Every graph-changing command
 
-One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alphabetical order. **Section** is where this page states the command's rule.
+One row for each of the 74 commands the catalogue marks `mutatesGraph`, in alphabetical order. **Section** is where this page states the command's rule.
 
 - **Engine:** the section gives the mutation rule, and the fixtures hold applied and rejected cases named `<command>/<case>`.
 - **Host:** answered by the host's history (section 9). The engine refuses the envelope (`not-implemented/history.undo`, `not-implemented/history.redo`); the `history` scripts record what the host does.
@@ -348,6 +349,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.move`                        | Engine          | 12.3.3  |                                                                                                                        |
 | `clip.overwrite`                   | Engine          | 12.5.4  |                                                                                                                        |
 | `clip.push`                        | Engine          | 12.5.1  |                                                                                                                        |
+| `clip.relink`                      | Engine          | 17.2    | Points a clip and its synchronised linked clips at another library asset.                                              |
 | `clip.reorder`                     | Engine          | 12.5.2  |                                                                                                                        |
 | `clip.roll`                        | Engine          | 12.4.2  |                                                                                                                        |
 | `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch, EQ and persisted clip mute.                                                                        |
@@ -356,7 +358,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.setGrade`                    | Not implemented | 8.2     | Do not record it. Do not change a clip's colour grade.                                                                 |
 | `clip.setKenBurns`                 | Engine          | 13.7.2  |                                                                                                                        |
 | `clip.setLink`                     | Engine          | 12.6.1  |                                                                                                                        |
-| `clip.setMask`                     | Not implemented | 8.2     | Do not record it. Do not add, change or remove a mask.                                                                 |
+| `clip.setMask`                     | Engine          | 17.1    | Turns a shape into a mask, edits its mask fields and pen path, or clears it.                                           |
 | `clip.setSpeed`                    | Engine          | 12.4.5  |                                                                                                                        |
 | `clip.setTransform`                | Engine          | 12.6.3  |                                                                                                                        |
 | `clip.setTransformParent`          | Engine          | 12.6.4  |                                                                                                                        |
@@ -386,7 +388,7 @@ One row for each of the 73 commands the catalogue marks `mutatesGraph`, in alpha
 | `marker.remove`                    | Engine          | 12.8.3  |                                                                                                                        |
 | `marker.update`                    | Engine          | 12.8.2  |                                                                                                                        |
 | `media.import`                     | Not implemented | 8.2     | Do not record it. Media records are not in the graph (3.5); place library media with `clip.add` (12.3.1).              |
-| `media.relink`                     | Engine          | 17      | Replace every source reader after admission and durable save; retain authored ranges.                                  |
+| `media.relink`                     | Engine          | 18      | Replace every source reader after admission and durable save; retain authored ranges.                                  |
 | `media.remove`                     | Not implemented | 8.2     | Do not record it. Media records are not in the graph (3.5); remove clips with `clip.delete` (12.3.2).                  |
 | `music.add`                        | Engine          | 12.8.4  | Always refused at this revision (`failed`).                                                                            |
 | `project.applyTemplate`            | Engine          | 14.6.2  |                                                                                                                        |
@@ -2558,6 +2560,18 @@ incoming explicit id or a preexisting item id anywhere in the graph. Other ids
 are unchanged. No timestamp or model provenance is written. Host history makes the replacement
 undoable (section 9); a refusal records no graph and applies none of the batch.
 
+### 15.1 Producing captions (FL-348, owner-gated)
+
+`captions.set` applies cues; it does not make them. At this revision speech-to-text runs only inside the web editor, in the browser, on the Whisper and Parakeet models listed by `GET /studio/resources` under the `transcript` producer (capability `transcriptionWorker`). The server has no transcription path: the machine-learning service serves no speech model, and no server job produces cues. A native client therefore cannot ask the server for captions yet. It sends `captions.set` with cues it already has (typed, imported from SRT or VTT, or made on the device by the person's own means).
+
+The server job, when the owner admits it, keeps this contract, so a native client can be written against it now:
+
+- `POST /studio/projects/{id}/transcriptions` with `{ clipId, language, destinationId }`: `language` is a BCP 47 tag or `auto`, and `destinationId` names an ML destination explicitly (never inferred), as the catalogue's `job.enqueueTranscription` does. The clip must be a main-timeline video or audio clip of the head revision. The answer is a job `{ id, status }` that Activity follows.
+- The job reads the clip's source window (12.2.4) from the original, sends it only to the named destination, and keeps nothing after it settles.
+- Its result is `{ language, cues: [{ start, end, text }] }`, with `start` and `end` exact rationals in seconds on the sequence, already offset by the clip's `from` and source window. It never edits the graph. The client applies the cues with `captions.set` (section 15), so undo, history and the lease apply as usual.
+
+**Owner-gated.** Running a transcription model on the server or a LAN worker, or routing Studio AI to Frameleaf Cloud's `transcription` workload, needs the owner's decision on the model (the Whisper rows carry no reviewed licence text in the rights table), its weights acquisition and its qualification. Until then the endpoint does not exist. `transcriptionWorker` in `GET /ml-destinations/capabilities` only says that a destination serves the Studio AI workload; it does not mean the server can transcribe a clip.
+
 ## 16. `lottie.update` (FL-105)
 
 **Payload:** `{ clipId, colors?, text?, slots? }`. It updates an existing main
@@ -2585,7 +2599,68 @@ transforms, media ownership, linked clips and other graph fields unchanged.
 Theme selection is not part of this canonical payload. Actual animated pixels,
 native slot rendering and bundle round-trip output require separate qualification.
 
-## 17. `media.relink` (FL-105)
+## 17. Masks and relinking (FL-348)
+
+Both commands change only the named main-timeline clips. They draw no ids, write no clock, and a refusal leaves the graph and history untouched. Fixtures are named `clip.setMask/<case>` and `clip.relink/<case>` (story FL-348). The web editor's own mask controls write exactly the fields of 17.1, and its drafts report each shape whose mask fields changed as one `clip.setMask` in the revision summary.
+
+### 17.1 `clip.setMask`
+
+**Payload:** `{ clipId, mask }`. A mask in this graph is a `shape` item with `isMask: true`: it masks the tracks below it. `mask` is `null` (remove the mask) or an object with any of:
+
+| Field     | Type                        | Writes                                                                 |
+| --------- | --------------------------- | ---------------------------------------------------------------------- |
+| `type`    | `"clip"` or `"alpha"`       | `maskType`. `clip` is a hard edge, `alpha` a soft one.                 |
+| `feather` | number, 0..100              | `maskFeather`, in pixels.                                              |
+| `opacity` | number, 0..100              | `maskOpacity`, the matte strength in percent.                          |
+| `invert`  | boolean                     | `maskInvert`.                                                          |
+| `path`    | array of 3 to 1000 vertices | `pathVertices`. Only on a shape whose `shapeType` is `path` (the pen). |
+
+A vertex is `{ position: [x, y], inHandle: [x, y], outHandle: [x, y], tangentMode? }`: finite numbers, positions normalised 0..1 to the shape's box and handles relative to the vertex. `tangentMode` is `corner`, `smooth`, `continuous` or `broken`. When it is absent, write `corner` if all four handle numbers are 0 and `smooth` otherwise, as loading does. Write each vertex with its four keys only.
+
+**Refusals, in order**
+
+1. A payload field other than `clipId` and `mask`: `invalid`.
+2. `clipId` missing or empty; no such clip: `invalid`.
+3. The clip is not a `shape`: `invalid`.
+4. `mask` absent (send `null` to remove), or neither `null` nor a plain object: `invalid`.
+5. The clip's track is locked: `failed`.
+6. A `mask` field not in the table; then a bad `path` (not a path shape, wrong vertex count, a vertex that is not an object, has another key, a pair that is not two finite numbers, an unknown tangent mode); then `type`, `feather`, `opacity`, `invert` out of their types: `invalid`.
+
+**Effect.**
+
+- `mask: null` on a shape that is not a mask changes nothing. On a mask it writes `isMask: false` and removes `blendMode`, `maskType`, `maskFeather`, `maskOpacity`, `maskInvert` and `pathClosed`. Loading then gives a path shape `pathClosed: true` again (2.6).
+- An object starts from the current values: on a mask, `maskType ?? "clip"`, `maskFeather ?? 10`, `maskOpacity ?? 100`, `maskInvert ?? false`; on a shape that is not yet a mask, `clip`, 0, 100 and `false`. Given fields replace them. When `type` changes and `feather` is not given, the feather becomes 0 for `clip`, and for `alpha` the current feather if it is above 0, else 10.
+- It writes `isMask: true`, `blendMode: "normal"` and all four mask fields. A shape that was not a mask also gets `pathClosed: true`. A `path` replaces `pathVertices`. `mask: {}` turns a shape into a hard clip mask with the defaults.
+- Nothing else changes: the shape's transform, keyframes, fill and stroke stay as they are. Size and place the mask with `clip.setTransform` (12.6.3).
+
+**Not covered.** There is no command that creates a shape. A native client masks a shape that is already in the graph (a pen path, a rectangle or an ellipse made in the web editor).
+
+### 17.2 `clip.relink`
+
+**Payload:** `{ clipId, assetId }`. Points a placed library clip at another library asset, as the web editor's relink of a missing clip does.
+
+**Targets.** The named clip and its synchronised linked clips (12.2.1) that hold the same `mediaId`. A clip on the same linked group that was trimmed apart keeps its media.
+
+**Refusals, in order**
+
+1. A payload field other than `clipId` and `assetId`: `invalid`.
+2. `clipId` missing or no such clip; `assetId` missing: `invalid`.
+3. The clip is not a `video`, `audio` or `image` with a `mediaId` (generated media, titles, shapes and compositions are refused): `invalid`.
+4. `assetId` has no media record in the session (3.5): `invalid`. A record that is neither `image/*` nor `video/*`: `invalid`.
+5. A target `image` needs an image, a `video` needs a video, and an `audio` needs a video whose record has `audioCodec`: `invalid`.
+6. A target on a locked track: `failed`.
+7. When the asset differs, a target whose source window does not fit the new asset (below): `failed`.
+
+**Effect.** When `assetId` already is the clip's `mediaId`, nothing changes. Otherwise each target, in `timeline.items` order, gets:
+
+- `mediaId: assetId` and `label` = the record's `fileName`; `thumbnailUrl` and `waveformData` are removed.
+- On a `video` or `image` target, when the record's width and height are both above 0: `sourceWidth` and `sourceHeight`. The `transform` is not refitted.
+- On a `video` or `audio` target, with `rate = round3(record.fps || project fps)` (round to three decimals, as `clip.add` does) and `previous = sourceFps ?? project fps`: `sourceFps = rate`, `sourceDuration = max(1, round(record.duration × rate))`, and the source window carried to the new rate. When `rate` equals `previous` the window is unchanged. Otherwise `sourceStart = round(sourceStart × rate / previous)` and `sourceEnd = round(sourceEnd × rate / previous)`, each computed in IEEE double precision in that order, with `round` as ECMAScript `Math.round`. The window must satisfy `sourceStart < sourceEnd <= sourceDuration`, or the batch is refused (rule 7).
+- `from`, `durationInFrames`, `speed`, `trimStart`/`trimEnd`, links, effects and keyframes are unchanged. An `image` target keeps its source fields.
+
+**Media records.** The record is the one 3.5 describes. The server's `GET /studio/assets/{id}/media-facts` gives a native client the exact frame rate and whether the original has an audio track (FL-348), so its records agree with the web host's probe.
+
+## 18. `media.relink` (FL-105)
 
 **Payload:** `{ mediaId, assetId }`. The replacement must be an admitted source supplied to the command runtime. On an isolated copy, change each matching reader in Main and every composition to that identity. Preserve clip ids, links, placement, duration, source ranges, transforms, selection and unrelated graph fields. Image readers need image bytes; Lottie readers need animation bytes with matching frame rate and valid existing segments; video readers need video; audio readers need audio or a video with an audio track. Refuse missing metadata, incompatible kinds, differing source frame rates, or a replacement too short for any existing source range as `invalid`; never clamp cuts. Update source dimensions and duration, and remove cached visual and audio URLs, thumbnail, waveform, transcript and reverse-conform fields. Legacy trim and offset bounds remain guarded. Admission never changes an existing import's checksum or owner.
 

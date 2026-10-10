@@ -952,6 +952,45 @@ function visibilityPredicates(
   }
   return predicates;
 }
+/**
+ * FL-349: a panorama is a still whose projection (GPano `ProjectionType`, stored upper-cased) is
+ * equirectangular or cylindrical, or an Insta360 `.insp` file — the reading `isPanorama` in
+ * `src/utils/asset.util.ts` uses for the 360° viewer, widened to cylindrical sweeps.
+ */
+export const isPanoramaAsset = sql<SqlBool>`(
+  "asset"."type" = ${sql.lit(AssetType.Image)}
+  and (
+    coalesce("asset_exif"."projectionType", '') in ('EQUIRECTANGULAR', 'CYLINDRICAL')
+    or lower("asset"."originalFileName") like '%.insp'
+  )
+)`;
+/** FL-349: how screenshots are named, matched case-insensitively anywhere in the file name. */
+const SCREENSHOT_FILE_NAME_PATTERN =
+  'screen[ _-]?shot|screen[ _-]?capture|bildschirmfoto|captura de pantalla|capture d.[ée]cran|schermafbeelding|schermata|スクリーンショット|屏幕截图|截屏|스크린샷';
+/**
+ * FL-349: a screenshot is a still named the way phones and computers name screenshots (Android
+ * `Screenshot_…`, macOS and Windows `Screenshot …` / `Screen Shot …`, and the common localised names),
+ * or a PNG that carries no camera make and no camera model, which is how iOS saves them (as
+ * `IMG_….PNG`). No stored field records the iOS "Screenshot" user comment, so this is the signal
+ * available without re-reading every file.
+ */
+export const isScreenshotAsset = sql<SqlBool>`(
+  "asset"."type" = ${sql.lit(AssetType.Image)}
+  and (
+    "asset"."originalFileName" ~* ${SCREENSHOT_FILE_NAME_PATTERN}
+    or (
+      lower("asset"."originalFileName") like '%.png'
+      and nullif("asset_exif"."make", '') is null
+      and nullif("asset_exif"."model", '') is null
+    )
+  )
+)`;
+function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expression<SqlBool>): Expression<SqlBool>[] {
+  if (!filter) {
+    return [];
+  }
+  return [filter.eq ? predicate : sql<SqlBool>`not coalesce(${predicate}, false)`];
+}
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
 function branchPredicates(
@@ -973,6 +1012,8 @@ function branchPredicates(
     ...existsPredicates(eb, branch.hasAlbums, () => albumAssets(eb)),
     ...existsPredicates(eb, branch.hasPeople, () => visibleFaces(eb)),
     ...existsPredicates(eb, branch.hasTags, () => tagAssets(eb)),
+    ...boolPredicates(branch.isPanorama, isPanoramaAsset),
+    ...boolPredicates(branch.isScreenshot, isScreenshotAsset),
     ...comparisonPredicates(eb, 'asset_exif.city', branch.city),
     ...comparisonPredicates(eb, 'asset_exif.state', branch.state),
     ...comparisonPredicates(eb, 'asset_exif.country', branch.country),
