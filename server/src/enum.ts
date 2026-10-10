@@ -1955,8 +1955,6 @@ export enum RouteKey {
 
 export enum CacheControl {
   PrivateWithCache = 'private_with_cache',
-  /** For a URL that names its content by hash: cache for a year, never revalidate. */
-  PrivateImmutable = 'private_immutable',
   PrivateWithoutCache = 'private_without_cache',
   None = 'none',
 }
