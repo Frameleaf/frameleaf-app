@@ -48,7 +48,7 @@
       <label for="restore-setup-code">{$t('frameleaf_setup_claim_code')}</label>
       <input
         id="restore-setup-code"
-        class="rounded border p-2"
+        class="rounded-sm border p-2"
         autocomplete="one-time-code"
         autocapitalize="characters"
         spellcheck="false"

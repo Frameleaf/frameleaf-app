@@ -51,12 +51,23 @@ it('leaves hidden memories and shown-less kinds and dates out of a search', asyn
   const sut = ctx.get(MemoryRepository);
   const { user } = await ctx.newUser();
   const { memory: hidden } = await ctx.newMemory({ ownerId: user.id, memoryAt: new Date('2020-09-25T00:00:00Z') });
+  const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Ann' });
   const { memory: birthday } = await ctx.newMemory({
     ownerId: user.id,
     type: MemoryType.Birthday,
     memoryAt: new Date('2026-03-01T00:00:00Z'),
+    data: { kind: 'birthday', year: 2026, subject: 'person', subjectId: person.personGroupId, name: 'Ann' } as never,
   });
   const { memory: kept } = await ctx.newMemory({ ownerId: user.id, memoryAt: new Date('2020-01-01T00:00:00Z') });
+  // a search returns only memories holding an item it can return, so each one gets a photo; a
+  // birthday's photo must show its person
+  for (const memory of [hidden, birthday, kept]) {
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+    if (memory === birthday) {
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+    }
+  }
 
   const ids = async (options: Parameters<MemoryRepository['search']>[2]) =>
     (await sut.search(user.id, {}, options)).map(({ id }) => id).toSorted();

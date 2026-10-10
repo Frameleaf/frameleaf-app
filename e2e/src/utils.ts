@@ -362,7 +362,7 @@ export const utils = {
             const unfinishedOperations = async (context: WaitContext, id?: string) => {
               const { rows } = await query(
                 context,
-                `SELECT id, "ownerId", status, "cancelRequestedAt",
+                `SELECT id, "ownerId", kind, settings, status, "cancelRequestedAt",
             "claimToken" IS NOT NULL AS claimed,
             "remoteJobId" IS NOT NULL AND "remoteReleasedAt" IS NULL AS "remotePending"
             FROM media_operation WHERE ($1::uuid IS NULL OR id = $1::uuid) AND (
@@ -522,6 +522,27 @@ export const utils = {
                 },
                 total.signal,
               );
+            const startedEdits = new Set<string>();
+            phase = 'join started non-cancellable edits';
+            await waitUntil(
+              total,
+              async () => {
+                const operations = await unfinishedOperations(total);
+                for (const operation of operations) {
+                  if (
+                    operation.kind === 'quick_edit' &&
+                    ['photo_edit', 'video_edit', 'video_export'].includes(operation.settings?.edit) &&
+                    (operation.status !== 'queued' || operation.claimed || operation.remotePending)
+                  ) {
+                    startedEdits.add(operation.id);
+                  }
+                }
+                // A failed render can clear its claim while queued for retry; it still owns its saved edit.
+                return operations.some((operation) => startedEdits.has(operation.id));
+              },
+              (unfinished) => !unfinished,
+              100,
+            );
             await resetWhilePaused({
               pause: async () => {
                 phase = 'pause queues';

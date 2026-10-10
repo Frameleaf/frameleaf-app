@@ -673,7 +673,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     while (saving) {
       const current = inflightDraft;
       await saving;
-      if (draft === current) return;
+      if (draft === current) {
+        return;
+      }
     }
     if (!draft || disposed || committing) {
       return;
