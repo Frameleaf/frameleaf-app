@@ -124,6 +124,7 @@
     places={data.places}
     things={data.things}
     landmarks={data.landmarks}
+    albumSuggestion={data.landmarkAlbumSuggestion}
     recents={data.recentCaptures}
     libraryTotal={data.libraryTotal}
     {memories}
