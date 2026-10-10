@@ -532,4 +532,21 @@
       display: inline;
     }
   }
+  /* Phones: a 44px target like the rest of the top bar's row, which counts on this width (TopBar.svelte). */
+  @media (max-width: 47.99rem) {
+    .fl-account-button {
+      min-width: 44px;
+      min-height: 44px;
+      padding: var(--fl-space-half) var(--fl-space-1);
+    }
+  }
+  /* Under 352px the row has no room for the chevron: the avatar alone, 44px wide, opens the menu. */
+  @media (max-width: 351px) {
+    .fl-account-button {
+      padding-inline: var(--fl-space-half);
+    }
+    .fl-account-button > :global(svg) {
+      display: none;
+    }
+  }
 </style>

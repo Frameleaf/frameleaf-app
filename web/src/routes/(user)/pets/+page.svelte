@@ -540,6 +540,10 @@
     color: var(--fl-text);
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
+    .pets {
+      padding-inline: var(--fl-space-2);
+    }
     /* The size Tags and Places step down to on phones. */
     h1 {
       font-size: var(--fl-font-title);

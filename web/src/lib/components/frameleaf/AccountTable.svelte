@@ -122,7 +122,7 @@
             </a>
           </th>
           <td>{user.isAdmin ? $t('frameleaf_users_role_admin') : $t('frameleaf_users_role_user')}</td>
-          <td>
+          <td class="items">
             {#if stats}
               {count(stats.photos + stats.videos)}
               <small>{$t('frameleaf_users_items_videos', { values: { count: stats.videos } })}</small>
@@ -261,6 +261,10 @@
     display: block;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
+  }
+  /* The count, then the video count under it: two whole lines however narrow the column gets. */
+  .items {
+    white-space: nowrap;
   }
   /* accounts-libraries.css `.resource-quota`. */
   .quota {

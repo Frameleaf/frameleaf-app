@@ -816,8 +816,9 @@
   }
   /* Phones: a back button and the name instead of pills, search on its own row, then sort and Show in timeline. */
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .folders {
-      padding: 14px 16px 64px;
+      padding: 14px var(--fl-space-2) 64px;
     }
     .head {
       flex-direction: column;

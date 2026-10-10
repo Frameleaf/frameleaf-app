@@ -539,8 +539,9 @@
     }
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .discovery {
-      padding: 20px 16px 30px;
+      padding: 20px var(--fl-space-2) 30px;
     }
     .dv-search input {
       min-width: 0;

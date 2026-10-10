@@ -139,6 +139,12 @@
       padding-inline: 0.6875rem;
     }
   }
+  /* Phones: 44px like the rest of the top bar's row (TopBar.svelte), not the 48px touch floor. */
+  @media (max-width: 47.99rem) {
+    .upload-menu :global(.menu-root > button) {
+      min-height: 44px;
+    }
+  }
   .item-text {
     display: flex;
     flex-direction: column;

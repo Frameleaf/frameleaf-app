@@ -172,7 +172,7 @@
 </script>
 
 <UserPageLayout scrollbar={false}>
-  <section class="frameleaf documents m-4 mb-12">
+  <section class="frameleaf documents m-4 mb-12 max-md:mx-(--fl-space-2)">
     <ResultsView
       assets={timelineAssets}
       downloadFileName={brandedArchiveName($t('frameleaf_archive_name_documents'))}

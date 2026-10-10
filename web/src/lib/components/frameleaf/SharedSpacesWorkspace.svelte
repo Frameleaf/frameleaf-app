@@ -449,6 +449,10 @@
     min-width: 0;
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
+    .spaces {
+      padding-inline: var(--fl-space-2);
+    }
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

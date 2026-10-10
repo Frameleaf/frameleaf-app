@@ -1016,8 +1016,9 @@
     border: 0;
   }
   @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .fla {
-      padding: 20px 16px 40px;
+      padding: 20px var(--fl-space-2) 40px;
     }
     .fla-job {
       grid-template-columns: 84px minmax(0, 1fr);
