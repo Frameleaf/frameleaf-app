@@ -17,6 +17,7 @@ import {
   SearchFacetsResponseDto,
   SearchHistogramDto,
   SearchHistogramResponseDto,
+  SearchLandmarkResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
   SearchResponseDto,
@@ -201,6 +202,18 @@ export class SearchController {
   })
   getCityAssetCounts(@Auth() auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
     return this.service.getCityAssetCounts(auth);
+  }
+
+  @Get('landmarks')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve visited landmarks',
+    description:
+      'Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getVisitedLandmarks(@Auth() auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
+    return this.service.getVisitedLandmarks(auth);
   }
 
   @Get('suggestions')

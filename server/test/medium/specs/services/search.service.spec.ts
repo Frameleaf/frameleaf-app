@@ -13,11 +13,13 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SearchService } from 'src/services/search.service.js';
@@ -34,10 +36,12 @@ const setup = (db?: Kysely<DB>) => {
     real: [
       AccessRepository,
       AssetRepository,
+      ConfigRepository,
       DatabaseRepository,
       SearchRepository,
       PartnerRepository,
       PersonRepository,
+      SystemMetadataRepository,
       TagRepository,
     ],
     mock: [LoggingRepository],
@@ -65,6 +69,80 @@ describe(SearchService.name, () => {
   it('should work', () => {
     const { sut } = setup();
     expect(sut).toBeDefined();
+  });
+
+  describe('landmarks (FL-353)', () => {
+    const park = { id: 'Q181185', name: 'Disneyland', kind: 'theme_park', latitude: 33.8121, longitude: -117.919 };
+    const tower = { id: 'Q243', name: 'Eiffel Tower', kind: 'tower', latitude: 48.8584, longitude: 2.2945 };
+    const inPark = { latitude: 33.8121, longitude: -117.919, city: 'Anaheim', state: 'California', country: 'USA' };
+    const atTower = { latitude: 48.8584, longitude: 2.2945, city: 'Paris', state: null, country: 'France' };
+
+    beforeEach(async () => {
+      await defaultDatabase.deleteFrom('landmark').execute();
+      await defaultDatabase
+        .insertInto('landmark')
+        .values([park, tower].map((place) => ({ ...place, radiusM: 500, rank: 50 })))
+        .execute();
+    });
+
+    it('lists the places the viewer has media at, and only their own visible media', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const at = async (ownerId: string, exif: object, asset: object = {}) => {
+        const { asset: created } = await ctx.newAsset({ ownerId, ...asset });
+        await ctx.newExif({ assetId: created.id, ...exif });
+        return created;
+      };
+      await at(user.id, inPark, { localDateTime: new Date('2024-06-03T10:00:00Z') });
+      const latest = await at(user.id, inPark, { localDateTime: new Date('2024-06-05T10:00:00Z') });
+      const paris = await at(user.id, atTower, { localDateTime: new Date('2023-01-01T10:00:00Z') });
+      await at(user.id, inPark, { deletedAt: new Date() });
+      await at(user.id, inPark, { visibility: AssetVisibility.Locked });
+      await at(user.id, inPark, { visibility: AssetVisibility.Archive });
+      await at(stranger.id, inPark);
+      await at(user.id, { latitude: 40, longitude: -100 });
+
+      await expect(sut.getVisitedLandmarks(factory.auth({ user }))).resolves.toEqual([
+        {
+          ...park,
+          assetCount: 2,
+          firstTakenAt: '2024-06-03T10:00:00.000Z',
+          lastTakenAt: '2024-06-05T10:00:00.000Z',
+          coverAssetId: latest.id,
+          city: 'Anaheim',
+          state: 'California',
+          country: 'USA',
+        },
+        {
+          ...tower,
+          assetCount: 1,
+          firstTakenAt: '2023-01-01T10:00:00.000Z',
+          lastTakenAt: '2023-01-01T10:00:00.000Z',
+          coverAssetId: paris.id,
+          city: 'Paris',
+          state: null,
+          country: 'France',
+        },
+      ]);
+    });
+
+    it('filters a search to, or away from, landmarks', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: disney } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: disney.id, ...inPark });
+      const { asset: paris } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: paris.id, ...atTower });
+      const { asset: elsewhere } = await ctx.newAsset({ ownerId: user.id });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ landmarkIds: { any: ['Q181185'] } })).resolves.toEqual([disney.id]);
+      await expect(ids({ landmarkIds: { any: ['Q181185', 'Q243'] } })).resolves.toEqual([disney.id, paris.id].sort());
+      await expect(ids({ landmarkIds: { none: ['Q243'] } })).resolves.toEqual([disney.id, elsewhere.id].sort());
+    });
   });
 
   it.each(['another owner', 'Locked', 'hidden', 'archived', 'trashed', 'video'] as const)(

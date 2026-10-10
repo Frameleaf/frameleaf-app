@@ -4174,6 +4174,14 @@ export type ImageEncodingInfo = {
     transfer?: number | "adaptive";
     width?: number;
 };
+export type LandmarkSummaryDto = {
+    /** Landmark ID (its Wikidata ID, for example Q243) */
+    id: string;
+    /** Kind of place, for example theme_park, museum or national_park */
+    kind: string;
+    /** Landmark name */
+    name: string;
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -4257,6 +4265,8 @@ export type AssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
+    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
     /** Live photo video ID */
@@ -5154,6 +5164,8 @@ export type BestPhotoAssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
+    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
     /** Live photo video ID */
@@ -11016,6 +11028,10 @@ export type IdFilter = {
     eq?: string;
     ne?: string;
 };
+export type LandmarkIdsFilter = {
+    "any"?: string[];
+    none?: string[];
+};
 export type IdFilterNullable = {
     eq?: string | null;
     ne?: string | null;
@@ -11072,6 +11088,7 @@ export type SearchFilterBranch = {
     isOffline?: BoolFilter;
     isPanorama?: BoolFilter;
     isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -11110,6 +11127,7 @@ export type SearchFilter = {
     isOffline?: BoolFilter;
     isPanorama?: BoolFilter;
     isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -12035,6 +12053,32 @@ export type SearchHistogramResponseDto = {
     granularity: SearchHistogramGranularity;
     /** Sum of every bucket; equals POST /search/statistics for the same body */
     total: number;
+};
+export type SearchLandmarkResponseDto = {
+    /** Number of timeline photos and videos taken at this landmark */
+    assetCount: number;
+    /** City most of these photos and videos were taken in */
+    city: string | null;
+    /** Country most of these photos and videos were taken in */
+    country: string | null;
+    /** The latest photo or video here, for use as a cover */
+    coverAssetId: string;
+    /** Local capture time of the earliest photo or video here */
+    firstTakenAt: string;
+    /** Landmark ID (its Wikidata ID, for example Q243) */
+    id: string;
+    /** Kind of place, for example theme_park, museum or national_park */
+    kind: string;
+    /** Local capture time of the latest photo or video here */
+    lastTakenAt: string;
+    /** Latitude of the landmark */
+    latitude: number;
+    /** Longitude of the landmark */
+    longitude: number;
+    /** Landmark name */
+    name: string;
+    /** State or region most of these photos and videos were taken in */
+    state: string | null;
 };
 export type MetadataSearchDto = {
     /** Filter by album IDs */
@@ -24824,6 +24868,17 @@ export function searchHistogram({ searchHistogramDto }: {
         method: "POST",
         body: searchHistogramDto
     })));
+}
+/**
+ * Retrieve visited landmarks
+ */
+export function getVisitedLandmarks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchLandmarkResponseDto[];
+    }>("/search/landmarks", {
+        ...opts
+    }));
 }
 /**
  * Search large assets
