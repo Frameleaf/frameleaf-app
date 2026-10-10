@@ -1,15 +1,19 @@
 # Reverse-geocoding inputs, pinned by SHA-256 (FL-191).
 #
 # Each file is fetched from Frameleaf's own host first,
-# https://static.frameleaf.cloud/geodata/2026-09-11/<file>, and from the capture URL below second. Both
+# https://static.frameleaf.cloud/geodata/2026-10-10/<file>, and from the capture URL below second. Both
 # copies must match the checksum. GeoNames publishes no versioned files, so the GeoNames entries are
 # Internet Archive captures of its daily dumps; the capture time is in each URL.
 #
 # Attribution: the GeoNames files are © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0
 # (https://creativecommons.org/licenses/by/4.0/). The Natural Earth file (release v5.1.2) is public domain.
+# landmarks.ndjson.gz is built by landmarks/build.mjs: its boundaries are © OpenStreetMap contributors under
+# the Open Database License (https://www.openstreetmap.org/copyright), its names and identifiers are from
+# Wikidata (CC0). Its second source is the copy committed beside that script.
 #
 # Capture dates: cities500.zip 2026-09-11T00:21:05Z, admin1CodesASCII.txt 2026-09-11T00:20:39Z,
-# admin2Codes.txt 2026-09-11T00:21:12Z, countryInfo.txt 2026-09-13T00:06:31Z.
+# admin2Codes.txt 2026-09-11T00:21:12Z, countryInfo.txt 2026-09-13T00:06:31Z. landmarks.ndjson.gz was built
+# 2026-10-10.
 #
 # sha256  file  capture-url
 c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef  cities500.zip  https://web.archive.org/web/20260911002105id_/https://download.geonames.org/export/dump/cities500.zip
@@ -17,3 +21,4 @@ c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef  cities500.zip 
 fe8196f90676f40a8845f24cc0687dadc668fe8c0f9de6458da65fda50b48aba  admin2Codes.txt  https://web.archive.org/web/20260911002112id_/https://download.geonames.org/export/dump/admin2Codes.txt
 93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512  countryInfo.txt  https://web.archive.org/web/20260913000631id_/https://download.geonames.org/export/dump/countryInfo.txt
 239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255  ne_10m_admin_0_countries.geojson  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson
+ad2371e52dd2b9f86e697d3b68819a693d0d2440b188a3c3a2899e36fc8dcd5d  landmarks.ndjson.gz  https://raw.githubusercontent.com/Frameleaf/frameleaf-app/4b01abae314bbf38b8e3fc22f6497e6ae7fb541a/server/base-image/geodata/landmarks/landmarks.ndjson.gz

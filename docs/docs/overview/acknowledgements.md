@@ -77,6 +77,14 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 - **Whisper speech recognition for Studio captions (large-v3-turbo, small; CTranslate2 conversions):** Studio captions on the server (owner decision 2026-10-09): OpenAI Whisper large-v3-turbo (on a GPU) and small (on a CPU) as CTranslate2 conversions run by faster-whisper (MIT, SYSTRAN) on CTranslate2 (MIT, OpenNMT): dropbox-dash/faster-whisper-large-v3-turbo revision 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf (model.bin SHA-256 e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da) and Systran/faster-whisper-small revision 536b0662742c02347bc0e980a01041f333bce120 (model.bin SHA-256 3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671), served unchanged by the Frameleaf model mirror. Runs on this server's ML worker or a home-network worker the owner names; never on Frameleaf Cloud from this path.
 - **Qwen2.5-VL Instruct 3B and 7B (photo descriptions):** The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
 
+## Photo library place data
+
+| Name                                                                                                       | Author                                            | Licence                                          | How it reaches you |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ | ------------------ |
+| [Landmark place pack (OpenStreetMap boundaries, Wikidata places)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors; Wikidata contributors | ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields) | bundled            |
+
+- **Landmark place pack (OpenStreetMap boundaries, Wikidata places):** Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
+
 ## Fonts (Studio titles)
 
 Title fonts come from [Google Fonts](https://fonts.google.com) and are loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps. Designers and licences: google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25.
@@ -340,6 +348,7 @@ arbitrarily-targeted use).
 - [`licenses/texts/lfm-open-license-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/lfm-open-license-1.0.txt)
 - [`licenses/texts/microsoft-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/microsoft-mit.txt)
 - [`licenses/texts/multilingual-clip-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/multilingual-clip-mit.txt)
+- [`licenses/texts/odbl-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/odbl-1.0.txt)
 - [`licenses/texts/ofl-1.1.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/ofl-1.1.txt)
 - [`licenses/texts/open-clip-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/open-clip-license.txt)
 - [`licenses/texts/openai-clip-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/openai-clip-mit.txt)

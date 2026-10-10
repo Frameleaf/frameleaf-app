@@ -7,7 +7,8 @@
     "studio-models": "Studio models, voices and runtimes",
     "studio-assets": "Studio assets and tools",
     "library-models": "Photo library machine learning models",
-    "fonts": "Fonts (Studio titles)"
+    "fonts": "Fonts (Studio titles)",
+    "library-data": "Photo library place data"
   },
   "components": [
     {
@@ -684,6 +685,23 @@
         "ml:nsfw:onnx-community/nsfw_image_detection-ONNX"
       ],
       "source": "Hugging Face card Falconsai/nsfw_image_detection (license: apache-2.0); the conversion declares none"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).",
+      "id": "landmark-place-pack",
+      "group": "library-data",
+      "name": "Landmark place pack (OpenStreetMap boundaries, Wikidata places)",
+      "author": "OpenStreetMap contributors; Wikidata contributors",
+      "licence": "ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields)",
+      "link": "https://www.openstreetmap.org/copyright",
+      "version": "2026-10-10",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/odbl-1.0.txt"
+      ],
+      "covers": [],
+      "source": "server/base-image/geodata/geodata.lock (landmarks.ndjson.gz) and server/base-image/geodata/landmarks/README.md; licence terms from https://osmfoundation.org/wiki/Licence and https://www.wikidata.org/wiki/Wikidata:Licensing"
     }
   ],
   "fonts": {
@@ -1715,6 +1733,13 @@
       "source": "https://raw.githubusercontent.com/LottieFiles/dotlottie-web/main/LICENSE",
       "retrievedOn": "2026-09-25",
       "sha256": "779cec663b3c6590082566f2a000170d7a4d1a4bfc6f954e61efa4adddc652a8"
+    },
+    {
+      "file": "licenses/texts/odbl-1.0.txt",
+      "title": "Open Data Commons Open Database License 1.0",
+      "source": "https://opendatacommons.org/licenses/odbl/odbl-10.txt",
+      "retrievedOn": "2026-10-10",
+      "sha256": "607680718977f6f6c9607972afd98f208573f19251315ed1362a8589b51beaf5"
     }
   ]
 }
