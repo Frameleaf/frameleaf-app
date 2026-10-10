@@ -1,11 +1,12 @@
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590 AS build
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app/manager
 COPY manager/package*.json ./
 RUN npm ci --ignore-scripts
 COPY manager/ ./
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
-FROM node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+FROM ${NODE_IMAGE}
 ARG TARGETARCH
 RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/local/lib/docker/cli-plugins \

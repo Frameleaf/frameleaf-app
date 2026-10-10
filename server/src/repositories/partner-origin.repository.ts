@@ -54,6 +54,13 @@ export type PersonOriginRow = {
   following: boolean;
 };
 export type PersonOriginInput = Omit<PersonOriginRow, 'overriddenFields' | 'following'>;
+export type PersonCopyInput = Omit<PersonOriginInput, 'personGroupId'> & {
+  name: string;
+  birthDate: Date | null;
+  isHidden: boolean;
+};
+export type PersonCopyUndo = { correctionId: string; personGroupId: string; faceIds: string[] };
+export type PersonCopyResult = { personGroupId: string } | { conflict: 'already-undone' | 'person-gone' };
 /** What a partner copy of one asset is made from (spec §4.3). */
 export type AssetCopyInput = {
   sourceAssetId: string;
@@ -313,6 +320,97 @@ export class PartnerOriginRepository {
         WHERE "partnerSharedById" = ${partnerSharedById}::uuid AND "ownerId" = ${ownerId}::uuid AND following
       `.execute(this.db);
     }
+  }
+  /** One live recipient identity per source; allocation, lineage, mapping and undo share this connection. */
+  async createPersonCopy(input: PersonCopyInput, undo?: PersonCopyUndo): Promise<PersonCopyResult> {
+    return this.db.transaction().execute(async (tx) => {
+      const key = createHash('sha1')
+        .update('partner-person-copy\0')
+        .update(input.ownerId)
+        .update(input.sourcePersonGroupId)
+        .digest()
+        .readBigInt64BE(0);
+      await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(tx);
+      if (undo) {
+        const {
+          rows: [correction],
+        } = await sql<{ undoneAt: Date | null }>`
+          SELECT "undoneAt" FROM public.face_correction
+          WHERE id = ${undo.correctionId}::uuid AND "ownerId" = ${input.ownerId}::uuid
+            AND action = 'partner-merge' FOR UPDATE
+        `.execute(tx);
+        if (!correction || correction.undoneAt) return { conflict: 'already-undone' };
+        const { rows } = await sql`
+          SELECT 1 FROM public.partner_person_link link
+          JOIN person ON person."ownerId" = link."ownerId" AND person."personGroupId" = link."personGroupId"
+          WHERE link."ownerId" = ${input.ownerId}::uuid AND link."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
+            AND link."personGroupId" = ${undo.personGroupId}::uuid AND link."correctionId" = ${undo.correctionId}::uuid
+        `.execute(tx);
+        if (rows.length === 0) return { conflict: 'person-gone' };
+      } else {
+        const { rows } = await sql<{ personGroupId: string }>`
+          SELECT link."personGroupId" FROM public.partner_person_link link
+          JOIN person ON person."ownerId" = link."ownerId" AND person."personGroupId" = link."personGroupId"
+          WHERE link."ownerId" = ${input.ownerId}::uuid AND link."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
+        `.execute(tx);
+        if (rows[0]) return rows[0];
+      }
+      const { rows } = await sql<{ personGroupId: string }>`
+        SELECT origin."personGroupId" FROM public.person_origin origin
+        JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
+        WHERE origin."ownerId" = ${input.ownerId}::uuid AND origin."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
+      `.execute(tx);
+      let personGroupId = rows[0]?.personGroupId;
+      if (!personGroupId) {
+        // A deleted recipient person is no longer a mapping, but its source unique key can remain.
+        await sql`
+          DELETE FROM public.person_origin origin
+          WHERE origin."ownerId" = ${input.ownerId}::uuid AND origin."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
+            AND NOT EXISTS (SELECT 1 FROM person WHERE person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId")
+        `.execute(tx);
+        const group = await tx
+          .insertInto('person_group')
+          .columns(['clusterGroupId'])
+          .expression((eb) => eb.selectFrom('user').select('clusterGroupId').where('id', '=', input.ownerId))
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        personGroupId = group.id;
+        await tx
+          .insertInto('person')
+          .values({
+            ownerId: input.ownerId,
+            personGroupId,
+            name: input.name,
+            birthDate: input.birthDate,
+            isHidden: input.isHidden,
+          })
+          .execute();
+        await this.createPersonOrigin({ ...input, personGroupId }, tx);
+      }
+      if (undo) {
+        await sql`
+          UPDATE public.face_correction SET "undoneAt" = clock_timestamp()
+          WHERE id = ${undo.correctionId}::uuid AND "ownerId" = ${input.ownerId}::uuid
+        `.execute(tx);
+        if (undo.faceIds.length > 0) {
+          await tx
+            .updateTable('asset_face')
+            .set({ personGroupId, correctedAt: sql`clock_timestamp()` })
+            .where('id', 'in', undo.faceIds)
+            .where('personGroupId', '=', undo.personGroupId)
+            .where('assetId', 'in', (eb) => eb.selectFrom('asset').select('id').where('ownerId', '=', input.ownerId))
+            .execute();
+        }
+      }
+      await sql`
+        INSERT INTO public.partner_person_link ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById", "correctionId")
+        VALUES (${input.ownerId}::uuid, ${input.sourcePersonGroupId}::uuid, ${personGroupId}::uuid, 'created', ${input.partnerSharedById}::uuid, NULL)
+        ON CONFLICT ("ownerId", "sourcePersonGroupId") DO UPDATE
+        SET "personGroupId" = excluded."personGroupId", kind = excluded.kind,
+          "partnerSharedById" = excluded."partnerSharedById", "correctionId" = excluded."correctionId"
+      `.execute(tx);
+      return { personGroupId };
+    });
   }
   async createPersonOrigin(input: PersonOriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     await sql`

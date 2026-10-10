@@ -274,6 +274,8 @@ describe('PersonService face history (FL-57)', () => {
       const sourcePersonGroupId = newUuid();
       const partnerId = newUuid();
       const newGroupId = newUuid();
+      const rootOwnerId = newUuid();
+      const birthDate = new Date('1990-01-01');
       mocks.person.getFaceCorrection.mockResolvedValue(entry);
       mocks.person.getPartnerPersonLinkByCorrection.mockResolvedValue({
         ownerId: entry.ownerId,
@@ -284,10 +286,11 @@ describe('PersonService face history (FL-57)', () => {
         correctionId: entry.id,
       });
       mocks.person.getPartnerMergedFaceIds.mockResolvedValue(['face-1']);
-      mocks.person.getByGroupId.mockResolvedValue(PersonFactory.create({ ownerId: partnerId, name: 'Emma' }));
-      mocks.person.createGroup.mockResolvedValue({ id: newGroupId } as never);
-      mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: entry.ownerId }));
-      mocks.person.undoPartnerMerge.mockResolvedValue(true);
+      mocks.person.getByGroupId.mockResolvedValue(
+        PersonFactory.create({ ownerId: partnerId, name: 'Emma', birthDate, isHidden: true }),
+      );
+      mocks.person.getPersonOriginRoot.mockResolvedValue(rootOwnerId);
+      mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ personGroupId: newGroupId });
       const thumbnailSelection = {
         where: vi.fn().mockReturnThis(),
         execute: vi
@@ -306,9 +309,28 @@ describe('PersonService face history (FL-57)', () => {
           undoable: false,
         }),
       );
-      expect(mocks.person.undoPartnerMerge).toHaveBeenCalledWith(entry.id, ['face-1'], newGroupId);
-      expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
-        expect.objectContaining({ ownerId: entry.ownerId, personGroupId: newGroupId, sourcePersonGroupId }),
+      expect(mocks.person.getFaceCorrection).toHaveBeenCalledWith(entry.ownerId, entry.id);
+      expect(mocks.person.getPartnerMergedFaceIds).toHaveBeenCalledWith(
+        entry.ownerId,
+        sourcePersonGroupId,
+        entry.toPersonId,
+      );
+      expect(mocks.person.getByGroupId).toHaveBeenCalledWith({
+        ownerId: partnerId,
+        personGroupId: sourcePersonGroupId,
+      });
+      expect(mocks.partnerOrigin.createPersonCopy).toHaveBeenCalledExactlyOnceWith(
+        {
+          ownerId: entry.ownerId,
+          sourceOwnerId: partnerId,
+          sourcePersonGroupId,
+          rootOwnerId,
+          partnerSharedById: partnerId,
+          name: 'Emma',
+          birthDate,
+          isHidden: true,
+        },
+        { correctionId: entry.id, personGroupId: entry.toPersonId, faceIds: ['face-1'] },
       );
       expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(false, entry.ownerId);
       expect(thumbnailSelection.where).toHaveBeenCalledWith('person.personGroupId', 'in', [newGroupId]);

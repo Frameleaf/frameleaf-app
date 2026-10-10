@@ -53,15 +53,16 @@ test.describe('Photo Viewer', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('loads original photo when zoomed', async ({ page }) => {
+  test('loads original photo when zoomed', async ({ context, page }) => {
     await page.goto(`/photos/${asset.id}`);
 
     const preview = page.getByTestId('preview').filter({ visible: true });
     await expect(preview).toHaveAttribute('src', /.+/);
 
-    const originalResponse = page.waitForResponse((response) =>
-      new URL(response.url()).pathname.endsWith(`/assets/${asset.id}/original`),
-    );
+    // The service worker follows the redirect; its response belongs to the browser context.
+    const originalResponse = context.waitForEvent('response', {
+      predicate: (response) => new URL(response.url()).pathname.endsWith(`/assets/${asset.id}/original`),
+    });
 
     const { width, height } = page.viewportSize()!;
     await page.mouse.move(width / 2, height / 2);

@@ -594,7 +594,37 @@
       "path": "patches/0122-rolling-edit-linked-track-lock-preflight.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0b145069a4c5460163f4c9d1b056440f3e34ca353994478407db450ae947912c"
+    },
+    {
+      "path": "patches/0123-removal-preview-lifetime-context.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5d0ad7eab48db5fd795d5951e946990b845ad554f652069dd10db3f36d04cb61"
+    },
+    {
+      "path": "patches/0124-normalization-inherited-track-state.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e119801be4e11c1fea390f54bbba849fdd3f4b0a731a40cd8bc6437222364e9f"
+    },
+    {
+      "path": "patches/0125-shared-proxy-deletion-alias-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2e5d07f39fa4005d1f3c180b464b545929debc1bffcd33108826417c6db9b06b"
+    },
+    {
+      "path": "patches/0126-project-copy-media-entry-references.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c93159a43e624d238d086aac29014fd2c4927abfe199a012aa0f5ff0faccfa52"
+    },
+    {
+      "path": "patches/0127-persisted-lottie-discriminator.patch",
+      "sha256": "d037a57d7ccc013b58528e2bce8c878e9acfeadf96053572e5bb6692ac60e27a",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0128-persisted-subtitle-discriminator.patch",
+      "sha256": "814f21171d2100a1680365d2a9b7c9b57d1485330417367d6feda4dd4c211e0f",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3"
+  "sourceSha256": "da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327"
 }

@@ -8,6 +8,7 @@ import test from "node:test";
 import { deriveOpenApiComparisonBase } from "./prepare-openapi-comparison-base.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.31.0";
 const base = () => ({
   openapi: "3.0.3",
   info: { title: "Literal compatibility", version: "1" },
@@ -176,7 +177,7 @@ test("pinned compatibility gate accepts equivalent legacy literals and rejects a
           `${fixtures}:/fixtures:ro`,
           "-w",
           "/workspace",
-          "tufin/oasdiff:v1.31.0",
+          oasdiffImage,
           "breaking",
           "--format",
           "json",

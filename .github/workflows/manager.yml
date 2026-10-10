@@ -12,6 +12,9 @@ on:
         '.github/frameleaf-release.cjs',
         'docker/postgres/**',
         'docker/docker-compose*.yml',
+        'scripts/configure-dockerhub-mirror.sh',
+        'scripts/dockerhub-mirror.test.mjs',
+        'scripts/ci-registry-images.test.mjs',
         '.github/workflows/manager.yml',
         'server/src/*/frameleaf-library-setup*',
         'server/src/controllers/index*',
@@ -37,6 +40,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   manager:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ${{ matrix.runner }}
@@ -75,7 +81,15 @@ jobs:
         run: npx --prefix manager playwright install --with-deps chromium
       - name: Manager navigation, setup, maintenance and responsive interactions
         run: node manager/test/ui-browser.mjs
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - run: mkdir -p "$RUNNER_TEMP/manager"
       - name: Build Manager once without publishing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -83,7 +97,9 @@ jobs:
           context: .
           file: manager/Dockerfile
           platforms: linux/${{ matrix.architecture }}
-          build-args: TARGETARCH=${{ matrix.architecture }}
+          build-args: |
+            TARGETARCH=${{ matrix.architecture }}
+            NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           tags: frameleaf-manager:test
           push: false
           provenance: false
@@ -97,7 +113,7 @@ jobs:
       - name: HTTPS claim, session and restart integration
         run: node manager/test/container.mjs
       - name: Build PostgreSQL from the owned pinned source
-        run: docker build --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
+        run: docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
       - name: Real disk PostgreSQL, encrypted Restic recovery and logical restore
         run: node manager/test/postgres-container.mjs
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

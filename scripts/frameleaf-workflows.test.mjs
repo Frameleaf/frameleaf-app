@@ -1023,12 +1023,28 @@ test("OpenAPI compares immutable same-repository base commits, not the moving ta
   );
   assert.ok(steps.indexOf(baseline) < steps.indexOf(derivation));
   assert.ok(steps.indexOf(derivation) < steps.indexOf(comparison));
+  assert.equal(comparison.uses, undefined);
+  assert.equal(comparison.with, undefined);
   assert.equal(
-    comparison.with.base,
-    ".frameleaf-api-base/open-api/immich-openapi-comparison-base.json",
+    comparison.if,
+    "${{ !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved') }}",
   );
-  assert.equal(comparison.with.revision, "open-api/immich-openapi-specs.json");
-  assert.equal(comparison.with["fail-on"], "ERR");
+  assert.equal(
+    w.jobs["check-openapi"].env.OASDIFF_IMAGE,
+    "mirror.gcr.io/tufin/oasdiff@sha256:cc59265b995bd19e1e87cf4302ab70b520f730c33ebdf52e3cfa154fe4a3b2fb",
+  );
+  assert.equal(
+    comparison.run.replace(/\\\n/g, " ").trim().replace(/\s+/g, " "),
+    'docker run --rm --network none -e OASDIFF_INTERNAL=1 -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace "$OASDIFF_IMAGE" breaking --format json --fail-on ERR /workspace/.frameleaf-api-base/open-api/immich-openapi-comparison-base.json /workspace/open-api/immich-openapi-specs.json',
+  );
+  for (const file of [
+    "frameleaf-openapi-policy.test.mjs",
+    "openapi-comparison-base.test.mjs",
+  ]) {
+    const policy = steps.find((s) => s.run === `node --test scripts/${file}`);
+    assert.ok(policy, `required OpenAPI policy caller ${file}`);
+    assert.ok(steps.indexOf(policy) < steps.indexOf(comparison));
+  }
   const guard = steps.find(
     (s) => s.name === "Validate immutable comparison commit",
   ).run;

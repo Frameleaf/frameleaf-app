@@ -1,4 +1,4 @@
-/** Trusted touch → toolbar-selected production Slip; exact linked ranges/history/OPFS, no host authority claim. */
+/** Trusted touch → production Slip or Select-cut Roll; exact linked ranges/history/OPFS, no host authority claim. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -47,6 +47,8 @@ assert(
   evidence,
   "STUDIO_TEST_EVIDENCE must identify an owned evidence directory",
 );
+const editTool = process.env.STUDIO_TIMELINE_EDIT ?? "slip";
+assert.ok(["slip", "roll"].includes(editTool));
 const mutation = process.env.STUDIO_TEST_MUTATION;
 assert(
   !mutation ||
@@ -68,6 +70,7 @@ const witness = {
   lockedProjectId,
   viewport: { width: 1024, height: 768 },
 };
+if (editTool === "roll") witness.nativeTool = "roll";
 // Compare the complete serialized edit graph, excluding only the documented view state.
 const editContent = (timeline) => {
   const {
@@ -85,6 +88,17 @@ const expectedSlipContent = (initial) => ({
     ["slip-v-A", "slip-a-A"].includes(item.id)
       ? { ...item, sourceStart: 30, sourceEnd: 150 }
       : item,
+  ),
+});
+// Independent +30 edit point oracle, not the live preview or production clamp helper.
+const expectedRollContent = (initial) => ({
+  ...initial,
+  items: initial.items.map((item) =>
+    ["slip-v-A", "slip-a-A"].includes(item.id)
+      ? { ...item, durationInFrames: 150, sourceEnd: 150 }
+      : ["slip-v-B", "slip-a-B"].includes(item.id)
+        ? { ...item, from: 150, durationInFrames: 180, sourceStart: 60 }
+        : item,
   ),
 });
 try {
@@ -142,6 +156,8 @@ try {
     await page
       .getByRole("button", { name: "Select Tool", exact: true })
       .click();
+    // Select's smart cut supplies Roll; there is no invented Roll toolbar command.
+    if (editTool === "roll") return;
     await page
       .getByRole("button", { name: "Slip Slide Tools", exact: true })
       .click();
@@ -166,7 +182,8 @@ try {
   const beginDrag = async (
     target = clip,
     durationFrames = 120,
-    pointerFrames = -30,
+    pointerFrames = editTool === "roll" ? 30 : -30,
+    atCut = editTool === "roll",
   ) => {
     const box = await target.boundingBox();
     assert(
@@ -182,16 +199,31 @@ try {
       "drag target must intersect the real viewport",
     );
     const start = {
-      x: (visibleLeft + visibleRight) / 2,
+      x: atCut ? box.x + box.width - 1 : (visibleLeft + visibleRight) / 2,
       y: box.y + box.height / 2,
       id: 1,
     };
-    // Pointer Slip negates displacement: left30 timeline frames advances source by30.
+    // Roll moves the cut right30; Slip negates displacement to advance source by30.
     const dx = (box.width * pointerFrames) / durationFrames;
-    assert(
-      start.x + dx > visibleLeft && start.x + dx < visibleRight,
-      "the complete trusted gesture must stay inside the visible clip",
-    );
+    if (atCut) {
+      assert(
+        start.x >= 0 && start.x < witness.viewport.width,
+        "actual cut must be in the viewport",
+      );
+      assert(
+        start.y >= 0 && start.y < witness.viewport.height,
+        "actual handle must be in the viewport",
+      );
+      assert(
+        start.x + dx >= 0 && start.x + dx < witness.viewport.width,
+        "the complete trusted Roll gesture must stay in the viewport",
+      );
+    } else {
+      assert(
+        start.x + dx > visibleLeft && start.x + dx < visibleRight,
+        "the complete trusted gesture must stay inside the visible clip",
+      );
+    }
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [start],
@@ -278,7 +310,10 @@ try {
     ],
     "fixture must match the independent30fps source-range oracle",
   );
-  witness.expectedContent = expectedSlipContent(witness.initialContent);
+  witness.expectedContent =
+    editTool === "roll"
+      ? expectedRollContent(witness.initialContent)
+      : expectedSlipContent(witness.initialContent);
   // A Select drag left from frame zero only selects. The negative control instead
   // moves the tail B pair right into free space, proving actual movement cannot pass Slip.
   witness.editGesture =
@@ -287,8 +322,26 @@ try {
           page.locator('[data-timeline-item][data-item-id="slip-v-B"]'),
           210,
           30,
+          false,
         )
       : await beginDrag();
+  if (editTool === "roll" && mutation !== "wrong-tool") {
+    witness.commitPreview = await page.evaluate(() =>
+      window.fl100Editor.rollPreview(),
+    );
+    assert.equal(witness.commitPreview.trimmedItemId, "slip-v-A");
+    assert.equal(witness.commitPreview.neighborItemId, "slip-v-B");
+    assert.equal(witness.commitPreview.handle, "end");
+    assert.equal(witness.commitPreview.neighborDelta, 30);
+    assert.equal(
+      witness.commitPreview.linkedUpdates["slip-a-A"].sourceEnd,
+      150,
+    );
+    assert.equal(
+      witness.commitPreview.linkedUpdates["slip-a-B"].sourceStart,
+      60,
+    );
+  }
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
@@ -310,8 +363,36 @@ try {
   assert.deepEqual(
     witness.editedContent,
     witness.expectedContent,
-    "Slip must change exactly both A source ranges to30..150; placement, B and unrelated graph must be unchanged",
+    editTool === "roll"
+      ? "Roll must move only the linked A/B cut to150 with A0..150/B60..240 source ranges and fixed span330"
+      : "Slip must change exactly both A source ranges to30..150; placement, B and unrelated graph must be unchanged",
   );
+  if (editTool === "roll") {
+    for (const trackId of ["slip-v", "slip-a"]) {
+      assert.deepEqual(
+        witness.edited.items
+          .filter((item) => item.trackId === trackId)
+          .map(({ from, durationInFrames, sourceStart, sourceEnd }) => ({
+            from,
+            durationInFrames,
+            sourceStart,
+            sourceEnd,
+          })),
+        [
+          { from: 0, durationInFrames: 150, sourceStart: 0, sourceEnd: 150 },
+          { from: 150, durationInFrames: 180, sourceStart: 60, sourceEnd: 240 },
+        ],
+      );
+      assert.equal(
+        Math.max(
+          ...witness.edited.items
+            .filter((item) => item.trackId === trackId)
+            .map((item) => item.from + item.durationInFrames),
+        ),
+        330,
+      );
+    }
+  }
   assert.equal(witness.edited.undoCount, 1);
   assert.equal(witness.edited.canRedo, false);
   const modifier = process.platform === "darwin" ? "Meta" : "Control";
@@ -329,24 +410,60 @@ try {
   assert.deepEqual(
     editContent(await timeline()),
     witness.expectedContent,
-    "real redo must restore the independently expected Slip graph",
+    `real redo must restore the independently expected ${editTool === "roll" ? "Roll" : "Slip"} graph`,
   );
   assert.deepEqual(witness.redone.items, witness.edited.items);
   assert.equal(witness.redone.undoCount, 1);
   const beforeCancel = await state();
   const contentBeforeCancel = editContent(await timeline());
-  witness.cancelGesture = await beginDrag();
-  witness.cancelPreview = await page.evaluate(() =>
-    window.fl100Editor.slipPreview(),
+  if (editTool === "roll")
+    witness.historyBeforeCancel = await page.evaluate(() =>
+      window.fl100Editor.historySnapshot(),
+    );
+  witness.cancelGesture = await beginDrag(
+    clip,
+    editTool === "roll" ? 150 : 120,
   );
-  assert.equal(witness.cancelPreview.itemId, "slip-v-A");
-  assert.equal(
-    witness.cancelPreview.slipDelta,
-    30,
-    "cancel must first reach a real nonzero source preview",
+  witness.cancelPreview = await page.evaluate(
+    (tool) =>
+      tool === "roll"
+        ? window.fl100Editor.rollPreview()
+        : window.fl100Editor.slipPreview(),
+    editTool,
   );
-  assert.equal(witness.cancelPreview.linkedUpdates["slip-a-A"].sourceStart, 60);
-  assert.equal(witness.cancelPreview.linkedUpdates["slip-a-A"].sourceEnd, 180);
+  if (editTool === "roll") {
+    assert.equal(witness.cancelPreview.trimmedItemId, "slip-v-A");
+    assert.equal(witness.cancelPreview.neighborItemId, "slip-v-B");
+    assert.equal(witness.cancelPreview.handle, "end");
+    assert.equal(
+      witness.cancelPreview.neighborDelta,
+      30,
+      "cancel must first reach a real nonzero Roll preview",
+    );
+    assert.equal(
+      witness.cancelPreview.linkedUpdates["slip-a-A"].sourceEnd,
+      180,
+    );
+    assert.equal(
+      witness.cancelPreview.linkedUpdates["slip-a-B"].sourceStart,
+      90,
+    );
+  } else {
+    assert.equal(witness.cancelPreview.itemId, "slip-v-A");
+    assert.equal(
+      witness.cancelPreview.slipDelta,
+      30,
+      "cancel must first reach a real nonzero source preview",
+    );
+    assert.equal(
+      witness.cancelPreview.linkedUpdates["slip-a-A"].sourceStart,
+      60,
+    );
+    assert.equal(
+      witness.cancelPreview.linkedUpdates["slip-a-A"].sourceEnd,
+      180,
+    );
+  }
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchCancel",
     touchPoints: [],
@@ -363,6 +480,16 @@ try {
     contentBeforeCancel,
     "cancel must restore the whole edit graph",
   );
+  if (editTool === "roll") {
+    witness.historyAfterCancel = await page.evaluate(() =>
+      window.fl100Editor.historySnapshot(),
+    );
+    assert.deepEqual(
+      witness.historyAfterCancel,
+      witness.historyBeforeCancel,
+      "Roll cancellation must preserve complete retained undo/redo entries and dirty state",
+    );
+  }
   if (mutation === "corrupt-retained-history") {
     await page.evaluate(() =>
       window.fl100Editor.corruptRetainedTouchHistoryForControl(),
@@ -432,6 +559,42 @@ try {
   lockedProjectPrepared = true;
   await page.waitForFunction(() => window.fl100Editor.touchReady());
   await selectSlip();
+  if (editTool === "roll") {
+    // A real body move and native undo seed a nonempty redo before the refused cut.
+    witness.lockedSeedOriginal = editContent(await timeline());
+    witness.lockedSeedGesture = await beginDrag(
+      page.locator('[data-timeline-item][data-item-id="slip-unrelated"]'),
+      45,
+      15,
+      false,
+    );
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await page.waitForFunction(
+      () => window.fl100Editor.state().undoCount === 1,
+    );
+    witness.lockedSeedEdited = editContent(await timeline());
+    const expectedSeed = {
+      ...witness.lockedSeedOriginal,
+      items: witness.lockedSeedOriginal.items.map((item) =>
+        item.id === "slip-unrelated" ? { ...item, from: 30 } : item,
+      ),
+    };
+    assert.deepEqual(
+      witness.lockedSeedEdited,
+      expectedSeed,
+      "locked-case redo must originate in a real unrelated +15 move, not a fabricated history entry",
+    );
+    await page.keyboard.press(`${modifier}+z`);
+    assert.deepEqual(editContent(await timeline()), witness.lockedSeedOriginal);
+    witness.lockedHistoryBefore = await page.evaluate(() =>
+      window.fl100Editor.historySnapshot(),
+    );
+    assert.equal(witness.lockedHistoryBefore.undo.length, 0);
+    assert.equal(witness.lockedHistoryBefore.redo.length, 1);
+  }
   witness.lockedBefore = await state();
   witness.lockedContentBefore = editContent(await timeline());
   assert.equal(
@@ -457,11 +620,41 @@ try {
   assert.deepEqual(witness.lockedAfter.items, witness.lockedBefore.items);
   assert.equal(witness.lockedAfter.undoCount, 0);
   assert.equal(witness.lockedAfter.canUndo, false);
-  assert.equal(witness.lockedAfter.canRedo, false);
-  witness.lockedPreview = await page.evaluate(() =>
-    window.fl100Editor.slipPreview(),
+  assert.equal(witness.lockedAfter.canRedo, editTool === "roll");
+  if (editTool === "roll") {
+    witness.lockedHistoryAfter = await page.evaluate(() =>
+      window.fl100Editor.historySnapshot(),
+    );
+    assert.deepEqual(
+      witness.lockedHistoryAfter,
+      witness.lockedHistoryBefore,
+      "locked Roll must preserve the entire nonempty redo and current graph",
+    );
+    await page.keyboard.press(`${modifier}+Shift+z`);
+    assert.deepEqual(
+      editContent(await timeline()),
+      witness.lockedSeedEdited,
+      "refused Roll must leave the real retained redo executable",
+    );
+    await page.keyboard.press(`${modifier}+z`);
+    assert.deepEqual(
+      editContent(await timeline()),
+      witness.lockedContentBefore,
+    );
+  }
+  witness.lockedPreview = await page.evaluate(
+    (tool) =>
+      tool === "roll"
+        ? window.fl100Editor.rollPreview()
+        : window.fl100Editor.slipPreview(),
+    editTool,
   );
-  assert.equal(witness.lockedPreview.itemId, null);
+  assert.equal(
+    editTool === "roll"
+      ? witness.lockedPreview.trimmedItemId
+      : witness.lockedPreview.itemId,
+    null,
+  );
   assert.deepEqual(witness.lockedPreview.linkedUpdates, {});
   witness.pointerEvents = await page.evaluate(() => window.fl94TouchEvents);
   assert(witness.pointerEvents.length > 0);
@@ -473,13 +666,22 @@ try {
   assert.equal(
     witness.pointerEvents.filter((event) => event.type === "pointerdown")
       .length,
-    3,
+    editTool === "roll" ? 4 : 3,
   );
-  assert(
-    witness.pointerEvents
-      .filter((event) => event.type === "pointerdown")
-      .every((event) => event.itemId === "slip-v-A"),
-  );
+  if (editTool === "roll") {
+    assert.deepEqual(
+      witness.pointerEvents
+        .filter((event) => event.type === "pointerdown")
+        .map((event) => event.itemId),
+      ["slip-v-A", "slip-v-A", "slip-unrelated", "slip-v-A"],
+    );
+  } else {
+    assert(
+      witness.pointerEvents
+        .filter((event) => event.type === "pointerdown")
+        .every((event) => event.itemId === "slip-v-A"),
+    );
+  }
   assert.equal(
     witness.pointerEvents.filter((event) => event.type === "pointercancel")
       .length,
@@ -519,7 +721,12 @@ try {
   );
   witness.userAgent = await page.evaluate(() => navigator.userAgent);
   await page.screenshot({
-    path: path.join(evidence, "tablet-slip-reopened.png"),
+    path: path.join(
+      evidence,
+      editTool === "roll"
+        ? "tablet-roll-reopened.png"
+        : "tablet-slip-reopened.png",
+    ),
   });
   assert(
     harness.observations.some(
@@ -590,5 +797,7 @@ try {
 }
 if (cleanupFailure) throw cleanupFailure;
 process.stdout.write(
-  "PASS trusted toolbar Slip linked source ranges → history/cancel retained undo/redo → locked companion refusal → OPFS save/reopen\n",
+  editTool === "roll"
+    ? "PASS trusted Select cut Roll linked ranges/fixed span → history/cancel retained undo/redo → locked nonempty-redo refusal → OPFS save/reopen\n"
+    : "PASS trusted toolbar Slip linked source ranges → history/cancel retained undo/redo → locked companion refusal → OPFS save/reopen\n",
 );
