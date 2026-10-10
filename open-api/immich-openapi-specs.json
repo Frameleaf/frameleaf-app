@@ -13844,6 +13844,229 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/filmstrip": {
+      "get": {
+        "description": "The index of a filmstrip sprite sheet for a Studio timeline: `count` frames sampled at the centre of equal slices of the video, each `height` pixels high, laid out left to right and top to bottom. Returns each frame timestamp and its position in the sprite; fetch the image from `/assets/{id}/filmstrip/sprite` with the same parameters and `version`. Made on first request from the playback rendition, cached, and remade when the video changes. 404 for anything that is not a video.",
+        "operationId": "getAssetFilmstrip",
+        "parameters": [
+          {
+            "name": "count",
+            "required": false,
+            "in": "query",
+            "description": "Frames to sample, evenly spaced along the video (default 20)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 120,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "jpeg",
+              "$ref": "#/components/schemas/AssetFilmstripFormat"
+            }
+          },
+          {
+            "name": "height",
+            "required": false,
+            "in": "query",
+            "description": "Frame height in pixels (default 90); the width follows the aspect ratio",
+            "schema": {
+              "minimum": 32,
+              "maximum": 240,
+              "default": 90,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFilmstripResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get video filmstrip",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/filmstrip/sprite": {
+      "get": {
+        "description": "The filmstrip sprite sheet (JPEG or WebP) the filmstrip index describes, for the same `count`, `height` and `format`. With `version`, 404 when the video changed since that index was read.",
+        "operationId": "viewAssetFilmstripSprite",
+        "parameters": [
+          {
+            "name": "count",
+            "required": false,
+            "in": "query",
+            "description": "Frames to sample, evenly spaced along the video (default 20)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 120,
+              "default": 20,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "jpeg",
+              "$ref": "#/components/schemas/AssetFilmstripFormat"
+            }
+          },
+          {
+            "name": "height",
+            "required": false,
+            "in": "query",
+            "description": "Frame height in pixels (default 90); the width follows the aspect ratio",
+            "schema": {
+              "minimum": 32,
+              "maximum": 240,
+              "default": 90,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "required": false,
+            "in": "query",
+            "description": "The `version` from the filmstrip index. When given and the video changed since, 404 is returned",
+            "schema": {
+              "pattern": "^[0-9a-f]{16}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View video filmstrip sprite",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/image-enrichment": {
       "get": {
         "description": "Retrieve private image description, tag, and NSFW detection metadata for a specific asset.",
@@ -15572,6 +15795,100 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.view",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/waveform": {
+      "get": {
+        "description": "Minimum and maximum sample per bucket of the video’s first audio track, normalized to -1..1, mono or per channel, for a Studio timeline. A video without audio returns `hasAudio: false` and no channels; anything that is not a video is 404. Made on first request from the playback rendition, cached, and remade when the video changes.",
+        "operationId": "getAssetWaveform",
+        "parameters": [
+          {
+            "name": "buckets",
+            "required": false,
+            "in": "query",
+            "description": "Peak pairs to return per channel (default 1000); fewer are returned for very short audio",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1000,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "channels",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "mono",
+              "$ref": "#/components/schemas/AssetWaveformChannelMode"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetWaveformResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get video audio waveform",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -59641,6 +59958,133 @@
         ],
         "type": "string"
       },
+      "AssetFilmstripFormat": {
+        "description": "Sprite sheet image format",
+        "enum": [
+          "jpeg",
+          "webp"
+        ],
+        "type": "string"
+      },
+      "AssetFilmstripFrameDto": {
+        "properties": {
+          "index": {
+            "description": "Frame position, 0-based",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "timeMs": {
+            "description": "Timestamp of the frame in the video, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "x": {
+            "description": "Left edge of the frame in the sprite, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "y": {
+            "description": "Top edge of the frame in the sprite, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "timeMs",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetFilmstripResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "columns": {
+            "description": "Tiles per sprite row",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "durationMs": {
+            "description": "Duration of the video, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/AssetFilmstripFormat"
+          },
+          "frameHeight": {
+            "description": "Height of every frame tile, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "frameWidth": {
+            "description": "Width of every frame tile, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "frames": {
+            "description": "Frames in time order, left to right, top to bottom",
+            "items": {
+              "$ref": "#/components/schemas/AssetFilmstripFrameDto"
+            },
+            "type": "array"
+          },
+          "mimeType": {
+            "description": "Content type of the sprite",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Sprite rows",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "spriteHeight": {
+            "description": "Sprite height, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "spriteWidth": {
+            "description": "Sprite width, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "version": {
+            "description": "Changes whenever the video changes; pass it to the sprite request",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "columns",
+          "durationMs",
+          "format",
+          "frameHeight",
+          "frameWidth",
+          "frames",
+          "mimeType",
+          "rows",
+          "spriteHeight",
+          "spriteWidth",
+          "version"
+        ],
+        "type": "object"
+      },
       "AssetIdErrorReason": {
         "description": "Error reason if failed",
         "enum": [
@@ -61249,6 +61693,90 @@
           "locked"
         ],
         "type": "string"
+      },
+      "AssetWaveformChannelDto": {
+        "properties": {
+          "max": {
+            "description": "Highest sample in each bucket, -1 to 1",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "min": {
+            "description": "Lowest sample in each bucket, -1 to 1",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "max",
+          "min"
+        ],
+        "type": "object"
+      },
+      "AssetWaveformChannelMode": {
+        "description": "mono downmixes every channel into one; all returns each channel (up to 8)",
+        "enum": [
+          "mono",
+          "all"
+        ],
+        "type": "string"
+      },
+      "AssetWaveformResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "bucketCount": {
+            "description": "Peak pairs per channel",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "bucketDurationMs": {
+            "description": "Audio time each bucket covers, in milliseconds",
+            "format": "double",
+            "type": "number"
+          },
+          "channels": {
+            "description": "One entry for mono, otherwise one per channel",
+            "items": {
+              "$ref": "#/components/schemas/AssetWaveformChannelDto"
+            },
+            "type": "array"
+          },
+          "durationMs": {
+            "description": "Duration of the decoded audio, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "hasAudio": {
+            "description": "false for a video without an audio track; channels is then empty",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "Changes whenever the video changes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "bucketCount",
+          "bucketDurationMs",
+          "channels",
+          "durationMs",
+          "hasAudio",
+          "version"
+        ],
+        "type": "object"
       },
       "AudioCodec": {
         "description": "Target audio codec",
