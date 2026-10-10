@@ -1,4 +1,7 @@
 import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -553,9 +556,20 @@ export class StudioPreviewService {
     if (!isInsideFolder(folder, output.path)) {
       throw new BadRequestException('The frame must be inside the directory this render was given');
     }
-    const stat = await this.storage.stat(output.path).catch(() => null);
-    if (!stat?.isFile() || String(stat.size) !== output.sizeInBytes) {
-      throw new BadRequestException('The frame is missing or its size does not match');
+    const handle = await open(output.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
+    if (!handle) throw new BadRequestException('The frame is missing or is not a regular file');
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || String(stat.size) !== output.sizeInBytes) {
+        throw new BadRequestException('The frame is missing or its size does not match');
+      }
+      const hash = createHash('sha256');
+      for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk);
+      if (hash.digest('hex') !== output.checksum) {
+        throw new BadRequestException('The frame does not match its checksum');
+      }
+    } finally {
+      await handle.close();
     }
 
     const frame = await this.repository.getForOwner(frameId, operation.ownerId);

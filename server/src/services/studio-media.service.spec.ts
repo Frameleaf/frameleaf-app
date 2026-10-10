@@ -76,6 +76,22 @@ describe(StudioMediaService.name, () => {
     });
   });
 
+  it('bounds the generation wait queue and releases it after failures', async () => {
+    const limited = (work: () => Promise<void>) =>
+      (sut as unknown as { limited: (work: () => Promise<void>) => Promise<void> }).limited(work);
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const work = vi.fn(() => held);
+    const accepted = Array.from({ length: 10 }, () => limited(work));
+    await expect(limited(work)).rejects.toThrow('Studio media generation is busy');
+    finish();
+    await Promise.all(accepted);
+    await expect(limited(() => Promise.reject(new Error('failed')))).rejects.toThrow('failed');
+    await expect(limited(() => Promise.resolve())).resolves.toBeUndefined();
+  });
+
   describe('filmstrip', () => {
     it('cuts frames from the playback rendition, never the original, and composes a sprite', async () => {
       mocks.media.probe.mockResolvedValue(videoInfo(false));

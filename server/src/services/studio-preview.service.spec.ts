@@ -1,5 +1,13 @@
 import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import type { Mock } from 'vitest';
+
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  open: vi.fn(),
+}));
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -290,7 +298,18 @@ describe(StudioPreviewService.name, () => {
     let output: { path: string; checksum: string; sizeInBytes: string; contentType: string };
     beforeEach(() => {
       folder = studioPreviewFrameFolder(authStub.user1.user.id, 'frame-1');
-      output = { path: `${folder}/frame.png`, checksum: 'c'.repeat(64), sizeInBytes: '2048', contentType: 'image/png' };
+      const bytes = Buffer.alloc(2048);
+      output = {
+        path: `${folder}/frame.png`,
+        checksum: createHash('sha256').update(bytes).digest('hex'),
+        sizeInBytes: '2048',
+        contentType: 'image/png',
+      };
+      vi.mocked(open).mockResolvedValue({
+        stat: () => storage.stat(output.path),
+        createReadStream: () => Readable.from([bytes]),
+        close: vi.fn().mockResolvedValue(undefined),
+      } as never);
     });
 
     it('gives the claim its own frame directory', () => {
@@ -336,6 +355,41 @@ describe(StudioPreviewService.name, () => {
       storage.stat.mockResolvedValueOnce({ isFile: () => true, size: 1 });
       await expect(sut.onRenderCompleted(operation, output)).rejects.toThrow('size does not match');
       expect(previews.publish).not.toHaveBeenCalled();
+    });
+
+    it('refuses symlinks and checksum mismatches before publishing', async () => {
+      vi.mocked(open).mockRejectedValueOnce(Object.assign(new Error('symlink'), { code: 'ELOOP' }));
+      await expect(sut.onRenderCompleted(operation, output)).rejects.toThrow();
+      await expect(sut.onRenderCompleted(operation, { ...output, checksum: 'ab'.repeat(32) })).rejects.toThrow(
+        'checksum',
+      );
+      expect(previews.publish).not.toHaveBeenCalled();
+    });
+
+    it('checks real file bytes and refuses a symlink on disk', async () => {
+      const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const root = await fs.mkdtemp(`${tmpdir()}/frameleaf-preview-`);
+      StorageCore.setMediaLocation(root);
+      try {
+        const directory = studioPreviewFrameFolder(authStub.user1.user.id, 'frame-1');
+        await fs.mkdir(directory, { recursive: true });
+        const path = `${directory}/frame.png`;
+        await fs.writeFile(path, Buffer.alloc(2048));
+        vi.mocked(open).mockImplementation(fs.open);
+        vi.mocked(previews.getForOwner).mockResolvedValue(undefined);
+        await expect(sut.onRenderCompleted(operation, { ...output, path })).resolves.toEqual({ published: false });
+        await expect(sut.onRenderCompleted(operation, { ...output, path, checksum: 'ab'.repeat(32) })).rejects.toThrow(
+          'checksum',
+        );
+        await fs.symlink(path, `${directory}/link.png`);
+        await expect(sut.onRenderCompleted(operation, { ...output, path: `${directory}/link.png` })).rejects.toThrow(
+          'regular file',
+        );
+      } finally {
+        StorageCore.setMediaLocation('/data');
+        await fs.rm(root, { recursive: true, force: true });
+      }
     });
 
     it('preserves a frame handed to another render meanwhile', async () => {

@@ -16,7 +16,7 @@ const AssetFilmstripOptionsSchema = z
       .max(FILMSTRIP_COUNT.max)
       .default(FILMSTRIP_COUNT.default)
       .optional()
-      .describe(`Frames to sample, evenly spaced along the video (default ${FILMSTRIP_COUNT.default})`),
+      .describe(`Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default ${FILMSTRIP_COUNT.default})`),
     height: z.coerce
       .number()
       .int()
@@ -24,7 +24,9 @@ const AssetFilmstripOptionsSchema = z
       .max(FILMSTRIP_HEIGHT.max)
       .default(FILMSTRIP_HEIGHT.default)
       .optional()
-      .describe(`Frame height in pixels (default ${FILMSTRIP_HEIGHT.default}); the width follows the aspect ratio`),
+      .describe(
+        `Frame height in pixels, rounded up to 32, 90, 180 or 240 (default ${FILMSTRIP_HEIGHT.default}); the width follows the aspect ratio`,
+      ),
     format: FilmstripFormatSchema.default('jpeg').optional(),
   })
   .meta({ id: 'AssetFilmstripOptionsDto' });

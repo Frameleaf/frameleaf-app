@@ -1,3 +1,11 @@
+import { createHash } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  open: vi.fn(),
+}));
 import { Kysely } from 'kysely';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AlbumKind, AlbumUserRole, AssetType, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
@@ -92,6 +100,11 @@ it.each([
     const operations = new MediaOperationRepository(database);
     const storage = automock(StorageRepository, { args: [ctx.getMock(LoggingRepository)], strict: false });
     storage.stat.mockResolvedValue({ isFile: () => true, size: 2048 } as never);
+    vi.mocked(open).mockResolvedValue({
+      stat: () => storage.stat('/preview/frame.png'),
+      createReadStream: () => Readable.from([Buffer.alloc(2048)]),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as never);
     storage.unlinkDir.mockResolvedValue();
     const projectService = new StudioProjectService(
       ctx.getMock(LoggingRepository),
@@ -119,7 +132,7 @@ it.each([
       });
     const output = (frameId: string) => ({
       path: `${studioPreviewFrameFolder(recipient.id, frameId)}/frame.png`,
-      checksum: 'c'.repeat(64),
+      checksum: createHash('sha256').update(Buffer.alloc(2048)).digest('hex'),
       sizeInBytes: '2048',
       contentType: 'image/png',
     });
