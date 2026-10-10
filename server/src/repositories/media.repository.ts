@@ -327,6 +327,10 @@ export class MediaRepository {
     return sharpProcessPool.run('composeImageGrid', [inputs, options]);
   }
 
+  async composeFilmstrip(...args: SharpArguments<'composeFilmstrip'>): Promise<void> {
+    return sharpProcessPool.run('composeFilmstrip', args);
+  }
+
   async renderDevelopGeometry(
     input: Buffer,
     raw: RawImageInfo,
