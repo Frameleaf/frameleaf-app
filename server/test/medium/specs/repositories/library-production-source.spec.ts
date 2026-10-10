@@ -20,6 +20,7 @@ import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { explainLibraryRunRead, getLibraryQueueDB, profileLibraryRunRead } from 'test/medium/library-queue-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 
 const libraryLedgerShape = () => sql<{
@@ -69,7 +70,7 @@ it('preserves ledger diagnostics for empty and multiple-run ledgers', async () =
 });
 
 /** Synthetic read-only paths, real service/queue/domain/asset/source SQL. This does not decode media. */
-it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-owned sources and bounded control reads', async () => {
+scaleIt('scans %i paths through manual/QueueAll/tick entrypoints with bounded control reads', 1.2, async () => {
   StorageCore.setMediaLocation('/synthetic-managed');
   const db: Kysely<DB> = await getLibraryQueueDB();
   const store = new SqlQueueStore(db);
@@ -104,7 +105,7 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
       maximumActiveIterators = Math.max(maximumActiveIterators, activeIterators);
       try {
         for (const root of options.pathsToCrawl) {
-          const count = root === '/external/one' ? 499_999 : 1;
+          const count = root === '/external/one' ? SCALE_ITEMS - 1 : 1;
           const take = options.take ?? 1000;
           for (let after = 0; after < count; after += take) {
             options.signal?.throwIfAborted();
@@ -270,7 +271,7 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
         (select count(*)::int from job where queue=${QueueName.Sidecar} and state in ('pending','waiting','active')) hot`.execute(
       db,
     );
-    expect(counts).toEqual({ assets: 500_000, sources: 2, media: 500_000, open: 0, hot: 0 });
+    expect(counts).toEqual({ assets: SCALE_ITEMS, sources: 2, media: SCALE_ITEMS, open: 0, hot: 0 });
     let visits = 0,
       maximumCopyPage = 0,
       maximumControlMs = 0,
@@ -278,7 +279,7 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
     while (await shareSelectionPage(db, { queue: QueueName.Sidecar })) {
       visits++;
       const copyStarted = performance.now();
-      // Fixed two-source metadata query, never a count over the growing 500k alias manifest.
+      // Fixed two-source metadata query, never a count over the growing alias manifest.
       const cursors = (
         await sql<{ copyAfter: string | null }>`select m."copyAfter" from job_selection_run m
           join job_selection s on s.id=m."selectionId" where m."runId"=${origin}::uuid
@@ -319,8 +320,8 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
       }
     })();
     maximumControlMs = Math.max(maximumControlMs, performance.now() - summaryStarted);
-    expect(summary.total).toBe(500_000);
-    expect(summary.stageTotals.total).toBe(500_001);
+    expect(summary.total).toBe(SCALE_ITEMS);
+    expect(summary.stageTotals.total).toBe(SCALE_ITEMS + 1);
     expect(summary.enumerationDone).toBe(true);
     expect(summary.state).toBe('paused');
     expect(maximumWalkPage).toBe(1000);
@@ -335,7 +336,7 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
     console.info(
       'library-service-source-calibration',
       JSON.stringify({
-        paths: 500_000,
+        paths: SCALE_ITEMS,
         sourceHeaders: 2,
         maximumWalkPage,
         maximumCopyPage,
@@ -351,4 +352,4 @@ it('scans 500000 paths through manual/QueueAll/tick entrypoints with operation-o
     await service.onShutdown();
     await db.destroy();
   }
-}, 600_000);
+});
