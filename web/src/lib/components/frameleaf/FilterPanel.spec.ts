@@ -45,7 +45,8 @@ describe('FilterPanel', () => {
       enrichmentCounts: { [ImageEnrichmentFilter.MissingImageDescription]: 5 },
     });
     expect(within(panel).queryByRole('heading', { name: 'Filters' })).not.toBeInTheDocument();
-    expect(within(panel).getByRole('button', { name: 'Photos (40)' })).toBeInTheDocument();
+    // the count is in the name once, not drawn a second time beside it
+    expect(within(panel).getByRole('button', { name: 'Photos (40)' })).toHaveTextContent(/^Photos \(40\)$/);
     expect(within(panel).getByRole('checkbox', { name: /Jamie/ }).closest('label')).toHaveTextContent('12');
     const descriptions = within(panel).getByRole('radiogroup', { name: 'Description' });
     expect(

@@ -191,7 +191,7 @@
     onclick={toggle}
   >
     {#key authManager.user}
-      <UserAvatar user={authManager.user} size="md" noTitle interactive />
+      <UserAvatar user={authManager.user} size="md" noTitle />
     {/key}
     <span class="fl-account-name">{authManager.user.name}</span>
     <Icon icon={mdiChevronDown} size="1em" aria-hidden={true} />
@@ -428,7 +428,7 @@
     color: var(--fl-muted);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
-    padding: 0 7px;
+    padding: 0 var(--fl-space-2);
     line-height: 16px;
   }
   .supporter-badge {

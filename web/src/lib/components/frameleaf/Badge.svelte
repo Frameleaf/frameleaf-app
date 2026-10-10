@@ -22,7 +22,7 @@
   } = $props();
 </script>
 
-<span class="badge {tone}">
+<span class="badge {tone}" class:status={String(value) === label}>
   {#if String(value) === label}
     <!-- A status badge whose text already says it all is read once, not twice. -->
     {label}
@@ -47,6 +47,10 @@
     font-variant-numeric: var(--fl-numeric);
     line-height: 1;
     border-radius: var(--fl-radius-pill);
+  }
+  /* A word, not a count: it keeps a small chip's room at each end; a single digit stays a circle. */
+  .status {
+    padding-inline: var(--fl-space-2);
   }
   .sr-only {
     position: absolute;

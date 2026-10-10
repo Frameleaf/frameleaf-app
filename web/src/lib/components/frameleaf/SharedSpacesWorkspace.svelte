@@ -337,7 +337,7 @@
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--fl-space-4) var(--fl-space-5);
   }
   .heading h1 {
     margin: 0;
@@ -345,7 +345,7 @@
     font-weight: 700;
   }
   .heading p {
-    margin: 0.125rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
     max-width: 40rem;
@@ -367,14 +367,14 @@
     flex-wrap: wrap;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.25rem 1rem;
-    margin: 0 0 0.75rem;
+    gap: var(--fl-space-2) var(--fl-space-4);
+    margin: 0 0 var(--fl-space-3);
   }
   .partners h2 {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--fl-space-1) var(--fl-space-2);
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
@@ -406,9 +406,9 @@
   .partner {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
     min-width: 0;
-    padding: 0.5rem 0.875rem 0.5rem 0.5rem;
+    padding: var(--fl-space-3) var(--fl-space-4) var(--fl-space-3) var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
@@ -442,16 +442,11 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
-    gap: 18px 12px;
+    gap: var(--fl-space-5) var(--fl-space-3);
     align-items: start;
   }
   .cell {
     min-width: 0;
-  }
-  @media (max-width: 640px) {
-    .spaces {
-      padding: 0.75rem;
-    }
   }
   @media (max-width: 700px) {
     .grid {

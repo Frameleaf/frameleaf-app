@@ -125,9 +125,9 @@
   </section>
 {/snippet}
 
-{#snippet cover(assetId: string | null | undefined)}
+{#snippet cover(assetId: string | null | undefined, size: AssetMediaSize = AssetMediaSize.Thumbnail)}
   {#if assetId}
-    <img src={thumbnail(assetId)} alt="" loading="lazy" />
+    <img src={getAssetMediaUrl({ id: assetId, size })} alt="" loading="lazy" />
   {:else}
     <span class="el-cover-empty"><Icon icon={mdiImageMultipleOutline} size="28" aria-hidden="true" /></span>
   {/if}
@@ -171,7 +171,8 @@
     <section class="el-section el-rise" style="--i: 1" aria-label={$t('frameleaf_explore_highlights_label')}>
       <div class="el-highlights">
         <a class="el-best fl-continuous-corners" href={Route.bestPhotos()}>
-          {@render cover(bestPhotos.cover?.id)}
+          <!-- The one wide card: a thumbnail stretched across it would be soft. -->
+          {@render cover(bestPhotos.cover?.id, AssetMediaSize.Preview)}
           <span class="el-cover-shade"></span>
           <span class="el-best-copy">
             <span class="el-overline"
@@ -414,7 +415,7 @@
     flex: 0 0 92px;
     flex-direction: column;
     align-items: center;
-    gap: 7px;
+    gap: var(--fl-space-2);
     min-width: 0;
     text-align: center;
   }
@@ -455,6 +456,20 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  /* A wide card shows a band of a taller photo: the one a little above centre, where faces usually are. */
+  .el-best > img {
+    object-position: center 30%;
+  }
+  /*
+   * Best Photos with nothing ranked yet: the mark sits in the card's top corner, clear of the copy
+   * below it, on the dark of a photo so the white copy reads in either theme.
+   */
+  .el-best > .el-cover-empty {
+    place-items: start;
+    padding: 22px 24px;
+    background: var(--fl-viewer-raised);
+    color: var(--fl-viewer-muted);
   }
   .el-cover-shade {
     position: absolute;
@@ -674,7 +689,7 @@
   }
   .el-recent button > span:not(.el-media-label) {
     display: block;
-    margin-top: 7px;
+    margin-top: var(--fl-space-2);
     overflow: hidden;
     font-size: 11px;
     text-overflow: ellipsis;
@@ -861,12 +876,17 @@
     }
     .el-things a {
       gap: 8px;
+      /* The arrow that ends the card on wider screens is hidden here; the name still stops short of the edge. */
+      padding-inline-end: var(--fl-space-3);
     }
     .el-things a > :global(svg) {
       display: none;
     }
     .el-best-copy {
       margin-inline-start: 18px;
+    }
+    .el-best > .el-cover-empty {
+      padding-inline: 18px;
     }
     .el-more a {
       min-height: 40px;

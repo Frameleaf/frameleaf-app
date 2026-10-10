@@ -121,6 +121,10 @@
   .upload-menu :global(.menu-root > button) {
     gap: 0.375rem;
   }
+  /* As wide as its longest line (within the menu's own cap), so a hint is not broken in two. */
+  .upload-menu :global([role='menu']) {
+    width: max-content;
+  }
   .upload-label {
     display: none;
     font-size: 0.875rem;
@@ -129,6 +133,10 @@
   @media (min-width: 62.5625rem) {
     .upload-label {
       display: inline;
+    }
+    /* With its label the button is a pill of text: the label keeps the room any button's does. */
+    .upload-menu :global(.menu-root > button) {
+      padding-inline: 0.6875rem;
     }
   }
   .item-text {
@@ -144,9 +152,9 @@
   .target {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
-    padding: 0.5rem 0.625rem 0.375rem;
-    margin-top: 0.25rem;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-3) 0.625rem var(--fl-space-2);
+    margin-top: var(--fl-space-2);
     border-top: 1px solid var(--fl-border);
     font-size: 0.75rem;
     color: var(--fl-muted);

@@ -21,7 +21,7 @@
   const geocodingDocs = $derived(helpLinks.docs('features/reverse-geocoding'));
 </script>
 
-<div class="mt-2">
+<div>
   <div in:reveal>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">

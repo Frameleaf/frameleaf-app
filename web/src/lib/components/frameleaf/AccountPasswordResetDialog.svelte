@@ -100,7 +100,7 @@
     margin-bottom: 0.75rem;
   }
   .secret code {
-    padding: 0.4375rem 0.6875rem;
+    padding: 0.4375rem var(--fl-space-3);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);

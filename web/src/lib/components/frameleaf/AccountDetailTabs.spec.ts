@@ -9,6 +9,7 @@ import {
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
+import { locale } from '$lib/stores/preferences.store';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
@@ -200,6 +201,30 @@ describe('AccountDetailTabs (FL-76)', () => {
     expect(screen.getByText('1 KiB')).toBeInTheDocument();
   });
 
+  it.each([
+    ['en-US', /^Oct 9, 2026, 11:50 PM$/],
+    ['de-DE', /^9\. Okt\. 2026, 23:50$/],
+  ])('says when the account was created to the minute, in the %s locale', (code, expected) => {
+    locale.set(code);
+    try {
+      render(AccountDetailTabs, {
+        user: { ...user, createdAt: '2026-10-09T23:50:19.000Z' },
+        preferences,
+        statistics,
+        sessions: [],
+        libraries: [],
+        preferencesEditable: true,
+        savePreferences: vi.fn(),
+        loadPreferences: vi.fn(),
+      });
+
+      // No seconds: this is when an account was made, not a clock.
+      expect(screen.getByText(en.created_at).nextElementSibling).toHaveTextContent(expected);
+    } finally {
+      locale.set('default');
+    }
+  });
+
   it("Overview's quick actions jump straight to Features and Security", async () => {
     renderTabs();
 
@@ -233,6 +258,8 @@ describe('AccountDetailTabs (FL-76)', () => {
       expect(items[2].querySelector('span')?.textContent).toMatch(/^\s*Trip photos · /);
       // The audit actor is named when the server recorded one.
       expect(items[0].querySelector('span')?.textContent).toContain('by Ada');
+      // The date and the actor are set apart the way the subject and the date are.
+      expect(items[0].querySelector('span')?.textContent?.trim()).toMatch(/^Grace Hopper · .+ 2026 · by Ada$/);
       expect(getUserHistoryAdmin).toHaveBeenCalledWith({ id: user.id, before: undefined, take: 50 });
     });
 

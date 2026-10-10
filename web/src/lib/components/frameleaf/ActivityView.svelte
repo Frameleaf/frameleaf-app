@@ -653,7 +653,7 @@
     color: var(--fl-muted);
   }
   h1 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--fl-space-2);
     font-size: 28px;
     font-weight: 600;
     letter-spacing: -0.6px;
@@ -738,7 +738,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 6px;
+    margin: 0 0 var(--fl-space-2);
   }
   .fla-count {
     font-size: 11px;

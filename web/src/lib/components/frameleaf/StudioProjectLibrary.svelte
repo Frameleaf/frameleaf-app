@@ -927,7 +927,7 @@
     margin: 0;
   }
   h1 {
-    margin: var(--fl-space-half) 0 0;
+    margin: var(--fl-space-1) 0 0;
     font: var(--fl-type-title);
     letter-spacing: var(--fl-tracking-title);
   }
@@ -984,8 +984,10 @@
     align-items: center;
     gap: var(--fl-space-2);
   }
+  /* When the search and the sort control wrap, the two rows of controls sit 12px apart. */
   .filters {
     justify-content: flex-end;
+    row-gap: var(--fl-space-3);
   }
   @media (max-width: 640px) {
     .filters {

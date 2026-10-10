@@ -502,7 +502,7 @@
   .fl-notifications-panel {
     position: absolute;
     top: 100%;
-    right: 0.5rem;
+    right: 0.75rem;
     z-index: 40;
     padding-top: 0.5rem;
   }
@@ -625,7 +625,7 @@
   }
   .fl-locked-toggle {
     gap: 7px;
-    padding: 0 10px;
+    padding: 0 11px;
     font-size: 12px;
     font-weight: 600;
   }
@@ -645,6 +645,14 @@
   }
   @media (max-width: 700px) {
     .fl-locked-state {
+      display: none;
+    }
+    /*
+     * The phone row has no room for the second half of the control: with it the brand mark was
+     * squeezed to a few pixels while Locked content was revealed. Locked stays one tap away in the
+     * menu drawer and the account menu.
+     */
+    .fl-locked-open {
       display: none;
     }
   }

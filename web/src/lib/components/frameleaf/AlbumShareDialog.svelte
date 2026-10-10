@@ -532,12 +532,12 @@
   .invite {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--fl-space-3);
   }
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--fl-muted);
@@ -653,7 +653,7 @@
   input,
   select {
     width: 100%;
-    padding: 0.5rem 0.5rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

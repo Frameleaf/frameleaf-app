@@ -65,7 +65,7 @@ describe('CommandPalette', () => {
 
   it('says how to reach commands, not how many groups there are, while idle', () => {
     render(CommandPalette, { index, onClose: vi.fn() });
-    expect(screen.getByText('Type > in search to open commands')).toBeInTheDocument();
+    expect(screen.getByText('Tip: type > in search to jump to pages and settings')).toBeInTheDocument();
   });
 
   it('crossfades instead of springing under Reduce Motion, checked in JavaScript', () => {

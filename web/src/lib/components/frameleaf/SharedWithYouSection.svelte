@@ -215,7 +215,7 @@
   }
   .swy header p,
   .swy-empty {
-    margin: 0.25rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
   }

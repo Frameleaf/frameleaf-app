@@ -343,7 +343,6 @@
         {$t('items_count', { values: { count } })}
       </span>
     {/if}
-    <span class="fl-grow"></span>
 
     <div class="fl-filter" bind:this={filterControl}>
       <button
@@ -399,7 +398,7 @@
     </div>
 
     {#if onSlideshow}
-      <button type="button" class="fl-tool" disabled={count === 0} onclick={onSlideshow}>
+      <button type="button" class="fl-tool" title={$t('slideshow')} disabled={count === 0} onclick={onSlideshow}>
         <Icon icon={mdiPlayBoxOutline} size="16" />
         {$t('slideshow')}
       </button>
@@ -469,21 +468,22 @@
 <style>
   .fl-toolbar {
     display: grid;
-    gap: 8px;
-    padding: 8px 0;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-3) 0;
+    /* The count and the chips start clear of the band's edge; the icon at the far end already does. */
+    padding-inline-start: var(--fl-space-3);
   }
   .fl-toolbar-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 5px;
+    /* Controls that wrap to a second line stay with the others at the end of the row. */
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
   }
-  .fl-grow {
-    flex: 1 1 auto;
-  }
-  /* Prototype `.result-count`. */
+  /* Prototype `.result-count`: at the start of the row, the controls at its end. */
   .fl-result-count {
-    margin-inline-start: 6px;
+    margin-inline-end: auto;
     color: var(--fl-muted);
     font-size: var(--fl-font-small, 12px);
     font-variant-numeric: tabular-nums;
@@ -500,8 +500,8 @@
   .fl-tool {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 0 10px;
+    gap: var(--fl-space-2);
+    padding: 0 11px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     background: transparent;
@@ -548,7 +548,7 @@
     position: absolute;
     z-index: 5;
     inset-inline-start: 0;
-    top: calc(100% + 6px);
+    top: calc(100% + var(--fl-space-2));
     margin: 0;
     padding: 6px;
     list-style: none;
@@ -588,14 +588,18 @@
   .fl-sort {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding-inline-start: 9px;
+    gap: var(--fl-space-1);
+    /* The border is the label's, so the label is the control height and the select fills it. */
+    min-height: var(--fl-control-height);
+    padding-inline-start: 11px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     background: var(--fl-raised);
     color: var(--fl-muted);
   }
   .fl-sort select {
+    align-self: stretch;
+    min-height: 0;
     border: 0;
     padding: 0 4px;
     background: transparent;
@@ -603,22 +607,29 @@
     font-size: var(--fl-font-small, 13px);
     width: auto;
   }
+  @media (pointer: coarse) {
+    .fl-sort {
+      min-height: var(--fl-control-height-touch);
+    }
+  }
   /* Prototype `.active-filter-bar`. */
   .fl-chips {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: var(--fl-space-3);
   }
   .fl-chip-list {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--fl-space-2);
     min-width: 0;
   }
   .fl-chips-clear {
     flex-shrink: 0;
+    /* Its text ends on the line of the last toolbar icon below it. */
+    padding: 0 var(--fl-space-3);
     border: 0;
     background: transparent;
     color: var(--fl-accent);
@@ -633,7 +644,26 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /*
+   * A narrow library (the information panel open on a laptop): Slideshow is its icon, as it is on
+   * phones, so the row of nine controls stays on one line at their full spacing.
+   */
+  @container fl-timeline (max-width: 860px) {
+    .fl-tool {
+      justify-content: center;
+      min-width: var(--fl-control-height);
+      padding: 0;
+      font-size: 0;
+      gap: 0;
+    }
+  }
   /* Phones (prototype `@media (max-width: 700px)`): the Filter control is its icon and badge. */
+  @media (max-width: 767px) {
+    /* The host insets the band's content to the page gutter. */
+    .fl-toolbar {
+      padding-inline-start: 0;
+    }
+  }
   @media (max-width: 700px) {
     .fl-filter-button {
       font-size: 0;

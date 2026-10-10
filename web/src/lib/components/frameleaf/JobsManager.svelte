@@ -1554,7 +1554,7 @@
   .jm-header-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 7px;
+    gap: var(--fl-space-2);
     justify-content: flex-end;
     padding-top: 8px;
   }
@@ -1630,7 +1630,7 @@
   }
   .jm-filterbar > label:not(.jm-search) {
     display: flex;
-    gap: 6px;
+    gap: var(--fl-space-2);
     flex-direction: column;
   }
   .jm-filterbar > label > span {
@@ -1645,7 +1645,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     min-height: 35px;
-    padding: 6px 9px;
+    padding: 6px var(--fl-space-3);
     outline-offset: var(--fl-focus-offset);
   }
   .jm-search {
@@ -1655,7 +1655,7 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    padding: 0 11px;
+    padding: 0 var(--fl-space-3);
     min-width: 200px;
     flex: 1;
     color: var(--fl-muted);
@@ -1781,7 +1781,7 @@
     color: var(--jm-red);
     background: color-mix(in srgb, var(--jm-red) 13%, transparent);
     border-radius: var(--fl-radius-pill);
-    padding: 2px 7px;
+    padding: 2px var(--fl-space-2);
     font-weight: 650;
   }
   .jm-count:disabled {
@@ -1877,7 +1877,7 @@
     font-size: 11px;
     background: var(--fl-panel);
     border-radius: var(--fl-radius-pill);
-    padding: 1px 5px;
+    padding: 1px var(--fl-space-2);
     font-variant-numeric: var(--fl-numeric);
   }
   .jm-tab-actions {
@@ -1895,7 +1895,7 @@
   }
   .jm-tab-actions > div {
     display: flex;
-    gap: 7px;
+    gap: var(--fl-space-2);
   }
   .jm-job-name {
     max-width: 360px;
@@ -1974,7 +1974,7 @@
   .jm-history summary > span {
     font-size: 11px;
     background: var(--fl-panel);
-    padding: 1px 5px;
+    padding: 1px var(--fl-space-2);
     border-radius: var(--fl-radius-pill);
   }
   .jm-history ol {
