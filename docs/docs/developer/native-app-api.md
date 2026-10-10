@@ -121,6 +121,68 @@ Payload details are in the [push envelope](./push-envelope-v1.md).
 
 Prefix `path` with the server address the Cast receiver can reach (normally the home-network address). The URL works for 15 minutes, for that one item and rendition only. It is signed with the server's own key (`server-hmac.key`) and holds the item, account, rendition, expiry and the issuing session or API key id, never a session token. Every read checks again that the session or API key still exists, the account still has access, the item is not Locked (even from a PIN-unlocked session) and none of the account's hidden people, pets or tags is in it, and that an administrator has not turned casting off for the account (`cast.adminDisabled`). Refusals: 403 when issuing (shared links, Locked or hidden items, casting turned off), 401 for an invalid, tampered or expired URL, 403 when a read is no longer allowed.
 
+## Studio timeline filmstrips and waveforms (October 9)
+
+Server branch `aj/studio-media-strips`. **New.** The native iPad and Android Studio timelines draw a clip's frames and its audio from two
+small derived resources rather than decoding the video on the device.
+
+| Operation                  | Endpoint                                                                     | Returns                                         |
+| -------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------- |
+| `getAssetFilmstrip`        | `GET /assets/{id}/filmstrip?count=20&height=90&format=jpeg`                  | `AssetFilmstripResponseDto` (JSON index)        |
+| `viewAssetFilmstripSprite` | `GET /assets/{id}/filmstrip/sprite?count=20&height=90&format=jpeg&version=…` | the sprite sheet (`image/jpeg` or `image/webp`) |
+| `getAssetWaveform`         | `GET /assets/{id}/waveform?buckets=1000&channels=mono`                       | `AssetWaveformResponseDto` (JSON)               |
+
+**Access** is the thumbnail's: `asset.view`, shared links (`key`/`slug`) included, and all three are available through the relay.
+Anything that is not a video is 404. Both are made with ffmpeg from the rendition `/assets/{id}/video/playback` serves (a published
+edit, then the transcode, then the original); the original is never served. The first request for a size waits while it is made (a
+fraction of a second per frame; a waveform decodes the whole audio track, a few seconds for a long video). Later requests are read
+from a cache beside the asset's thumbnails, which is remade when the video file changes and removed when the asset is deleted.
+
+**Filmstrip.** `count` 1–120 (default 20) frames, each `height` 32–240 pixels (default 90), at the centre of `count` equal slices
+of the video. Every frame is the same size: as wide as the displayed aspect ratio (after rotation) allows, cover-cropped beyond 3:1
+or 1:3. Frames run left to right, top to bottom, wrapping before the sprite is wider than 4096 pixels. The index:
+
+```json
+{
+  "assetId": "…",
+  "version": "9f0c2a4be1d07c35",
+  "durationMs": 12480,
+  "format": "jpeg",
+  "mimeType": "image/jpeg",
+  "frameWidth": 160,
+  "frameHeight": 90,
+  "columns": 20,
+  "rows": 1,
+  "spriteWidth": 3200,
+  "spriteHeight": 90,
+  "frames": [
+    { "index": 0, "timeMs": 312, "x": 0, "y": 0 },
+    { "index": 1, "timeMs": 936, "x": 160, "y": 0 }
+  ]
+}
+```
+
+Fetch the sprite with the same `count`, `height` and `format`, plus `version`; with `version` it is 404 if the video changed since
+the index was read (fetch the index again). The sprite may be cached by `(id, count, height, format, version)`. A frame that cannot
+be decoded (a sparse keyframe at the very end) repeats its neighbour, so the sprite always matches the index.
+
+**Waveform.** `buckets` 1–10000 (default 1000) min/max pairs per channel of the first audio track, normalized to −1…1;
+`channels=mono` (default) downmixes, `channels=all` returns each channel (up to 8, in the source order). Very short audio returns
+fewer buckets than asked for (`bucketCount` says how many; at most 100 a second). A video without audio returns `hasAudio: false`,
+`bucketCount: 0` and `channels: []`.
+
+```json
+{
+  "assetId": "…",
+  "version": "9f0c2a4be1d07c35",
+  "hasAudio": true,
+  "durationMs": 12480,
+  "bucketCount": 1000,
+  "bucketDurationMs": 12.48,
+  "channels": [{ "min": [-0.0123, -0.4511], "max": [0.0131, 0.4982] }]
+}
+```
+
 ## Studio captions on the server (October 9)
 
 Studio captions can now be made by the server with Whisper (owner decision
