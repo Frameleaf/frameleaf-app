@@ -34,6 +34,16 @@ export const TagUpdateSchema = z
   })
   .meta({ id: 'TagUpdateDto' });
 
+const TagMergeSchema = z
+  .object({
+    targetId: z
+      .uuidv4()
+      .describe(
+        'The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag',
+      ),
+  })
+  .meta({ id: 'TagMergeDto' });
+
 const TagUpsertSchema = z
   .object({
     tags: z.array(z.string()).describe('Tag names to upsert'),
@@ -91,6 +101,7 @@ const TagStatisticsResponseSchema = z
 
 export class TagCreateDto extends createZodDto(TagCreateSchema) {}
 export class TagUpdateDto extends createZodDto(TagUpdateSchema) {}
+export class TagMergeDto extends createZodDto(TagMergeSchema) {}
 export class TagUpsertDto extends createZodDto(TagUpsertSchema) {}
 export class TagBulkAssetsDto extends createZodDto(TagBulkAssetsSchema) {}
 export class TagBulkAssetsResponseDto extends createZodDto(TagBulkAssetsResponseSchema) {}
