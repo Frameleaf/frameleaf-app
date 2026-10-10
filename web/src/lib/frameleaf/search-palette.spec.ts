@@ -54,6 +54,7 @@ const catalog: PaletteCatalog = {
     { value: 'Banff', count: 30 },
     { value: 'Lake Louise', count: 9 },
   ],
+  landmarks: [],
   makes: [{ value: 'Sony', count: 50 }, { value: 'Canon' }],
   models: [{ value: 'ILCE-7M4' }, { value: 'EOS R5' }],
   lenses: [{ value: 'FE 24-70mm F2.8 GM' }, { value: 'RF 15-35mm' }],
@@ -524,5 +525,52 @@ describe('saving as a smart album', () => {
       fields: ['personIds', 'city', 'text'],
     });
     expect(smartAlbumCriteria(emptyDiscoveryQuery())).toEqual({ ok: false, fields: [] });
+  });
+});
+
+describe('landmarks under place: (FL-354)', () => {
+  const PARK = 'Q181185';
+  const withLandmarks: PaletteCatalog = {
+    ...catalog,
+    landmarks: [
+      { id: PARK, name: 'Disneyland Park', count: 84 },
+      { id: 'Q40', name: 'Banff', count: 2 },
+    ],
+  };
+
+  it('finds a landmark by name or id, and two mean either one', () => {
+    const parsed = parseSearchInput('place:"disneyland park"', withLandmarks);
+    expect(parsed.filter).toEqual({ landmarkIds: { any: [PARK] } });
+    expect(parsed.tokens[0]).toMatchObject({ display: 'Disneyland Park', fields: ['landmarkIds'], id: PARK });
+    expect(parseSearchInput(`place:${PARK} place:Q40 -place:Oslo`, withLandmarks).filter).toEqual({
+      landmarkIds: { any: [PARK, 'Q40'] },
+      city: { ne: 'Oslo' },
+    });
+    expect(parseSearchInput('-place:"Disneyland Park"', withLandmarks).filter).toEqual({
+      landmarkIds: { none: [PARK] },
+    });
+  });
+
+  it('lets a town win a name it shares with a landmark', () => {
+    expect(parseSearchInput('place:Banff', withLandmarks).filter).toEqual({ city: { eq: 'Banff' } });
+  });
+
+  it('reads a landmark back as its place: chip, unless a town would take the name', () => {
+    const query = (ids: string[]) => ({ ...emptyDiscoveryQuery(), filter: { landmarkIds: { any: ids } } });
+    expect(typedTokensFromQuery(query([PARK]), withLandmarks).tokens).toEqual(['place:"Disneyland Park"']);
+    for (const ids of [['Q40'], ['Q999']]) {
+      const { tokens, base } = typedTokensFromQuery(query(ids), withLandmarks);
+      expect(tokens).toEqual([]);
+      expect(base.filter).toEqual({ landmarkIds: { any: ids } });
+    }
+  });
+
+  it('suggests a landmark as a place', () => {
+    expect(suggestSearchTokens('disn', withLandmarks)[0]).toMatchObject({
+      kind: 'place',
+      label: 'Disneyland Park',
+      detail: 'place:"Disneyland Park"',
+      count: 84,
+    });
   });
 });

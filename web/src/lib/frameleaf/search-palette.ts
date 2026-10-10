@@ -177,6 +177,8 @@ export type PaletteCatalog = {
   people: { id: string; name: string; count?: number }[];
   tags: { id: string; label: string; count?: number }[];
   places: CatalogValue[];
+  /** The landmarks the account has photos at (FL-354); `place:` names them as well as towns. */
+  landmarks: { id: string; name: string; count?: number }[];
   makes: CatalogValue[];
   models: CatalogValue[];
   lenses: CatalogValue[];
@@ -189,6 +191,7 @@ export const emptyPaletteCatalog = (): PaletteCatalog => ({
   people: [],
   tags: [],
   places: [],
+  landmarks: [],
   makes: [],
   models: [],
   lenses: [],
@@ -301,8 +304,13 @@ const withStringValues = (
 
 type IdsCondition = { any?: string[]; all?: string[]; none?: string[] };
 
-const withId = (current: IdsCondition | undefined, id: string, exclude: boolean): IdsCondition => {
-  const bucket = exclude ? 'none' : 'all';
+const withId = (
+  current: IdsCondition | undefined,
+  id: string,
+  exclude: boolean,
+  include: 'all' | 'any' = 'all',
+): IdsCondition => {
+  const bucket = exclude ? 'none' : include;
   return { ...current, [bucket]: [...new Set([...(current?.[bucket] ?? []), id])] };
 };
 
@@ -381,7 +389,16 @@ const resolveToken = (
       return { display: tag.label, fields: ['tagIds'], id: tag.id };
     }
     case 'place': {
-      const place = catalog.places.find((item) => fold(item.value) === fold(value))?.value ?? value;
+      const city = catalog.places.find((item) => fold(item.value) === fold(value))?.value;
+      // A landmark answers to place: as well (FL-354); a town of the same name wins. Two landmarks mean
+      // either one, as two towns do. ponytail: a town and a landmark together mean both, since they are
+      // two fields; say "either" across them with an `or` group if anyone asks for it.
+      const landmark = city ? undefined : byName(catalog.landmarks, value, (item) => item.name);
+      if (landmark) {
+        filter.landmarkIds = withId(filter.landmarkIds as IdsCondition, landmark.id, exclude, 'any');
+        return { display: landmark.name, fields: ['landmarkIds'], id: landmark.id };
+      }
+      const place = city ?? value;
       filter.city = withStringValues(filter.city as StringListCondition, [place], exclude);
       return { display: place, fields: ['city'] };
     }
@@ -649,6 +666,9 @@ export const suggestSearchTokens = (input: string, catalog: PaletteCatalog, limi
   for (const place of catalog.places) {
     push('place', 'place', place.value, place.value, place.count);
   }
+  for (const landmark of catalog.landmarks) {
+    push('place', 'place', landmark.name, landmark.name, landmark.count);
+  }
   for (const tag of catalog.tags) {
     push('tag', 'tag', tag.label, tag.label, tag.count);
   }
@@ -728,6 +748,7 @@ export const buildPaletteCatalog = (
     people: options.people.map((person) => ({ id: person.id, name: person.name, count: people.get(person.id) })),
     tags: options.tags.map((tag) => ({ id: tag.value, label: tag.label, count: tags.get(tag.value) })),
     places: withCounts(options.cities, facets[SearchFacetField.City]),
+    landmarks: options.landmarks,
     makes: withCounts(options.makes, facets[SearchFacetField.Make]),
     models: withCounts(options.models, facets[SearchFacetField.Model]),
     lenses: withCounts(options.lenses, facets[SearchFacetField.LensModel]),
@@ -1043,6 +1064,18 @@ const candidateTokens = (field: string, condition: Condition, catalog: PaletteCa
     }
     case 'city': {
       return both('place', [...values('eq'), ...values('in')], [...values('ne'), ...values('notIn')]);
+    }
+    case 'landmarkIds': {
+      const name = (id: unknown) => catalog.landmarks.find((item) => item.id === id)?.name;
+      const ids = [...values('any'), ...values('none')];
+      if (ids.some((id) => !name(id))) {
+        return undefined;
+      }
+      return both(
+        'place',
+        values('any').map((id) => name(id)),
+        values('none').map((id) => name(id)),
+      );
     }
     case 'type': {
       const word = (value: unknown) =>
