@@ -139,8 +139,9 @@
         "sourceHeight": { "type": "number" },
         "transform": { "$ref": "#/$defs/transform" },
         "transformParent": { "$ref": "#/$defs/transformParent" },
-        "crop": { "type": "object" },
-        "cornerPin": { "type": "object" },
+        "crop": { "$ref": "#/$defs/crop" },
+        "cornerPin": { "$ref": "#/$defs/cornerPin" },
+        "audioDucking": { "$ref": "#/$defs/audioDucking" },
         "volume": { "type": "number", "minimum": -60, "maximum": 12 },
         "fadeIn": { "type": "number", "minimum": 0 },
         "fadeOut": { "type": "number", "minimum": 0 },
@@ -159,7 +160,46 @@
         "spanLayout": { "enum": ["stack", "inline"] },
         "fontSize": { "type": "number" },
         "fontFamily": { "type": "string", "minLength": 1 },
-        "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "crop": {
+      "description": "Crop of a video or image (17.6): each side a fraction of the source, softness a signed fraction.",
+      "type": "object",
+      "properties": {
+        "left": { "type": "number", "minimum": 0, "maximum": 1 },
+        "right": { "type": "number", "minimum": 0, "maximum": 1 },
+        "top": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bottom": { "type": "number", "minimum": 0, "maximum": 1 },
+        "softness": { "type": "number", "minimum": -1, "maximum": 1 },
+        "refit": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "cornerPin": {
+      "description": "Corner pin (17.6): pixel offsets of the four corners, measured on a box of the reference size.",
+      "type": "object",
+      "required": ["topLeft", "topRight", "bottomRight", "bottomLeft"],
+      "properties": {
+        "topLeft": { "$ref": "#/$defs/point" },
+        "topRight": { "$ref": "#/$defs/point" },
+        "bottomRight": { "$ref": "#/$defs/point" },
+        "bottomLeft": { "$ref": "#/$defs/point" },
+        "referenceWidth": { "type": "number", "exclusiveMinimum": 0 },
+        "referenceHeight": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "audioDucking": {
+      "description": "Sidechain ducking carried by a duck-source clip (13.9).",
+      "type": "object",
+      "required": ["duckOthersDb"],
+      "properties": {
+        "duckOthersDb": { "type": "number", "minimum": -60, "maximum": 0 },
+        "attackSec": { "type": "number", "minimum": 0, "maximum": 5 },
+        "releaseSec": { "type": "number", "minimum": 0, "maximum": 5 },
+        "targetTrackIds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } }
+      },
+      "additionalProperties": true
+    },
+    "fontWeight": { "$ref": "#/$defs/fontWeight" },
         "fontStyle": { "enum": ["normal", "italic"] },
         "underline": { "type": "boolean" },
         "textAlign": { "enum": ["left", "center", "right"] },
