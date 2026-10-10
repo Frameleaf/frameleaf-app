@@ -60,7 +60,11 @@ export class FrameleafServerSetupService extends BaseService {
       configRepository: this.configRepository,
       systemMetadataRepository: this.systemMetadataRepository,
     });
-    return { setup: admin ? 'complete' : 'needed', cloud: cloudUrl ? 'available' : 'unavailable', linked };
+    return {
+      setup: admin || !this.configRepository.getEnv().setup.allow ? 'complete' : 'needed',
+      cloud: cloudUrl ? 'available' : 'unavailable',
+      linked,
+    };
   }
 
   /** `POST server/setup/code`. */

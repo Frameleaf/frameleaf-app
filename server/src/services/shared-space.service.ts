@@ -28,8 +28,10 @@ import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
 import { AlbumUserRole, AssetFileType, CacheControl, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireEntityAccess } from 'src/utils/access.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { ImmichFileResponse, getFilenameExtension } from 'src/utils/file.js';
+import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   type CommentThreadInfo,
@@ -292,16 +294,10 @@ export class SharedSpaceService extends BaseService {
     }
     requireSharedSpace(album);
 
-    if (!isSpaceMember(album, auth.user.id)) {
-      await this.albumUserRepository.create({ albumId: id, userId: auth.user.id, role: invite.role });
-      await this.albumUserRepository.createSpaceEvent({
-        albumId: id,
-        actorId: auth.user.id,
-        type: SharedSpaceEventType.MemberJoined,
-        targetUserId: auth.user.id,
-      });
+    const accepted = await this.albumUserRepository.acceptInvite({ albumId: id, userId: auth.user.id });
+    if (!accepted) {
+      throw new NotFoundException('No invitation to this shared space');
     }
-    await this.albumUserRepository.deleteInvite({ albumId: id, userId: auth.user.id });
 
     const joined = await this.albumRepository.getById(id, { withAssets: false }, auth.user.id);
     if (!joined) {
@@ -511,7 +507,10 @@ export class SharedSpaceService extends BaseService {
     return {
       linked,
       candidates: candidates
-        .filter(({ personGroupId }) => !alreadyLinked.has(personGroupId))
+        .filter(
+          ({ personGroupId }) =>
+            !alreadyLinked.has(personGroupId) && !isSuppressedWhileLocked(auth, 'person', personGroupId),
+        )
         .map((candidate) => ({
           id: candidate.personGroupId,
           name: candidate.name,
@@ -539,6 +538,11 @@ export class SharedSpaceService extends BaseService {
     const space = await this.requireSpaceMembership(auth, id);
     requireSpaceContributor(space, auth.user.id);
 
+    await requireEntityAccess(
+      this.accessRepository,
+      { auth, permission: Permission.PersonRead, ids: [dto.personId] },
+      'Person',
+    );
     const person = await this.personRepository.getByGroupId({
       ownerId: auth.user.id,
       personGroupId: dto.personId,

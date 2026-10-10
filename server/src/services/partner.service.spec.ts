@@ -16,6 +16,8 @@ describe(PartnerService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerService));
     mocks.partnerOrigin.getBackfill.mockResolvedValue(undefined);
+    mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: null });
+    mocks.asset.getStatistics.mockResolvedValue({ IMAGE: 0, VIDEO: 0, AUDIO: 0, OTHER: 0 } as never);
   });
 
   it('should work', () => {
@@ -83,6 +85,18 @@ describe(PartnerService.name, () => {
       expect(mocks.partner.getAll).toHaveBeenCalledWith(user1.id);
     });
   });
+
+  it.each(['pin', 'locked'] as const)(
+    'requires elevation before partner backfill when the account has %s content',
+    async (kind) => {
+      if (kind === 'pin') mocks.user.getForPinCode.mockResolvedValue({ pinCode: 'hashed', password: null });
+      else mocks.asset.getStatistics.mockResolvedValue({ IMAGE: 1 } as never);
+      await expect(sut.create(AuthFactory.create(), { sharedWithId: UserFactory.create().id })).rejects.toThrow(
+        'Unlock your session',
+      );
+      expect(mocks.partner.create).not.toHaveBeenCalled();
+    },
+  );
 
   describe('create', () => {
     it('should create a new partner', async () => {

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
 import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType } from 'src/enum.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -320,17 +321,21 @@ describe(SharedSpaceService.name, () => {
         createdAt: newDate(),
       });
       mocks.album.getById.mockResolvedValue(getForAlbum(space));
-      mocks.albumUser.create.mockResolvedValue({ albumId: space.id, userId: recipient.id, role: AlbumUserRole.Viewer });
-      mocks.albumUser.deleteInvite.mockResolvedValue();
+      mocks.albumUser.acceptInvite.mockResolvedValue(true);
 
       await sut.accept(AuthFactory.create(recipient), space.id);
 
-      expect(mocks.albumUser.create).toHaveBeenCalledWith({
-        albumId: space.id,
-        userId: recipient.id,
-        role: AlbumUserRole.Viewer,
-      });
-      expect(mocks.albumUser.deleteInvite).toHaveBeenCalledWith({ albumId: space.id, userId: recipient.id });
+      expect(mocks.albumUser.acceptInvite).toHaveBeenCalledWith({ albumId: space.id, userId: recipient.id });
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an invitation withdrawn before the atomic acceptance', async () => {
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      mocks.albumUser.getInvite.mockResolvedValue({ role: AlbumUserRole.Editor } as never);
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.albumUser.acceptInvite.mockResolvedValue(false);
+      await expect(sut.accept(AuthFactory.create(), space.id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
     it('refuses without an invitation, so membership is never self-granted', async () => {
@@ -702,6 +707,10 @@ describe(SharedSpaceService.name, () => {
       const { candidates } = await sut.getPeople(AuthFactory.create(editor), space.id);
 
       expect(candidates).toEqual([expect.objectContaining({ id: fresh, name: 'Sam' })]);
+      const lockedAuth = AuthFactory.create(editor);
+      lockedAuth.hiddenContent = { ...emptyHiddenContentFilter(editor.id), personIds: [fresh] };
+      expect((await sut.getPeople(lockedAuth, space.id)).candidates).toEqual([]);
+
       // Candidates are scoped to the caller's own people, inside the space, without sensitive/Locked media.
       expect(mocks.albumUser.getSpacePersonCandidates).toHaveBeenCalledWith(space.id, editor.id, {
         excludeNsfw: true,
@@ -710,6 +719,18 @@ describe(SharedSpaceService.name, () => {
   });
 
   describe('linkPerson', () => {
+    it('refuses a suppressed person before reading or publishing their identity', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      const personId = newUuid();
+      const auth = AuthFactory.create(editor);
+      auth.hiddenContent = { ...emptyHiddenContentFilter(editor.id), personIds: [personId] };
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.linkPerson(auth, space.id, { personId })).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.person.getByGroupId).not.toHaveBeenCalled();
+      expect(mocks.albumUser.createLinkedPerson).not.toHaveBeenCalled();
+    });
+
     it('refuses a person the caller does not own', async () => {
       const { space, editor } = spaceWithEditor();
       asEditor(space);

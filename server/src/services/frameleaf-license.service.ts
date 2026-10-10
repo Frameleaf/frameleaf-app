@@ -311,8 +311,10 @@ export class FrameleafLicenseService extends BaseService {
     }
     const { certificate, activationId } = await this.activateWithCloud(check.key, {});
     const license = await this.verifyForStore(certificate, 'key', { keyHint: check.last4, activationId });
-    const store = await this.readStore();
-    await this.writeStore({ ...store, key: license });
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      const store = await this.readStore();
+      await this.writeStore({ ...store, key: license });
+    });
     await this.audit(auth, AdminAuditAction.LicenseActivated, check.last4);
     return this.getStatus();
   }
@@ -324,32 +326,38 @@ export class FrameleafLicenseService extends BaseService {
     if (license.kind === 'individual') {
       throw new BadRequestException('This licence is for one person. Activate it in your own settings.');
     }
-    const store = await this.readStore();
-    await this.writeStore(license.kind === 'plan' ? { ...store, plan: license } : { ...store, key: license });
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      const store = await this.readStore();
+      await this.writeStore(license.kind === 'plan' ? { ...store, plan: license } : { ...store, key: license });
+    });
     await this.audit(auth, AdminAuditAction.LicenseActivated, 'file');
     return this.getStatus();
   }
 
   /** `DELETE admin/license`: remove the supporter key, deactivating it with the cloud when reachable. */
   async removeKey(auth: AuthDto): Promise<LicenseStatusResponseDto> {
-    const store = await this.readStore();
-    if (!store.key) {
-      throw new NotFoundException('This server has no licence key');
-    }
-    await this.deactivateWithCloud(store.key);
-    await this.writeStore({ ...store, key: null });
-    await this.audit(auth, AdminAuditAction.LicenseRemoved, store.key.keyHint ?? null);
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      const store = await this.readStore();
+      if (!store.key) {
+        throw new NotFoundException('This server has no licence key');
+      }
+      await this.deactivateWithCloud(store.key);
+      await this.writeStore({ ...store, key: null });
+      await this.audit(auth, AdminAuditAction.LicenseRemoved, store.key.keyHint ?? null);
+    });
     return this.getStatus();
   }
 
   /** `DELETE admin/license/plan`: remove the plan from this server; the subscription is untouched. */
   async removePlan(auth: AuthDto): Promise<LicenseStatusResponseDto> {
-    const store = await this.readStore();
-    if (!store.plan) {
-      throw new NotFoundException('This server has no Frameleaf Cloud plan');
-    }
-    await this.writeStore({ ...store, plan: null });
-    await this.audit(auth, AdminAuditAction.LicenseRemoved, 'plan');
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      const store = await this.readStore();
+      if (!store.plan) {
+        throw new NotFoundException('This server has no Frameleaf Cloud plan');
+      }
+      await this.writeStore({ ...store, plan: null });
+      await this.audit(auth, AdminAuditAction.LicenseRemoved, 'plan');
+    });
     return this.getStatus();
   }
 
@@ -669,8 +677,10 @@ export class FrameleafLicenseService extends BaseService {
       throw new BadRequestException('Frameleaf Cloud returned a licence that does not match what it said it was.');
     }
     if (license.kind === 'server' && isAdmin) {
-      const store = await this.readStore();
-      await this.writeStore({ ...store, key: license });
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+        const store = await this.readStore();
+        await this.writeStore({ ...store, key: license });
+      });
       await this.audit(auth, AdminAuditAction.LicenseActivated, keyHint);
       return { kind: 'server', keyHint };
     }
