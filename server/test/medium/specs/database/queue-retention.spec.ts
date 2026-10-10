@@ -4,6 +4,7 @@ import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('bounded PostgreSQL queue history', () => {
@@ -159,7 +160,7 @@ describe('bounded PostgreSQL queue history', () => {
     expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toHaveLength(500);
   });
 
-  it.each([50_000, 500_000])(
+  it.each([SCALE_ITEMS / 10, SCALE_ITEMS])(
     'bounds candidate work with %i ineligible retained parents',
     async (size) => {
       // Seed retained history, not executed media. Only two actual cleanup visits run here.

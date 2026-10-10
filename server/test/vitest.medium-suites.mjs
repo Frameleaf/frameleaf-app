@@ -2,10 +2,12 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * The medium specs that load 15,000 queue items or 500,000 rows. Run serially with everything else
- * they took about an hour of the 83 minutes the whole suite needed on a hosted runner, so CI runs
- * them as two jobs of their own beside the rest (`FRAMELEAF_MEDIUM_SUITE`). A spec left off these
- * lists still runs: `core` is every medium spec that is not listed here.
+ * The medium scale specs: the 15,000-item queue run and those that load `SCALE_ITEMS` rows
+ * (test/medium/scale.ts: 25,000 by default; they were first sized at 500,000, which
+ * queue-scale.spec.ts still loads). Run serially with everything else at that first size they took
+ * about an hour of the 83 minutes the whole suite needed on a hosted runner, so CI runs them as two
+ * jobs of their own beside the rest (`FRAMELEAF_MEDIUM_SUITE`). A spec left off these lists still
+ * runs: `core` is every medium spec that is not listed here.
  */
 export const MEDIUM_SCALE_SUITES = Object.freeze({
   'queue-scale': [

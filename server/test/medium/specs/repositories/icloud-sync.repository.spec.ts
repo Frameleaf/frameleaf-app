@@ -5,6 +5,7 @@ import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repos
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 const field = (value: unknown) => ({ value });
@@ -267,12 +268,14 @@ describe(ICloudSyncRepository.name, () => {
     expect(rows[0].source._sync).toEqual({ name: 'manual baseline' });
   });
 
-  it('keyset-materializes a bounded batch from a 500,000-asset source inventory', async () => {
+  it('keyset-materializes a bounded batch from a scale-sized source inventory', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [master], null, true);
     await db.transaction().execute(async (transaction) => {
       await sql`INSERT INTO public.icloud_record ("connectionId","libraryKey","recordId","recordType","masterId",fields)
         SELECT ${connection.id}::uuid,'library',lpad(n::text,6,'0'),'CPLAsset','master',
-        '{"masterRef":{"value":{"recordName":"master"}}}'::jsonb FROM generate_series(1,500000) n`.execute(transaction);
+        '{"masterRef":{"value":{"recordName":"master"}}}'::jsonb FROM generate_series(1,${SCALE_ITEMS}) n`.execute(
+        transaction,
+      );
       // A batch must stay bounded when the planner chooses a hash/merge join too.
       await sql`SET LOCAL enable_nestloop = off`.execute(transaction);
       captured.length = 0;
