@@ -1,7 +1,7 @@
 // Expected values below are hand calculations with synthetic coverage, never GPU output.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference } from './ascii-reference.mjs';
+import { ASCII_ALPHA_GUARD, asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
 import { compareCase } from './render-goldens.mjs';
 
 const params = {
@@ -107,4 +107,50 @@ test('invalid inputs fail closed and wrong output fails the unchanged comparison
   assert(compareCase(subject,expected).pass);
   assert(!compareCase(subject,frame([0,0,0,0.5])).pass);
   assert(!compareCase(subject,frame([0.25,0.5,0.75,0.5])).pass);
+});
+
+// Sub-guard coverage: only the equations' own segment t·Gc is accepted, and only where the reference has no ink.
+test('coverage under the transparent division guard is reported only where the reference has none', () => {
+  const guardedOf = (p, atlas = solid(0)) => {
+    const guarded = [];
+    renderAsciiReference(frame([0.25, 0.5, 0.75, 1]), 2, 2, { ...params, ...p }, atlas, guarded);
+    return guarded;
+  };
+  assert.equal(ASCII_ALPHA_GUARD, 0.0001);
+  assert.deepEqual(guardedOf({ transparentBg: true, matchSourceColor: true }), [0, 1, 2, 3].map((pixel) => ({ pixel, limit: [0.25, 0.5, 0.75] })));
+  assert.deepEqual(guardedOf({ transparentBg: true }).map((entry) => entry.limit), Array(4).fill([1, 1, 1]));
+  assert.deepEqual(guardedOf({ transparentBg: true, asciiOpacity: 0 }, solid()).length, 4);
+  assert.deepEqual(guardedOf({ transparentBg: false }), []);
+  assert.deepEqual(guardedOf({ transparentBg: true }, solid()), []);
+  assert.deepEqual(guardedOf({ transparentBg: true }, solid(1)), []); // One coverage byte is 39 guards.
+  assert.deepEqual(guardedOf({ transparentBg: true, originalOpacity: 1 }), []);
+});
+
+test('guarded pixels accept the segment t·Gc with matching alpha and nothing else', () => {
+  const tolerance = { abs: 2 / 255, relative: 0, outliers: 0, meanAbs: 1 / 255 };
+  const expected = frame([0, 0, 0, 0]);
+  const guarded = [{ pixel: 1, limit: [0.25, 0.5, 0.75] }];
+  const passes = (actual, zone = guarded) => {
+    const settled = settleAsciiGuard(expected, actual, zone);
+    return compareCase({ name: 'guard', expected: settled.expected, tolerance }, actual).pass;
+  };
+  const withPixel1 = (rgba) => [0, 0, 0, 0, ...rgba, 0, 0, 0, 0, 0, 0, 0, 0];
+  assert(passes(withPixel1([0, 0, 0, 0])));
+  // t = 0.5: half of Gc at half the guard alpha.
+  const half = withPixel1([0.125, 0.25, 0.375, 0.00005]);
+  assert(passes(half));
+  assert.deepEqual(settleAsciiGuard(expected, half, guarded).pixels, [{ pixel: 1, t: 0.5, alpha: 0.00005 }]);
+  assert.deepEqual(settleAsciiGuard(expected, half, guarded).expected.slice(4, 8), [0.125, 0.25, 0.375, 0]);
+  // t = 1 is the colour at and above the guard; its alpha stays under the comparison rule.
+  assert(passes(withPixel1([0.25, 0.5, 0.75, 0.004])));
+  assert(!passes(withPixel1([0.25, 0.5, 0.75, 0.5])));
+  // Off the segment, beyond it, or a partial t with visible alpha.
+  assert(!passes(withPixel1([0.375, 0, 0, 0.00005])));
+  assert(!passes(withPixel1([0.5, 1, 1, 0.00005])));
+  assert(!passes(withPixel1([0.125, 0.25, 0.375, 0.004])));
+  // The same colour where the reference has ink, or in an unguarded frame, still fails.
+  assert(!passes([0.125, 0.25, 0.375, 0.00005, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+  assert(!passes(half, []));
+  assert.throws(() => settleAsciiGuard(expected, half.slice(4), guarded), /complete frame/);
+  assert.throws(() => settleAsciiGuard(expected, withPixel1([NaN, 0, 0, 0]), guarded), /finite/);
 });
