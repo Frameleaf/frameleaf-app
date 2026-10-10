@@ -137,13 +137,13 @@ export const EFFECT_EXTRA_CASES = {
     { name: 'shutterAngle-not-finite', params: { shutterAngle: null } },
   ],
   // The 16 x 12 frame is one block at the default block size. These cases use the smallest
-  // block (2 x 1.5 blocks) so that blocks glitch, shift, split and corrupt.
+  // block (2 x 1.5 blocks) so that blocks glitch, shift, split and corrupt. Coverage is 1 in every
+  // one: which blocks a lower coverage picks differs between builds of the canonical backend (C6).
   'gpu-block-glitch': [
     { name: 'coverage=1,blockSize=8', params: { coverage: 1, blockSize: 8 } },
     { name: 'coverage=1,blockSize=8,intensity=1@t=0.3', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 0.3 },
     { name: 'coverage=1,blockSize=8,intensity=1@t=1.1', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 1.1 },
     { name: 'coverage=1,blockSize=8,intensity=1@t=2.5', params: { coverage: 1, blockSize: 8, intensity: 1 }, clock: 2.5 },
-    { name: 'coverage=0.5,blockSize=8@t=1.6', params: { coverage: 0.5, blockSize: 8 }, clock: 1.6 },
     { name: 'coverage=1,blockSize=8,speed=4@t=2.5', params: { coverage: 1, blockSize: 8, speed: 4 }, clock: 2.5 },
     { name: 'coverage=1@t=8.75', params: { coverage: 1 }, clock: 8.75 },
   ],

@@ -720,10 +720,10 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 14,
+        "cases": 13,
         "pixel": 0,
         "edge": 0,
-        "statistical": 13,
+        "statistical": 12,
         "refused": 1
       }
     },
