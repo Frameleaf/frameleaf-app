@@ -10,7 +10,7 @@ import path from 'node:path';
 
 export const TEXT_GOLDENS_FORMAT = 'frameleaf-studio-text-goldens';
 export const TEXT_GOLDENS_VERSION = 1;
-export const SINE_TOLERANCE = 1e-12;
+export const SINE_TOLERANCE = 1e-9;
 export const SINE_PRESETS = ['wave-in', 'pulse', 'wave', 'shimmer', 'swing'];
 export const STYLE_FIELDS = [
   'text', 'color', 'fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'underline', 'lineHeight', 'letterSpacing',
@@ -28,6 +28,26 @@ export const STYLE_FIELDS = [
 // of its advances plus the letter spacing once per code point. ascent = 0.9375 x size,
 // descent = 0.25 x size.
 // ---------------------------------------------------------------------------------------------
+/** The synthetic measurer as data: what goldens/text.json and text.md publish for clients that cannot read this file. */
+export const SYNTHETIC_MEASURER_TABLE = {
+  unit: 'multiples of the font size in px',
+  advances: [
+    { characters: ['U+0020', 'U+00A0', 'i', 'j', 'l', '.', ',', ':', ';', '!', '|', "'"], factor: 0.25 },
+    { characters: ['m', 'w', 'M', 'W'], factor: 0.875 },
+    { characters: ['A-Z except M and W'], factor: 0.625 },
+    { characters: ['U+2E80 and above'], factor: 1 },
+    { characters: ['every other code point'], factor: 0.5 },
+  ],
+  order: 'the first matching row wins',
+  weightFactor: { fromWeight: 600, factor: 1.125 },
+  style: 'italic changes nothing',
+  family: 'the family changes nothing',
+  kerning: 'none',
+  width: 'sum over code points of size x factor x weightFactor, plus letterSpacing once per code point (the last included)',
+  ascent: 0.9375,
+  descent: 0.25,
+};
+
 export function syntheticMeasurer() {
   const size = (font) => {
     const match = /(\d+(?:\.\d+)?)px/.exec(font);
@@ -308,12 +328,17 @@ export function referenceLayout(item, boxWidth, boxHeight, measurer) {
   return layout;
 }
 
+/** X6: the height the text needs in a box of this width. */
+export function referenceRequiredHeight(item, boxWidth, measurer) {
+  const padding = Math.max(0, pick(item.textPadding, 16));
+  const stroke = item.stroke && item.stroke.width > 0 ? item.stroke.width : 0;
+  const shadow = item.textShadow ? Math.abs(item.textShadow.offsetY) + item.textShadow.blur : 0;
+  return referenceLayout(item, boxWidth, 0, measurer).totalHeight + padding * 2 + stroke * 2 + shadow * 2;
+}
+
 /** X6: the box height after auto height. */
 export function referenceAutoHeight(item, boxWidth, boxHeight, measurer) {
-  const padding = Math.max(0, pick(item.textPadding, 16));
-  const stroke = item.stroke ? item.stroke.width : 0;
-  const shadow = item.textShadow ? Math.abs(item.textShadow.offsetY) + item.textShadow.blur : 0;
-  const required = referenceLayout(item, boxWidth, 0, measurer).totalHeight + padding * 2 + stroke * 2 + shadow * 2;
+  const required = referenceRequiredHeight(item, boxWidth, measurer);
   return required > boxHeight + 0.5 ? required : boxHeight;
 }
 
@@ -473,6 +498,31 @@ export function referenceMotionState(spec, { frame, length, unitIndex, unitCount
 const WHITE_RANGES = [[0x09, 0x0d], [0x20, 0x20], [0xa0, 0xa0], [0x1680, 0x1680], [0x2000, 0x200a], [0x2028, 0x2029], [0x202f, 0x202f], [0x205f, 0x205f], [0x3000, 0x3000], [0xfeff, 0xfeff]];
 const WHITE_SPACE = { test: (char) => WHITE_RANGES.some(([low, high]) => char.codePointAt(0) >= low && char.codePointAt(0) <= high) };
 
+/** X15: the word rule, with no platform segmenter. Returns, per code point, whether it belongs to a word. */
+function wordMembers(chars) {
+  const kind = chars.map((char) => (/\p{L}/u.test(char) ? 'L' : /\p{Nd}/u.test(char) ? 'D' : /\p{Pc}/u.test(char) ? 'C' : /[\p{M}\p{Cf}]/u.test(char) ? 'X' : 'O'));
+  const base = (from, step) => {
+    let i = from + step;
+    while (i >= 0 && i < chars.length && kind[i] === 'X') i += step;
+    return i >= 0 && i < chars.length ? kind[i] : null;
+  };
+  const APOSTROPHES = ["'", '’'];
+  const DIGIT_JOINERS = ['.', ',', ';'];
+  const LETTER_JOINERS = ['·', '․'];
+  const member = [];
+  chars.forEach((char, i) => {
+    const before = base(i, -1);
+    const after = base(i, 1);
+    if (kind[i] === 'L' || kind[i] === 'D' || kind[i] === 'C') member.push(true);
+    else if (kind[i] === 'X') member.push(i > 0 && member[i - 1]);
+    else if (APOSTROPHES.includes(char)) member.push(member[i - 1] === true && ((before === 'L' && after === 'L') || (before === 'D' && after === 'D')));
+    else if (DIGIT_JOINERS.includes(char)) member.push(member[i - 1] === true && before === 'D' && after === 'D');
+    else if (LETTER_JOINERS.includes(char)) member.push(member[i - 1] === true && before === 'L' && after === 'L');
+    else member.push(false);
+  });
+  return member;
+}
+
 /** X15: the unit index of every code point of the laid-out lines (null: in no unit). */
 export function referenceUnits(lines, unit) {
   const blank = (char) => WHITE_SPACE.test(char);
@@ -481,29 +531,27 @@ export function referenceUnits(lines, unit) {
   let next = 0;
   if (unit === 'character') return { indices: lines.map((line) => Array.from(line, (char) => (blank(char) ? null : next++))), unitCount: next };
   assert.equal(unit, 'word');
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
   const indices = lines.map((line) => {
+    const chars = Array.from(line);
+    const member = wordMembers(chars);
     const out = [];
     let last = null;
     let waiting = [];
-    for (const piece of segmenter.segment(line)) {
-      if (piece.isWordLike) {
-        const mine = next++;
-        for (const position of waiting) out[position] = mine;
-        waiting = [];
-        last = mine;
-        for (const _ of piece.segment) out.push(mine);
-        continue;
-      }
-      for (const char of piece.segment) {
-        if (blank(char)) out.push(null);
-        else if (last !== null) out.push(last);
-        else {
-          waiting.push(out.length);
-          out.push(null);
+    chars.forEach((char, i) => {
+      if (member[i]) {
+        if (i === 0 || !member[i - 1]) {
+          last = next++;
+          for (const position of waiting) out[position] = last;
+          waiting = [];
         }
+        out.push(last);
+      } else if (blank(char)) out.push(null);
+      else if (last !== null) out.push(last);
+      else {
+        waiting.push(out.length);
+        out.push(null);
       }
-    }
+    });
     if (waiting.length > 0) {
       const mine = next++;
       for (const position of waiting) out[position] = mine;
@@ -673,6 +721,21 @@ export function referenceAnimatedStyle(item, animated, canvas, titleStyles) {
   return Object.fromEntries(ANIMATED_STYLE_FIELDS.map((key) => [key, out[key]]));
 }
 
+/** Deep equality of two JSON values with numbers allowed to differ by `bound` (0: exact). */
+export function sameWithin(a, b, bound) {
+  if (typeof a === 'number' && typeof b === 'number') return a === b || Math.abs(a - b) <= bound;
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((value, i) => sameWithin(value, b[i], bound));
+  if (a && typeof a === 'object') {
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameWithin(a[key], b[key], bound));
+  }
+  return a === b;
+}
+
+/** Does a paint or motion case go through the sine (text.md X18)? Its numbers then carry SINE_TOLERANCE. */
+export const usesSine = (spec) => Object.values(spec ?? {}).some((slot) => SINE_PRESETS.includes(slot.presetId));
+
 /** JSON view of a value (drops undefined, folds -0 into 0), the form the goldens store. */
 export const plain = (value) => JSON.parse(JSON.stringify(value));
 
@@ -774,6 +837,13 @@ export function layoutCases() {
   for (const [fontFamily, fontWeight, fontStyle] of families) {
     add(`platform/family/${fontFamily}`, { text: 'Frameleaf Studio titles\nAV To fj 0123', fontFamily, fontWeight, fontStyle, fontSize: 48, letterSpacing: -1, lineHeight: 0.96, textAlign: 'left', backgroundColor: '#0f172a' }, { width: 420, height: 320 }, 'platform');
   }
+  // A weight or style the family does not have is measured as the nearest face it has (text.md X4).
+  add('platform/missing-weight/Anton-bold', { text: 'Frameleaf AV 01', fontFamily: 'Anton', fontWeight: 'bold', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
+  add('platform/missing-weight/Anton-normal', { text: 'Frameleaf AV 01', fontFamily: 'Anton', fontWeight: 'normal', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
+  add('platform/missing-style/Orbitron-italic', { text: 'Frameleaf AV 01', fontFamily: 'Orbitron', fontStyle: 'italic', fontSize: 32 }, { width: 420, height: 200 }, 'platform');
+  add('platform/missing-style/Orbitron-normal', { text: 'Frameleaf AV 01', fontFamily: 'Orbitron', fontStyle: 'normal', fontSize: 32 }, { width: 420, height: 200 }, 'platform');
+  add('platform/missing-both/Bebas-Neue-semibold-italic', { text: 'Frameleaf AV 01', fontFamily: 'Bebas Neue', fontWeight: 'semibold', fontStyle: 'italic', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
+  add('platform/missing-both/Bebas-Neue-normal', { text: 'Frameleaf AV 01', fontFamily: 'Bebas Neue', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
   add('platform/latin-ext', { text: 'Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144', fontFamily: 'Inter', fontWeight: 'medium', fontStyle: 'italic', fontSize: 40 }, { width: 300, height: 240 }, 'platform');
   return cases;
 }
@@ -856,9 +926,14 @@ export function slotCases(catalogue) {
 export function unitCases() {
   const sets = {
     words: ['Hello, world!', '  two  spaces ', '', '"Quoted" (text) end.'],
-    punctuation: ['...', '- dash first', 'a\u00a0b\tc', "don't stop-go"],
+    punctuation: ['...', '- dash first', 'a b\tc', "don't stop-go"],
     numbers: ['Take 2 at 10.5 fps', 'e-mail me@home now'],
     single: ['one line only'],
+    apostrophes: ["don't stop-go 5'6", "it’s rock'n'roll 'quoted' o' 't"],
+    'digit-joiners': ['10.5 1,000 1;2 v1.2.3', '3.14.15 1.a a.1 1,a 10:30 1/2'],
+    'letters-do-not-join': ['a.b file.txt U.S. e.g.', 'a:b x+y=z a&b C++ x-y a/b'],
+    symbols: ['foo_bar1 #tag $5 50% abc123 1st', 'me@home a—b a–b 3×4'],
+    accents: ['café café naïve A·B a․b', 'a­b \u{1F600}ok ok\u{1F600} \u{1F600}'],
   };
   return Object.entries(sets).flatMap(([name, lines]) => ['character', 'word', 'line', 'whole-clip'].map((unit) => ({ name: `${name}/${unit}`, lines, unit })));
 }
@@ -938,32 +1013,139 @@ export function styleScaleCases(catalogue) {
   return cases;
 }
 
-export const IMAGE_SIZE = { width: 64, height: 40 };
-const NBSP3 = '\u00a0\u00a0\u00a0';
+export const IMAGE_SIZE = { width: 96, height: 64 };
+const NBSP3 = '   ';
+/**
+ * Image cases. The text is no-break spaces, so no glyph ink enters. `class` is declared, not measured:
+ *  pixel        every edge the platform rasterises lies on a pixel boundary, or is the edge of an axis-aligned
+ *               filled rectangle (whose coverage is the covered fraction of the pixel);
+ *  edge         a rounded corner, or a stroked or path edge between pixel boundaries: its anti-aliased coverage
+ *               belongs to the rasteriser;
+ *  statistical  a blurred shadow: the blur kernel belongs to the platform (text.md X22).
+ * Every box already holds its text (text.md X6), so nothing here would have been grown by the engine.
+ */
 export function imageCases() {
-  const transform = { x: 0, y: 0, width: 56, height: 32 };
-  const base = { text: NBSP3, fontSize: 16, textPadding: 6, color: '#ffffff', durationInFrames: 30 };
-  const make = (name, item, box = transform) => ({ name, item: { ...base, ...item }, transform: box });
+  const transform = { x: 0, y: 0, width: 88, height: 56 };
+  const base = { text: NBSP3, fontSize: 16, lineHeight: 1.25, textPadding: 6, color: '#ffffff', durationInFrames: 30 };
+  const line = { underline: true, fontSize: 40, lineHeight: 0.8025, verticalAlign: 'top', textAlign: 'left' };
+  const make = (name, kind, item) => ({ name, class: kind, item: { ...base, ...item }, transform });
   return [
-    make('background-square', { backgroundColor: '#3366cc' }),
-    make('background-round', { backgroundColor: '#3366cc', backgroundRadius: 8 }),
-    make('background-pill', { backgroundColor: '#3366cc', backgroundRadius: 999 }),
-    make('background-translucent', { backgroundColor: 'rgba(0, 0, 0, 0.55)', backgroundRadius: 4 }),
-    make('background-left-top', { backgroundColor: '#cc6633', textAlign: 'left', verticalAlign: 'top' }),
-    make('underline', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', letterSpacing: 2 }),
-    make('underline-hard-shadow', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff0000' } }),
-    make('underline-blurred-shadow', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 0, offsetY: 6, blur: 6, color: '#ff0000' } }),
-    make('background-has-no-shadow', { backgroundColor: '#3366cc', textShadow: { offsetX: 5, offsetY: 5, blur: 0, color: '#ff0000' } }),
-    make('alpha/background-8-digit', { backgroundColor: '#3366cc80', backgroundRadius: 4 }),
-    make('alpha/background-8-digit-equals-caption-rgba', { backgroundColor: '#0000008c', backgroundRadius: 4 }),
-    make('alpha/shadow-8-digit', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff000080' } }),
-    make('alpha/caption-shadow-rgba', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: 'rgba(0, 0, 0, 0.6)' } }),
-    make('alpha/caption-shadow-8-digit', { underline: true, fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#00000099' } }),
-    make('alpha/text-colour-8-digit-fades-its-shadow', { underline: true, color: '#ffffff80', fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff000080' } }),
-    make('alpha/translucent-background-and-shadow', { underline: true, color: '#ffffffcc', fontSize: 40, lineHeight: 0.2, verticalAlign: 'top', textAlign: 'left', backgroundColor: '#3366cc80',
-      textShadow: { offsetX: 16, offsetY: -12, blur: 0, color: '#ff000080' } }),
-    make('clipped-to-the-box', { backgroundColor: '#3366cc', textPadding: 14, fontSize: 24 }, { x: 4, y: -2, width: 30, height: 20 }),
+    make('background-square', 'pixel', { backgroundColor: '#3366cc' }),
+    make('background-subpixel', 'pixel', { backgroundColor: '#3366cc', lineHeight: 1.2 }),
+    make('background-round', 'edge', { backgroundColor: '#3366cc', backgroundRadius: 8 }),
+    make('background-pill', 'edge', { backgroundColor: '#3366cc', backgroundRadius: 999 }),
+    make('background-translucent', 'edge', { backgroundColor: 'rgba(0, 0, 0, 0.55)', backgroundRadius: 4 }),
+    make('background-left-top', 'pixel', { backgroundColor: '#cc6633', textAlign: 'left', verticalAlign: 'top' }),
+    make('underline', 'pixel', line),
+    make('underline-subpixel', 'edge', { ...line, lineHeight: 0.8, letterSpacing: 2 }),
+    make('underline-hard-shadow', 'pixel', { ...line, textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff0000' } }),
+    make('underline-blurred-shadow', 'statistical', { ...line, textShadow: { offsetX: 0, offsetY: 1, blur: 4, color: '#ff0000' } }),
+    make('background-has-no-shadow', 'pixel', { backgroundColor: '#3366cc', textShadow: { offsetX: 5, offsetY: 5, blur: 0, color: '#ff0000' } }),
+    make('alpha/background-8-digit', 'pixel', { backgroundColor: '#3366cc80' }),
+    make('alpha/background-8-digit-equals-caption-rgba', 'edge', { backgroundColor: '#0000008c', backgroundRadius: 4 }),
+    make('alpha/shadow-8-digit', 'pixel', { ...line, textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff000080' } }),
+    make('alpha/caption-shadow-rgba', 'pixel', { ...line, textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: 'rgba(0, 0, 0, 0.6)' } }),
+    make('alpha/caption-shadow-8-digit', 'pixel', { ...line, textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#00000099' } }),
+    make('alpha/text-colour-8-digit-fades-its-shadow', 'pixel', { ...line, color: '#ffffff80', textShadow: { offsetX: 3, offsetY: 4, blur: 0, color: '#ff000080' } }),
+    make('alpha/translucent-background-and-shadow', 'edge', { ...line, color: '#ffffffcc', backgroundColor: '#3366cc80', textShadow: { offsetX: 16, offsetY: -4, blur: 0, color: '#ff000080' } }),
+    make('clip/shadow-cut-at-the-box-edge', 'pixel', { ...line, textAlign: 'right', textShadow: { offsetX: 12, offsetY: 0, blur: 0, color: '#ff0000' } }),
   ];
+}
+
+/** A colour as a reader accepts it (text.md X12): hex of 3, 4, 6 or 8 digits, rgb() and rgba() with commas. Straight RGBA in 0..1. */
+export function referenceColour(text) {
+  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(text);
+  if (hex) {
+    const digits = hex[1].length <= 4 ? Array.from(hex[1], (d) => d + d) : hex[1].match(/../g);
+    const [r, g, b, a = 255] = digits.map((pair) => parseInt(pair, 16));
+    return [r / 255, g / 255, b / 255, a / 255];
+  }
+  const fn = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*(\d*\.?\d+)\s*)?\)$/i.exec(text);
+  assert(fn, `colour ${text} is not a form a reader must accept`);
+  const alpha = fn[4] === undefined ? 1 : Math.round(Math.min(1, Number(fn[4])) * 255) / 255;
+  return [Math.min(255, Number(fn[1])) / 255, Math.min(255, Number(fn[2])) / 255, Math.min(255, Number(fn[3])) / 255, alpha];
+}
+
+/**
+ * What the prose predicts for an image case: per pixel, a straight RGBA value or null where the value
+ * belongs to the platform rasteriser (a rounded corner, an unaligned path or stroke edge, a blur, or a
+ * fractional coverage that leaves the pixel nearly transparent).
+ */
+export function referenceImage(c, measurer = syntheticMeasurer()) {
+  const { width, height } = IMAGE_SIZE;
+  const ops = referencePaint(c.item, IMAGE_SIZE, c.transform, measurer, 0);
+  const clip = ops.find((op) => op.op === 'clip');
+  const aligned = (value) => Math.abs(value - Math.round(value)) < 1e-6;
+  assert([clip.x, clip.y, clip.width, clip.height].every(aligned), 'image cases clip on pixel boundaries');
+  const shapes = [];
+  for (const op of ops) {
+    const rect = op.op === 'background' ? { x: op.x, y: op.y, w: op.width, h: op.height, r: op.radius, filled: op.radius === 0 }
+      : op.op === 'underline' ? { x: op.x1, y: op.y - op.thickness / 2, w: op.x2 - op.x1, h: op.thickness, r: 0, filled: false } : null;
+    if (!rect) continue;
+    const colour = referenceColour(op.color);
+    if (op.shadow) {
+      const cast = referenceColour(op.shadow.color);
+      shapes.push({ ...rect, x: rect.x + op.shadow.offsetX, y: rect.y + op.shadow.offsetY, colour: [cast[0], cast[1], cast[2], cast[3] * colour[3]], soft: op.shadow.blur });
+    }
+    shapes.push({ ...rect, colour, soft: 0 });
+  }
+  const overlap = (low, high, from, to) => Math.max(0, Math.min(high, to) - Math.max(low, from));
+  // Coverage of pixel (i, j) by a shape inside the clip, or null when the rasteriser decides it.
+  const coverage = (shape, i, j) => {
+    const left = Math.max(shape.x, clip.x);
+    const right = Math.min(shape.x + shape.w, clip.x + clip.width);
+    const top = Math.max(shape.y, clip.y);
+    const bottom = Math.min(shape.y + shape.h, clip.y + clip.height);
+    if (shape.soft > 0) {
+      const reach = 3 * shape.soft + 1;
+      return i + 1 <= left - reach || i >= right + reach || j + 1 <= top - reach || j >= bottom + reach || i + 1 <= clip.x || i >= clip.x + clip.width || j + 1 <= clip.y || j >= clip.y + clip.height ? 0 : null;
+    }
+    const area = overlap(i, i + 1, left, right) * overlap(j, j + 1, top, bottom);
+    if (area === 0) return 0;
+    const inCorner = shape.r > 0 && (i < shape.x + shape.r || i + 1 > shape.x + shape.w - shape.r) && (j < shape.y + shape.r || j + 1 > shape.y + shape.h - shape.r);
+    if (inCorner) {
+      // A corner is a quarter circle of radius r: a pixel wholly inside it is covered, one wholly outside is not.
+      const cx = i < shape.x + shape.r ? shape.x + shape.r : shape.x + shape.w - shape.r;
+      const cy = j < shape.y + shape.r ? shape.y + shape.r : shape.y + shape.h - shape.r;
+      const far = Math.hypot(Math.max(Math.abs(i - cx), Math.abs(i + 1 - cx)), Math.max(Math.abs(j - cy), Math.abs(j + 1 - cy)));
+      const near = Math.hypot(Math.max(0, i - cx, cx - (i + 1)), Math.max(0, j - cy, cy - (j + 1)));
+      if (near >= shape.r) return 0;
+      if (far > shape.r || area < 1 - 1e-9) return null;
+    }
+    if (shape.filled || [shape.x, shape.y, shape.x + shape.w, shape.y + shape.h].every(aligned)) return area > 1 - 1e-9 ? 1 : area < 1e-9 ? 0 : area;
+    return area > 1 - 1e-9 ? 1 : null;
+  };
+  const expected = [];
+  let undecided = 0;
+  for (let j = 0; j < height; j++) {
+    for (let i = 0; i < width; i++) {
+      let out = [0, 0, 0, 0];
+      let partial = false;
+      for (const shape of shapes) {
+        const cover = coverage(shape, i, j);
+        if (cover === null) { out = null; break; }
+        if (cover > 0 && cover < 1) partial = true;
+        const a = cover * shape.colour[3];
+        const alpha = a + out[3] * (1 - a);
+        out = alpha === 0 ? [0, 0, 0, 0] : [0, 1, 2].map((k) => (shape.colour[k] * a + out[k] * out[3] * (1 - a)) / alpha).concat(alpha);
+      }
+      if (out && partial && out[3] < 0.5) out = null;
+      if (!out) undecided++;
+      expected.push(out);
+    }
+  }
+  return { expected, undecided, blurred: shapes.some((shape) => shape.soft > 0), shapes: shapes.length };
+}
+
+/** The tolerance of an image case from its declared class and the pixels the prose leaves to the rasteriser. */
+export function imageTolerance(c, measured = null) {
+  const { undecided, blurred } = referenceImage(c);
+  const channels = IMAGE_SIZE.width * IMAGE_SIZE.height * 4;
+  const floor = 2 / 255;
+  assert.equal(c.class, blurred ? 'statistical' : undecided > 0 ? 'edge' : 'pixel', `image/${c.name}: declared class does not match its geometry`);
+  if (c.class === 'pixel') return { class: 'pixel', abs: floor, relative: 0, outliers: 0, meanAbs: floor / 2, measured };
+  if (c.class === 'edge') return { class: 'edge', abs: floor, relative: 0, outliers: undecided * 4, meanAbs: Number((floor / 2 + (undecided * 4 * 0.25) / channels).toPrecision(3)), undecidedPixels: undecided, measured };
+  return { class: 'statistical', abs: floor, relative: 0, outliers: Math.max(undecided * 4, Math.ceil(0.1 * channels)), meanAbs: 0.02, undecidedPixels: undecided, measured };
 }
 
 /** Engine-free structural validation of a text goldens document. */

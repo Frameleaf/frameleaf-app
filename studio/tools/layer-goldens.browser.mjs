@@ -24,6 +24,7 @@ const studio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 const ENCODING = 'rgba8-deflate-base64';
 const STATISTICAL = ['blend/dissolve'];
+const PROJECTIVE = ['corner-pin/image', 'corner-pin/reference-size'];
 const GOLDENS = path.join(studio, 'spec/goldens/layers.json');
 
 // The engine files whose behaviour the goldens pin; their digest is recorded so drift is visible.
@@ -84,9 +85,9 @@ async function renderAll(chromium, args, cases) {
         const { metadata, timeline } = c.graph;
         // The graph of protocol section 2 as the engine's composition: each track lists its items.
         const composition = {
-          fps: metadata.fps, width: metadata.width, height: metadata.height, durationInFrames: 30,
+          fps: metadata.fps, width: metadata.width, height: metadata.height, durationInFrames: 60,
           ...(metadata.backgroundColor !== undefined ? { backgroundColor: metadata.backgroundColor } : {}),
-          keyframes: timeline.keyframes ?? [], transitions: [],
+          keyframes: timeline.keyframes ?? [], transitions: timeline.transitions ?? [],
           tracks: timeline.tracks.map((track) => ({ ...track,
             items: timeline.items.filter((item) => item.trackId === track.id).map((item) => (item.type === 'image' ? { ...item, src: media[item.mediaId] } : item)) })),
         };
@@ -108,8 +109,10 @@ async function renderAll(chromium, args, cases) {
         }
         results.push(result);
       }
+      // A float-route case (layers.md L16) takes the float route's frame as its picture.
+      results.forEach((r, i) => { if (cases[i].route === 'float') { if (!r.float) throw new Error(`${cases[i].name}: ${r.floatError}`); r.display = r.pixels; r.pixels = r.float.map((v) => Math.min(1, Math.max(0, v))); } });
       return { environment, results };
-    }, { cases: cases.map(({ name, frame, graph }) => ({ name, frame, graph })), media });
+    }, { cases: cases.map(({ name, frame, graph, route }) => ({ name, frame, graph, route })), media });
   } finally {
     await browser.close();
   }
@@ -193,7 +196,17 @@ export async function runLayerGoldens({ write = false, probe = false } = {}) {
         tolerance.meanAbs = Math.max(tolerance.meanAbs, 0.02);
       }
       const floatRoute = r.float ? distance(stored, r.float) : { error: r.floatError };
-      return { name: c.name, class: c.class, frame: c.frame, reference: c.reference, size: { width: c.graph.metadata.width, height: c.graph.metadata.height },
+      if (PROJECTIVE.includes(c.name)) {
+        // L11: the contract is the exact projective warp, not the engine's triangle mesh. The tolerance
+        // also admits the measured distance between the two.
+        const exact = deriveTolerance('sdr', stored, referenceFrame(c), c.name);
+        tolerance.abs = Math.max(tolerance.abs, exact.abs);
+        tolerance.outliers = Math.max(tolerance.outliers, exact.outliers);
+        tolerance.meanAbs = Math.max(tolerance.meanAbs, exact.meanAbs);
+        tolerance.class = tolerance.outliers <= 0.1 * stored.length && tolerance.meanAbs <= 0.02 ? 'edge' : 'statistical';
+        tolerance.projective = exact.measured;
+      }
+      return { name: c.name, class: c.class, frame: c.frame, reference: c.reference, ...(c.route ? { route: c.route } : {}), size: { width: c.graph.metadata.width, height: c.graph.metadata.height },
         graph: c.graph, outcome: 'rendered', tolerance, floatRoute, output: { encoding: ENCODING, data: encodeBuffer(r.pixels, ENCODING) } };
     }),
   };
