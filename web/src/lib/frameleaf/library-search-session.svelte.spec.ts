@@ -189,3 +189,12 @@ it('owns structured cursor paging and ignores a late page after disposal', async
   await session.loadNextPage(options);
   expect(searchAssets).toHaveBeenCalledTimes(2);
 });
+
+it('does not append an asset twice when offset pages overlap', async () => {
+  const session = createSession();
+  session.reset(structured({ city: 'Edmonton' }));
+  vi.mocked(searchAssets).mockResolvedValueOnce(result('first', '2')).mockResolvedValueOnce(result('first'));
+  await session.loadNextPage(options);
+  await session.loadNextPage(options);
+  expect(session.assets.map(({ id }) => id)).toEqual(['first']);
+});

@@ -47,6 +47,7 @@
   import { filterIsInOrNearViewport } from '$lib/managers/timeline-manager/utils.svelte';
   import type { ViewerAsset } from '$lib/managers/timeline-manager/viewer-asset.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
@@ -1119,6 +1120,8 @@
       }
       const ids = range.map((item) => item.id);
       session.dispatch({ type: 'selection', ids: [...new Set([...session.selection, ...ids])] });
+    } catch (error) {
+      handleError(error, $t('failed_to_load_assets'));
     } finally {
       rangePending = false;
     }

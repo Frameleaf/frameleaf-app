@@ -22,6 +22,7 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { isTypingTarget } from '$lib/frameleaf/library-shortcuts';
   import { selectionForPreservation } from '$lib/frameleaf/preservation';
   import { canSendCopies, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
@@ -401,7 +402,11 @@
 
   /** Escape closes the menu before it clears the selection, as the prototype does. */
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());
-  const deleteKey = () => perform(trash || locked ? 'delete-permanently' : 'delete');
+  const deleteKey = (event: KeyboardEvent) => {
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
+    perform(trash || locked ? 'delete-permanently' : 'delete');
+  };
 </script>
 
 <svelte:window
@@ -409,8 +414,8 @@
     ? [
         { shortcut: { key: 'Escape' }, onShortcut: handleEscape },
         { shortcut: { key: 'D', ctrl: true }, onShortcut: onClear, preventDefault: true },
-        { shortcut: { key: 'Delete' }, onShortcut: deleteKey },
-        { shortcut: { key: 'Backspace' }, onShortcut: deleteKey },
+        { shortcut: { key: 'Delete' }, onShortcut: deleteKey, preventDefault: false },
+        { shortcut: { key: 'Backspace' }, onShortcut: deleteKey, preventDefault: false },
       ]
     : []}
 />
