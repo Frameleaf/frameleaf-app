@@ -4781,14 +4781,14 @@
         "operationId": "startDatabaseRestoreFlow",
         "parameters": [],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FrameleafSetupCodeDto"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -13863,7 +13863,7 @@
             "name": "count",
             "required": false,
             "in": "query",
-            "description": "Frames to sample, evenly spaced along the video (default 20)",
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
             "schema": {
               "minimum": 1,
               "maximum": 120,
@@ -13884,7 +13884,7 @@
             "name": "height",
             "required": false,
             "in": "query",
-            "description": "Frame height in pixels (default 90); the width follows the aspect ratio",
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
             "schema": {
               "minimum": 32,
               "maximum": 240,
@@ -13969,7 +13969,7 @@
             "name": "count",
             "required": false,
             "in": "query",
-            "description": "Frames to sample, evenly spaced along the video (default 20)",
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
             "schema": {
               "minimum": 1,
               "maximum": 120,
@@ -13990,7 +13990,7 @@
             "name": "height",
             "required": false,
             "in": "query",
-            "description": "Frame height in pixels (default 90); the width follows the aspect ratio",
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
             "schema": {
               "minimum": 32,
               "maximum": 240,
