@@ -1,0 +1,329 @@
+# Pre-release integration image for the Frameleaf Cloud cross-repository e2e.
+#
+# Builds the server image (API, microservices and the edge worker) from the tip of
+# master/frameleaf-implementation with the same Dockerfile, target, build arguments and native
+# per-architecture runners as Deploy (docker.yml -> local-multi-runner-build.yml), and pushes it
+# to ghcr.io/frameleaf/frameleaf-server under integration-<sha> tags only, together with the database image
+# built from docker/postgres, pushed as ghcr.io/frameleaf/frameleaf-postgres:integration-<sha> after the same
+# deployment test ran against it. FL-142 (owner decision
+# 2026-09-27): the build is an OCI archive on its runner; it is pushed, byte for byte, only after the
+# deployment test ran it with the release Compose file on both architectures. It never writes the
+# release pipeline's tags (latest, release, edge, frameleaf-v*, commit-*) or its build cache,
+# and it is not a release: nothing promotes or advertises this image.
+#
+# Owner decision 2026-09-27: this is the only workflow that sets the build argument
+# FRAMELEAF_BUILD_CHANNEL=integration, which compiles the integration channel into the server so it
+# may trust extra licence-signing keys from a mounted JWKS (FRAMELEAF_LICENSE_EXTRA_JWKS_FILE) for
+# the Frameleaf Cloud e2e. Release builds never set it and ignore that variable
+# (scripts/frameleaf-workflows.test.mjs enforces both).
+name: Integration Image
+
+# A workflow that is not on the default branch (fork/main) cannot be dispatched, so pushes to
+# master/frameleaf-implementation build it. One run at a time: a running build always finishes (the
+# branch moves every few minutes, faster than a build), and a newer push replaces any queued run, so
+# the next build is always the latest head. The manual dispatch stays for when this file reaches the
+# default branch. The guard below still refuses any other branch or repository.
+on:
+  push:
+    branches: [master/frameleaf-implementation]
+  workflow_dispatch:
+
+concurrency:
+  group: integration-image
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/frameleaf/frameleaf-server
+  DATABASE_IMAGE: ghcr.io/frameleaf/frameleaf-postgres
+
+jobs:
+  guard:
+    name: Refuse anything but master/frameleaf-implementation
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require the Frameleaf repository, the integration branch and a push or manual dispatch
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == Frameleaf/frameleaf-app ]] || { echo "::error::Wrong repository: $REPOSITORY"; exit 1; }
+          [[ "$REF" == refs/heads/master/frameleaf-implementation ]] || { echo "::error::Integration images build only from master/frameleaf-implementation, not $REF"; exit 1; }
+          [[ "$EVENT" == push || "$EVENT" == workflow_dispatch ]] || { echo "::error::Push or manual dispatch only, not $EVENT"; exit 1; }
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: guard
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+            cache: linux-amd64-cpu-prod
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+            cache: linux-arm64-cpu-prod
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the server image to an OCI archive (not pushed)
+        id: build
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: prod
+          platforms: ${{ matrix.platform }}
+          outputs: type=oci,dest=${{ runner.temp }}/archive/image.tar,name=frameleaf-deploy-test/frameleaf-server:${{ matrix.architecture }}
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=integration-${{ github.sha }}
+            org.opencontainers.image.description=Pre-release integration build, not a release
+            org.frameleaf.build.variant=cpu
+            org.frameleaf.build.channel=integration
+          # Read the Deploy build cache; never write it.
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:${{ matrix.cache }}
+          secrets: |
+            mise_github_token=${{ github.token }}
+          build-args: |
+            DEVICE=cpu
+            BUILD_ID=${{ github.run_id }}
+            BUILD_IMAGE=integration-${{ github.sha }}
+            BUILD_SOURCE_REF=${{ github.ref_name }}
+            BUILD_SOURCE_COMMIT=${{ github.sha }}
+            BUILD_SOURCE_REPOSITORY=${{ github.repository }}
+            BUILD_IMAGE_NAME=frameleaf-server
+            FRAMELEAF_BUILD_CHANNEL=integration
+      # The database image the Compose file names, from docker/postgres, as an archive the deployment test runs.
+      - name: Build the database image to an OCI archive (not pushed)
+        id: database
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: docker/postgres
+          file: docker/postgres/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=oci,dest=${{ runner.temp }}/archive/postgres/image.tar,name=frameleaf-deploy-test/frameleaf-postgres:${{ matrix.architecture }}
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=integration-${{ github.sha }}
+            org.opencontainers.image.description=Pre-release integration build, not a release
+            org.frameleaf.build.channel=integration
+      # Fresh-install validation uses the current CPU ML source, independently of older release manifests.
+      - name: Build the CPU machine-learning image to an OCI archive (not pushed)
+        id: machine-learning
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: machine-learning
+          file: machine-learning/Dockerfile
+          target: prod
+          platforms: ${{ matrix.platform }}
+          outputs: type=oci,dest=${{ runner.temp }}/archive/ml/image.tar,name=frameleaf-deploy-test/frameleaf-machine-learning:${{ matrix.architecture }}
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=integration-${{ github.sha }}
+            org.opencontainers.image.description=Pre-release integration build, not a release
+            org.frameleaf.build.variant=cpu
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-machine-learning-build-cache:${{ matrix.cache }}
+          build-args: |
+            DEVICE=cpu
+      - name: Record the platform digests
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          DATABASE_DIGEST: ${{ steps.database.outputs.digest }}
+          ML_DIGEST: ${{ steps.machine-learning.outputs.digest }}
+        run: |
+          set -euo pipefail
+          record() {
+            [[ "$1" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid digest for $2"; exit 1; }
+            tar -xOf "$2/image.tar" index.json | jq -e --arg d "$1" '[.manifests[].digest] == [$d]' > /dev/null
+            printf '%s\n' "$1" > "$2/digest"
+          }
+          record "$DIGEST" "$RUNNER_TEMP/archive"
+          record "$DATABASE_DIGEST" "$RUNNER_TEMP/archive/postgres"
+          record "$ML_DIGEST" "$RUNNER_TEMP/archive/ml"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integration-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/archive/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  deploy-test:
+    name: Deployment test ${{ matrix.architecture }}
+    needs: build
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: integration-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/server
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Prepare the CPU ML archive for deployment
+        run: |
+          set -euo pipefail
+          test ! -e "$RUNNER_TEMP/ml"
+          mkdir "$RUNNER_TEMP/ml"
+          mv "$RUNNER_TEMP/server/ml/image.tar" "$RUNNER_TEMP/ml/image.tar"
+      - name: Resolve the images under test
+        env:
+          SERVER_BUILT: 'true'
+          ML_BUILT: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs deploy-test-images
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Deploy the unpushed server, database and ML images and test the installation
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          DATABASE_ARCHIVE: ${{ runner.temp }}/server/postgres/image.tar
+        run: node .github/frameleaf-deploy-test.cjs
+
+  publish:
+    name: Push the tested images and tag integration-<sha>
+    needs: deploy-test
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
+      database-digest: ${{ steps.manifest.outputs.database-digest }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/archives
+          pattern: integration-archive-*
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Push each tested archive by digest, byte for byte
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
+          # The server archive sits at the artifact root, the database archive in postgres/.
+          push() {
+            local name="$1" image="$2" subdirectory="$3" architecture archive digest layout
+            mkdir -p "$RUNNER_TEMP/digests/$name"
+            for architecture in amd64 arm64; do
+              archive="$RUNNER_TEMP/archives/integration-archive-${architecture}${subdirectory}"
+              digest="$(cat "$archive/digest")"
+              [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid $name $architecture digest"; exit 1; }
+              layout="$RUNNER_TEMP/layout-${name}-${architecture}"
+              mkdir -p "$layout"
+              tar -xf "$archive/image.tar" -C "$layout"
+              jq -e --arg d "$digest" '[.manifests[].digest] == [$d]' "$layout/index.json" > /dev/null
+              oras cp --from-oci-layout "${layout}@${digest}" "${image}@${digest}"
+              [[ "$(oras resolve "${image}@${digest}")" == "$digest" ]] || { echo "::error::Pushed $name digest differs from the tested archive"; exit 1; }
+              printf '%s\n' "$digest" > "$RUNNER_TEMP/digests/$name/$architecture"
+            done
+          }
+          push server "$IMAGE" ""
+          push database "$DATABASE_IMAGE" /postgres
+          oras logout ghcr.io
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish the multi-architecture manifests under integration tags only
+        id: manifest
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::Invalid source SHA"; exit 1; }
+          full="integration-${SHA}"
+          short="integration-${SHA:0:12}"
+          {
+            echo "### Pre-release integration images (not a release)"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for name in server database; do
+            if [[ "$name" == server ]]; then IMAGE_REF="$IMAGE"; else IMAGE_REF="$DATABASE_IMAGE"; fi
+            sources=()
+            for architecture in amd64 arm64; do
+              digest="$(cat "$RUNNER_TEMP/digests/$name/$architecture")"
+              [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid $name $architecture digest"; exit 1; }
+              sources+=("${IMAGE_REF}@${digest}")
+            done
+            docker buildx imagetools create \
+              --tag "${IMAGE_REF}:${full}" \
+              --tag "${IMAGE_REF}:${short}" \
+              --annotation "index:org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app" \
+              --annotation "index:org.opencontainers.image.revision=${SHA}" \
+              --annotation "index:org.opencontainers.image.version=${full}" \
+              --annotation "index:org.opencontainers.image.description=Pre-release integration build, not a release" \
+              "${sources[@]}"
+            digest="$(docker buildx imagetools inspect "${IMAGE_REF}:${full}" --format '{{json .Manifest}}' | jq -r .digest)"
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Could not read the published $name digest"; exit 1; }
+            if [[ "$name" == server ]]; then echo "digest=${digest}" >> "$GITHUB_OUTPUT"; else echo "database-digest=${digest}" >> "$GITHUB_OUTPUT"; fi
+            {
+              echo "- \`${IMAGE_REF}:${full}\`"
+              echo "- \`${IMAGE_REF}:${short}\`"
+              echo "- \`${IMAGE_REF}@${digest}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done

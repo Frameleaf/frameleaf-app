@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/heartbeat",
+    "headers": {
+      "Authorization": "Bearer <access_token>",
+      "Content-Type": "application/json"
+    },
+    "note": "bearer compatibility off, or a DPoP-bound token sent as bearer"
+  },
+  "status": 401,
+  "headers": {
+    "WWW-Authenticate": "DPoP algs=\"EdDSA Ed25519\""
+  },
+  "body": {
+    "code": "invalid_token",
+    "message": "Send the instance token with a DPoP proof.",
+    "retryable": false,
+    "requestId": "req_01J8ZK3M4N5P6Q7U"
+  }
+}

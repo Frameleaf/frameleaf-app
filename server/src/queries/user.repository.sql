@@ -80,6 +80,48 @@ where
   "user"."isAdmin" = $1
   and "user"."deletedAt" is null
 
+-- UserRepository.getAdmins
+select
+  "id",
+  "name",
+  "email",
+  "avatarColor",
+  "profileImagePath",
+  "profileChangedAt",
+  "clusterGroupId",
+  "createdAt",
+  "updatedAt",
+  "deletedAt",
+  "isAdmin",
+  "status",
+  "oauthId",
+  "profileImagePath",
+  "shouldChangePassword",
+  "storageLabel",
+  "quotaSizeInBytes",
+  "quotaUsageInBytes",
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "user_metadata"."key",
+          "user_metadata"."value"
+        from
+          "user_metadata"
+        where
+          "user"."id" = "user_metadata"."userId"
+      ) as agg
+  ) as "metadata"
+from
+  "user"
+where
+  "user"."isAdmin" = $1
+  and "user"."deletedAt" is null
+order by
+  "user"."createdAt" asc
+
 -- UserRepository.getFileSamples
 select
   "id",
@@ -314,6 +356,100 @@ where
 order by
   "createdAt" desc
 
+-- UserRepository.hasLockedProfileImageSource
+select
+  "user"."id"
+from
+  "user"
+where
+  "user"."id" = $1::uuid
+  and exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "user"."profileImageAssetId"
+  )
+
+-- UserRepository.getLockedProfileImageSources
+select
+  "user"."id",
+  "user"."profileImagePath",
+  "user"."profileImageAssetId"
+from
+  "user"
+where
+  "user"."profileImageAssetId" is not null
+  and exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "user"."profileImageAssetId"
+  )
+  and "user"."deletedAt" is null
+
+-- UserRepository.getProfileImageReplacement
+select
+  "asset"."id",
+  "asset_file"."path"
+from
+  "asset"
+  inner join "asset_file" on "asset_file"."assetId" = "asset"."id"
+  and "asset_file"."type" = 'preview'
+where
+  "asset"."ownerId" = $1::uuid
+  and "asset"."type" = 'IMAGE'
+  and "asset"."status" = 'active'
+  and "asset"."visibility" = 'timeline'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  and "asset"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      public.asset as nsfw_asset
+    where
+      nsfw_asset.id = "asset"."id"
+      and nsfw_asset.is_nsfw = true
+  )
+order by
+  coalesce(
+    (
+      select
+        best_photo.score
+      from
+        "public"."asset_best_photo_score" as best_photo
+      where
+        best_photo."assetId" = "asset"."id"
+        and best_photo.score >= 0.9
+    ),
+    -1
+  ) desc,
+  "asset"."fileCreatedAt" desc,
+  "asset_file"."isEdited" desc
+limit
+  $2
+
+-- UserRepository.replaceLockedProfileImage
+update "user"
+set
+  "profileImagePath" = $1,
+  "profileImageAssetId" = $2,
+  "profileChangedAt" = $3
+where
+  "user"."id" = $4::uuid
+  and "user"."profileImageAssetId" = $5::uuid
+
 -- UserRepository.getUserStats
 select
   "user"."id" as "userId",
@@ -324,6 +460,14 @@ select
       (
         "asset"."type" = 'IMAGE'
         and "asset"."visibility" != 'hidden'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "photos",
   count(*) filter (
@@ -331,6 +475,14 @@ select
       (
         "asset"."type" = 'VIDEO'
         and "asset"."visibility" != 'hidden'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "videos",
   coalesce(

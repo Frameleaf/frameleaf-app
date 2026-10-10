@@ -5,10 +5,12 @@ export const uuidDto = {
 };
 
 const adminLoginDto = {
-  email: 'admin@immich.cloud',
+  email: 'admin@example.com',
   password: 'password',
 };
-const adminSignupDto = { ...adminLoginDto, name: 'Immich Admin' };
+// FL-292: the e2e server pins its setup code (FRAMELEAF_SETUP_CODE in docker-compose.yml)
+export const setupCode = process.env.FRAMELEAF_SETUP_CODE ?? 'E2ESETUP';
+const adminSignupDto = { ...adminLoginDto, name: 'Immich Admin', setupCode };
 
 export const loginDto = {
   admin: adminLoginDto,
@@ -21,33 +23,33 @@ export const signupDto = {
 export const createUserDto = {
   create(key: string) {
     return {
-      email: `${key}@immich.cloud`,
+      email: `${key}@example.com`,
       name: `Generated User ${key}`,
       password: `password-${key}`,
     };
   },
   user1: {
-    email: 'user1@immich.cloud',
+    email: 'user1@example.com',
     name: 'User 1',
     password: 'password1',
   },
   user2: {
-    email: 'user2@immich.cloud',
+    email: 'user2@example.com',
     name: 'User 2',
     password: 'password12',
   },
   user3: {
-    email: 'user3@immich.cloud',
+    email: 'user3@example.com',
     name: 'User 3',
     password: 'password123',
   },
   user4: {
-    email: 'user4@immich.cloud',
+    email: 'user4@example.com',
     name: 'User 4',
     password: 'password123',
   },
   userQuota: {
-    email: 'user-quota@immich.cloud',
+    email: 'user-quota@example.com',
     name: 'User Quota',
     password: 'password-quota',
     quotaSizeInBytes: 512,

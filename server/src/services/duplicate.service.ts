@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobItem, JobOf } from 'src/types.js';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -12,19 +12,26 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  DuplicateGroupKind,
   JobName,
   JobStatus,
+  MlWorkload,
   Permission,
   QueueName,
   StorageFolder,
   TranscodeTarget,
 } from 'src/enum.js';
+import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { classifyDuplicateGroup, duplicateDisposalReasons } from 'src/utils/duplicate-review.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
-import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 
 type ResolveRequest = {
   assetUpdate: {
@@ -119,18 +126,48 @@ export class DuplicateService extends BaseService {
     // Clean up singleton groups (assets that are the only member of their duplicate group)
     await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
 
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    const { preferOriginalFormat } = machineLearning.duplicateDetection;
-
     const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
-    return duplicates.map(({ duplicateId, assets }) => {
-      const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
-      return {
-        duplicateId,
-        assets: mappedAssets,
-        suggestedKeepAssetIds: suggestDuplicateKeepAssetIds(mappedAssets, { preferOriginalFormat }),
-      };
-    });
+    let history: Set<string> | undefined;
+    try {
+      history = await this.assetDevelopRepository.getAssetIdsWithHistory(
+        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
+      );
+    } catch {
+      // Recommendations stay visible, but missing evidence never permits unattended disposal.
+    }
+    return Promise.all(
+      duplicates.map(async ({ duplicateId, assets }) => {
+        const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
+        const suggestedKeepAssetIds =
+          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
+            ? []
+            : suggestDuplicateKeepAssetIds(mappedAssets);
+        let motionId: string | undefined;
+        if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
+          try {
+            motionId = await this.duplicateRepository.findMotionTransfer(
+              auth.user.id,
+              suggestedKeepAssetIds[0],
+              assets.filter(({ id }) => !suggestedKeepAssetIds.includes(id)).map(({ id }) => id),
+            );
+          } catch {
+            /* Inconclusive pairing evidence retains the review requirement. */
+          }
+        }
+        const prospective = mappedAssets.map((asset) =>
+          motionId && suggestedKeepAssetIds.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
+        );
+        const reviewRequiredReasons = history
+          ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history)
+          : ['evidence-unavailable'];
+        return {
+          duplicateId,
+          assets: mappedAssets,
+          suggestedKeepAssetIds,
+          ...(reviewRequiredReasons.length > 0 && { reviewRequiredReasons }),
+        };
+      }),
+    );
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -163,7 +200,72 @@ export class DuplicateService extends BaseService {
   }
 
   private async resolveGroup(auth: AuthDto, group: DuplicateResolveGroupDto): Promise<BulkIdResponseDto> {
+    const effects: JobOf<JobName.DuplicateResolutionLifecycle> = {
+      id: randomUUID(),
+      userId: auth.user.id,
+      sidecarIds: [],
+      lockedIds: [],
+      trashIds: [],
+      force: false,
+    };
+    const result = await this.duplicateRepository.withResolutionLock(group.duplicateId, async (tx) => {
+      const result = await this.resolveLockedGroup(auth, group, effects);
+      if (
+        result.success &&
+        (effects.sidecarIds.length > 0 || effects.lockedIds.length > 0 || effects.trashIds.length > 0)
+      ) {
+        await this.jobRepository.queueInTransaction(tx, { name: JobName.DuplicateResolutionLifecycle, data: effects });
+      }
+      return result;
+    });
+    if (
+      result.success &&
+      (effects.sidecarIds.length > 0 || effects.lockedIds.length > 0 || effects.trashIds.length > 0)
+    ) {
+      try {
+        await queueExecution.exit(() => this.handleResolutionLifecycle(effects));
+        await this.jobRepository.removeJob(JobName.DuplicateResolutionLifecycle, effects.id);
+      } catch {
+        this.logger.warn('Duplicate resolution committed; lifecycle work retained for retry');
+      }
+    }
+    return result;
+  }
+
+  @OnJob({ name: JobName.DuplicateResolutionLifecycle, queue: QueueName.BackgroundTask })
+  async handleResolutionLifecycle(effects: JobOf<JobName.DuplicateResolutionLifecycle>): Promise<JobStatus> {
+    const work: (() => Promise<unknown>)[] = [];
+    if (effects.sidecarIds.length > 0)
+      work.push(() =>
+        this.jobRepository.queueAll(effects.sidecarIds.map((id) => ({ name: JobName.SidecarWrite, data: { id } }))),
+      );
+    if (effects.lockedIds.length > 0)
+      work.push(async () => {
+        await this.afterAssetsLocked(effects.lockedIds);
+        const siblingIds = (await this.assetRepository.getStackSiblingIds(effects.lockedIds)) ?? [];
+        await this.notifyAssetsUpdated([...effects.lockedIds, ...siblingIds], effects.userId);
+      });
+    if (effects.trashIds.length > 0)
+      work.push(() =>
+        this.eventRepository.emit(effects.force ? 'AssetDeleteAll' : 'AssetTrashAll', {
+          assetIds: effects.trashIds,
+          userId: effects.userId,
+        }),
+      );
+    const results = await Promise.allSettled(work.map((run) => run()));
+    if (results.some((result) => result.status === 'rejected'))
+      throw new Error('Duplicate lifecycle work requires retry');
+    return JobStatus.Success;
+  }
+
+  private async resolveLockedGroup(
+    auth: AuthDto,
+    group: DuplicateResolveGroupDto,
+    effects: JobOf<JobName.DuplicateResolutionLifecycle>,
+  ): Promise<BulkIdResponseDto> {
     const { duplicateId, keepAssetIds, trashAssetIds } = group;
+
+    await this.requireAccess({ auth, permission: Permission.DuplicateDelete, ids: [duplicateId] });
 
     const duplicateGroup = await this.duplicateRepository.get(duplicateId, this.nsfwOptions(auth));
     if (!duplicateGroup) {
@@ -222,6 +324,32 @@ export class DuplicateService extends BaseService {
       }
     }
 
+    const history = await this.assetDevelopRepository.getAssetIdsWithHistory(idsToTrash);
+    const motionId =
+      idsToKeep.length === 1 && duplicateGroup.assets.some((asset) => asset.livePhotoVideoId)
+        ? await this.duplicateRepository.findMotionTransfer(auth.user.id, idsToKeep[0], idsToTrash)
+        : undefined;
+    const prospective = duplicateGroup.assets.map((asset) =>
+      motionId && idsToKeep.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
+    );
+    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history);
+    if (reviewRequiredReasons.length > 0) {
+      return {
+        id: duplicateId,
+        success: false,
+        error: BulkIdErrorReason.VALIDATION,
+        errorMessage: 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
+      };
+    }
+
+    if (motionId) {
+      const allowed = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: idsToKeep });
+      if (!allowed.has(idsToKeep[0]))
+        return { id: duplicateId, success: false, error: BulkIdErrorReason.NO_PERMISSION };
+      // Keep the disposable still's original reference too, for restoration and shared-motion accounting.
+      await this.assetRepository.update({ id: idsToKeep[0], livePhotoVideoId: motionId });
+    }
+
     // Only merge metadata into the keeper when exactly one asset can absorb trashed duplicates.
     if (idsToKeep.length === 1 && idsToTrash.length > 0) {
       const assetAlbumMap = await this.albumRepository.getByAssetIds(auth.user.id, [...groupAssetIds]);
@@ -275,10 +403,16 @@ export class DuplicateService extends BaseService {
       }
 
       if (hasExifUpdate || hasTagUpdate) {
-        await this.jobRepository.queueAll(idsToKeep.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+        effects.sidecarIds = idsToKeep;
       }
 
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null, ...assetUpdate });
+      if (assetUpdate.visibility === AssetVisibility.Locked) {
+        // a kept copy that became Locked is no longer a face thumbnail or profile picture (FL-53)
+        // give every stack sibling the cascade also locked the same real-time update the kept copies
+        // get, so an open web client reflects the whole stack at once (FL-53, `locked-stacks.ts`)
+        effects.lockedIds = idsToKeep;
+      }
     } else if (idsToKeep.length > 0) {
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null });
     }
@@ -294,10 +428,8 @@ export class DuplicateService extends BaseService {
         duplicateId: null,
       });
 
-      await this.eventRepository.emit(isForce ? 'AssetDeleteAll' : 'AssetTrashAll', {
-        assetIds: idsToTrash,
-        userId: auth.user.id,
-      });
+      effects.trashIds = idsToTrash;
+      effects.force = isForce;
     }
 
     return { id: duplicateId, success: true };
@@ -315,7 +447,8 @@ export class DuplicateService extends BaseService {
     response.assetUpdate.isFavorite = assets.some((asset) => asset.isFavorite);
 
     const visibilityOrder = [AssetVisibility.Locked, AssetVisibility.Archive, AssetVisibility.Timeline];
-    let visibility = visibilityOrder.find((level) => assets.some((asset) => asset.visibility === level));
+    // `locked` is the lock record (FL-34); `updateAll` turns it into a lock on the kept copy
+    let visibility = visibilityOrder.find((level) => assets.some((asset) => effectiveVisibilityOf(asset) === level));
     if (!visibility && assets.some((asset) => asset.visibility === AssetVisibility.Hidden)) {
       visibility = AssetVisibility.Hidden;
     }
@@ -372,16 +505,17 @@ export class DuplicateService extends BaseService {
 
   @OnJob({ name: JobName.AssetDetectDuplicatesQueueAll, queue: QueueName.DuplicateDetection })
   async handleQueueSearchDuplicates({ force }: JobOf<JobName.AssetDetectDuplicatesQueueAll>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: false });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
+    // Library care → "Group near-duplicates for review" (FL-69, settings-catalog.mjs:951-956).
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForSearchDuplicates(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetDetectDuplicates, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(
+      JobName.AssetDetectDuplicates,
+      this.assetJobRepository.selectionForSearchDuplicates(force),
+    );
 
     return JobStatus.Success;
   }
@@ -392,6 +526,7 @@ export class DuplicateService extends BaseService {
   }: JobOf<JobName.AssetGenerateVideoDuplicateFramesQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -400,24 +535,10 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    let jobs: JobItem[] = [];
-    const queueAll = async () => {
-      await this.jobRepository.queueAll(jobs);
-      jobs = [];
-    };
-
-    const assets = this.assetJobRepository.streamForVideoDuplicateFrames({
-      force,
-      frameCount: enhancedVideo.frameCount,
-    });
-    for await (const asset of assets) {
-      jobs.push({ name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: asset.id } });
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await queueAll();
-      }
-    }
-
-    await queueAll();
+    await this.jobRepository.queueSelection(
+      JobName.AssetGenerateVideoDuplicateFrames,
+      this.assetJobRepository.selectionForVideoDuplicateFrames({ force, frameCount: enhancedVideo.frameCount }),
+    );
 
     return JobStatus.Success;
   }
@@ -429,6 +550,7 @@ export class DuplicateService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const { machineLearning } = config;
     if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -437,6 +559,7 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
     if (!asset) {
       this.logger.error(`Asset ${id} not found`);
@@ -451,16 +574,21 @@ export class DuplicateService extends BaseService {
     const timestamps = this.getVideoDuplicateFrameTimestamps(enhancedVideo.frameCount, asset.format);
     if (timestamps.length < VIDEO_DUPLICATE_FRAME_MIN_COUNT) {
       this.logger.debug(`Asset ${id} is too short for enhanced video duplicate detection`);
-      await this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() });
+      await publishJobResult(() =>
+        this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() }),
+      );
       return JobStatus.Skipped;
     }
 
-    const frames = [];
+    const frames: Array<{ assetId: string; frameIndex: number; timestampMs: number; path: string; embedding: string }> =
+      [];
     for (const [frameIndex, timestamp] of timestamps.entries()) {
-      const path = StorageCore.getNestedPath(
-        StorageFolder.Thumbnails,
-        asset.ownerId,
-        `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
+      const path = attemptOutputPath(
+        StorageCore.getNestedPath(
+          StorageFolder.Thumbnails,
+          asset.ownerId,
+          `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
+        ),
       );
       this.storageCore.ensureFolders(path);
 
@@ -471,7 +599,12 @@ export class DuplicateService extends BaseService {
 
       try {
         await this.mediaRepository.transcode(asset.originalPath, path, command);
-        const embedding = await this.machineLearningRepository.encodeImage(path, machineLearning.clip);
+        const selection = await this.selectRoutedMlDestination({
+          workload: MlWorkload.Clip,
+          jobId: asset.id,
+          jobName: JobName.AssetGenerateVideoDuplicateFrames,
+        });
+        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
 
         frames.push({
           assetId: asset.id,
@@ -481,6 +614,7 @@ export class DuplicateService extends BaseService {
           embedding,
         });
       } catch (error: any) {
+        jobSignal()?.throwIfAborted();
         // A single frame can fail to extract when its sampled start_time lands in
         // the sparse-keyframe dead zone near EOF (ffmpeg writes no packets and
         // exits non-zero). Skip just that frame instead of failing the whole job.
@@ -507,78 +641,104 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
-    if (stalePaths.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
-    }
+    await publishJobResult(async () => {
+      const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
+      if (stalePaths.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
+      }
+    });
 
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.AssetDetectDuplicates, queue: QueueName.DuplicateDetection })
   async handleSearchDuplicates({ id }: JobOf<JobName.AssetDetectDuplicates>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: true });
+    if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
-    const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
-    if (!asset) {
-      this.logger.error(`Asset ${id} not found`);
-      return JobStatus.Failed;
-    }
+    const publish = async (): Promise<JobStatus> => {
+      const tx = publicationTransaction.getStore();
+      if (tx) {
+        // Group merges can touch siblings not returned by the nearest-neighbour query.
+        // Lock this owner's rows in stable order before reading matching/manual resolution state.
+        const owner = await tx.selectFrom('asset').select('ownerId').where('id', '=', id).executeTakeFirst();
+        if (owner)
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('ownerId', '=', owner.ownerId)
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+      }
+      const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
+      if (!asset) {
+        this.logger.error(`Asset ${id} not found`);
+        return JobStatus.Failed;
+      }
 
-    if (asset.stackId) {
-      this.logger.debug(`Asset ${id} is part of a stack, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.stackId) {
+        this.logger.debug(`Asset ${id} is part of a stack, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (asset.visibility === AssetVisibility.Hidden) {
-      this.logger.debug(`Asset ${id} is not visible, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.visibility === AssetVisibility.Hidden) {
+        this.logger.debug(`Asset ${id} is not visible, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (asset.visibility === AssetVisibility.Locked) {
-      this.logger.debug(`Asset ${id} is locked, skipping`);
-      return JobStatus.Skipped;
-    }
+      if (asset.visibility === AssetVisibility.Locked) {
+        this.logger.debug(`Asset ${id} is locked, skipping`);
+        return JobStatus.Skipped;
+      }
 
-    if (!asset.embedding) {
-      this.logger.debug(`Asset ${id} is missing embedding`);
-      return JobStatus.Failed;
-    }
+      if (!asset.embedding) {
+        this.logger.debug(`Asset ${id} is missing embedding`);
+        return JobStatus.Failed;
+      }
 
-    let duplicateAssets = await this.duplicateRepository.search({
-      assetId: asset.id,
-      embedding: asset.embedding,
-      maxDistance: machineLearning.duplicateDetection.maxDistance,
-      type: asset.type,
-      userIds: [asset.ownerId],
-    });
+      let duplicateAssets = await this.duplicateRepository.search({
+        assetId: asset.id,
+        embedding: asset.embedding,
+        maxDistance: machineLearning.duplicateDetection.maxDistance,
+        type: asset.type,
+        userIds: [asset.ownerId],
+      });
 
-    if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
-      duplicateAssets = await this.filterConfirmedVideoDuplicates(
-        asset,
-        duplicateAssets,
-        machineLearning.duplicateDetection,
-      );
-    }
+      if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
+        duplicateAssets = await this.filterConfirmedVideoDuplicates(
+          asset,
+          duplicateAssets,
+          machineLearning.duplicateDetection,
+        );
+      }
 
-    let assetIds = [asset.id];
-    if (duplicateAssets.length > 0) {
-      this.logger.debug(
-        `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
-      );
-      assetIds = await this.updateDuplicates(asset, duplicateAssets);
-    } else if (asset.duplicateId) {
-      this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
-      await this.assetRepository.update({ id: asset.id, duplicateId: null });
-    }
+      let assetIds = [asset.id];
+      if (duplicateAssets.length > 0) {
+        this.logger.debug(
+          `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
+        );
+        assetIds = await this.updateDuplicates(asset, duplicateAssets);
+      } else if (asset.duplicateId) {
+        this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
+        await this.assetRepository.update({ id: asset.id, duplicateId: null });
+      }
 
-    const duplicatesDetectedAt = new Date();
-    await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
+      const duplicatesDetectedAt = new Date();
+      await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
 
-    return JobStatus.Success;
+      return JobStatus.Success;
+    };
+    if (
+      deferJobAdoption(async () => {
+        if ((await publish()) === JobStatus.Failed) throw new Error('Duplicate matching could not be published');
+      })
+    )
+      return JobStatus.Success;
+    return publish();
   }
 
   private getVideoDuplicateFrameTimestamps(frameCount: number, format: { duration: number }): number[] {

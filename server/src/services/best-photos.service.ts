@@ -3,8 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobItem, JobOf } from 'src/types.js';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -14,6 +13,7 @@ import {
   BestPhotosResponseDto,
 } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -93,32 +93,26 @@ export class BestPhotosService {
 
   @OnJob({ name: JobName.BestPhotosScoreQueueAll, queue: QueueName.BackgroundTask })
   async handleQueueAll({ force }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
-    let jobs: JobItem[] = [];
-
-    for await (const asset of this.assetJobRepository.streamForBestPhotosScoring({
-      force,
-      scoreVersion: BEST_PHOTO_SCORE_VERSION,
-    })) {
-      jobs.push({ name: JobName.BestPhotosScore, data: { id: asset.id } });
-
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(jobs);
-        jobs = [];
-      }
-    }
-
-    await this.jobRepository.queueAll(jobs);
+    await this.jobRepository.queueSelection(
+      JobName.BestPhotosScore,
+      this.assetJobRepository.selectionForBestPhotosScoring({
+        force,
+        scoreVersion: BEST_PHOTO_SCORE_VERSION,
+      }),
+    );
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.BestPhotosScore, queue: QueueName.BackgroundTask })
   async handleScore({ id }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForBestPhotoScoring(id);
     if (!asset || !this.isEligible(asset)) {
       return JobStatus.Skipped;
     }
 
     if (!asset.previewFile) {
+      deferJobUntilDependency('source-unavailable');
       this.logger.warn(`Skipping Best Photos scoring for asset ${id}: preview file is missing`);
       return JobStatus.Skipped;
     }
@@ -277,7 +271,7 @@ export class BestPhotosService {
     const aestheticScore = clamp(normalizedThumbnailScore * 0.85 + subjectScore * 0.15 - screenshotPenalty);
     const diversityScore = 0.5;
 
-    // scoreVersion 1 is a local deterministic heuristic. Future versions can use Immich ML-service hooks.
+    // scoreVersion 1 is a local deterministic heuristic. Future versions can use ML-service hooks.
     const score = clamp(0.45 * aestheticScore + 0.3 * technicalScore + 0.15 * subjectScore + 0.1 * diversityScore);
 
     return {

@@ -1,0 +1,25 @@
+name: Repository hygiene
+on:
+  pull_request:
+    branches: [fork/main, master/frameleaf-implementation]
+  push:
+    branches: [fork/main, master/frameleaf-implementation]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: repository-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  repository-hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: bash .github/check-repository-hygiene.test.sh
+      - run: bash .github/check-repository-hygiene.sh
+        env:
+          HYGIENE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/fork/main' }}

@@ -1,0 +1,279 @@
+# Studio render spec: effects and transitions (native-app contract)
+
+**Status: native-app contract.** This directory specifies what every Studio effect and transition does to the picture. The native Frameleaf Studio apps for iPad and Android tablets render effects and transitions from these pages and the goldens beside them, and must not read engine source. It completes section 18 of the [Studio graph protocol](../../docs/docs/developer/studio-graph-protocol-v1.md). The protocol says which effects and transitions a graph may name and with which parameters. These pages say what they draw.
+
+This is a clean-room specification. It was written by reading the engine, and it describes behaviour only, as mathematics and prose; it contains no engine source text, and a test enforces that (see [Checks](#checks)). The engine is an adapted build of Freecut (MIT, `studio/notices/freecut.txt`) pinned at revision `4d62e8082c5eb387a96275bcbd323d28f6e41a62` with the patches in `studio/patches`. The spec is versioned with that pin, like the protocol: a change of engine revision or of an effect or transition patch must leave the goldens passing, or it changes this contract.
+
+Where the engine's behaviour is accidental (a parameter that does nothing, a dead range, an asymmetric seam), a page says **implementation-defined** and describes what the engine does. It never invents semantics the engine does not have. A native client reproduces implementation-defined behaviour unless the page gives a native rule.
+
+## Contents
+
+| Path | What it is |
+| --- | --- |
+| `effects/<id>.md` | One page per effect of the parameter catalogue (54). |
+| `transitions/<id>.md` | One page per transition of the parameter catalogue (44). |
+| `hdr.md` | HDR and colour management: the `metadata.colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals (rules H1 to H17). |
+| `goldens/hdr.json` | Its goldens: stage vectors and small images from the real engine; `../tools/hdr-goldens.{mjs,browser.mjs,test.mjs}` define, generate and check them. |
+| `index.json` | Machine-readable index: every id, its page, `full` or `partial`, what is not specifiable, its route and its golden counts. |
+| `goldens/effects.json` | Effect goldens: inputs, cases and outputs rendered by the real engine, with tolerances. |
+| `goldens/transitions.json` | Transition goldens, plus the progress-curve table of T1. |
+| `goldens/ascii-atlases.json` | The glyph atlas strips the font-atlas `gpu-ascii` goldens were rendered with (the platform input of those cases). |
+| `keyframes.md` | Keyframe interpolation: what each easing computes and the value of a keyframed property at a frame (rules K1 to K16). |
+| `goldens/keyframes.json` | Keyframe goldens: 728 engine values, 586 of them pinned bit for bit. |
+| `../tools/render-goldens.mjs` | The inputs, case list, buffer encodings and comparison rule, without the engine. |
+| `../tools/render-goldens.browser.mjs` | Renders every case through the engine; `--write` regenerates the goldens. |
+| `../tools/render-goldens.test.mjs` | Engine-free checks: coverage, inputs, the progress curve, the comparison rule, the T6 reference, the published atlases and the clean-room lint. |
+| `../tools/clip-reference.mjs` | T6 written out: the Canvas 2D clip and stroke transitions computed from the pages alone. |
+| `../tools/keyframe-goldens.mjs`, `.browser.mjs`, `.test.mjs` | The keyframe cases and a reference written from `keyframes.md`; the engine run; the engine-free check. |
+| `layers.md` | Layer compositing: frame assembly, layer order, background, transform and parents, opacity, blend modes, crop, corner radius, masks and shapes. |
+| `goldens/layers.json` | Layer goldens: small project frames rendered by the engine's frame renderer. |
+| `text.md` | Titles and text: style fields, layout, spans, text motion, colours and alpha, and the bundled font files. |
+| `goldens/text.json` | Text goldens: layout and motion values and small frames, made with the bundled fonts it names by hash. |
+| `../tools/layer-goldens.*`, `../tools/text-goldens.*` | Cases and prose references, engine runs and engine-free checks of the layer and text pages; run from the two render-goldens files. |
+
+The five colour effects that had numeric oracles before this spec (brightness, contrast, exposure, saturation, levels) keep `../tools/photometric-goldens.mjs` as an independent equation check; their pages restate those equations.
+
+## How to use the goldens
+
+Each golden file holds its inputs, then one case per line. An effect case names the effect, the domain (`sdr` or `hdr`), the full parameter set, the effect clock in seconds, and either `"outcome": "refused"` (an HDR project must refuse the effect) or the output buffer and its tolerance. A transition case names the transition, its route (`gpu` or `canvas`), the direction, the progress and any properties, with the output and tolerance.
+
+- **Inputs** are generated by formula (documented in `render-goldens.mjs`) and also stored, so a native test can load them directly. Effects use a 16 × 12 image with ramps, hard edges, primaries, a grey ramp and translucent and fully transparent pixels; HDR effects use its linear decode with highlights up to 8.0 and a negative component. Transitions use two opaque 48 × 27 images.
+- **Buffers** are RGBA, row-major from the top-left pixel, compressed with raw DEFLATE (RFC 1951, no zlib header), base64-encoded. `f16le` holds IEEE binary16 little-endian channels; `rgba8` holds one byte per channel, value = byte / 255. Effect outputs are binary16 straight alpha. Transition outputs are straight alpha, 8-bit unless a value falls outside [0, 1].
+- **Effect cases:** default parameters; then one case per parameter, with numbers moved halfway from the default towards the maximum (or minimum), each other select option, each flag flipped, and colours set to `#3366cc`; plus named extra cases (custom curves points, a 3³ LUT, custom gradient stops, custom ASCII characters; curves and motion blur with keys that are absent or not finite numbers; block glitch with small blocks and full coverage at several clocks). Temporal effects render their defaults at t = 0.75 s and 2.5 s. A case's `params` is the stored parameter object exactly: a key that is not listed is absent, and `null` is a key that is present but is not a finite number [C9]. `clock` is given to temporal effects only [C8].
+- **Transition cases:** every direction at p = 0.25, 0.5 and 0.75; the first direction at p = 0 and 1; and each parameter moved halfway towards its maximum at p = 0.5; plus named extra cases (radialBlur at its largest blur, with and without the hidden tap count).
+- **Comparison rule** (`compareCase`): every channel finite; at most `outliers` channels differ by more than max(`abs`, `relative` × |golden|); and the mean absolute difference is at most `meanAbs`. Alpha counts like RGB.
+- **Platform glyph input:** the 23 font-atlas ASCII cases use the platform's glyph coverage as an explicit input. `goldens/ascii-atlases.json` publishes the nine atlas strips the committed outputs were rendered with (one per ramp and font; coverage bytes, 24 × 24 texels per glyph), captured in the same run that wrote the outputs. A native client that feeds its ASCII shader these strips instead of its own font rasteriser must pass all 23 cases as `pixel` cases; the engine-free test does exactly that with the CPU reference. With its own rasteriser a native client is checked as the drift gate is: The drift gate captures the production atlas, checks its dimensions and every coverage byte against an independent Canvas rasterization of the documented ramp/font/layout, then compares the full GPU frame to the independent prose-derived CPU reference in `../tools/ascii-reference.mjs`. The committed Mac outputs remain platform snapshots; their tolerances are unchanged and also bound the CPU comparison. The five procedural ASCII shape cases and every other case still compare to the committed output. Atlas input hashes and browser identity are reported so an input change can be distinguished from a renderer regression. Where transparent-mode reference coverage is under the 0.0001 division guard, RGB is checked against the page's own segment t · Gc (gpu-ascii, Notes) and alpha as usual. No GPU output supplies the CPU expectation otherwise.
+- **Tolerances are measured.** The generator renders every case twice on the canonical backend (Chromium with SwiftShader WebGPU and CPU Canvas 2D, CI's backend), requires the two renders to agree bit for bit, then renders every case on a hardware backend (Metal WebGPU and GPU Canvas 2D). From the cross-backend differences d: when at most 10 % of channels have d > 0.03 (sparse divergence on edges or exact level boundaries), `abs` = max(floor, 1.5 × the largest of the other differences); otherwise `abs` = max(floor, 1.5 × the largest difference), capped at 0.25. `outliers` = twice the channels that bound still misses, and `meanAbs` = max(floor / 2, 1.5 × the mean difference). Cases of the ids driven by HASH (grain, colour glitch, block glitch, VHS, halftone, fluted glass, and the glitch, sparkles, lightLeakBurn, filmGateSlip, smoothCut and liquidDistort transitions) are always `statistical`, allowing at least 10 % outlier channels and a mean of 0.02. The floor is 2/255 for SDR and 0.004 plus 0.2 % for linear HDR.
+- **`class`** says what a case pins. `pixel`: every channel agrees across GPUs within 0.03. `edge`: only edges or exact level boundaries differ (Canvas 2D edges, derivative-based widths, values on a quantisation step); at most 10 % of channels. `statistical`: the result depends on GPU transcendental precision (the `HASH` noise of C6 at large arguments, as used by grain, glitches, VHS, halftone grain, sparkles and the noisy transitions) or on the platform rasteriser. Only structure, magnitude and mean are pinned, and the spec page says which parts. A native client should pass `pixel` and `edge` cases on any GPU and `statistical` cases by mean.
+
+Regenerate after an engine change (Node 24, the prepared engine of `studio/README.md`):
+
+```sh
+npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort &
+GOLDENS_CROSS_CHECK_ARGS='--enable-unsafe-webgpu --use-angle=metal --ignore-gpu-blocklist' \
+  node studio/tools/render-goldens.browser.mjs --write   # canonical SwiftShader + a hardware cross-check
+node studio/tools/render-goldens.browser.mjs             # drift gate: the engine still meets the goldens
+node --test studio/tools/render-goldens.test.mjs
+```
+
+The cross-check needs a hardware WebGPU adapter; on another platform use its ANGLE backend (`--use-angle=vulkan` or `d3d11`). Without `GOLDENS_CROSS_CHECK_ARGS` every tolerance falls back to the floor, which the CI drift gate would still pass but natives could not; do not commit goldens written that way. When an effect or transition changes, change its page, regenerate the goldens and update `index.json` in the same change.
+
+## Shared conventions: effects
+
+Pages cite these by tag.
+
+**[C1] Coordinates.** Output pixel (i, j): i = 0 … W−1 from left to right, j = 0 … H−1 from top to bottom. Its normalised coordinate is uv = ((i + 0.5)/W, (j + 0.5)/H): origin top-left, v grows downward. Aspect a = W/H; pixel size (1/W, 1/H). W and H are the size of the item's frame being processed, the composition size in production. **The item's transform precedes its effect stack.** The engine first draws the item into a transparent W × H frame of the composition's size (at the render scale in use), with its source fitted, cropped and placed by its whole transform: position, size, rotation, anchor and transform parents. The effect stack then runs on that frame. So uv = (0, 0) is the composition's top-left corner, not the item's; an effect sees the item where it sits on the canvas, surrounded by transparent pixels (all four channels 0), and its W, H and a are the composition's whatever the item's size. A spatial effect can therefore move or spread the picture outside the item's box, but never outside the composition frame, and a rotated item is blurred, waved or pixelated along the composition's axes, not its own. The item's masks and its blend with the layers below come after the effect stack. The goldens exercise an effect alone, on a frame given directly.
+
+**[C2] Sampling.** S(uv) samples the input with bilinear filtering between texel centres and clamp-to-edge addressing: a coordinate outside [0, 1] reads the nearest edge texel. F(i, j) fetches texel (i, j) exactly, with no filtering. Data textures (the curves table, gradient tables, 3D LUTs) are read with the same bilinear filter. On GPUs, bilinear weights are quantised by the texture unit (commonly to 1/256); this is why filtered SDR taps that fall between texels agree to the `pixel` floor rather than bit for bit.
+
+**[C3] SDR domain.** In an SDR project, colour values are sRGB-encoded (non-linear) BT.709 R′G′B′ with straight (non-premultiplied) alpha, nominally 0 … 1. Production renders effects into binary16 RGBA textures (each pass rounds its output to binary16); a legacy route uses 8-bit textures. The effects of a stack run in array order, each reading the previous output; a disabled entry is skipped. Unless a page says otherwise, an effect's SDR result is stored as computed, and any clamping is the page's own.
+
+**[C4] HDR domain.** In an HDR project, values are **linear** display-referred BT.709, straight alpha, 1.0 = 203 cd/m², signed, limited to ±65504 (the binary16 range). Only 16 effects render: brightness, contrast, exposure, saturation, temperature, vibrance, grayscale, sepia, invert, box blur, gaussian blur, motion blur, pixelate, twirl, wave and bulge. If a stack holds any other enabled effect, the engine refuses to render the frame (`HdrRenderUnavailableError`), and a native client must refuse too and not substitute an SDR render. Pages give the exact HDR behaviour. Two helpers recur:
+
+- **PB(q)**, the premultiplied bilinear tap at uv q: x = q.u·W − 0.5, y = q.v·H − 0.5; x0 = floor(x), y0 = floor(y), fx = x − x0, fy = y − y0. For dx, dy ∈ {0, 1}, take texel T = F(clamp(x0 + dx, 0, W−1), clamp(y0 + dy, 0, H−1)) with weight ω = (dx ? fx : 1 − fx)·(dy ? fy : 1 − fy). PB(q) = Σ ω·(T.r·T.a, T.g·T.a, T.b·T.a, T.a), in full float precision.
+- **HDR-OUT(r, g, b, a)** for an accumulated premultiplied colour: α = clamp(a, 0, 1); κ = α rounded to the nearest binary16 value, ties to even, keeping binary16 subnormals (multiples of 2⁻²⁴; anything at or below 2⁻²⁵ becomes 0). If κ ≤ 0 the output is (0, 0, 0, 0); otherwise (clamp(r/a), clamp(g/a), clamp(b/a), κ) with clamp to ±65504, dividing by the unrounded a.
+
+**[C5] Alpha.** Inputs are straight alpha. Each page states how alpha is produced and what RGB is written where alpha is 0. The final output of an effect stack is composited with premultiplied alpha, so RGB under alpha 0 is never visible, although it can bleed into later spatial effects of the same stack.
+
+**[C6] Hash and noise.** HASH(p) for a 2-vector p: q = (p·(127.1, 311.7), p·(269.5, 183.3)) (dot products); HASH(p) = fract(sin(q·(12.9898, 78.233)) × 43758.5453). NOISE(p) is value noise: i = floor(p), f = fract(p), u = f²(3 − 2f) per component; NOISE(p) = mix(mix(HASH(i), HASH(i + (1, 0)), u.x), mix(HASH(i + (0, 1)), HASH(i + (1, 1)), u.x), u.y). FBM(p) = Σ_{k=0…4} 0.5^{k+1}·NOISE(2^k·p). All of these are evaluated in binary32. The same HASH, NOISE and FBM serve the transitions.
+
+HASH multiplies a sine by 43758.5453 and keeps the fraction, so it magnifies every rounding choice before it: one unit in the last place of the sine's argument, or 10⁻⁵ in the sine itself, gives an unrelated result. Three choices decide the value, and the pages cannot leave them open:
+
+- **Products and sums.** Each constant is the binary32 number nearest its decimal. A dot product a·b of 2-vectors is computed as the binary32 product a.x × b.x, then a single fused multiply-add of a.y × b.y onto it (one rounding for the second product and the sum together). Every other product and sum is rounded to binary32 on its own (unfused).
+- **Range reduction.** The sine's argument reaches 10⁶ radians and more. Every measured backend reduces it in binary32 before evaluating: with R = 0.15915493667125702, the binary32 number nearest 1/(2π), the turn count is x·R rounded to binary32, and only its fraction is used. A native client must reduce the same way; a sine that reduces exactly (as a library sine in binary64 does) is a different function at these arguments, by up to 0.38 at 10⁶ radians.
+- **The sine after reduction.** The canonical backend does not evaluate an accurate sine. It computes x₂ = x × (−R) + 0.25 as one fused multiply-add; z = 0.25 − |x₂ − round(x₂)| (round half to even); z₂ = z × z; and sin(x) = ((A × z₂ + B) × z₂ + C) × z, where each bracket is one fused multiply-add and A = 74.43888854980469, B = −41.169368743896484, C = 6.282308578491211 are binary32 constants. This is a fifth-order fit, exact at 0, π/6, π/3 and π/2, and its error against the true sine is up to 1.9 × 10⁻⁴. It reproduces the canonical backend's sine bit for bit over 12 288 probe arguments from −8 to 5 × 10⁶ (measured on the arm64 build that wrote the goldens). The x86-64 build of the same backend, which CI runs, does not give the same HASH: where a page thresholds a HASH (which block glitches, which mode), the two builds choose differently. So even "the canonical backend" is two functions, and the goldens of HASH ids hold on both only because they pin the mean. The hardware cross-check backend (Metal) reduces as above and then evaluates to within 2.3 × 10⁻⁷ of the true sine.
+
+Consequences. With the canonical sine and these rounding rules, a clean-room implementation reproduces the canonical HASH wherever its arguments are whole numbers or other values that binary32 holds exactly, as in gpu-block-glitch (block indices and a step count): its goldens are met to within a handful of channels. With an accurate sine after the same reduction it reproduces a hardware backend's HASH instead. The two differ by up to 8 in the product before the fraction is taken, so they are unrelated per pixel, though equally distributed. **No sine accuracy makes an implementation match a backend whose sine it does not copy.** Where the argument comes from an interpolated coordinate (the per-pixel uv of gpu-grain, and NOISE and FBM at fractional points), even the canonical sine is not enough: the argument is of the order of 10³ to 10⁴, one unit in its last place is 10⁻⁴ to 10⁻³ radians, which moves the product by 5 to 40, and the rasteriser's interpolation of uv is not fixed to the last bit. For these reasons every case of an id driven by HASH is classed `statistical` (see the goldens): a native client must use binary32 and the reduction above, may use either sine, and is held to the structure the page gives and to the mean bound, not to the canonical pixels.
+
+Outside HASH, a sine or cosine is used at face value (the scan lines of gpu-scanlines, the angles of blurs and distortions). There an error δ in the sine moves the result by at most the factor the page multiplies it by, the canonical error of 1.9 × 10⁻⁴ is far inside the `pixel` floor, and any sine accurate to 10⁻³ after the same reduction passes.
+
+**[C7] Colour helpers.**
+- LUMA709(c) = 0.2126R + 0.7152G + 0.0722B; LUMA601(c) = 0.299R + 0.587G + 0.114B, on whatever values the effect holds (encoded in SDR, linear in HDR).
+- RGB→HSV: let P = (g, b, 0, −1/3) if g ≥ b, else (b, g, −1, 2/3); Q = (r, P₂, P₃, P₁) if r ≥ P₁, else (P₁, P₂, P₄, r) (components 1-based). d = Q₁ − min(Q₄, Q₂); H = |Q₃ + (Q₄ − Q₂)/(6d + 10⁻¹⁰)|; S = d/(Q₁ + 10⁻¹⁰); V = Q₁. H is in [0, 1].
+- HSV→RGB: k = |fract(H + (1, 2/3, 1/3))·6 − 3| per component; RGB = V·mix(1, clamp(k − 1, 0, 1), S).
+- RGB→HSL: M = max(r, g, b), m = min(r, g, b), L = (M + m)/2. If M = m the result is (0, 0, L). Otherwise d = M − m; S = d/(2 − M − m) if L > 0.5, else d/(M + m); H = (g − b)/d + (6 if g < b else 0) when M = r, (b − r)/d + 2 when M = g, (r − g)/d + 4 otherwise; H ← H/6.
+- HSL→RGB: if S = 0 the result is (L, L, L). Otherwise q = L(1 + S) if L < 0.5, else L + S − L·S; p = 2L − q; each channel is HUE(p, q, t) for t = H + 1/3, H, H − 1/3, where HUE wraps t into [0, 1] once (t < 0: t + 1; t > 1: t − 1) and returns p + (q − p)·6t if t < 1/6, q if t < 1/2, p + (q − p)(2/3 − t)·6 if t < 2/3, else p.
+- GAUSS(x, σ) = exp(−x²/(2σ²)); SMOOTHERSTEP(e0, e1, x) = t³(t(6t − 15) + 10) with t = clamp((x − e0)/(e1 − e0), 0, 1).
+- π is 3.14159265359 and τ = 2π is 6.28318530718, rounded to binary32.
+
+**[C8] Effect clock.** A temporal effect (`temporal: true` in the catalogue) receives t = f/fps seconds, where f is the frame relative to the item's start and fps is the project rate. The quotient is computed in binary64 and then rounded once to binary32; everything a page derives from t (a product with a speed, a step count) is binary32 arithmetic on that value, one rounding per operation. Preview and export use the same t, so a frame always renders the same. A non-temporal effect is given no clock: nothing is added to its stored parameter object.
+
+**[C9] Parameter sanitising.** Sanitising acts on the keys the stored parameter object **has**, and never adds a key. For a key that is present: a number outside [min, max] is clamped to the range; a value that is not a finite number (a string, a boolean, `null`, or a keyframed value that is not a number) becomes the catalogue default; a select value that is not an option becomes the default; a flag that is not a boolean becomes the default. Colour, JSON and text values pass through unchanged, so each page gives its own parsing and fallback. Keys the catalogue does not declare for the effect pass through unchanged too, whatever their value.
+
+A key that is **absent** stays absent. Protocol 13.2.2 draws an absent parameter at its catalogue default, and for most parameters the engine does. A few shaders read a missing key differently, for example motion blur's shutter angle, mirror's horizontal flag, gradient map's custom stops and the four point keys of each curves channel. Their pages give the engine's behaviour, which is implementation-defined. So "present but not a finite number" and "absent" are different inputs: the first always draws as the default, the second draws as the page says. A native client sends every parameter when it adds an effect (protocol 13.3.1). But `effect.add` stores parameters exactly as sent, so a graph written by another client can still lack keys or hold undeclared ones. For such a graph, a native client draws what the page says the engine draws.
+
+**[C10] Screen-space derivatives.** A few effects use FW(f) = |∂f/∂i| + |∂f/∂j| of a per-pixel quantity f. The engine's canonical backend computes it with coarse differences over 2 × 2 pixel quads: the quad holding pixel (i, j) starts at (i₀, j₀) = (2·⌊i/2⌋, 2·⌊j/2⌋); ∂f/∂i = f(i₀ + 1, j₀) − f(i₀, j₀) (its top row) and ∂f/∂j = f(i₀, j₀ + 1) − f(i₀, j₀) (its left column), and all four pixels of the quad use those values. A native client computes FW this way (on a GPU, evaluate f for the quad's pixels explicitly rather than using hardware derivatives). Hardware with fine derivatives differs only where f is discontinuous inside a quad.
+
+**Standard functions.** mix(a, b, t) = a + (b − a)t; fract(x) = x − floor(x); clamp; step(e, x) = 1 if x ≥ e, else 0; smoothstep(e0, e1, x) = t²(3 − 2t) with t = clamp((x − e0)/(e1 − e0), 0, 1); round rounds half to even; sign(0) = 0; pow of a negative base is undefined on GPUs, and pages say how the engine avoids or meets it. Arithmetic is binary32 unless a page says otherwise.
+
+## Shared conventions: transitions
+
+**[T1] Progress.** A transition of d frames on a cut at frame c with alignment α covers the frames from c − ⌊d·α⌋ (inclusive) to c − ⌊d·α⌋ + d (exclusive) (protocol 13.2.3). At frame f of that window, the local frame is k = f − (c − ⌊d·α⌋), and the linear progress is t = clamp(k / max(1, d − 1), 0, 1), so the first frame of the window draws t = 0 and the last t = 1. The drawn progress p applies the timing:
+
+- `linear`: p = t
+- `ease-in`: p = t²
+- `ease-out`: p = t(2 − t)
+- `ease-in-out`: p = 2t² for t < 0.5, else −1 + (4 − 2t)t
+- `cubic-bezier` with points (x1, y1, x2, y2): p = 0 at t = 0 and 1 at t = 1. Otherwise c_x = 3x1, b_x = 3(x2 − x1) − c_x, a_x = 1 − c_x − b_x, and likewise c_y, b_y, a_y from y1 and y2. Start with s = t and run at most 8 Newton steps: e = ((a_x·s + b_x)s + c_x)s − t; stop if |e| < 10⁻⁶; slope = (3a_x·s + 2b_x)s + c_x; stop if |slope| < 10⁻⁶; s ← clamp(s − e/slope, 0, 1). Then p = ((a_y·s + b_y)s + c_y)s. Without points it is linear.
+- any other timing: linear.
+
+All of this is computed in binary64 and is exact: `goldens/transitions.json` holds 112 engine values (`progressCurve`), and the engine-free test reproduces every one bit for bit from this paragraph. p is then passed to the renderer (binary32 on the GPU route). Pages describe how each transition reshapes p internally.
+
+**[T2] Inputs and alpha.** A is the outgoing clip's picture and B the incoming clip's, each W × H at composition size, already rendered with its own transform, effects, masks and opacity (the handles of protocol 13.2.3 supply the frames beyond each clip's end). On the GPU route, A and B are straight-alpha binary16 textures. The engine premultiplies both (RGB × alpha) before any filtered sampling; the transition's mathematics works on premultiplied colour; and the result is converted back to straight alpha by dividing RGB by alpha (alpha ≤ 0 gives (0, 0, 0, 0)). In an SDR project, the clamps a page names (to [0, 1], or to at most 1) are applied where it names them; nothing forces the result to A at p = 0 or to B at p = 1, so pages state their own endpoint behaviour. On the Canvas 2D route, A and B are 8-bit canvases, drawn with premultiplied source-over compositing on a transparent W × H canvas.
+
+**[T3] Directions.** from-left, from-right, from-top and from-bottom. On the GPU route a missing or unknown direction draws as from-left. On the Canvas 2D route each renderer has its own fallback, which its page gives: for example, edgeWipe with no direction draws from-top, although the editor writes from-left. Pages give the geometry for each direction their transition declares.
+
+**[T4] Property sanitising.** A declared numeric property that is not a finite number falls back to its default; a finite one is clamped to [min, max]. A declared colour that is not three finite numbers falls back to its default. An undeclared property is kept only when it is a finite number (some renderers read such hidden properties, and their pages list them with their defaults). Duration: a non-finite value draws as 30 frames; otherwise its whole frames, at least 1. Alignment: non-finite draws as 0.5; otherwise it is clamped to [0, 1].
+
+**[T5] HDR.** Every transition is refused in an HDR project (`HdrRenderUnavailableError`); a native client must refuse too.
+
+**Routes.** 21 transitions have a GPU shader and are drawn by it whenever WebGPU is available, in preview and export: fade, wipe, slide, flip, clockWipe, iris, dissolve, additiveDissolve, blurDissolve, dipToColorDissolve, nonAdditiveDissolve, smoothCut, sparkles, glitch, pixelate, chromatic, radialBlur, liquidDistort, lensWarpZoom, lightLeakBurn and filmGateSlip. Their Canvas 2D fallbacks (used only without WebGPU) are not the contract. The other 23 are drawn with Canvas 2D in every case, and their pages specify the drawing as layers, transforms and exact clip geometry.
+
+**[T6] Canvas 2D edges.** On the canonical backend (CPU Canvas 2D) clip paths are not anti-aliased: a pixel is wholly inside a clip or wholly outside it. The backend decides this by scan conversion in fixed point, and the rule is exact. A native client follows it. `../tools/clip-reference.mjs` is this paragraph written out, and the engine-free test requires it to reproduce every pixel of every straight-edged clip golden (the 18 clip transitions whose outlines are polygons or rectangles; no channel farther than the SDR floor of 2/255, which is the 8-bit rounding of the blend), with the one exception recorded under radialWipe below.
+
+A clip path is a list of closed sub-paths, each a polygon in pixel coordinates (x to the right, y down, the frame is [0, W] × [0, H]) held in binary32. For each edge of each polygon:
+
+1. **Cut to the frame.** The part of the edge above y = 0 or below y = H is dropped. A part to the left of x = 0 is replaced by a vertical edge on x = 0 over the same range of y, and a part to the right of x = W by a vertical edge on x = W. Where the edge crosses a side of the frame, the crossing is computed in binary32. Each piece keeps the edge's direction (up or down), which the non-zero rule needs.
+2. **Snap.** Every endpoint coordinate c becomes the whole number n = trunc(64 × c), rounded towards zero: coordinates are held in units of 1/64 pixel. Order the two ends so that y₀ ≤ y₁.
+3. **Rows.** The edge covers the rows j with r₀ ≤ j < r₁, where r = floor((y + 32)/64) for each end. An edge with r₀ = r₁ covers no row and is dropped; this removes every horizontal edge.
+4. **Crossing.** The slope is m = trunc(65536 × (x₁ − x₀)/(y₁ − y₀)), a whole number rounded towards zero. On its first row r₀ the edge crosses at X = 1024 × (x₀ + floor(m × (64 × r₀ + 32 − y₀)/65536)), in units of 1/65536 pixel: this is the edge's x at the height of the row's pixel centres. Each following row adds m to X.
+5. **Spans.** On each row, sort the crossings by X. Going from left to right, the pixels between one crossing and the next are inside the clip when, to their left, the number of crossings is odd (even-odd rule) or the count of downward edges minus upward edges is not zero (non-zero rule). A span between crossings X_a ≤ X_b holds the columns i with floor((X_a + 32768)/65536) ≤ i < floor((X_b + 32768)/65536).
+
+What this amounts to:
+
+- For an edge that is vertical or horizontal at coordinate e, the region to the left of it (or above it) holds the columns (or rows) i < floor(e + 0.5), that is, the pixels whose centre i + 0.5 is at or before e. **A centre exactly on such an edge belongs to the region on the left of the edge, or above it.** So the edge acts as if it were rounded to floor(e + 0.5), halves upwards. An edge at e = 13.5 puts row 13 above it.
+- For a slanted edge, the pixel's centre is tested against the edge as steps 2 and 4 hold it: each end snapped by less than 1/64 pixel towards the origin in x and in y, and the slope shortened to a multiple of 1/65536. Only a centre within a few hundredths of a pixel of the true edge can fall on the other side from the exact geometry, and there the fixed-point rule decides: ten pixels of the goldens do (in arrowIris, hexagonIris, pentagonIris, starShape and triangleLeftShape), and the rule gets every one.
+- Abutting shapes of one clip path leave no seam and no double coverage, because both use the same crossing.
+
+**Curved outlines** (the ellipse of ovalIris and the cubic Béziers of eyeIris and heartShape). The canonical backend replaces a curve by chords before step 1, and how many chords it uses is its own business: it cuts the curve at its turning points and at the frame's sides and steps along each piece in the same fixed point. That is **not specifiable** from the outside. **Native rule:** flatten each curve to chords that stay within 1/16 pixel of it (or test the true curve), then apply steps 1 to 5. Against the goldens (48 × 27) this differs in at most 13 pixels of a case, all of them on the outline: ovalIris 12, eyeIris 13, heartShape 4 at worst. Their cases are classed `edge`, their outlier allowance covers it several times over, and the engine-free test checks that the reference with true curves passes every one of them.
+
+**The row and column through the centre** (radialWipe). A hand of radialWipe that lies exactly along the row of pixel centres through the frame centre (H odd), or the column (W odd), is an edge of zero height or width after step 3, so that row or column is decided by the far end of the hand's sector: the end of a circular arc, which the backend computes in binary32 with an error of the order of 10⁻⁶ pixel whose sign depends on p. Step 2 turns that sign into a whole 1/64 pixel. **Native rule:** use the exact end point. Then, for 0 < p < 1, the half of the centre row to the right of the centre shows A and the half to its left shows B; with W odd, the part of the centre column above the centre shows A and the part below it shows B (when both are odd, the one pixel at the centre is decided by steps 2 to 5 on the four hands). The canonical backend agrees except where the sign fell the other way: in the goldens, the right half of row 13 at p = 0.25 shows B (24 pixels). Those pixels are implementation-defined and are inside the outlier allowance of that case.
+
+**Strokes** (the destination-out strokes of spiralWipe and xWipe) are anti-aliased. The coverage c of a pixel is the fraction of its area that lies inside the stroke's outline: for xWipe, the points within half the width of either diagonal and between its ends (butt caps); for spiralWipe, the points within half the width of any segment of the polyline (round caps and joins). Overlapping parts count once. The canonical backend approximates this area with its own sampling: against the exact area it differs by at most 0.007 on average over the frame and by up to 0.16 at single pixels on a stroke's edge (0.025 on average and up to 0.4 for the 1-pixel hairline at p = 0, and 0.25 at the corner caps of xWipe at p = 1), which is why these cases are classed `edge` or `statistical`. A native client computes the area fraction to within 1/64 (an 8 × 8 grid of sample points per pixel is enough); the reference does, and passes every case of both transitions.
+
+Other canvas backends may anti-alias clip edges; where the two measured backends differed, the cases are classed `edge`.
+
+## Index
+
+`index.json` is the machine-readable index. Coverage at this revision:
+
+<!-- index:start (generated by render-goldens.browser.mjs --write) -->
+- **Effects:** 54 specified, 52 fully and 2 partly (`gpu-fluted-glass`, `gpu-ascii`). Goldens: 493 cases, of which 370 are pixel, 10 edge and 75 statistical, plus 38 HDR refusals.
+- **Transitions:** 44 specified, 39 fully and 5 partly (`radialWipe`, `eyeIris`, `ovalIris`, `heartShape`, `lensWarpZoom`); 21 on the GPU route and 23 on Canvas 2D. Goldens: 335 cases, of which 204 are pixel, 45 edge and 86 statistical, plus 112 progress-curve values.
+
+| Effect | Category | HDR | Status | Goldens (pixel / edge / statistical) |
+| --- | --- | --- | --- | --- |
+| [`gpu-brightness`](effects/gpu-brightness.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-contrast`](effects/gpu-contrast.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-exposure`](effects/gpu-exposure.md) | color | linear | full | 8 / 0 / 0 |
+| [`gpu-hue-shift`](effects/gpu-hue-shift.md) | color, temporal | refused | full | 4 / 1 / 0 |
+| [`gpu-invert`](effects/gpu-invert.md) | color | linear | full | 2 / 0 / 0 |
+| [`gpu-levels`](effects/gpu-levels.md) | color | refused | full | 6 / 0 / 0 |
+| [`gpu-saturation`](effects/gpu-saturation.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-temperature`](effects/gpu-temperature.md) | color | linear | full | 8 / 0 / 0 |
+| [`gpu-grayscale`](effects/gpu-grayscale.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-sepia`](effects/gpu-sepia.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-curves`](effects/gpu-curves.md) | color | refused | full | 23 / 0 / 0 |
+| [`gpu-color-wheels`](effects/gpu-color-wheels.md) | color | refused | full | 27 / 0 / 0 |
+| [`gpu-secondary-qualifier`](effects/gpu-secondary-qualifier.md) | color | refused | full | 14 / 3 / 0 |
+| [`gpu-power-window`](effects/gpu-power-window.md) | color | refused | full | 15 / 0 / 0 |
+| [`gpu-vibrance`](effects/gpu-vibrance.md) | color | linear | full | 4 / 0 / 0 |
+| [`gpu-gradient-map`](effects/gpu-gradient-map.md) | color | refused | full | 12 / 0 / 0 |
+| [`gpu-lut`](effects/gpu-lut.md) | color | refused | full | 4 / 0 / 0 |
+| [`gpu-gaussian-blur`](effects/gpu-gaussian-blur.md) | blur | linear | full | 6 / 0 / 0 |
+| [`gpu-box-blur`](effects/gpu-box-blur.md) | blur | linear | full | 4 / 0 / 0 |
+| [`gpu-motion-blur`](effects/gpu-motion-blur.md) | blur | linear | full | 18 / 0 / 0 |
+| [`gpu-radial-blur`](effects/gpu-radial-blur.md) | blur | refused | full | 5 / 0 / 0 |
+| [`gpu-zoom-blur`](effects/gpu-zoom-blur.md) | blur | refused | full | 5 / 0 / 0 |
+| [`gpu-pixelate`](effects/gpu-pixelate.md) | distort | linear | full | 4 / 0 / 0 |
+| [`gpu-rgb-split`](effects/gpu-rgb-split.md) | distort | refused | full | 3 / 0 / 0 |
+| [`gpu-twirl`](effects/gpu-twirl.md) | distort | linear | full | 10 / 0 / 0 |
+| [`gpu-wave`](effects/gpu-wave.md) | distort | linear | full | 10 / 0 / 0 |
+| [`gpu-trigger-wave`](effects/gpu-trigger-wave.md) | distort, temporal | refused | full | 13 / 0 / 0 |
+| [`gpu-bulge`](effects/gpu-bulge.md) | distort | linear | full | 10 / 0 / 0 |
+| [`gpu-kaleidoscope`](effects/gpu-kaleidoscope.md) | distort | refused | full | 3 / 0 / 0 |
+| [`gpu-mirror`](effects/gpu-mirror.md) | distort | refused | full | 3 / 0 / 0 |
+| [`gpu-fluted-glass`](effects/gpu-fluted-glass.md) | distort | refused | partial | 0 / 0 / 28 |
+| [`gpu-ripple-glass`](effects/gpu-ripple-glass.md) | distort | refused | full | 12 / 0 / 0 |
+| [`gpu-glass-mosaic`](effects/gpu-glass-mosaic.md) | distort | refused | full | 0 / 4 / 4 |
+| [`gpu-blocks`](effects/gpu-blocks.md) | distort | refused | full | 5 / 0 / 0 |
+| [`gpu-droste`](effects/gpu-droste.md) | distort | refused | full | 6 / 0 / 0 |
+| [`gpu-vignette`](effects/gpu-vignette.md) | stylize | refused | full | 5 / 0 / 0 |
+| [`gpu-grain`](effects/gpu-grain.md) | stylize, temporal | refused | full | 0 / 0 / 5 |
+| [`gpu-sharpen`](effects/gpu-sharpen.md) | stylize | refused | full | 3 / 0 / 0 |
+| [`gpu-posterize`](effects/gpu-posterize.md) | stylize | refused | full | 0 / 2 / 0 |
+| [`gpu-glow`](effects/gpu-glow.md) | stylize | refused | full | 7 / 0 / 0 |
+| [`gpu-edge-detect`](effects/gpu-edge-detect.md) | stylize | refused | full | 3 / 0 / 0 |
+| [`gpu-scanlines`](effects/gpu-scanlines.md) | stylize, temporal | refused | full | 5 / 0 / 0 |
+| [`gpu-color-glitch`](effects/gpu-color-glitch.md) | stylize, temporal | refused | full | 0 / 0 / 4 |
+| [`gpu-block-glitch`](effects/gpu-block-glitch.md) | stylize, temporal | refused | full | 0 / 0 / 12 |
+| [`gpu-crt`](effects/gpu-crt.md) | stylize | refused | full | 5 / 0 / 0 |
+| [`gpu-halftone`](effects/gpu-halftone.md) | stylize | refused | full | 0 / 0 / 15 |
+| [`gpu-dither`](effects/gpu-dither.md) | stylize | refused | full | 22 / 0 / 0 |
+| [`gpu-ascii`](effects/gpu-ascii.md) | stylize | refused | partial | 28 / 0 / 0 |
+| [`gpu-threshold`](effects/gpu-threshold.md) | stylize | refused | full | 2 / 0 / 0 |
+| [`gpu-vhs`](effects/gpu-vhs.md) | stylize, temporal | refused | full | 0 / 0 / 7 |
+| [`gpu-ink`](effects/gpu-ink.md) | stylize | refused | full | 8 / 0 / 0 |
+| [`gpu-pixel-sort`](effects/gpu-pixel-sort.md) | stylize | refused | full | 8 / 0 / 0 |
+| [`gpu-pixel-sort-hq`](effects/gpu-pixel-sort-hq.md) | stylize | refused | full | 5 / 0 / 0 |
+| [`gpu-chroma-key`](effects/gpu-chroma-key.md) | keying | refused | full | 5 / 0 / 0 |
+
+| Transition | Category | Route | Status | Goldens (pixel / edge / statistical) |
+| --- | --- | --- | --- | --- |
+| [`fade`](transitions/fade.md) | basic | GPU | full | 5 / 0 / 0 |
+| [`barnDoor`](transitions/barnDoor.md) | motion | Canvas 2D | full | 5 / 0 / 0 |
+| [`split`](transitions/split.md) | motion | Canvas 2D | full | 2 / 3 / 0 |
+| [`wipe`](transitions/wipe.md) | motion | GPU | full | 14 / 0 / 0 |
+| [`bandWipe`](transitions/bandWipe.md) | wipe | Canvas 2D | full | 2 / 1 / 2 |
+| [`centerWipe`](transitions/centerWipe.md) | wipe | Canvas 2D | full | 5 / 0 / 0 |
+| [`clockWipe`](transitions/clockWipe.md) | wipe | GPU | full | 6 / 0 / 0 |
+| [`edgeWipe`](transitions/edgeWipe.md) | wipe | Canvas 2D | full | 14 / 0 / 0 |
+| [`radialWipe`](transitions/radialWipe.md) | wipe | Canvas 2D | partial | 2 / 0 / 3 |
+| [`spiralWipe`](transitions/spiralWipe.md) | wipe | Canvas 2D | full | 1 / 1 / 3 |
+| [`venetianBlindWipe`](transitions/venetianBlindWipe.md) | wipe | Canvas 2D | full | 2 / 0 / 3 |
+| [`xWipe`](transitions/xWipe.md) | wipe | Canvas 2D | full | 0 / 5 / 0 |
+| [`slide`](transitions/slide.md) | motion | GPU | full | 14 / 0 / 0 |
+| [`flip`](transitions/flip.md) | custom | GPU | full | 14 / 0 / 0 |
+| [`iris`](transitions/iris.md) | iris | GPU | full | 6 / 0 / 0 |
+| [`arrowIris`](transitions/arrowIris.md) | iris | Canvas 2D | full | 1 / 5 / 0 |
+| [`crossIris`](transitions/crossIris.md) | iris | Canvas 2D | full | 3 / 2 / 1 |
+| [`diamondIris`](transitions/diamondIris.md) | iris | Canvas 2D | full | 3 / 3 / 0 |
+| [`eyeIris`](transitions/eyeIris.md) | iris | Canvas 2D | partial | 3 / 3 / 0 |
+| [`hexagonIris`](transitions/hexagonIris.md) | iris | Canvas 2D | full | 5 / 1 / 0 |
+| [`ovalIris`](transitions/ovalIris.md) | iris | Canvas 2D | partial | 5 / 1 / 0 |
+| [`pentagonIris`](transitions/pentagonIris.md) | iris | Canvas 2D | full | 5 / 1 / 0 |
+| [`squareIris`](transitions/squareIris.md) | iris | Canvas 2D | full | 5 / 1 / 0 |
+| [`triangleIris`](transitions/triangleIris.md) | iris | Canvas 2D | full | 2 / 4 / 0 |
+| [`boxShape`](transitions/boxShape.md) | shape | Canvas 2D | full | 2 / 3 / 0 |
+| [`heartShape`](transitions/heartShape.md) | shape | Canvas 2D | partial | 3 / 2 / 0 |
+| [`starShape`](transitions/starShape.md) | shape | Canvas 2D | full | 2 / 3 / 0 |
+| [`triangleLeftShape`](transitions/triangleLeftShape.md) | shape | Canvas 2D | full | 2 / 3 / 0 |
+| [`triangleRightShape`](transitions/triangleRightShape.md) | shape | Canvas 2D | full | 2 / 3 / 0 |
+| [`dissolve`](transitions/dissolve.md) | dissolve | GPU | full | 5 / 0 / 0 |
+| [`additiveDissolve`](transitions/additiveDissolve.md) | dissolve | GPU | full | 5 / 0 / 0 |
+| [`blurDissolve`](transitions/blurDissolve.md) | dissolve | GPU | full | 6 / 0 / 0 |
+| [`dipToColorDissolve`](transitions/dipToColorDissolve.md) | dissolve | GPU | full | 6 / 0 / 0 |
+| [`nonAdditiveDissolve`](transitions/nonAdditiveDissolve.md) | dissolve | GPU | full | 5 / 0 / 0 |
+| [`smoothCut`](transitions/smoothCut.md) | dissolve | GPU | full | 0 / 0 / 6 |
+| [`sparkles`](transitions/sparkles.md) | custom | GPU | full | 0 / 0 / 9 |
+| [`glitch`](transitions/glitch.md) | custom | GPU | full | 0 / 0 / 8 |
+| [`pixelate`](transitions/pixelate.md) | custom | GPU | full | 6 / 0 / 0 |
+| [`chromatic`](transitions/chromatic.md) | custom | GPU | full | 16 / 0 / 0 |
+| [`radialBlur`](transitions/radialBlur.md) | custom | GPU | full | 9 / 0 / 0 |
+| [`liquidDistort`](transitions/liquidDistort.md) | custom | GPU | full | 0 / 0 / 20 |
+| [`lensWarpZoom`](transitions/lensWarpZoom.md) | custom | GPU | partial | 11 / 0 / 0 |
+| [`lightLeakBurn`](transitions/lightLeakBurn.md) | custom | GPU | full | 0 / 0 / 19 |
+| [`filmGateSlip`](transitions/filmGateSlip.md) | custom | GPU | full | 0 / 0 / 12 |
+<!-- index:end -->
+
+## Checks
+
+- `node --test studio/tools/render-goldens.test.mjs` (engine-free, runs in CI with the other Studio contract checks) verifies that:
+  - every catalogue effect and transition has a page, an `index.json` entry and goldens, with matching counts;
+  - the inputs match their formulas and the case lists are complete and ordered;
+  - the T1 progress curve reproduces every engine value bit for bit from the prose;
+  - the comparison rule rejects identity, NaN, short and shifted outputs;
+  - the T6 reference reproduces the straight-edged clip goldens exactly, passes the curved and stroked ones, and the published ASCII atlases, fed to the CPU reference, pass the 23 font-atlas cases;
+  - the keyframe reference written from `keyframes.md` reproduces every keyframe golden (bit for bit where the case is marked exact);
+  - no page contains engine source text (shader or TypeScript constructs).
+- `node studio/tools/render-goldens.browser.mjs` (needs the prepared engine and WebGPU) renders every case through the engine on the canonical backend and fails when any case falls outside its tolerance. It also fails when an HDR refusal starts rendering, when the progress curve changes, or when a keyframe golden no longer holds (`keyframe-goldens.browser.mjs`, which it runs).

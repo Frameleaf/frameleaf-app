@@ -1,42 +1,79 @@
-<script lang="ts">
-  import type { PersonResponseDto } from '@immich/sdk';
+<script lang="ts" generics="T extends PersonResponseDto">
+  import { onDestroy } from 'svelte';
+  import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
+  import type { PersonResponseDto } from '@frameleaf/sdk';
 
   interface Props {
-    people: PersonResponseDto[];
+    people: T[];
+    managed?: boolean;
     hasNextPage?: boolean | undefined;
     loadNextPage: () => void;
-    children?: import('svelte').Snippet<[{ person: PersonResponseDto; index: number }]>;
+    children?: import('svelte').Snippet<[{ person: T; index: number }]>;
   }
 
-  let { people, hasNextPage = undefined, loadNextPage, children }: Props = $props();
+  let { people, managed = false, hasNextPage = undefined, loadNextPage, children }: Props = $props();
 
-  let lastPersonContainer: HTMLElement | undefined = $state();
+  let grid: HTMLElement | undefined = $state();
+  // The last card is what the next page loads behind; it is read from the grid, so every card
+  // keeps the same wrapper and can slide when the list is sorted or filtered.
+  const lastPersonContainer = $derived(people.length > 0 ? (grid?.lastElementChild ?? undefined) : undefined);
+  const motion = $derived({ count: people.length });
 
+  let retired = false;
   const intersectionObserver = new IntersectionObserver((entries) => {
     const entry = entries.find((entry) => entry.target === lastPersonContainer);
-    if (entry?.isIntersecting) {
+    if (!retired && hasNextPage && entry?.isIntersecting) {
       loadNextPage();
     }
   });
 
+  onDestroy(() => {
+    retired = true;
+    intersectionObserver.disconnect();
+  });
+
   $effect(() => {
-    if (!lastPersonContainer) {
+    intersectionObserver.disconnect();
+    if (!lastPersonContainer || !hasNextPage) {
       return;
     }
 
-    intersectionObserver.disconnect();
     intersectionObserver.observe(lastPersonContainer);
   });
 </script>
 
-<div class="grid w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-10">
+<div class={managed ? 'managed-grid' : 'library-grid'} bind:this={grid}>
   {#each people as person, index (person.id)}
-    {#if hasNextPage && index === people.length - 1}
-      <div bind:this={lastPersonContainer}>
-        {@render children?.({ person, index })}
-      </div>
-    {:else}
+    <div class="cell" animate:listFlip={motion} in:listEnter={motion} out:listLeave={motion}>
       {@render children?.({ person, index })}
-    {/if}
+    </div>
   {/each}
 </div>
+
+<style>
+  /* template/src/people.css `.pl-grid`. */
+  .library-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: 20px;
+  }
+  .managed-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  .cell {
+    min-width: 0;
+  }
+  @media (max-width: 700px) {
+    /* Two faces on a small phone, three once there is room for them. */
+    .library-grid {
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .managed-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+  }
+</style>

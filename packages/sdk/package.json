@@ -1,10 +1,10 @@
 {
-  "name": "@immich/sdk",
+  "name": "@frameleaf/sdk",
   "version": "3.2.0",
-  "description": "Auto-generated TypeScript SDK for the Immich API",
+  "description": "Auto-generated TypeScript SDK for the Frameleaf API",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/immich-app/immich.git",
+    "url": "git+https://github.com/Frameleaf/frameleaf-app.git",
     "directory": "packages/sdk"
   },
   "type": "module",

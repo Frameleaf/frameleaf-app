@@ -6,15 +6,25 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { randomUUID } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AlbumUserRole } from 'src/enum.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { NotificationDto } from 'src/dtos/notification.dto.js';
 import { ReleaseEventV1, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
 import { SyncAssetEditV1, SyncAssetExifV1, SyncAssetV2 } from 'src/dtos/sync.dto.js';
+import { withSocketConfigUpdate, withSocketPublication } from 'src/middleware/websocket.adapter.js';
 import { type AppRestartEvent, type ArgsOf, EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+
+type ConfigUpdatePublication = {
+  kind: 'frameleaf-config-reconciliation-v1';
+  publicationId: string;
+  publisherWorkerId: string;
+};
+type ConfigUpdateAcknowledgement = ConfigUpdatePublication & { workerId: string; result: 'ok' | 'error' };
 
 export const serverEvents = [
   'ConfigUpdate',
@@ -25,10 +35,17 @@ export const serverEvents = [
   'HlsSessionRequest',
   'HlsSessionResult',
   'HlsSessionEnd',
+  'LibraryWatchUpdate',
+  'CloudBackupKeyShare',
+  'CloudBackupKeyRequest',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 
 export interface ClientEventMap {
+  /** Complete local sequence; never translated into broad Trash/Delete handlers. */
+  AssetLocalEffectsV1: [
+    { streamEpoch: string; sequence: string; effectId: string; assetIds: string[]; revokedOperationIds: string[] },
+  ];
   on_upload_success: [AssetResponseDto];
   on_user_delete: [string];
   on_asset_delete: [string];
@@ -44,16 +61,60 @@ export interface ClientEventMap {
   on_new_release: [ReleaseEventV1];
   on_notification: [NotificationDto];
   on_session_delete: [string];
+  /** FL-34: the elevated (PIN-unlocked) access of the receiving session(s) was revoked. */
+  on_session_lock: [];
+  /**
+   * FL-43: one of the receiving account's jobs changed state. Only the id travels; the client asks the
+   * owner-scoped job list again, so nothing about the job is revealed by the event itself.
+   */
+  on_media_operation_update: [string];
+  /**
+   * FL-155: the Frameleaf Cloud link, licence or a person's Frameleaf account changed. Sent to
+   * administrators (and, for `account`, to that person); only the topic travels, and the client
+   * reads the admin-only status again.
+   */
+  on_frameleaf_cloud: [{ topic: FrameleafCloudTopic }];
+  /**
+   * FL-146 (FL-77, owner decision 2026-09-29): an administrator changed the receiving account's
+   * preferences. Nothing else travels; the account's open sessions read their preferences again.
+   */
+  on_user_preferences_update: [];
 
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
   AssetEditReadyV2: [{ asset: SyncAssetV2; edit: SyncAssetEditV1[] }];
+  /**
+   * Fork-only (FL-39): a video edit render settled without publishing anything. Official clients
+   * never subscribe to it, so a failure never looks like an "edit ready" to them.
+   */
+  VideoEditVersionFailedV1: [{ assetId: string; versionId: string | null }];
+  /**
+   * Fork-only (FL-53): somebody's role in an album changed, or they left or were removed (`role:
+   * null`). Sent to that person and to the album's remaining members, so open pages drop controls
+   * and dialogs the new role no longer allows without waiting for a reload.
+   */
+  AlbumUserUpdateV1: [{ albumId: string; userId: string; role: AlbumUserRole | null }];
+  /**
+   * Fork-only (FL-54): `sharedById` stopped sharing their library with `sharedWithId`. Sent to both,
+   * so the recipient's open timeline, partner page and viewer drop what they held at once.
+   */
+  PartnerRevokeV1: [{ sharedById: string; sharedWithId: string }];
+  /**
+   * FL-111: a committed shelf or audience change invalidates generated content for this project.
+   * Sent only to its authenticated owner's room; null invalidates all after emptying their trash.
+   * Discard admitted content immediately and reauthorize before displaying it again.
+   */
+  StudioProjectInvalidatedV1: [{ projectId: string | null }];
 }
+
+export type FrameleafCloudTopic = 'link' | 'license' | 'account';
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 
+// FL-161: no permissive `cors`. Only the websocket transport is offered, and each handshake's
+// `Origin` is checked against this server's own names in `AuthService.authenticateWebsocket()`
+// before the socket joins any room.
 @WebSocketGateway({
-  cors: true,
   path: '/api/socket.io',
   transports: ['websocket'],
 })
@@ -77,7 +138,33 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
     for (const event of serverEvents) {
       server.on(event, (...args: ArgsOf<any>) => {
         this.logger.debug(`Server event: ${event} (receive)`);
-        handlePromiseError(this.eventRepository.onEvent({ name: event, args, server: true }), this.logger);
+        if (event === 'ConfigUpdate' && typeof args.at(-1) === 'function') {
+          const ack = args.pop() as (result: ConfigUpdateAcknowledgement) => void;
+          const publication = args.pop() as ConfigUpdatePublication | undefined;
+          const reconcile = async () => {
+            if (
+              publication?.kind !== 'frameleaf-config-reconciliation-v1' ||
+              typeof publication.publicationId !== 'string' ||
+              !publication.publicationId ||
+              typeof publication.publisherWorkerId !== 'string' ||
+              !publication.publisherWorkerId
+            ) {
+              throw new Error('Configuration publication identity is unavailable');
+            }
+            const acknowledge = (result: 'ok' | 'error') =>
+              withSocketPublication(this.requireServer(), (workerId) => ack({ ...publication, workerId, result }));
+            try {
+              await this.eventRepository.onEvent({ name: event, args, server: true });
+            } catch (error) {
+              await acknowledge('error');
+              throw error;
+            }
+            await acknowledge('ok');
+          };
+          handlePromiseError(reconcile(), this.logger);
+        } else {
+          handlePromiseError(this.eventRepository.onEvent({ name: event, args, server: true }), this.logger);
+        }
       });
     }
   }
@@ -109,6 +196,68 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
 
   clientBroadcast<T extends keyof ClientEventMap>(event: T, ...data: ClientEventMap[T]) {
     this.server?.emit(event, ...data);
+  }
+
+  async clientBroadcastAndFlush(event: 'AppRestartV1', ...data: ClientEventMap['AppRestartV1']): Promise<void> {
+    const server = this.requireServer();
+    await withSocketPublication(server, () =>
+      server.sockets.adapter.broadcast(
+        { type: 2, nsp: server.sockets.name, data: [event, ...data] },
+        { rooms: new Set(), except: new Set(), flags: {} },
+      ),
+    );
+  }
+
+  async serverSendAndFlush(event: 'AppRestart', ...args: ArgsOf<'AppRestart'>): Promise<void> {
+    const server = this.requireServer();
+    await withSocketPublication(server, () => {
+      server.serverSideEmit(event, ...args);
+    });
+  }
+
+  async acknowledgeRestart(ack?: (ok: 'ok') => void): Promise<void> {
+    if (ack) {
+      await withSocketPublication(this.requireServer(), () => ack('ok'));
+    }
+  }
+
+  private requireServer(): Server {
+    if (!this.server) {
+      throw new Error('Websocket server is unavailable for restart publication');
+    }
+    return this.server;
+  }
+
+  async awaitConfigUpdate(update: ArgsOf<'ConfigUpdate'>[0]): Promise<void> {
+    const server = this.requireServer();
+    await withSocketConfigUpdate(server, async (expectedWorkers, publisherWorkerId) => {
+      const publication: ConfigUpdatePublication = {
+        kind: 'frameleaf-config-reconciliation-v1',
+        publicationId: randomUUID(),
+        publisherWorkerId,
+      };
+      const responses: ConfigUpdateAcknowledgement[] = await server.serverSideEmitWithAck(
+        'ConfigUpdate',
+        update,
+        publication,
+      );
+      const acknowledged = new Set<string>();
+      for (const response of responses) {
+        if (
+          response?.kind !== publication.kind ||
+          response.publicationId !== publication.publicationId ||
+          response.publisherWorkerId !== publisherWorkerId ||
+          typeof response.workerId !== 'string' ||
+          response.result !== 'ok'
+        ) {
+          throw new Error('One or more websocket workers failed configuration reconciliation');
+        }
+        acknowledged.add(response.workerId);
+      }
+      if (expectedWorkers.some((workerId) => !acknowledged.has(workerId))) {
+        throw new Error('One or more websocket workers failed configuration reconciliation');
+      }
+    });
   }
 
   serverSend<T extends ServerEvents>(event: T, ...args: ArgsOf<T>): void {

@@ -2,18 +2,20 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
 
   import { AssetAction } from '$lib/constants';
-  import { removeAssetFromStack, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+  import { removeAssetFromStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageMinusOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     asset: AssetResponseDto;
     stack: StackResponseDto;
     onAction: OnAction;
   }
 
-  let { asset, stack, onAction }: Props = $props();
+  let { asset, stack, onAction, text }: Props = $props();
 
   const handleRemoveFromStack = async () => {
     await removeAssetFromStack({
@@ -28,4 +30,4 @@
   };
 </script>
 
-<MenuOption icon={mdiImageMinusOutline} onClick={handleRemoveFromStack} text={$t('viewer_remove_from_stack')} />
+<MenuOption icon={mdiImageMinusOutline} onClick={handleRemoveFromStack} text={text ?? $t('viewer_remove_from_stack')} />

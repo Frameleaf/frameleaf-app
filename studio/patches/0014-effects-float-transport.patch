@@ -1,0 +1,334 @@
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -5,6 +5,7 @@
+ import type {
+   EffectDataTexturePayload,
+   EffectDataTextureSpec,
++  EffectTextureFormat,
+   GpuEffectDefinition,
+   GpuEffectInstance,
+ } from './types'
+@@ -66,6 +67,18 @@
+ }
+ `
+
++// Texture boundaries keep straight RGB/alpha. Unlike canvas output, conversion
++// must not premultiply; rgba8unorm performs the explicit SDR quantization.
++const TEXTURE_CONVERSION_SHADER = /* wgsl */ `
++${FULLSCREEN_VERTEX}
++@group(0) @binding(1) var inputTex: texture_2d<f32>;
++@fragment
++fn convertFragment(input: VertexOutput) -> @location(0) vec4f {
++  let c = textureLoad(inputTex, vec2i(input.position.xy), 0);
++  return vec4f(c.rgb, clamp(c.a, 0.0, 1.0));
++}
++`
++
+ type GpuExternalImageSource =
+   | OffscreenCanvas
+   | HTMLCanvasElement
+@@ -100,6 +113,7 @@
+   // layout maps; the fragment maps above stay untouched.
+   private computePipelines = new Map<string, GPUComputePipeline>()
+   private computeBindGroupLayouts = new Map<string, GPUBindGroupLayout>()
++  private conversionPipelines = new Map<EffectTextureFormat, GPURenderPipeline>()
+   private sampler: GPUSampler
+   private blitPipeline: GPURenderPipeline | null = null
+   private blitBindGroupLayout: GPUBindGroupLayout | null = null
+@@ -258,7 +272,11 @@
+     }
+   }
+
+-  private createEffectPipeline(id: string, effect: GpuEffectDefinition): void {
++  private createEffectPipeline(
++    id: string,
++    effect: GpuEffectDefinition,
++    format: EffectTextureFormat = 'rgba8unorm',
++  ): void {
+     try {
+       const shaderCode = `${COMMON_WGSL}\n${effect.shader}`
+       const shaderModule = this.device.createShaderModule({
+@@ -289,7 +307,7 @@
+         label: `effect-${id}-layout`,
+         entries,
+       })
+-      this.bindGroupLayouts.set(id, bindGroupLayout)
++      this.bindGroupLayouts.set(`${id}:${format}`, bindGroupLayout)
+
+       const pipeline = this.device.createRenderPipeline({
+         label: `effect-${id}-pipeline`,
+@@ -298,19 +316,23 @@
+         fragment: {
+           module: shaderModule,
+           entryPoint: effect.entryPoint,
+-          targets: [{ format: 'rgba8unorm' }],
++          targets: [{ format }],
+         },
+         primitive: { topology: 'triangle-list' },
+       })
+-      this.pipelines.set(id, pipeline)
++      this.pipelines.set(`${id}:${format}`, pipeline)
+     } catch (e) {
+       getLogger().warn(`Failed to create pipeline for ${id}`, e)
+     }
+   }
+
+-  private createComputeEffectPipeline(id: string, effect: GpuEffectDefinition): void {
++  private createComputeEffectPipeline(
++    id: string,
++    effect: GpuEffectDefinition,
++    format: EffectTextureFormat = 'rgba8unorm',
++  ): void {
+     try {
+-      const shaderCode = `${COMMON_WGSL}\n${effect.shader}`
++      const shaderCode = `${COMMON_WGSL}\n${effect.shader.replaceAll('EFFECT_OUTPUT_FORMAT', format)}`
+       const shaderModule = this.device.createShaderModule({
+         label: `effect-${id}-compute`,
+         code: shaderCode,
+@@ -323,7 +345,7 @@
+         {
+           binding: 1,
+           visibility: GPUShaderStage.COMPUTE,
+-          storageTexture: { access: 'write-only', format: 'rgba8unorm', viewDimension: '2d' },
++          storageTexture: { access: 'write-only', format, viewDimension: '2d' },
+         },
+       ]
+       if (effect.uniformSize > 0) {
+@@ -338,29 +360,29 @@
+         label: `effect-${id}-compute-layout`,
+         entries,
+       })
+-      this.computeBindGroupLayouts.set(id, bindGroupLayout)
++      this.computeBindGroupLayouts.set(`${id}:${format}`, bindGroupLayout)
+
+       const pipeline = this.device.createComputePipeline({
+         label: `effect-${id}-compute-pipeline`,
+         layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+         compute: { module: shaderModule, entryPoint: effect.entryPoint },
+       })
+-      this.computePipelines.set(id, pipeline)
++      this.computePipelines.set(`${id}:${format}`, pipeline)
+     } catch (e) {
+       getLogger().warn(`Failed to create compute pipeline for ${id}`, e)
+     }
+   }
+
+-  private ensurePingPong(w: number, h: number): void {
+-    if (this.pingTexture && this.texW === w && this.texH === h) return
++  private ensurePingPong(w: number, h: number, format: EffectTextureFormat = 'rgba8unorm'): void {
++    if (this.pingTexture?.format === format && this.texW === w && this.texH === h) return
+     this.pingTexture?.destroy()
+     this.pongTexture?.destroy()
+     const desc: GPUTextureDescriptor = {
+       size: { width: w, height: h },
+-      format: 'rgba8unorm',
++      format,
+       // STORAGE_BINDING lets compute-variant effects write these textures via
+-      // textureStore. rgba8unorm is a core writable-storage format, so this
+-      // needs no extra device feature. Fragment effects ignore the extra usage.
++      // textureStore. Both rgba8unorm and rgba16float are core storage formats.
++      // Fragment effects ignore the extra usage.
+       usage:
+         GPUTextureUsage.TEXTURE_BINDING |
+         GPUTextureUsage.STORAGE_BINDING |
+@@ -482,6 +504,7 @@
+     w: number,
+     h: number,
+   ): GPUTexture {
++    const format = startInput.format as EffectTextureFormat
+     let inputTex = startInput
+     let outputTex = startOutput
+     let inputView = inputTex === this.pingTexture ? this.pingView! : this.pongView!
+@@ -503,13 +526,17 @@
+       // Uniform contents change via writeBuffer, but each encoded pass gets a
+       // stable buffer object of its own, so the cached group stays valid.
+       const viewKey = inputView === this.pingView ? 'ping' : 'pong'
++      const pipelineKey = `${effect.type}:${format}`
+
+       // Compute-variant effects: read input via textureLoad, scatter to the
+       // output storage texture. Output is the opposite ping/pong texture, so no
+       // read-after-write hazard within the pass.
+       if (definition.compute) {
+-        const computePipeline = this.computePipelines.get(effect.type)
+-        const computeLayout = this.computeBindGroupLayouts.get(effect.type)
++        if (!this.computePipelines.has(pipelineKey)) {
++          this.createComputeEffectPipeline(effect.type, definition, format)
++        }
++        const computePipeline = this.computePipelines.get(pipelineKey)
++        const computeLayout = this.computeBindGroupLayouts.get(pipelineKey)
+         if (!computePipeline || !computeLayout) continue
+
+         const cacheKey = `${effectIndex}:${effect.type}:compute:${viewKey}`
+@@ -542,8 +569,11 @@
+         continue
+       }
+
+-      const pipeline = this.pipelines.get(effect.type)
+-      const layout = this.bindGroupLayouts.get(effect.type)
++      if (!this.pipelines.has(pipelineKey)) {
++        this.createEffectPipeline(effect.type, definition, format)
++      }
++      const pipeline = this.pipelines.get(pipelineKey)
++      const layout = this.bindGroupLayouts.get(pipelineKey)
+       if (!pipeline || !layout) continue
+
+       // Auxiliary data texture (curve/color LUT) — kept current before binding.
+@@ -771,6 +801,7 @@
+     const { width: w, height: h } = getExternalImageSourceDimensions(source)
+     if (w < 2 || h < 2) return false
+     if (outputTexture.width !== w || outputTexture.height !== h) return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
+
+     if (enabled.length === 0) {
+       this.device.queue.copyExternalImageToTexture(
+@@ -780,7 +811,7 @@
+       )
+       return true
+     }
+-    this.ensurePingPong(w, h)
++    this.ensurePingPong(w, h, outputTexture.format)
+     if (!this.pingTexture || !this.pongTexture) return false
+
+     this.device.queue.copyExternalImageToTexture(
+@@ -807,6 +838,49 @@
+     return true
+   }
+
++  private copyEffectTexture(
++    encoder: GPUCommandEncoder,
++    source: GPUTexture,
++    output: GPUTexture,
++    width: number,
++    height: number,
++  ): void {
++    if (source === output) return
++    if (source.format === output.format) {
++      encoder.copyTextureToTexture({ texture: source }, { texture: output }, { width, height })
++      return
++    }
++    const format = output.format as EffectTextureFormat
++    let pipeline = this.conversionPipelines.get(format)
++    if (!pipeline) {
++      const module = this.device.createShaderModule({ code: TEXTURE_CONVERSION_SHADER })
++      pipeline = this.device.createRenderPipeline({
++        layout: 'auto',
++        vertex: { module, entryPoint: 'vertexMain' },
++        fragment: { module, entryPoint: 'convertFragment', targets: [{ format }] },
++        primitive: { topology: 'triangle-list' },
++      })
++      this.conversionPipelines.set(format, pipeline)
++    }
++    const group = this.device.createBindGroup({
++      layout: pipeline.getBindGroupLayout(0),
++      entries: [{ binding: 1, resource: source.createView() }],
++    })
++    const pass = encoder.beginRenderPass({
++      colorAttachments: [{ view: output.createView(), loadOp: 'clear', storeOp: 'store' }],
++    })
++    pass.setPipeline(pipeline)
++    pass.setBindGroup(0, group)
++    pass.draw(6)
++    pass.end()
++  }
++
++  /**
++   * Straight RGB with coverage alpha in [0, 1]. Float inputs/outputs keep float
++   * transport throughout the chain; effect-specific math may still limit RGB.
++   * Cross-format boundaries require TEXTURE_BINDING on the source and
++   * RENDER_ATTACHMENT on the output. Matching formats use exact GPU copies.
++   */
+   applyTextureEffectsToTexture(
+     sourceTexture: GPUTexture,
+     effects: GpuEffectInstance[],
+@@ -825,24 +899,29 @@
+       return false
+     }
+
++    if (
++      (sourceTexture.format !== 'rgba8unorm' && sourceTexture.format !== 'rgba16float') ||
++      (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
++    ) return false
++    if (sourceTexture.format !== outputTexture.format && (
++      !(sourceTexture.usage & GPUTextureUsage.TEXTURE_BINDING) ||
++      !(outputTexture.usage & GPUTextureUsage.RENDER_ATTACHMENT)
++    )) return false
++
++    const format: EffectTextureFormat =
++      sourceTexture.format === 'rgba16float' || outputTexture.format === 'rgba16float'
++        ? 'rgba16float'
++        : 'rgba8unorm'
+     const commandEncoder = this.device.createCommandEncoder()
+     if (enabled.length === 0) {
+-      commandEncoder.copyTextureToTexture(
+-        { texture: sourceTexture },
+-        { texture: outputTexture },
+-        { width, height },
+-      )
++      this.copyEffectTexture(commandEncoder, sourceTexture, outputTexture, width, height)
+       this.device.queue.submit([commandEncoder.finish()])
+       return true
+     }
+
+-    this.ensurePingPong(width, height)
++    this.ensurePingPong(width, height, format)
+     if (!this.pingTexture || !this.pongTexture) return false
+-    commandEncoder.copyTextureToTexture(
+-      { texture: sourceTexture },
+-      { texture: this.pingTexture },
+-      { width, height },
+-    )
++    this.copyEffectTexture(commandEncoder, sourceTexture, this.pingTexture, width, height)
+     const finalTex = this.runEffectChain(
+       commandEncoder,
+       enabled,
+@@ -851,11 +930,7 @@
+       width,
+       height,
+     )
+-    commandEncoder.copyTextureToTexture(
+-      { texture: finalTex },
+-      { texture: outputTexture },
+-      { width, height },
+-    )
++    this.copyEffectTexture(commandEncoder, finalTex, outputTexture, width, height)
+     this.device.queue.submit([commandEncoder.finish()])
+     return true
+   }
+@@ -1119,6 +1194,7 @@
+     this.blitBindGroupPong = null
+     this.pipelines.clear()
+     this.bindGroupLayouts.clear()
++    this.conversionPipelines.clear()
+     this.computePipelines.clear()
+     this.computeBindGroupLayouts.clear()
+     this.blitPipeline = null
+--- a/src/infrastructure/gpu-effects/types.ts
++++ b/src/infrastructure/gpu-effects/types.ts
+@@ -1,3 +1,6 @@
++/** Color transport uses straight RGB and bounded coverage alpha; masks/data remain rgba8. */
++export type EffectTextureFormat = 'rgba8unorm' | 'rgba16float'
++
+ export interface EffectParam {
+   /** 'json' params hold structured data as a JSON string (custom panels only — no generic UI) */
+   type: 'number' | 'boolean' | 'select' | 'color' | 'point' | 'json' | 'text'
+@@ -40,7 +43,8 @@
+  * Marks an effect as running through a compute pass instead of the default
+  * fragment render pass. Compute effects read the input via `textureLoad`
+  * (binding 0, a plain `texture_2d<f32>` — no sampler) and write results with
+- * `textureStore` into a `texture_storage_2d<rgba8unorm, write>` (binding 1);
++ * `textureStore` into a `texture_storage_2d<EFFECT_OUTPUT_FORMAT, write>` (binding 1);
++ * EffectsPipeline substitutes the selected EffectTextureFormat in that token;
+  * uniforms stay at binding 2. This unlocks passes a single fragment shader
+  * can't express — scatter writes, cross-pixel sorting, prefix scans — because
+  * an invocation can write to an output location other than its own.
+--- a/src/infrastructure/gpu-effects/effects/stylize.ts
++++ b/src/infrastructure/gpu-effects/effects/stylize.ts
+@@ -2755,7 +2755,7 @@
+   width: f32, height: f32, _p0: f32, _p1: f32,
+ };
+ @group(0) @binding(0) var inputTex: texture_2d<f32>;
+-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba8unorm, write>;
++@group(0) @binding(1) var outputTex: texture_storage_2d<EFFECT_OUTPUT_FORMAT, write>;
+ @group(0) @binding(2) var<uniform> params: PixelSortHqParams;
+
+ fn psInBand(l: f32) -> bool {

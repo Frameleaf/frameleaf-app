@@ -1,0 +1,39 @@
+{
+  "estimate": "est1.Up5cQ2x7VbN4kP1sT8yH3dLw6cJ0aF5gR2uE9iO4nM7qX1zB8vC3tY6hW0pK5sD2fG9jL4",
+  "expiresAt": "2026-09-27T20:15:00.000Z",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "computeSku": "cs_RN7A9KND",
+  "cost": {
+    "p50": 0.112118,
+    "p90": 0.128935,
+    "startup": 0.05,
+    "hold": 0.211169,
+    "minimum": 0.05
+  },
+  "seconds": {
+    "coldStart": 10,
+    "run": 76.1
+  },
+  "basis": "modelled",
+  "upscale": {
+    "scale": 4,
+    "items": [
+      {
+        "inputId": "a1",
+        "scale": 4
+      },
+      {
+        "inputId": "a2",
+        "scale": 4
+      },
+      {
+        "inputId": "a3",
+        "scale": 2
+      }
+    ],
+    "lowered": [
+      "a3"
+    ]
+  }
+}

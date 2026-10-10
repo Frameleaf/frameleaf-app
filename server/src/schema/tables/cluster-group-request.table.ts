@@ -1,5 +1,5 @@
-import { CreateDateColumn, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { CreateDateColumn, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 

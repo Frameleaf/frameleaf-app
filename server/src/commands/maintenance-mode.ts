@@ -1,5 +1,6 @@
 import { Command, CommandRunner } from 'nest-commander';
 import { CliService } from 'src/services/cli.service.js';
+import { maintenanceLoginHint } from 'src/utils/maintenance.js';
 
 @Command({
   name: 'enable-maintenance-mode',
@@ -14,7 +15,7 @@ export class EnableMaintenanceModeCommand extends CommandRunner {
     const { authUrl, alreadyEnabled } = await this.service.enableMaintenanceMode();
 
     console.info(alreadyEnabled ? 'The server is already in maintenance mode!' : 'Maintenance mode has been enabled.');
-    console.info(`\nLog in using the following URL:\n${authUrl}`);
+    console.info(`\n${maintenanceLoginHint(authUrl)}:\n${authUrl}`);
   }
 }
 

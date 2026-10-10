@@ -1,0 +1,18 @@
+{
+  "header": {
+    "typ": "dpop+jwt",
+    "alg": "EdDSA",
+    "jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+    }
+  },
+  "payload": {
+    "jti": "4f1c2b7e-9a0d-4c3b-8e21-6d5f0a9b3c47",
+    "htm": "POST",
+    "htu": "https://id.frameleaf.cloud/token",
+    "iat": 1790395200,
+    "nonce": "fFBN9RMFo2VcZyDCyq7vbHiK9KkILKn6vJ4KCpRkyqI"
+  }
+}

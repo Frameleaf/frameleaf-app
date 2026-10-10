@@ -1,0 +1,15 @@
+--- a/src/infrastructure/gpu-effects/effects/keying.ts
++++ b/src/infrastructure/gpu-effects/effects/keying.ts
+@@ -31,7 +31,11 @@
+   let cbcrDist = length(colorYCbCr.yz - keyYCbCr.yz);
+   let innerTolerance = params.tolerance;
+   let outerTolerance = params.tolerance + params.softness;
+-  var alpha = smoothstep(innerTolerance, outerTolerance, cbcrDist);
++  // A zero-width edge is a hard key; smoothstep is undefined for equal bounds.
++  var alpha = select(0.0, 1.0, cbcrDist > innerTolerance);
++  if (outerTolerance > innerTolerance) {
++    alpha = smoothstep(innerTolerance, outerTolerance, cbcrDist);
++  }
+   var finalColor = color.rgb;
+   if (params.spillSuppression > 0.0) {
+     if (params.keyG > params.keyR && params.keyG > params.keyB) {

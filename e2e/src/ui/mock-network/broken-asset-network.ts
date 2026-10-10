@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 import { randomPreview, randomThumbnail } from 'src/ui/generators/timeline.js';
 
@@ -19,7 +19,7 @@ export const createMockStackAsset = (ownerId: string): AssetResponseDto => {
     ownerId,
     owner: {
       id: ownerId,
-      email: 'admin@immich.cloud',
+      email: 'admin@example.com',
       name: 'Admin',
       profileImagePath: '',
       profileChangedAt: now,

@@ -16,7 +16,7 @@ export class OAuthProfileFactory {
       name: 'Name',
       given_name: 'Given',
       family_name: 'Family',
-      email: `oauth-${sub}@immich.cloud`,
+      email: `oauth-${sub}@example.com`,
       email_verified: true,
       ...dto,
     });

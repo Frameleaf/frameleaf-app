@@ -4,6 +4,7 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { defaults, mapPublicConfig, mapUserConfig } from 'src/dtos/config.dto.js';
+import { ConfigCredential } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -79,6 +80,139 @@ describe('config controllers', () => {
     });
   });
 
+  describe('credentials (FL-67)', () => {
+    it('should list whether each credential is stored', async () => {
+      service.getCredentials.mockResolvedValue([{ name: ConfigCredential.SmtpPassword, configured: true }]);
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/credentials');
+
+      expect(status).toBe(200);
+      expect(body).toEqual([{ name: 'smtp-password', configured: true }]);
+    });
+
+    it('should replace a credential with the value sent', async () => {
+      service.setCredential.mockResolvedValue({ name: ConfigCredential.OAuthClientSecret, configured: true });
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/oauth-client-secret')
+        .send({ value: 'new-secret' });
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ name: 'oauth-client-secret', configured: true });
+      expect(service.setCredential).toHaveBeenCalledWith(undefined, ConfigCredential.OAuthClientSecret, {
+        value: 'new-secret',
+      });
+    });
+
+    it('should reject a blank credential value', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/smtp-password')
+        .send({ value: ' '.repeat(3) });
+
+      expect(status).toBe(400);
+      expect(service.setCredential).not.toHaveBeenCalled();
+    });
+
+    it('should reject an unknown credential name', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/database-password')
+        .send({ value: 'secret' });
+
+      expect(status).toBe(400);
+      expect(service.setCredential).not.toHaveBeenCalled();
+    });
+
+    it('should clear a credential', async () => {
+      service.clearCredential.mockResolvedValue({ name: ConfigCredential.OAuthClientSecret, configured: false });
+
+      const { status, body } = await request(ctx.getHttpServer()).delete(
+        '/admin/config/credentials/oauth-client-secret',
+      );
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ name: 'oauth-client-secret', configured: false });
+      expect(service.clearCredential).toHaveBeenCalledWith(undefined, ConfigCredential.OAuthClientSecret);
+    });
+  });
+
+  describe('GET /admin/config/history (FL-66)', () => {
+    it('should return the settings change history', async () => {
+      const history = {
+        entries: [
+          {
+            id: 'entry-1',
+            createdAt: '2026-09-23T10:00:00.000Z',
+            actorId: 'admin',
+            actorName: 'Admin',
+            changes: [
+              { path: 'trash.days', before: '30', after: '12' },
+              { path: 'oauth.clientSecret', before: null, after: null, credential: 'replaced' as const },
+            ],
+            omittedChanges: 0,
+          },
+        ],
+      };
+      service.getConfigHistory.mockResolvedValue(history);
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/history');
+
+      expect(status).toBe(200);
+      expect(body).toEqual(history);
+    });
+  });
+
+  describe('GET /admin/config/revision (FL-66)', () => {
+    it('should return the saved config with its revision', async () => {
+      service.getAdminConfigWithRevision.mockResolvedValue({ config: validConfig(), revision: 'abc123' });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/revision');
+
+      expect(status).toBe(200);
+      expect(body.revision).toBe('abc123');
+      expect(body.config.trash).toEqual(defaults.trash);
+    });
+  });
+
+  describe('PUT /admin/config/revision (FL-66)', () => {
+    it('should pass the config and the expected revision to the service', async () => {
+      service.updateAdminConfigWithRevision.mockImplementation(({ config }) =>
+        Promise.resolve({ config, revision: 'next' }),
+      );
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config: validConfig(), expectedRevision: 'abc123' });
+
+      expect(status).toBe(200);
+      expect(body.revision).toBe('next');
+      expect(service.updateAdminConfigWithRevision).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedRevision: 'abc123' }),
+        undefined,
+      );
+    });
+
+    it('should require the revision the changes were made against', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config: validConfig() });
+
+      expect(status).toBe(400);
+      expect(service.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    });
+
+    it('should validate the config the same way as PUT /admin/config', async () => {
+      const config = validConfig();
+      config.nightlyTasks.startTime = 'invalid';
+
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config, expectedRevision: 'abc123' });
+
+      expect(status).toBe(400);
+      expect(service.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    });
+  });
+
   describe('GET /config', () => {
     it('should return the properties visible to logged in users', async () => {
       service.getUserConfig.mockResolvedValue(mapUserConfig(validConfig()));
@@ -103,7 +237,8 @@ describe('config controllers', () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/public/config');
 
       expect(status).toBe(200);
-      expect(body.server).toEqual({ loginPageMessage: defaults.server.loginPageMessage });
+      // FL-71 (CC-4): the server name is shown to everyone, like the login page message.
+      expect(body.server).toEqual({ name: defaults.server.name, loginPageMessage: defaults.server.loginPageMessage });
       expect(body.oauth).toEqual({
         autoLaunch: defaults.oauth.autoLaunch,
         buttonText: defaults.oauth.buttonText,

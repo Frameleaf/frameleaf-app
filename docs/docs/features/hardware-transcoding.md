@@ -63,12 +63,14 @@ For RKMPP to work:
 
 #### Basic Setup
 
-1. If you do not already have it, download the latest [`hwaccel.transcoding.yml`][hw-file] file and ensure it's in the same folder as the `docker-compose.yml`.
-2. In the `docker-compose.yml` under `immich-server`, uncomment the `extends` section and change `cpu` to the appropriate backend.
+`hwaccel.transcoding.yml` is Frameleaf's hardware-acceleration helper, included with the release Compose files. It provides GPU device mappings and runtime options; it does not install another application. Use the helper supplied with the same release as your Compose file.
+
+1. If you do not already have it, download [`hwaccel.transcoding.yml`][hw-file] from the matching release and ensure it's in the same folder as the `docker-compose.yml`.
+2. In the `docker-compose.yml` under `frameleaf-server`, uncomment the `extends` section and change `cpu` to the appropriate backend.
 
    Note: For VAAPI on WSL2, be sure to use `vaapi-wsl` rather than `vaapi`
 
-3. Redeploy the `immich-server` container with these updated settings.
+3. Redeploy the `frameleaf-server` container with these updated settings.
 4. In the Admin page under `Video transcoding settings`, change the hardware acceleration setting to the appropriate option and save.
 
    Note: For Jasper Lake and Elkhart Lake CPUs, you will need to set the `Hardware Acceleration` -> `Constant quality mode` to `CQP`
@@ -76,7 +78,7 @@ For RKMPP to work:
 5. (Optional) Enable hardware decoding for optimal performance.
 
 <details>
-<summary>immich.json</summary>
+<summary>frameleaf.json</summary>
 
 If you use a [configuration file](/install/config-file.md), use the `accel` option to select the hardware (e.g. `qsv` for Intel or `nvenc` for Nvidia). Set `accelDecode` to `true` if you want hardware decoding.
 
@@ -93,21 +95,21 @@ If you use a [configuration file](/install/config-file.md), use the `accel` opti
 
 #### Single Compose File
 
-Some platforms, including Unraid and Portainer, do not support multiple Compose files as of writing. As an alternative, you can "inline" the relevant contents of the [`hwaccel.transcoding.yml`][hw-file] file into the `immich-server` service directly.
+Some platforms, including Unraid and Portainer, do not support multiple Compose files as of writing. As an alternative, you can "inline" the relevant contents of the [`hwaccel.transcoding.yml`][hw-file] file into the `frameleaf-server` service directly.
 
-For example, the `qsv` section in this file is:
+For example, the `quicksync` section in this file is:
 
 ```yaml
 devices:
   - /dev/dri:/dev/dri
 ```
 
-You can add this to the `immich-server` service instead of extending from `hwaccel.transcoding.yml`:
+You can add this to the `frameleaf-server` service instead of extending from `hwaccel.transcoding.yml`:
 
 ```yaml
-immich-server:
+frameleaf-server:
   container_name: frameleaf_server
-  image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}
+  image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
   # Note the lack of an `extends` section
   devices:
     - /dev/dri:/dev/dri
@@ -121,7 +123,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 
 ##### QSV
 
-1. Unraid > Docker > (Stop) Immich container > Edit
+1. Unraid > Docker > (Stop) Frameleaf container > Edit
 2. Scroll down and select `Add another Path, Port, Variable, Label or Device`
 3. In the drop-down menu, select `Device` and an entry with any name and the value `/dev/dri`.
 4. Continue to step 4 of "Basic Setup".
@@ -139,7 +141,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 - While you can use VAAPI with NVIDIA and Intel devices, prefer the more specific APIs since they're more optimized for their respective devices
 - You can confirm the device is being recognized and used by checking its utilization (via `nvtop` for NVIDIA, `intel_gpu_top` for Intel, etc.) when transcoding. A lack of error logs when transcoding also indicates that it's being used.
 
-[hw-file]: https://github.com/immich-app/immich/releases/latest/download/hwaccel.transcoding.yml
+[hw-file]: https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.transcoding.yml
 [nvct]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 [jellyfin-lp]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#low-power-encoding
 [jellyfin-kernel-bug]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#known-issues-and-limitations-on-linux

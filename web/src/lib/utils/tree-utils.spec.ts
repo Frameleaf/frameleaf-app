@@ -1,4 +1,4 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 import { getAlbumIdPath, getLastIdSegment, TreeNode } from '$lib/utils/tree-utils';
 
 const albumLike = (overrides: Partial<AlbumResponseDto>): AlbumResponseDto =>

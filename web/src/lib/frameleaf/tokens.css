@@ -1,43 +1,388 @@
-/* Source: design/frameleaf/tokens.json. Scoped; never import prototype styles. */
+@import './base.css';
+
+/*
+ * The Frameleaf design tokens. Source of truth: ./brand-tokens.json, copied byte for byte to
+ * design/frameleaf/tokens.json; the values follow the prototype (design/frameleaf/template).
+ * Scoped to .frameleaf; never import the prototype stylesheets into production.
+ * web/src/app.css maps the same values onto the legacy UI kit and Tailwind's neutral ramp, and
+ * ./tokens.ts mirrors the numeric scales for script use.
+ *
+ * Status colours carry meaning, so every foreground token below is chosen to clear
+ * 4.5:1 against --fl-canvas, --fl-panel and --fl-raised in its own theme, and every
+ * --fl-*-text token clears 4.5:1 against the fill it sits on. The prototype's raw
+ * brand teal and blue are decorative fills there and do not clear that bar as
+ * foregrounds, so the readable per-theme values are used here instead; the brand
+ * hues themselves stay in brand-tokens.json `brand`.
+ * web/src/lib/frameleaf/tokens.spec.ts enforces both contracts.
+ */
+/*
+ * The asset viewer (`.fl-media-viewer`) is portaled outside every .frameleaf root, yet the
+ * prototype gives `.media-viewer` the same motion, material and type tokens (apple-style.css:4-7).
+ * It always takes the dark set: the viewer is black in both themes (apple-style.css:366-370).
+ *
+ * The document root carries the tokens too, following the app theme class on <html>, so
+ * surfaces that are portalled outside every .frameleaf root (toasts, legacy kit modals,
+ * tooltips) and the kit theme mapping in app.css read the same values. Only custom properties
+ * and color-scheme are set on the root: nothing here restyles a page that has no .frameleaf root.
+ */
+:root.dark,
+.fl-media-viewer,
 .frameleaf[data-theme='dark'] {
   --fl-accent: #22c55e;
   --fl-border: #303940;
+  /* The outline of a control whose edge is its only affordance: 3:1 on every surface. */
+  --fl-border-strong: #687682;
   --fl-canvas: #101416;
   --fl-muted: #a1adb8;
   --fl-panel: #171d21;
   --fl-raised: #222a30;
   --fl-text: #e5e7eb;
   --fl-accent-text: #072211;
+  /* The prototype's primary hover (styles.css `.button.primary:hover`). */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), white 10%);
+  --fl-accent-pressed: color-mix(in srgb, var(--fl-accent), black 14%);
+  --fl-teal: #0ea5a0;
+  --fl-teal-text: #04201f;
+  --fl-blue: #5794f7;
+  --fl-blue-text: #061529;
+  --fl-warning: #e4bd69;
+  --fl-warning-text: #2b1f05;
+  --fl-danger: #f16966;
+  --fl-danger-text: #2a0605;
+  /* Reserved for AI-produced content: the sparkle on a solid indigo tile (tokens.json `ai`). */
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  /* AI labels and links as text; the tile itself stays solid indigo. */
+  --fl-ai-ink: #a3a1ff;
+  /*
+   * Foregrounds on the frosted material. The material lets a photograph show through, so it can
+   * be as bright as white or as dark as black behind the panel tint; only these tokens and
+   * --fl-text are checked at 4.5:1 across both extremes and the solid fallback. --fl-muted and
+   * --fl-accent are not: use the on-material pair for secondary text and accent marks on material.
+   */
+  --fl-on-material-muted: #d3dae0;
+  --fl-on-material-accent: #8be9ab;
+  /* Elevation: 1 raised controls and cards, 2 menus and toasts, 3 floating capsules, 4 sheets. */
+  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
+  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
+  --fl-shadow-3: 0 10px 40px rgb(0 0 0 / 40%);
+  --fl-shadow-4: 0 18px 80px rgb(0 0 0 / 47%);
+  /*
+   * The viewer chrome stays dark in both themes so a photograph is judged against a
+   * neutral dark surround. The values are declared per theme rather than shared so a
+   * future light-viewer decision changes one block, and so the contrast test can
+   * assert the viewer pairs for each theme independently.
+   */
+  --fl-viewer-canvas: #08090b;
+  --fl-viewer-panel: #17181a;
+  --fl-viewer-raised: #25272b;
+  --fl-viewer-border: rgb(255 255 255 / 8%);
+  --fl-viewer-text: #f1f1f2;
+  --fl-viewer-muted: #979ba2;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: dark;
 }
+:root:not(.dark),
 .frameleaf[data-theme='light'] {
   --fl-accent: #157b40;
   --fl-border: #d6dce0;
+  --fl-border-strong: #64727d;
   --fl-canvas: #f4f6f7;
   --fl-muted: #53636d;
   --fl-panel: #ffffff;
   --fl-raised: #eef1f3;
   --fl-text: #18252b;
   --fl-accent-text: #ffffff;
+  /*
+   * Lightening the accent as the prototype does leaves white text at 4.42:1 in this theme,
+   * so the light hover darkens toward the text colour instead.
+   */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
+  --fl-accent-pressed: color-mix(in srgb, var(--fl-accent), var(--fl-text) 24%);
+  --fl-teal: #0a7673;
+  --fl-teal-text: #ffffff;
+  --fl-blue: #0b5fea;
+  --fl-blue-text: #ffffff;
+  --fl-warning: #886100;
+  --fl-warning-text: #ffffff;
+  --fl-danger: #c62828;
+  --fl-danger-text: #ffffff;
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  --fl-ai-ink: #4b49cf;
+  --fl-on-material-muted: #36434b;
+  --fl-on-material-accent: #0b4f28;
+  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 13%);
+  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 20%);
+  --fl-shadow-3: 0 10px 40px rgb(0 0 0 / 18%);
+  --fl-shadow-4: 0 18px 80px rgb(0 0 0 / 24%);
+  --fl-viewer-canvas: #08090b;
+  --fl-viewer-panel: #17181a;
+  --fl-viewer-raised: #25272b;
+  --fl-viewer-border: rgb(255 255 255 / 8%);
+  --fl-viewer-text: #f1f1f2;
+  --fl-viewer-muted: #979ba2;
+  --fl-viewer-focus: #a5d4ef;
   color-scheme: light;
 }
+:root,
+.fl-media-viewer,
 .frameleaf {
-  --fl-radius: 4px;
-  --fl-panel-radius: 6px;
+  /*
+   * Radius scale (apple-style.css): xs badges, kbd and inner chips; sm small wells and
+   * thumbnails; control buttons, fields and menu items; card cards, menus and panels; capsule
+   * floating bars; sheet dialogs and sheets; pill chips and switches.
+   */
+  --fl-radius-xs: 4px;
+  --fl-radius-sm: 6px;
+  --fl-radius: 9px;
+  --fl-radius-control: 9px;
+  --fl-radius-control-compact: 7px;
+  --fl-radius-card: 12px;
+  --fl-radius-capsule: 16px;
+  --fl-radius-dialog: 22px;
+  --fl-radius-pill: 999px;
+  /*
+   * Retained as an alias so components written against the first token pass, including
+   * shell work in flight on other branches, keep a defined radius rather than falling
+   * back to 0. New code uses --fl-radius-card or --fl-radius-control directly.
+   */
+  --fl-panel-radius: var(--fl-radius-control);
+  /* The sheet radius (apple-style.css:48 `--fl-radius-sheet`); --fl-radius-dialog is the same corner. */
+  --fl-radius-sheet: var(--fl-radius-dialog);
+  --fl-motion-fast: 120ms;
+  --fl-motion: 180ms;
+  --fl-motion-slow: 240ms;
+  --fl-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /*
+   * September 24 motion (apple-style.css:11-40): a spring with a slight settle for sheets,
+   * menus and presses, and a snappy ease for small moves. Svelte transitions read the same
+   * preference through $lib/frameleaf/motion.ts, which turns movement into crossfades.
+   */
+  --fl-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141,
+    0.281 6.7%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017,
+    1.077,
+    1.121,
+    1.149 24.3%,
+    1.159,
+    1.163,
+    1.161,
+    1.154 29.9%,
+    1.129 32.8%,
+    1.051 39.6%,
+    1.017 43.1%,
+    0.991,
+    0.977 51%,
+    0.974 53.8%,
+    0.975 57.1%,
+    0.997 69.8%,
+    1.003 76.9%,
+    1
+  );
+  --fl-snappy: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --fl-duration: 380ms;
+  /*
+   * The motion vocabulary (BRAND.md, base.css `fl-pop`/`fl-sheet`/`fl-dock`/`fl-reveal`, and the
+   * matching helpers in motion.ts). One duration per pattern so the feel is tuned here:
+   *   Press   --fl-duration-press in, --fl-duration settle, --fl-spring
+   *   Pop     --fl-duration-pop on --fl-spring, exit --fl-duration-pop-out
+   *   Sheet   --fl-duration-sheet on --fl-spring, exit --fl-duration-sheet-out on --fl-snappy
+   *   Dock    --fl-duration-dock on --fl-spring, exit --fl-duration-dock-out
+   *   Reflow  --fl-duration-dock on --fl-spring (FLIP, motion.ts animateFlip)
+   *   Hero    --fl-duration-hero on --fl-spring (view transition, app.css)
+   *   Reveal  --fl-motion on --fl-ease, --fl-stagger per item
+   * Opacity companions use --fl-duration-fade with --fl-ease. Under Reduce Motion every pattern
+   * is an opacity crossfade of --fl-duration-reduced.
+   */
+  --fl-duration-press: 90ms;
+  --fl-duration-fade: 200ms;
+  --fl-duration-pop: 320ms;
+  --fl-duration-dock: 420ms;
+  --fl-duration-sheet: 480ms;
+  --fl-duration-hero: 520ms;
+  --fl-duration-pop-out: 120ms;
+  --fl-duration-sheet-out: 180ms;
+  --fl-duration-dock-out: 200ms;
+  --fl-duration-reduced: 150ms;
+  /* Continuous indicators: one turn of the ring spinner, one breath of a skeleton. */
+  --fl-duration-spin: 800ms;
+  --fl-duration-pulse: 1600ms;
+  --fl-stagger: 30ms;
+  /* Earlier names for the same values, kept so existing rules keep working. */
+  --fl-fade: var(--fl-duration-fade);
+  --fl-duration-fast: var(--fl-motion-fast);
+  --fl-duration-base: var(--fl-motion);
+  --fl-duration-slow: var(--fl-motion-slow);
+  /*
+   * Frosted materials (apple-style.css:41-44): the panel at 72% over a blurred backdrop, with
+   * a hairline edge. Increase Contrast and Reduce Transparency swap in a solid panel below.
+   * Text on material uses --fl-text, --fl-on-material-muted or --fl-on-material-accent only.
+   */
+  --fl-material: color-mix(in srgb, var(--fl-panel) 72%, transparent);
+  --fl-material-edge: color-mix(in srgb, var(--fl-text) 12%, transparent);
+  --fl-material-blur: blur(24px) saturate(180%);
+  /*
+   * The one scrim behind every modal surface (dialogs, palettes, sheets): a dimmed, blurred
+   * backdrop. The fallback block below makes it darker and unblurred.
+   */
+  --fl-scrim: rgb(0 0 0 / 40%);
+  --fl-scrim-blur: blur(12px);
+  /*
+   * Edge-to-edge devices: chrome keeps clear of the notch and home indicator
+   * (apple-style.css:502-513). env() reads 0 where there is no inset.
+   */
+  --fl-safe-top: env(safe-area-inset-top, 0px);
+  --fl-safe-right: env(safe-area-inset-right, 0px);
+  --fl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --fl-safe-left: env(safe-area-inset-left, 0px);
+  /* SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery. */
+  --fl-family-ui: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
+  --fl-family-mono: ui-monospace, SFMono-Regular, monospace;
+  /*
+   * Type scale. Each step is a `font` shorthand (weight size/line-height family) with a matching
+   * tracking token: `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or
+   * the `fl-type-*` classes in base.css. The --fl-font-* sizes are the same steps for rules that
+   * only set a size. Nothing is below 11px. Headings are semibold and tighten as they grow: the
+   * confident voice shared with frameleaf.app. `hero` is for sign-in, first run and an empty
+   * library only.
+   */
+  --fl-font-hero: 40px;
+  --fl-font-display: 28px;
+  --fl-font-title: 22px;
+  --fl-font-headline: 18px;
+  --fl-font-size: 14px;
+  --fl-font-callout: 13px;
+  --fl-font-small: 12px;
+  --fl-font-micro: 11px;
+  --fl-type-hero: 600 var(--fl-font-hero) / 1.05 var(--fl-family-ui);
+  --fl-type-display: 600 var(--fl-font-display) / 1.15 var(--fl-family-ui);
+  --fl-type-title: 600 var(--fl-font-title) / 1.25 var(--fl-family-ui);
+  --fl-type-headline: 600 var(--fl-font-headline) / 1.3 var(--fl-family-ui);
+  --fl-type-body: 400 var(--fl-font-size) / 1.45 var(--fl-family-ui);
+  --fl-type-callout: 400 var(--fl-font-callout) / 1.4 var(--fl-family-ui);
+  --fl-type-caption: 400 var(--fl-font-small) / 1.35 var(--fl-family-ui);
+  --fl-type-micro: 600 var(--fl-font-micro) / 1.3 var(--fl-family-ui);
+  --fl-tracking-hero: -0.035em;
+  --fl-tracking-display: -0.025em;
+  --fl-tracking-title: -0.02em;
+  --fl-tracking-headline: -0.015em;
+  --fl-tracking-body: 0;
+  --fl-tracking-callout: 0;
+  --fl-tracking-caption: 0;
+  --fl-tracking-micro: 0.04em;
+  /* Anything that counts, times or aligns in a column: `font-variant-numeric: var(--fl-numeric)`. */
+  --fl-numeric: tabular-nums;
+  /* Spacing: a 4px grid. Use these for padding, gaps and margins. */
+  --fl-space-half: 2px;
+  --fl-space-1: 4px;
+  --fl-space-2: 8px;
+  --fl-space-3: 12px;
+  --fl-space-4: 16px;
+  --fl-space-5: 20px;
+  --fl-space-6: 24px;
+  --fl-space-8: 32px;
+  --fl-space-10: 40px;
+  --fl-space-12: 48px;
+  --fl-space-16: 64px;
+  /* Icon sizes: xs inline marks, sm dense rows, md default, lg toolbars, xl prominent, hero empty states. */
+  --fl-icon-xs: 12px;
+  --fl-icon-sm: 14px;
+  --fl-icon-md: 16px;
+  --fl-icon-lg: 18px;
+  --fl-icon-xl: 20px;
+  --fl-icon-hero: 28px;
+  /* Control heights: the 44px floor, 48px for touch, 34px only for opt-in compact desktop controls. */
+  --fl-control-height: 44px;
+  --fl-control-height-touch: 48px;
+  --fl-control-height-compact: 34px;
+  /* Layers, lowest to highest. The legacy kit's own layers sit on the same numbers. */
+  --fl-z-sticky: 10;
+  --fl-z-rail: 20;
+  --fl-z-popover: 30;
+  --fl-z-dock: 35;
+  --fl-z-scrim: 40;
+  --fl-z-modal: 50;
+  --fl-z-toast: 60;
+  --fl-z-menu: 70;
+  --fl-z-tooltip: 90;
+  /*
+   * One focus ring. --fl-focus-offset for controls; --fl-focus-inset for edge-to-edge items
+   * (tiles, list rows, anything clipped by its container). The viewer swaps the colour for
+   * --fl-viewer-focus and keeps the same geometry.
+   */
+  --fl-focus-ring: 2px solid var(--fl-accent);
+  --fl-focus-offset: 2px;
+  --fl-focus-inset: -2px;
+  --fl-accent-soft: color-mix(in srgb, var(--fl-accent), transparent 86%);
+  --fl-accent-soft-strong: color-mix(in srgb, var(--fl-accent), transparent 76%);
+  --fl-ai-soft: color-mix(in srgb, var(--fl-ai), transparent 84%);
+  /* Success is the brand green: one hue for "done", selection and the primary action. */
+  --fl-success: var(--fl-accent);
+  --fl-success-text: var(--fl-accent-text);
+}
+.fl-media-viewer,
+.frameleaf {
   color: var(--fl-text);
   background: var(--fl-canvas);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font: var(--fl-type-body);
+  font-size: var(--fl-font-size);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-.frameleaf :focus-visible {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: 3px;
+/*
+ * Solid fallbacks for the frosted material (apple-style.css:51-57): under Increase Contrast or
+ * Reduce Transparency the material is the opaque panel, its edge the ordinary border, and
+ * nothing behind it is blurred.
+ */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  :root,
+  .fl-media-viewer,
+  .frameleaf {
+    --fl-material: var(--fl-panel);
+    --fl-material-edge: var(--fl-border);
+    --fl-material-blur: none;
+    --fl-scrim: rgb(0 0 0 / 67%);
+    --fl-scrim-blur: none;
+  }
 }
-.frameleaf :where(button, input, select, summary) {
+/*
+ * The Display P3 accent (apple-style.css:70-77, tokens.json `accentP3`) on wide-gamut screens.
+ * web/src/lib/frameleaf/tokens.spec.ts checks it keeps the sRGB accent's contrast.
+ */
+@media (color-gamut: p3) {
+  :root.dark,
+  .frameleaf[data-theme='dark'] {
+    --fl-accent: color(display-p3 0.2 0.82 0.38);
+  }
+  :root:not(.dark),
+  .frameleaf[data-theme='light'] {
+    --fl-accent: color(display-p3 0.1 0.5 0.26);
+  }
+}
+/*
+ * `.fl-scope` is the class scope (the page area of the signed-in layout carries it): inside it the
+ * baseline's classes and the primitives work, but no element is restyled, so the pages already
+ * there keep their layout. Only what opts in by class gets the ring and the height floor:
+ * `.button`, `.fl-press`, and the primitives, which mark their controls `fl-control`.
+ */
+.frameleaf :focus-visible,
+.fl-scope :where(.button, .fl-control, .fl-press):focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+}
+/* Edge-to-edge items (tiles, list rows) draw the ring inside so their container cannot clip it. */
+.frameleaf .fl-focus-inset:focus-visible {
+  outline-offset: var(--fl-focus-inset);
+}
+.frameleaf :where(button, input, select, summary),
+.fl-scope :where(.button, .fl-control) {
   min-height: 44px;
 }
 .frameleaf :where(button, summary) {
@@ -47,7 +392,8 @@
   cursor: default;
 }
 @media (pointer: coarse) {
-  .frameleaf :where(button, input, select, summary) {
+  .frameleaf :where(button, input, select, summary),
+  .fl-scope :where(.button, .fl-control) {
     min-height: 48px;
     min-width: 48px;
   }

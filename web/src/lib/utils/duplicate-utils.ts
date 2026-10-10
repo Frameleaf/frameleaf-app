@@ -1,4 +1,4 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import {
   mdiBrightness6,
   mdiCalendar,
@@ -23,7 +23,9 @@ import {
   mdiWeightKilogram,
 } from '@mdi/js';
 import { DateTime } from 'luxon';
+import type { Translations } from 'svelte-i18n';
 import type { MessageFormatter } from 'svelte-i18n';
+import { getExifRating } from '$lib/frameleaf/rating';
 import { getAssetResolution, getFileSize } from '$lib/utils/asset-utils';
 import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
 
@@ -56,7 +58,7 @@ const getDateTime = (asset: AssetResponseDto) => {
 
 type MetadataFieldDefinition = {
   icon: string;
-  titleKey: string;
+  titleKey: Translations;
   keys: readonly string[];
   render: (asset: AssetResponseDto, $t: MessageFormatter, locale: string | undefined) => string;
   tooltip?: (asset: AssetResponseDto, $t: MessageFormatter) => string;
@@ -209,8 +211,14 @@ const metadataFields = [
     icon: mdiStarOutline,
     titleKey: 'rating',
     keys: ['rating'],
-    // eslint-disable-next-line eqeqeq
-    render: (asset, $t) => (asset.exifInfo?.rating == null ? $t('unknown') : `${asset.exifInfo.rating} stars`),
+    render: (asset, $t) => {
+      const rating = getExifRating(asset.exifInfo);
+      return rating === -1
+        ? $t('frameleaf_library_rating_rejected')
+        : rating === null
+          ? $t('unknown')
+          : `${rating} stars`;
+    },
   },
   {
     icon: mdiPhoneRotateLandscape,
@@ -273,6 +281,9 @@ const getValueForAsset = (asset: AssetResponseDto, key: MetadataFieldKey): unkno
     case 'originalFileName':
     case 'originalPath': {
       return asset[key];
+    }
+    case 'rating': {
+      return getExifRating(asset.exifInfo);
     }
     case 'fileSize': {
       return getFileSize(asset);

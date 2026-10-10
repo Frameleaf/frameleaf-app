@@ -5,13 +5,15 @@ import { Readable } from 'node:stream';
 import { text } from 'node:stream/consumers';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, ChecksumAlgorithm, IntegrityReport, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -24,7 +26,16 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(IntegrityService, {
     database: db || defaultDatabase,
-    real: [IntegrityRepository, AssetRepository, ConfigRepository, SystemMetadataRepository, ForkSchemaRepository],
+    real: [
+      IntegrityRepository,
+      AssetRepository,
+      ConfigRepository,
+      SystemMetadataRepository,
+      AssetChecksumRepository,
+      PhysicalFileRepository,
+      // FL-81: a full run gets an id for its batches (`startCheckRun`).
+      CryptoRepository,
+    ],
     mock: [LoggingRepository, EventRepository, StorageRepository, JobRepository],
   });
 };
@@ -225,6 +236,8 @@ describe(IntegrityService.name, () => {
         name: JobName.IntegrityUntrackedFiles,
         data: {
           type: 'asset',
+          // FL-81: every batch carries its run, so the last one to finish records "Last run".
+          runId: expect.any(String),
           paths: expect.arrayContaining(['/path/to/file']),
         },
       });
@@ -233,6 +246,8 @@ describe(IntegrityService.name, () => {
         name: JobName.IntegrityUntrackedFiles,
         data: {
           type: 'asset_file',
+          // FL-81: every batch carries its run, so the last one to finish records "Last run".
+          runId: expect.any(String),
           paths: expect.arrayContaining(['/path/to/file3']),
         },
       });
@@ -495,6 +510,7 @@ describe(IntegrityService.name, () => {
       expect(job.queue).toHaveBeenCalledWith({
         name: JobName.IntegrityMissingFiles,
         data: {
+          runId: expect.any(String),
           items: expect.arrayContaining([
             { path: '/path/to/file1', assetId, fileAssetId: null, reportId: null },
             { path: '/path/to/file2', assetId: assetId2, fileAssetId: null, reportId },

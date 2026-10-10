@@ -1,0 +1,15 @@
+<Container version="2">
+  <Name>frameleaf-ml</Name>
+  <Repository>@ML_REF@</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>frameleaf</Network>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
+  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
+  <Overview>Optional local search and recognition worker for Frameleaf Server.</Overview>
+  <Category>MediaApp:Photos</Category>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-ml.xml</TemplateURL>
+  <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
+  <Config Name="Model cache" Target="/cache" Default="/mnt/user/appdata/frameleaf/model-cache" Mode="rw" Description="Persistent downloaded models" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/model-cache</Config>
+</Container>

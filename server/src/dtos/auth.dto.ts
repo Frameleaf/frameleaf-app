@@ -8,6 +8,7 @@ import { toEmail } from 'src/validation.js';
 
 export type CookieResponse = {
   isSecure: boolean;
+  rememberMe?: boolean;
   values: Array<{ key: ImmichCookie; value: string | null }>;
 };
 
@@ -15,6 +16,8 @@ export const pinCodeRegex = /^\d{6}$/;
 
 export type AuthDto = {
   user: AuthUser;
+  /** Internal durable worker authority; never populated from a request. */
+  system?: true;
   apiKey?: AuthApiKey;
   sharedLink?: AuthSharedLink;
   session?: AuthSession;
@@ -27,6 +30,10 @@ const LoginCredentialSchema = z
   .object({
     email: toEmail.describe('User email').meta({ example: 'testuser@email.com' }),
     password: z.string().describe('User password').meta({ example: 'password' }),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -67,9 +74,27 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.extend({
-  name: z.string().describe('User name').meta({ example: 'Admin' }),
-}).meta({ id: 'SignUpDto' });
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
+  .extend({
+    name: z.string().describe('User name').meta({ example: 'Admin' }),
+    // FL-292: required in practice (a sign-up without either is refused with setup_code_required);
+    // optional in the schema so the request shape stays compatible
+    setupCode: z
+      .string()
+      .trim()
+      .max(32)
+      .optional()
+      .describe(
+        "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
+      ),
+    setupTicket: z
+      .string()
+      .trim()
+      .max(256)
+      .optional()
+      .describe('Instead of the code: a setup ticket from POST server/setup/code, from the same device'),
+  })
+  .meta({ id: 'SignUpDto' });
 
 const ChangePasswordSchema = z
   .object({
@@ -106,9 +131,13 @@ const ValidateAccessTokenResponseSchema = z
   })
   .meta({ id: 'ValidateAccessTokenResponseDto' });
 
-const OAuthCallbackSchema = z
+export const OAuthCallbackSchema = z
   .object({
     url: z.string().min(1).describe('OAuth callback URL'),
+    rememberMe: z
+      .boolean()
+      .optional()
+      .describe('Persist authentication cookies across browser sessions (default true)'),
     state: z.string().optional().describe('OAuth state parameter'),
     codeVerifier: z.string().optional().describe('OAuth code verifier (PKCE)'),
   })

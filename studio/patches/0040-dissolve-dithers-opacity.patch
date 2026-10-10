@@ -1,0 +1,362 @@
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -852,8 +852,12 @@
+   }
+   // Frameleaf (FL-98): a preview renderer captures signal frames for the scopes repeatedly, so
+   // the conversion target and its readback buffer are kept while the frame size stays the same.
+-  let signalTargets: { width: number; height: number; output: GPUTexture; buffer: GPUBuffer } | null =
+-    null
++  let signalTargets: {
++    width: number
++    height: number
++    output: GPUTexture
++    buffer: GPUBuffer
++  } | null = null
+   const signalTargetsFor = (device: GPUDevice, width: number, height: number) => {
+     if (signalTargets && signalTargets.width === width && signalTargets.height === height) {
+       return signalTargets
+@@ -2402,8 +2406,12 @@
+       gpu.setWorkingRange(colorManagement.workingRange)
+       const hdrWorking = colorManagement.workingRange === 'hdr'
+       const floatRoute = hdrWorking || floatCapture !== null
++      // Dissolve is dithered at compositing (FL-99), which the direct path skips.
++      const directTaskIsDissolve =
++        renderTasks[0]?.type === 'item' &&
++        getEffectiveBlendMode(getCurrentItem(renderTasks[0].item)) === 'dissolve'
+       const shouldDirectRenderSingleTask =
+-        frameOptimization.shouldDirectRenderSingleTask && !floatRoute
++        frameOptimization.shouldDirectRenderSingleTask && !floatRoute && !directTaskIsDissolve
+       const { shouldUseDeferredGpuBatch } = frameOptimization
+       const hasNonNormalBlend = renderTasks.some(
+         (t) =>
+--- a/src/features/export/utils/frame-compositing.ts
++++ b/src/features/export/utils/frame-compositing.ts
+@@ -1,6 +1,7 @@
+ import type { TimelineItem } from '@/types/timeline'
+ import { createLogger } from '@/shared/logging/logger'
+ import { getCompositeOperation } from '@/types/blend-mode-css'
++import { drawDissolved } from '@/shared/graphics/dissolve-dither'
+ import { doesMaskAffectTrack } from '@/shared/utils/mask-scope'
+ import { hasCornerPin, type FrameRenderTask } from '@/features/export/deps/composition-runtime'
+ import { DEFAULT_LAYER_PARAMS, type CompositeLayer } from '@/infrastructure/gpu-compositor'
+@@ -15,6 +16,28 @@
+   return createLogger('ClientRenderEngine')
+ }
+ 
++/**
++ * Canvas2D compositing of one rendered layer. Dissolve has no composite operation:
++ * its opacity is dithered first (FL-99 owner decision; see dissolve-dither.ts).
++ */
++function drawCanvasLayer(
++  ctx: OffscreenCanvasRenderingContext2D,
++  source: OffscreenCanvas,
++  blendMode: TimelineItem['blendMode'],
++): void {
++  if (blendMode === 'dissolve') {
++    drawDissolved(ctx, source)
++    return
++  }
++  if (blendMode && blendMode !== 'normal') {
++    ctx.globalCompositeOperation = getCompositeOperation(blendMode)
++  }
++  ctx.drawImage(source, 0, 0)
++  if (blendMode && blendMode !== 'normal') {
++    ctx.globalCompositeOperation = 'source-over'
++  }
++}
++
+ export interface FrameCompositingDeps {
+   useGpuCompositor: boolean
+   gpu: GpuPipelineManager
+@@ -278,15 +301,7 @@
+           }
+           const blendMode =
+             task.type === 'item' ? getEffectiveBlendMode(getCurrentItem(task.item)) : undefined
+-          if (blendMode && blendMode !== 'normal') {
+-            contentCtx.globalCompositeOperation = getCompositeOperation(blendMode)
+-          }
+-
+-          contentCtx.drawImage(fallbackSource, 0, 0)
+-
+-          if (blendMode && blendMode !== 'normal') {
+-            contentCtx.globalCompositeOperation = 'source-over'
+-          }
++          drawCanvasLayer(contentCtx, fallbackSource, blendMode)
+           if (fallbackResult !== result) {
+             for (const c of fallbackResult.poolCanvases) canvasPool.release(c)
+           }
+@@ -328,16 +343,8 @@
+ 
+       const blendMode =
+         task.type === 'item' ? getEffectiveBlendMode(getCurrentItem(task.item)) : undefined
+-      if (blendMode && blendMode !== 'normal') {
+-        contentCtx.globalCompositeOperation = getCompositeOperation(blendMode)
+-      }
++      drawCanvasLayer(contentCtx, result.source, blendMode)
+ 
+-      contentCtx.drawImage(result.source, 0, 0)
+-
+-      if (blendMode && blendMode !== 'normal') {
+-        contentCtx.globalCompositeOperation = 'source-over'
+-      }
+-
+       for (const c of result.poolCanvases) canvasPool.release(c)
+     }
+   }
+--- a/src/features/preview/hooks/use-gpu-effects-overlay.test.ts
++++ b/src/features/preview/hooks/use-gpu-effects-overlay.test.ts
+@@ -575,18 +575,16 @@
+     })
+ 
+     expect(
+-      shouldForceContinuousPreviewOverlayInWindow(
+-        [effected],
+-        0,
+-        { startFrame: 497, endFrameExclusive: 509 },
+-      ),
++      shouldForceContinuousPreviewOverlayInWindow([effected], 0, {
++        startFrame: 497,
++        endFrameExclusive: 509,
++      }),
+     ).toBe(true)
+     expect(
+-      shouldForceContinuousPreviewOverlayInWindow(
+-        [effected],
+-        0,
+-        { startFrame: 0, endFrameExclusive: 9 },
+-      ),
++      shouldForceContinuousPreviewOverlayInWindow([effected], 0, {
++        startFrame: 0,
++        endFrameExclusive: 9,
++      }),
+     ).toBe(false)
+   })
+ 
+@@ -598,18 +596,16 @@
+     })
+ 
+     expect(
+-      shouldForceContinuousPreviewOverlayInWindow(
+-        [effected],
+-        0,
+-        { startFrame: 499, endFrameExclusive: 511 },
+-      ),
++      shouldForceContinuousPreviewOverlayInWindow([effected], 0, {
++        startFrame: 499,
++        endFrameExclusive: 511,
++      }),
+     ).toBe(true)
+     expect(
+-      shouldForceContinuousPreviewOverlayInWindow(
+-        [effected],
+-        0,
+-        { startFrame: 500, endFrameExclusive: 512 },
+-      ),
++      shouldForceContinuousPreviewOverlayInWindow([effected], 0, {
++        startFrame: 500,
++        endFrameExclusive: 512,
++      }),
+     ).toBe(false)
+   })
+ })
+@@ -650,3 +646,58 @@
+     ).toBe(true)
+   })
+ })
++
++// FL-99 owner decision (2026-09-29): a Dissolve item dithers its total opacity, which
++// only the engine can draw, so the preview must show the engine surface for it, never
++// the DOM player, and switch to it before the item enters and after it leaves.
++describe('Dissolve always previews through the engine surface (FL-99)', () => {
++  const dissolve = (overrides: Partial<TimelineItem> = {}) =>
++    createVideoItem({
++      id: 'dissolve',
++      from: 300,
++      durationInFrames: 60,
++      blendMode: 'dissolve',
++      ...overrides,
++    })
++  const windowAt = (frame: number, isPlaying: boolean, playbackRate = 1) =>
++    getContinuousPreviewOverlayFrameWindow({
++      frame,
++      fps: 30,
++      isPlaying,
++      isPreviewing: false,
++      playbackRate,
++    })
++
++  it('uses the engine surface on a paused frame showing a translucent Dissolve item', () => {
++    const item = dissolve({
++      transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, opacity: 0.4 },
++    })
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(320, false))).toBe(true)
++    expect(shouldForceContinuousPreviewOverlay([item], [], 320)).toBe(true)
++  })
++
++  it('switches before the item enters during playback and holds after it leaves, so nothing flashes', () => {
++    const item = dissolve()
++    // Forward playback: pre-armed inside the lookahead before frame 300.
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(292, true))).toBe(true)
++    // Held just past the end (frame 360 is the first frame without it).
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(361, true))).toBe(true)
++    // Reverse playback pre-arms behind the playhead.
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(367, true, -1))).toBe(
++      true,
++    )
++    // Far away, the ordinary DOM player keeps playback cheap.
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(100, true))).toBe(false)
++    expect(shouldForceContinuousPreviewOverlayInWindow([item], [], windowAt(400, false))).toBe(
++      false,
++    )
++  })
++
++  it('uses the engine surface for a Dissolve item inside a compound clip', () => {
++    const subComp = createSubComposition([dissolve({ id: 'inner', from: 0 })])
++    const comp = createCompositionItem({ from: 0, durationInFrames: 120 })
++    expect(
++      shouldForceContinuousPreviewOverlay([comp], [], 10, undefined, { [subComp.id]: subComp }),
++    ).toBe(true)
++  })
++})
+--- a/src/infrastructure/gpu-shared/blend-modes.ts
++++ b/src/infrastructure/gpu-shared/blend-modes.ts
+@@ -253,9 +253,14 @@
+ ) -> vec4f {
+   var srcAlpha = clamp(sourceAlpha, 0.0, 1.0);
+   if (mode == 1u) {
+-    let ditherAlpha = clamp(dissolveAlpha, 0.0, 1.0);
+-    let coverage = compositeDissolveAlpha(ditherAlpha, seed);
+-    srcAlpha = coverage * clamp(srcAlpha / max(ditherAlpha, 0.00001), 0.0, 1.0);
++    // FL-99 owner decision (2026-09-29), a deliberate exception to Freecut parity:
++    // Dissolve dithers the pixel's opacity (item opacity times content alpha, as
++    // Photoshop does) into all-or-nothing coverage. The item's opacity reaches the
++    // compositor as texture alpha, so dithering only the layer opacity uniform (always
++    // 1 in production) never dissolved anything. The pattern depends only on the
++    // pixel position: frames are reproducible and a held opacity does not flicker.
++    // \`dissolveAlpha\` (the layer opacity) is already part of \`sourceAlpha\`.
++    srcAlpha = compositeDissolveAlpha(srcAlpha, seed);
+   }
+   srcAlpha *= clamp(postDissolveAlpha, 0.0, 1.0);
+   if (srcAlpha <= 0.0) {
+--- /dev/null
++++ b/src/shared/graphics/dissolve-dither.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { dissolveCovers, dissolveThreshold, ditherAlphaInPlace } from './dissolve-dither'
++
++describe('dissolve dither (FL-99 owner decision)', () => {
++  it('is deterministic and depends only on the pixel position', () => {
++    expect(dissolveThreshold(12, 34)).toBe(dissolveThreshold(12, 34))
++    const values = new Set(Array.from({ length: 64 }, (_, i) => dissolveThreshold(i, 7)))
++    expect(values.size).toBeGreaterThan(48)
++    for (const v of values) {
++      expect(v).toBeGreaterThanOrEqual(0)
++      expect(v).toBeLessThan(1)
++    }
++  })
++
++  it('covers nothing at 0, everything at 1, and about the opacity in between', () => {
++    const N = 128
++    for (const opacity of [0, 0.25, 0.5, 0.75, 1]) {
++      let covered = 0
++      for (let y = 0; y < N; y++)
++        for (let x = 0; x < N; x++) if (dissolveCovers(x, y, opacity)) covered++
++      const fraction = covered / (N * N)
++      if (opacity === 0 || opacity === 1) expect(fraction).toBe(opacity)
++      else expect(Math.abs(fraction - opacity)).toBeLessThan(0.03)
++    }
++  })
++
++  it('makes every alpha all-or-nothing and leaves colour and exact alphas alone', () => {
++    const W = 16
++    const H = 16
++    const data = new Uint8ClampedArray(W * H * 4)
++    for (let i = 0; i < W * H; i++)
++      data.set([10, 20, 30, i % 3 === 0 ? 128 : i % 3 === 1 ? 0 : 255], i * 4)
++    const before = Uint8ClampedArray.from(data)
++    ditherAlphaInPlace(data, W, H)
++    for (let i = 0; i < W * H; i++) {
++      expect([0, 255]).toContain(data[i * 4 + 3])
++      expect(Array.from(data.slice(i * 4, i * 4 + 3))).toEqual([10, 20, 30])
++      if (before[i * 4 + 3] === 0 || before[i * 4 + 3] === 255)
++        expect(data[i * 4 + 3]).toBe(before[i * 4 + 3])
++    }
++    const again = Uint8ClampedArray.from(before)
++    ditherAlphaInPlace(again, W, H)
++    expect(again).toEqual(data)
++  })
++})
+--- /dev/null
++++ b/src/shared/graphics/dissolve-dither.ts
+@@ -0,0 +1,71 @@
++/**
++ * FL-99 owner decision (2026-09-29): Dissolve dithers each pixel's total opacity
++ * (item opacity times content alpha, as Photoshop does) into all-or-nothing coverage
++ * on every route, a deliberate exception to Freecut SDR parity. The GPU routes do it
++ * in the shared compositor WGSL (`compositeBlendSourceOver`); this is the same rule
++ * for the Canvas2D compositing fallback. The DOM player never shows a Dissolve item:
++ * like every non-normal blend mode it routes the preview to the engine surface (see
++ * use-gpu-effects-overlay.ts), so preview and export draw the same pixels. The
++ * threshold depends only on the pixel position, so a frame is reproducible and a held
++ * opacity does not flicker. It is the WGSL hash in 32-bit float, over pixel centres.
++ */
++
++const f = Math.fround
++const fract = (v: number) => f(v - Math.floor(v))
++
++/** Deterministic threshold in [0, 1) for pixel (x, y). */
++export function dissolveThreshold(x: number, y: number): number {
++  const px = f(x + 0.5)
++  const py = f(y + 0.5)
++  const p3 = [fract(f(px * 0.1031)), fract(f(py * 0.1031)), fract(f(px * 0.1031))]
++  const d = f(
++    f(p3[0]! * f(p3[1]! + 33.33)) +
++      f(f(p3[1]! * f(p3[2]! + 33.33)) + f(p3[2]! * f(p3[0]! + 33.33))),
++  )
++  const q = [f(p3[0]! + d), f(p3[1]! + d), f(p3[2]! + d)]
++  return fract(f(f(q[0]! + q[1]!) * q[2]!))
++}
++
++/** Whether pixel (x, y) is covered at `opacity` (0 never, 1 always). */
++export function dissolveCovers(x: number, y: number, opacity: number): boolean {
++  return dissolveThreshold(x, y) < opacity
++}
++
++/**
++ * Dithers straight-alpha RGBA pixels in place: each alpha becomes 0 or 255, covered
++ * with the probability of its opacity. Colour is left as it is.
++ */
++export function ditherAlphaInPlace(data: Uint8ClampedArray, width: number, height: number): void {
++  for (let y = 0; y < height; y++) {
++    for (let x = 0; x < width; x++) {
++      const i = (y * width + x) * 4 + 3
++      const alpha = data[i]!
++      if (alpha === 0 || alpha === 255) continue
++      data[i] = dissolveCovers(x, y, alpha / 255) ? 255 : 0
++    }
++  }
++}
++
++type Canvas2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
++
++/**
++ * Draws `source` onto `ctx` with Dissolve: its pixels' opacity dithered, then drawn
++ * over the destination. The source is copied, never modified.
++ */
++export function drawDissolved(ctx: Canvas2D, source: OffscreenCanvas | HTMLCanvasElement): void {
++  const { width, height } = source
++  const scratch = new OffscreenCanvas(width, height)
++  const scratchCtx = scratch.getContext('2d', { willReadFrequently: true })
++  if (!scratchCtx) {
++    ctx.drawImage(source, 0, 0)
++    return
++  }
++  scratchCtx.drawImage(source, 0, 0)
++  const image = scratchCtx.getImageData(0, 0, width, height)
++  ditherAlphaInPlace(image.data, width, height)
++  scratchCtx.putImageData(image, 0, 0)
++  const previous = ctx.globalCompositeOperation
++  ctx.globalCompositeOperation = 'source-over'
++  ctx.drawImage(scratch, 0, 0)
++  ctx.globalCompositeOperation = previous
++}

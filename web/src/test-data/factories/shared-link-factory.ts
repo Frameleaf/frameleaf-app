@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
+import { SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
 
 export const sharedLinkFactory = Sync.makeFactory<SharedLinkResponseDto>({
@@ -16,4 +16,5 @@ export const sharedLinkFactory = Sync.makeFactory<SharedLinkResponseDto>({
   allowDownload: Sync.each(() => faker.datatype.boolean()),
   showMetadata: Sync.each(() => faker.datatype.boolean()),
   slug: null,
+  url: null,
 });

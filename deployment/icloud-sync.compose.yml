@@ -1,14 +1,16 @@
 # Overlay the release's existing Compose file. All source paths must be absolute.
+# FL-294: IMMICH_FORK_IMAGE, IMMICH_UID, IMMICH_GID and IMMICH_SOURCE_ROOT still work in place of the
+# FRAMELEAF_* names.
 services:
-  immich-server:
-    image: ${IMMICH_FORK_IMAGE:?Set the tested fork image tag or digest}
-    user: '${IMMICH_UID:-1000}:${IMMICH_GID:-1000}'
+  frameleaf-server:
+    image: ${FRAMELEAF_IMAGE:-${IMMICH_FORK_IMAGE:?Set FRAMELEAF_IMAGE to the tested Frameleaf image tag or digest}}
+    user: '${FRAMELEAF_UID:-${IMMICH_UID:-1000}}:${FRAMELEAF_GID:-${IMMICH_GID:-1000}}'
     environment:
-      IMMICH_ICLOUD_BRIDGE_URL: https://icloud-bridge:9443
-      IMMICH_ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token
-      IMMICH_ICLOUD_KEY_FILE: /run/secrets/icloud_encryption_key
-      IMMICH_ICLOUD_CA_FILE: /run/secrets/icloud_bridge_ca
-      IMMICH_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
+      FRAMELEAF_ICLOUD_BRIDGE_URL: https://icloud-bridge:9443
+      FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token
+      FRAMELEAF_ICLOUD_KEY_FILE: /run/secrets/icloud_encryption_key
+      FRAMELEAF_ICLOUD_CA_FILE: /run/secrets/icloud_bridge_ca
+      FRAMELEAF_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
     secrets:
       - icloud_bridge_token
       - icloud_encryption_key
@@ -28,12 +30,12 @@ services:
 
   icloud-bridge:
     build:
-      context: ${IMMICH_SOURCE_ROOT:?Set the absolute path to this fork checkout}/icloud-bridge
+      context: ${FRAMELEAF_SOURCE_ROOT:-${IMMICH_SOURCE_ROOT:?Set FRAMELEAF_SOURCE_ROOT to the absolute path of this checkout}}/icloud-bridge
       args:
-        UID: ${IMMICH_UID:-1000}
-        GID: ${IMMICH_GID:-1000}
+        UID: ${FRAMELEAF_UID:-${IMMICH_UID:-1000}}
+        GID: ${FRAMELEAF_GID:-${IMMICH_GID:-1000}}
     image: immich-icloud-bridge:rclone-1.75.1
-    user: '${IMMICH_UID:-1000}:${IMMICH_GID:-1000}'
+    user: '${FRAMELEAF_UID:-${IMMICH_UID:-1000}}:${FRAMELEAF_GID:-${IMMICH_GID:-1000}}'
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -42,7 +44,7 @@ services:
     mem_limit: 512m
     cpus: 1.0
     tmpfs:
-      - /tmp:size=16m,mode=0700,uid=${IMMICH_UID:-1000},gid=${IMMICH_GID:-1000}
+      - /tmp:size=16m,mode=0700,uid=${FRAMELEAF_UID:-${IMMICH_UID:-1000}},gid=${FRAMELEAF_GID:-${IMMICH_GID:-1000}}
     environment:
       ICLOUD_BRIDGE_LISTEN: :9443
       ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token

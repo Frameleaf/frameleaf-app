@@ -1,0 +1,7 @@
+{
+  "code": "invalid_dpop_proof",
+  "message": "The DPoP proof isn't valid. Send a fresh proof signed by the server key.",
+  "retryable": false,
+  "detail": "replayed",
+  "requestId": "req_01J8ZK3M4N5P6Q7T"
+}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { castManager, CastState } from '$lib/managers/cast-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { Icon, IconButton, LoadingSpinner } from '@immich/ui';
+  import { Icon, IconButton, LoadingSpinner } from '@frameleaf/ui';
   import { mdiCastConnected, mdiPause, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -73,7 +73,7 @@
   <span>{$t('connected_to')} {castManager.receiverName}</span>
 </span>
 
-<img src={poster} alt="poster" class="m-4 rounded-xl" />
+<img src={poster} alt="" class="m-4 rounded-xl" />
 
 <div class="flex place-content-center place-items-center">
   {#if castManager.castState === CastState.BUFFERING}

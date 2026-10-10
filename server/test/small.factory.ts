@@ -10,8 +10,8 @@ export const newUuids = () => Array.from({ length: 100 }, () => 0).map(() => new
 export const newDate = () => new Date();
 export const newUuidV7 = () => v7();
 export const newSha1 = () => Buffer.from('this is a fake hash');
-export const newEmbedding = () => {
-  const embedding = Array.from({ length: 512 }, () => 0).map(() => Math.random());
+export const newEmbedding = (dimensions = 512) => {
+  const embedding = Array.from({ length: dimensions }, () => 0).map(() => Math.random());
   return '[' + embedding + ']';
 };
 
@@ -88,7 +88,7 @@ const authUserFactory = (authUser: Partial<AuthUser> = {}) => {
     id = newUuid(),
     isAdmin = false,
     name = 'Test User',
-    email = 'test@immich.cloud',
+    email = 'test@example.com',
     quotaUsageInBytes = 0,
     quotaSizeInBytes = null,
   } = authUser;
@@ -110,7 +110,7 @@ const userAdminFactory = (user: Partial<UserAdmin> = {}) => {
   const {
     id = newUuid(),
     name = 'Test User',
-    email = 'test@immich.cloud',
+    email = 'test@example.com',
     profileImagePath = '',
     profileChangedAt = newDate(),
     storageLabel = null,
@@ -223,6 +223,12 @@ export const factory = {
     validationError: (errors?: ReadonlyArray<{ path: ReadonlyArray<string | number>; message: string }>) => ({
       message: 'Validation failed',
       errors: errors ? expect.arrayContaining(errors.map((e) => expect.objectContaining(e))) : expect.any(Array),
+      displayError: {
+        version: 1,
+        code: 'request_validation_failed',
+        args: {},
+        fallback: { locale: 'en', message: 'This request could not be accepted.' },
+      },
     }),
   },
 };

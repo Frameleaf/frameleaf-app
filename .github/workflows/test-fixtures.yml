@@ -1,0 +1,29 @@
+name: Frameleaf frozen media fixtures
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  archive:
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve the frozen attributed fixture source
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Archive the owned fixture input with checksums
+        run: |
+          mkdir -p "$RUNNER_TEMP/frameleaf-fixtures"
+          tar --exclude=.git -czf "$RUNNER_TEMP/frameleaf-fixtures/frameleaf-test-assets-6742055402de1aa48f93d12ded7d18f4057f9d1f.tar.gz" -C e2e/test-assets .
+          cd "$RUNNER_TEMP/frameleaf-fixtures"
+          sha256sum *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: frameleaf-test-assets-6742055402de1aa48f93d12ded7d18f4057f9d1f
+          path: ${{ runner.temp }}/frameleaf-fixtures/
+          if-no-files-found: error
+          retention-days: 30

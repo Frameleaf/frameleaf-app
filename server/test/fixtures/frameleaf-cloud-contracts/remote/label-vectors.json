@@ -1,0 +1,9 @@
+{
+  "algorithm": "lowercase RFC 4648 base32 (no padding) of SHA-256(UTF-8 instance id)[0..10)",
+  "vectors": [
+    { "instanceId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53", "sha256Prefix80": "a6b5daaf2790d67b1f8b", "label": "u225vlzhsdlhwh4l" },
+    { "instanceId": "01930000-0000-7000-8000-000000000000", "sha256Prefix80": "ac5aa4003b3ccfb93fce", "label": "vrnkiab3hth3sp6o" },
+    { "instanceId": "019a2b3c-4d5e-7f60-8a1b-2c3d4e5f6a7b", "sha256Prefix80": "7de18ffc5e4d50d2ce43", "label": "pxqy77c6jvinftsd" },
+    { "instanceId": "ffffffff-ffff-7fff-bfff-ffffffffffff", "sha256Prefix80": "7125058c2df83728f343", "label": "oesqldbn7a3sr42d" }
+  ]
+}

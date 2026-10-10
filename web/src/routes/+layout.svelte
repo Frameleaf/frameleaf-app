@@ -1,12 +1,17 @@
 <script lang="ts">
-  import { afterNavigate, beforeNavigate } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { getPagesProvider, getSettingsProvider } from '$lib/commands';
-  import DownloadPanel from './DownloadPanel.svelte';
+  import { clearOAuthContinue } from '$lib/frameleaf/auth-session-preference';
+  import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
+  import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
+  import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
+  import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
+  import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
+  import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
+  import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
-  import UploadPanel from './UploadPanel.svelte';
   import VersionAnnouncement from './VersionAnnouncement.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -17,34 +22,62 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
-  import { getServerConfig } from '@immich/sdk';
+  import { installFrameleafKit } from '$lib/frameleaf/kit-bridge';
+  import { heroNavigation, installHeroIntent, sectionCrossfade } from '$lib/frameleaf/motion';
+  import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
+  import { applyThemeColor } from '$lib/frameleaf/theme-color';
+  import { viewerZoomTransition } from '$lib/frameleaf/viewer-zoom';
+  import frameleafLogoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
+  import frameleafSymbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
+  import { getServerConfig } from '@frameleaf/sdk';
   import {
-    CommandPaletteProvider,
-    CORE_PAGE_COMMANDS,
-    defaultProvider,
-    MOBILE_APP_COMMANDS,
+    logoManager,
     modalManager,
-    OTHER_SITE_COMMANDS,
-    PROJECT_SUPPORT_COMMANDS,
-    ScreencastOverlay,
     setLocale,
     setTranslations,
-    SOCIAL_COMMANDS,
     Theme,
     themeManager,
-    toastManager,
     TooltipProvider,
-  } from '@immich/ui';
+  } from '@frameleaf/ui';
   import { En } from 'media-chrome/lang/en';
   import { addTranslation } from 'media-chrome/utils/i18n';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import '../app.css';
+  // The brand tokens, on the document root for every page (BRAND.md). After app.css so the
+  // shared layer order is already declared.
+  import '$lib/frameleaf/tokens.css';
+
+  trackSessionModals(modalManager);
+  // The legacy kit takes the brand: Frameleaf toasts and the one confirmation dialog.
+  installFrameleafKit();
+
+  // FL-35: a photo grows out of its thumbnail into the viewer and back (interactions.js viewerTransition).
+  // A card that opens a page travels into it (`data-fl-shared`, $lib/frameleaf/motion heroNavigation).
+  // Any other move between sections of the app crossfades instead of cutting (BRAND.md "Hero").
+  onNavigate(
+    (navigation) => viewerZoomTransition(navigation) ?? heroNavigation(navigation) ?? sectionCrossfade(navigation),
+  );
+
+  // The browser chrome follows the app theme, not the OS colour scheme (App.jsx:2193-2203).
+  $effect(() => applyThemeColor(themeManager.value === Theme.Dark ? 'dark' : 'light'));
 
   interface Props {
     children?: Snippet;
   }
+
+  // FL-135: app-owned marks render through $lib/components/frameleaf/Logo.svelte. This only swaps the
+  // mark @frameleaf/ui draws inside its own components (the Modal header icon, SupporterBadge) so no
+  // vendored Immich logo is shown. The kit ships no light-background wordmark, so light lockups
+  // fall back to the gradient symbol, mirroring Logo.svelte's rule.
+  const frameleafLockup = { light: frameleafSymbolUrl, dark: frameleafLogoDarkUrl };
+  logoManager.setLogo({
+    stacked: frameleafLockup,
+    unstacked: frameleafLockup,
+    stacked_futo: frameleafLockup,
+    icon: frameleafSymbolUrl,
+  });
 
   const MediaChromeDefaultKeys = [
     'Start airplay',
@@ -167,12 +200,27 @@
 
   let showNavigationLoadingBar = $state(false);
 
-  toastManager.setOptions({ class: 'top-16 fixed' });
-
   onMount(() => {
     const element = document.querySelector('#stencil');
     element?.remove();
-    // if the browser theme changes, changes the Immich theme too
+    // FL-83: the root owns lock retries even when a PIN route or dialog has unmounted.
+    sessionAccess.retryLock = requestSessionLock;
+    const stopWatchingLockOwner = watchSessionLockOwner();
+    // Only a signed-in session has anything to lock; a signed-out tab keeps the flag until the next
+    // sign-in or sign-out drops it.
+    if (sessionAccess.lockPending && authManager.authenticated) {
+      void requestSessionLock();
+    }
+    // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
+    const removeSearchShortcuts = installSearchShortcuts();
+    // The press that starts a card-to-page Hero transition.
+    const removeHeroIntent = installHeroIntent();
+    return () => {
+      removeHeroIntent();
+      sessionAccess.retryLock = undefined;
+      stopWatchingLockOwner();
+      removeSearchShortcuts?.();
+    };
   });
 
   eventManager.emit('AppInit');
@@ -195,8 +243,13 @@
     showNavigationLoadingBar = true;
   });
 
-  afterNavigate(() => {
+  afterNavigate(({ to }) => {
     showNavigationLoadingBar = false;
+    // FL-80: an OAuth sign-in's continue address is used up once the tab has left the login page
+    // (see `onSuccess` in auth/login/+page.svelte)
+    if (to?.route.id && to.route.id !== '/auth/login') {
+      clearOAuthContinue();
+    }
   });
 
   const { serverRestarting } = websocketStore;
@@ -214,12 +267,20 @@
       return;
     }
 
-    if (maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location)) {
+    // FL-80 M-4: the maintenance page shows its own "Maintenance is finished" state with "Open Frameleaf".
+    if (
+      maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location) &&
+      !location.pathname.startsWith(Route.maintenanceMode())
+    ) {
       modalManager.show(ServerRestartingModal, {}).catch((error) => console.error('Error [ServerRestartBox]:', error));
     }
   });
 
   const onWebsocketConnect = async () => {
+    // The maintenance page owns its finished state and explicit return action.
+    if (location.pathname.startsWith(Route.maintenanceMode())) {
+      return;
+    }
     const isRestarting = get(serverRestarting);
     if (isRestarting && maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location)) {
       const { maintenanceMode } = await getServerConfig();
@@ -235,10 +296,8 @@
 <VersionAnnouncement />
 
 <svelte:head>
-  <title>{page.data.meta?.title || 'Web'} - Immich</title>
+  <title>{page.data.meta?.title ? `${page.data.meta.title} - Frameleaf` : 'Frameleaf'}</title>
   <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
-  <meta name="theme-color" content="white" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="black" media="(prefers-color-scheme: dark)" />
 
   {#if page.data.meta}
     <meta name="description" content={page.data.meta.description} />
@@ -256,30 +315,26 @@
   {/if}
 </svelte:head>
 
+<!-- FL-34: nothing (panels included) renders until the session's elevated access is verified -->
+<!-- FL-83: a pending local lock (persisted across reloads) keeps everything behind the root shield -->
 <TooltipProvider>
-  {#if page.data.error}
-    <ErrorLayout error={page.data.error}></ErrorLayout>
-  {:else}
-    {@render children?.()}
-  {/if}
+  <SessionLockShield active={sessionAccess.lockPending && authManager.authenticated}>
+    <SessionPrivacyGuard>
+      {#if page.data.error}
+        <ErrorLayout error={page.data.error}></ErrorLayout>
+      {:else}
+        {@render children?.()}
+      {/if}
 
-  {#if showNavigationLoadingBar}
-    <NavigationLoadingBar />
-  {/if}
+      {#if showNavigationLoadingBar}
+        <NavigationLoadingBar />
+      {/if}
 
-  <DownloadPanel />
-  <UploadPanel />
-  <ScreencastOverlay />
-
-  <CommandPaletteProvider
-    providers={[
-      getPagesProvider($t),
-      getSettingsProvider($t),
-      defaultProvider({ name: $t('documentation'), types: ['doc', 'documentation'], actions: CORE_PAGE_COMMANDS }),
-      defaultProvider({ name: $t('support'), actions: PROJECT_SUPPORT_COMMANDS }),
-      defaultProvider({ name: 'Socials', types: ['social', 'socials'], actions: SOCIAL_COMMANDS }),
-      defaultProvider({ name: $t('mobile_app'), actions: MOBILE_APP_COMMANDS }),
-      defaultProvider({ name: 'Sites', types: ['site', 'sites'], actions: OTHER_SITE_COMMANDS }),
-    ]}
-  />
+      <!-- App.jsx PanelDock: uploads above downloads. -->
+      <PanelDock>
+        <UploadPanel />
+        <DownloadPanel />
+      </PanelDock>
+    </SessionPrivacyGuard>
+  </SessionLockShield>
 </TooltipProvider>

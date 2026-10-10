@@ -1,6 +1,6 @@
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { lang } from '$lib/stores/preferences.store';
-import { langs } from '$lib/utils/i18n';
+import { convertBCP47, langs } from '$lib/utils/i18n';
 
 class LanguageManager {
   constructor() {
@@ -28,7 +28,12 @@ class LanguageManager {
 
     this.rtl = item.rtl ?? false;
 
-    document.body.setAttribute('dir', item.rtl ? 'rtl' : 'ltr');
+    const dir = item.rtl ? 'rtl' : 'ltr';
+    document.body.setAttribute('dir', dir);
+    // FL-139: the page's language and direction for assistive technology and the browser (WCAG 3.1.1);
+    // the keys-only development language keeps English
+    document.documentElement.lang = item.code === 'dev' ? 'en' : convertBCP47(item.code);
+    document.documentElement.dir = dir;
 
     eventManager.emit('LanguageChange', item);
   }

@@ -1,4 +1,4 @@
-import { LoginResponseDto } from '@immich/sdk';
+import { LoginResponseDto } from '@frameleaf/sdk';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -111,7 +111,7 @@ describe('/admin/maintenance', () => {
       it('should fail without cookie or token in body', async () => {
         const { status, body } = await request(app).post('/admin/maintenance/login').send({});
         expect(status).toBe(401);
-        expect(body).toEqual({ message: 'Missing JWT Token' });
+        expect(body).toEqual(errorDto.unauthorized('Missing JWT Token'));
       });
 
       it('should succeed with cookie', async () => {

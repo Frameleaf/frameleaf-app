@@ -1,0 +1,608 @@
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -695,6 +695,16 @@
+   }
+
+   if (participant.item.type === 'image') {
++    if (rctx.hdrRaster?.has(participant.item.mediaId)) {
++      const raster = rctx.hdrRaster.frameTexture(participant.item.mediaId!)
++      return {
++        kind: 'media',
++        item: participant.item,
++        texture: raster.texture,
++        sourceWidth: raster.width,
++        sourceHeight: raster.height,
++      }
++    }
+     const loadedImage = rctx.imageElements.get(participant.item.id)
+     if (!loadedImage) return null
+     return {
+--- /dev/null
++++ b/src/features/export/utils/canvas-item-renderer/image.hdr.test.ts
+@@ -0,0 +1,77 @@
++import { expect, it, vi } from 'vitest'
++import { renderImageItem } from './image'
++import {
++  createItemRenderContext,
++  createMockCanvasContext,
++} from '@/features/export/utils/canvas-item-renderer-test-helpers'
++import { renderTransitionFallbackCanvas } from '@/features/export/utils/frame-render-tasks'
++// Link the candidate shared implementation into the unchanged real canvas dispatch chain.
++vi.mock('@/features/export/utils/canvas-item-renderer/image', async () =>
++  vi.importActual<typeof import('./image')>('./image'),
++)
++const item = {
++  id: 'left',
++  type: 'image',
++  mediaId: 'photo',
++  trackId: 't',
++  from: 0,
++  durationInFrames: 60,
++  src: 'private.png',
++  label: 'Private',
++} as const
++const transform = { x: 0, y: 0, width: 1280, height: 720 }
++it('sharedcanvas image entry refuses HDR before missingbitmap or GIF fallback', () => {
++  const ctx = createMockCanvasContext()
++  const rctx = createItemRenderContext({ hdrRaster: { has: () => true } } as never)
++  expect(() => renderImageItem(ctx, item as never, transform, rctx as never, 0)).toThrow(
++    'HDR raster',
++  )
++  expect(ctx.drawImage).not.toHaveBeenCalled()
++})
++it('actualmaskedtransition fallback rejects HDR ratherthan returning blankcanvases', async () => {
++  const ctx = createMockCanvasContext()
++  const canvasPool = {
++    acquire: vi.fn(() => ({ canvas: { width: 1280, height: 720 }, ctx })),
++    release: vi.fn(),
++  }
++  const rctx = createItemRenderContext({ canvasPool, hdrRaster: { has: () => true } } as never)
++  const transition = {
++    transition: {
++      id: 'tr',
++      type: 'crossfade',
++      presentation: 'dissolve',
++      timing: 'linear',
++      leftClipId: 'left',
++      rightClipId: 'right',
++      trackId: 't',
++      durationInFrames: 20,
++    },
++    leftClip: item,
++    rightClip: { ...item, id: 'right', from: 60 },
++    progress: 0.5,
++    transitionStart: 50,
++    transitionEnd: 70,
++    durationInFrames: 20,
++    leftPortion: 10,
++    rightPortion: 10,
++    cutPoint: 60,
++  }
++  await expect(
++    renderTransitionFallbackCanvas(
++      { transition, trackOrder: 1 } as never,
++      { frame: 60, activeMasks: [{ trackOrder: 0 }], itemRenderContext: rctx, canvasPool } as never,
++    ),
++  ).rejects.toThrow('HDR raster')
++  expect(ctx.drawImage).not.toHaveBeenCalled()
++  expect(canvasPool.acquire).toHaveBeenCalledTimes(3)
++  expect(canvasPool.release).toHaveBeenCalledTimes(3)
++})
++it('ordinary SDR static image still calls actual draw', () => {
++  const ctx = createMockCanvasContext(),
++    source = {} as ImageBitmap
++  const rctx = createItemRenderContext({
++    imageElements: new Map([['left', { source, width: 1280, height: 720 }]]),
++  } as never)
++  renderImageItem(ctx, item as never, transform, rctx as never, 0)
++  expect(ctx.drawImage).toHaveBeenCalled()
++})
+--- a/src/features/export/utils/canvas-item-renderer/image.ts
++++ b/src/features/export/utils/canvas-item-renderer/image.ts
+@@ -14,6 +14,9 @@
+   rctx: ItemRenderContext,
+   frame: number,
+ ): void {
++  if (rctx.hdrRaster?.has(item.mediaId)) {
++    throw new Error('HDR raster cannot be drawn through a canvas')
++  }
+   const { fps, canvasSettings, imageElements, gifFramesMap } = rctx
+
+   // Check if this is an animated GIF with cached frames
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -355,6 +355,10 @@
+     })
+   }
+
++  if (participant.item.type === 'image' && rctx.hdrRaster?.has(participant.item.mediaId)) {
++    throw new Error('HDR raster cannot fall back to a canvas')
++  }
++
+   const { canvas, ctx } = rctx.canvasPool.acquire()
+   poolCanvases.push(canvas)
+   canvas.width = rctx.canvasSettings.width
+--- a/src/features/export/utils/canvas-item-renderer/types.ts
++++ b/src/features/export/utils/canvas-item-renderer/types.ts
+@@ -172,6 +172,10 @@
+
+   // Image / GIF state
+   imageElements: Map<string, WorkerLoadedImage>
++  hdrRaster?: {
++    has(mediaId: string | undefined): boolean
++    frameTexture(mediaId: string): { texture: GPUTexture; width: number; height: number }
++  }
+   gifFramesMap: Map<string, CachedGifFrames>
+   ensureImageItemReady?: (item: ImageItem) => Promise<void>
+   /** Preloaded Lottie renderers keyed by item id; renders a frame on demand. */
+@@ -338,7 +342,7 @@
+   | {
+       /** FL-97: an HDR frame already in working values (owned by the HDR source). */
+       kind: 'media'
+-      item: VideoItem
++      item: ImageItem | VideoItem
+       source?: undefined
+       texture: GPUTexture
+       sourceWidth: number
+--- a/src/features/export/utils/client-render-engine.dispose.test.ts
++++ b/src/features/export/utils/client-render-engine.dispose.test.ts
+@@ -87,7 +87,7 @@
+     renderer.dispose()
+     expect(resources.destroyColor).toHaveBeenCalledTimes(1)
+     expect(resources.destroyColor.mock.invocationCallOrder[0]).toBeLessThan(
+-      resources.disposeGpu.mock.invocationCallOrder[0],
++      resources.disposeGpu.mock.invocationCallOrder[0]!,
+     )
+     renderer.dispose()
+     expect(resources.destroyColor).toHaveBeenCalledTimes(1)
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -107,6 +107,7 @@
+   type SubCompRenderData,
+ } from './canvas-item-renderer'
+ import { HdrVideoSources } from './hdr-video-sources'
++import { HdrRasterSources, type HdrRasterInput } from './hdr-raster-sources'
+ import { ScrubbingCache } from '@/features/export/deps/preview'
+ import {
+   resolveFrameRenderOptimization,
+@@ -679,6 +680,7 @@
+   canvas: OffscreenCanvas,
+   ctx: OffscreenCanvasRenderingContext2D,
+   options: {
++    hdrRasters?: Readonly<Record<string, HdrRasterInput>>
+     mode?: CompositionRendererMode
+     getPreviewTransformOverride?: (itemId: string) => Partial<ResolvedTransform> | undefined
+     getPreviewEffectsOverride?: (itemId: string) => ItemEffect[] | undefined
+@@ -817,17 +819,22 @@
+   const resolveProjectColor = () =>
+     resolveColorManagement(
+       composition.colorManagement,
+-      deriveSourceWorkingRange(
+-        tracks,
+-        getMediaMetadataById,
+-        useCompositionsStore.getState().compositionById,
+-      ),
++      options.hdrRasters && Object.keys(options.hdrRasters).length > 0
++        ? 'hdr'
++        : deriveSourceWorkingRange(
++            tracks,
++            getMediaMetadataById,
++            useCompositionsStore.getState().compositionById,
++          ),
+     )
+   let colorManagement = resolveProjectColor()
+   // An HDR project keeps extended range through every float node pipeline.
+   const gpu = new GpuPipelineManager(colorManagement.workingRange)
+   // FL-97: HDR projects read library clips' HDR intermediates, not the SDR stream.
+   const hdrVideoSources = new HdrVideoSources(() => gpu.effects?.getDevice())
++  const hdrRasterSources = new HdrRasterSources(options.hdrRasters ?? {}, () =>
++    gpu.effects?.getDevice(),
++  )
+   const hdrVideo: NonNullable<ItemRenderContext['hdrVideo']> = {
+     frameTexture: (item, sourceTime) =>
+       hdrVideoSources.frameTexture(item, sourceTime, colorManagement.referenceWhiteNits),
+@@ -1138,6 +1145,8 @@
+   }
+
+   const ensureImageItemReady = async (baseItem: ImageItem, signal?: AbortSignal) => {
++    throwIfAborted(signal)
++    if (hdrRasterSources.has(baseItem.mediaId)) return
+     const src = await resolveRendererMediaSource(baseItem, false, signal)
+     if (!src) return
+     const item = baseItem.src === src ? baseItem : ({ ...baseItem, src } as ImageItem)
+@@ -1382,6 +1391,10 @@
+     },
+     reverseVideoFrameCache,
+     imageElements,
++    hdrRaster: {
++      has: (id) => hdrRasterSources.has(id),
++      frameTexture: (id) => hdrRasterSources.frameTexture(id, colorManagement.referenceWhiteNits),
++    },
+     gifFramesMap,
+     ensureImageItemReady: (item) => ensureImageItemReady(item),
+     lottieProvider,
+@@ -2567,6 +2580,9 @@
+                 }
+                 gpu.texturePool.release(floatTexture)
+                 for (const pooled of poolCanvases) canvasPool.release(pooled)
++              }
++              if (item.type === 'image' && hdrRasterSources.has(item.mediaId)) {
++                throw new Error('HDR raster could not be rendered on the float route')
+               }
+               return renderItemWithEffects(
+                 task.item,
+@@ -3076,6 +3092,7 @@
+       itemRenderContext.textRasterCache?.clear()
+       itemRenderContext.cornerPinWarpCache?.clear()
+
++      hdrRasterSources.dispose()
+       hdrVideoSources.dispose()
+       colorOutput?.destroy()
+       colorOutput = null
+--- a/src/features/export/utils/frame-render-tasks.ts
++++ b/src/features/export/utils/frame-render-tasks.ts
+@@ -50,15 +50,20 @@
+     doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
+   )
+   const { canvas: trCanvas, ctx: trCtx } = canvasPool.acquire()
+-  await renderTransitionToCanvas(
+-    trCtx,
+-    task.transition,
+-    frame,
+-    itemRenderContext,
+-    task.trackOrder,
+-    transitionMasks,
+-  )
+-  return { source: trCanvas, poolCanvases: [trCanvas] }
++  try {
++    await renderTransitionToCanvas(
++      trCtx,
++      task.transition,
++      frame,
++      itemRenderContext,
++      task.trackOrder,
++      transitionMasks,
++    )
++    return { source: trCanvas, poolCanvases: [trCanvas] }
++  } catch (error) {
++    canvasPool.release(trCanvas)
++    throw error
++  }
+ }
+
+ export interface FrameItemRenderDeps {
+--- /dev/null
++++ b/src/features/export/utils/hdr-raster-sources.test.ts
+@@ -0,0 +1,81 @@
++import { describe, expect, it, vi } from 'vitest'
++import { HdrRasterSources, validateHdrRaster } from './hdr-raster-sources'
++const image = () => ({
++  width: 2,
++  height: 1,
++  transfer: 'pq' as const,
++  rgb: new Uint16Array([32768, 32769, 32770, 32771, 32772, 32773]),
++})
++function gpu() {
++  const textures: { createView: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn> }[] = []
++  const buffers: { destroy: ReturnType<typeof vi.fn> }[] = []
++  const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn(), end: vi.fn() }
++  const device = {
++    limits: { maxTextureDimension2D: 8192 },
++    createTexture: vi.fn((_descriptor: GPUTextureDescriptor) => {
++      const t = { createView: vi.fn(), destroy: vi.fn() }
++      textures.push(t)
++      return t
++    }),
++    createBuffer: vi.fn(() => {
++      const b = { destroy: vi.fn() }
++      buffers.push(b)
++      return b
++    }),
++    createShaderModule: vi.fn(),
++    createRenderPipeline: vi.fn(() => ({ getBindGroupLayout: vi.fn() })),
++    createBindGroup: vi.fn(),
++    createCommandEncoder: vi.fn(() => ({ beginRenderPass: () => pass, finish: vi.fn() })),
++    queue: {
++      writeTexture: vi.fn((..._args: unknown[]) => {}),
++      writeBuffer: vi.fn(),
++      submit: vi.fn(),
++    },
++  }
++  return { device, textures, buffers }
++}
++describe('owned HDR raster source', () => {
++  it('uploads actual16bitcodes withoutcanvas and copies callerinput', () => {
++    vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 1, COPY_DST: 2, RENDER_ATTACHMENT: 4 })
++    vi.stubGlobal('GPUBufferUsage', { UNIFORM: 1, COPY_DST: 2 })
++    const g = gpu(),
++      input = image()
++    const source = new HdrRasterSources({ photo: input }, () => g.device as unknown as GPUDevice)
++    input.rgb.fill(0)
++    let uploaded: number[] = []
++    g.device.queue.writeTexture.mockImplementation((_target, pixels) => {
++      uploaded = Array.from(pixels as Uint16Array).slice(0, 8)
++    })
++    const first = source.frameTexture('photo', 203)
++    expect(uploaded).toEqual([32768, 32769, 32770, 65535, 32771, 32772, 32773, 65535])
++    expect(g.device.createTexture.mock.calls[0]![0].format).toBe('rgba16uint')
++    expect(g.textures[0]!.destroy).toHaveBeenCalledOnce()
++    expect(g.buffers[0]!.destroy).toHaveBeenCalledOnce()
++    expect(source.frameTexture('photo', 203).texture).toBe(first.texture)
++    source.dispose()
++    source.dispose()
++    expect(g.textures[1]!.destroy).toHaveBeenCalledOnce()
++    expect(() => source.frameTexture('photo', 203)).toThrow('disposed')
++    vi.unstubAllGlobals()
++  })
++  it('invalid typedpixels/profile/size andmissingGPU refuse withoutfallback', () => {
++    for (const input of [
++      { ...image(), rgb: new Uint8Array(6) },
++      { ...image(), width: 0 },
++      { ...image(), transfer: 'sdr' },
++      { ...image(), rgb: new Uint16Array(3) },
++    ]) {
++      expect(() => validateHdrRaster(input as never)).toThrow()
++    }
++    const source = new HdrRasterSources({ photo: image() }, () => null)
++    expect(() => source.frameTexture('photo', 203)).toThrow('WebGPU')
++    source.dispose()
++  })
++  it('defaultSDR emptyinputs create no GPUresources', () => {
++    const device = vi.fn(() => null)
++    const source = new HdrRasterSources({}, device)
++    expect(source.has('photo')).toBe(false)
++    source.dispose()
++    expect(device).not.toHaveBeenCalled()
++  })
++})
+--- /dev/null
++++ b/src/features/export/utils/hdr-raster-sources.ts
+@@ -0,0 +1,173 @@
++import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import { MANAGED_COLOR_WGSL } from '@/infrastructure/gpu-color/managed-color-wgsl'
++
++export interface HdrRasterInput {
++  width: number
++  height: number
++  transfer: 'pq' | 'hlg'
++  rgb: Uint16Array
++}
++
++export function validateHdrRaster(
++  input: HdrRasterInput | undefined,
++): asserts input is HdrRasterInput {
++  if (
++    !input ||
++    !Number.isSafeInteger(input.width) ||
++    !Number.isSafeInteger(input.height) ||
++    input.width <= 0 ||
++    input.height <= 0 ||
++    input.width * input.height > 16_777_216 ||
++    !['pq', 'hlg'].includes(input.transfer) ||
++    !(input.rgb instanceof Uint16Array) ||
++    input.rgb.length !== input.width * input.height * 3
++  )
++    throw new Error('Invalid HDR raster input')
++}
++
++/** Per-renderer owned textures; integer source codes never pass through a canvas. */
++export class HdrRasterSources {
++  private disposed = false
++  private readonly textures = new Map<string, { texture: GPUTexture; referenceWhite: number }>()
++  private readonly inputs: Readonly<Record<string, HdrRasterInput>>
++  constructor(
++    inputs: Readonly<Record<string, HdrRasterInput>>,
++    private readonly getDevice: () => GPUDevice | null | undefined,
++  ) {
++    let pixels = 0
++    this.inputs = Object.fromEntries(
++      Object.entries(inputs).map(([id, input]) => {
++        validateHdrRaster(input)
++        pixels += input.width * input.height
++        if (!id || pixels > 16_777_216) throw new Error('HDR raster resource limit')
++        return [id, { ...input, rgb: input.rgb.slice() }]
++      }),
++    )
++  }
++
++  has(mediaId: string | undefined): boolean {
++    return !!mediaId && Object.hasOwn(this.inputs, mediaId)
++  }
++
++  frameTexture(mediaId: string, referenceWhite: number) {
++    if (this.disposed) throw new Error('HDR raster disposed')
++    const input = this.inputs[mediaId]
++    validateHdrRaster(input)
++    const device = this.getDevice()
++    if (!device) throw new Error('HDR raster requires WebGPU')
++    if (
++      input.width > device.limits.maxTextureDimension2D ||
++      input.height > device.limits.maxTextureDimension2D
++    ) {
++      throw new Error('HDR raster exceeds device texture limits')
++    }
++    if (!(referenceWhite > 0 && Number.isFinite(referenceWhite)))
++      throw new Error('Invalid reference white')
++    const cached = this.textures.get(mediaId)
++    if (cached && cached.referenceWhite !== referenceWhite) {
++      cached.texture.destroy()
++      this.textures.delete(mediaId)
++    }
++    let output = cached?.referenceWhite === referenceWhite ? cached.texture : undefined
++    if (!output) {
++      let source: GPUTexture | undefined
++      let uniform: GPUBuffer | undefined
++      let candidate: GPUTexture | undefined
++      try {
++        source = device.createTexture({
++          size: [input.width, input.height],
++          format: 'rgba16uint',
++          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
++        })
++        const stride = Math.ceil((input.width * 8) / 256) * 256
++        const pixels = new Uint16Array((stride / 2) * input.height)
++        for (let y = 0; y < input.height; y++)
++          for (let x = 0; x < input.width; x++) {
++            const at = (y * stride) / 2 + x * 4
++            pixels.set(
++              input.rgb.subarray((y * input.width + x) * 3, (y * input.width + x) * 3 + 3),
++              at,
++            )
++            pixels[at + 3] = 65535
++          }
++        device.queue.writeTexture({ texture: source }, pixels, { bytesPerRow: stride }, [
++          input.width,
++          input.height,
++        ])
++        pixels.fill(0)
++        const module = device.createShaderModule({
++          code: `${FULLSCREEN_QUAD_WGSL}\n${MANAGED_COLOR_WGSL}\n
++          @group(0) @binding(0) var source: texture_2d<u32>;
++          @group(0) @binding(1) var<uniform> params: vec4f;
++          @fragment fn fragmentMain(v: VertexOutput) -> @location(0) vec4f {
++            let size = textureDimensions(source);
++            let p = min(vec2u(v.uv * vec2f(size)), size - vec2u(1));
++            let signal = vec3f(textureLoad(source, vec2i(p), 0).rgb) / 65535.0;
++            return vec4f(fl_signal_to_working(signal, params.x, params.y), 1.0);
++          }`,
++        })
++        const pipeline = device.createRenderPipeline({
++          layout: 'auto',
++          vertex: { module, entryPoint: 'vertexMain' },
++          fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: 'rgba16float' }] },
++          primitive: { topology: 'triangle-list' },
++        })
++        uniform = device.createBuffer({
++          size: 16,
++          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
++        })
++        device.queue.writeBuffer(
++          uniform,
++          0,
++          new Float32Array([input.transfer === 'pq' ? 0 : 1, referenceWhite, 0, 0]),
++        )
++        candidate = device.createTexture({
++          size: [input.width, input.height],
++          format: 'rgba16float',
++          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
++        })
++        const encoder = device.createCommandEncoder()
++        const pass = encoder.beginRenderPass({
++          colorAttachments: [
++            {
++              view: candidate.createView(),
++              loadOp: 'clear',
++              storeOp: 'store',
++              clearValue: [0, 0, 0, 0],
++            },
++          ],
++        })
++        pass.setPipeline(pipeline)
++        pass.setBindGroup(
++          0,
++          device.createBindGroup({
++            layout: pipeline.getBindGroupLayout(0),
++            entries: [
++              { binding: 0, resource: source.createView() },
++              { binding: 1, resource: { buffer: uniform } },
++            ],
++          }),
++        )
++        pass.draw(6)
++        pass.end()
++        device.queue.submit([encoder.finish()])
++        output = candidate
++        this.textures.set(mediaId, { texture: output, referenceWhite })
++      } catch (error) {
++        candidate?.destroy()
++        throw error
++      } finally {
++        source?.destroy()
++        uniform?.destroy()
++      }
++    }
++    return { texture: output, width: input.width, height: input.height }
++  }
++
++  dispose(): void {
++    this.disposed = true
++    for (const { texture } of this.textures.values()) texture.destroy()
++    this.textures.clear()
++    for (const input of Object.values(this.inputs)) input.rgb.fill(0)
++  }
++}
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -17,6 +17,7 @@
+  * layer being present.
+  */
+ import type { Project } from '@/types/project'
++import { validateHdrRaster, type HdrRasterInput } from '@/features/export/utils/hdr-raster-sources'
+ import type { TimelineTrack, TimelineItem, TextItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import type { ItemKeyframes } from '@/types/keyframe'
+@@ -1018,6 +1019,7 @@
+   HeadlessFrameInput,
+   'project' | 'media' | 'frame' | 'atSeconds' | 'strict'
+ > {
++  hdrRasters?: Readonly<Record<string, HdrRasterInput>>
+   target: 'pq' | 'hlg'
+   /** Browser-local cancellation; Node drivers also close their page when a lease is lost. */
+   signal?: AbortSignal
+@@ -1027,6 +1029,15 @@
+   input.signal?.throwIfAborted()
+   if (input.target !== 'pq' && input.target !== 'hlg') throw new Error('Unsupported signal target')
+   const view = extractTimeline(input.project)
++  for (const id of Object.keys(input.hdrRasters ?? {})) {
++    validateHdrRaster(input.hdrRasters![id]!)
++    if (
++      !(input.media ?? []).some((media) => media.mediaId === id) ||
++      !view.items.some((item) => item.type === 'image' && item.mediaId === id)
++    ) {
++      throw new Error('HDR raster is not a declared image resource')
++    }
++  }
+   const gpuAvailable = await detectWebGpuOnce()
+   input.signal?.throwIfAborted()
+   const frame = resolveTargetFrame(view, input)
+@@ -1051,7 +1062,13 @@
+   await assertGpuForComposition(composition, view.compositions)
+   composition.tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
+   input.signal?.throwIfAborted()
+-  const signal = await renderCompositionSignalFrame(composition, frame, input.target, input.signal)
++  const signal = await renderCompositionSignalFrame(
++    composition,
++    frame,
++    input.target,
++    input.signal,
++    input.hdrRasters,
++  )
+   return {
+     ...signal,
+     frame,
+--- a/src/headless/signal-frame.ts
++++ b/src/headless/signal-frame.ts
+@@ -1,4 +1,5 @@
+ import type { CompositionInputProps } from '@/types/export'
++import type { HdrRasterInput } from '@/features/export/utils/hdr-raster-sources'
+ import { createCompositionRenderer } from '@/features/export/utils/client-render-engine'
+
+ /** Own one real float renderer; no image Blob or 8-bit canvas capture is returned. */
+@@ -7,12 +8,16 @@
+   frame: number,
+   target: 'pq' | 'hlg',
+   signal?: AbortSignal,
++  hdrRasters?: Readonly<Record<string, HdrRasterInput>>,
+ ) {
+   signal?.throwIfAborted()
+   const canvas = new OffscreenCanvas(composition.width, composition.height)
+   const ctx = canvas.getContext('2d')
+   if (!ctx) throw new Error('Signal frame requires a composition context')
+-  const renderer = await createCompositionRenderer(composition, canvas, ctx, { mode: 'export' })
++  const renderer = await createCompositionRenderer(composition, canvas, ctx, {
++    mode: 'export',
++    ...(hdrRasters ? { hdrRasters } : {}),
++  })
+   let disposed = false
+   const dispose = () => {
+     if (disposed) return

@@ -1,21 +1,32 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
+import type { SetupGateDeps } from 'src/utils/frameleaf-setup-gate.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
+import { DatabaseLock } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -25,26 +36,37 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -64,22 +86,32 @@ import { VideoStreamRepository } from 'src/repositories/video-stream.repository.
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
-import { getConfig, updateConfig } from 'src/utils/config.js';
+import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
+import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
+import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
+import { resolvePublicUrl } from 'src/utils/public-url.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
   AccessRepository,
   ActivityRepository,
+  AdminAuditRepository,
   AlbumRepository,
   AlbumUserRepository,
   ApiKeyRepository,
   AppRepository,
   AssetRepository,
+  AssetDevelopRepository,
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  AssetRestorationRepository,
+  ClassificationRepository,
   ClusterGroupRepository,
   ConfigRepository,
   CronRepository,
@@ -89,31 +121,44 @@ export const BASE_SERVICE_DEPENDENCIES = [
   DuplicateRepository,
   EmailRepository,
   EventRepository,
-  ForkSchemaRepository,
+  AssetChecksumRepository,
   IntegrityRepository,
   JobRepository,
   LibraryRepository,
   MachineLearningRepository,
   MapRepository,
   MediaRepository,
+  MediaOperationRepository,
   MemoryRepository,
   MetadataRepository,
+  MlDestinationRepository,
   MoveRepository,
   NotificationRepository,
   OAuthRepository,
   OcrRepository,
   PartnerRepository,
+  PartnerOriginRepository,
   PersonRepository,
   PhysicalFileRepository,
+  PhysicalFileTrashRepository,
   PluginRepository,
   ProcessRepository,
-  RunPodRepository,
+  RenderWorkerRepository,
+  FrameleafCloudRepository,
+  FrameleafCloudMlRepository,
+  FrameleafConsentRepository,
+  FrameleafUserLicenseRepository,
+  FrameleafAccountRepository,
+  HardwareProbeRepository,
+  InstanceIdentityRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
+  ItemShareRepository,
+  AlbumSourceRepository,
   StackRepository,
   StorageRepository,
   SyncRepository,
@@ -137,14 +182,18 @@ export class BaseService {
     protected logger: LoggingRepository,
     protected accessRepository: AccessRepository,
     protected activityRepository: ActivityRepository,
+    protected adminAuditRepository: AdminAuditRepository,
     protected albumRepository: AlbumRepository,
     protected albumUserRepository: AlbumUserRepository,
     protected apiKeyRepository: ApiKeyRepository,
     protected appRepository: AppRepository,
     protected assetRepository: AssetRepository,
+    protected assetDevelopRepository: AssetDevelopRepository,
     protected assetEditRepository: AssetEditRepository,
     protected assetFileRepository: AssetFileRepository,
     protected assetJobRepository: AssetJobRepository,
+    protected assetRestorationRepository: AssetRestorationRepository,
+    protected classificationRepository: ClassificationRepository,
     protected clusterGroupRepository: ClusterGroupRepository,
     protected configRepository: ConfigRepository,
     protected cronRepository: CronRepository,
@@ -154,31 +203,44 @@ export class BaseService {
     protected duplicateRepository: DuplicateRepository,
     protected emailRepository: EmailRepository,
     protected eventRepository: EventRepository,
-    protected forkSchemaRepository: ForkSchemaRepository,
+    protected forkSchemaRepository: AssetChecksumRepository,
     protected integrityRepository: IntegrityRepository,
     protected jobRepository: JobRepository,
     protected libraryRepository: LibraryRepository,
     protected machineLearningRepository: MachineLearningRepository,
     protected mapRepository: MapRepository,
     protected mediaRepository: MediaRepository,
+    protected mediaOperationRepository: MediaOperationRepository,
     protected memoryRepository: MemoryRepository,
     protected metadataRepository: MetadataRepository,
+    protected mlDestinationRepository: MlDestinationRepository,
     protected moveRepository: MoveRepository,
     protected notificationRepository: NotificationRepository,
     protected oauthRepository: OAuthRepository,
     protected ocrRepository: OcrRepository,
     protected partnerRepository: PartnerRepository,
+    protected partnerOriginRepository: PartnerOriginRepository,
     protected personRepository: PersonRepository,
     protected physicalFileRepository: PhysicalFileRepository,
+    protected physicalFileTrashRepository: PhysicalFileTrashRepository,
     protected pluginRepository: PluginRepository,
     protected processRepository: ProcessRepository,
-    protected runPodRepository: RunPodRepository,
+    protected renderWorkerRepository: RenderWorkerRepository,
+    protected frameleafCloudRepository: FrameleafCloudRepository,
+    protected frameleafCloudMlRepository: FrameleafCloudMlRepository,
+    protected frameleafConsentRepository: FrameleafConsentRepository,
+    protected frameleafUserLicenseRepository: FrameleafUserLicenseRepository,
+    protected frameleafAccountRepository: FrameleafAccountRepository,
+    protected hardwareProbeRepository: HardwareProbeRepository,
+    protected instanceIdentityRepository: InstanceIdentityRepository,
     protected searchRepository: SearchRepository,
     protected serverInfoRepository: ServerInfoRepository,
     protected smartAlbumRepository: SmartAlbumRepository,
     protected sessionRepository: SessionRepository,
     protected sharedLinkRepository: SharedLinkRepository,
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
+    protected itemShareRepository: ItemShareRepository,
+    protected albumSourceRepository: AlbumSourceRepository,
     protected stackRepository: StackRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -211,14 +273,18 @@ export class BaseService {
       LoggingRepository.create(),
       ctx.accessRepository,
       ctx.activityRepository,
+      ctx.adminAuditRepository,
       ctx.albumRepository,
       ctx.albumUserRepository,
       ctx.apiKeyRepository,
       ctx.appRepository,
       ctx.assetRepository,
+      ctx.assetDevelopRepository,
       ctx.assetEditRepository,
       ctx.assetFileRepository,
       ctx.assetJobRepository,
+      ctx.assetRestorationRepository,
+      ctx.classificationRepository,
       ctx.clusterGroupRepository,
       ctx.configRepository,
       ctx.cronRepository,
@@ -235,24 +301,37 @@ export class BaseService {
       ctx.machineLearningRepository,
       ctx.mapRepository,
       ctx.mediaRepository,
+      ctx.mediaOperationRepository,
       ctx.memoryRepository,
       ctx.metadataRepository,
+      ctx.mlDestinationRepository,
       ctx.moveRepository,
       ctx.notificationRepository,
       ctx.oauthRepository,
       ctx.ocrRepository,
       ctx.partnerRepository,
+      ctx.partnerOriginRepository,
       ctx.personRepository,
       ctx.physicalFileRepository,
+      ctx.physicalFileTrashRepository,
       ctx.pluginRepository,
       ctx.processRepository,
-      ctx.runPodRepository,
+      ctx.renderWorkerRepository,
+      ctx.frameleafCloudRepository,
+      ctx.frameleafCloudMlRepository,
+      ctx.frameleafConsentRepository,
+      ctx.frameleafUserLicenseRepository,
+      ctx.frameleafAccountRepository,
+      ctx.hardwareProbeRepository,
+      ctx.instanceIdentityRepository,
       ctx.searchRepository,
       ctx.serverInfoRepository,
       ctx.smartAlbumRepository,
       ctx.sessionRepository,
       ctx.sharedLinkRepository,
       ctx.sharedLinkAssetRepository,
+      ctx.itemShareRepository,
+      ctx.albumSourceRepository,
       ctx.stackRepository,
       ctx.storageRepository,
       ctx.syncRepository,
@@ -273,16 +352,37 @@ export class BaseService {
     return service as InstanceType<T>;
   }
 
+  /**
+   * FL-304: recount storage usage (of one user, or of all). Develop artifacts are charged to their
+   * owner, so the recount includes them wherever the fork schema can be used; elsewhere it is the
+   * official recount of the photos alone.
+   */
+  protected async syncUsage(id?: string) {
+    if (!(await this.assetDevelopRepository.syncUsage(id))) {
+      await this.userRepository.syncUsage(id);
+    }
+  }
+
+  /** FL-190: this server's public address for links it sends, or `undefined` (see `resolvePublicUrl`). */
+  protected async getPublicUrl(server: SystemConfig['server']) {
+    // FL-165: "Use my domain" publishes the verified custom hostname in links too
+    const { frameleafCloud } = await this.getConfig({ withCache: true });
+    return resolvePublicUrl(
+      server,
+      { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository },
+      frameleafCloud.remoteAccess,
+    );
+  }
+
   get worker() {
     return this.configRepository.getWorker();
   }
 
-  private get configRepos() {
+  protected get configRepos() {
     return {
       configRepo: this.configRepository,
       metadataRepo: this.systemMetadataRepository,
       logger: this.logger,
-      forkSchemaRepo: this.forkSchemaRepository,
     };
   }
 
@@ -290,8 +390,164 @@ export class BaseService {
     return getConfig(this.configRepos, options);
   }
 
-  updateConfig(newConfig: SystemConfig) {
-    return updateConfig(this.configRepos, newConfig);
+  updateConfig(newConfig: SystemConfig, repos = this.configRepos) {
+    return updateConfig(repos, newConfig);
+  }
+
+  /** FL-66: the saved configuration straight from storage, for revision checks and updates. */
+  readConfigForUpdate(repos = this.configRepos) {
+    return readConfig(repos);
+  }
+
+  /**
+   * FL-66: change the saved system configuration as one step. It holds the settings lock that
+   * every administrator save holds, and starts from the configuration read straight from storage
+   * under it, so neither this change nor an administrator's save can overwrite the other.
+   */
+  updateConfigExclusively(
+    change: (config: SystemConfig) => void,
+    history?: { source: ConfigHistorySource; auth?: AuthDto; title?: string },
+  ) {
+    return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+      const result = await withEffectiveConfigWrite(this.configRepos, async (repos) => {
+        const oldConfig = await this.readConfigForUpdate(repos);
+        const next = cloneDeep(oldConfig);
+        change(next);
+        const newConfig = await this.updateConfig(next, repos);
+        return { oldConfig, newConfig };
+      });
+      // Best-effort history remains outside the config transaction, under existing outer serialization.
+      if (history)
+        await this.recordConfigChange(result.oldConfig, result.newConfig, history.auth, {
+          kind: 'settings',
+          source: history.source,
+          title: history.title,
+        });
+      return result;
+    });
+  }
+
+  /** FL-66: add a saved change to the settings change history (see `recordConfigHistory`). */
+  protected recordConfigChange(
+    oldConfig: SystemConfig,
+    newConfig: SystemConfig,
+    auth: AuthDto | undefined,
+    options: { kind: ConfigHistoryKind; title?: string; source?: ConfigHistorySource },
+  ) {
+    return recordConfigHistory(
+      {
+        systemMetadataRepository: this.systemMetadataRepository,
+        cryptoRepository: this.cryptoRepository,
+        logger: this.logger,
+      },
+      oldConfig,
+      newConfig,
+      auth?.user,
+      options,
+    );
+  }
+
+  /**
+   * Admit one machine-learning request against the destination the caller names (FL-110).
+   * Refuses when the destination is missing, disabled, unconsented, over budget, unhealthy or
+   * does not serve the workload; never substitutes another destination.
+   */
+  protected async selectMlDestination(request: MlSelectionRequest) {
+    const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
+    return selectMlDestination(
+      {
+        mlDestinationRepository: this.mlDestinationRepository,
+        machineLearningRepository: this.machineLearningRepository,
+      },
+      { ...request, destinationId },
+    );
+  }
+
+  /**
+   * Admit a library workload against the destination the administrator routed it to. The
+   * route is explicit configuration; a workload without one is refused, not sent anywhere.
+   */
+  protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
+    const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
+    return this.selectMlDestination({ ...request, destinationId });
+  }
+
+  /**
+   * Once a move of `assetIds` into the Locked folder is committed (FL-53): the people whose featured
+   * face was on them, or on another photo of their stacks, get a thumbnail from the face that replaced
+   * it, and profile pictures copied from a photo now Locked are replaced.
+   */
+  protected async afterAssetsLocked(assetIds: string[], sequenced = false): Promise<void> {
+    await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
+    await this.replaceLockedProfileImages();
+    // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
+    if (!sequenced) await this.eventRepository.emit('AssetLocked', { assetIds });
+  }
+
+  /**
+   * Pushes the current state of `assetIds` to `ownerId`'s other open sessions over the websocket
+   * (`on_asset_update`). Used so a move into or out of the Locked folder — including the rest of a
+   * stack a direct move carries along (FL-53, `locked-stacks.ts`) — is reflected in every open web
+   * client at once, not only in the tab that made the change and not only for the asset named directly.
+   */
+  protected async notifyAssetsUpdated(assetIds: string[], ownerId: string): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
+    for (const asset of assets) {
+      this.websocketRepository.clientSend(
+        'on_asset_update',
+        ownerId,
+        mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
+      );
+    }
+  }
+
+  /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
+  protected async replaceLockedProfileImages(): Promise<void> {
+    await replaceLockedProfileImages(
+      {
+        media: this.mediaRepository,
+        crypto: this.cryptoRepository,
+        storageCore: this.storageCore,
+        user: this.userRepository,
+        job: this.jobRepository,
+        logger: this.logger,
+      },
+      () => this.getConfig({ withCache: true }),
+    );
+  }
+
+  /**
+   * FL-76: add to the administrator audit trail behind the account detail's Activity tab. Called by
+   * the service that made the change, after it succeeded. Recording never undoes or fails the change
+   * it records: if the insert fails, the change stands and the failure is logged.
+   */
+  /** FL-292: what the setup code gate needs (`src/utils/frameleaf-setup-gate.ts`). */
+  protected get setupGate(): SetupGateDeps {
+    return {
+      configRepository: this.configRepository,
+      cryptoRepository: this.cryptoRepository,
+      databaseRepository: this.databaseRepository,
+      logger: this.logger,
+      systemMetadataRepository: this.systemMetadataRepository,
+      userRepository: this.userRepository,
+    };
+  }
+
+  protected async recordAdminEvents(events: Insertable<AdminAuditEventTable>[]): Promise<void> {
+    if (events.length === 0) {
+      return;
+    }
+
+    try {
+      await this.adminAuditRepository.create(events);
+    } catch (error) {
+      const actions = events.map(({ action }) => action).join(', ');
+      this.logger.error(`Unable to record administrator activity (${actions}): ${error}`);
+    }
   }
 
   requireAccess(request: AccessRequest) {
@@ -314,7 +570,7 @@ export class BaseService {
   }
 
   async createUser(dto: Omit<Insertable<UserTable>, 'clusterGroupId'> & { email: string }): Promise<UserAdmin> {
-    const exists = await this.userRepository.getByEmail(dto.email);
+    const exists = await this.userRepository.getByEmail(dto.email, { withDeleted: true });
     if (exists) {
       this.logger.debug('User creation rejected: user already exists');
       throw new BadRequestException('Email is not available');
@@ -331,8 +587,24 @@ export class BaseService {
     if (payload.password) {
       payload.password = await this.cryptoRepository.hashBcrypt(payload.password, SALT_ROUNDS);
     }
+    /*
+     * FL-76: `UserAdminCreateDto` accepts `pinCode`, so an administrator could supply one
+     * at creation, and before this it reached `user.pinCode` verbatim while
+     * `UserAdminService.update` hashed it. A clear-text PIN there never
+     * verifies against `validateSecret`, which compares with bcrypt, so the account's
+     * Locked content could not be unlocked with the PIN it was created with, and the
+     * secret sat in the database and in every backup in the clear. Hash it on the same
+     * path as the password so a stored PIN is always a bcrypt hash.
+     */
+    if (payload.pinCode) {
+      payload.pinCode = await this.cryptoRepository.hashBcrypt(payload.pinCode, SALT_ROUNDS);
+    }
     if (payload.storageLabel) {
       payload.storageLabel = sanitize(payload.storageLabel.replaceAll('.', ''));
+      // FL-76: the label is unique, as on update; refuse a duplicate before the insert fails on it
+      if (await this.userRepository.getByStorageLabel(payload.storageLabel, true)) {
+        throw new BadRequestException('Storage label already in use by another account');
+      }
     }
 
     const clusterGroup = await this.clusterGroupRepository.create();

@@ -1,18 +1,22 @@
 import { Body, Container, Font, Head, Hr, Html, Img, Preview, Section, Tailwind, Text } from '@react-email/components';
+import { createRequire } from 'node:module';
 import * as React from 'react';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
+import { getFrameleafEmailLogoUrl } from 'src/emails/components/frameleaf-logo.js';
+
+const emailPreset = createRequire(import.meta.url)('tailwindcss-preset-email');
 
 interface ImmichLayoutProps {
   children: React.ReactNode;
   preview: string;
+  baseUrl?: string;
 }
 
-export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
+export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) => (
   <Html>
     <Tailwind
       config={{
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, unicorn/prefer-module
-        presets: [require('tailwindcss-preset-email')],
+        presets: [emailPreset],
         theme: {
           extend: {
             colors: {
@@ -48,11 +52,15 @@ export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
         <Container className="my-[40px] mx-auto max-w-[465px]">
           <Section className="my-6 p-12 border border-red-400 rounded-[50px] bg-gray-50">
             <Section className="flex justify-center mb-12">
-              <Img
-                src="https://immich.app/img/immich-logo-inline-light.png"
-                className="h-12 antialiased rounded-none w-full"
-                alt="Immich"
-              />
+              {baseUrl ? (
+                <Img
+                  src={getFrameleafEmailLogoUrl(baseUrl)}
+                  className="h-12 antialiased rounded-none w-full"
+                  alt="Frameleaf"
+                />
+              ) : (
+                <Text className="m-0 text-center text-2xl font-semibold">Frameleaf</Text>
+              )}
             </Section>
 
             {children}
@@ -69,6 +77,7 @@ export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
 
 ImmichLayout.PreviewProps = {
   preview: 'This is the preview shown on some mail clients',
+  baseUrl: 'https://photos.example.com',
   children: <Text>Email body goes here.</Text>,
 } as ImmichLayoutProps;
 

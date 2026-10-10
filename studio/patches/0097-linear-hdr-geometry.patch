@@ -1,0 +1,57 @@
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -64,7 +64,7 @@
+ export function isLinearHdrEffectType(type: string): boolean {
+   return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' || type === 'gpu-temperature' ||
+     type === 'gpu-vibrance' || type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
+-    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur' || type === 'gpu-pixelate'
++    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur' || type === 'gpu-pixelate' || type === 'gpu-twirl' || type === 'gpu-wave' || type === 'gpu-bulge'
+ }
+ 
+ /** True when the gpu effect type belongs to the color category (a "grade" effect). */
+diff --git a/src/infrastructure/gpu-effects/common.ts b/src/infrastructure/gpu-effects/common.ts
+--- a/src/infrastructure/gpu-effects/common.ts
++++ b/src/infrastructure/gpu-effects/common.ts
+@@ -137,8 +137,9 @@
+ }
+ fn fl_blur_output(color: vec4f) -> vec4f {
+   if (!FL_EXTENDED_RANGE) { return color; }
+-  if (color.a <= 0.0) { return vec4f(0.0); }
+-  return vec4f(fl_range3(color.rgb / color.a), clamp(color.a, 0.0, 1.0));
++  let coverage = quantizeToF16(clamp(color.a, 0.0, 1.0));
++  if (coverage <= 0.0) { return vec4f(0.0); }
++  return vec4f(fl_range3(color.rgb / color.a), coverage);
+ }
+ fn fl_domain_offset3(c: vec3f) -> vec3f {
+   if (FL_EXTENDED_RANGE) { return c - clamp(c, vec3f(0.0), vec3f(1.0)); }
+diff --git a/src/infrastructure/gpu-effects/effects/distort.ts b/src/infrastructure/gpu-effects/effects/distort.ts
+--- a/src/infrastructure/gpu-effects/effects/distort.ts
++++ b/src/infrastructure/gpu-effects/effects/distort.ts
+@@ -140,7 +140,7 @@
+   let twirledUV = center + rotated;
+   let inRadius = dist < params.radius;
+   let finalUV = select(input.uv, twirledUV, inRadius);
+-  return textureSample(inputTex, texSampler, finalUV);
++  return fl_blur_output(fl_blur_sample(inputTex, texSampler, finalUV));
+ }`,
+   params: {
+     amount: {
+@@ -205,7 +205,7 @@
+   var uv = input.uv;
+   uv.y += sin(uv.x * params.frequencyX * TAU) * params.amplitudeX;
+   uv.x += sin(uv.y * params.frequencyY * TAU) * params.amplitudeY;
+-  return textureSample(inputTex, texSampler, uv);
++  return fl_blur_output(fl_blur_sample(inputTex, texSampler, uv));
+ }`,
+   params: {
+     amplitudeX: {
+@@ -461,7 +461,7 @@
+   let bulgedUV = center + direction * newDist;
+   let inRadius = dist < params.radius && dist > 0.0;
+   let finalUV = select(input.uv, bulgedUV, inRadius);
+-  return textureSample(inputTex, texSampler, finalUV);
++  return fl_blur_output(fl_blur_sample(inputTex, texSampler, finalUV));
+ }`,
+   params: {
+     amount: {

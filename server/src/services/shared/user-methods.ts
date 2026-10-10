@@ -1,13 +1,19 @@
 import { DateTime } from 'luxon';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { CalendarHeatmapDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { CalendarHeatmapType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { asDateString } from 'src/utils/date.js';
 
+/**
+ * `lockedOwnerId`: set only when the user asks for their own heatmap from an elevated session, so
+ * their Locked media is counted. Anyone else, an administrator included, never counts it (FL-34).
+ */
 export const getCalendarHeatmap = async (
   userId: string,
   dto: CalendarHeatmapDto,
   repos: { asset: AssetRepository },
+  { lockedOwnerId }: LockedVisibilityOptions = {},
 ) => {
   const toDate = DateTime.fromJSDate(dto.to ?? new Date(), { zone: 'utc' }).startOf('day');
   const fromDate = (
@@ -18,6 +24,7 @@ export const getCalendarHeatmap = async (
     from: fromDate.toJSDate(),
     to: toDate.plus({ days: 1 }).toJSDate(),
     type: dto.type ?? CalendarHeatmapType.Upload,
+    lockedOwnerId,
   });
   const countsMap = new Map(counts.map((item) => [asDateString(item.date)!, item.count]));
 

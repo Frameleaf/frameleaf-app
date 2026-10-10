@@ -1,8 +1,8 @@
-import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
-import { cubicOut } from 'svelte/easing';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
+import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -18,6 +18,9 @@ export interface Faces {
   boundingBoxY2: number;
 }
 
+/** Zoom settles without overshoot: the shape of `--fl-snappy`, not the spring. */
+const zoomEase = (t: number): number => 1 - Math.pow(1 - t, 4);
+
 const createDefaultZoomState = (): ZoomImageWheelState => ({
   currentRotation: 0,
   currentZoom: 1,
@@ -30,7 +33,6 @@ export type Events = {
   Zoom: [];
   ZoomChange: [ZoomImageWheelState];
   Copy: [];
-  FaceEditModeChange: [boolean];
 };
 
 class AssetViewerManager extends BaseEventManager<Events> {
@@ -51,8 +53,13 @@ class AssetViewerManager extends BaseEventManager<Events> {
   isShowActivityPanel = $state(false);
   isPlayingMotionPhoto = $state(false);
   isShowEditor = $state(false);
+  /**
+   * FL-35: a panorama opens in the photo-sphere viewer. When the viewer offers "Fit
+   * panorama" the user is asking to see the flat equirectangular frame instead, which the
+   * ordinary photo viewer renders. Reset on every asset change.
+   */
+  #isPanoramaFlattened = $state(false);
   #isFaceEditMode = $state(false);
-  #isEditFacesPanelOpen = $state(false);
   #viewingAssetStoreState = $state<AssetResponseDto>();
   #viewState = $state<boolean>(false);
   #highlightedFaces = $state<Faces[]>([]);
@@ -81,10 +88,6 @@ class AssetViewerManager extends BaseEventManager<Events> {
 
   get isFaceEditMode() {
     return this.#isFaceEditMode;
-  }
-
-  get isEditFacesPanelOpen() {
-    return this.#isEditFacesPanelOpen;
   }
 
   get zoomState() {
@@ -142,13 +145,19 @@ class AssetViewerManager extends BaseEventManager<Events> {
   animatedZoom(targetZoom: number, duration = 300) {
     this.cancelZoomAnimation();
 
+    // Reduce Motion: a zoom step is a scaling photo, so it lands at once.
+    if (mediaQueryManager.reducedMotion) {
+      this.zoomState = { ...this.#zoomState, currentZoom: targetZoom };
+      return;
+    }
+
     const startZoom = this.#zoomState.currentZoom;
     const startTime = performance.now();
 
     const frame = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const linearProgress = Math.min(elapsed / duration, 1);
-      const easedProgress = cubicOut(linearProgress);
+      const easedProgress = zoomEase(linearProgress);
       const interpolatedZoom = startZoom + (targetZoom - startZoom) * easedProgress;
 
       this.zoomState = { ...this.#zoomState, currentZoom: interpolatedZoom };
@@ -186,6 +195,19 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.isShowDetailPanel = false;
   }
 
+  /**
+   * V-15: a field of the information panel that should take focus once it renders, such as the tag
+   * box for the T key (MediaViewer.jsx:803-807, `data-mv-focus="tags"`). The field clears it.
+   */
+  focusRequest = $state<'tags' | null>(null);
+
+  /** Opens the information panel and asks one of its fields to take focus. */
+  focusDetailField(field: 'tags') {
+    this.closeActivityPanel();
+    this.isShowDetailPanel = true;
+    this.focusRequest = field;
+  }
+
   openEditor() {
     this.closeActivityPanel();
     this.isShowEditor = true;
@@ -195,30 +217,35 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.isShowEditor = false;
   }
 
+  /** FL-38: opens or closes the face tagger (`frameleaf/FaceTagger.svelte`), mounted by AssetViewer. */
   toggleFaceEditMode() {
     this.#isFaceEditMode = !this.#isFaceEditMode;
-    this.emit('FaceEditModeChange', this.#isFaceEditMode);
+  }
+
+  openFaceEditMode() {
+    this.#isFaceEditMode = true;
   }
 
   closeFaceEditMode() {
-    if (this.#isFaceEditMode) {
-      this.emit('FaceEditModeChange', false);
-    }
     this.#isFaceEditMode = false;
-  }
-
-  openEditFacesPanel() {
-    this.#isEditFacesPanelOpen = true;
-  }
-
-  closeEditFacesPanel() {
-    this.#isEditFacesPanelOpen = false;
   }
 
   resetPanelState() {
     this.closeEditor();
     this.closeFaceEditMode();
-    this.closeEditFacesPanel();
+    this.resetPanoramaView();
+  }
+
+  get isPanoramaFlattened() {
+    return this.#isPanoramaFlattened;
+  }
+
+  togglePanoramaView() {
+    this.#isPanoramaFlattened = !this.#isPanoramaFlattened;
+  }
+
+  resetPanoramaView() {
+    this.#isPanoramaFlattened = false;
   }
 
   get highlightedFaces() {

@@ -1,43 +1,66 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, JobName } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  JobStatus,
+  MlWorkload,
+  SourceType,
+} from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { QueueExecution } from 'src/queue/types.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PersonService } from 'src/services/person.service.js';
+import { JobOf } from 'src/types.js';
+import { useRealJobPublication } from 'test/fixtures/job-publication.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(PersonService, {
+  const service = newMediumService(PersonService, {
     database: db || defaultDatabase,
     real: [
       AccessRepository,
       AssetJobRepository,
       ConfigRepository,
+      CryptoRepository,
       DatabaseRepository,
       PersonRepository,
       AssetRepository,
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository],
+    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
   });
+  // FL-57: face changes queue the refresh of generated text that may name the wrong people
+  service.ctx.getMock(JobRepository).queue.mockResolvedValue();
+  useRealJobPublication(service.ctx.database, service.ctx.getMock(JobRepository), [service.sut]);
+  return service;
 };
 
 const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
@@ -133,14 +156,41 @@ describe(PersonService.name, () => {
       const auth = factory.auth({ user });
       const hiddenAuth = { ...auth, hideNsfwAssets: true };
 
-      await expect(sut.getById(hiddenAuth, nsfwOnlyPerson.personGroupId)).rejects.toThrow(
-        'Not found or no person.read access',
-      );
+      await expect(sut.getById(hiddenAuth, nsfwOnlyPerson.personGroupId)).rejects.toThrow('Person not found');
       await expect(sut.getById(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
         expect.objectContaining({ id: mixedPerson.personGroupId }),
       );
-      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 2 });
-      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual({ assets: 1 });
+      await expect(sut.getStatistics(auth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 2 }),
+      );
+      await expect(sut.getStatistics(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ assets: 1 }),
+      );
+    });
+
+    it('splits the person page count into photos and videos over timeline assets only (FL-37)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Counted' });
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: user.id,
+        type: AssetType.Image,
+        visibility: AssetVisibility.Archive,
+      });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, deletedAt: new Date() });
+      for (const asset of [photo, video, archived, trashed]) {
+        await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: asset.id });
+      }
+      // two faces of the same person on one photo still count that photo once
+      await ctx.newAssetFace({ personGroupId: person.personGroupId, assetId: photo.id });
+
+      await expect(sut.getStatistics(factory.auth({ user }), person.personGroupId)).resolves.toEqual({
+        assets: 2,
+        photos: 1,
+        videos: 1,
+      });
     });
 
     it('should not serve person thumbnails generated from private NSFW feature faces', async () => {
@@ -182,12 +232,132 @@ describe(PersonService.name, () => {
     });
   });
 
+  describe('Locked media (FL-34)', () => {
+    it('never shows Locked (while locked) or foreign media as correction history evidence (FL-57, FL-195)', async () => {
+      // its own database: the corrected faces it leaves would outlast the forced recognition tests below
+      const { sut, ctx } = setup(await getKyselyDB());
+      const personRepo = ctx.get(PersonRepository);
+      const { user: user1 } = await ctx.newUser();
+      const { user: user2 } = await ctx.newUser({ clusterGroupId: user1.clusterGroupId });
+      const { person } = await ctx.newPerson({ ownerId: user1.id });
+      await ctx.newPerson({ ownerId: user2.id, personGroupId: person.personGroupId });
+
+      const { asset: locked1 } = await ctx.newAsset({ ownerId: user1.id, visibility: AssetVisibility.Locked });
+      const { asset: timeline1 } = await ctx.newAsset({ ownerId: user1.id });
+      const { asset: timeline2 } = await ctx.newAsset({ ownerId: user2.id });
+      for (const asset of [locked1, timeline1, timeline2]) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, imageWidth: 100, imageHeight: 100 });
+        await personRepo.reassignFace(assetFace.id, person.personGroupId);
+        await personRepo.recordFaceCorrections([
+          {
+            ownerId: user1.id,
+            actorId: user1.id,
+            action: 'reassign',
+            faceId: assetFace.id,
+            toPersonId: person.personGroupId,
+          },
+        ]);
+      }
+
+      const locked = await sut.getCorrectionHistory(factory.auth({ user: user1 }), person.personGroupId, {
+        page: 1,
+        size: 25,
+      });
+      expect(locked.corrections).toHaveLength(3);
+      expect(locked.corrections.filter(({ evidence }) => evidence).map(({ evidence }) => evidence!.assetId)).toEqual([
+        timeline1.id,
+      ]);
+      expect(locked.corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(2);
+
+      // FL-195: the owner's unlocked session sees their own marked photo as evidence like any other;
+      // someone else's media never
+      const unlocked = await sut.getCorrectionHistory(
+        factory.auth({ user: user1, session: { hasElevatedPermission: true } }),
+        person.personGroupId,
+        { page: 1, size: 25 },
+      );
+      expect(unlocked.corrections).toHaveLength(3);
+      expect(
+        unlocked.corrections
+          .filter(({ evidence }) => evidence)
+          .map(({ evidence }) => evidence!.assetId)
+          .toSorted(),
+      ).toEqual([locked1.id, timeline1.id].toSorted());
+      expect(unlocked.corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(1);
+
+      // the history is the owner's: the partner sees none of it
+      await expect(
+        sut.getCorrectionHistory(factory.auth({ user: user2 }), person.personGroupId, { page: 1, size: 25 }),
+      ).resolves.toEqual({ corrections: [], hasNextPage: false });
+    });
+
+    it("reaches a face on the caller's own Locked media only from an elevated session", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+
+      await expect(sut.deleteFace(factory.auth({ user }), assetFace.id, { force: false })).rejects.toThrow(
+        'Not found or no face.delete access',
+      );
+      await expect(
+        sut.deleteFace(factory.auth({ user, session: { hasElevatedPermission: true } }), assetFace.id, {
+          force: false,
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('suppressed people (owner decision, September 22, 2026)', () => {
+    it('should answer a suppressed person like a missing one while locked, with or without photos', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person: withPhoto } = await ctx.newPerson({ ownerId: user.id, name: 'With photo' });
+      const { person: withoutPhoto } = await ctx.newPerson({ ownerId: user.id, name: 'Without photo' });
+      const { person: visible } = await ctx.newPerson({ ownerId: user.id, name: 'Visible' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: otherAsset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ personGroupId: withPhoto.personGroupId, assetId: asset.id });
+      await ctx.newAssetFace({ personGroupId: visible.personGroupId, assetId: otherAsset.id });
+
+      const auth = factory.auth({ user });
+      const hiddenContent = {
+        userId: user.id,
+        includeNsfw: false,
+        tagIds: [],
+        personIds: [withPhoto.personGroupId, withoutPhoto.personGroupId],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      const lockedAuth = { ...auth, hideNsfwAssets: true, hiddenContent };
+      const unlockedAuth = { ...auth, suppressedContent: hiddenContent };
+
+      const missing = await sut.getById(lockedAuth, factory.uuid()).catch((error: Error) => error.message);
+      expect(missing).toBe('Person not found');
+      for (const person of [withPhoto, withoutPhoto]) {
+        await expect(sut.getById(lockedAuth, person.personGroupId)).rejects.toThrow(missing);
+        await expect(sut.getStatistics(lockedAuth, person.personGroupId)).rejects.toThrow(missing);
+        await expect(sut.update(lockedAuth, person.personGroupId, { name: 'Renamed' })).rejects.toThrow(missing);
+        await expect(sut.getById(unlockedAuth, person.personGroupId)).resolves.toEqual(
+          expect.objectContaining({ id: person.personGroupId }),
+        );
+      }
+
+      await expect(sut.getById(lockedAuth, visible.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ id: visible.personGroupId }),
+      );
+      await expect(ctx.get(PersonRepository).getByGroupId(withoutPhoto)).resolves.toEqual(
+        expect.objectContaining({ name: 'Without photo' }),
+      );
+    });
+  });
+
   describe('delete', () => {
     it('should throw an error when there is no access', async () => {
       const { sut } = setup();
       const auth = factory.auth();
       const personId = factory.uuid();
-      await expect(sut.delete(auth, personId)).rejects.toThrow('Not found or no person.delete access');
+      await expect(sut.delete(auth, personId)).rejects.toThrow('Person not found');
     });
 
     it('should delete the person', async () => {
@@ -240,6 +410,191 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each(['empty', 'nonmatching'] as const)(
+      'settles an imported %s detection as failed without losing people or featured faces, including retry',
+      async (result) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Imported person', isHidden: true });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, description: '' });
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'imported-preview.jpg' });
+        const { assetFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.MachineLearning,
+          correctedAt: null,
+          deletedAt: null,
+          imageWidth: 100,
+          imageHeight: 100,
+          boundingBoxX1: 10,
+          boundingBoxY1: 10,
+          boundingBoxX2: 30,
+          boundingBoxY2: 30,
+        });
+        await ctx.get(PersonRepository).update({ ...person, faceAssetId: assetFace.id });
+        const readFaces = () =>
+          ctx.database.selectFrom('asset_face').selectAll().where('assetId', '=', asset.id).execute();
+        const readPerson = () =>
+          ctx.database
+            .selectFrom('person')
+            .selectAll()
+            .where('ownerId', '=', user.id)
+            .where('personGroupId', '=', person.personGroupId)
+            .executeTakeFirstOrThrow();
+        const before = { faces: await readFaces(), person: await readPerson() };
+        ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+          imageWidth: 100,
+          imageHeight: 100,
+          faces:
+            result === 'empty'
+              ? []
+              : [{ boundingBox: { x1: 70, y1: 70, x2: 90, y2: 90 }, embedding: newEmbedding(), score: 1 }],
+        });
+        const queue = `import-faces-${randomUUID()}`;
+        const worker = randomUUID();
+        const runId = randomUUID();
+        const store = new SqlQueueStore(ctx.database);
+        await store.initialize([queue], worker);
+        await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, 'immich-import-derived', '{}'::jsonb)`.execute(
+          ctx.database,
+        );
+        await store.enqueue([
+          {
+            queue,
+            name: JobName.AssetDetectFaces,
+            data: { id: asset.id, preserveImportedFaces: true },
+            runId,
+            itemKey: asset.id,
+            rootItemKey: asset.id,
+            safeToRetry: true,
+            sensitive: false,
+            deadlineMs: 60_000,
+          },
+        ]);
+        await store.finishEnumeration(runId);
+        const reason = 'Imported face regeneration unresolved: detection did not match retained faces';
+        for (const attempt of [1, 2]) {
+          const [claim] = await new SqlQueueStore(ctx.database).claim(queue, worker);
+          expect(claim).toMatchObject({ attempt, runId, data: { id: asset.id, preserveImportedFaces: true } });
+          const execution: QueueExecution = {
+            claim,
+            signal: new AbortController().signal,
+            progress: vi.fn(),
+            progressUnits: 0,
+            adoptions: [],
+            followups: [],
+            buffering: false,
+          };
+          await queueExecution.run(execution, () =>
+            sut.handleDetectFaces(claim.data as unknown as JobOf<JobName.AssetDetectFaces>),
+          );
+          await expect(
+            store.complete(claim, execution.followups, (tx) =>
+              publicationTransaction.run(tx, () =>
+                queueExecution.run(execution, async () => {
+                  execution.buffering = true;
+                  for (const adopt of execution.adoptions) await adopt(tx);
+                }),
+              ),
+            ),
+          ).rejects.toThrow(reason);
+          expect(await store.fail(claim, reason)).toBe(true);
+          expect({ faces: await readFaces(), person: await readPerson() }).toEqual(before);
+          expect(
+            await ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute(),
+          ).toEqual([]);
+          expect(execution.followups).toEqual([]);
+          await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(ctx.database);
+        }
+        expect(await store.claim(queue, worker)).toEqual([]);
+        expect(
+          (
+            await sql`select state, attempt, "retryBaseAttempt", error from job where "runId" = ${runId}::uuid`.execute(
+              ctx.database,
+            )
+          ).rows,
+        ).toEqual([{ state: 'failed', attempt: 2, retryBaseAttempt: 0, error: reason }]);
+        expect(
+          (await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(ctx.database)).rows,
+        ).toEqual([{ state: 'failed' }]);
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      'repairs an imported ML face without face_search, preserving decisions (corrected=%s)',
+      async (corrected) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, description: '' });
+        await ctx.newAssetFile({
+          assetId: asset.id,
+          type: AssetFileType.Preview,
+          isEdited: false,
+          path: 'imported-preview.jpg',
+        });
+        const { assetFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.MachineLearning,
+          correctedAt: corrected ? new Date() : null,
+          deletedAt: null,
+        });
+        const readFace = () =>
+          ctx.database.selectFrom('asset_face').selectAll().where('id', '=', assetFace.id).executeTakeFirstOrThrow();
+        const readEmbedding = () =>
+          ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute();
+        const before = await readFace();
+        await ctx.get(PersonRepository).update({ ...person, faceAssetId: assetFace.id });
+        const readPerson = () =>
+          ctx.database
+            .selectFrom('person')
+            .selectAll()
+            .where('ownerId', '=', user.id)
+            .where('personGroupId', '=', person.personGroupId)
+            .executeTakeFirstOrThrow();
+        const personBefore = await readPerson();
+        expect(await readEmbedding()).toEqual([]);
+        const embedding = newEmbedding();
+        ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+          imageHeight: assetFace.imageHeight,
+          imageWidth: assetFace.imageWidth,
+          faces: [
+            {
+              boundingBox: {
+                x1: assetFace.boundingBoxX1,
+                y1: assetFace.boundingBoxY1,
+                x2: assetFace.boundingBoxX2,
+                y2: assetFace.boundingBoxY2,
+              },
+              embedding,
+              score: 1,
+            },
+          ],
+        });
+
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
+        expect(await readEmbedding()).toEqual([{ faceId: assetFace.id, embedding: expect.any(String) }]);
+        expect(await readFace()).toEqual(before);
+        // Replaying the repair upserts the same derived row, without a new face or recognition assignment.
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
+        expect(await readEmbedding()).toHaveLength(1);
+        expect(
+          await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute(),
+        ).toEqual([{ id: assetFace.id }]);
+        expect(await readFace()).toEqual(before);
+        expect(await readPerson()).toEqual(personBefore);
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('should prefer an edited preview file', async () => {
       const { sut, ctx } = setup();
       const config = await ctx.getConfig();
@@ -265,6 +620,7 @@ describe(PersonService.name, () => {
       await sut.handleDetectFaces({ id: asset.id });
 
       expect(ctx.getMock(MachineLearningRepository).detectFaces).toHaveBeenCalledWith(
+        expect.objectContaining({ workload: MlWorkload.Face }),
         'edited_file.jpg',
         config.machineLearning.facialRecognition,
       );
@@ -272,7 +628,7 @@ describe(PersonService.name, () => {
   });
 
   describe('handleQueueRecognizeFaces', () => {
-    it('should delete all people and queue faces for recognition', async () => {
+    it('freezes all faces for forced recognition without deleting people before admission', async () => {
       const { sut, ctx } = setup();
       const jobRepo = ctx.getMock(JobRepository);
       ctx.getMock(StorageRepository).unlink.mockResolvedValue();
@@ -294,16 +650,65 @@ describe(PersonService.name, () => {
 
       await sut.handleQueueRecognizeFaces({ force: true });
 
-      await expect(ctx.database.selectFrom('person').selectAll().execute()).resolves.toHaveLength(0);
-      expect(jobRepo.queueAll).toHaveBeenCalledWith(
-        expect.objectContaining([
-          { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
-          { name: JobName.FacialRecognition, data: { id: assetFaceUser1.id, deferred: false } },
+      await expect(
+        ctx.database
+          .selectFrom('person')
+          .select(['ownerId', 'personGroupId'])
+          .where('ownerId', 'in', [user.id, user1.id])
+          .orderBy('ownerId')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { ownerId: user.id, personGroupId: person.personGroupId },
+          { ownerId: user1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.ownerId.localeCompare(b.ownerId)),
+      );
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select(['id', 'personGroupId'])
+          .where('id', 'in', [assetFace.id, assetFaceUser1.id])
+          .orderBy('id')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { id: assetFace.id, personGroupId: person.personGroupId },
+          { id: assetFaceUser1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.id.localeCompare(b.id)),
+      );
+      const { rows } = await sql<{
+        itemKey: string;
+        rootItemKey: string;
+        selection: JobOf<JobName.FacialRecognition>;
+        state: string;
+        jobId: string | null;
+      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
+        where stage = ${JobName.FacialRecognition}
+        and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
+      // Other earlier fixtures can also be selected, but both owners' roots must be durable and unadmitted.
+      expect(rows).toHaveLength(2);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          {
+            itemKey: assetFace.id,
+            rootItemKey: asset.id,
+            selection: { id: assetFace.id, deferred: false, force: true },
+            state: 'pending',
+            jobId: null,
+          },
+          {
+            itemKey: assetFaceUser1.id,
+            rootItemKey: assetUser1.id,
+            selection: { id: assetFaceUser1.id, deferred: false, force: true },
+            state: 'pending',
+            jobId: null,
+          },
         ]),
       );
+      expect(jobRepo.queueAll).not.toHaveBeenCalled();
     });
 
-    it('should only delete all people of a specified cluster group and queue their faces for recognition', async () => {
+    it('freezes only the specified cluster group without changing either owner before admission', async () => {
       const { sut, ctx } = setup();
       const jobRepo = ctx.getMock(JobRepository);
       ctx.getMock(StorageRepository).unlink.mockResolvedValue();
@@ -325,16 +730,52 @@ describe(PersonService.name, () => {
 
       await sut.handleQueueRecognizeFaces({ force: true, clusterGroupId: user.clusterGroupId });
 
-      await expect(ctx.database.selectFrom('person').selectAll().execute()).resolves.toHaveLength(1);
-      expect(jobRepo.queueAll).toHaveBeenCalledWith(
-        expect.objectContaining([{ name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } }]),
+      await expect(
+        ctx.database
+          .selectFrom('person')
+          .select(['ownerId', 'personGroupId'])
+          .where('ownerId', 'in', [user.id, user1.id])
+          .orderBy('ownerId')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { ownerId: user.id, personGroupId: person.personGroupId },
+          { ownerId: user1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.ownerId.localeCompare(b.ownerId)),
       );
-      expect(jobRepo.queueAll).not.toHaveBeenCalledWith(
-        expect.objectContaining([
-          { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
-          { name: JobName.FacialRecognition, data: { id: assetFaceUser1.id, deferred: false } },
-        ]),
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select(['id', 'personGroupId'])
+          .where('id', 'in', [assetFace.id, assetFaceUser1.id])
+          .orderBy('id')
+          .execute(),
+      ).resolves.toEqual(
+        [
+          { id: assetFace.id, personGroupId: person.personGroupId },
+          { id: assetFaceUser1.id, personGroupId: personUser1.personGroupId },
+        ].toSorted((a, b) => a.id.localeCompare(b.id)),
       );
+      const { rows } = await sql<{
+        itemKey: string;
+        rootItemKey: string;
+        selection: JobOf<JobName.FacialRecognition>;
+        state: string;
+        jobId: string | null;
+      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
+        where stage = ${JobName.FacialRecognition}
+        and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
+      expect(rows).toEqual([
+        {
+          itemKey: assetFace.id,
+          rootItemKey: asset.id,
+          selection: { id: assetFace.id, deferred: false, force: true },
+          state: 'pending',
+          jobId: null,
+        },
+      ]);
+      expect(rows.some(({ itemKey }) => itemKey === assetFaceUser1.id)).toBe(false);
+      expect(jobRepo.queueAll).not.toHaveBeenCalled();
     });
   });
 

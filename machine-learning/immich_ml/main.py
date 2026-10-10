@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import importlib.util
 import os
 import secrets
 import signal
@@ -13,8 +14,8 @@ from zipfile import BadZipFile
 
 import onnxruntime as ort
 import orjson
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from onnxruntime.capi.onnxruntime_pybind11_state import InvalidProtobuf, NoSuchFile
 from PIL.Image import Image
 from pydantic import ValidationError
@@ -24,10 +25,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from immich_ml.models import get_model_deps
-from immich_ml.models.base import InferenceModel
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
+from immich_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav
 from immich_ml.models.transforms import decode_pil
 
-from .config import PreloadModelData, log, settings
+from .config import PreloadModelData, log, model_source, settings
+from .env_aliases import read_env
+from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
     ImageDescriptionAcceleration,
@@ -56,6 +60,8 @@ last_called: float | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     global thread_pool
+    source_url, source_setting = model_source()
+    log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
         (
             "Created in-memory cache with unloading "
@@ -206,9 +212,9 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
 app = FastAPI(lifespan=lifespan)
 
 
-# Health endpoints stay unauthenticated so RunPod's proxy probes and LAN deployments
+# Health endpoints stay unauthenticated so reverse-proxy probes and LAN deployments
 # (the default UX) keep working unchanged. Auth only kicks in for paths that actually
-# do inference, and only when IMMICH_ML_AUTH_TOKEN is set in the environment.
+# do inference, and only when FRAMELEAF_ML_AUTH_TOKEN is set in the environment.
 # Normalised exempt paths — comparison strips trailing slash and lowercases.
 _AUTH_EXEMPT_PATHS = frozenset({"/", "/ping"})
 # Cap on the Authorization header byte length to avoid degenerate-input
@@ -235,12 +241,12 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         # No token configured -> auth disabled; serve every request. This is the
         # default for local / same-LAN deployments — upstream Immich ships the ML
         # service without authentication. A token is only present when something
-        # sets IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode, whose endpoint is
-        # exposed on the public internet and must stay authenticated.
+        # sets FRAMELEAF_ML_AUTH_TOKEN, e.g. a LAN worker reached through a proxy,
+        # whose endpoint may be exposed beyond this host and must stay authenticated.
         if self._expected_bytes is None:
             return await call_next(request)
         # Token configured: enforce bearer auth on everything except the health
-        # endpoints, which stay open so RunPod's proxy probes keep working.
+        # endpoints, which stay open so proxy health probes keep working.
         normalized_path = _normalize_auth_path(request.url.path)
         if normalized_path in _AUTH_EXEMPT_PATHS:
             return await call_next(request)
@@ -257,12 +263,12 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-_expected_token = os.environ.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None
+_expected_token = read_env(os.environ, "FRAMELEAF_ML_AUTH_TOKEN").strip() or None
 
 # Startup banner so the auth state is visible in worker logs — a single log
 # line is easy to miss when gunicorn boots, so the banner mirrors other Immich
-# startup output. Bearer auth is enforced only when a token is set (e.g. RunPod
-# Pod mode injects one); otherwise the service is open, matching upstream
+# startup output. Bearer auth is enforced only when a token is set (e.g. a LAN
+# worker configured with one); otherwise the service is open, matching upstream
 # Immich, which ships the ML service without authentication.
 _auth_state = (
     "ENABLED  (bearer token required for /predict)"
@@ -270,12 +276,12 @@ _auth_state = (
     else "DISABLED (no token; /predict open to anything that can reach this port)"
 )
 log.info("=" * 64)
-log.info("Immich ML auth: %s", _auth_state)
-log.info("  IMMICH_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
+log.info("Frameleaf ML auth: %s", _auth_state)
+log.info("  FRAMELEAF_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
 log.info("=" * 64)
 if not _expected_token:
     log.warning(
-        "IMMICH_ML_AUTH_TOKEN is not set; /predict is unauthenticated. Treat the "
+        "FRAMELEAF_ML_AUTH_TOKEN is not set; /predict is unauthenticated. Treat the "
         "ML service URL as a trusted internal endpoint — anything able to reach "
         "this port can submit inference requests."
     )
@@ -285,12 +291,39 @@ app.add_middleware(BearerAuthMiddleware, expected_token=_expected_token)
 
 @app.get("/")
 async def root() -> ORJSONResponse:
-    return ORJSONResponse({"message": "Immich ML"})
+    return ORJSONResponse({"message": "Frameleaf ML"})
 
 
 @app.get("/ping")
 def ping() -> PlainTextResponse:
     return PlainTextResponse("pong")
+
+
+# The workloads this container serves (FL-110). The server's destination model asks every
+# endpoint what it can run before admitting a request, instead of inferring capability from
+# a successful /ping. This container is the ordinary /predict service: it serves the library
+# workloads, plus Studio AI speech to text (`/transcribe`, Whisper, owner decision 2026-10-09) when
+# its runtime is installed. Restoration needs a dedicated worker that publishes its own capabilities;
+# listing it here would be a false claim.
+#
+# Public contract — KEEP IN SYNC WITH ``server/src/enum.ts`` (``MlWorkload``,
+# ``LIBRARY_ML_WORKLOADS``) and ``MachineLearningRepository.probe``.
+# "pet-recognition" (FL-58) is CLIP text encoding against the configured CLIP model, which this
+# container serves whenever it serves "clip"; it is listed separately so it can be routed alone.
+LIBRARY_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment", "pet-recognition")
+
+
+def _has_transcription_runtime() -> bool:
+    return importlib.util.find_spec("faster_whisper") is not None
+
+
+SERVED_WORKLOADS: tuple[str, ...] = LIBRARY_WORKLOADS + (("studio-ai",) if _has_transcription_runtime() else ())
+PREDICT_PROTOCOL = "predict-v1"
+
+
+@app.get("/capabilities")
+def capabilities() -> ORJSONResponse:
+    return ORJSONResponse({"protocol": PREDICT_PROTOCOL, "workloads": list(SERVED_WORKLOADS)})
 
 
 @app.get("/hardware")
@@ -322,6 +355,8 @@ def hardware() -> ORJSONResponse:
             "torchCudaAvailable": torch_cuda_available,
             "cudaDeviceCount": cuda_device_count,
             "preferredAcceleration": preferred_acceleration,
+            # FL-159: which GPU this container reaches, through which backend (Hardware & GPU).
+            "container": container_report(providers, openvino_device_ids),
         }
     )
 
@@ -360,6 +395,7 @@ async def predict(
     entries: InferenceEntries = Depends(get_entries),
     image: bytes | None = File(default=None),
     text: str | None = Form(default=None),
+    mask: bytes | None = File(default=None),
 ) -> Any:
     if image is not None:
         decoded = await run(lambda: decode_pil(image))
@@ -370,11 +406,81 @@ async def predict(
         inputs = text
     else:
         raise HTTPException(400, "Either image or text must be provided")
-    response = await run_inference(inputs, entries)
+    # Clean Up Remove fills (`inpaint`): a greyscale mask the same size as the image, 255 where content is removed.
+    decoded_mask: Image | None = None
+    if mask is not None:
+        if not isinstance(inputs, Image):
+            raise HTTPException(400, "A mask needs an image")
+        decoded_mask = await run(lambda: decode_pil(mask))
+        if decoded_mask.size != inputs.size:
+            raise HTTPException(400, "The mask must be the same size as the image")
+    response = await run_inference(inputs, entries, decoded_mask)
     return ORJSONResponse(response)
 
 
-async def run_inference(payload: Image | str, entries: InferenceEntries) -> InferenceResponse:
+@app.post("/transcribe")
+async def transcribe(
+    entries: InferenceEntries = Depends(get_entries),
+    audio: UploadFile = File(),
+) -> StreamingResponse:
+    """Studio captions: Whisper over one clip's audio (16 kHz mono 16-bit PCM WAV).
+
+    The request names one entry, `{"transcribe": {"audio": {"modelName": "frameleaf-transcribe", "options":
+    {"language"?, "wordTimestamps"?}}}}`. Problems found before any work starts are HTTP errors (400 bad
+    audio or language, 503 no model or runtime). Otherwise the answer is newline-delimited JSON: one
+    `info` line, a `segment` line per segment as it is decoded, then `done` (or `error`). Closing the
+    connection stops the decoding at the next segment.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.TRANSCRIBE:
+        raise HTTPException(400, "A transcription request names exactly one transcribe entry")
+    entry = without_deps[0]
+    try:
+        samples = await run(read_wav, audio.file)
+    except AudioFormatError as error:
+        raise HTTPException(400, str(error)) from error
+    model = await model_cache.get(
+        entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
+    )
+    model = await load(model)
+    assert isinstance(model, TranscribeModel)
+    language = entry["options"].get("language")
+    if language is not None and language not in model.languages:
+        raise HTTPException(400, f"Whisper does not know the language '{language}'")
+    items = model.stream(samples, **entry["options"])
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, not by a dependency: the stream outlives the handler, and an idle shutdown
+        # must not stop a transcription that is still running.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except Exception as error:
+                    log.error(f"Transcription failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Transcription failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                yield orjson.dumps(item) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still decoding in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+async def run_inference(
+    payload: Image | str, entries: InferenceEntries, mask: Image | None = None
+) -> InferenceResponse:
     outputs: dict[ModelIdentity, Any] = {}
     response: InferenceResponse = {}
 
@@ -382,7 +488,11 @@ async def run_inference(payload: Image | str, entries: InferenceEntries) -> Infe
         model = await model_cache.get(
             entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
         )
-        inputs = [payload]
+        inputs: list[Any] = [payload]
+        if entry["task"] == ModelTask.INPAINT:
+            if mask is None:
+                raise HTTPException(400, "Inpainting needs a mask")
+            inputs.append(mask)
         for dep in model.depends:
             try:
                 inputs.append(outputs[dep])
@@ -434,6 +544,9 @@ async def load(model: InferenceModel) -> InferenceModel:
 
     try:
         return await run(_load, model)
+    except ModelUnavailableError as error:
+        # A missing model is a configuration problem; clearing the cache and retrying cannot fix it.
+        raise HTTPException(503, str(error)) from error
     except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile):
         log.warning(f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache.")
         model.clear_cache()

@@ -4,7 +4,7 @@
 
 <script lang="ts">
   import { getProfileImageUrl } from '$lib/utils';
-  import { type UserAvatarColor } from '@immich/sdk';
+  import { type UserAvatarColor } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   interface User {
@@ -78,7 +78,7 @@
 </script>
 
 <figure
-  class="{sizeClass} {colorClass} {interactiveClass} overflow-hidden rounded-full shadow-md"
+  class="{sizeClass} {colorClass} {interactiveClass} fl-squircle overflow-hidden shadow-md"
   title={noTitle ? undefined : title}
 >
   {#if user.profileImagePath}

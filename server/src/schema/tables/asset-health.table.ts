@@ -8,8 +8,8 @@ import {
   Table,
   Unique,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
 import { media_health_updated_at } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';

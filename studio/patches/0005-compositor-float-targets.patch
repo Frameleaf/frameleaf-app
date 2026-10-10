@@ -1,0 +1,36 @@
+--- a/src/infrastructure/gpu-compositor/compositor-pipeline.ts
++++ b/src/infrastructure/gpu-compositor/compositor-pipeline.ts
+@@ -31,7 +31,8 @@
+ @fragment
+ fn blitFragment(input: VertexOutput) -> @location(0) vec4f {
+-  // Composite textures store straight alpha; canvas expects premultiplied
++  // Explicit SDR output conversion: clip straight RGB before premultiplying,
++  // so extended highlights cannot produce canvas RGB greater than alpha.
+   let c = textureSample(inputTex, texSampler, input.uv);
+-  return vec4f(c.rgb * c.a, c.a);
++  return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * c.a, c.a);
+ }
+ `
+@@ -326,5 +327,5 @@
+         layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.regularLayout] }),
+         vertex: { module, entryPoint: 'vertexMain' },
+-        fragment: { module, entryPoint: 'compositeFragment', targets: [{ format: 'rgba8unorm' }] },
++        fragment: { module, entryPoint: 'compositeFragment', targets: [{ format: 'rgba16float' }] },
+         primitive: { topology: 'triangle-list' },
+       })
+@@ -356,5 +357,5 @@
+           module,
+           entryPoint: 'compositeExternalFragment',
+-          targets: [{ format: 'rgba8unorm' }],
++          targets: [{ format: 'rgba16float' }],
+         },
+         primitive: { topology: 'triangle-list' },
+@@ -396,5 +397,7 @@
+     const desc: GPUTextureDescriptor = {
+       size: { width: w, height: h },
+-      format: 'rgba8unorm',
++      // Preserve negative RGB, highlights and sub-8-bit precision between layers.
++      // The final blit remains the explicit conversion to the canvas format.
++      format: 'rgba16float',
+       usage:
+         GPUTextureUsage.TEXTURE_BINDING |

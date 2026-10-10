@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "weightsRoot": "/restoration/weights",
+  "models": [
+    {
+      "id": "realbasicvsr-x4",
+      "family": "realbasicvsr",
+      "mode": "faithful",
+      "displayName": "RealBasicVSR x4",
+      "repository": "https://github.com/ckkelvinchan/RealBasicVSR",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": null,
+        "weights": null,
+        "url": "https://github.com/ckkelvinchan/RealBasicVSR"
+      },
+      "nativeScale": 4,
+      "runtime": {
+        "root": "/opt/restoration/realbasicvsr",
+        "python": "/opt/restoration/realbasicvsr/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "/usr/src/immich_ml/video_restoration/runtime_worker.py",
+          "realbasicvsr",
+          "--module",
+          "inference_realbasicvsr",
+          "--config",
+          "configs/realbasicvsr_x4.py",
+          "--checkpoint",
+          "{weight:generator}",
+          "--max-seq-len",
+          "{max_seq_len}"
+        ],
+        "env": {
+          "TORCH_HOME": "/restoration/weights/realbasicvsr/torch-home"
+        },
+        "timeoutSeconds": 3600,
+        "protocol": "warm-v1",
+        "idleSeconds": 120,
+        "maxRequests": 64
+      },
+      "weights": [
+        {
+          "role": "generator",
+          "path": "realbasicvsr/RealBasicVSR_x4.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "spynet",
+          "path": "realbasicvsr/torch-home/hub/checkpoints/spynet_20210409-c6c1bd09.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 1280,
+        "maxFrames": 300,
+        "maxFramesPerChunk": 30,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "notes": "Every value marked REPLACE and every limit must come from the qualification run. minVramBytes 0 is a placeholder, not a measurement."
+    },
+    {
+      "id": "seedvr2-3b",
+      "family": "seedvr2",
+      "mode": "creative",
+      "displayName": "SeedVR2 3B",
+      "repository": "https://github.com/ByteDance-Seed/SeedVR",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": null,
+        "weights": null,
+        "url": "https://github.com/ByteDance-Seed/SeedVR"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/seedvr",
+        "python": "/opt/restoration/seedvr/.venv/bin/python",
+        "argv": [
+          "/opt/restoration/seedvr/.venv/bin/torchrun",
+          "--standalone",
+          "--nnodes=1",
+          "--nproc-per-node=1",
+          "/usr/src/immich_ml/video_restoration/runtime_worker.py",
+          "seedvr2",
+          "--module",
+          "projects.inference_seedvr2_3b"
+        ],
+        "env": {},
+        "timeoutSeconds": 7200,
+        "protocol": "warm-v1",
+        "idleSeconds": 120,
+        "maxRequests": 64
+      },
+      "weights": [
+        {
+          "role": "dit",
+          "path": "/opt/restoration/seedvr/ckpts/seedvr2_ema_3b.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "vae",
+          "path": "/opt/restoration/seedvr/ckpts/ema_vae.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "positive-embedding",
+          "path": "/opt/restoration/seedvr/pos_emb.pt",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "negative-embedding",
+          "path": "/opt/restoration/seedvr/neg_emb.pt",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 1280,
+        "maxFrames": 150,
+        "maxFramesPerChunk": 150,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "notes": "Upstream reads its checkpoints from fixed paths under the checkout, so the weight paths point there (mount the weights volume at ckpts/). The file names follow the upstream README and must be confirmed against the pinned commit. minVramBytes 0 is a placeholder, not a measurement."
+    },
+    {
+      "id": "rife-4-25",
+      "family": "rife",
+      "mode": "smooth_motion",
+      "displayName": "RIFE 4.25",
+      "repository": "https://github.com/hzwer/Practical-RIFE",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": "MIT",
+        "weights": "MIT",
+        "url": "https://github.com/hzwer/Practical-RIFE"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/rife",
+        "python": "/opt/restoration/rife/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "frameleaf_interpolate.py",
+          "--model",
+          "{weight:flownet}",
+          "--img",
+          "{input_dir}",
+          "--output",
+          "{output_dir}",
+          "--exp",
+          "{exp}"
+        ],
+        "env": {},
+        "timeoutSeconds": 3600
+      },
+      "weights": [
+        {
+          "role": "flownet",
+          "path": "rife/4.25/flownet.pkl",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "rife-4.25", "file": "flownet.pkl" }
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 3840,
+        "maxFrames": 1800,
+        "maxFramesPerChunk": 1800,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "requiresGpu": true,
+      "notes": "Smooth motion (FL-162). The weights come from the Frameleaf model source (frameleaf/rife-4.25); `python -m immich_ml.video_restoration fetch-weights rife-4-25` downloads them once the sha256 is pinned. frameleaf_interpolate.py is the runtime's frame-folder entry point and must be confirmed against the pinned commit. requiresGpu false is only for a record qualified on the processor. Every REPLACE value and every limit must come from the qualification run."
+    }
+  ]
+}

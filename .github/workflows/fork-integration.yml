@@ -2,9 +2,15 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ['fork/main']
+    branches: ['fork/main', 'master/frameleaf-implementation']
   workflow_call:
   workflow_dispatch:
+    inputs:
+      raw_engine:
+        description: Execute actual native RAW camera validation
+        type: choice
+        default: none
+        options: [none, libraw, darktable]
 
 permissions:
   contents: read
@@ -22,7 +28,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -35,9 +43,40 @@ jobs:
           node .github/check-runners.cjs
           node .github/check-release.cjs
           node .github/check-jira.cjs
+          node scripts/frameleaf-distribution-gates.mjs
           node --test docker/frameleaf-delivery.test.mjs
-          node --test .github/frameleaf-release.test.cjs
-      - name: Install plugin WASM and API generation tools
+          node --test \
+            .github/native-raw.test.cjs \
+            .github/frameleaf-release.test.cjs \
+            .github/frameleaf-deploy-test.test.cjs \
+            .github/verify-release-bundle.test.cjs \
+            scripts/frameleaf-distribution-gates.test.mjs
+      - name: Set up the pinned NAS renderer Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.11.15'
+      - name: Prepare the pinned TrueNAS rendering library
+        run: |
+          catalog="$RUNNER_TEMP/truenas-catalog"
+          test ! -e "$catalog"
+          git init "$catalog"
+          git -C "$catalog" remote add origin https://github.com/truenas/apps.git
+          git -C "$catalog" sparse-checkout set ix-dev/community/actual-budget/templates/library/base_v2_3_4
+          git -C "$catalog" fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          git -C "$catalog" checkout --detach FETCH_HEAD
+          test "$(git -C "$catalog" rev-parse HEAD)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          python3 -m venv "$RUNNER_TEMP/nas-render-venv"
+          source "$RUNNER_TEMP/nas-render-venv/bin/activate"
+          python3 -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r packaging/nas/requirements-render.lock
+          python3 -m pip check
+          printf '%s\n' "$RUNNER_TEMP/nas-render-venv/bin" >> "$GITHUB_PATH"
+      - name: Validate NAS package fixtures
+        env:
+          TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
+          FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
+      - name: Install plugin WASM, API generation and ffmpeg tools
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -45,50 +84,65 @@ jobs:
           docker cp fork-integration-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
           docker rm fork-integration-mise
           "$RUNNER_TEMP/mise" trust mise.toml
-          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts
+          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts github:jellyfin/jellyfin-ffmpeg
           {
             "$RUNNER_TEMP/mise" where github:extism/js-pdk
             echo "$("$RUNNER_TEMP/mise" where github:webassembly/binaryen)/bin"
             "$RUNNER_TEMP/mise" bin-paths npm:oazapfts
+            # the server unit tests' byte-level clip checks (FL-162) run real ffmpeg and ffprobe
+            "$RUNNER_TEMP/mise" bin-paths github:jellyfin/jellyfin-ffmpeg
           } >> "$GITHUB_PATH"
+      - name: Check local Studio source preflight and exact frame timestamps
+        run: node --test scripts/frameleaf-studio-preflight.test.mjs
       - name: Build SDK and core plugin WASM
         run: |
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/plugin-sdk build
-          pnpm --filter @immich/plugin-core build
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+          pnpm --filter @frameleaf/plugin-core build
+      - name: Verify generated API artifacts are tracked
+        run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+      - name: Generate OpenAPI and TypeScript client
+        id: api-generation
+        run: |
+          pnpm --filter frameleaf build
+          pnpm --filter frameleaf exec node dist/bin/sync-open-api.js
+          node scripts/generate-typescript-sdk.mjs
+      - name: Retain generated API artifacts for source reconciliation
+        if: ${{ steps.api-generation.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: generated-api-${{ github.sha }}
+          path: |
+            open-api/immich-openapi-specs.json
+            packages/sdk/src/fetch-client.ts
+          if-no-files-found: error
       - name: Verify OpenAPI and TypeScript client freshness
         run: |
-          pnpm --filter immich build
-          pnpm --filter immich exec node dist/bin/sync-open-api.js
-          git diff --exit-code -- open-api/immich-openapi-specs.json
-          oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
-          git diff --exit-code -- packages/sdk/src/fetch-client.ts
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/sdk test
+          git diff --exit-code -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/sdk test
       - name: Check server types and lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
-          pnpm --filter immich check
-          pnpm --filter immich lint
-      - name: Run server unit tests
-        run: pnpm --filter immich test --run
-      - name: Run server medium tests with local PostgreSQL containers
-        run: pnpm --filter immich test:medium --run
+          pnpm --filter frameleaf check
+          pnpm --filter frameleaf lint
       - name: Check web types and Svelte components
         run: |
-          pnpm --filter immich-web exec svelte-kit sync
-          pnpm --filter immich-web check:typescript
-          pnpm --filter immich-web check:svelte
+          pnpm --filter frameleaf-web exec svelte-kit sync
+          pnpm --filter frameleaf-web check:typescript
+          pnpm --filter frameleaf-web check:svelte
       - name: Check CLI and migration command
         run: |
-          pnpm --filter @immich/cli check
-          pnpm --filter @immich/cli lint
-          pnpm --filter @immich/cli test --run
-          pnpm --filter @immich/cli build
+          pnpm --filter @frameleaf/cli check
+          pnpm --filter @frameleaf/cli lint
+          pnpm --filter @frameleaf/cli test --run
+          pnpm --filter @frameleaf/cli build
           node packages/cli/bin/immich migrate --help
       - name: Check end-to-end fixtures against generated clients
-        run: pnpm --filter immich-e2e check
+        run: pnpm --filter frameleaf-e2e check
       - name: Run web unit tests
-        run: pnpm --filter immich-web test --run
+        run: pnpm --filter frameleaf-web test --run
 
   machine-learning:
     if: github.repository == 'Frameleaf/frameleaf-app'
@@ -115,6 +169,9 @@ jobs:
         run: .venv/bin/python -m pytest -q
 
   machine-learning-containers:
+    env:
+      FRAMELEAF_CI_PYTHON_IMAGE: mirror.gcr.io/library/python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+      FRAMELEAF_CI_CUDA_IMAGE: mirror.gcr.io/nvidia/cuda@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -126,8 +183,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
       - name: Build ML runtime with locked fork dependencies
-        run: docker build --build-arg DEVICE=${{ matrix.device }} --target prod -t fork-ml-test machine-learning
+        run: docker build --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import immich_ml.models.image_description'
@@ -135,3 +195,123 @@ jobs:
         if: matrix.device == 'cuda'
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import torch; import torchvision; from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration'
+
+  native-raw:
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.raw_engine != 'none'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+        if: inputs.raw_engine == 'libraw'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: inputs.raw_engine == 'libraw'
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: inputs.raw_engine == 'libraw'
+      - name: Build the candidate's pinned LibRaw source and CLI
+        if: inputs.raw_engine == 'libraw'
+        working-directory: server/base-image/sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends autoconf automake build-essential jq libtool pkg-config liblcms2-dev libjpeg-dev zlib1g-dev
+          sudo bash ./libraw.sh
+      - name: Test actual RAW sensor output and preservation
+        if: inputs.raw_engine == 'libraw'
+        working-directory: server
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { exiftool } from 'exiftool-vendored';
+          import { spawnSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          // Expected active dimensions come from pinned LibRaw e419de08 identify.cpp
+          // EOS70D row/lines1016 and Nikon D80 lines1980, and tiff.cpp ActiveArea.
+          // EXIF image dimensions describe the camera JPEG/default crop instead.
+          function rawFixtureDimensions(model, tags) {
+            if (/EOS\s*70D\b/i.test(model)) return [5568 - 72, 3708 - 38];
+            const groups = Object.entries(tags).filter(([key, value]) => key.endsWith(':PhotometricInterpretation') && Number(value) === 32803).map(([key]) => key.slice(0, key.lastIndexOf(':')));
+            assert.equal(groups.length, 1, 'Expected one unambiguous CFA raw IFD');
+            const group = groups[0];
+            const width = Number(tags[group + ':ImageWidth']), height = Number(tags[group + ':ImageHeight']);
+            if (/\bD80\b/i.test(model)) return [width - 4, height - 3];
+            assert.match(model, /GR\s*III|GR\s*3/i);
+            const active = tags[group + ':ActiveArea'];
+            if (active === undefined) return [width, height];
+            const area = (Array.isArray(active) ? active : String(active).trim().split(/[ ,]+/)).map(Number);
+            assert.equal(area.length, 4);
+            assert.ok(area.every(value => Number.isSafeInteger(value) && value >= 0));
+            assert.ok(area[2] <= height && area[3] <= width && area[2] > area[0] && area[3] > area[1]);
+            return [area[3] - area[1], area[2] - area[0]];
+          }
+          assert.deepEqual(rawFixtureDimensions('Canon EOS 70D', {}), [5496, 3670]);
+          assert.deepEqual(rawFixtureDimensions('NIKON D80', { 'SubIFD:PhotometricInterpretation': 32803, 'SubIFD:ImageWidth': 3900, 'SubIFD:ImageHeight': 2600 }), [3896, 2597]);
+          assert.deepEqual(rawFixtureDimensions('RICOH GR III', { 'IFD0:PhotometricInterpretation': 32803, 'IFD0:ImageWidth': 6048, 'IFD0:ImageHeight': 4024, 'IFD0:ActiveArea': '12 24 4012 6024' }), [6000, 4000]);
+          assert.throws(() => rawFixtureDimensions('RICOH GR III', {}));
+          const fixtures = ['Canon/EOS_70D.CR2', 'Ricoh/GR3/Ricoh_GR3-450.DNG', 'Nikon/D80/glarus.nef'];
+          try {
+            for (const name of fixtures) {
+              const file = resolve('../e2e/test-assets/formats/raw', name);
+              const tags = await exiftool.read(file);
+              const rawTags = await exiftool.readRaw(file, { readArgs: ['-a', '-G1', '-n'] });
+              let [width, height] = rawFixtureDimensions(String(tags.Model), rawTags);
+              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing validated active sensor dimensions');
+              if ([5, 6, 7, 8].includes(Number(tags.Orientation)) || /90|270/.test(String(tags.Orientation))) [width, height] = [height, width];
+              console.log({ fixture: name, camera: tags.Model, activeSensor: [width, height], cameraImage: [tags.ImageWidth, tags.ImageHeight] });
+              const result = spawnSync(process.execPath, ['--experimental-transform-types', 'base-image/verify-raw.mjs', file, String(width), String(height), 'src/utils/raw-renderer.ts'], { stdio: 'inherit' });
+              if (result.error || result.status !== 0) throw result.error ?? new Error('Native RAW validation failed: ' + name);
+            }
+          } finally { await exiftool.end(); }
+          JS
+      - name: Build candidate patched native RAW production runtime
+        if: inputs.raw_engine == 'darktable'
+        env:
+          RAW_PLATFORM: ${{ matrix.platform }}
+          DOCKER_BUILDKIT: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/raw-validation"
+          docker build --pull --no-cache --platform "$RAW_PLATFORM" \
+            --target native-raw-validation --file server/Dockerfile \
+            --tag frameleaf-native-raw:validation .
+          docker image inspect frameleaf-native-raw:validation > "$RUNNER_TEMP/raw-validation/image.json"
+          docker create --name native-raw-evidence frameleaf-native-raw:validation
+          docker cp native-raw-evidence:/usr/local/share/frameleaf/native-darktable.json "$RUNNER_TEMP/raw-validation/"
+          docker cp native-raw-evidence:/build/darktable-runtime.json "$RUNNER_TEMP/raw-validation/"
+          docker rm native-raw-evidence
+      - name: Test genuine RAW full controls and calibrated lens offline
+        id: native-validation
+        if: inputs.raw_engine == 'darktable'
+        shell: bash
+        run: |
+          # Fixture is the pinned e2e submodule's genuine CR2. RawSpeed 7cf3dc3 cameras.xml
+          # EOS70D crop is x72/y38 from its 5568x3708 sensor: 5496x3670, orientation 1.
+          # Its EF17-40mm f/4L USM is in the shipped Lensfun0.3.4 database; require calibration.
+          echo 'f3e703f0461707a16b76a0bfae9a42f90b6ab9019e2c8cea90a17ebbe806c7fd  e2e/test-assets/formats/raw/Canon/EOS_70D.CR2' | sha256sum --strict --check -
+          docker run --rm --network none --entrypoint node \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/e2e/test-assets/formats/raw,dst=/fixtures,readonly" \
+            frameleaf-native-raw:validation /build/verify-darktable-develop.mjs \
+            /fixtures/Canon/EOS_70D.CR2 5496 3670 /usr/src/app/server/dist/utils/darktable-renderer.js calibrated \
+            2>&1 | tee "$RUNNER_TEMP/raw-validation/fixture.log"
+      - name: Retain native runtime provenance and fixture result
+        if: always() && inputs.raw_engine == 'darktable'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-raw-${{ matrix.runner }}-${{ github.sha }}
+          path: ${{ runner.temp }}/raw-validation/
+          if-no-files-found: error

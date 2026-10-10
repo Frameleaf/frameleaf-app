@@ -6,19 +6,15 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
-from rapidocr import LangRec
-from rapidocr.inference_engine.base import FileInfo, InferSession
-from rapidocr.utils.download_file import DownloadFile, DownloadFileInput
-from rapidocr.utils.typings import EngineType, OCRVersion, TaskType
-from rapidocr.utils.typings import ModelType as RapidModelType
 
-from immich_ml.config import log, settings
+from immich_ml.config import settings
 from immich_ml.models.base import InferenceModel
 from immich_ml.schemas import ModelFormat, ModelSession, ModelTask, ModelType
 from immich_ml.sessions.ort import OrtSession
 
 from .ctc import CtcDecoder, greedy
 from .schemas import TextDetectionOutput, TextRecognitionOutput
+from .source import download_ocr_model
 
 REC_HEIGHT = 48
 REC_BASE_RATIO = 320 / REC_HEIGHT  # PP-OCR's rec_image_shape floor
@@ -30,7 +26,6 @@ class TextRecognizer(InferenceModel):
     identity = (ModelType.RECOGNITION, ModelTask.OCR)
 
     def __init__(self, model_name: str, **model_kwargs: Any) -> None:
-        self.language = LangRec[model_name.split("__")[0]] if "__" in model_name else LangRec.CH
         self._empty: TextRecognitionOutput = {
             "box": np.empty(0, dtype=np.float32),
             "boxScore": np.empty(0, dtype=np.float32),
@@ -42,22 +37,7 @@ class TextRecognizer(InferenceModel):
         self.batch_size = max_batch_size if max_batch_size else 6
 
     def _download(self) -> None:
-        model_info = InferSession.get_model_url(
-            FileInfo(
-                engine_type=EngineType.ONNXRUNTIME,
-                ocr_version=OCRVersion.PPOCRV5,
-                task_type=TaskType.REC,
-                lang_type=self.language,
-                model_type=RapidModelType.MOBILE if "mobile" in self.model_name else RapidModelType.SERVER,
-            )
-        )
-        download_params = DownloadFileInput(
-            file_url=model_info["model_dir"],
-            sha256=model_info["SHA256"],
-            save_path=self.model_path,
-            logger=log,
-        )
-        DownloadFile.run(download_params)
+        download_ocr_model(self)
 
     def _load(self) -> ModelSession:
         # TODO: support other runtimes

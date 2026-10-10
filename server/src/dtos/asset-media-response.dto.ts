@@ -6,7 +6,10 @@ export enum AssetMediaStatus {
   DUPLICATE = 'duplicate',
 }
 
-const AssetMediaStatusSchema = z.enum(AssetMediaStatus).describe('Upload status').meta({ id: 'AssetMediaStatus' });
+export const AssetMediaStatusSchema = z
+  .enum(AssetMediaStatus)
+  .describe('Upload status')
+  .meta({ id: 'AssetMediaStatus' });
 
 const AssetMediaResponseSchema = z
   .object({

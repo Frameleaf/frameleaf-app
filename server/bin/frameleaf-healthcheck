@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# FL-294: FRAMELEAF_* names first, then their deprecated IMMICH_* aliases
+log_level="${FRAMELEAF_LOG_LEVEL:-$IMMICH_LOG_LEVEL}"
+workers_include="${FRAMELEAF_WORKERS_INCLUDE:-$IMMICH_WORKERS_INCLUDE}"
+workers_exclude="${FRAMELEAF_WORKERS_EXCLUDE:-$IMMICH_WORKERS_EXCLUDE}"
+
+log_container_verbose() {
+  if [[ $log_level == verbose ]]; then
+    echo "$1" > /proc/1/fd/2
+  fi
+}
+
+if [[ ( $workers_include != '' && $workers_include != *api* ) || $workers_exclude == *api* ]]; then
+  echo "API worker excluded, skipping"
+  exit 0
+fi
+
+host="${FRAMELEAF_HOST:-${IMMICH_HOST:-localhost}}"
+port="${FRAMELEAF_PORT:-${IMMICH_PORT:-2283}}"
+
+result=$(curl -fsS -m 2 http://"$host":"$port"/api/server/ping)
+result_exit=$?
+
+if [ $result_exit != 0 ]; then
+  echo "Fail: exit code is $result_exit"
+  log_container_verbose "Healthcheck failed: exit code $result_exit"
+  exit 1
+fi
+
+if ! node -e 'process.exit(JSON.parse(process.argv[1]).res === "pong" ? 0 : 1)' -- "$result" >/dev/null 2>&1; then
+  echo "Fail: didn't reply with pong"
+  log_container_verbose "Healthcheck failed: didn't reply with pong"
+  exit 1
+fi

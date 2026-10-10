@@ -1,29 +1,51 @@
-import { ShallowDehydrateObject } from 'kysely';
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  ShallowDehydrateObject,
+} from 'kysely';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { OutputInfo } from 'sharp';
+import type { QueueExecution } from 'src/queue/types.js';
 import { Exif } from 'src/database.js';
 import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetPathType,
-  AssetStatus,
   AssetType,
   AssetVisibility,
   AudioCodec,
+  ChecksumAlgorithm,
   Colorspace,
+  DvProfile,
   ExifOrientation,
   ImageFormat,
   JobName,
   JobStatus,
   RawExtractedFormat,
+  ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   VideoCodec,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
+import { SharpOperations } from 'src/queue/sharp-operations.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import * as physicalFiles from 'src/repositories/physical-file.repository.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
-import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
+import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { operationExecution } from 'src/utils/execution-signal.js';
+import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
@@ -39,7 +61,8 @@ const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
 
-vi.mock('src/utils/raw-renderer.js', () => ({
+vi.mock('src/utils/raw-renderer.js', async (original) => ({
+  ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
 }));
 
@@ -49,246 +72,88 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    // Keep the child batch orchestration real while stubbing its native I/O. The pool tests exercise IPC.
+    let decodeFailure: unknown;
+    const operations = Object.assign(new SharpOperations(), {
+      decodeImage: async (...args: Parameters<SharpOperations['decodeImage']>) => {
+        try {
+          return await mocks.media.decodeImage(...args);
+        } catch (error) {
+          decodeFailure = error;
+          throw error;
+        }
+      },
+      generateThumbhash: mocks.media.generateThumbhash,
+      generateThumbnail: mocks.media.generateThumbnail,
+      getImageMetadata: mocks.media.getImageMetadata,
+    });
+    mocks.media.generateImageThumbnails.mockImplementation(async (...args) => {
+      decodeFailure = undefined;
+      try {
+        return await operations.generateImageThumbnails(...args);
+      } catch (error) {
+        if (decodeFailure instanceof SharpOperationError) {
+          throw new SharpOperationError(decodeFailure.message, true);
+        }
+        throw decodeFailure ?? error;
+      }
+    });
+    mocks.asset.update.mockResolvedValue(undefined);
+    // FL-39: without retained video history the handler keeps its single-master path.
+    mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
   });
 
   it('should be defined', () => {
     expect(sut).toBeDefined();
   });
 
-  // TODO these should all become medium tests of either the service or the repository.
-  // The entire logic of what to queue lives in the SQL query now
-  describe('handleQueueGenerateThumbnails', () => {
-    it('should queue all assets', async () => {
-      const asset = AssetFactory.create();
-      const person = PersonFactory.create({ faceAssetId: newUuid() });
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
+  describe('durable thumbnail selection', () => {
+    it('includes missing original HDR renditions only behind the HDR processing gate', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const query = { where: vi.fn() };
+        query.where.mockReturnValue(query);
+        mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
+        mocks.person.selectionForThumbnails.mockReturnValue(query as never);
+        await sut.handleQueueGenerateThumbnails({ force: false });
+        expect(mocks.assetJob.selectionForThumbnailJob).toHaveBeenCalledWith({
+          force: false,
+          fullsizeEnabled: false,
+          hdrBackfill: true,
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+    it.each([true, false])(
+      'materializes normal and edited stages without holding a stream (force=%s)',
+      async (force) => {
+        const query = { where: vi.fn() };
+        query.where.mockReturnValue(query);
+        mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
+        mocks.person.selectionForThumbnails.mockReturnValue(query as never);
+        await sut.handleQueueGenerateThumbnails({ force });
+        expect(mocks.assetJob.selectionForThumbnailJob).toHaveBeenCalledWith({ force, fullsizeEnabled: false });
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetGenerateThumbnails, query);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEditThumbnailGeneration, query);
+        expect(mocks.assetJob.streamForThumbnailJob).not.toHaveBeenCalled();
+        expect(mocks.person.selectionForThumbnails).toHaveBeenCalledWith(force);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.PersonGenerateThumbnail, query);
+        expect(mocks.person.getAll).not.toHaveBeenCalled();
+      },
+    );
 
-      mocks.person.getAll.mockReturnValue(makeStream([person]));
-
+    it('keeps profile repair as an explicit durable cleanup stage without running it in enumeration', async () => {
+      const query = { where: vi.fn() };
+      query.where.mockReturnValue(query);
+      mocks.assetJob.selectionForThumbnailJob.mockReturnValue(query as never);
+      mocks.person.selectionForThumbnails.mockReturnValue(query as never);
+      mocks.job.collectFollowups.mockImplementation(async (collect) => {
+        await collect();
+      });
       await sut.handleQueueGenerateThumbnails({ force: true });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: true, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith(undefined);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.PersonGenerateThumbnail,
-          data: { ownerId: person.ownerId, personGroupId: person.personGroupId },
-        },
-      ]);
-    });
-
-    it('should queue trashed assets when force is true', async () => {
-      const asset = AssetFactory.create({ status: AssetStatus.Trashed, deletedAt: new Date() });
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-
-      await sut.handleQueueGenerateThumbnails({ force: true });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: true, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-    });
-
-    it('should queue archived assets when force is true', async () => {
-      const asset = AssetFactory.create({ visibility: AssetVisibility.Archive });
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-
-      await sut.handleQueueGenerateThumbnails({ force: true });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: true, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-    });
-
-    it('should queue all people with missing thumbnail path', async () => {
-      const [person1, person2] = [
-        PersonFactory.create({ thumbnailPath: undefined }),
-        PersonFactory.create({ thumbnailPath: undefined }),
-      ];
-
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([AssetFactory.create()]));
-      mocks.person.getAll.mockReturnValue(makeStream([person1, person2]));
-      mocks.person.getRandomFace.mockResolvedValueOnce(AssetFaceFactory.create());
-
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-      expect(mocks.person.getRandomFace).toHaveBeenCalled();
-      expect(mocks.person.update).toHaveBeenCalledTimes(1);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.PersonGenerateThumbnail,
-          data: {
-            ownerId: person1.ownerId,
-            personGroupId: person1.personGroupId,
-          },
-        },
-      ]);
-    });
-
-    it('should queue all assets with missing resize path', async () => {
-      const asset = AssetFactory.create();
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should queue all assets with missing preview', async () => {
-      const asset = AssetFactory.create();
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetGenerateThumbnails, data: { id: asset.id } },
-      ]);
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should queue all assets with missing thumbhash', async () => {
-      const asset = AssetFactory.from({ thumbhash: null })
-        .files([AssetFileType.Thumbnail, AssetFileType.Preview])
-        .build();
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetGenerateThumbnails, data: { id: asset.id } },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should queue all assets with missing fullsize when feature is enabled', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: true } } });
-      const asset = { id: factory.uuid(), isEdited: false };
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: true });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should not queue assets with missing fullsize when feature is disabled', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: false } } });
-      const asset = { id: factory.uuid(), isEdited: false };
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledTimes(1);
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should queue assets with edits but missing edited thumbnails', async () => {
-      const asset = AssetFactory.from().edit().build();
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetEditThumbnailGeneration,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should not queue assets with missing edited fullsize when feature is disabled', async () => {
-      const asset = AssetFactory.from().edit().build();
-      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: false } } });
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: false });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: false, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledTimes(1);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith({ thumbnailPath: '' });
-    });
-
-    it('should queue assets with missing fullsize when force is true, regardless of setting', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: false } } });
-      const asset = { id: factory.uuid(), isEdited: false };
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: true });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: true, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalled();
-    });
-
-    it('should queue both regular and edited thumbnails for assets with edits when force is true', async () => {
-      const asset = AssetFactory.from().edit().build();
-      mocks.assetJob.streamForThumbnailJob.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-      await sut.handleQueueGenerateThumbnails({ force: true });
-
-      expect(mocks.assetJob.streamForThumbnailJob).toHaveBeenCalledWith({ force: true, fullsizeEnabled: false });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateThumbnails,
-          data: { id: asset.id },
-        },
-        {
-          name: JobName.AssetEditThumbnailGeneration,
-          data: { id: asset.id },
-        },
-      ]);
-
-      expect(mocks.person.getAll).toHaveBeenCalledWith(undefined);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.ProfileImageRepair, data: {} });
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
   });
 
@@ -356,6 +221,52 @@ describe(MediaService.name, () => {
       });
       expect(mocks.move.create).toHaveBeenCalledTimes(3);
     });
+
+    it("never moves a shared generated file into a non-primary asset's folder", async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, physicalFileId: 'shared-preview' })
+        .file({ type: AssetFileType.Thumbnail, physicalFileId: 'own-thumbnail' })
+        .build();
+      mocks.assetJob.getForMigrationJob.mockResolvedValue(asset);
+      mocks.physicalFile.getPhysicalFile.mockImplementation((id: string) =>
+        Promise.resolve({ id, canonicalAssetId: id === 'own-thumbnail' ? asset.id : 'primary-asset' } as never),
+      );
+      mocks.move.create.mockResolvedValue({
+        entityId: asset.id,
+        id: 'move-id',
+        newPath: '/new/path',
+        oldPath: '/old/path',
+        pathType: AssetPathType.Original,
+      });
+
+      await expect(sut.handleAssetMigration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.move.create).not.toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Preview }));
+      expect(mocks.move.create).toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Thumbnail }));
+    });
+
+    it("never moves a generated file with no physical file that another asset (a partner copy's source) owns", async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, path: '/data/thumbs/source/preview.jpeg', physicalFileId: null })
+        .file({ type: AssetFileType.Thumbnail, path: '/data/thumbs/own/thumbnail.webp', physicalFileId: null })
+        .build();
+      mocks.assetJob.getForMigrationJob.mockResolvedValue(asset);
+      mocks.physicalFile.getGeneratedPathPrimaryAssetId.mockImplementation((path: string) =>
+        Promise.resolve(path === '/data/thumbs/source/preview.jpeg' ? 'source-asset' : asset.id),
+      );
+      mocks.move.create.mockResolvedValue({
+        entityId: asset.id,
+        id: 'move-id',
+        newPath: '/new/path',
+        oldPath: '/old/path',
+        pathType: AssetPathType.Original,
+      });
+
+      await expect(sut.handleAssetMigration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.move.create).not.toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Preview }));
+      expect(mocks.move.create).toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Thumbnail }));
+    });
   });
 
   describe('handleGenerateThumbnails', () => {
@@ -367,14 +278,219 @@ describe(MediaService.name, () => {
       mocks.ocr.getByAssetId.mockResolvedValue([]);
       mocks.media.decodeImage.mockImplementation((input) =>
         Promise.resolve(
-          typeof input === 'string'
+          typeof input === 'string' || input === renderedRawBuffer
             ? { data: rawBuffer, info: rawInfo as OutputInfo } // string implies original file
             : { data: fullsizeBuffer, info: rawInfo as OutputInfo }, // buffer implies embedded image extracted
         ),
       );
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
       vi.mocked(renderRawWithLibRaw).mockReset();
-      vi.mocked(renderRawWithLibRaw).mockRejectedValue(new Error('dcraw_emu unavailable'));
+      vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
+    });
+
+    it('persists HDR identity only in the durable publication transaction', async () => {
+      const context = {
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetGenerateThumbnails },
+        signal: new AbortController().signal,
+        adoptions: [],
+        afterCommit: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      const identity = 'aa'.repeat(32);
+      const db = new Kysely({
+        dialect: {
+          createDriver: () => new DummyDriver(),
+          createAdapter: () => new PostgresAdapter(),
+          createIntrospector: (db) => new PostgresIntrospector(db),
+          createQueryCompiler: () => new PostgresQueryCompiler(),
+        },
+      });
+      const execute = vi.spyOn(db.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
+      await queueExecution.run(context, () =>
+        sut['stageGeneratedFiles'](
+          [],
+          [
+            {
+              assetId: newUuid(),
+              type: AssetFileType.HdrPreview,
+              path: '/hdr.jpg',
+              isEdited: false,
+              isProgressive: false,
+              isTransparent: false,
+              renditionIdentity: identity,
+            },
+          ],
+        ),
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(context.adoptions).toHaveLength(1);
+      await context.adoptions[0](db as never);
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sql: expect.stringContaining('"renditionIdentity" = excluded."renditionIdentity"'),
+          parameters: expect.arrayContaining([identity]),
+        }),
+        undefined,
+      );
+      await db.destroy();
+    });
+
+    it('keeps full resolution available for web images with unknown encoding', async () => {
+      const asset = getForGenerateThumbnail(AssetFactory.from({ originalFileName: 'image.png' }).exif().build());
+      const result = await sut['extractOriginalImage'](asset, {
+        ...defaults.image,
+        fullsize: { ...defaults.image.fullsize, enabled: false },
+      });
+      expect(result.convertFullsize).toBe(true);
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
+        asset.originalPath,
+        expect.objectContaining({ size: undefined }),
+        expect.anything(),
+      );
+    });
+
+    it('publishes HDR and SDR renditions together while feeding thumbhash from the authored SDR base', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const contentChecksum = Buffer.alloc(32, 2);
+        mocks.crypto.hashFile.mockResolvedValue(contentChecksum);
+        const asset = AssetFactory.from({
+          checksum: Buffer.alloc(20, 1),
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        })
+          .exif({
+            imageEncoding: {
+              dynamicRange: 'hdr',
+              gainMap: 'iso-21496',
+              reconstructionAvailable: true,
+            },
+          })
+          .build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateHdrRenditions.mockImplementation((_source, outputs) =>
+          Promise.resolve(
+            outputs.map((output) => ({
+              path: output.path,
+              width: output.size ?? 100,
+              height: output.size ?? 100,
+              gamut: 1,
+              encoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+            })),
+          ),
+        );
+        mocks.media.generateImageThumbnails.mockResolvedValue({
+          info: rawInfo,
+          thumbhash: Buffer.from('hash'),
+          isTransparent: false,
+        });
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledOnce();
+        expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+          asset.originalPath,
+          expect.any(Array),
+          undefined,
+          undefined,
+          contentChecksum,
+        );
+        expect(mocks.media.generateImageThumbnails).toHaveBeenCalledWith(
+          expect.stringContaining('hdr_fullsize'),
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: AssetFileType.HdrPreview,
+              renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+            }),
+            expect.objectContaining({
+              type: AssetFileType.HdrFullSize,
+              renditionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+            }),
+            expect.objectContaining({ type: AssetFileType.FullSize }),
+            expect.objectContaining({ type: AssetFileType.Preview }),
+            expect.objectContaining({ type: AssetFileType.Thumbnail }),
+          ]),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it.each([ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])(
+      'uses the stored %s content checksum rather than accepting changed original bytes',
+      async (checksumAlgorithm) => {
+        vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        try {
+          const checksum = Buffer.alloc(checksumAlgorithm === ChecksumAlgorithm.sha1File ? 20 : 32, 1);
+          const asset = AssetFactory.from({ checksum, checksumAlgorithm })
+            .exif({
+              imageEncoding: { dynamicRange: 'hdr', gainMap: 'iso-21496', reconstructionAvailable: true },
+            })
+            .build();
+          mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+          mocks.media.generateHdrRenditions.mockRejectedValue(new Error('IMAGE_SOURCE_CHANGED'));
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('IMAGE_SOURCE_CHANGED');
+          expect(mocks.media.generateHdrRenditions).toHaveBeenCalledWith(
+            asset.originalPath,
+            expect.any(Array),
+            undefined,
+            undefined,
+            checksum,
+          );
+          expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+          expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+          expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      },
+    );
+
+    it('retains the previous rendition set when required HDR generation fails', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.from()
+          .exif({
+            imageEncoding: {
+              dynamicRange: 'hdr',
+              gainMap: 'iso-21496',
+              reconstructionAvailable: true,
+            },
+          })
+          .build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateHdrRenditions.mockRejectedValue(new Error('INVALID_GAIN_MAP'));
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('INVALID_GAIN_MAP');
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('submits one image batch without returning decoded pixels to the service', async () => {
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateImageThumbnails.mockResolvedValue({
+        info: rawInfo,
+        thumbhash: Buffer.from('hash'),
+        isTransparent: false,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbhash).not.toHaveBeenCalled();
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([
+        expect.objectContaining({ type: AssetFileType.Preview }),
+        expect.objectContaining({ type: AssetFileType.Thumbnail }),
+      ]);
     });
 
     it('should skip thumbnail generation if asset not found', async () => {
@@ -434,7 +550,11 @@ describe(MediaService.name, () => {
 
     it('should generate P3 thumbnails for a wide gamut image', async () => {
       const asset = AssetFactory.from()
-        .exif({ profileDescription: 'Adobe RGB', bitsPerSample: 14 })
+        .exif({
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+          profileDescription: 'Adobe RGB',
+          bitsPerSample: 14,
+        })
         .files([AssetFileType.Preview, AssetFileType.Thumbnail])
         .build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -685,6 +805,52 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           outputOptions: expect.arrayContaining([expect.stringContaining('start_time=42')]),
+        }),
+      );
+    });
+
+    it("cuts a video's thumbnail at the cover its owner chose, without scoring candidates (FL-59)", async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        coverTimestampMs: 64_500,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.scoreThumbnailCandidate).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      for (const call of [1, 2]) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          call,
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({
+            outputOptions: expect.arrayContaining([expect.stringContaining('start_time=64.5')]),
+          }),
+        );
+      }
+    });
+
+    it('keeps a cover chosen near the end of a video clear of its final stretch (FL-59)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        coverTimestampMs: 119_900,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+        1,
+        '/original/path.ext',
+        expect.any(String),
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([expect.stringContaining('start_time=115')]),
         }),
       );
     });
@@ -1020,7 +1186,9 @@ describe(MediaService.name, () => {
     });
 
     it.each(Object.values(ImageFormat))('should generate an image preview in %s format', async (format) => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { preview: { format } } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const thumbhashBuffer = Buffer.from('a thumbhash', 'utf8');
@@ -1070,7 +1238,9 @@ describe(MediaService.name, () => {
     });
 
     it.each(Object.values(ImageFormat))('should generate an image thumbnail in %s format', async (format) => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { thumbnail: { format } } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       const thumbhashBuffer = Buffer.from('a thumbhash', 'utf8');
@@ -1120,7 +1290,9 @@ describe(MediaService.name, () => {
     });
 
     it('should generate progressive JPEG for preview when enabled', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { preview: { progressive: true }, thumbnail: { progressive: false } },
       });
@@ -1159,7 +1331,9 @@ describe(MediaService.name, () => {
     });
 
     it('should generate progressive JPEG for thumbnail when enabled', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { preview: { progressive: false }, thumbnail: { format: ImageFormat.Jpeg, progressive: true } },
       });
@@ -1249,6 +1423,7 @@ describe(MediaService.name, () => {
 
       await sut.handleGenerateThumbnails({ id: asset.id });
 
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
         colorspace: Colorspace.P3,
@@ -1295,7 +1470,7 @@ describe(MediaService.name, () => {
 
       await sut.handleGenerateThumbnails({ id: asset.id });
 
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1312,7 +1487,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1330,7 +1505,7 @@ describe(MediaService.name, () => {
 
       expect(mocks.media.extract).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1344,7 +1519,7 @@ describe(MediaService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
       mocks.media.decodeImage.mockRejectedValue(
-        new Error(
+        new SharpOperationError(
           `Input file has corrupt header: magickload: Magick: Unsupported file format or not RAW file '${asset.originalPath}'`,
         ),
       );
@@ -1354,7 +1529,39 @@ describe(MediaService.name, () => {
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
-    it('should render RAW with LibRaw when Sharp cannot decode the source and enhanced RAW rendering is enabled', async () => {
+    it.each([false, true])('skips classified unsupported RAW with enhanced rendering %s', async (enabled) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      const failure = new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false, enhancedRaw: { enabled } } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
+    });
+
+    it.each([
+      new RawRenderError('dependency_missing', 'ENOENT'),
+      new RawRenderError('timeout', 'ETIMEDOUT'),
+      new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT'),
+      new RawRenderError('io', 'EIO'),
+      new RawRenderError('damaged', 'ERR_RAW_DAMAGED'),
+      new RawRenderError('decode_failed', 'ERR_RAW_DECODE'),
+    ])('propagates classified RAW failure for retry or diagnosis: %s', async (failure) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({
+        image: { extractEmbedded: false, enhancedRaw: { enabled: false } },
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('should render the sensor directly when enhanced RAW rendering is enabled', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
         .build();
@@ -1371,7 +1578,7 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(renderRawWithLibRaw).toHaveBeenCalledWith(asset.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledWith(asset.originalPath, undefined);
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
@@ -1380,26 +1587,21 @@ describe(MediaService.name, () => {
       expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
 
-    it('should not render RAW with LibRaw when enhanced RAW rendering is disabled', async () => {
-      const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
-        .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
-        .build();
+    it('should render RAW with LibRaw when enhanced RAW rendering is disabled', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { extractEmbedded: false, enhancedRaw: { enabled: false } },
       });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-      mocks.media.decodeImage.mockRejectedValue(
-        new Error(`Input file has corrupt header: unsupported RAW file '${asset.originalPath}'`),
-      );
-
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
-
-      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
-      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, expect.any(Object));
+      expect(mocks.media.decodeImage).not.toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
+      expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
 
     it('should process invalid images if enabled', async () => {
-      vi.stubEnv('IMMICH_PROCESS_INVALID_IMAGES', 'true');
+      vi.stubEnv('FRAMELEAF_PROCESS_INVALID_IMAGES', 'true');
       const asset = AssetFactory.from({ originalFileName: 'file.dng' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
         .build();
@@ -1410,7 +1612,7 @@ describe(MediaService.name, () => {
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(
-        asset.originalPath,
+        renderedRawBuffer,
         expect.objectContaining({ processInvalidImages: true }),
       );
 
@@ -1435,45 +1637,248 @@ describe(MediaService.name, () => {
       vi.unstubAllEnvs();
     });
 
-    it('should extract full-size JPEG preview from RAW', async () => {
-      const asset = AssetFactory.from({ originalFileName: 'file.dng' })
-        .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
-        .build();
+    it.each([RawExtractedFormat.Jpeg, RawExtractedFormat.Jxl])(
+      'renders fullsize from the sensor instead of the available embedded %s',
+      async (format) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build();
+        mocks.systemMetadata.get.mockResolvedValue({
+          image: {
+            fullsize: { enabled: true, format: ImageFormat.Webp },
+            extractEmbedded: true,
+            enhancedRaw: { enabled: false },
+          },
+        });
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
+        expect(mocks.media.extract).not.toHaveBeenCalled();
+        expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
+          renderedRawBuffer,
+          expect.objectContaining({
+            size: undefined,
+            orientation: undefined,
+          }),
+        );
+        expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(3);
+        expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
+          rawBuffer,
+          expect.objectContaining({
+            format: ImageFormat.Webp,
+            raw: rawInfo,
+          }),
+          expect.stringContaining('fullsize.webp'),
+        );
+        // Pixel re-encoding cannot copy the camera JPEG's GPS or other original metadata.
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(mocks.media.writeExif).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ type: AssetFileType.FullSize })]),
+        );
+      },
+    );
 
-      mocks.systemMetadata.get.mockResolvedValue({
-        image: { fullsize: { enabled: true, format: ImageFormat.Webp }, extractEmbedded: true },
-      });
+    it('does not publish a fullsize file if sensor re-encoding fails (FL-54)', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: true }, extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('encoding failed'));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('encoding failed');
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
+    it('does not retry the sensor or publish files after an embedded preview output fails', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+      const error = new SharpOperationError('output encoding failed');
+      mocks.media.generateThumbnail.mockRejectedValueOnce(error);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+    });
+
+    it.each(['metadata', 'decode'] as const)(
+      'preserves %s pool control failures without starting LibRaw',
+      async (stage) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        for (const error of [
+          new JobDependencyUnavailable('local-capacity'),
+          new SharpResourceLimitError('input is too large'),
+          new Error('Sharp child closed (SIGKILL)'),
+          new Error('spawn node ENOENT'),
+        ]) {
+          mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+          if (stage === 'metadata') {
+            mocks.media.getImageMetadata.mockRejectedValueOnce(error);
+          } else {
+            mocks.media.decodeImage.mockRejectedValueOnce(error);
+          }
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+          expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+          expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+          expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+          expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it.each(['metadata', 'decode'] as const)(
+      'does not start LibRaw after an operation cancellation during %s',
+      async (stage) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
+        const abort = new AbortController();
+        const error = new Error('operation cancelled');
+        const failed = () => {
+          abort.abort(error);
+          return Promise.reject(new SharpOperationError('bad embedded JPEG'));
+        };
+        if (stage === 'metadata') {
+          mocks.media.getImageMetadata.mockImplementationOnce(failed);
+        } else {
+          mocks.media.decodeImage.mockImplementationOnce(failed);
+        }
+        await operationExecution.run(
+          {
+            signal: abort.signal,
+            progress: vi.fn(),
+            settle: () => Promise.resolve(),
+            settled: false,
+            completed: new Map(),
+          },
+          async () => {
+            await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+          },
+        );
+        expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+        expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+      },
+    );
+
+    it('leaves an original RAW file unchanged after a Sharp resource refusal', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'raw-control-'));
+      const originalPath = join(directory, 'original.dng');
+      const original = Buffer.from('immutable sensor original fixture');
+      try {
+        await writeFile(originalPath, original);
+        const asset = AssetFactory.from({ originalPath, originalFileName: 'original.dng' }).exif().build();
+        mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+        const error = new SharpResourceLimitError('pixel ceiling');
+        mocks.media.getImageMetadata.mockRejectedValueOnce(error);
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+        expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(await readFile(originalPath)).toEqual(original);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('falls back for a damaged embedded header using the current operation signal', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
+      mocks.media.getImageMetadata.mockRejectedValueOnce(new SharpOperationError('bad embedded header'));
+      const abort = new AbortController();
+      await operationExecution.run(
+        {
+          signal: abort.signal,
+          progress: vi.fn(),
+          settle: () => Promise.resolve(),
+          settled: false,
+          completed: new Map(),
+        },
+        async () => {
+          await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        },
+      );
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, abort.signal);
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
+    it('falls back once from a failed embedded preview decode to the sensor', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
       mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
       mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-
-      await sut.handleGenerateThumbnails({ id: asset.id });
-
-      expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
-        colorspace: Colorspace.P3,
-        processInvalidImages: false,
-        size: 1440, // capped to preview size as fullsize conversion is skipped
-      });
-
-      expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(2);
-      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
-        {
-          colorspace: Colorspace.P3,
-          format: ImageFormat.Jpeg,
-          size: 1440,
-          quality: 80,
-          progressive: false,
-          processInvalidImages: false,
-          raw: rawInfo,
-          edits: [],
-        },
-        expect.any(String),
+      mocks.media.decodeImage.mockRejectedValueOnce(new SharpOperationError('bad embedded JPEG'));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
+      expect(mocks.media.decodeImage).toHaveBeenNthCalledWith(
+        1,
+        extractedBuffer,
+        expect.objectContaining({ orientation: 6 }),
+      );
+      expect(mocks.media.decodeImage).toHaveBeenNthCalledWith(
+        2,
+        renderedRawBuffer,
+        expect.objectContaining({ orientation: undefined }),
       );
     });
 
-    it('should convert full-size WEBP preview from JXL preview of RAW', async () => {
+    it('uses full sensor resolution for edits even when fullsize viewing is disabled', async () => {
+      const asset = getForGenerateThumbnail(
+        AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build(),
+      );
+      const image = {
+        ...defaults.image,
+        extractEmbedded: true,
+        enhancedRaw: { enabled: false },
+        fullsize: { ...defaults.image.fullsize, enabled: false },
+      };
+      const result = await sut['extractOriginalImage'](asset, image, true);
+      expect(result.convertFullsize).toBe(true);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath, undefined);
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
+        renderedRawBuffer,
+        expect.objectContaining({
+          size: undefined,
+          orientation: undefined,
+        }),
+      );
+    });
+
+    it('does not repeat a failed sensor attempt or use the embedded JPEG to hide it', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      const error = new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
+      mocks.systemMetadata.get.mockResolvedValue({
+        image: { fullsize: { enabled: true }, extractEmbedded: true, enhancedRaw: { enabled: true } },
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(error);
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+      expect(renderRawWithLibRaw).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+    });
+
+    it.each(['photo.jpeg', 'layered.psd'])('preserves direct successful decoding for %s', async (originalFileName) => {
+      const asset = AssetFactory.from({ originalFileName }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
+    });
+
+    it('should convert sensor fullsize even when embedded JXL is available', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
         .build();
@@ -1488,14 +1893,14 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
       });
 
       expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(3);
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
+        rawBuffer,
         {
           colorspace: Colorspace.P3,
           format: ImageFormat.Webp,
@@ -1508,7 +1913,7 @@ describe(MediaService.name, () => {
         expect.any(String),
       );
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
+        rawBuffer,
         {
           colorspace: Colorspace.P3,
           format: ImageFormat.Jpeg,
@@ -1536,7 +1941,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
       });
@@ -1610,7 +2015,9 @@ describe(MediaService.name, () => {
     });
 
     it('should skip generating full-size preview for web-friendly images', async () => {
-      const asset = AssetFactory.from().exif().build();
+      const asset = AssetFactory.from()
+        .exif({ imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false } })
+        .build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: true } } });
       mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
       mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
@@ -1755,12 +2162,102 @@ describe(MediaService.name, () => {
       mocks.ocr.getByAssetId.mockResolvedValue([]);
       mocks.media.decodeImage.mockImplementation((input) =>
         Promise.resolve(
-          typeof input === 'string'
+          typeof input === 'string' || input === renderedRawBuffer
             ? { data: rawBuffer, info: rawInfo as OutputInfo } // string implies original file
             : { data: fullsizeBuffer, info: rawInfo as OutputInfo }, // buffer implies embedded image extracted
         ),
       );
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
+    });
+
+    describe('as a job in Activity (FL-43)', () => {
+      const edited = () =>
+        AssetFactory.from()
+          .exif()
+          .edit({ action: AssetEditAction.Crop })
+          .files([
+            { type: AssetFileType.FullSize, isEdited: true },
+            { type: AssetFileType.Preview, isEdited: true },
+            { type: AssetFileType.Thumbnail, isEdited: true },
+          ])
+          .build();
+
+      beforeEach(() => {
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.heartbeat.mockResolvedValue(true);
+        mocks.mediaOperation.complete.mockResolvedValue(true);
+        mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+      });
+
+      it('replaces the edited previews under the job’s claim and completes it with the photo', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+
+        await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        expect(mocks.mediaOperation.beginValidation.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.asset.upsertFiles.mock.invocationCallOrder[0],
+        );
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledWith('op-1', 'token-1', { resultAssetId: asset.id });
+      });
+
+      it('leaves the recorded previews alone when the job lost its claim', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: null } as never);
+
+        await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' })).resolves.toBe(
+          JobStatus.Skipped,
+        );
+
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      });
+
+      it('does not retain visibility adoptions when the edit claim is lost after rendering', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: null } as never);
+        const execution = {
+          claim: { id: 'job-1', token: 'attempt-1', name: JobName.AssetEditThumbnailGeneration },
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          followups: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+
+        await expect(
+          queueExecution.run(execution, () =>
+            sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' }),
+          ),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(execution.adoptions).toHaveLength(0);
+        expect(mocks.person.updateVisibility).not.toHaveBeenCalled();
+        expect(mocks.ocr.updateOcrVisibilities).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      });
     });
 
     it('should skip videos', async () => {
@@ -1899,6 +2396,58 @@ describe(MediaService.name, () => {
   });
 
   describe('handleGeneratePersonThumbnail', () => {
+    it('releases the superseded path only after successful claim adoption, retaining it when the face changes', async () => {
+      const person = PersonFactory.create({ faceAssetId: newUuid(), thumbnailPath: '/old-person.jpeg' });
+      mocks.person.getByGroupId.mockResolvedValue(person as never);
+      mocks.person.getFaceById.mockResolvedValue({ assetId: newUuid() } as never);
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 1000, height: 1000 } as OutputInfo,
+      });
+      const context = {
+        claim: { id: newUuid(), token: newUuid(), name: JobName.PersonGenerateThumbnail },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      await queueExecution.run(context, () =>
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      );
+      expect(context.adoptions).toHaveLength(1);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      const query = {
+        select: vi.fn(),
+        where: vi.fn(),
+        forUpdate: vi.fn(),
+        set: vi.fn(),
+        execute: vi.fn().mockResolvedValue([]),
+      };
+      for (const name of ['select', 'where', 'forUpdate', 'set'] as const) query[name].mockReturnValue(query);
+      const tx = { selectFrom: vi.fn().mockReturnValue(query), updateTable: vi.fn().mockReturnValue(query) };
+      const lock = vi.spyOn(physicalFiles, 'lockFilePath').mockResolvedValue();
+      try {
+        await context.adoptions[0](tx as never);
+        expect(lock).toHaveBeenCalledWith(tx, expect.stringContaining('.attempts'));
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: ['/old-person.jpeg'] },
+        });
+        expect(query.set.mock.invocationCallOrder[0]).toBeLessThan(mocks.job.queue.mock.invocationCallOrder[0]);
+        mocks.job.queue.mockClear();
+        tx.updateTable.mockClear();
+        mocks.person.getByGroupId.mockResolvedValue({ ...person, faceAssetId: newUuid() } as never);
+        await expect(context.adoptions[0](tx as never)).rejects.toThrow('Person thumbnail source changed');
+        expect(tx.updateTable).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      } finally {
+        lock.mockRestore();
+      }
+    });
+
     it('should generate a thumbnail even if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
       mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
@@ -1915,19 +2464,28 @@ describe(MediaService.name, () => {
     });
 
     it('should skip a person not found', async () => {
-      await sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should skip a person without a face asset id', async () => {
       const person = PersonFactory.create({ faceAssetId: null });
-      await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should skip a person with face not found', async () => {
-      await sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' });
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: 'owner-1', personGroupId: 'person-group-1' }),
+      ).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should generate a thumbnail', async () => {
@@ -1943,10 +2501,13 @@ describe(MediaService.name, () => {
         sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
       ).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith({
-        ownerId: person.ownerId,
-        personGroupId: person.personGroupId,
-      });
+      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith(
+        {
+          ownerId: person.ownerId,
+          personGroupId: person.personGroupId,
+        },
+        undefined,
+      );
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.any(String));
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(personThumbnailStub.newThumbnailMiddle.originalPath, {
         colorspace: Colorspace.P3,
@@ -1997,10 +2558,13 @@ describe(MediaService.name, () => {
         sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
       ).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith({
-        ownerId: person.ownerId,
-        personGroupId: person.personGroupId,
-      });
+      expect(mocks.person.getDataForThumbnailGenerationJob).toHaveBeenCalledWith(
+        {
+          ownerId: person.ownerId,
+          personGroupId: person.personGroupId,
+        },
+        undefined,
+      );
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.any(String));
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(expect.any(String), {
         colorspace: Colorspace.P3,
@@ -2334,52 +2898,14 @@ describe(MediaService.name, () => {
     });
   });
 
-  describe('handleQueueVideoConversion', () => {
-    it('should queue all video assets', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.streamForVideoConversion.mockReturnValue(makeStream([asset]));
-      mocks.person.getAll.mockReturnValue(makeStream());
-
-      await sut.handleQueueVideoConversion({ force: true });
-
-      expect(mocks.assetJob.streamForVideoConversion).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetEncodeVideo,
-          data: { id: asset.id },
-        },
-      ]);
-    });
-
-    it('should queue all video assets without encoded videos', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.streamForVideoConversion.mockReturnValue(makeStream([asset]));
-
-      await sut.handleQueueVideoConversion({});
-
-      expect(mocks.assetJob.streamForVideoConversion).toHaveBeenCalledWith(void 0);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetEncodeVideo,
-          data: { id: asset.id },
-        },
-      ]);
-    });
-  });
-
-  describe('handleQueueVideoConversion', () => {
-    it('should queue hidden assets when force is not set', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
-      mocks.assetJob.streamForVideoConversion.mockReturnValue(makeStream([asset]));
-
-      await sut.handleQueueVideoConversion({});
-      expect(mocks.assetJob.streamForVideoConversion).toHaveBeenCalledWith(void 0);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetEncodeVideo,
-          data: { id: asset.id },
-        },
-      ]);
+  describe('durable video selection', () => {
+    it.each([true, undefined])('materializes selected video IDs (force=%s)', async (force) => {
+      const query = {};
+      mocks.assetJob.selectionForVideoConversion.mockReturnValue(query as never);
+      await sut.handleQueueVideoConversion({ force });
+      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(force);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
+      expect(mocks.assetJob.streamForVideoConversion).not.toHaveBeenCalled();
     });
   });
 
@@ -2410,6 +2936,32 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('keeps the canonical file on regeneration for a linked copy, with no master-user setting (universal storage)', async () => {
+      const file = {
+        assetId: 'asset-id',
+        type: AssetFileType.Thumbnail,
+        path: '/generated/thumbnail.webp',
+        isEdited: false,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const canonical = { id: 'physical-id', path: '/canonical/thumbnail.webp' };
+      const existing = { ...file, id: 'file-id', path: canonical.path, physicalFileId: canonical.id };
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue(canonical as never);
+      mocks.asset.upsertFiles.mockResolvedValue();
+      mocks.job.queue.mockResolvedValue();
+
+      await (sut as any).syncFiles([existing], [file]);
+
+      // the regenerated output is dropped; the shared file and its row stay as they were
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: [file.path] } });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: expect.arrayContaining([canonical.path]) },
+      });
+    });
+
     it('keeps edited outputs independent from shared generated files', async () => {
       const file = {
         assetId: 'asset-id',
@@ -2434,18 +2986,77 @@ describe(MediaService.name, () => {
     const audioStream = probeStub.audioStreamAac.audioStream ?? undefined;
     const format = { ...probeStub.audioStreamAac.format, duration: 5 };
 
+    // FL-17/FL-39: every edited master is rendered under the color decision made for its source
+    const editCommand = (config: any, edits: any[], stream: any, audio: any, fmt: any) =>
+      (sut as any).getVideoEditCommand(
+        config,
+        edits,
+        stream,
+        audio,
+        fmt,
+        resolveEditedMasterColorPolicy(stream, config),
+      );
+    const editPlan = (config: any, edits: any[], stream: any, audio: any, fmt: any) =>
+      (sut as any).getVideoEditCommandPlan(
+        config,
+        edits,
+        stream,
+        audio,
+        fmt,
+        resolveEditedMasterColorPolicy(stream, config),
+      );
     const getPlan = (ffmpeg: Partial<SystemConfig['ffmpeg']>, edits: any[]) =>
-      (sut as any).getVideoEditCommandPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
+      editPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
+
+    it('holds the final picture through a longer audio timeline before applying whole-clip speed', () => {
+      const source = { ...videoStream, duration: 22.362289 };
+      const timeline = { ...format, duration: 22.616236 };
+      const edits = [{ action: AssetEditAction.Speed, parameters: { rate: 2 } }];
+      const command = editCommand(defaults.ffmpeg, edits, source, audioStream, timeline);
+      expect(getFilterOption(command.outputOptions)).toContain(
+        'tpad=stop_mode=clone:stop_duration=0.2539,setpts=0.5*PTS',
+      );
+      expect(command.outputOptions).toEqual(
+        expect.arrayContaining(['-filter:a', 'atempo=2', '-fps_mode', 'passthrough']),
+      );
+      expect(command.outputOptions).not.toContain('-shortest');
+      const fallback = (sut as any).getVideoEditSoftwareFallbackCommandPlan(
+        defaults.ffmpeg,
+        edits,
+        source,
+        audioStream,
+        timeline,
+        'hardware failed',
+        resolveEditedMasterColorPolicy(source, defaults.ffmpeg),
+      );
+      expect(getFilterOption(fallback.command.outputOptions)).toContain(
+        'tpad=stop_mode=clone:stop_duration=0.2539,setpts=0.5*PTS',
+      );
+      for (const duration of [undefined, null, NaN, Infinity, 0, 22.616236, 23]) {
+        const unchanged = editCommand(defaults.ffmpeg, edits, { ...source, duration }, audioStream, timeline);
+        expect(getFilterOption(unchanged.outputOptions)).not.toContain('tpad');
+      }
+      const unchanged = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.AutoEnhance, parameters: { enabled: true } }],
+        source,
+        audioStream,
+        timeline,
+      );
+      expect(getFilterOption(unchanged.outputOptions)).not.toContain('tpad');
+    });
 
     it('should preserve edited dimensions independently of playback resolution', () => {
       const source = { ...videoStream, width: 3840, height: 2160, rotation: 0 };
       const edits = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
       const commands = ['480', '720', '1080', 'original'].map((targetResolution) =>
-        (sut as any).getVideoEditCommand({ ...defaults.ffmpeg, targetResolution }, edits, source, audioStream, format),
+        editCommand({ ...defaults.ffmpeg, targetResolution }, edits, source, audioStream, format),
       );
 
       for (const command of commands) {
-        expect(getFilterOption(command.outputOptions)).toBe('transpose=1');
+        // FL-39: a right-angle turn alone is written to the display matrix; every packet is kept
+        expect(command.inputOptions).toEqual(expect.arrayContaining(['-display_rotation']));
+        expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
         expect(command).toEqual(commands[0]);
       }
       expect((sut as any).getVideoEditDimensions(edits, source)).toEqual({ width: 2160, height: 3840 });
@@ -2459,12 +3070,12 @@ describe(MediaService.name, () => {
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
       ];
       expect((sut as any).getVideoEditDimensions(edits, portrait)).toEqual({ width: 500, height: 1000 });
-      const command = (sut as any).getVideoEditCommand(defaults.ffmpeg, edits, portrait, audioStream, format);
+      const command = editCommand(defaults.ffmpeg, edits, portrait, audioStream, format);
       expect(getFilterOption(command.outputOptions)).toBe('crop=1000:500:0:0,transpose=1');
     });
 
     it('should build a complex filter graph for speed segments with audio', () => {
-      const command = (sut as any).getVideoEditCommand(
+      const command = editCommand(
         defaults.ffmpeg,
         [
           { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
@@ -2490,8 +3101,161 @@ describe(MediaService.name, () => {
       expect(filterGraph).toContain('[aconcat]volume=0.75[aout]');
     });
 
+    it('plays the whole-clip speed in the gaps between speed ranges (FL-113)', () => {
+      const edits = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      const command = editCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
+      const filterGraph = command.outputOptions[command.outputOptions.indexOf('-filter_complex') + 1];
+
+      expect(filterGraph).toContain('[0:0]trim=start=0:end=1,setpts=0.5*(PTS-STARTPTS)[v0]');
+      expect(filterGraph).toContain('[0:0]trim=start=1:end=3,setpts=2*(PTS-STARTPTS)[v1]');
+      expect(filterGraph).toContain('[0:0]trim=start=3:end=5,setpts=0.5*(PTS-STARTPTS)[v2]');
+      // The whole-clip rate is not applied a second time on top of the ranges.
+      expect(filterGraph).not.toContain('setpts=0.5*PTS');
+      expect((sut as any).getVideoEditDurationMs(edits, format)).toBe(500 + 4000 + 1000);
+    });
+
+    it('scales a straightened picture to cover its frame instead of leaving black corners (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Straighten, parameters: { angle: 5, fill: true } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toContain('rotate=5*PI/180:fillcolor=black');
+      expect(filters).toMatch(
+        /rotate=5\*PI\/180:fillcolor=black,scale=trunc\(iw\*1\.\d+\/2\)\*2:trunc\(ih\*1\.\d+\/2\)\*2,crop=1920:1080/,
+      );
+    });
+
+    it("renders the develop model of the quick editor with the still renderer's tone curve (FL-113)", () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          {
+            action: AssetEditAction.Adjust,
+            parameters: { model: 'develop', exposure: 0.5, contrast: 20, saturation: -10, preset: 'Mono' },
+          },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toMatch(/curves=r='0\/0 [^']+':g='[^']+':b='[^']+'/);
+      expect(filters).toContain('eq=saturation=0.9');
+      expect(filters).toContain('colorchannelmixer=rr=0.2126:rg=0.7152:rb=0.0722');
+      // The earlier adjustment model is not applied to develop values.
+      expect(filters).not.toContain('eq=contrast=');
+    });
+
+    it('keeps the earlier adjustment model for recipes without the develop marker', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Adjust, parameters: { contrast: 20 } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(getFilterOption(command.outputOptions)).toContain('eq=contrast=1.2');
+    });
+
+    it('anchors text on the prototype grid with a shadow (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          {
+            action: AssetEditAction.TextOverlay,
+            parameters: {
+              text: 'Title',
+              x: 0.5,
+              y: 1,
+              position: 'bottom',
+              shadow: true,
+              size: 0.05,
+              color: '#ffffff',
+            },
+          },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toContain("drawtext=text='Title':x=(w-text_w)/2:y=h-text_h-w*0.04:fontsize=h*0.05");
+      expect(filters).toContain(':shadowcolor=black@0.7:shadowx=0:shadowy=3');
+    });
+
+    it('crops the stabilized edges and limits gain above 100% (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true, cropEdges: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4, limit: true } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(getFilterOption(command.outputOptions)).toContain(
+        'deshake,crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2,scale=1920:1080',
+      );
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4,alimiter=limit=0.98');
+    });
+
+    it('renders an earlier recipe exactly as before: no fill, no edge crop, no limiter', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Straighten, parameters: { angle: 5 } },
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toMatch(/^rotate=5\*PI\/180:fillcolor=black,deshake(,|$)/);
+      expect(filters).not.toContain('scale=trunc(iw*');
+      expect(filters).not.toContain('crop=trunc(iw*0.96');
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4');
+    });
+
+    it('copies the packets for a lone fast trim instead of re-encoding (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000, mode: 'fast' } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(command.inputOptions).toEqual(['-ss', '1']);
+      expect(command.outputOptions).toEqual(expect.arrayContaining(['-t', '3', '-c', 'copy']));
+      expect(command.outputOptions).not.toContain('-vf');
+    });
+
+    it('renders a fast trim frame-accurately when another edit needs a re-encode', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000, mode: 'fast' } },
+          { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(command.outputOptions).not.toEqual(expect.arrayContaining(['-c', 'copy']));
+      expect(getFilterOption(command.outputOptions)).toContain('transpose=1');
+    });
+
     it('should offset text overlay timing after trimming video', () => {
-      const command = (sut as any).getVideoEditCommand(
+      const command = editCommand(
         defaults.ffmpeg,
         [
           { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 5000 } },
@@ -2517,7 +3281,7 @@ describe(MediaService.name, () => {
           parameters: { text: 'Hello', x: 0.5, y: 0.5, startMs: 3000, endMs: 4000, size: 0.06, color: '#ffffff' },
         },
       ];
-      const command = (sut as any).getVideoEditCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
+      const command = editCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
       const filterComplexIndex = command.outputOptions.indexOf('-filter_complex');
       const filterGraph = command.outputOptions[filterComplexIndex + 1];
 
@@ -2534,7 +3298,8 @@ describe(MediaService.name, () => {
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-hwaccel']));
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-init_hw_device']));
       expect(plan.command.outputOptions).toEqual(
-        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', '23']),
+        // FL-39: the edited master is never encoded below the master quality cap, whatever the playback crf
+        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
       expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4');
     });
@@ -2557,7 +3322,7 @@ describe(MediaService.name, () => {
     });
 
     it('should retain source autorotation when hardware encoding a portrait trim', () => {
-      const plan = (sut as any).getVideoEditCommandPlan(
+      const plan = editPlan(
         { ...defaults.ffmpeg, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
         [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 3000 } }],
         { ...videoStream, rotation: 90 },
@@ -2598,25 +3363,17 @@ describe(MediaService.name, () => {
       },
     );
 
-    it('should append preset, thread, and bitrate options for edited video output', () => {
+    it('should append preset and thread options but never the playback bitrate cap to an edited master', () => {
       const plan = getPlan({ maxBitrate: '10000k', threads: 2 }, [
         { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 3000 } },
       ]);
 
       expect(plan.command.outputOptions).toEqual(
-        expect.arrayContaining([
-          '-preset',
-          'ultrafast',
-          '-threads',
-          '2',
-          '-crf',
-          '23',
-          '-maxrate',
-          '10000k',
-          '-bufsize',
-          '20000k',
-        ]),
+        expect.arrayContaining(['-preset', 'ultrafast', '-threads', '2', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
+      // FL-39: the playback transcode settings describe a proxy; they never cap the edited master
+      expect(plan.command.outputOptions).not.toContain('-maxrate');
+      expect(plan.command.outputOptions).not.toContain('-bufsize');
     });
   });
 
@@ -2630,6 +3387,7 @@ describe(MediaService.name, () => {
         files: [],
       };
       mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
       mocks.assetEdit.getAll.mockResolvedValue([
         { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
       ]);
@@ -2647,6 +3405,8 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
+      // Without a retained version the saved edits and files are this render's inputs: fully fenced.
+      expect(mocks.job.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id, { derivatives: true });
       expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
         1,
@@ -2666,13 +3426,1148 @@ describe(MediaService.name, () => {
           outputOptions: expect.arrayContaining(['-c:v', 'h264']),
         }),
       );
-      expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            assetId: asset.id,
+            type: AssetFileType.EncodedVideo,
+            isEdited: true,
+          }),
+        ]),
+      );
+    });
+
+    describe('edited-master policy (FL-39, FL-16)', () => {
+      const editedAsset = (overrides: Record<string, unknown> = {}) => ({
+        ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        checksum: Buffer.from('checksum'),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: probeStub.audioStreamAac.audioStream,
+        format: { ...probeStub.videoStreamH264.format, duration: 5 },
+        files: [],
+        ...overrides,
+      });
+
+      const stubThumbnails = () => {
+        (sut as any).generateVideoThumbnails = () =>
+          Promise.resolve({
+            files: [],
+            thumbhash: Buffer.from('thumbhash'),
+            fullsizeDimensions: { width: 300, height: 200 },
+          });
+      };
+
+      const lastTranscodeOptions = () => {
+        const calls = mocks.media.transcode.mock.calls;
+        return calls.at(-1)![2].outputOptions as string[];
+      };
+
+      beforeEach(() => {
+        sut.videoInterfaces = { dri: ['renderD128'], mali: true };
+        stubThumbnails();
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
+        ]);
+      });
+
+      it('does not let the playback resolution, CRF or bitrate ceiling cap the edited master', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: {
+            accel: TranscodeHardwareAcceleration.Disabled,
+            crf: 30,
+            targetResolution: '720',
+            maxBitrate: '3000k',
+          },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        // The master quality target is clamped to at least CRF 18, never the playback CRF.
+        expect(outputOptions[outputOptions.indexOf('-crf') + 1]).toBe('18');
+        // The playback bitrate ceiling must not truncate the master.
+        expect(outputOptions).not.toContain('-maxrate');
+        expect(outputOptions).not.toContain('-bufsize');
+        // 1920x1080 source, cropped to 300x200 by the recipe alone — no playback downscale.
+        expect(getFilterOption(outputOptions)).not.toContain('scale=');
+      });
+
+      it('preserves rational timing and any variable-frame-rate mapping', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-fps_mode') + 1]).toBe('passthrough');
+        expect(outputOptions[outputOptions.indexOf('-video_track_timescale') + 1]).toBe('600');
+      });
+
+      it('does not downmix the master to stereo, and stream-copies an untouched track', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions).not.toContain('-ac');
+        expect(outputOptions[outputOptions.indexOf('-c:a') + 1]).toBe('copy');
+      });
+
+      it('re-encodes audio without forcing stereo when the recipe changes the audio', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Audio, parameters: { volume: 0.5 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions).not.toContain('-ac');
+        expect(outputOptions[outputOptions.indexOf('-c:a') + 1]).not.toBe('copy');
+      });
+
+      it('tags the master with the source colour volume and keeps its bit depth', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('smpte2084');
+        expect(outputOptions[outputOptions.indexOf('-color_primaries') + 1]).toBe('bt2020');
+        // A 10-bit source keeps 10 bits: the H.264 playback codec is promoted rather than flattening it.
+        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe(VideoCodec.Hevc);
+        expect(getFilterOption(outputOptions)).toContain('format=yuv420p10le');
+      });
+
+      it('keeps a full-range source in full range instead of hard-coding limited range (FL-102)', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: { ...probeStub.videoStreamHDR.videoStream, colorRange: 'pc' } }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(getFilterOption(outputOptions)).toContain('out_range=pc');
+        expect(getFilterOption(outputOptions)).not.toContain('out_range=tv');
+        expect(outputOptions[outputOptions.indexOf('-color_range') + 1]).toBe('pc');
+      });
+
+      it('does not tag a range the plain 8-bit chain never converted to (FL-102)', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: { ...probeStub.videoStreamH264.videoStream, colorRange: 'pc' } }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(getFilterOption(outputOptions) ?? '').not.toContain('out_range=');
+        expect(outputOptions).not.toContain('-color_range');
+      });
+
+      it('delivers limited range when the source does not state its range (FL-102)', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(getFilterOption(outputOptions)).toContain('out_range=tv');
+        expect(outputOptions[outputOptions.indexOf('-color_range') + 1]).toBe('tv');
+      });
+
+      it('tags a tone-mapped master as Rec. 709 rather than copying the source HDR tags', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Hable },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('bt709');
+      });
+
+      it('fails before touching an existing master when the source cannot be preserved', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({
+            videoStream: { ...probeStub.videoStreamDolbyVision.videoStream, dvProfile: DvProfile.Dvhe05 },
+          }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      });
+
+      it('never renders over the original', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const [input, output] = mocks.media.transcode.mock.calls.at(-1)!;
+        expect(input).toBe('/original/path.ext');
+        expect(output).not.toBe('/original/path.ext');
+        expect(output).toMatch(/_edited\.mp4$/);
+      });
+
+      it('preserves every packet for a lone right-angle rotation instead of re-encoding', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const command = mocks.media.transcode.mock.calls.at(-1)![2];
+        expect(command.inputOptions).toEqual(['-display_rotation', '-90']);
+        expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
+        expect(command.outputOptions).not.toContain('-vf');
+        expect(command.outputOptions).not.toContain('-crf');
+      });
+
+      it('records the probed length of a stream-copied fast trim, which starts at a keyframe (FL-113)', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          {
+            id: 'edit-id',
+            action: AssetEditAction.Trim,
+            parameters: { startMs: 1500, endMs: 4000, mode: VideoTrimMode.Fast },
+          },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+        mocks.media.probe.mockResolvedValue({
+          format: { duration: 3.2 },
+          videoStreams: [probeStub.videoStreamH264.videoStream],
+          audioStreams: [],
+        } as any);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode.mock.calls.at(-1)![2].outputOptions).toEqual(
+          expect.arrayContaining(['-c', 'copy']),
+        );
+        // Out minus in would be 2500 ms; the copy ran from the keyframe before the in point.
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'video-id', duration: 3200 }));
+      });
+
+      it('re-encodes a rotation that is combined with another edit', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-1', action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+          { id: 'edit-2', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const command = mocks.media.transcode.mock.calls.at(-1)![2];
+        expect(command.inputOptions).not.toContain('-display_rotation');
+        expect(getFilterOption(command.outputOptions)).toContain('transpose=1');
+      });
+
+      it('records the edited master lineage beside the master', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const [lineagePath, buffer] = mocks.storage.createOrOverwriteFile.mock.calls.at(-1)!;
+        expect(lineagePath).toMatch(/_edited\.mp4\.lineage\.json$/);
+
+        const lineage = JSON.parse((buffer as Buffer).toString('utf8'));
+        expect(lineage).toEqual(
+          expect.objectContaining({
+            sourceAssetId: 'video-id',
+            sourceOriginalPath: '/original/path.ext',
+            sourceChecksum: Buffer.from('checksum').toString('base64'),
+            renderer: FRAMELEAF_RENDERER,
+            recipeActions: [AssetEditAction.Crop],
+          }),
+        );
+        expect(lineage.recipeRevision).toEqual(expect.any(String));
+        expect(lineage.rendererVersion).toEqual(expect.any(String));
+        // FL-101: the decode qualification of the source travels with the master.
+        expect(lineage.decode).toEqual({
+          matrixEntry: expect.toBeOneOf([expect.any(String), null]),
+          support: expect.any(String),
+          reason: expect.any(String),
+        });
+      });
+
+      it('writes the lineage before the edited master is published as an asset file', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({ assetId: 'video-id', type: AssetFileType.EncodedVideo, isEdited: true }),
+          ]),
+        );
+        expect(mocks.storage.createOrOverwriteFile.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.asset.upsertFiles.mock.invocationCallOrder[0],
+        );
+      });
+    });
+  });
+
+  describe('version-owned video publication', () => {
+    beforeEach(() => {
+      mocks.media.probePackets.mockResolvedValue({
+        presentation: { startPts: 0, endPts: 18_000 },
+        packetCount: 900,
+        totalDuration: 18_000,
+        outputFrames: 900,
+        keyframePts: [0],
+        keyframeAccDuration: [600],
+        keyframeOwnDuration: [600],
+      });
+    });
+    const versionFor = (
+      asset: { id: string; ownerId: string; originalPath: string; checksum: Buffer },
+      purpose: 'save' | 'export' | 'revert',
+    ) => ({
+      id: newUuid(),
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      sourcePath: asset.originalPath,
+      sourceChecksum: asset.checksum,
+      recipe: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 200, height: 100 } }],
+      purpose,
+      status: 'pending' as const,
+      masterPath: null,
+      proxyPath: null,
+      files: [],
+      createdAt: new Date(),
+    });
+
+    it('refuses an unqualified original before rendering and fails only that version', async () => {
+      const videoStream = { ...probeStub.videoStreamDolbyVision.videoStream, dvProfile: DvProfile.Dvhe05 };
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = versionFor(asset, 'save');
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+      // The version's own original is probed; the asset row's (edited) metadata is not trusted.
+      mocks.media.probe.mockResolvedValue({ videoStreams: [videoStream], audioStreams: [], format: asset.format });
+
+      await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Failed);
+
+      // A retained version's publication decides about later saves and replaced thumbnails itself.
+      expect(mocks.job.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id, { derivatives: false });
+      expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
+      expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('queues the edited files a first versioned revert released from a pre-history edit', async () => {
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = { ...versionFor(asset, 'revert'), recipe: [] };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({
+        published: true,
+        releasedPaths: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'],
+      });
+      mocks.media.probe.mockResolvedValue({
+        videoStreams: [probeStub.videoStreamH264.videoStream],
+        audioStreams: [],
+        format: asset.format,
+      });
+
+      await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'] },
+      });
+    });
+
+    it.each([
+      [true, true, true],
+      [false, true, true],
+      [true, false, true],
+      [true, true, false],
+    ])(
+      'distinguishes deferred supersession from source/claim refusal (superseded=%s, claim=%s, registration=%s)',
+      async (superseded, claim, registration) => {
+        const asset = AssetFactory.create({ type: AssetType.Video });
+        const version = versionFor(asset, 'save');
+        let requestedId = version.id;
+        mocks.assetEdit.publishVideoVersion.mockImplementation(() =>
+          Promise.resolve({
+            published: requestedId === version.id,
+            releasedPaths: [],
+            ...(requestedId !== version.id && superseded && { superseded: true }),
+          }),
+        );
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(registration);
+        mocks.mediaOperation.complete.mockResolvedValue(claim);
+        const tracker = new EditOperationTracker(mocks.mediaOperation, mocks.job, mocks.logger);
+        const context = {
+          claim: { id: 'job', token: 'attempt', name: JobName.AssetVideoEditGeneration },
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          afterCommit: [],
+          followups: [],
+          buffering: false,
+        } as unknown as QueueExecution;
+        const candidates = ['/attempt/master.mp4', '/attempt/master.mp4.lineage.json', '/attempt/proxy.mp4'];
+        const execution = queueExecution.run(context, () =>
+          tracker.execute('op-1', async (run) => {
+            const accepted = await (sut as any).publishVideoVersion(
+              version,
+              { masterPath: candidates[0], files: [], width: 1080, height: 1920, duration: 1000 },
+              run,
+              candidates,
+            );
+            return accepted ? JobStatus.Success : JobStatus.Skipped;
+          }),
+        );
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        if (registration) {
+          await execution;
+        } else {
+          await expect(execution).rejects.toThrow('Edit operation lost its claim before publication');
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+          expect(context.afterCommit).toEqual([]);
+          return;
+        }
+        // The next Save replaces the requested version after rendering, before deferred adoption.
+        requestedId = newUuid();
+        const transaction = {} as never;
+        const adoption = queueExecution.run(context, () =>
+          publicationTransaction.run(transaction, async () => {
+            for (const adopt of context.adoptions) await adopt(transaction);
+          }),
+        );
+        if (superseded && claim) {
+          await expect(adoption).resolves.toBeUndefined();
+          expect(mocks.mediaOperation.complete).toHaveBeenCalledExactlyOnceWith(
+            'op-1',
+            'token-1',
+            { resultAssetId: null, result: EDIT_NOTHING_PUBLISHED },
+            transaction,
+            true,
+          );
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+          for (const notify of context.afterCommit ?? []) await notify();
+          expect(mocks.storage.unlink.mock.calls.map(([file]) => file)).toEqual(candidates);
+        } else if (superseded) {
+          await expect(adoption).rejects.toThrow('Edit operation lost its claim before publication');
+          expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        } else {
+          await expect(adoption).rejects.toThrow('Video version changed before publication');
+          expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+          expect(context.afterCommit).toEqual([]);
+        }
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
+
+    it('defers version references and released-file intents until queue publication', async () => {
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = { ...versionFor(asset, 'revert'), recipe: [] };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: ['/retired.mp4'] });
+      mocks.media.probe.mockResolvedValue({
+        videoStreams: [asset.videoStream],
+        audioStreams: [],
+        format: asset.format,
+      });
+      const context = {
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetVideoEditGeneration },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+
+      await expect(
+        queueExecution.run(context, () => sut.handleAssetVideoEditGeneration({ id: asset.id })),
+      ).resolves.toBe(JobStatus.Success);
+      expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(context.adoptions).toHaveLength(1);
+      await queueExecution.run(context, async () => {
+        for (const adopt of context.adoptions) await adopt({} as never);
+      });
+      expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledOnce();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/retired.mp4'] } });
+    });
+
+    it('publishes an export master and proxy without replacing the current thumbnails', async () => {
+      const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = versionFor(asset, 'export');
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+      mocks.media.transcode.mockResolvedValue(undefined);
+      mocks.media.probe.mockResolvedValue({
+        videoStreams: [{ ...videoStream, width: 200, height: 100 }],
+        audioStreams: [],
+        format: { ...asset.format, duration: 30 },
+      });
+      const thumbnails = vi.fn();
+      (sut as any).generateVideoThumbnails = thumbnails;
+
+      await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.assetEdit.getVideoVersion).toHaveBeenCalledWith(asset.id, version.id);
+      expect(thumbnails).not.toHaveBeenCalled();
+      const [master, proxy] = [mocks.media.transcode.mock.calls[0][1], mocks.media.transcode.mock.calls[1][1]];
+      expect(master).toMatch(new RegExp(String.raw`${version.id}_.+\.master\.mp4$`));
+      expect(proxy).toMatch(new RegExp(String.raw`${version.id}_.+\.proxy\.mp4$`));
+      expect(mocks.storage.createOrOverwriteFile).toHaveBeenCalledWith(`${master}.lineage.json`, expect.any(Buffer));
+      expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledExactlyOnceWith(
+        version,
         expect.objectContaining({
-          assetId: asset.id,
-          type: AssetFileType.EncodedVideo,
-          isEdited: true,
+          masterPath: master,
+          files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy, isEdited: true })],
         }),
       );
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it.each([null, { startPts: 0, endPts: 9000 }])(
+      'refuses unavailable or truncated full-clip timing before lineage, proxy or publication',
+      async (presentation) => {
+        const videoStream = {
+          ...probeStub.videoStreamH264.videoStream,
+          timeBaseRational: { num: 1, den: 600 },
+          width: 300,
+          height: 200,
+          rotation: 0,
+        };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = versionFor(asset, 'export');
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [{ ...videoStream, width: 200, height: 100 }],
+          audioStreams: [],
+          format: asset.format,
+        });
+        mocks.media.probePackets
+          .mockResolvedValueOnce({
+            presentation: { startPts: 0, endPts: 18_000 },
+            packetCount: 900,
+            totalDuration: 18_000,
+            outputFrames: 900,
+            keyframePts: [],
+            keyframeAccDuration: [],
+            keyframeOwnDuration: [],
+          })
+          .mockResolvedValueOnce({
+            presentation,
+            packetCount: 900,
+            totalDuration: 18_000,
+            outputFrames: 900,
+            keyframePts: [],
+            keyframeAccDuration: [],
+            keyframeOwnDuration: [],
+          });
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.master\.mp4$/));
+      },
+    );
+
+    describe('audio validation of the master (FL-102)', () => {
+      const surround = {
+        index: 1,
+        codecName: 'eac3',
+        profile: null,
+        bitrate: 640_000,
+        channels: 6,
+        channelLayout: '5.1(side)',
+        sampleRate: 48_000,
+      };
+      const setup = (masterAudio: Record<string, unknown>[]) => {
+        const videoStream = {
+          ...probeStub.videoStreamH264.videoStream,
+          timeBaseRational: { num: 1, den: 600 },
+          width: 300,
+          height: 200,
+          rotation: 0,
+        };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: surround,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = versionFor(asset, 'export');
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        const master = { ...videoStream, width: 200, height: 100, duration: 30, frameRate: 30 };
+        mocks.media.probe
+          .mockResolvedValueOnce({
+            videoStreams: [videoStream],
+            audioStreams: [surround],
+            format: { ...asset.format, duration: 30 },
+          })
+          .mockResolvedValue({
+            videoStreams: [master],
+            audioStreams: masterAudio as never,
+            format: { ...asset.format, duration: 30 },
+          });
+        return { asset, version };
+      };
+
+      it('publishes a master whose 5.1 track survives and ends with the picture', async () => {
+        const { asset, version } = setup([{ ...surround, duration: 30.01 }]);
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+          JobStatus.Success,
+        );
+        expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledOnce();
+      });
+
+      it.each([
+        ['lost its audio', []],
+        ['was folded to stereo', [{ ...surround, channels: 2, channelLayout: 'stereo', duration: 30 }]],
+        ['drifted from the picture', [{ ...surround, duration: 29.5 }]],
+      ])('never publishes a master whose audio %s', async (_, masterAudio) => {
+        const { asset, version } = setup(masterAudio);
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id })).resolves.toBe(
+          JobStatus.Failed,
+        );
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.master\.mp4$/));
+      });
+    });
+
+    describe('as a job in Activity (FL-43)', () => {
+      const exportSetup = () => {
+        const videoStream = {
+          ...probeStub.videoStreamH264.videoStream,
+          timeBaseRational: { num: 1, den: 600 },
+          width: 300,
+          height: 200,
+          rotation: 0,
+        };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = versionFor(asset, 'export');
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [{ ...videoStream, width: 200, height: 100 }],
+          audioStreams: [],
+          format: { ...asset.format, duration: 30 },
+        });
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.heartbeat.mockResolvedValue(true);
+        mocks.mediaOperation.complete.mockResolvedValue(true);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'other' } as never);
+        return { asset, version };
+      };
+
+      it('publishes the version only after its job moved to validating, then completes it', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.mediaOperation.beginValidation.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.assetEdit.publishVideoVersion.mock.invocationCallOrder[0],
+        );
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledWith('op-1', 'token-1', { resultAssetId: asset.id });
+      });
+
+      it('publishes nothing and removes its files when the job lost its claim, leaving the current version', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        const master = mocks.media.transcode.mock.calls[0][1];
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(master);
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      });
+
+      it('reports a failed render with its reason and never publishes it', async () => {
+        const { asset, version } = exportSetup();
+        mocks.media.transcode.mockRejectedValue(new Error('ffmpeg exited with code 1'));
+        mocks.mediaOperation.fail.mockResolvedValue('retrying');
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          'op-1',
+          'token-1',
+          expect.objectContaining({ errorCode: 'edit_render_failed' }),
+          { retry: true },
+        );
+      });
+
+      it('does not render a job another delivery holds', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(undefined);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each(['save', 'export', 'revert'] as const)(
+      'preserves multi-audio originals through the %s path',
+      async (purpose) => {
+        const videoStream = probeStub.videoStreamH264.videoStream;
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: probeStub.audioStreamAac.audioStream,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = {
+          id: newUuid(),
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          sourcePath: asset.originalPath,
+          sourceChecksum: asset.checksum,
+          recipe: purpose === 'revert' ? [] : [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+          purpose,
+          status: 'pending',
+          masterPath: null,
+          proxyPath: null,
+          files: [],
+          createdAt: new Date(),
+        };
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [videoStream],
+          audioStreams: [
+            { ...probeStub.audioStreamAac.audioStream!, index: 1 },
+            { ...probeStub.audioStreamAac.audioStream!, index: 2 },
+          ],
+          format: asset.format,
+        });
+        await expect(
+          sut.handleAssetVideoEditGeneration({
+            id: asset.id,
+            ...(purpose === 'export' && { versionId: version.id }),
+          }),
+        ).resolves.toBe(purpose === 'revert' ? JobStatus.Success : JobStatus.Failed);
+        expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        if (purpose === 'revert') {
+          expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledExactlyOnceWith(
+            version,
+            expect.objectContaining({ files: [], masterPath: null }),
+          );
+        } else {
+          expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        }
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(
+      [true, false, 'invalid-master'].flatMap((accepted) =>
+        [false, true].flatMap((copy) =>
+          [
+            [TranscodeHardwareAcceleration.Disabled, 'h264'],
+            [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc'],
+            [TranscodeHardwareAcceleration.Qsv, 'h264_qsv'],
+            [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi'],
+            [TranscodeHardwareAcceleration.Rkmpp, 'h264_rkmpp'],
+          ].map(([accel, codec]) => ({ accepted, copy, accel: accel as TranscodeHardwareAcceleration, codec })),
+        ),
+      ),
+    )(
+      'publishes a proxy independently from the master ($accepted, copy=$copy, accel=$accel)',
+      async ({ accepted, copy, accel, codec }) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel, accelDecode: true, targetVideoCodec: VideoCodec.H264, targetResolution: '480' },
+        });
+        sut.videoInterfaces = { dri: ['renderD128'], mali: true };
+        const videoStream = {
+          ...probeStub.videoStreamH264.videoStream,
+          timeBaseRational: { num: 1, den: 600 },
+          width: 300,
+          height: 200,
+          rotation: 0,
+        };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = {
+          id: newUuid(),
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          sourcePath: asset.originalPath,
+          sourceChecksum: asset.checksum,
+          recipe: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+          purpose: 'save' as const,
+          status: 'pending' as const,
+          masterPath: null,
+          proxyPath: null,
+          files: [],
+          createdAt: new Date(),
+        };
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: accepted === true, releasedPaths: [] });
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [
+            {
+              ...videoStream,
+              rotation: copy ? -90 : 0,
+              width: accepted === 'invalid-master' ? 301 : copy ? 300 : 200,
+              height: copy ? 200 : 300,
+            },
+          ],
+          audioStreams: [],
+          format: asset.format,
+        });
+        mocks.media.probe.mockResolvedValueOnce({
+          videoStreams: [videoStream],
+          audioStreams: [],
+          // A remuxable container admits the packet-preserving rotation; another one is baked.
+          format: { ...asset.format, duration: 30, formatName: copy ? 'mov,mp4,m4a,3gp,3g2,mj2' : 'matroska,webm' },
+        });
+        mocks.storage.unlink.mockResolvedValue(undefined);
+        (sut as any).generateVideoThumbnails = () =>
+          Promise.resolve({
+            files: [],
+            thumbhash: Buffer.from('hash'),
+            fullsizeDimensions: { width: 300, height: 200 },
+          });
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(
+          accepted === 'invalid-master' ? JobStatus.Failed : accepted ? JobStatus.Success : JobStatus.Skipped,
+        );
+        if (accepted === 'invalid-master') {
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledWith(asset.id, version.id);
+          expect(mocks.media.transcode).toHaveBeenCalledOnce();
+          // master, its lineage sidecar and the proxy path are all released
+          expect(mocks.storage.unlink).toHaveBeenCalledTimes(3);
+          return;
+        }
+        if (copy) {
+          expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toContain('copy');
+          const proxyCommand = mocks.media.transcode.mock.calls[1][2];
+          expect(proxyCommand.outputOptions).toContain(codec);
+          expect(proxyCommand.outputOptions).not.toContain('copy');
+          expect(proxyCommand.inputOptions).not.toContain('-noautorotate');
+          expect(proxyCommand.inputOptions).not.toContain('-hwaccel');
+        }
+        const master = mocks.media.transcode.mock.calls[0][1];
+        const proxy = mocks.media.transcode.mock.calls[1][1];
+        expect(mocks.media.transcode.mock.calls[0][0]).toBe(asset.originalPath);
+        expect(mocks.media.transcode.mock.calls[1][0]).toBe(master);
+        expect(master).not.toBe(proxy);
+        expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledWith(
+          version,
+          expect.objectContaining({
+            masterPath: master,
+            duration: 30_000,
+            width: 200,
+            height: 300,
+            files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy })],
+          }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledTimes(accepted ? 0 : 3);
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('handleStudioHdrProxy (FL-97)', () => {
+    const fingerprint = Buffer.from('fingerprint');
+    const hdrAsset = (videoStream: any = probeStub.videoStreamHDR10.videoStream, files: any[] = []) => ({
+      ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.mov' }),
+      checksum: Buffer.from('original-checksum'),
+      files,
+      videoStream,
+      audioStream: null,
+      format: probeStub.videoStreamHDR10.format,
+    });
+    const editedMaster = {
+      id: 'e',
+      type: AssetFileType.EncodedVideo,
+      path: '/edited.mp4',
+      isEdited: true,
+      isProgressive: false,
+      isTransparent: false,
+    };
+    const fileDelete = (...files: string[]) => ({ name: JobName.FileDelete, data: { files } });
+
+    beforeEach(() => {
+      mocks.asset.getStudioHdrSourceFingerprint.mockResolvedValue(fingerprint);
+    });
+
+    it('fails when the asset is missing', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('records SDR video as ineligible, so project reads stop queueing it', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(probeStub.videoStreamH264.videoStream) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith({
+        assetId: 'video-id',
+        ownerId: expect.any(String),
+        sourceFingerprint: fingerprint,
+        status: 'ineligible',
+      });
+    });
+
+    it('records a video without a probed stream as ineligible instead of throwing', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(null) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ineligible' }),
+      );
+    });
+
+    it('never derives from the original once an edit is published over it', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset(undefined, [editedMaster]) as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.asset.recordStudioHdrIntermediate).not.toHaveBeenCalled();
+    });
+
+    it('skips when the current intermediate is on disk, and makes a lost one again', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(new Map([['video-id', '/x-studio-hdr.mp4']]));
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    const generation = expect.stringMatching(/video-id-studio-hdr-[0-9a-f-]{36}\.mp4$/);
+
+    it('makes a 10-bit PQ AV1 intermediate under a new name and records it against the original it read', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        '/original/path.mov',
+        generation,
+        expect.objectContaining({
+          outputOptions: expect.arrayContaining([
+            '-c:v',
+            'libsvtav1',
+            '-pix_fmt',
+            'yuv420p10le',
+            '-color_trc',
+            'smpte2084',
+          ]),
+          twoPass: false,
+        }),
+      );
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith({
+        assetId: 'video-id',
+        ownerId: expect.any(String),
+        sourceFingerprint: fingerprint,
+        status: 'ready',
+        path: generation,
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it("keeps to the admin's ffmpeg thread limit", async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { threads: 2 } });
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      const { outputOptions } = mocks.media.transcode.mock.calls[0][2];
+      expect(outputOptions).toEqual(expect.arrayContaining(['-threads', '2']));
+      expect(outputOptions.find((option: string) => option.startsWith('color-primaries='))).toMatch(/:lp=2$/);
+    });
+
+    it('discards what it made when the original was replaced or removed meanwhile', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: false });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(generation);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('never names the same file twice, so a queued FileDelete cannot reach a new generation', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      await sut.handleStudioHdrProxy({ id: 'video-id' });
+      const [first, second] = mocks.media.transcode.mock.calls.map(([, output]) => output);
+      expect(first).not.toEqual(second);
+    });
+
+    it('releases an intermediate it replaced at another path (the owner changed)', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: true, replacedPath: '/old-owner/v.mp4' });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.job.queue).toHaveBeenCalledWith(fileDelete('/old-owner/v.mp4'));
+    });
+
+    it('records a failed transcode, so it is not retried on every read, and discards the partial file', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(hdrAsset() as any);
+      mocks.media.transcode.mockRejectedValue(new Error('boom'));
+      mocks.asset.recordStudioHdrIntermediate.mockResolvedValue({ recorded: true, replacedPath: '/stale/v.mp4' });
+      await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.asset.recordStudioHdrIntermediate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', sourceFingerprint: fingerprint }),
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(generation);
+      // a ready intermediate the refusal replaced goes through FileDelete
+      expect(mocks.job.queue).toHaveBeenCalledWith(fileDelete('/stale/v.mp4'));
     });
   });
 

@@ -5,3 +5,6 @@ node_modules/
 /playwright/.cache/
 /dist
 .env
+
+# Frozen media fixtures are retrieved by the owned bootstrap or artifact workflow.
+/test-assets/

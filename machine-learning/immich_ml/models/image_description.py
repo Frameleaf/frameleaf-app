@@ -4,6 +4,7 @@ import os
 import re
 import threading
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -211,7 +212,7 @@ class ImageDescriptionModel(InferenceModel):
         # Scope cache directory by acceleration backend so CUDA (full-precision
         # PyTorch weights) and OpenVINO (int4 IR) snapshots do not collide on
         # the same path. Without this scoping, switching acceleration with a
-        # persistent /cache volume (RunPod-style deployments) silently loads
+        # persistent /cache volume (remote GPU deployments) silently loads
         # the wrong weights and the loader crashes opaquely. See ml.md Critical #2.
         base = settings.cache_folder / self.model_task.value / self.model_name
         scoped = base / str(self.acceleration)
@@ -327,9 +328,9 @@ class ImageDescriptionModel(InferenceModel):
         device = self._torch_device(torch)
         torch_dtype = torch.float16 if str(device).startswith("cuda") else torch.float32
         trust_remote_code = self._is_florence_model()
-        processor = AutoProcessor.from_pretrained(
-            str(self.cache_dir), trust_remote_code=trust_remote_code, local_files_only=True
-        )
+        # AutoProcessor's dynamic factory is unannotated in Transformers 5.x.
+        load_processor = cast(Callable[..., Any], AutoProcessor.from_pretrained)
+        processor = load_processor(str(self.cache_dir), trust_remote_code=trust_remote_code, local_files_only=True)
 
         if self._is_florence_model():
             model = AutoModelForCausalLM.from_pretrained(
@@ -337,7 +338,7 @@ class ImageDescriptionModel(InferenceModel):
                 torch_dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
                 local_files_only=True,
-            ).to(device)
+            )
         else:
             # AutoModelForImageTextToText dispatches to the right vision-LM class
             # via the model's config.json. Works for the full Qwen2.5-VL family
@@ -348,9 +349,11 @@ class ImageDescriptionModel(InferenceModel):
                 str(self.cache_dir),
                 torch_dtype="auto",
                 local_files_only=True,
-            ).to(device)
+            )
 
-        model.eval()
+        # Move the loaded instance in place; the decorated .to return annotation is unreliable.
+        cast(Callable[[str], object], getattr(model, "to"))(device)
+        cast(Callable[[], object], getattr(model, "eval"))()
         return {"model": model, "processor": processor, "device": device, "torch": torch, "torch_dtype": torch_dtype}
 
     def _predict_cuda(self, image: Image.Image, nsfw: Any = None, external_prompt: str | None = None) -> dict[str, Any]:

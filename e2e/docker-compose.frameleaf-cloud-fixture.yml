@@ -1,0 +1,42 @@
+# FL-201: a fake Frameleaf Cloud (discovery, instance token, ML gateway) answering the vendored
+# @frameleaf/cloud-contracts fixtures. Used only by `pnpm test:cloud`: it points the server at the fake,
+# which the main run's specs (item-share) must not see. It changes nothing else about the server.
+#
+# Start the WHOLE stack fresh with both files, never by recreating only the server on a database an
+# earlier container initialised: the server detects its media location from its own filesystem
+# (/data or /usr/src/app/upload) and refuses to start when that differs from what the database recorded.
+#   docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml \
+#     up -d --no-build --force-recreate --renew-anon-volumes --wait
+services:
+  frameleaf-cloud-fixture:
+    image: ${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
+    command: node /fixture/frameleaf-cloud-fixture.mjs
+    environment:
+      FRAMELEAF_CLOUD_FIXTURE_PORT: '3010'
+      FRAMELEAF_CLOUD_FIXTURE_URL: http://frameleaf-cloud-fixture:3010
+      FRAMELEAF_CLOUD_FIXTURE_MODE: ${FRAMELEAF_CLOUD_FIXTURE_MODE:-}
+      FRAMELEAF_CLOUD_FIXTURE_CONTRACTS: file:///fixture-contracts/ml/
+    volumes:
+      - ./src/fixtures/frameleaf-cloud-fixture.mjs:/fixture/frameleaf-cloud-fixture.mjs:ro
+      - ./src/fixtures/frameleaf-cloud:/fixture/frameleaf-cloud:ro
+      - ../server/test/fixtures/frameleaf-cloud-contracts/ml:/fixture-contracts/ml:ro
+    ports:
+      - 3010:3010
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3010/ping').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  frameleaf-server:
+    environment:
+      FRAMELEAF_CLOUD_URL: http://frameleaf-cloud-fixture:3010
+    depends_on:
+      frameleaf-cloud-fixture:
+        condition: service_healthy

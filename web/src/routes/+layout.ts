@@ -1,4 +1,4 @@
-import { commandPaletteManager } from '@immich/ui';
+import { commandPaletteManager } from '@frameleaf/ui';
 import { goto } from '$app/navigation';
 import { languageManager } from '$lib/managers/language-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -29,7 +29,7 @@ export const load = (async ({ fetch, url }) => {
   return {
     error,
     meta: {
-      title: 'Immich',
+      title: 'Frameleaf',
     },
   };
 }) satisfies LayoutLoad;

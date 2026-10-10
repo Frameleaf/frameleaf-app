@@ -43,7 +43,12 @@
 </script>
 
 <div class={`flex gap-2 ${className}`} {...rest}>
-  <button type="button" class="w-8 text-xl leading-none font-bold" onclick={toggleSign} title="Toggle sign">
+  <button
+    type="button"
+    class="w-8 text-xl leading-none font-bold"
+    onclick={toggleSign}
+    title={$t('frameleaf_duration_toggle_sign')}
+  >
     {sign >= 0 ? '+' : '-'}
   </button>
   <input type="number" min="0" placeholder={$t('days')} class="w-1/3" bind:value={days} />

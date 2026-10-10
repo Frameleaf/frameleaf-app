@@ -23,13 +23,12 @@
   import { focusOutside } from '$lib/actions/focus-outside';
   import { shortcuts } from '$lib/actions/shortcut';
   import { generateId } from '$lib/utils/generate-id';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { Icon, IconButton, Label } from '@immich/ui';
+  import { Icon, IconButton, Label } from '@frameleaf/ui';
   import { mdiChevronDown, mdiClose, mdiMagnify } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { FormEventHandler } from 'svelte/elements';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
 
   interface Props {
     label: string;
@@ -48,6 +47,8 @@
     defaultFirstOption?: boolean;
     onSelect?: (option: ComboBoxOption | undefined) => void;
     forceFocus?: boolean;
+    /** What the list says when a search matches nothing; "No results" by default. */
+    emptyText?: string;
   }
 
   let {
@@ -61,6 +62,7 @@
     defaultFirstOption = false,
     onSelect = () => {},
     forceFocus = false,
+    emptyText,
   }: Props = $props();
 
   /**
@@ -181,7 +183,7 @@
     onSelect(selectedOption);
   };
 
-  // TODO: move this combobox component into @immich/ui
+  // TODO: move this combobox component into @frameleaf/ui
   // Bits UI dialogs use `contain: layout` so fixed descendants are positioned in dialog space
   const getModalBounds = () => {
     const modalRoot = input?.closest('[data-dialog-content]');
@@ -270,10 +272,10 @@
 
 <svelte:window onresize={onPositionChange} />
 {#if !hideLabel}
-  <Label class="mb-1 block text-xs font-light text-neutral-500" for={inputId}>{label}</Label>
+  <Label class="mb-1 block text-xs text-(--fl-muted)" for={inputId}>{label}</Label>
 {/if}
 <div
-  class="relative w-full text-base text-gray-700 dark:text-gray-300"
+  class="relative w-full text-base text-(--fl-text)"
   use:focusOutside={{ onFocusOut: deactivate }}
   use:shortcuts={[
     {
@@ -288,7 +290,7 @@
   <div>
     {#if isActive}
       <div class="absolute inset-y-0 inset-s-0 flex items-center ps-3">
-        <div class="dark:text-immich-dark-fg/75">
+        <div class="text-(--fl-muted)">
           <Icon icon={mdiMagnify} aria-hidden />
         </div>
       </div>
@@ -307,7 +309,7 @@
       class:rounded-b-none!={isOpen && dropdownDirection === 'bottom'}
       class:rounded-t-none!={isOpen && dropdownDirection === 'top'}
       class:cursor-pointer={!isActive}
-      class="immich-form-input w-full pe-12! text-sm transition-all"
+      class="immich-form-input w-full pe-12! text-sm transition-colors"
       id={inputId}
       onfocus={activate}
       oninput={onInput}
@@ -383,8 +385,10 @@
   <ul
     role="listbox"
     id={listboxId}
-    in:fly={{ duration: mediaQueryManager.reducedMotion ? 0 : 250 }}
-    class="fixed z-1 w-full overflow-y-auto border-gray-300 bg-white text-start text-sm dark:border-gray-900 dark:bg-gray-800"
+    in:motionFly={{ duration: 250 }}
+    class="fl-combobox-list fixed z-1 w-full overflow-y-auto border-(--fl-border) bg-(--fl-panel) text-start text-sm text-(--fl-text)"
+    class:open={isOpen}
+    class:top={dropdownDirection === 'top'}
     class:rounded-b-xl={dropdownDirection === 'bottom'}
     class:rounded-t-xl={dropdownDirection === 'top'}
     class:shadow-sm={dropdownDirection === 'bottom'}
@@ -403,11 +407,11 @@
           role="option"
           aria-selected={selectedIndex === 0}
           aria-disabled={true}
-          class="w-full cursor-default px-4 py-2 text-start hover:bg-gray-200 aria-selected:bg-gray-200 dark:hover:bg-gray-700 aria-selected:dark:bg-gray-700"
+          class="w-full cursor-default px-4 py-2 text-start text-(--fl-muted)"
           id={`${listboxId}-0`}
           onclick={closeDropdown}
         >
-          {allowCreate ? searchQuery : $t('no_results')}
+          {allowCreate ? searchQuery : (emptyText ?? $t('no_results'))}
         </li>
       {/if}
       {#each filteredOptions as option, index (option.id || option.label)}
@@ -415,7 +419,7 @@
         <li
           aria-selected={index === selectedIndex}
           bind:this={optionRefs[index]}
-          class="wrap-break-words w-full cursor-pointer px-4 py-2 text-start transition-all hover:bg-gray-200 aria-selected:bg-gray-200 dark:hover:bg-gray-700 aria-selected:dark:bg-gray-700"
+          class="wrap-break-words w-full cursor-pointer px-4 py-2 text-start transition-colors hover:bg-(--fl-raised) aria-selected:bg-(--fl-raised)"
           id={`${listboxId}-${index}`}
           onclick={() => handleSelect(option)}
           role="option"
@@ -426,3 +430,26 @@
     {/if}
   </ul>
 </div>
+
+<style>
+  /*
+   * The option list is a Frameleaf popup: the panel surface with the menu elevation, opening on
+   * the Pop pattern (base.css keyframes) from the edge it hangs from. Under Reduce Motion it
+   * crossfades; the rule is !important to outrank the global motion clamp.
+   */
+  .fl-combobox-list.open {
+    box-shadow: var(--fl-shadow-2);
+    transform-origin: top center;
+    animation:
+      fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both,
+      fl-pop-in var(--fl-duration-pop) var(--fl-spring) both;
+  }
+  .fl-combobox-list.open.top {
+    transform-origin: bottom center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-combobox-list.open {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+    }
+  }
+</style>

@@ -1,0 +1,307 @@
+--- /dev/null
++++ b/src/shared/timeline/transitions/transition-inputs.ts
+@@ -0,0 +1,76 @@
++import { TRANSITION_CONFIGS, type TransitionDefinition } from '@/types/transition'
++
++type TransitionProperties = Record<string, unknown>
++
++const isFiniteNumber = (value: unknown): value is number =>
++  typeof value === 'number' && Number.isFinite(value)
++
++/**
++ * FL-99: the inputs a transition is drawn with. A stored or imported value that
++ * is not what the transition declares reaches every renderer (preview and
++ * export, GPU and Canvas2D) and the audio crossfade as its declared meaning
++ * instead of an undefined one. The rule is the one effect parameters follow:
++ * - a finite number outside its declared range is clamped to the range;
++ * - a value that is not a finite number falls back to the declared default.
++ *
++ * The duration's range is one frame and up, in whole frames; its default is the
++ * transition type's default duration. A non-finite duration used to give a
++ * window with no start or end, which kept the outgoing clip on screen for the
++ * whole incoming clip.
++ */
++export function resolveTransitionDuration(durationInFrames: unknown): number {
++  if (!isFiniteNumber(durationInFrames)) return TRANSITION_CONFIGS.crossfade.defaultDuration
++  return Math.max(1, Math.floor(durationInFrames))
++}
++
++/** The alignment's range is [0, 1]; its default is centred on the cut. */
++export function resolveTransitionAlignment(alignment: unknown): number {
++  if (!isFiniteNumber(alignment)) return 0.5
++  return Math.max(0, Math.min(1, alignment))
++}
++
++/**
++ * The properties a transition's renderer is given:
++ * - a declared numeric parameter is a finite number inside its declared range,
++ *   or its default;
++ * - a declared colour is three finite numbers, or its default;
++ * - a property the transition does not declare is kept only when it is a finite
++ *   number: the renderers read a few numeric properties that have no control,
++ *   and anything else would reach a shader uniform as NaN.
++ * Valid properties come back as the same object.
++ */
++export function sanitizeTransitionProperties(
++  definition: TransitionDefinition,
++  properties: TransitionProperties | undefined,
++): TransitionProperties | undefined {
++  if (!properties) return properties
++  const declared = new Map(
++    (definition.parameters ?? []).map((parameter) => [parameter.key, parameter]),
++  )
++  let out: TransitionProperties | null = null
++  const change = () => (out ??= { ...properties })
++  for (const [key, value] of Object.entries(properties)) {
++    const parameter = declared.get(key)
++    if (!parameter) {
++      if (!isFiniteNumber(value)) delete change()[key]
++      continue
++    }
++    if (parameter.type === 'number') {
++      if (!isFiniteNumber(value)) {
++        change()[key] = parameter.defaultValue
++        continue
++      }
++      const low = typeof parameter.min === 'number' ? parameter.min : -Infinity
++      const high = typeof parameter.max === 'number' ? parameter.max : Infinity
++      const clamped = Math.min(high, Math.max(low, value))
++      if (clamped !== value) change()[key] = clamped
++    } else if (
++      !Array.isArray(value) ||
++      value.length < 3 ||
++      !value.slice(0, 3).every(isFiniteNumber)
++    ) {
++      change()[key] = parameter.defaultValue
++    }
++  }
++  return out ?? properties
++}
+--- /dev/null
++++ b/src/shared/timeline/transitions/transition-inputs.test.ts
+@@ -0,0 +1,170 @@
++import { describe, expect, it } from 'vite-plus/test'
++import type { Transition, TransitionDefinition } from '@/types/transition'
++import {
++  resolveTransitionAlignment,
++  resolveTransitionDuration,
++  sanitizeTransitionProperties,
++} from './transition-inputs'
++import { transitionRegistry } from './registry'
++import { calculateTransitionPortions, resolveTransitionWindows } from './transition-planner'
++import type { TimelineItem } from '@/types/timeline'
++
++const definition = {
++  id: 'test',
++  parameters: [
++    { key: 'strength', label: 'Strength', type: 'number', defaultValue: 9, min: 0, max: 24 },
++    { key: 'spin', label: 'Spin', type: 'number', defaultValue: 0.3 },
++    {
++      key: 'color',
++      label: 'Color',
++      type: 'color',
++      defaultValue: [0, 0, 0],
++      valueFormat: 'rgb-array',
++    },
++  ],
++} as unknown as TransitionDefinition
++
++describe('transition inputs (FL-99 invalid transitions)', () => {
++  it('draws a duration that is not a finite number as the default duration', () => {
++    for (const duration of [
++      Number.NaN,
++      Number.POSITIVE_INFINITY,
++      Number.NEGATIVE_INFINITY,
++      'long',
++      null,
++      undefined,
++    ]) {
++      expect(resolveTransitionDuration(duration)).toBe(30)
++    }
++  })
++
++  it('keeps the whole frames of a finite duration, and at least one', () => {
++    expect(resolveTransitionDuration(10)).toBe(10)
++    expect(resolveTransitionDuration(10.7)).toBe(10)
++    expect(resolveTransitionDuration(0)).toBe(1)
++    expect(resolveTransitionDuration(-5)).toBe(1)
++  })
++
++  it('draws an alignment that is not a finite number as centred, and clamps a finite one', () => {
++    for (const alignment of [Number.NaN, Number.POSITIVE_INFINITY, 'left', null, undefined]) {
++      expect(resolveTransitionAlignment(alignment)).toBe(0.5)
++    }
++    expect(resolveTransitionAlignment(-3)).toBe(0)
++    expect(resolveTransitionAlignment(7)).toBe(1)
++    expect(resolveTransitionAlignment(0.25)).toBe(0.25)
++  })
++
++  it('splits an invalid duration or alignment like the default it draws as', () => {
++    expect(calculateTransitionPortions(Number.NaN, 0.5)).toEqual({
++      leftPortion: 15,
++      rightPortion: 15,
++    })
++    expect(calculateTransitionPortions(10, Number.NaN)).toEqual({ leftPortion: 5, rightPortion: 5 })
++  })
++
++  it('returns valid properties as they are, the same object', () => {
++    const properties = { strength: 12, spin: -40, color: [1, 0.5, 2], hidden: 0.25 }
++    expect(sanitizeTransitionProperties(definition, properties)).toBe(properties)
++    expect(sanitizeTransitionProperties(definition, undefined)).toBe(undefined)
++  })
++
++  it('clamps finite numbers to the declared range and leaves unbounded ones', () => {
++    expect(sanitizeTransitionProperties(definition, { strength: 1000, spin: -5000 })).toEqual({
++      strength: 24,
++      spin: -5000,
++    })
++    expect(sanitizeTransitionProperties(definition, { strength: -1 })).toEqual({ strength: 0 })
++  })
++
++  it('falls back to the default for non-finite and non-number values', () => {
++    expect(
++      sanitizeTransitionProperties(definition, {
++        strength: Number.NaN,
++        spin: Number.POSITIVE_INFINITY,
++        color: 'red',
++      }),
++    ).toEqual({ strength: 9, spin: 0.3, color: [0, 0, 0] })
++    expect(
++      sanitizeTransitionProperties(definition, { strength: '12', color: [0.2, Number.NaN, 0.4] }),
++    ).toEqual({
++      strength: 9,
++      color: [0, 0, 0],
++    })
++    expect(sanitizeTransitionProperties(definition, { color: [0.2, 0.4] })).toEqual({
++      color: [0, 0, 0],
++    })
++  })
++
++  it('keeps an undeclared property only when it is a finite number', () => {
++    expect(
++      sanitizeTransitionProperties(definition, {
++        strength: 3,
++        centerX: 0.25,
++        centerY: Number.NaN,
++        samples: 'many',
++        nested: { a: 1 },
++      }),
++    ).toEqual({ strength: 3, centerX: 0.25 })
++  })
++
++  it('hands every renderer the sanitised transition, and a valid one untouched', () => {
++    transitionRegistry.register('fl99-test', { ...definition, id: 'fl99-test' }, {})
++    try {
++      const clip = (id: string, from: number) =>
++        ({ id, from, durationInFrames: 40 }) as unknown as TimelineItem
++      const clips = new Map([
++        ['a', clip('a', 0)],
++        ['b', clip('b', 40)],
++        ['c', clip('c', 80)],
++      ])
++      const transition = (id: string, leftClipId: string, rightClipId: string, extra: object) =>
++        ({
++          id,
++          presentation: 'fl99-test',
++          timing: 'linear',
++          leftClipId,
++          rightClipId,
++          ...extra,
++        }) as unknown as Transition
++      const valid = transition('valid', 'a', 'b', {
++        durationInFrames: 10,
++        properties: { strength: 3 },
++      })
++      const invalid = transition('invalid', 'b', 'c', {
++        durationInFrames: Number.NaN,
++        alignment: Number.NaN,
++        properties: { strength: Number.NaN },
++      })
++      const windows = resolveTransitionWindows([valid, invalid], clips)
++      expect(windows[0]!.transition).toBe(valid)
++      expect(windows[0]).toMatchObject({ startFrame: 35, endFrame: 45, durationInFrames: 10 })
++      expect(windows[1]!.transition.properties).toEqual({ strength: 9 })
++      // The default 30 frames, centred on the cut at frame 80.
++      expect(windows[1]).toMatchObject({ startFrame: 65, endFrame: 95, durationInFrames: 30 })
++    } finally {
++      transitionRegistry.unregister('fl99-test')
++    }
++  })
++
++  it('leaves the properties of a transition with no registered definition alone', () => {
++    const clip = (id: string, from: number) =>
++      ({ id, from, durationInFrames: 40 }) as unknown as TimelineItem
++    const unknown = {
++      id: 'unknown',
++      presentation: 'fl99-not-registered',
++      timing: 'linear',
++      leftClipId: 'a',
++      rightClipId: 'b',
++      durationInFrames: 10,
++      properties: { anything: 'goes' },
++    } as unknown as Transition
++    const [window] = resolveTransitionWindows(
++      [unknown],
++      new Map([
++        ['a', clip('a', 0)],
++        ['b', clip('b', 40)],
++      ]),
++    )
++    expect(window!.transition).toBe(unknown)
++  })
++})
+--- a/src/shared/timeline/transitions/transition-planner.ts
++++ b/src/shared/timeline/transitions/transition-planner.ts
+@@ -1,5 +1,11 @@
+ import type { TimelineItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
++import { transitionRegistry } from './registry'
++import {
++  resolveTransitionAlignment,
++  resolveTransitionDuration,
++  sanitizeTransitionProperties,
++} from './transition-inputs'
+ 
+ const FRAME_EPSILON = 1
+ 
+@@ -40,17 +46,25 @@
+   return rightStart < leftEnd - FRAME_EPSILON
+ }
+ 
+-function clampTransitionAlignment(alignment: number | undefined): number {
+-  const value = alignment ?? 0.5
+-  return Math.max(0, Math.min(1, value))
++/**
++ * FL-99: the transition every renderer draws. Its properties are what the
++ * transition declares (see sanitizeTransitionProperties); a valid transition, and
++ * one with no registered definition (drawn as a hard cut), is returned as it is.
++ */
++function resolveDrawnTransition(transition: Transition): Transition {
++  const definition = transitionRegistry.getDefinition(transition.presentation)
++  if (!definition) return transition
++  const properties = sanitizeTransitionProperties(definition, transition.properties)
++  return properties === transition.properties ? transition : { ...transition, properties }
+ }
+ 
+ export function calculateTransitionPortions(
+   durationInFrames: number,
+   alignment: number | undefined,
+ ): TransitionPortions {
+-  const safeDuration = Math.max(1, Math.floor(durationInFrames))
+-  const clampedAlignment = clampTransitionAlignment(alignment)
++  // FL-99: a duration or alignment that is not a finite number draws as its default.
++  const safeDuration = resolveTransitionDuration(durationInFrames)
++  const clampedAlignment = resolveTransitionAlignment(alignment)
+   const leftPortion = Math.floor(safeDuration * clampedAlignment)
+   const rightPortion = safeDuration - leftPortion
+   return { leftPortion, rightPortion }
+@@ -115,7 +129,8 @@
+   const incomingTransitionByClipId = new Map<string, string>()
+   const outgoingTransitionByClipId = new Map<string, string>()
+ 
+-  for (const transition of transitions) {
++  for (const requested of transitions) {
++    const transition = resolveDrawnTransition(requested)
+     const leftClip = clipsById.get(transition.leftClipId)
+     const rightClip = clipsById.get(transition.rightClipId)
+     if (!leftClip || !rightClip) continue

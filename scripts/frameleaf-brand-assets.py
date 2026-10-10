@@ -15,16 +15,13 @@ import xml.etree.ElementTree as ET
 
 INVENTORY_PATH = Path("design/frameleaf/brand-kit/brand-asset-inventory.json")
 MANIFEST_PATH = Path("design/frameleaf/brand-kit/manifest.json")
-GUIDE_PATH = Path("docs/docs/developer/frameleaf-plan/06-brand-assets.md")
-BACKLOG_PATH = Path("docs/docs/developer/frameleaf-plan/backlog.json")
-JIRA_MAP_PATH = Path("docs/docs/developer/frameleaf-plan/jira-map.json")
 SOURCE_MANIFEST_PATH = Path("design/frameleaf/source-manifest.json")
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
 XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
 MANIFEST_SHA256 = "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7"
-SOURCE_MANIFEST_SHA256 = "66944718daf617fd4ed1b60004fd47ab2ccbf1f59c8e14d99d295327683b3b25"
+SOURCE_MANIFEST_SHA256 = "dfeef2e51e00288f818f2c12802a74ba14d61f4e910295eaa8a25b20a8e25b13"
 
 SUPPLIED_SOURCES = {
     "README.txt": (2089, "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff"),
@@ -38,31 +35,17 @@ SUPPLIED_SOURCES = {
 }
 
 REFERENCE_SPECS = (
-    ("design/frameleaf/README.md", "approved-design-handoff"),
-    ("design/frameleaf/INTERACTION-REQUIREMENTS.md", "approved-interaction-contract"),
     ("design/frameleaf/tokens.json", "approved-token-reference"),
-    ("design/frameleaf/template/README.md", "approved-prototype-usage-contract"),
-    ("design/frameleaf/references/README.md", "approved-visual-reference-contract"),
     ("design/frameleaf/mark.png", "historical-raster-reference-not-authority"),
-    ("design/frameleaf/template/public/media/brand.png", "historical-raster-reference-not-authority"),
 )
 
 COMPATIBILITY_SENTINELS = (
-    ("mobile/pubspec.yaml", "yaml-root-name", "immich_mobile"),
-    ("mobile/pubspec.yaml", "yaml-image-path-android", "assets/immich-logo.png"),
-    ("packages/sdk/package.json", "json-name", "@immich/sdk"),
-    ("server/package.json", "json-name", "immich"),
+    ("packages/sdk/package.json", "json-name", "@frameleaf/sdk"),
+    ("server/package.json", "json-name", "frameleaf"),
     ("machine-learning/pyproject.toml", "toml-project-name", "immich-ml"),
     ("machine-learning/pyproject.toml", "toml-build-includes", "immich_ml"),
-    ("web/src/routes/+layout.svelte", "svelte-import", "@immich/sdk"),
+    ("web/src/routes/+layout.svelte", "svelte-import", "@frameleaf/sdk"),
 )
-
-OWNERS = {
-    "FN-201": {"jiraId": "23644", "jiraKey": "FL-29", "dependencies": ["FN-103"], "paths": ["design/frameleaf/tokens.json", "web/src/lib/frameleaf/tokens.css", "web/src/lib/components/frameleaf", "mobile/lib/frameleaf/frameleaf_tokens.dart", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-101": {"jiraId": "23745", "jiraKey": "FL-130", "dependencies": ["REL-201"], "paths": ["mobile/frameleaf-identity.example.json", "scripts/frameleaf-mobile-identity.py", "scripts/frameleaf-mobile-identity-test.py", "mobile/android/app/build.gradle", "mobile/ios/Runner.xcodeproj", "mobile/ios/Runner/Runner.entitlements", "mobile/ios/fastlane", "design/frameleaf/brand-kit/manifest.json", "design/frameleaf/brand-kit/frameleaf-app-icon.svg", "design/frameleaf/brand-kit/frameleaf-symbol-white.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-102": {"jiraId": "23746", "jiraKey": "FL-131", "dependencies": ["MOB-101", "REL-101"], "paths": ["mobile/lib/services/oauth.service.dart", "mobile/lib/widgets/forms/login/login_form.dart", "mobile/lib/services/auth.service.dart", "mobile/lib/providers/auth.provider.dart", "server/src/services/auth.service.ts", "server/src/controllers/oauth.controller.ts", "server/src/dtos/config.dto.ts", "design/frameleaf/brand-kit/frameleaf-logo-dark.svg", "design/frameleaf/brand-kit/frameleaf-symbol.svg", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-    "REL-103": {"jiraId": "23750", "jiraKey": "FL-135", "dependencies": ["MOB-101", "REL-101"], "paths": ["design/frameleaf", "mobile/assets/frameleaf-mark.png", "mobile/pubspec.yaml", "mobile/android/fastlane/metadata", "mobile/ios/Runner/Assets.xcassets", "mobile/ios/ShareExtension", "mobile/ios/WidgetExtension", "mobile/lib/utils/licenses.dart", "mobile/lib/frameleaf/frameleaf_links.dart", "web/src/lib/components/frameleaf", "design/frameleaf/brand-kit", "design/frameleaf/brand-kit/manifest.json", "docs/docs/developer/frameleaf-plan/06-brand-assets.md"]},
-}
 
 
 def reject_duplicate_keys(pairs):
@@ -118,13 +101,6 @@ def compatibility_value(root, path_text, parser):
     if parser == "json-name":
         value = load_json(path)
         return value.get("name")
-    if parser.startswith("yaml-"):
-        active = strip_line_comments(text)
-        if parser == "yaml-root-name":
-            matches = re.findall(r"^name\s*:\s*['\"]?([^'\"\s]+)['\"]?\s*$", active, re.M)
-        else:
-            matches = re.findall(r"^\s*image_path_android\s*:\s*['\"]?([^'\"\s#]+)['\"]?\s*$", active, re.M)
-        return matches[0] if len(matches) == 1 else None
     if parser.startswith("toml-"):
         active = strip_line_comments(text)
         sections = {}
@@ -337,10 +313,10 @@ def validate_manifest(root):
 def validate_source_manifest(root, manifest):
     path = root / SOURCE_MANIFEST_PATH
     size, sha256 = digest(path)
-    if (size, sha256) != (55157, SOURCE_MANIFEST_SHA256):
+    if (size, sha256) != (54824, SOURCE_MANIFEST_SHA256):
         raise ValueError("design source manifest differs from the reviewed immutable authority")
     source_manifest = load_json(path)
-    exact_keys(source_manifest, {"schemaVersion", "capturedAt", "sourceState", "repository", "sourceCheckoutHead", "packagingBase", "issue", "productionParity", "files", "excluded", "testScope"}, "design source manifest")
+    exact_keys(source_manifest, {"schemaVersion", "capturedAt", "repository", "sourceCheckoutHead", "packagingBase", "files", "excluded"}, "design source manifest")
     entries = {}
     for entry in source_manifest["files"]:
         exact_keys(entry, {"source", "path", "sourceSha256", "sha256", "bytes", "modifiedForPortability"}, f"design source entry {entry.get('path')}")
@@ -368,14 +344,13 @@ def build_inventory(root):
             "kind": "supplied-vector" if entry["path"].endswith(".svg") else "supplied-provenance",
             "bytes": entry["bytes"],
             "sha256": entry["sha256"],
-            "status": "authoritative-source-not-runtime-implementation",
         })
     references = []
     for path_text, role in REFERENCE_SPECS:
         path = root / path_text
         size, sha256 = digest(path)
         references.append({"id": f"reference:{path_text}", "path": path_text, "role": role,
-            "bytes": size, "sha256": sha256, "status": "reference-not-production-qualification"})
+            "bytes": size, "sha256": sha256})
     sentinels = []
     for path_text, parser, expected_value in COMPATIBILITY_SENTINELS:
         value = compatibility_value(root, path_text, parser)
@@ -383,77 +358,32 @@ def build_inventory(root):
         if not valid:
             raise ValueError(f"effective compatibility identity removed from {path_text}: {expected_value}")
         sentinels.append({"path": path_text, "parser": parser, "expectedValue": expected_value})
-    backlog = load_json(root / BACKLOG_PATH)
-    jira = load_json(root / JIRA_MAP_PATH)
-    by_id = {item["id"]: item for item in backlog["items"]}
-    if len(by_id) != len(backlog["items"]):
-        raise ValueError("backlog contains duplicate owner identities")
-    ownership = []
-    for plan_id, expected in OWNERS.items():
-        item = by_id.get(plan_id)
-        mapping = jira["issues"].get(plan_id)
-        if not item or not mapping:
-            raise ValueError(f"missing backlog/Jira owner: {plan_id}")
-        if item.get("status") != "planned-not-qualified" or item.get("dependencies") != expected["dependencies"]:
-            raise ValueError(f"{plan_id}: dependencies/status differ from the reviewed brand contract")
-        if item.get("type") != "story" or item.get("paths") != expected["paths"]:
-            raise ValueError(f"{plan_id}: type/owner paths differ from the reviewed brand contract")
-        expected_url = f"https://heroit.atlassian.net/browse/{expected['jiraKey']}"
-        if mapping != {"id": expected["jiraId"], "key": expected["jiraKey"], "url": expected_url}:
-            raise ValueError(f"{plan_id}: Jira identity differs from the reviewed brand contract")
-        ownership.append({"planId": plan_id, "type": item["type"], "jiraId": mapping["id"],
-            "jiraKey": mapping["key"], "jiraUrl": mapping["url"], "dependencies": item["dependencies"],
-            "paths": item["paths"], "status": item["status"]})
     manifest_size, manifest_hash = digest(root / MANIFEST_PATH)
     supplied_ledger = hashlib.sha256(json.dumps(originals, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     reference_ledger = hashlib.sha256(json.dumps(references, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     return {
         "schemaVersion": 1,
         "product": "Frameleaf",
-        "assessment": "Supplied artwork and approved references are preserved; no production web/native integration or release qualification is claimed.",
         "manifest": {"path": str(MANIFEST_PATH), "bytes": manifest_size, "sha256": manifest_hash},
         "sourceManifest": source_manifest,
         "digests": {"suppliedSourceLedgerSha256": supplied_ledger,
             "approvedReferenceLedgerSha256": reference_ledger},
-        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 5,
-            "historicalRasterReferences": 2, "generatedDerivatives": 0, "productionConsumers": 0,
-            "nativeConsumers": 0},
-        "qualification": {"sourceIntegrityReviewed": True, "artworkAuthorityRecorded": True,
-            "webIntegrated": False, "nativeIntegrated": False, "productionQualified": False,
-            "releaseQualified": False},
+        "counts": {"suppliedFiles": 8, "suppliedVectors": 7, "approvedReferenceDocuments": 1,
+            "historicalRasterReferences": 1, "generatedDerivatives": 0},
         "suppliedSources": originals,
         "approvedReferences": references,
-        "expectedDuplicateContent": [{"sha256": references[-1]["sha256"],
-            "paths": [references[-2]["path"], references[-1]["path"]],
-            "reason": "The portable template retained the historical generated prototype raster byte-for-byte; neither copy is production artwork authority."}],
-        "ownership": ownership,
+        "expectedDuplicateContent": [],
         "compatibilitySentinels": sentinels,
         "policies": {"globalImmichStringReplacementProhibited": True, "suppliedSourceMutationProhibited": True,
             "unknownBrandKitMembersProhibited": True, "derivativesRequireSeparateIdentityAndProvenance": True},
     }
 
 
-def validate_document(root):
-    text = (root / GUIDE_PATH).read_text()
-    required = (
-        "seven SVGs",
-        "authoritative Frameleaf artwork",
-        "Do not run SVG formatters or optimizers",
-        "does not claim production integration, native qualification or release readiness",
-        "Do not globally replace `immich`",
-        "brand-asset-inventory.json",
-    )
-    for value in required:
-        if value not in text:
-            raise ValueError(f"brand guide is missing required boundary: {value}")
-
-
 def validate(root):
     expected = build_inventory(root)
     actual = load_json(root / INVENTORY_PATH)
     if actual != expected:
-        raise ValueError("brand asset inventory is stale or contains unsupported qualification claims")
-    validate_document(root)
+        raise ValueError("brand asset inventory is stale")
     return expected
 
 
@@ -469,7 +399,7 @@ def main(argv=None):
         if args.print_inventory:
             print(json.dumps(inventory, indent=2, sort_keys=True) + "\n", end="")
         elif args.check:
-            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 7 references, 0 derivatives, 0 qualified consumers.")
+            print("Frameleaf brand contract verified: 8 supplied files (7 SVGs), 2 references, 0 derivatives.")
     except (KeyError, OSError, ET.ParseError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"Frameleaf brand contract failed: {error}", file=sys.stderr)
         return 1

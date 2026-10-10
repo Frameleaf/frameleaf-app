@@ -6,6 +6,7 @@ import { ZodError } from 'zod';
 import { ImmichHeader } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { isHttpException, onRouteError } from 'src/utils/logger.js';
+import { serverErrorDisplay } from 'src/utils/server-error-display.js';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter<Error> {
@@ -33,6 +34,12 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
       .header({
         [ImmichHeader.CorrelationId]: this.cls.getId(),
         'Content-Type': 'application/json',
+        'Cache-Control':
+          /^\/(?:api\/)?(?:icloud-sync\/edits\/evidence|system-config\/config-file\/(?:activation|reload))\/?$/i.test(
+            req.path ?? '',
+          )
+            ? 'private, no-store'
+            : 'no-store',
       })
       .status(status)
       .json(body);
@@ -49,9 +56,17 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
       if (error instanceof ZodValidationException || error instanceof ZodSerializationException) {
         const zodError = error.getZodError();
         if (zodError instanceof ZodError && zodError.issues.length > 0) {
+          const validationBody = { message: 'Validation failed', errors: zodError.issues };
           return {
             status,
-            body: { message: 'Validation failed', errors: zodError.issues },
+            body: {
+              ...validationBody,
+              displayError: serverErrorDisplay(
+                status,
+                validationBody,
+                error instanceof ZodValidationException ? 'request_validation_failed' : 'response_validation_failed',
+              ),
+            },
           };
         }
       }
@@ -59,13 +74,14 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
       // remove fields injected by NestJS that duplicate the HTTP response line
       delete body['error'];
       delete body['statusCode'];
-      return { status, body };
+      return { status, body: { ...body, displayError: serverErrorDisplay(status, body) } };
     }
 
     return {
       status: 500,
       body: {
         message: 'Internal server error',
+        displayError: serverErrorDisplay(500, {}),
       },
     };
   }

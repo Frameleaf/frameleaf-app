@@ -1,10 +1,7 @@
-import { DatabaseConnectionParams } from '@immich/sql-tools';
-import { RegisterQueueOptions } from '@nestjs/bullmq';
+import { DatabaseConnectionParams } from '@frameleaf/sql-tools';
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { QueueOptions } from 'bullmq';
 import { Request, Response } from 'express';
 import { HelmetOptions } from 'helmet';
-import { RedisOptions } from 'ioredis';
 import { CLS_ID, ClsModuleOptions } from 'nestjs-cls';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,9 +16,18 @@ import {
   ImmichWorker,
   LogFormat,
   LogLevel,
-  QueueName,
 } from 'src/enum.js';
-import { setDifference } from 'src/utils/set.js';
+import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
+import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
+import { parseWorkerSelection } from 'src/utils/environment-values.js';
+import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
+import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
+import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
+import {
+  DEFAULT_SHUTDOWN_DEADLINE_SECONDS,
+  DEFAULT_SHUTDOWN_GRACE_SECONDS,
+  getWorkerDeadlineMs,
+} from 'src/utils/shutdown.js';
 
 export interface EnvData {
   host?: string;
@@ -47,11 +53,6 @@ export interface EnvData {
     thirdPartySupportUrl?: string;
   };
 
-  bull: {
-    config: QueueOptions;
-    queues: RegisterQueueOptions[];
-  };
-
   cls: {
     config: ClsModuleOptions;
   };
@@ -66,13 +67,11 @@ export interface EnvData {
     vectorExtension?: VectorExtension;
   };
 
-  licensePublicKey: {
-    client: string;
-    server: string;
-  };
-
   versionCheck: {
+    /** Frameleaf Cloud release feed, asked first. */
     url: string;
+    /** Frameleaf's GitHub releases, asked only when the feed cannot answer. */
+    fallbackUrl: string;
   };
 
   network: {
@@ -95,8 +94,6 @@ export interface EnvData {
     corePlugin: string;
   };
 
-  redis: RedisOptions;
-
   setup: {
     allow: boolean;
   };
@@ -110,9 +107,23 @@ export interface EnvData {
   storage: {
     ignoreMountCheckErrors: boolean;
     mediaLocation?: string;
+    /** Directories administrators may select Google Photos imports from (FL-65). */
+    importRoots: string[];
+    /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
+    recoveryRoots?: RecoveryRootConfig[];
   };
 
   workers: ImmichWorker[];
+
+  /** FL-291: the stop budget (FRAMELEAF_SHUTDOWN_GRACE_SECONDS, FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS). */
+  shutdown: {
+    /** Running jobs and in-flight requests get this long to finish. */
+    graceMs: number;
+    /** The supervisor kills what is left and exits. */
+    deadlineMs: number;
+    /** Each worker exits by then, whatever its teardown is doing. */
+    workerDeadlineMs: number;
+  };
 
   plugins: {
     external: {
@@ -121,30 +132,35 @@ export interface EnvData {
     };
   };
 
+  /** Signed release destinations of this installation's apps (FL-82). */
+  appReleases: AppReleaseConfig;
+
+  /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
+  frameleafCloud: {
+    url: string | null;
+    /** FL-293: the push gateway's address (`FRAMELEAF_PUSH_URL`), or null: discovery's, else push is off. */
+    pushUrl: string | null;
+    identityDir: string | null;
+    /** FL-155: single-use headless link token, or null. */
+    linkToken: string | null;
+    /** FL-292: a pinned setup code (`FRAMELEAF_SETUP_CODE`), or null for a random one per start. */
+    setupCode: string | null;
+    /** FL-154: the edge worker's direct listener. */
+    edge: { port: number; bind: string; secret: string | null; acmeDirectoryUrl: string | null };
+    /** FL-158: this server's home-network address, or null. */
+    localUrl: string | null;
+    /** FL-154: networks treated as home besides RFC 1918 and ULA. */
+    trustedLanCidrs: string[];
+    /** Integration builds only: the extra licence JWKS file (`FRAMELEAF_LICENSE_EXTRA_JWKS_FILE`), or null. */
+    licenseExtraJwksFile: string | null;
+  };
+
   noColor: boolean;
   nodeVersion?: string;
+
+  /** FL-294: deprecated IMMICH_ names this environment uses, each with its FRAMELEAF_ name. */
+  deprecatedEnv: Array<Pick<EnvAlias, 'legacy' | 'current'>>;
 }
-
-const productionKeys = {
-  client:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF2LzdTMzJjUkE1KysxTm5WRHNDTQpzcFAvakpISU1xT0pYRm5oNE53QTJPcHorUk1mZGNvOTJQc09naCt3d1FlRXYxVTJjMnBqelRpUS8ybHJLcS9rCnpKUmxYd2M0Y1Vlc1FETUpPRitQMnFPTlBiQUprWHZDWFlCVUxpdENJa29Md2ZoU0dOanlJS2FSRGhkL3ROeU4KOCtoTlJabllUMWhTSWo5U0NrS3hVQ096YXRQVjRtQ0RlclMrYkUrZ0VVZVdwOTlWOWF6dkYwRkltblRXcFFTdwpjOHdFWmdPTWg0c3ZoNmFpY3dkemtQQ3dFTGFrMFZhQkgzMUJFVUNRTGI5K0FJdEhBVXRKQ0t4aGI1V2pzMXM5CmJyWGZpMHZycGdjWi82RGFuWTJxZlNQem5PbXZEMkZycmxTMXE0SkpOM1ZvN1d3LzBZeS95TWNtelRXWmhHdWgKVVFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-  server:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFvcG5ZRGEwYS9kVTVJZUc3NGlFRQpNd2RBS2pzTmN6TGRDcVJkMVo5eTVUMndqTzdlWUlPZUpUc2wzNTBzUjBwNEtmU1VEU1h2QzlOcERwYzF0T0tsCjVzaEMvQXhwdlFBTENva0Y0anQ4dnJyZDlmQ2FYYzFUcVJiT21uaGl1Z0Q2dmtyME8vRmIzVURpM1UwVHZoUFAKbFBkdlNhd3pMcldaUExmbUhWVnJiclNLbW45SWVTZ3kwN3VrV1RJeUxzY2lOcnZuQnl3c0phUmVEdW9OV1BCSApVL21vMm1YYThtNHdNV2hpWGVoaUlPUXFNdVNVZ1BlQ3NXajhVVngxQ0dsUnpQREEwYlZOUXZlS1hXVnhjRUk2ClVMRWdKeTJGNDlsSDArYVlDbUJmN05FcjZWUTJXQjk1ZXZUS1hLdm4wcUlNN25nRmxjVUF3NmZ1VjFjTkNUSlMKNndJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-};
-
-const stagingKeys = {
-  client:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFuSUNyTm5jbGpPSC9JdTNtWVVaRQp0dGJLV1c3OGRuajl5M0U2ekk3dU1NUndEckdYWFhkTGhkUDFxSWtlZHh0clVVeUpCMWR4R04yQW91S082MlNGCldrbU9PTmNGQlRBWFZTdjhUNVY0S0VwWnFQYWEwaXpNaGxMaE5sRXEvY1ZKdllrWlh1Z2x6b1o3cG1nbzFSdHgKam1iRm5NNzhrYTFRUUJqOVdLaEw2eWpWRUl2MDdVS0lKWHBNTnNuS2g1V083MjZhYmMzSE9udTlETjY5VnFFRQo3dGZrUnRWNmx2U1NzMkFVMngzT255cHA4ek53b0lPTWRibGsyb09aWWROZzY0Y3l2SzJoU0FlU3NVMFRyOVc5Ckgra0Y5QlNCNlk0QXl0QlVkSmkrK2pMSW5HM2Q5cU9ieFVzTlYrN05mRkF5NjJkL0xNR0xSOC9OUFc0U0s3c0MKRlFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-  server:
-    'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUE3Sy8yd3ZLUS9NdU8ydi9MUm5saAoyUy9zTHhDOGJiTEw1UUlKOGowQ3BVZW40YURlY2dYMUpKUmtGNlpUVUtpNTdTbEhtS3RSM2JOTzJmdTBUUVg5Ck5WMEJzVzllZVB0MmlTMWl4VVFmTzRObjdvTjZzbEtac01qd29RNGtGRGFmM3VHTlZJc0dMb3UxVWRLUVhpeDEKUlRHcXVTb3NZVjNWRlk3Q1hGYTVWaENBL3poVXNsNGFuVXp3eEF6M01jUFVlTXBaenYvbVZiQlRKVzBPSytWZgpWQUJvMXdYMkVBanpBekVHVzQ3Vko4czhnMnQrNHNPaHFBNStMQjBKVzlORUg5QUpweGZzWE4zSzVtM00yNUJVClZXcTlRYStIdHRENnJ0bnAvcUFweXVkWUdwZk9HYTRCUlZTR1MxMURZM0xrb2FlRzYwUEU5NHpoYjduOHpMWkgKelFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
-};
-
-const WORKER_TYPES = new Set(Object.values(ImmichWorker));
-
-const asSet = <T>(value: string | undefined, defaults: T[]) => {
-  const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
-  return new Set(values.length === 0 ? defaults : (values as T[]));
-};
 
 const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) => {
   // default is off
@@ -162,51 +178,29 @@ const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) =>
 };
 
 const getEnv = (): EnvData => {
-  const parseResult = EnvSchema.safeParse(process.env);
+  // FL-294: deprecated IMMICH_ names are resolved to their FRAMELEAF_ names before validation, and a
+  // pair set to two different values refuses to start
+  const { env: resolvedEnv, deprecated: deprecatedEnv } = resolveEnvAliases(process.env);
+  const parseResult = EnvSchema.safeParse(resolvedEnv);
   if (!parseResult.success) {
     const messages = ['Invalid environment variables: '];
     for (const issue of parseResult.error.issues) {
-      const path = issue.path.join('.');
+      const path = describeEnvName(issue.path.join('.'), deprecatedEnv);
       messages.push(`  - [${path}] ${issue.message}`);
     }
     throw new Error(messages.join('\n'));
   }
   const dto = parseResult.data;
+  const helpLinks = parseHelpLinks(dto);
 
-  const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [ImmichWorker.Api, ImmichWorker.Microservices]);
-  const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
-  const workers = [...setDifference(includedWorkers, excludedWorkers)];
-  for (const worker of workers) {
-    if (!WORKER_TYPES.has(worker)) {
-      throw new Error(`Invalid worker(s) found: ${workers.join(',')}`);
-    }
-  }
+  const workers = parseWorkerSelection(dto);
 
-  const environment = dto.IMMICH_ENV || ImmichEnvironment.Production;
-  const isProd = environment === ImmichEnvironment.Production;
-  const buildFolder = dto.IMMICH_BUILD_DATA || '/build';
+  const environment = dto.FRAMELEAF_ENV || ImmichEnvironment.Production;
+  const buildFolder = dto.FRAMELEAF_BUILD_DATA || '/build';
   const folders = {
     geodata: join(buildFolder, 'geodata'),
     web: join(buildFolder, 'www'),
   };
-
-  let redisConfig = {
-    host: dto.REDIS_HOSTNAME || 'redis',
-    port: dto.REDIS_PORT || 6379,
-    db: dto.REDIS_DBINDEX || 0,
-    username: dto.REDIS_USERNAME || undefined,
-    password: dto.REDIS_PASSWORD || undefined,
-    path: dto.REDIS_SOCKET || undefined,
-  };
-
-  const redisUrl = dto.REDIS_URL;
-  if (redisUrl && redisUrl.startsWith('ioredis://')) {
-    try {
-      redisConfig = JSON.parse(Buffer.from(redisUrl.slice(10), 'base64').toString());
-    } catch (error) {
-      throw new Error('Failed to decode redis options', { cause: error });
-    }
-  }
 
   const databaseConnection: DatabaseConnectionParams = dto.DB_URL
     ? { connectionType: 'url', url: dto.DB_URL }
@@ -216,59 +210,43 @@ const getEnv = (): EnvData => {
         port: dto.DB_PORT || 5432,
         username: dto.DB_USERNAME || 'postgres',
         password: dto.DB_PASSWORD || 'postgres',
-        database: dto.DB_DATABASE_NAME || 'immich',
+        database: dto.DB_DATABASE_NAME || 'frameleaf',
         ssl: dto.DB_SSL_MODE || undefined,
       };
 
-  let vectorExtension: VectorExtension | undefined;
-  if (dto.DB_VECTOR_EXTENSION) {
-    switch (dto.DB_VECTOR_EXTENSION) {
-      case 'pgvector': {
-        vectorExtension = DatabaseExtension.Vector;
-        break;
-      }
-      case 'vectorchord': {
-        vectorExtension = DatabaseExtension.VectorChord;
-        break;
-      }
-    }
-  }
+  const vectorExtension = DatabaseExtension.Vector;
+
+  const shutdownGraceMs = (dto.FRAMELEAF_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS) * 1000;
+  const shutdownDeadlineMs = (dto.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
 
   return {
-    host: dto.IMMICH_HOST,
-    port: dto.IMMICH_PORT || 2283,
+    host: dto.FRAMELEAF_HOST,
+    port: dto.FRAMELEAF_PORT || 2283,
+    shutdown: {
+      graceMs: shutdownGraceMs,
+      deadlineMs: shutdownDeadlineMs,
+      workerDeadlineMs: getWorkerDeadlineMs(shutdownGraceMs, shutdownDeadlineMs),
+    },
     environment,
-    configFile: dto.IMMICH_CONFIG_FILE,
-    logLevel: dto.IMMICH_LOG_LEVEL,
-    logFormat: dto.IMMICH_LOG_FORMAT || LogFormat.Console,
+    configFile: dto.FRAMELEAF_CONFIG_FILE,
+    logLevel: dto.FRAMELEAF_LOG_LEVEL,
+    logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
 
     buildMetadata: {
-      build: dto.IMMICH_BUILD,
-      buildUrl: dto.IMMICH_BUILD_URL,
-      buildImage: dto.IMMICH_BUILD_IMAGE,
-      buildImageUrl: dto.IMMICH_BUILD_IMAGE_URL,
-      repository: dto.IMMICH_REPOSITORY,
-      repositoryUrl: dto.IMMICH_REPOSITORY_URL,
-      sourceRef: dto.IMMICH_SOURCE_REF,
-      sourceCommit: dto.IMMICH_SOURCE_COMMIT,
-      sourceUrl: dto.IMMICH_SOURCE_URL,
-      thirdPartySourceUrl: dto.IMMICH_THIRD_PARTY_SOURCE_URL,
-      thirdPartyBugFeatureUrl: dto.IMMICH_THIRD_PARTY_BUG_FEATURE_URL,
-      thirdPartyDocumentationUrl: dto.IMMICH_THIRD_PARTY_DOCUMENTATION_URL,
-      thirdPartySupportUrl: dto.IMMICH_THIRD_PARTY_SUPPORT_URL,
-    },
-
-    bull: {
-      config: {
-        prefix: 'immich_bull',
-        connection: { ...redisConfig },
-        defaultJobOptions: {
-          attempts: 1,
-          removeOnComplete: true,
-          removeOnFail: false,
-        },
-      },
-      queues: Object.values(QueueName).map((name) => ({ name })),
+      build: dto.FRAMELEAF_BUILD,
+      buildUrl: dto.FRAMELEAF_BUILD_URL,
+      buildImage: dto.FRAMELEAF_BUILD_IMAGE,
+      buildImageUrl: dto.FRAMELEAF_BUILD_IMAGE_URL,
+      repository: dto.FRAMELEAF_REPOSITORY,
+      repositoryUrl: dto.FRAMELEAF_REPOSITORY_URL,
+      sourceRef: dto.FRAMELEAF_SOURCE_REF,
+      sourceCommit: dto.FRAMELEAF_SOURCE_COMMIT,
+      sourceUrl: dto.FRAMELEAF_SOURCE_COMMIT_URL,
+      // FL-135: validated https help destinations, `FRAMELEAF_*` first (see `parseHelpLinks`)
+      thirdPartySourceUrl: helpLinks.sourceUrl,
+      thirdPartyBugFeatureUrl: helpLinks.bugFeatureUrl,
+      thirdPartyDocumentationUrl: helpLinks.documentationUrl,
+      thirdPartySupportUrl: helpLinks.supportUrl,
     },
 
     cls: {
@@ -292,20 +270,18 @@ const getEnv = (): EnvData => {
     },
 
     helmet: {
-      config: resolveHelmetFile(dto.IMMICH_HELMET_FILE),
+      config: resolveHelmetFile(dto.FRAMELEAF_HELMET_FILE),
     },
 
-    licensePublicKey: isProd ? productionKeys : stagingKeys,
-
     versionCheck: {
-      url: isProd ? 'https://version.immich.cloud/version' : 'https://version.dev.immich.cloud/version',
+      // FL-80 / FL-192: Frameleaf's own release feeds only; no Immich version service, in any environment.
+      url: FRAMELEAF_RELEASE_FEED,
+      fallbackUrl: FRAMELEAF_RELEASES_API,
     },
 
     network: {
-      trustedProxies: dto.IMMICH_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
+      trustedProxies: dto.FRAMELEAF_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
     },
-
-    redis: redisConfig,
 
     resourcePaths: {
       lockFile: join(buildFolder, 'build-lock.json'),
@@ -324,12 +300,33 @@ const getEnv = (): EnvData => {
     },
 
     setup: {
-      allow: dto.IMMICH_ALLOW_SETUP ?? true,
+      allow: dto.FRAMELEAF_ALLOW_SETUP ?? true,
+    },
+
+    appReleases: parseAppReleases(dto),
+
+    frameleafCloud: {
+      url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
+      pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
+      identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
+      linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
+      setupCode: dto.FRAMELEAF_SETUP_CODE ?? null,
+      edge: {
+        port: dto.FRAMELEAF_EDGE_PORT ?? 2443,
+        bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0',
+        secret: dto.FRAMELEAF_EDGE_SECRET ?? null,
+        acmeDirectoryUrl: dto.FRAMELEAF_ACME_DIRECTORY_URL ?? null,
+      },
+      localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
+      trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
+      licenseExtraJwksFile: dto.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE?.trim() || null,
     },
 
     storage: {
-      ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
-      mediaLocation: dto.IMMICH_MEDIA_LOCATION,
+      ignoreMountCheckErrors: !!dto.FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS,
+      mediaLocation: dto.FRAMELEAF_MEDIA_LOCATION,
+      importRoots: dto.FRAMELEAF_IMPORT_ROOTS,
+      recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 
     telemetry: {
@@ -343,12 +340,14 @@ const getEnv = (): EnvData => {
 
     plugins: {
       external: {
-        allow: dto.IMMICH_ALLOW_EXTERNAL_PLUGINS ?? false,
-        installFolder: dto.IMMICH_PLUGINS_INSTALL_FOLDER,
+        allow: dto.FRAMELEAF_ALLOW_EXTERNAL_PLUGINS ?? false,
+        installFolder: dto.FRAMELEAF_PLUGINS_INSTALL_FOLDER,
       },
     },
 
     noColor: !!dto.NO_COLOR,
+
+    deprecatedEnv,
   };
 };
 
@@ -380,3 +379,14 @@ export class ConfigRepository {
 }
 
 export const clearEnvCache = () => (cached = undefined);
+
+/**
+ * FL-294: the one startup warning naming the deprecated IMMICH_ variables in use and their FRAMELEAF_
+ * names. The supervisor calls it once; its workers resolve the same environment without repeating it.
+ */
+export const warnDeprecatedEnv = (warn: (message: string) => void = console.warn) => {
+  const warning = deprecatedEnvWarning(new ConfigRepository().getEnv().deprecatedEnv);
+  if (warning) {
+    warn(warning);
+  }
+};

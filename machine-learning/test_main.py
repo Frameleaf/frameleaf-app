@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -11,28 +12,31 @@ from types import SimpleNamespace
 from typing import Any, Callable
 from unittest import mock
 
+import httpx
 import numpy as np
 import onnxruntime as ort
 import orjson
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
 from PIL import Image
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
-from immich_ml.config import MaxBatchSize, Settings, settings
+from immich_ml.config import MaxBatchSize, Settings, log, model_source, settings
 from immich_ml.main import load, preload_models
-from immich_ml.models.base import InferenceModel
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.cache import ModelCache
 from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
 from immich_ml.models.clip.visual import OpenClipVisualEncoder
+from immich_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
 from immich_ml.models.facial_recognition.detection import FaceDetector
 from immich_ml.models.facial_recognition.recognition import FaceRecognizer
 from immich_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
 from immich_ml.models.ocr.detection import TextDetector
 from immich_ml.models.ocr.recognition import TextRecognizer
-from immich_ml.schemas import ModelFormat, ModelPrecision, ModelTask, ModelType
+from immich_ml.schemas import ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
 from immich_ml.sessions.ann import AnnSession
 from immich_ml.sessions.ort import OrtSession
 from immich_ml.sessions.rknn import RknnSession, run_inference
@@ -51,6 +55,12 @@ class FakeLock:
 
 
 class TestBase:
+    @pytest.fixture(autouse=True)
+    def default_model_source(self, monkeypatch: MonkeyPatch, mocker: MockerFixture) -> None:
+        monkeypatch.delenv("HF_ENDPOINT", raising=False)
+        mocker.patch.object(settings, "model_source_url", None)
+        mocker.patch.object(settings, "model_source_token", None)
+
     def test_sets_default_worker_timeout(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.delenv("DEVICE", raising=False)
         monkeypatch.delenv("MACHINE_LEARNING_WORKER_TIMEOUT", raising=False)
@@ -166,10 +176,12 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
 
     def test_download_downloads_armnn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
@@ -177,10 +189,12 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
 
     def test_download_downloads_rknn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
@@ -188,11 +202,97 @@ class TestBase:
         encoder.download()
 
         snapshot_download.assert_called_once_with(
-            "immich-app/ViT-B-32__openai",
+            "frameleaf/ViT-B-32__openai",
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
         )
+
+    def test_download_uses_configured_model_source(self, snapshot_download: mock.Mock, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.example.com",
+            token=False,
+        )
+
+    def test_download_keeps_hf_endpoint_when_model_source_is_unset(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://hub-mirror.example.com"
+        assert snapshot_download.call_args.kwargs["token"] is False
+        assert model_source() == ("https://hub-mirror.example.com", "HF_ENDPOINT")
+
+    def test_model_source_url_takes_precedence_over_hf_endpoint(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch, mocker: MockerFixture
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://models.example.com"
+        assert model_source() == ("https://models.example.com", "MACHINE_LEARNING_MODEL_SOURCE_URL")
+
+    def test_model_source_defaults_to_the_frameleaf_mirror(self) -> None:
+        assert model_source() == ("https://models.frameleaf.cloud", "default")
+
+    @pytest.mark.parametrize("status", [401, 404])
+    def test_download_names_missing_model_and_model_source(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture, status: int
+    ) -> None:
+        error = mocker.patch.object(log, "error")
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        snapshot_download.side_effect = RepositoryNotFoundError(
+            "Repository not found", response=httpx.Response(status, request=request)
+        )
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError) as raised:
+            recognizer.download()
+
+        message = str(raised.value)
+        assert "'buffalo_l'" in message
+        assert "https://models.frameleaf.cloud" in message
+        assert "frameleaf/buffalo_l" in message
+        assert "MACHINE_LEARNING_MODEL_SOURCE_URL" in message
+        assert "immich" not in message.lower()
+        error.assert_called_once_with(message)
+        snapshot_download.assert_called_once()
+
+    def test_download_treats_uncached_not_found_as_missing_model(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/antelopev2/revision/main")
+        not_found = HfHubHTTPError("Not found", response=httpx.Response(404, request=request))
+        missing = LocalEntryNotFoundError("Cannot find an appropriate cached snapshot folder")
+        missing.__cause__ = not_found
+        snapshot_download.side_effect = missing
+        detector = FaceDetector("antelopev2", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError, match="antelopev2"):
+            detector.download()
+
+    def test_download_keeps_other_source_errors(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        outage = HfHubHTTPError("Service unavailable", response=httpx.Response(503, request=request))
+        snapshot_download.side_effect = outage
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(HfHubHTTPError) as raised:
+            recognizer.download()
+
+        assert raised.value is outage
 
     def test_throws_exception_if_model_path_does_not_exist(
         self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
@@ -1810,6 +1910,95 @@ class TestFaceRecognition:
 
 
 class TestOcr:
+    @staticmethod
+    def _serve(snapshot_download: mock.Mock, content: bytes) -> None:
+        """Make the mocked model source 'serve' `content` for whichever file was requested."""
+
+        def fake(repo_id: str, *, local_dir: Path, allow_patterns: list[str], **kwargs: Any) -> str:
+            target = Path(local_dir) / allow_patterns[0].removesuffix("/*") / "model.onnx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            return str(local_dir)
+
+        snapshot_download.side_effect = fake
+
+    @pytest.mark.parametrize(
+        ("model_class", "model_name", "repo"),
+        [
+            (TextDetector, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextRecognizer, "CH__PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextDetector, "LATIN__PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "LATIN__PP-OCRv5_mobile", "frameleaf/LATIN__PP-OCRv5_mobile"),
+            (TextRecognizer, "KOREAN__PP-OCRv5_mobile", "frameleaf/KOREAN__PP-OCRv5_mobile"),
+        ],
+    )
+    def test_download_goes_to_model_source(
+        self,
+        snapshot_download: mock.Mock,
+        mocker: MockerFixture,
+        tmp_path: Path,
+        model_class: type[InferenceModel],
+        model_name: str,
+        repo: str,
+    ) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        rapidocr_download = mocker.patch("rapidocr.utils.download_file.DownloadFile.run")
+        content = b"onnx bytes"
+        source = get_ocr_model_file(model_name, model_class.identity[0])
+        mocker.patch(
+            "immich_ml.models.ocr.source.get_ocr_model_file",
+            return_value=source._replace(sha256=hashlib.sha256(content).hexdigest()),
+        )
+        self._serve(snapshot_download, content)
+        model = model_class(model_name, cache_dir=tmp_path)
+
+        model.download()
+
+        snapshot_download.assert_called_once_with(
+            repo,
+            cache_dir=tmp_path,
+            local_dir=tmp_path,
+            allow_patterns=[f"{model.model_type.value}/*"],
+            endpoint="https://models.example.com",
+            token=False,
+        )
+        assert model.model_path == tmp_path / model.model_type.value / "model.onnx"
+        assert model.model_path.read_bytes() == content
+        rapidocr_download.assert_not_called()
+
+    @pytest.mark.parametrize("model_class", [TextDetector, TextRecognizer])
+    def test_download_rejects_checksum_mismatch(
+        self, snapshot_download: mock.Mock, tmp_path: Path, model_class: type[InferenceModel]
+    ) -> None:
+        self._serve(snapshot_download, b"not the pinned export")
+        model = model_class("PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="checksum") as raised:
+            model.download()
+
+        assert "frameleaf/PP-OCRv5_mobile" in str(raised.value)
+        assert not model.model_path.exists()
+
+    def test_download_names_missing_file(self, snapshot_download: mock.Mock, tmp_path: Path) -> None:
+        model = TextRecognizer("EN__PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="recognition/model.onnx") as raised:
+            model.download()
+
+        assert "frameleaf/EN__PP-OCRv5_mobile" in str(raised.value)
+        assert "https://models.frameleaf.cloud" in str(raised.value)
+
+    def test_every_ocr_model_has_pinned_files(self) -> None:
+        for model_name in _PADDLE_MODELS:
+            assert get_model_source(model_name) == ModelSource.PADDLE
+            for model_type in (ModelType.DETECTION, ModelType.RECOGNITION):
+                source = get_ocr_model_file(model_name, model_type)
+                assert source.repo.endswith("PP-OCRv5_mobile") or source.repo.endswith("PP-OCRv5_server")
+                assert len(source.sha256) == 64
+                int(source.sha256, 16)
+
     def test_det_min_score_is_per_request(self, path: mock.Mock) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
         text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
@@ -2102,6 +2291,23 @@ class TestLoad:
         mock_model.clear_cache.assert_called_once()
         assert mock_model.load.call_count == 2
 
+    async def test_load_reports_missing_model_without_clearing_cache(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "buffalo_l"
+        mock_model.model_type = ModelType.RECOGNITION
+        mock_model.model_task = ModelTask.FACIAL_RECOGNITION
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+        mock_model.load.side_effect = ModelUnavailableError("Model 'buffalo_l' isn't available")
+
+        with pytest.raises(HTTPException) as raised:
+            await load(mock_model)
+
+        assert raised.value.status_code == 503
+        assert raised.value.detail == "Model 'buffalo_l' isn't available"
+        mock_model.clear_cache.assert_not_called()
+        mock_model.load.assert_called_once()
+
     async def test_load_raises_if_os_error_and_already_retried(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
         mock_model.model_name = "test_model_name"
@@ -2155,7 +2361,7 @@ def test_root_endpoint(deployed_app: TestClient) -> None:
 
     body = response.json()
     assert response.status_code == 200
-    assert body == {"message": "Immich ML"}
+    assert body == {"message": "Frameleaf ML"}
 
 
 def test_ping_endpoint(deployed_app: TestClient) -> None:
@@ -2234,7 +2440,7 @@ def test_bearer_auth_open_when_no_token() -> None:
     # request, including inference paths. This matches upstream Immich (the ML
     # service ships without auth) and is the default for local / same-LAN
     # deployments. A token is only expected when something sets
-    # IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode.
+    # FRAMELEAF_ML_AUTH_TOKEN, e.g. a LAN worker behind a proxy.
     from starlette.applications import Starlette
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route
@@ -2382,17 +2588,52 @@ def test_extract_signal_field_returns_bool_for_non_canonical_values() -> None:
     assert result["is_nsfw_likely"] is True
 
 
+def test_capabilities_endpoint_lists_library_workloads_and_transcription(deployed_app: TestClient) -> None:
+    response = deployed_app.get("http://localhost:3003/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["protocol"] == "predict-v1"
+    # The predict container never claims restoration. It claims Studio AI only for Whisper speech to
+    # text (/transcribe), and only when that runtime is installed.
+    assert body["workloads"] == ["face", "clip", "ocr", "enrichment", "pet-recognition", "studio-ai"]
+    assert not {"restoration-faithful", "restoration-creative"} & set(body["workloads"])
+
+
+def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:
+    # Capabilities describe what the worker can run and are probed with the same credentials
+    # as inference, so they are not on the unauthenticated health allow-list.
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse as _JR
+    from starlette.routing import Route
+
+    from immich_ml.main import BearerAuthMiddleware
+
+    async def caps(_req: Any) -> Any:
+        return _JR({"workloads": ["face"]})
+
+    app = Starlette(routes=[Route("/capabilities", caps)])
+    app.add_middleware(BearerAuthMiddleware, expected_token="my-token")
+    client = TestClient(app)
+
+    assert client.get("/capabilities").status_code == 401
+    assert client.get("/capabilities", headers={"Authorization": "Bearer my-token"}).status_code == 200
+
+
 def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "immich_ml.main.ort.get_available_providers",
         lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     monkeypatch.setattr("immich_ml.main._torch_cuda_info", lambda: (True, 1))
+    container = {"image": "cuda", "backend": "CUDA", "gpus": [], "driver": None, "nvidiaError": None, "devices": {}}
+    monkeypatch.setattr("immich_ml.main.container_report", lambda _providers, _ids: container)
 
     response = deployed_app.get("http://localhost:3003/hardware")
 
     assert response.status_code == 200
     assert response.json() == {
+        "container": container,
         "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
         "openvinoDeviceIds": [],
         "torchCudaAvailable": True,
@@ -2499,3 +2740,142 @@ class TestPredictionEndpoints:
             parsed_embedding = orjson.loads(embedding)
             assert np.allclose(expected_face["embedding"], parsed_embedding)
             assert np.allclose(expected_face["score"], actual_face["score"])
+
+
+def test_hardware_report_names_the_gpu_torch_uses_and_the_devices_passed_in(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from immich_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: (
+            [{"name": "NVIDIA GeForce RTX 3060", "vendor": "NVIDIA", "memoryTotalBytes": 12884901888}],
+            "CUDA 12.4",
+            "CUDA",
+        ),
+    )
+    monkeypatch.setattr(
+        hardware_report, "_nvidia_smi", lambda: {"name": "x", "memoryTotalBytes": 1, "driver": "550.107"}
+    )
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["backend"] == "CUDA"
+    assert report["image"] == "cuda"
+    assert report["gpus"][0]["name"] == "NVIDIA GeForce RTX 3060"
+    assert report["driver"] == "Driver 550.107 · CUDA 12.4"
+
+
+def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from immich_ml import hardware_report
+
+    dev = tmp_path / "dri"
+    dev.mkdir()
+    (dev / "renderD128").write_text("")
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD128" / "device").mkdir(parents=True)
+    (sys_drm / "renderD128" / "device" / "vendor").write_text("0x8086\n")
+
+    nodes = hardware_report._render_nodes(dev, sys_drm)
+    assert nodes == [
+        {
+            "node": "renderD128",
+            "vendor": "Intel",
+            "accessible": True,
+            "memoryTotalBytes": None,
+            "gid": (dev / "renderD128").stat().st_gid,
+            # Not a device node, so no host node can be named.
+            "hostNode": None,
+        }
+    ]
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: nodes)
+    report = hardware_report.container_report(["CPUExecutionProvider"], ["CPU"])
+    assert report["backend"] == "CPU"
+    assert report["gpus"] == []
+    assert report["devices"]["renderNodes"] == nodes
+    assert report["computeCapability"] is None
+    assert set(report["host"]) == {"kernel", "gpus", "dxg", "groups", "root"}
+
+
+def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
+    from immich_ml import hardware_report
+
+    pci = tmp_path / "pci"
+    for address, vendor, device_class, vram, render in [
+        ("0000:00:02.0", "0x8086", "0x030000", None, "renderD128"),
+        ("0000:03:00.0", "0x1002", "0x030000", str(16 * 1024**3), "renderD129"),
+        ("0000:00:1f.3", "0x8086", "0x040300", None, None),  # audio: not a GPU
+        ("0000:05:00.0", "0x1a03", "0x030000", None, None),  # a server's BMC display: not a GPU
+    ]:
+        device = pci / address
+        device.mkdir(parents=True)
+        (device / "vendor").write_text(vendor + "\n")
+        (device / "class").write_text(device_class + "\n")
+        if vram:
+            (device / "mem_info_vram_total").write_text(vram + "\n")
+        if render:
+            (device / "drm" / render).mkdir(parents=True)
+
+    assert hardware_report._host_gpus(pci) == [
+        {
+            "pciAddress": "0000:00:02.0",
+            "vendor": "Intel",
+            "renderNode": "renderD128",
+            "integrated": True,
+            "memoryTotalBytes": None,
+        },
+        {
+            "pciAddress": "0000:03:00.0",
+            "vendor": "AMD",
+            "renderNode": "renderD129",
+            "integrated": False,
+            "memoryTotalBytes": 16 * 1024**3,
+        },
+    ]
+    assert hardware_report._host_gpus(tmp_path / "missing") is None
+
+
+def test_hardware_report_names_rocm_gfx_targets_and_the_override(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    from immich_ml import hardware_report
+
+    topology = tmp_path / "nodes"
+    (topology / "0").mkdir(parents=True)
+    (topology / "0" / "properties").write_text("cpu_cores_count 16\ngfx_target_version 0\n")
+    (topology / "1").mkdir()
+    (topology / "1" / "properties").write_text("simd_count 64\ngfx_target_version 100302\n")
+    (topology / "2").mkdir()
+    (topology / "2" / "properties").write_text("gfx_target_version 90010\n")
+    monkeypatch.delenv("HSA_OVERRIDE_GFX_VERSION", raising=False)
+
+    assert hardware_report.rocm_facts(topology) == {"gfxTargets": ["gfx1032", "gfx90a"], "hsaOverride": None}
+
+    monkeypatch.setenv("HSA_OVERRIDE_GFX_VERSION", "10.3.0")
+    assert hardware_report.rocm_facts(topology)["hsaOverride"] == "10.3.0"
+
+
+def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: MonkeyPatch) -> None:
+    from immich_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: ([{"name": "NVIDIA GeForce GTX 1650", "vendor": "NVIDIA", "memoryTotalBytes": 1}], "CUDA 12.4", "CUDA"),
+    )
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(hardware_report, "_compute_capability", lambda: "7.5")
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["computeCapability"] == "7.5"
+    assert report["rocm"] is None

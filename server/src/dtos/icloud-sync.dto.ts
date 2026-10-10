@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { MediaOperationStatusSchema } from 'src/enum.js';
 
 export const ICloudConfigSchema = z
   .object({
@@ -53,6 +54,25 @@ export class ICloudConnectionUpdateDto extends createZodDto(
     .meta({ id: 'ICloudConnectionUpdateDto' }),
 ) {}
 
+export class ICloudIdentityReuseAuthorityDto extends createZodDto(
+  z
+    .object({ enabled: z.boolean(), includeProtected: z.boolean(), requestKey: z.uuid() })
+    .strict()
+    .refine((value) => value.enabled || !value.includeProtected, { message: 'Disabled consent has no protected scope' })
+    .meta({ id: 'ICloudIdentityReuseAuthorityDto' }),
+) {}
+
+const IdentityReuseAuthorityStatusSchema = z.object({
+  enabled: z.boolean(),
+  includeProtected: z.boolean(),
+  available: z.boolean(),
+  regrantRequired: z.boolean(),
+  executionAvailable: z
+    .literal(false)
+    .describe('Foundation consent does not enable weekly execution or identity reuse'),
+});
+export class ICloudIdentityReuseAuthorityStatusDto extends createZodDto(IdentityReuseAuthorityStatusSchema) {}
+
 export class ICloudAuthDto extends createZodDto(
   z
     .object({
@@ -81,15 +101,53 @@ export class ICloudControlDto extends createZodDto(
     .meta({ id: 'ICloudControlDto' }),
 ) {}
 
+/** A personal library or an iCloud Shared Photo Library (FL-68). */
+const ICloudLibraryAreaSchema = z.enum(['private', 'shared']).meta({ id: 'ICloudLibraryArea' });
+
+/**
+ * What a reconciliation finding is (FL-68): an item to review, one that failed or is unsupported, one
+ * kept in the trash here although iCloud still has it, or one deleted in iCloud that stayed here.
+ */
+const ICloudReviewKindSchema = z
+  .enum(['review', 'failed', 'unsupported', 'kept-trashed', 'source-removed'])
+  .meta({ id: 'ICloudReviewKind' });
+
+/**
+ * The connection's current or most recent run (FL-68): a durable media operation, the same row
+ * Activity and the notifications panel show. Only its state; never a path, a file or a credential.
+ */
+const RunSchema = z
+  .object({
+    id: z.uuid().describe('Media operation ID of the run'),
+    status: MediaOperationStatusSchema,
+    progress: z
+      .number()
+      .meta({ format: 'double' })
+      .describe('0 to 100, from resources settled out of those known so far'),
+    processedUnits: z.number().int().describe('Resources settled so far'),
+    totalUnits: z.number().int().nullable().describe('Resources known so far; null until the inventory is counted'),
+    retrying: z.boolean().describe('Back in the queue for its automatic retry after a failure'),
+    waiting: z.boolean().describe('Handed back to wait for the provider or a backed-off item'),
+    pauseRequested: z.boolean().describe('A pause was asked for and the worker has not reached it yet'),
+    errorCode: z.string().nullable().describe('Stable failure code, translated by the client'),
+    startedAt: z.string().nullable(),
+    finishedAt: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .meta({ id: 'ICloudSyncRunDto' });
+
 const ConnectionSchema = z
   .object({
     id: z.uuid(),
     label: z.string(),
     state: z.string(),
+    authenticated: z.boolean().describe('Whether an encrypted Apple session is stored; the session is never returned'),
     config: ConfigFieldsSchema,
     lastError: z.string().nullable(),
     nextRunAt: z.string().nullable(),
-    counts: z.record(z.string(), z.number()),
+    counts: z.record(z.string(), z.number().int()),
+    run: RunSchema.nullable().describe('The current or most recent sync run'),
+    identityReuseAuthority: IdentityReuseAuthorityStatusSchema.optional(),
   })
   .meta({ id: 'ICloudConnectionResponseDto' });
 export class ICloudConnectionResponseDto extends createZodDto(ConnectionSchema) {}
@@ -104,12 +162,33 @@ export class ICloudConnectionsResponseDto extends createZodDto(
 export class ICloudInventoryResponseDto extends createZodDto(
   z
     .object({
-      libraries: z.array(z.object({ id: z.string(), name: z.string(), supported: z.boolean() })),
+      libraries: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          area: ICloudLibraryAreaSchema,
+          supported: z.boolean(),
+        }),
+      ),
       albums: z.array(
         z.object({ id: z.string(), libraryId: z.string(), name: z.string(), parentId: z.string().nullable() }),
       ),
       complete: z.boolean(),
-      recent: z.array(z.object({ assetId: z.uuid(), resourceId: z.uuid(), outcome: z.string() })).optional(),
+      recent: z
+        .array(z.object({ assetId: z.uuid(), resourceId: z.uuid(), outcome: z.string(), fileName: z.string() }))
+        .optional(),
+      review: z
+        .array(
+          z.object({
+            resourceId: z.uuid(),
+            kind: ICloudReviewKindSchema,
+            reason: z.string().nullable(),
+            fileName: z.string().nullable(),
+            role: z.string(),
+            assetId: z.uuid().nullable(),
+          }),
+        )
+        .describe('Reconciliation findings; private items only for an unlocked session'),
     })
     .meta({ id: 'ICloudInventoryResponseDto' }),
 ) {}

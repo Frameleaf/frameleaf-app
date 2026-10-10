@@ -1,5 +1,5 @@
 {
-  "name": "@immich/scripts",
+  "name": "@frameleaf/scripts",
   "version": "3.0.0-rc.2",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "license": "GNU Affero General Public License version 3",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/immich-app/immich.git",
+    "url": "git+https://github.com/Frameleaf/frameleaf-app.git",
     "directory": "packages/scripts"
   },
   "scripts": {

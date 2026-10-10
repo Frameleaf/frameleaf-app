@@ -7,6 +7,22 @@ import { isoDatetimeToDate } from 'src/validation.js';
 export class CreateProfileImageDto {
   @ApiProperty({ type: 'string', format: 'binary', description: 'Profile image file' })
   [UploadFieldName.PROFILE_DATA]!: Express.Multer.File;
+
+  @ApiProperty({
+    type: 'string',
+    format: 'uuid',
+    required: false,
+    description: 'ID of the photo the image was copied from, if any. A Locked photo is refused.',
+  })
+  assetId?: string;
+
+  @ApiProperty({
+    type: 'boolean',
+    required: false,
+    description:
+      'The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set.',
+  })
+  keepSource?: boolean | 'true' | 'false';
 }
 
 const CreateProfileImageResponseSchema = z

@@ -1,0 +1,154 @@
+diff --git a/src/features/editor/components/audio-mixer-view.test.tsx b/src/features/editor/components/audio-mixer-view.test.tsx
+--- a/src/features/editor/components/audio-mixer-view.test.tsx
++++ b/src/features/editor/components/audio-mixer-view.test.tsx
+@@ -4,7 +4,7 @@
+ import { AudioMeterPanel } from './audio-meter-panel'
+ import { useItemsStore, useCompositionsStore } from '@/features/editor/deps/timeline-store'
+ import { usePlaybackStore } from '@/shared/state/playback'
+-import { makeTimelineAudioItem, makeTimelineTrack } from '@/features/timeline/test-helpers'
++import { makeTimelineAudioItem, makeTimelineTrack } from '../deps/timeline-test-helpers-contract'
+ import {
+   compileAudioMeterGraph,
+   resolveAudioMeterSources,
+diff --git a/src/features/editor/deps/timeline-test-helpers-contract.ts b/src/features/editor/deps/timeline-test-helpers-contract.ts
+--- a/src/features/editor/deps/timeline-test-helpers-contract.ts
++++ b/src/features/editor/deps/timeline-test-helpers-contract.ts
+@@ -1,5 +1,6 @@
+ /** Test-only seam for editor specs that exercise the real timeline stores. */
+ export {
++  makeTimelineAudioItem,
+   makeTimelineTrack,
+   makeTimelineVideoItem,
+   resetTimelineCompositionTestState,
+diff --git a/src/features/export/utils/embedded-subtitle-export.test.ts b/src/features/export/utils/embedded-subtitle-export.test.ts
+--- a/src/features/export/utils/embedded-subtitle-export.test.ts
++++ b/src/features/export/utils/embedded-subtitle-export.test.ts
+@@ -2,7 +2,7 @@
+
+ import { describe, expect, it } from 'vite-plus/test'
+ import { parseSrt, parseVtt, serializeSrt } from '@/shared/utils/subtitles'
+-import { buildSubtitleSegmentForClip } from '@/features/media-library/utils/caption-items'
++import { buildSubtitleSegmentForClip } from '../deps/media-library-contract'
+ import type { CompositionInputProps } from '@/types/export'
+ import type { SubtitleSegmentItem, TimelineTrack } from '@/types/timeline'
+
+@@ -178,7 +178,7 @@
+
+ describe('imported caption export modes', () => {
+   const imported = {
+-    id: 'imported-text', type: 'text' as const, textRole: 'caption' as const,
++    id: 'imported-text', label: 'Imported SRT', type: 'text' as const, textRole: 'caption' as const,
+     trackId: 'track-1', from: 30, durationInFrames: 30, text: 'Imported SRT', color: '#ffffff',
+     captionSource: { type: 'subtitle-import' as const, clipId: '', mediaId: '', fileName: 'captions.srt', format: 'srt' as const, importedAt: 1 },
+   }
+diff --git a/src/features/export/deps/media-library-contract.ts b/src/features/export/deps/media-library-contract.ts
+--- a/src/features/export/deps/media-library-contract.ts
++++ b/src/features/export/deps/media-library-contract.ts
+@@ -6,6 +6,8 @@
+ import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store'
+ import { importMediaLibraryService } from '@/features/media-library/services/media-library-service-loader'
+ import type { MediaMetadata } from '@/types/storage'
++
++export { buildSubtitleSegmentForClip } from '@/features/media-library/utils/caption-items'
+
+ export {
+   resolveMediaUrl,
+diff --git a/src/features/media-library/services/subtitle-import-service.test.ts b/src/features/media-library/services/subtitle-import-service.test.ts
+--- a/src/features/media-library/services/subtitle-import-service.test.ts
++++ b/src/features/media-library/services/subtitle-import-service.test.ts
+@@ -2,12 +2,10 @@
+ import { fireEvent } from '@testing-library/react'
+ import type { Project } from '@/types/project'
+ import { useProjectStore } from '../deps/projects'
+-import { useItemsStore } from '@/features/timeline/stores/items-store'
+-import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
+-import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
++import { useItemsStore, useTimelineSettingsStore, useTimelineCommandStore,
++  resetTimelineCompositionTestState, buildTimelineFromStores, hydrateTimelineStoresFromProject,
++} from '../deps/timeline-test-helpers-contract'
+ import { useCompositionNavigationStore } from '../deps/timeline-stores'
+-import { resetTimelineCompositionTestState } from '@/features/timeline/test-helpers'
+-import { buildTimelineFromStores, hydrateTimelineStoresFromProject } from '@/features/timeline/stores/timeline-persistence'
+ import { showSubtitleImport } from './subtitle-import-service'
+
+ const project: Project = {
+diff --git a/src/features/keyframes/utils/property-expression-unary-depth.test.ts b/src/features/keyframes/utils/property-expression-unary-depth.test.ts
+--- a/src/features/keyframes/utils/property-expression-unary-depth.test.ts
++++ b/src/features/keyframes/utils/property-expression-unary-depth.test.ts
+@@ -75,7 +75,7 @@
+     expect([...keyframes]).toEqual(before)
+
+     // A fresh allowed source still resolves through the same production path.
+-    keyframes.get('source')!.expressions![0]!.source = '-'.repeat(63) + 'value'
++    keyframes.get('source')!.expressions = [{ type: 'expression', targetProperty: property, enabled: true, source: '-'.repeat(63) + 'value' }]
+     const expected = property === 'x' ? -19 : { x: -19, y: -29 }
+     expect(resolvePropertyExpressionValue('target', property, preValue, context)).toEqual({ value: expected })
+     expect(evaluatePropertyExpression(source, { preValue, globalFrame: 30, fps: 30,
+diff --git a/src/features/timeline/services/mic-recording-authority.test.ts b/src/features/timeline/services/mic-recording-authority.test.ts
+--- a/src/features/timeline/services/mic-recording-authority.test.ts
++++ b/src/features/timeline/services/mic-recording-authority.test.ts
+@@ -56,7 +56,7 @@
+ const result = () => ({ blob: new Blob(['take']), mimeType: 'audio/webm', durationMs: 1000 })
+ const media: MediaMetadata = { id: 'recorded', storageType: 'workspace', fileName: 'take.webm',
+   fileSize: 4, mimeType: 'audio/webm', duration: 1, width: 0, height: 0, fps: 0,
+-  codec: 'opus', bitrate: 0, createdAt: 1, updatedAt: 1,
++  codec: 'opus', bitrate: 0, createdAt: 1, updatedAt: 1, tags: [],
+ }
+ beforeEach(() => {
+   vi.clearAllMocks()
+diff --git a/src/features/media-library/services/subtitle-import-service.ts b/src/features/media-library/services/subtitle-import-service.ts
+--- a/src/features/media-library/services/subtitle-import-service.ts
++++ b/src/features/media-library/services/subtitle-import-service.ts
+@@ -60,6 +60,7 @@
+     const bytes = await file.arrayBuffer()
+     if (scope.signal.aborted) return 0
+     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
++    // eslint-disable-next-line no-control-regex -- Reject binary control bytes while permitting subtitle whitespace.
+     if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
+       throw new Error('Subtitle files must contain UTF-8 text without control characters.')
+     }
+diff --git a/src/features/media-library/deps/timeline-test-helpers-contract.ts b/src/features/media-library/deps/timeline-test-helpers-contract.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/media-library/deps/timeline-test-helpers-contract.ts
+@@ -0,0 +1,6 @@
++/** Test-only seam for subtitle specs that exercise the real timeline authority. */
++export { useItemsStore } from '@/features/timeline/stores/items-store'
++export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++export { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
++export { resetTimelineCompositionTestState } from '@/features/timeline/test-helpers'
++export { buildTimelineFromStores, hydrateTimelineStoresFromProject } from '@/features/timeline/stores/timeline-persistence'
+diff --git a/src/features/editor/components/preview-area.test.tsx b/src/features/editor/components/preview-area.test.tsx
+--- a/src/features/editor/components/preview-area.test.tsx
++++ b/src/features/editor/components/preview-area.test.tsx
+@@ -6,12 +6,9 @@
+ import { useEditorStore } from '@/shared/state/editor'
+
+ vi.mock('@/features/editor/deps/preview', async () => {
+-  const { useMaskEditorStore } = await vi.importActual<
+-    typeof import('@/features/preview/stores/mask-editor-store')
+-  >('@/features/preview/stores/mask-editor-store')
+-  const { useItemsStore } = await vi.importActual<
+-    typeof import('@/features/timeline/stores/items-store')
+-  >('@/features/timeline/stores/items-store')
++  const { useMaskEditorStore, useItemsStore } = await vi.importActual<
++    typeof import('../deps/preview-contract')
++  >('../deps/preview-contract')
+   return {
+     useMaskEditorStore,
+     useItemsStore,
+diff --git a/src/features/timeline/services/reverse-conform-service.test.ts b/src/features/timeline/services/reverse-conform-service.test.ts
+--- a/src/features/timeline/services/reverse-conform-service.test.ts
++++ b/src/features/timeline/services/reverse-conform-service.test.ts
+@@ -97,7 +97,10 @@
+   it('admits a 240fps reverse preview on a 30fps timeline through the real render boundary', async () => {
+     const reachedEncoderSetup = new Error('Reached encoder setup')
+     renderCompositionMock.mockImplementationOnce(async (options) => {
+-      const { renderComposition } = await import('@/features/export/utils/canvas-render-orchestrator')
++      const { importCanvasRenderOrchestrator } = await vi.importActual<
++        typeof import('../deps/export-contract')
++      >('../deps/export-contract')
++      const { renderComposition } = await importCanvasRenderOrchestrator()
+       return renderComposition({
+         ...options,
+         onProgress: () => {

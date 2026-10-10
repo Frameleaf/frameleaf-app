@@ -40,6 +40,7 @@ describe(SyncRequestType.AssetExifsV1, () => {
           fileSizeInByte: null,
           focalLength: null,
           fps: null,
+          imageEncoding: null,
           iso: null,
           latitude: null,
           lensModel: null,

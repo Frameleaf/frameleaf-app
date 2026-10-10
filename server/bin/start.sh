@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Quiet mode suppresses informational output (enabled for immich-admin)
+# Quiet mode suppresses informational output (enabled for frameleaf-admin and its deprecated alias
+# immich-admin)
 QUIET=false
-if [ "$1" = "immich-admin" ]; then
+if [ "$1" = "frameleaf-admin" ] || [ "$1" = "immich-admin" ]; then
   QUIET=true
 fi
 
@@ -13,7 +14,7 @@ log_message() {
   fi
 }
 
-log_message "Initializing Immich $IMMICH_SOURCE_REF"
+log_message "Initializing Frameleaf ${FRAMELEAF_SOURCE_REF:-$IMMICH_SOURCE_REF}"
 
 lib_path="/usr/lib/$(arch)-linux-gnu/libmimalloc.so.3"
 if [ -f "$lib_path" ]; then
@@ -31,7 +32,8 @@ read_file_and_export() {
 	if [[ -n $fname ]]; then
 		content="$(< "$fname")"
 		export "$2"="${content}"
-		unset "$1"
+		# Recovery must retain the effective local credential-file source, including systemd fallback.
+		export "$1"="$fname"
 	fi
 }
 read_file_and_export "DB_URL_FILE" "DB_URL"
@@ -39,7 +41,6 @@ read_file_and_export "DB_HOSTNAME_FILE" "DB_HOSTNAME"
 read_file_and_export "DB_DATABASE_NAME_FILE" "DB_DATABASE_NAME"
 read_file_and_export "DB_USERNAME_FILE" "DB_USERNAME"
 read_file_and_export "DB_PASSWORD_FILE" "DB_PASSWORD"
-read_file_and_export "REDIS_PASSWORD_FILE" "REDIS_PASSWORD"
 
 if CPU_CORES="${CPU_CORES:=$(get-cpus.sh 2>/dev/null)}"; then
   log_message "Detected CPU Cores: $CPU_CORES"
@@ -58,7 +59,7 @@ if [ -f "${SERVER_HOME}/dist/main.js" ]; then
   fi
 else
   echo "Error: ${SERVER_HOME}/dist/main.js not found"
-  if [ "$IMMICH_ENV" = "development" ]; then
+  if [ "${FRAMELEAF_ENV:-$IMMICH_ENV}" = "development" ]; then
     echo "You may need to build the server first."
   fi
   exit 1

@@ -1,3 +1,9 @@
+# CLI container builds. Publication to ghcr.io/frameleaf/frameleaf-cli is a manual dispatch with publish
+# selected on the exact current fork/main, gated by FRAMELEAF_ENABLE_CLI_PUBLISH=true. Releases are created
+# with the workflow token, which never triggers this workflow, so there is no release trigger; release
+# promotion refuses to promote until frameleaf-cli:latest exists (FL-191).
+# Both native architectures build once, smoke-test their exported image, and retain an OCI archive.
+# Publication copies those exact qualified bytes by digest; signing and provenance precede latest.
 name: CLI Build
 'on':
   pull_request:
@@ -16,9 +22,6 @@ name: CLI Build
       - packages/sdk/**
       - pnpm-lock.yaml
       - .github/workflows/cli.yml
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
       publish:
@@ -33,41 +36,132 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
-    name: CLI container build
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name != 'release' }}
-    runs-on: ubuntu-24.04
+    name: CLI container build (${{ matrix.architecture }})
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: amd64
+            node-architecture: x64
+          - runner: ubuntu-24.04-arm
+            architecture: arm64
+            node-architecture: arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Prepare archives
+        run: mkdir -p "$RUNNER_TEMP/cli"
       - name: Build without publishing
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: packages/cli/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.architecture }}
           push: false
           tags: frameleaf-cli:ci
+          provenance: false
+          outputs: |-
+            type=oci,dest=${{ runner.temp }}/cli/image.tar,compression=gzip,force-compression=true
+            type=docker,dest=${{ runner.temp }}/cli/runtime.tar
+          labels: |-
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Smoke-test the exact native image and record qualification
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          NODE_ARCHITECTURE: ${{ matrix.node-architecture }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |-
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) [[ "$ARCHITECTURE" == amd64 ]] ;;
+            aarch64) [[ "$ARCHITECTURE" == arm64 ]] ;;
+            *) exit 1 ;;
+          esac
+          archive="$RUNNER_TEMP/cli"
+          mkdir "$archive/layout"
+          tar -xf "$archive/image.tar" -C "$archive/layout"
+          digest=$(jq -er '.manifests | select(length == 1) | .[0].digest' "$archive/layout/index.json")
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          manifest="$archive/layout/blobs/sha256/${digest#sha256:}"
+          [[ "sha256:$(sha256sum "$manifest" | cut -d' ' -f1)" == "$digest" ]]
+          config=$(jq -er '.config.digest' "$manifest")
+          config_file="$archive/layout/blobs/sha256/${config#sha256:}"
+          [[ "sha256:$(sha256sum "$config_file" | cut -d' ' -f1)" == "$config" ]]
+          jq -e --arg a "$ARCHITECTURE" '.architecture == $a and .os == "linux"' "$config_file" > /dev/null
+          jq -e --arg s "$SOURCE_SHA" '.config.Labels["org.opencontainers.image.revision"]==$s' "$config_file" > /dev/null
+          while read -r layer; do
+            [[ "$layer" =~ ^sha256:[a-f0-9]{64}$ ]]
+            [[ "sha256:$(sha256sum "$archive/layout/blobs/sha256/${layer#sha256:}" | cut -d' ' -f1)" == "$layer" ]]
+          done < <(jq -r '.layers[].digest' "$manifest")
+          jq -e '[.layers[].mediaType] | all(. == "application/vnd.oci.image.layer.v1.tar+gzip")' "$manifest" > /dev/null
+          jq -r '.layers[].digest' "$manifest" > "$archive/oci-layer-digests"
+          jq -r '.rootfs.diff_ids[]' "$config_file" > "$archive/oci-diffids"
+          [[ "$(wc -l < "$archive/oci-layer-digests")" == "$(wc -l < "$archive/oci-diffids")" ]]
+          paste "$archive/oci-layer-digests" "$archive/oci-diffids" | while read -r layer diffid; do
+            actual="sha256:$(gzip -dc "$archive/layout/blobs/sha256/${layer#sha256:}" | sha256sum | cut -d' ' -f1)"
+            [[ "$actual" == "$diffid" ]]
+          done
+          docker load --input "$archive/runtime.tar"
+          [[ "$(docker image inspect frameleaf-cli:ci --format '{{.Id}}')" == "$config" ]]
+          # Docker executes uncompressed layers: bind every ordered diffID to the OCI config.
+          docker image inspect frameleaf-cli:ci --format '{{json .RootFS.Layers}}' > "$archive/runtime-rootfs.json"
+          jq -e --slurpfile runtime "$archive/runtime-rootfs.json" '.rootfs.diff_ids==$runtime[0]' "$config_file" > /dev/null
+          [[ "$(docker run --rm --network none --entrypoint node frameleaf-cli:ci -p process.arch)" == "$NODE_ARCHITECTURE" ]]
+          [[ "$(docker run --rm --network none frameleaf-cli:ci --version)" == "$(jq -r .version packages/cli/package.json)" ]]
+          docker run --rm --network none frameleaf-cli:ci --help > "$archive/help.txt"
+          grep -q 'upload' "$archive/help.txt"
+          grep -q 'server-info' "$archive/help.txt"
+          docker run --rm --network none frameleaf-cli:ci migrate --help > "$archive/migrate-help.txt"
+          grep -q -- '--from-key' "$archive/migrate-help.txt"
+          grep -q -- '--to-key' "$archive/migrate-help.txt"
+          if docker run --rm --network none frameleaf-cli:ci invalid-command; then
+            echo '::error::CLI accepted an invalid command'; exit 1
+          fi
+          cd "$archive"
+          sha256sum image.tar runtime.tar > SHA256SUMS
+          jq -n --arg source "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg architecture "$ARCHITECTURE" \
+            --slurpfile rootfs "$archive/runtime-rootfs.json" --arg digest "$digest" --arg config "$config" --arg archiveSha "$(sha256sum image.tar | cut -d' ' -f1)" \
+            '{sourceCommit:$source,repository:$repository,runId:$run,runAttempt:$attempt,architecture:$architecture,
+              digest:$digest,configDigest:$config,rootfsDiffIds:$rootfs[0],archiveSha256:$archiveSha,smoke:"passed"}' > receipt.json
+          rm -rf layout
+      - name: Retain tested archives and receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: cli-tested-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/cli/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
   publish:
     name: CLI Publish
+    needs: build
+    environment: production
     if:
-      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' && (github.event_name
-      == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main'))
-      }}
+      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' &&
+      github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -87,32 +181,110 @@ jobs:
             echo "::error::CLI publication requires the exact current fork/main commit."
             exit 1
           fi
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
-      - name: Login to owned GHCR namespace
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+      - name: Download both qualified archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Container tags
-        id: metadata
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+          pattern: cli-tested-*
+          path: ${{ runner.temp }}/cli-archives
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          images: ghcr.io/frameleaf/frameleaf-cli
-          flavor: latest=false
-          tags: |-
-            type=sha,format=long
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-      - name: Publish CLI image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+          cosign-release: v3.1.3
+      - name: Verify and publish only qualified digests
+        id: publish
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |-
+          set -euo pipefail
+          image=ghcr.io/frameleaf/frameleaf-cli
+          : "${COSIGN_PRIVATE_KEY:?Frameleaf production signing key is required}"
+          : "${COSIGN_PASSWORD:?Frameleaf production signing password is required}"
+          descriptors=()
+          # Validate BOTH receipts before any registry write.
+          for architecture in amd64 arm64; do
+            archive="$RUNNER_TEMP/cli-archives/cli-tested-$architecture"
+            (cd "$archive" && sha256sum -c SHA256SUMS)
+            jq -e --arg source "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+              --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg a "$architecture" \
+              --arg hash "$(sha256sum "$archive/image.tar" | cut -d' ' -f1)" \
+              '.sourceCommit==$source and .repository==$repository and .runId==$run and .runAttempt==$attempt
+               and .architecture==$a and .archiveSha256==$hash and .smoke=="passed"' "$archive/receipt.json" > /dev/null
+            digest=$(jq -er .digest "$archive/receipt.json")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            mkdir "$archive/layout"
+            tar -xf "$archive/image.tar" -C "$archive/layout"
+            jq -e --arg d "$digest" '[.manifests[].digest] == [$d]' "$archive/layout/index.json" > /dev/null
+            manifest="$archive/layout/blobs/sha256/${digest#sha256:}"
+            [[ "sha256:$(sha256sum "$manifest" | cut -d' ' -f1)" == "$digest" ]]
+            config=$(jq -er .config.digest "$manifest")
+            [[ "$config" == "$(jq -er .configDigest "$archive/receipt.json")" ]]
+            config_file="$archive/layout/blobs/sha256/${config#sha256:}"
+            [[ "sha256:$(sha256sum "$config_file" | cut -d' ' -f1)" == "$config" ]]
+            jq -e --arg a "$architecture" '.architecture==$a and .os=="linux"' "$config_file" > /dev/null
+            jq -e --arg s "$SOURCE_SHA" --slurpfile receipt "$archive/receipt.json" \
+              '.config.Labels["org.opencontainers.image.revision"]==$s and .rootfs.diff_ids==$receipt[0].rootfsDiffIds' \
+              "$config_file" > /dev/null
+            while read -r layer; do
+              [[ "$layer" =~ ^sha256:[a-f0-9]{64}$ ]]
+              [[ "sha256:$(sha256sum "$archive/layout/blobs/sha256/${layer#sha256:}" | cut -d' ' -f1)" == "$layer" ]]
+            done < <(jq -r '.layers[].digest' "$manifest")
+            descriptor="$RUNNER_TEMP/cli-$architecture-descriptor.json"
+            jq -n --arg digest "$digest" --arg architecture "$architecture" --argjson size "$(wc -c < "$manifest")" \
+              '{mediaType:"application/vnd.oci.image.manifest.v1+json",digest:$digest,size:$size,
+                platform:{architecture:$architecture,os:"linux"}}' > "$descriptor"
+            descriptors+=("$descriptor")
+          done
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
+          for architecture in amd64 arm64; do
+            archive="$RUNNER_TEMP/cli-archives/cli-tested-$architecture"
+            digest=$(jq -er .digest "$archive/receipt.json")
+            oras cp --from-oci-layout "$archive/layout@$digest" "$image@$digest"
+            [[ "$(oras resolve "$image@$digest")" == "$digest" ]]
+            cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$image@$digest"
+            cosign verify --key cosign.pub "$image@$digest" > /dev/null
+          done
+          jq -s --arg source "$SOURCE_SHA" \
+            '{schemaVersion:2,mediaType:"application/vnd.oci.image.index.v1+json",manifests:.,
+              annotations:{"org.opencontainers.image.revision":$source,
+                "org.opencontainers.image.source":"https://github.com/Frameleaf/frameleaf-app"}}' \
+            "${descriptors[@]}" > "$RUNNER_TEMP/cli-index.json"
+          digest="sha256:$(sha256sum "$RUNNER_TEMP/cli-index.json" | cut -d' ' -f1)"
+          oras manifest push "$image@$digest" "$RUNNER_TEMP/cli-index.json"
+          [[ "$(oras resolve "$image@$digest")" == "$digest" ]]
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$image@$digest"
+          cosign verify --key cosign.pub "$image@$digest" > /dev/null
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          jq -n --arg source "$SOURCE_SHA" --arg digest "$digest" --arg run "$GITHUB_RUN_ID" \
+            --slurpfile amd64 "$RUNNER_TEMP/cli-archives/cli-tested-amd64/receipt.json" \
+            --slurpfile arm64 "$RUNNER_TEMP/cli-archives/cli-tested-arm64/receipt.json" \
+            '{image:"ghcr.io/frameleaf/frameleaf-cli",digest:$digest,sourceCommit:$source,runId:$run,
+              architectures:[$amd64[0],$arm64[0]]}' \
+            > "$RUNNER_TEMP/cli-publication.json"
+      - name: Attest published build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          context: .
-          file: packages/cli/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+          subject-name: ghcr.io/frameleaf/frameleaf-cli
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+      - name: Update latest only after signature and provenance
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |-
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/fork/main
+          [[ "$(git rev-parse FETCH_HEAD)" == "$SOURCE_SHA" ]]
+          oras tag "ghcr.io/frameleaf/frameleaf-cli@$DIGEST" latest
+          [[ "$(oras resolve ghcr.io/frameleaf/frameleaf-cli:latest)" == "$DIGEST" ]]
+          oras logout ghcr.io
+      - name: Retain publication binding
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: cli-publication
+          path: ${{ runner.temp }}/cli-publication.json
+          if-no-files-found: error

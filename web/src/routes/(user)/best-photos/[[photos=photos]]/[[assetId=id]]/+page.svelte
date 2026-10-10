@@ -1,44 +1,45 @@
 <script lang="ts">
+  import '$lib/frameleaf/discovery.css';
+  import BestMoments from '$lib/components/frameleaf/BestMoments.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
+  import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import type { Viewport } from '$lib/managers/timeline-manager/types';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
+  import type { BestMoment } from '$lib/frameleaf/best-moments';
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { navigateToAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getBestPhotos, type BestPhotoAssetResponseDto } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, IconButton, LoadingSpinner } from '@immich/ui';
-  import { mdiDotsVertical, mdiSelectAll } from '@mdi/js';
+  import { getBestPhotos, type BestPhotoAssetResponseDto } from '@frameleaf/sdk';
+  import { mdiStarOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import type { PageData } from './$types';
 
-  interface Props {
-    data: PageData;
-  }
-
-  let { data }: Props = $props();
-
-  const viewport: Viewport = $state({ width: 0, height: 0 });
+  /**
+   * Best Photos (FL-50, FL-33 cleanup): the ranked results in the Frameleaf grid.
+   *
+   * These are a paged ranking rather than a timeline, so the page mounts `ResultsView` — the flat
+   * counterpart of the library view — which binds the same session and the same FL-32 selection
+   * bar. The legacy gallery grid and select bar are gone. The order is the server's quality ranking
+   * (`GET /best-photos`), never star ratings; each tile shows the item's own star rating like every
+   * other grid (T-6, `AssetTile.jsx:278-291`), so a rating is never presented as the quality score.
+   * With no scored items the page says so rather than falling back to ratings.
+   */
   let page = $state(1);
   let isLoading = $state(true);
   let assets: BestPhotoAssetResponseDto[] = $state([]);
-  let resultsElement: HTMLElement | undefined = $state();
+  /** How many items are ranked in all, once the first page says. */
+  let total = $state<number | null>(null);
+  /** The first page could not be loaded: a retry in place, never "nothing ranked yet". */
+  let loadFailed = $state(false);
+  const SKELETON_TILES = Array.from({ length: 18 }, (_, index) => index);
+
+  const timelineAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
 
   const onAssetDelete = (assetIds: string[]) => {
     const deleted = new Set(assetIds);
@@ -48,6 +49,7 @@
   const reload = async () => {
     page = 1;
     assets = [];
+    loadFailed = false;
     await loadNextPage(true);
   };
 
@@ -61,22 +63,41 @@
 
     try {
       const response = await getBestPhotos({ page, limit: 100 });
-      assets.push(...response.items);
+      const known = new Set(assets.map(({ id }) => id));
+      for (const asset of response.items) {
+        if (known.has(asset.id)) {
+          continue;
+        }
+
+        known.add(asset.id);
+        assets.push(asset);
+      }
+      total = response.total;
       page = Number(response.nextPage) || 0;
     } catch (error) {
-      handleError(error, $t('failed_to_load_assets'));
+      if (assets.length === 0) {
+        loadFailed = true;
+      } else {
+        handleError(error, $t('failed_to_load_assets'));
+      }
     } finally {
       isLoading = false;
     }
   };
 
-  const handleSelectAll = () => {
-    assetMultiSelectManager.selectAssets(assets.map((asset) => toTimelineAsset(asset)));
+  /** A ranked video's best moment: open it in the viewer, starting there (FL-50). */
+  const playMoment = ({ asset, timestampMs }: BestMoment) => {
+    videoSeek.request(asset.id, timestampMs);
+    void navigateToAsset(asset);
   };
 
-  const handleSetVisibility = (assetIds: string[]) => {
-    assetMultiSelectManager.clear();
-    onAssetDelete(assetIds);
+  const handleSelectAll = () => librarySession.selectAll(assets.map((asset) => asset.id));
+
+  const updateAsset = (updated: { id: string }) => {
+    const index = assets.findIndex((asset) => asset.id === updated.id);
+    if (index !== -1) {
+      assets[index] = { ...assets[index], ...updated };
+    }
   };
 
   onMount(() => {
@@ -84,82 +105,91 @@
   });
 </script>
 
-<UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} title={data.meta.title} scrollbar={false}>
-  <section
-    class="m-4 mb-12 bg-immich-bg dark:bg-immich-dark-bg"
-    bind:clientHeight={viewport.height}
-    bind:clientWidth={viewport.width}
-    bind:this={resultsElement}
-  >
-    {#if assets.length > 0}
-      <GalleryViewer
-        {assets}
-        assetInteraction={assetMultiSelectManager}
-        onEndReached={loadNextPage}
-        showArchiveIcon={true}
-        {viewport}
-        onReload={reload}
-        slidingWindowOffset={resultsElement?.offsetTop ?? 0}
-      />
-    {:else if !isLoading}
-      <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center">
-        <EmptyPlaceholder text={$t('no_best_photos_scored')} />
-      </div>
-    {/if}
+<UserPageLayout scrollbar={false}>
+  <section class="m-4 mb-12 bg-(--fl-canvas)">
+    <!-- The same header as Places, Tags, Folders and Memories: title, one line of what this is, count. -->
+    <div class="fl-discovery best-photos-head">
+      <header class="dv-header">
+        <div>
+          <h1>{$t('best_photos')}</h1>
+          <p>
+            {$t('frameleaf_best_photos_intro')}
+            {#if total}
+              · {$t('frameleaf_explore_item_count', { values: { count: total } })}
+            {/if}
+          </p>
+        </div>
+      </header>
+    </div>
+    <BestMoments {assets} onPlay={playMoment} />
+    <ResultsView
+      assets={timelineAssets}
+      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_best_photos'))}
+      onEndReached={() => void loadNextPage()}
+      onRemoved={onAssetDelete}
+      onSelectAll={handleSelectAll}
+      onOpen={(asset) => void navigateToAsset(asset)}
+    >
+      {#snippet empty()}
+        {#if loadFailed}
+          <div class="best-photos-state">
+            <InlineError
+              title={$t('frameleaf_best_photos_failed_title')}
+              message={$t('frameleaf_search_failed_hint')}
+              onRetry={reload}
+              retrying={isLoading}
+            />
+          </div>
+        {:else if !isLoading}
+          <div class="best-photos-state">
+            <EmptyState
+              icon={mdiStarOutline}
+              title={$t('frameleaf_best_photos_empty_title')}
+              message={$t('frameleaf_best_photos_empty_body')}
+            />
+          </div>
+        {/if}
+      {/snippet}
+    </ResultsView>
 
-    {#if isLoading}
-      <div class="flex items-center justify-center py-16">
-        <LoadingSpinner size="giant" />
+    {#if isLoading && assets.length === 0 && !loadFailed}
+      <div class="best-photos-skeleton" aria-busy="true">
+        <span class="sr-only">{$t('loading')}</span>
+        {#each SKELETON_TILES as tile (tile)}
+          <Skeleton variant="tile" />
+        {/each}
       </div>
+    {:else if isLoading && assets.length > 0}
+      <div class="best-photos-more"><Spinner size="xl" /></div>
     {/if}
   </section>
 </UserPageLayout>
 
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    {@const Actions = getAssetBulkActions($t)}
-    <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-    <CreateSharedLink />
-    <IconButton
-      shape="round"
-      color="secondary"
-      variant="ghost"
-      aria-label={$t('select_all')}
-      icon={mdiSelectAll}
-      onclick={handleSelectAll}
-    />
-    <ActionButton action={Actions.AddToAlbum} />
-    {#if assetMultiSelectManager.isAllUserOwned}
-      <FavoriteAction
-        removeFavorite={assetMultiSelectManager.isAllFavorite}
-        onFavorite={(ids, isFavorite) => {
-          for (const id of ids) {
-            const asset = assets.find((asset) => asset.id === id);
-            if (asset) {
-              asset.isFavorite = isFavorite;
-            }
-          }
-        }}
-      />
+<ResultsAssetViewer {assets} onAssetChange={updateAsset} onRemove={(id) => onAssetDelete([id])} />
 
-      <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-        <DownloadAction menuItem />
-        <ChangeDate menuItem />
-        <ChangeDescription menuItem />
-        <ChangeLocation menuItem />
-        <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} />
-        {#if assetMultiSelectManager.ownedAssets.length > 0}
-          <MarkNsfwAction menuItem />
-          <MarkNsfwAction menuItem markSafe />
-        {/if}
-        <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-        {#if authManager.preferences.tags.enabled}
-          <TagAction menuItem />
-        {/if}
-        <DeleteAssets menuItem {onAssetDelete} onUndoDelete={reload} />
-      </ButtonContextMenu>
-    {:else}
-      <DownloadAction />
-    {/if}
-  </AssetSelectControlBar>
-{/if}
+<style>
+  .best-photos-head {
+    max-width: none;
+    padding: var(--fl-space-2) 0 0;
+  }
+  .best-photos-state,
+  .best-photos-skeleton,
+  .best-photos-more {
+    background: transparent;
+  }
+  .best-photos-state {
+    display: grid;
+    min-height: calc(66vh - 11rem);
+    place-content: center;
+  }
+  .best-photos-skeleton {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: var(--fl-space-1);
+  }
+  .best-photos-more {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-8) 0;
+  }
+</style>

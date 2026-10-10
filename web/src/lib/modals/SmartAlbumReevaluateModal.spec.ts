@@ -1,4 +1,4 @@
-import type { SmartAlbumReevaluateEstimateDto } from '@immich/sdk';
+import type { SmartAlbumReevaluateEstimateDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';

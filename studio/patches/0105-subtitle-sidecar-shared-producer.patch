@@ -1,0 +1,623 @@
+--- a/src/features/timeline/utils/group-utils.ts
++++ b/src/features/timeline/utils/group-utils.ts
+@@ -1,3 +1,4 @@
++import { resolveEffectiveTrackStates as canonicalTrackStates } from '@/shared/utils/subtitle-sidecar.mjs'
+ import type { TimelineItem, TimelineTrack } from '@/types/timeline'
+ 
+ /**
+@@ -50,24 +51,5 @@
+  * the organizational container rows themselves.
+  */
+ export function resolveEffectiveTrackStates(tracks: TimelineTrack[]): TimelineTrack[] {
+-  const groupsById = new Map(
+-    tracks.filter((track) => track.isGroup).map((track) => [track.id, track] as const),
+-  )
+-
+-  return tracks
+-    .filter((track) => !track.isGroup)
+-    .map((track) => {
+-      const parentGroup = track.parentTrackId ? groupsById.get(track.parentTrackId) : undefined
+-      if (!parentGroup) {
+-        return track
+-      }
+-
+-      return {
+-        ...track,
+-        locked: track.locked || parentGroup.locked,
+-        muted: track.muted || parentGroup.muted,
+-        visible: track.visible !== false && parentGroup.visible !== false,
+-        solo: track.solo || parentGroup.solo,
+-      }
+-    })
++  return canonicalTrackStates(tracks)
+ }
+--- a/src/shared/utils/subtitles.ts
++++ b/src/shared/utils/subtitles.ts
+@@ -1,3 +1,4 @@
++import { serializeSrt as canonicalSrt, serializeVtt as canonicalVtt } from './subtitle-sidecar.mjs'
+ export type SubtitleFormat = 'srt' | 'vtt'
+ 
+ export interface SubtitleCue {
+@@ -33,25 +34,11 @@
+ }
+ 
+ export function serializeSrt(cues: readonly SubtitleCue[]): string {
+-  return normalizeCuesForExport(cues)
+-    .map((cue, index) =>
+-      [
+-        String(index + 1),
+-        `${formatSrtTimestamp(cue.startSeconds)} --> ${formatSrtTimestamp(cue.endSeconds)}`,
+-        cue.text,
+-      ].join('\n'),
+-    )
+-    .join('\n\n')
++  return canonicalSrt(cues)
+ }
+ 
+ export function serializeVtt(cues: readonly SubtitleCue[]): string {
+-  const body = normalizeCuesForExport(cues)
+-    .map(
+-      (cue) =>
+-        `${formatVttTimestamp(cue.startSeconds)} --> ${formatVttTimestamp(cue.endSeconds)}\n${cue.text}`,
+-    )
+-    .join('\n\n')
+-  return `WEBVTT\n\n${body}`
++  return canonicalVtt(cues)
+ }
+ 
+ function parseSubtitleBlocks(text: string, format: SubtitleFormat): SubtitleParseResult {
+@@ -136,32 +123,6 @@
+   return h * 3600 + m * 60 + s + ms / 1000
+ }
+ 
+-function formatSrtTimestamp(seconds: number): string {
+-  return formatTimestamp(seconds, ',')
+-}
+-
+-function formatVttTimestamp(seconds: number): string {
+-  return formatTimestamp(seconds, '.')
+-}
+-
+-function formatTimestamp(seconds: number, separator: ',' | '.'): string {
+-  const totalMs = Math.max(0, Math.round(seconds * 1000))
+-  const ms = totalMs % 1000
+-  const totalSeconds = Math.floor(totalMs / 1000)
+-  const s = totalSeconds % 60
+-  const totalMinutes = Math.floor(totalSeconds / 60)
+-  const m = totalMinutes % 60
+-  const h = Math.floor(totalMinutes / 60)
+-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}${separator}${String(ms).padStart(3, '0')}`
+-}
+-
+-function normalizeCuesForExport(cues: readonly SubtitleCue[]): SubtitleCue[] {
+-  return cues
+-    .filter((cue) => cue.text.trim().length > 0 && cue.endSeconds > cue.startSeconds)
+-    .map((cue) => ({ ...cue, text: cue.text.trim() }))
+-    .sort((a, b) => a.startSeconds - b.startSeconds)
+-}
+-
+ function stripBom(text: string): string {
+   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+ }
+@@ -174,7 +135,3 @@
+   if (format !== 'vtt') return false
+   return firstLine.startsWith('NOTE') || firstLine === 'STYLE' || firstLine === 'REGION'
+ }
+-
+-function pad2(value: number): string {
+-  return String(value).padStart(2, '0')
+-}
+--- a/src/features/export/utils/embedded-subtitle-export.ts
++++ b/src/features/export/utils/embedded-subtitle-export.ts
+@@ -1,3 +1,7 @@
++import {
++  isTranscriptSubtitleItem as canonicalCaptionItem,
++  buildTranscriptSubtitleCues as canonicalCues,
++} from '@/shared/utils/subtitle-sidecar.mjs'
+ import type { CompositionInputProps, SubtitleExportMode } from '@/types/export'
+ import type { SubtitleSegmentItem, TextItem, TimelineItem, TimelineTrack } from '@/types/timeline'
+ import { serializeVtt, type SubtitleCue } from '@/shared/utils/subtitles'
+@@ -44,15 +48,7 @@
+ 
+ // Keep the existing helper contract, including transcript behavior, while admitting imported and extracted cues.
+ function isTranscriptSubtitleItem(item: TimelineItem): item is SubtitleSegmentItem | TextItem {
+-  return (
+-    (item.type === 'subtitle' &&
+-      (item.source.type === 'transcript' || item.source.type === 'subtitle-import' ||
+-        item.source.type === 'embedded-subtitles')) ||
+-    (item.type === 'text' &&
+-      item.textRole === 'caption' &&
+-      (item.captionSource?.type === 'subtitle-import' ||
+-        item.captionSource?.type === 'embedded-subtitles'))
+-  )
++  return canonicalCaptionItem(item)
+ }
+ 
+ /**
+@@ -61,49 +57,7 @@
+  * there are none. Source provenance remains unchanged. Shared by the soft-embed (VTT) and sidecar (SRT) paths.
+  */
+ export function buildTranscriptSubtitleCues(composition: CompositionInputProps): SubtitleCue[] {
+-  const fps = composition.fps
+-  const durationSeconds =
+-    composition.durationInFrames !== undefined ? composition.durationInFrames / fps : Infinity
+-
+-  const cues: SubtitleCue[] = []
+-
+-  for (const track of composition.tracks) {
+-    if (track.visible === false) continue
+-
+-    for (const item of track.items ?? []) {
+-      if (!isTranscriptSubtitleItem(item)) continue
+-
+-      const itemStartSeconds = item.from / fps
+-      const itemEndSeconds = (item.from + item.durationInFrames) / fps
+-
+-      const itemCues = item.type === 'text'
+-        ? [{ id: item.id, startSeconds: 0, endSeconds: item.durationInFrames / fps, text: item.text }]
+-        : item.cues
+-      for (const cue of itemCues) {
+-        const startSeconds = Math.max(0, itemStartSeconds + cue.startSeconds)
+-        const endSeconds = Math.min(
+-          durationSeconds,
+-          itemEndSeconds,
+-          itemStartSeconds + cue.endSeconds,
+-        )
+-
+-        if (endSeconds <= startSeconds || cue.text.trim().length === 0) continue
+-
+-        cues.push({
+-          id: cue.id,
+-          startSeconds,
+-          endSeconds,
+-          text: cue.text,
+-        })
+-      }
+-    }
+-  }
+-
+-  // Items can be processed track-by-track in any order, but subtitle consumers
+-  // expect cues sorted chronologically. Sort by start time, breaking ties by
+-  // end time so deterministically-overlapping cues don't reorder.
+-  cues.sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds)
+-  return cues
++  return canonicalCues(composition)
+ }
+ 
+ export function buildTranscriptSubtitleWebVtt(composition: CompositionInputProps): string | null {
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -1,3 +1,4 @@
++import { trimSubtitleCues } from '@/shared/utils/subtitle-sidecar.mjs'
+ import type { TimelineTrack, TimelineItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import type { AudioEqSettings } from '@/types/audio'
+@@ -177,16 +178,12 @@
+         }
+ 
+         if (item.type === 'subtitle' && (additionalTrimStart > 0 || additionalTrimEnd > 0)) {
+-          const trimStartSeconds = additionalTrimStart / fps
+-          const trimmedDurationSeconds = newDuration / fps
+           const subtitleItem = adjustedItem as typeof item
+-          subtitleItem.cues = item.cues
+-            .map((cue) => ({
+-              ...cue,
+-              startSeconds: Math.max(0, cue.startSeconds - trimStartSeconds),
+-              endSeconds: Math.min(trimmedDurationSeconds, cue.endSeconds - trimStartSeconds),
+-            }))
+-            .filter((cue) => cue.text.trim().length > 0 && cue.endSeconds > cue.startSeconds)
++          subtitleItem.cues = trimSubtitleCues(
++            item.cues,
++            additionalTrimStart / fps,
++            newDuration / fps,
++          )
+         }
+ 
+         return adjustedItem
+--- a/src/features/export/hooks/use-client-render.ts
++++ b/src/features/export/hooks/use-client-render.ts
+@@ -27,8 +27,7 @@
+ } from '../utils/render-pipeline'
+ import { trySmartCopyExport } from '../utils/smart-copy'
+ import { convertTimelineToComposition } from '../utils/timeline-to-composition'
+-import { buildTranscriptSubtitleCues } from '../utils/embedded-subtitle-export'
+-import { serializeSrt } from '@/shared/utils/subtitles'
++import { prepareSidecarPlan } from '@/shared/utils/subtitle-sidecar.mjs'
+ import { releaseTemporaryExportOutput } from '../utils/export-output-target'
+ import { useTimelineStore } from '@/features/export/deps/timeline'
+ import { useProjectStore } from '@/features/export/deps/projects'
+@@ -160,6 +159,23 @@
+         const effectiveInPoint = renderWholeProject ? null : inPoint
+         const effectiveOutPoint = renderWholeProject ? null : outPoint
+         const signal = abortControllerRef.current.signal
++
++        // Validate authored captions before legacy clipping/filtering or any render path.
++        const sidecarPlan =
++          requested.clientSettings.subtitleMode === 'sidecar'
++            ? prepareSidecarPlan({
++                tracks,
++                items,
++                fps,
++                frameRate: (
++                  currentProject?.metadata as
++                    | { frameRate?: { num: number; den: number } }
++                    | undefined
++                )?.frameRate,
++                inPoint: effectiveInPoint,
++                outPoint: effectiveOutPoint,
++              })
++            : null
+ 
+         const smartCopy = await trySmartCopyExport(
+           {
+@@ -183,8 +199,14 @@
+         )
+ 
+         if (smartCopy.result) {
+-          resultRef.current = smartCopy.result
+-          setResult(smartCopy.result)
++          const copiedResult = sidecarPlan
++            ? {
++                ...smartCopy.result,
++                subtitleSidecar: { filename: 'subtitles.srt', content: sidecarPlan.content },
++              }
++            : smartCopy.result
++          resultRef.current = copiedResult
++          setResult(copiedResult)
+           setStatus('completed')
+           setProgress(100)
+           event.set('renderPath', 'smart-copy')
+@@ -308,15 +330,12 @@
+         // (export-trimmed) composition on the main thread and attach it so the
+         // dialog can offer it as a second download.
+         let finalResult = renderResult
+-        if (clientSettings.subtitleMode === 'sidecar') {
+-          const cues = buildTranscriptSubtitleCues(composition)
+-          if (cues.length > 0) {
+-            finalResult = {
+-              ...renderResult,
+-              subtitleSidecar: { filename: 'subtitles.srt', content: serializeSrt(cues) },
+-            }
+-            event.set('subtitleSidecarCues', cues.length)
++        if (sidecarPlan) {
++          finalResult = {
++            ...renderResult,
++            subtitleSidecar: { filename: 'subtitles.srt', content: sidecarPlan.content },
+           }
++          event.set('subtitleSidecarCues', sidecarPlan.cueCount)
+         }
+ 
+         resultRef.current = finalResult
+--- /dev/null
++++ b/src/features/export/hooks/use-client-render.sidecar.test.ts
+@@ -0,0 +1,181 @@
++// @vitest-environment jsdom
++import { beforeEach, expect, it, vi } from 'vitest'
++import { act, renderHook } from '@testing-library/react'
++const harness = vi.hoisted(() => ({
++  state: {} as any,
++  render: vi.fn(),
++  resolve: vi.fn(),
++  smart: vi.fn(),
++}))
++vi.mock('../utils/client-renderer', () => ({
++  mapToClientSettings: vi.fn(),
++  getSupportedCodecs: vi.fn(),
++  formatBytes: String,
++  estimateFileSize: vi.fn(),
++  getVideoBitrateForQuality: vi.fn(),
++}))
++vi.mock('../utils/render-pipeline', () => ({
++  isExtendedSettings: () => false,
++  mapRequestedClientSettings: (settings: any) => ({
++    clientSettings: settings,
++    exportMode: 'video',
++    renderWholeProject: false,
++  }),
++  resolveClientSettings: async (settings: any) => ({ clientSettings: settings }),
++  runRender: (...args: any[]) => harness.render(...args),
++}))
++vi.mock('../utils/smart-copy', () => ({
++  trySmartCopyExport: (...args: any[]) => harness.smart(...args),
++}))
++vi.mock('../utils/export-output-target', () => ({ releaseTemporaryExportOutput: async () => {} }))
++vi.mock('@/features/export/deps/timeline', () => ({
++  useTimelineStore: { getState: () => harness.state },
++}))
++vi.mock('@/features/export/deps/projects', () => ({
++  useProjectStore: {
++    getState: () => ({ currentProject: { metadata: { width: 1280, height: 720 } } }),
++  },
++}))
++vi.mock('@/shared/state/playback', () => ({
++  usePlaybackStore: { getState: () => ({ masterGainEnvelope: [] }) },
++}))
++vi.mock('@/features/export/deps/media-library', () => ({
++  resolveMediaUrls: (...args: any[]) => harness.resolve(...args),
++}))
++vi.mock('@/features/export/deps/caption-items', () => ({
++  appendVirtualTranscriptCaptionTrack: (tracks: any) => tracks,
++}))
++vi.mock('@/shared/logging/logger', () => ({
++  createOperationId: () => 'controlled',
++  createLogger: () => ({
++    warn: vi.fn(),
++    debug: vi.fn(),
++    event: vi.fn(),
++    startEvent: () => ({ merge: vi.fn(), set: vi.fn(), success: vi.fn(), failure: vi.fn() }),
++  }),
++}))
++import { useClientRender } from './use-client-render'
++const settings = {
++  subtitleMode: 'sidecar',
++  container: 'mp4',
++  codec: 'avc',
++  resolution: { width: 1280, height: 720 },
++} as any
++beforeEach(() => {
++  vi.clearAllMocks()
++  harness.state = {
++    tracks: [{ id: 'v', order: 0, visible: true }],
++    items: [],
++    transitions: [],
++    fps: 24,
++    keyframes: [],
++    inPoint: null,
++    outPoint: null,
++  }
++  harness.smart.mockResolvedValue({ result: null })
++  harness.resolve.mockImplementation(async (tracks) => tracks)
++  harness.render.mockResolvedValue({
++    result: { blob: new Blob(['controlled']), fileSize: 10, duration: 1 },
++    renderPath: 'controlled',
++  })
++})
++it('refuses eligible nearest-ms collapse BEFORE smart-copy, media resolution or render', async () => {
++  harness.state.items = [
++    {
++      id: 'caption',
++      type: 'subtitle',
++      trackId: 'v',
++      from: 0,
++      durationInFrames: 24,
++      source: { type: 'subtitle-import' },
++      cues: [{ id: 'tiny', startSeconds: 0.0001, endSeconds: 0.0004, text: 'positive' }],
++    },
++  ]
++  const hook = renderHook(() => useClientRender())
++  await act(() => hook.result.current.startExport(settings))
++  expect(harness.smart).not.toHaveBeenCalled()
++  expect(harness.resolve).not.toHaveBeenCalled()
++  expect(harness.render).not.toHaveBeenCalled()
++  expect(hook.result.current.status).toBe('failed')
++  expect(hook.result.current.error).toMatch(/represent/i)
++  hook.unmount()
++})
++it('attaches explicit sealed empty SRT through actual caller', async () => {
++  harness.state.items = [
++    {
++      id: 'title',
++      type: 'text',
++      trackId: 'v',
++      from: 0,
++      durationInFrames: 24,
++      text: 'ordinary title',
++    },
++  ]
++  const hook = renderHook(() => useClientRender())
++  await act(() => hook.result.current.startExport(settings))
++  expect(harness.render).toHaveBeenCalledTimes(1)
++  expect(hook.result.current.result?.subtitleSidecar).toEqual({
++    filename: 'subtitles.srt',
++    content: '',
++  })
++  expect(harness.render.mock.calls[0]![0].composition.tracks[0].items[0].text).toBe(
++    'ordinary title',
++  )
++  hook.unmount()
++})
++it.each(['burn', 'off'])('retains %s caller rendering without SRT attachment', (mode) => {
++  return (async () => {
++    const hook = renderHook(() => useClientRender())
++    await act(() => hook.result.current.startExport({ ...settings, subtitleMode: mode }))
++    expect(harness.render).toHaveBeenCalledTimes(1)
++    expect(hook.result.current.result?.subtitleSidecar).toBeUndefined()
++    hook.unmount()
++  })()
++})
++it.each(['sidecar', 'burn', 'off'])(
++  'preserves successful smart-copy bytes and %s attachment policy',
++  async (mode) => {
++    const copied = { blob: new Blob(['copied-original-bytes']), fileSize: 21, duration: 1 }
++    harness.smart.mockResolvedValue({ result: copied })
++    const hook = renderHook(() => useClientRender())
++    await act(() => hook.result.current.startExport({ ...settings, subtitleMode: mode }))
++    expect(harness.smart).toHaveBeenCalledTimes(1)
++    expect(harness.render).not.toHaveBeenCalled()
++    expect(harness.resolve).not.toHaveBeenCalled()
++    expect(hook.result.current.status).toBe('completed')
++    expect(hook.result.current.result?.blob).toBe(copied.blob)
++    expect(hook.result.current.result?.fileSize).toBe(copied.fileSize)
++    if (mode === 'sidecar')
++      expect(hook.result.current.result?.subtitleSidecar).toEqual({
++        filename: 'subtitles.srt',
++        content: '',
++      })
++    else expect(hook.result.current.result).toBe(copied)
++    hook.unmount()
++  },
++)
++it('attaches the validated nonempty plan to successful copied media without changing its blob', async () => {
++  harness.state.items = [
++    {
++      id: 'caption',
++      type: 'text',
++      textRole: 'caption',
++      captionSource: { type: 'subtitle-import' },
++      trackId: 'v',
++      from: 0,
++      durationInFrames: 24,
++      text: 'Copied caption',
++    },
++  ]
++  const copied = { blob: new Blob(['copy']), fileSize: 4, duration: 1 }
++  harness.smart.mockResolvedValue({ result: copied })
++  const hook = renderHook(() => useClientRender())
++  await act(() => hook.result.current.startExport(settings))
++  expect(hook.result.current.result?.subtitleSidecar).toEqual({
++    filename: 'subtitles.srt',
++    content: '1\n00:00:00,000 --> 00:00:01,000\nCopied caption',
++  })
++  expect(hook.result.current.result?.blob).toBe(copied.blob)
++  expect(harness.render).not.toHaveBeenCalled()
++  hook.unmount()
++})
+--- /dev/null
++++ b/src/features/export/utils/subtitle-sidecar.semantic.test.ts
+@@ -0,0 +1,146 @@
++// @vitest-environment node
++import { describe, expect, it } from 'vitest'
++import {
++  prepareSidecarPlan,
++  resolveEffectiveTrackStates,
++} from '@/shared/utils/subtitle-sidecar.mjs'
++import { convertTimelineToComposition } from './timeline-to-composition'
++import { buildTranscriptSubtitleCues } from './embedded-subtitle-export'
++import { serializeSrt } from '@/shared/utils/subtitles'
++const fps = 30000 / 1001
++const track = (id: string, order: number, extra = {}) => ({
++  id,
++  order,
++  visible: true,
++  locked: false,
++  muted: false,
++  solo: false,
++  height: 80,
++  items: [],
++  name: id,
++  ...extra,
++})
++const items: any[] = [
++  {
++    id: 'title',
++    type: 'text',
++    trackId: 'title',
++    from: 0,
++    durationInFrames: 120,
++    text: 'Ordinary title',
++  },
++  {
++    id: 'a',
++    type: 'subtitle',
++    trackId: 'caption',
++    from: 0,
++    durationInFrames: 120,
++    source: { type: 'subtitle-import' },
++    cues: [
++      { id: 'a', startSeconds: 20 / fps, endSeconds: 50 / fps, text: 'Café 東京\nsecond line' },
++      { id: 'b', startSeconds: 70 / fps, endSeconds: 110 / fps, text: 'Tail cue' },
++    ],
++  },
++  {
++    id: 'second-caption',
++    type: 'text',
++    textRole: 'caption',
++    captionSource: { type: 'subtitle-import' },
++    trackId: 'second',
++    from: 20,
++    durationInFrames: 10,
++    text: 'Equal start second track',
++  },
++]
++const tracks = [track('title', 0), track('caption', 1), track('second', 2)]
++const whole =
++  '1\n00:00:00,667 --> 00:00:01,001\nEqual start second track\n\n2\n00:00:00,667 --> 00:00:01,668\nCafé 東京\nsecond line\n\n3\n00:00:02,336 --> 00:00:03,670\nTail cue'
++const selected =
++  '1\n00:00:00,000 --> 00:00:00,667\nCafé 東京\nsecond line\n\n2\n00:00:01,335 --> 00:00:02,002\nTail cue'
++describe('actual engine shared Sidecar producer consumers', () => {
++  it.each([
++    [null, null, whole],
++    [30, 90, selected],
++  ] as const)(
++    'preserves independent whole/range bytes through actual composition and collectors',
++    (inPoint, outPoint, expected) => {
++      const input = { tracks, items, fps, inPoint, outPoint }
++      const before = JSON.stringify(input)
++      const plan = prepareSidecarPlan(input)
++      const composition = convertTimelineToComposition(
++        tracks,
++        items,
++        [],
++        fps,
++        1280,
++        720,
++        inPoint,
++        outPoint,
++      )
++      expect(plan.content).toBe(expected)
++      expect(serializeSrt(buildTranscriptSubtitleCues(composition))).toBe(expected)
++      expect(
++        composition.tracks.flatMap((x) => x.items ?? []).find((x) => x.id === 'title'),
++      ).toBeDefined()
++      expect(JSON.stringify(input)).toBe(before)
++    },
++  )
++  it('omits inherited hidden caption with the same helper used by export', () => {
++    const all = [
++      track('g', 3, { isGroup: true, visible: false, locked: true }),
++      track('caption', 1, { parentTrackId: 'g' }),
++    ]
++    const plan = prepareSidecarPlan({ tracks: all, items: [items[1]], fps })
++    const composition = convertTimelineToComposition(all, [items[1]], [], fps, 1280, 720)
++    expect(plan.zeroCue).toBe(true)
++    expect(buildTranscriptSubtitleCues(composition)).toEqual([])
++    expect(composition.tracks[0]?.locked).toBe(true)
++  })
++  it('retains immediate-parent semantics and unresolved-parent identity', () => {
++    const parent = track('p', 0, { isGroup: true, visible: false }),
++      middle = track('m', 1, { isGroup: true, parentTrackId: 'p', visible: true }),
++      child = track('c', 2, { parentTrackId: 'm' }),
++      unresolved = track('u', 3, { parentTrackId: 'absent' })
++    const effective = resolveEffectiveTrackStates([parent, middle, child, unresolved])
++    expect(effective.map((t) => t.id)).toEqual(['c', 'u'])
++    expect(effective[0]?.visible).toBe(true)
++    expect(effective[1]).toBe(unresolved)
++  })
++  it('rejects malformed hidden/off-range authorship before legacy filtering', () => {
++    const bad = {
++      ...items[1],
++      from: 200,
++      cues: [{ id: 'bad', startSeconds: NaN, endSeconds: 1, text: 'bad' }],
++    }
++    expect(() =>
++      prepareSidecarPlan({ tracks, items: [bad], fps, inPoint: 30, outPoint: 90 }),
++    ).toThrow(/malformed/)
++  })
++})
++it('keeps generic rounded legacy projection while strict long-offset whole/range requires exact state', () => {
++  const late: any[] = [
++    {
++      id: 'late',
++      type: 'text',
++      textRole: 'caption',
++      captionSource: { type: 'subtitle-import' },
++      trackId: 'caption',
++      from: 30000,
++      durationInFrames: 30,
++      text: 'Late',
++    },
++  ]
++  const rounded = convertTimelineToComposition(tracks, late, [], 29.97, 1280, 720)
++  expect(serializeSrt(buildTranscriptSubtitleCues(rounded))).toBe(
++    '1\n00:16:41,001 --> 00:16:42,002\nLate',
++  )
++  expect(() => prepareSidecarPlan({ tracks, items: late, fps: 29.97 })).toThrow(/cadence/)
++  expect(() =>
++    prepareSidecarPlan({ tracks, items: late, fps: 29.97, inPoint: 29970, outPoint: 30060 }),
++  ).toThrow(/cadence/)
++  const exact = { tracks, items: late, fps, frameRate: { num: 30000, den: 1001 } }
++  expect(prepareSidecarPlan(exact).content).toBe('1\n00:16:41,000 --> 00:16:42,001\nLate')
++  expect(prepareSidecarPlan({ ...exact, inPoint: 29970, outPoint: 30060 }).content).toBe(
++    '1\n00:00:01,001 --> 00:00:02,002\nLate',
++  )
++})

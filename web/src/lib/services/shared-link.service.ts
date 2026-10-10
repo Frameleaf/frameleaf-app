@@ -1,70 +1,41 @@
 import {
   createSharedLink,
   getSharedLinkById,
-  removeSharedLink,
+  isHttpError,
   removeSharedLinkAssets,
   updateSharedLink,
   type SharedLinkCreateDto,
   type SharedLinkEditDto,
   type SharedLinkResponseDto,
-} from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiContentCopy, mdiLink, mdiPencilOutline, mdiQrcode, mdiTrashCanOutline } from '@mdi/js';
-import type { MessageFormatter } from 'svelte-i18n';
-import { goto } from '$app/navigation';
+} from '@frameleaf/sdk';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-import QrCodeModal from '$lib/modals/QrCodeModal.svelte';
 import { Route } from '$lib/route';
-import { copyToClipboard } from '$lib/utils';
-import { handleError } from '$lib/utils/handle-error';
+import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
-export const getSharedLinksActions = ($t: MessageFormatter) => {
-  const ViewAll: ActionItem = {
-    title: $t('shared_links'),
-    icon: mdiLink,
-    onAction: () => goto(Route.sharedLinks()),
-  };
-
-  return { ViewAll };
-};
-
-export const getSharedLinkActions = ($t: MessageFormatter, sharedLink: SharedLinkResponseDto) => {
-  const Edit: ActionItem = {
-    title: $t('edit_link'),
-    icon: mdiPencilOutline,
-    onAction: () => goto(Route.editSharedLink(sharedLink)),
-  };
-
-  const Delete: ActionItem = {
-    title: $t('delete_link'),
-    icon: mdiTrashCanOutline,
-    color: 'danger',
-    onAction: () => handleDeleteSharedLink(sharedLink),
-  };
-
-  const Copy: ActionItem = {
-    title: $t('copy_link'),
-    icon: mdiContentCopy,
-    onAction: () => copyToClipboard(asUrl(sharedLink)),
-  };
-
-  const ViewQrCode: ActionItem = {
-    title: $t('view_qr_code'),
-    icon: mdiQrcode,
-    onAction: () => handleShowSharedLinkQrCode(sharedLink),
-  };
-
-  return { Edit, Delete, Copy, ViewQrCode };
-};
-
 export const asUrl = (sharedLink: SharedLinkResponseDto) => {
+  // FL-305: the server's address when it has one (an external domain is set)
+  if (sharedLink.url) {
+    return sharedLink.url;
+  }
   const path = Route.viewSharedLink(sharedLink);
   return new URL(path, serverConfigManager.value.externalDomain || location.origin).href;
 };
 
-export const handleCreateSharedLink = async (dto: SharedLinkCreateDto) => {
+/** The server's refusal when a custom address (slug) is held by another link (FL-83 AL-26). */
+export const SHARED_LINK_SLUG_TAKEN = 'Shared link slug is already in use';
+
+export const isSlugTakenError = (error: unknown) =>
+  isHttpError(error) && error.status === 400 && getServerErrorMessage(error) === SHARED_LINK_SLUG_TAKEN;
+
+type SaveOptions = {
+  /** Called instead of the generic failure toast when the custom address is already used. */
+  onSlugTaken?: () => void;
+};
+
+export const handleCreateSharedLink = async (dto: SharedLinkCreateDto, options?: SaveOptions) => {
   const $t = await getFormatter();
 
   try {
@@ -76,17 +47,22 @@ export const handleCreateSharedLink = async (dto: SharedLinkCreateDto) => {
 
     eventManager.emit('SharedLinkCreate', sharedLink);
 
-    // prevent nested modal
-    void handleShowSharedLinkQrCode(sharedLink);
-
-    return true;
+    // The caller shows the design's "Link ready" step (SharedLinkForm.jsx:237-303) with this link.
+    return sharedLink;
   } catch (error) {
+    if (options?.onSlugTaken && isSlugTakenError(error)) {
+      options.onSlugTaken();
+      return;
+    }
     handleError(error, $t('errors.failed_to_create_shared_link'));
-    return false;
   }
 };
 
-export const handleUpdateSharedLink = async (sharedLink: SharedLinkResponseDto, dto: SharedLinkEditDto) => {
+export const handleUpdateSharedLink = async (
+  sharedLink: SharedLinkResponseDto,
+  dto: SharedLinkEditDto,
+  options?: SaveOptions,
+) => {
   const $t = await getFormatter();
 
   try {
@@ -97,28 +73,12 @@ export const handleUpdateSharedLink = async (sharedLink: SharedLinkResponseDto, 
 
     return true;
   } catch (error) {
+    if (options?.onSlugTaken && isSlugTakenError(error)) {
+      options.onSlugTaken();
+      return false;
+    }
     handleError(error, $t('errors.failed_to_edit_shared_link'));
     return false;
-  }
-};
-
-const handleDeleteSharedLink = async (sharedLink: SharedLinkResponseDto) => {
-  const $t = await getFormatter();
-  const success = await modalManager.showDialog({
-    title: $t('delete_shared_link'),
-    prompt: $t('confirm_delete_shared_link'),
-    confirmText: $t('delete'),
-  });
-  if (!success) {
-    return;
-  }
-
-  try {
-    await removeSharedLink({ id: sharedLink.id });
-    eventManager.emit('SharedLinkDelete', sharedLink);
-    toastManager.primary($t('deleted_shared_link'));
-  } catch (error) {
-    handleError(error, $t('errors.unable_to_delete_shared_link'));
   }
 };
 
@@ -154,9 +114,4 @@ export const handleRemoveSharedLinkAssets = async (sharedLink: SharedLinkRespons
     handleError(error, $t('errors.unable_to_remove_assets_from_shared_link'));
     return false;
   }
-};
-
-const handleShowSharedLinkQrCode = async (sharedLink: SharedLinkResponseDto) => {
-  const $t = await getFormatter();
-  await modalManager.show(QrCodeModal, { title: $t('view_link'), value: asUrl(sharedLink) });
 };

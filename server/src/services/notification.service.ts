@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
+import type { AdminNotice, ArgOf } from 'src/repositories/event.repository.js';
+import type { EmailImageAttachment, IEmailJob, JobOf, UserMetadataItem } from 'src/types.js';
+import { JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { MapAlbumDto } from 'src/dtos/album.dto.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -15,6 +16,7 @@ import {
   mapNotification,
 } from 'src/dtos/notification.dto.js';
 import {
+  AlbumKind,
   AssetFileType,
   JobName,
   JobStatus,
@@ -27,7 +29,13 @@ import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { getExternalDomain, isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { isNsfwHidingEnabled } from 'src/utils/misc.js';
+import {
+  type NotificationText,
+  type SystemNotificationTemplate,
+  notificationLocaleOf,
+  renderSystemNotification,
+} from 'src/utils/notification-locale.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -86,17 +94,23 @@ export class NotificationService extends BaseService {
       return;
     }
 
-    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, JSON.stringify(job.data));
+    // FL-71: the signup notice and its mail carry a password, which never goes to the log
+    const data = JOBS_WITH_SENSITIVE_DATA.has(job.name) ? '[redacted]' : JSON.stringify(job.data);
+    this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, data);
 
     switch (job.name) {
       case JobName.DatabaseBackup: {
         const errorMessage = error instanceof Error ? error.message : error;
+        const text = await this.localText(
+          admin.id,
+          { version: 1, key: 'job-failed', args: { jobName: job.name, error: String(errorMessage) } },
+          { title: 'Job Failed', body: `Job ${[job.name]} failed with error: ${errorMessage}` },
+        );
         const item = await this.notificationRepository.create({
           userId: admin.id,
           type: NotificationType.JobFailed,
           level: NotificationLevel.Error,
-          title: 'Job Failed',
-          description: `Job ${[job.name]} failed with error: ${errorMessage}`,
+          ...text,
         });
 
         this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
@@ -110,18 +124,18 @@ export class NotificationService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigUpdate' })
-  onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
+  async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     this.websocketRepository.clientBroadcast('on_config_update');
-    this.websocketRepository.serverSend('ConfigUpdate', { oldConfig, newConfig });
+    await this.websocketRepository.awaitConfigUpdate({ oldConfig, newConfig });
   }
 
   @OnEvent({ name: 'AppRestart' })
-  onAppRestart(state: ArgOf<'AppRestart'>) {
-    this.websocketRepository.clientBroadcast('AppRestartV1', {
+  async onAppRestart(state: ArgOf<'AppRestart'>) {
+    await this.websocketRepository.clientBroadcastAndFlush('AppRestartV1', {
       isMaintenanceMode: state.isMaintenanceMode,
     });
 
-    this.websocketRepository.serverSend('AppRestart', state);
+    await this.websocketRepository.serverSendAndFlush('AppRestart', state);
   }
 
   @OnEvent({ name: 'ConfigValidate', priority: -100 })
@@ -147,6 +161,33 @@ export class NotificationService extends BaseService {
   @OnEvent({ name: 'AssetShow' })
   async onAssetShow({ assetId }: ArgOf<'AssetShow'>) {
     await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id: assetId, notify: true } });
+  }
+
+  @OnEvent({ name: 'AssetLocalEffects' })
+  async onAssetLocalEffects(bundle: ArgOf<'AssetLocalEffects'>) {
+    const removed = await this.mediaOperationRepository.listRevokedSourceAdmissions(bundle.revocations);
+    const admissions = new Map(
+      [...removed, ...(bundle.lockedCascade?.interactiveAdmissions ?? [])].map((row) => [row.id, row]),
+    )
+      .values()
+      .toArray();
+    const audiences = new Set([bundle.ownerId, ...admissions.map((row) => row.ownerId)]);
+    for (const ownerId of audiences)
+      this.websocketRepository.clientSend('AssetLocalEffectsV1', ownerId, {
+        streamEpoch: bundle.streamEpoch,
+        sequence: bundle.sequence,
+        effectId: bundle.effectId,
+        assetIds:
+          ownerId === bundle.ownerId
+            ? [
+                ...new Set([
+                  ...bundle.assets.map((row) => row.assetId),
+                  ...bundle.stacks.flatMap((row) => row.memberAssetIds),
+                ]),
+              ]
+            : [],
+        revokedOperationIds: admissions.filter((row) => row.ownerId === ownerId).map((row) => row.id),
+      });
   }
 
   @OnEvent({ name: 'AssetTrash' })
@@ -237,18 +278,189 @@ export class NotificationService extends BaseService {
     await this.jobRepository.queue({ name: JobName.NotifyAlbumInvite, data: { id, recipientId: userId, senderName } });
   }
 
+  /**
+   * FL-83 (AL-30b): items were shared with a person. The notification album invitations use: one
+   * in-app notification, and an email when the recipient allows album invitation emails. Both carry
+   * the share link (`resolveShareBaseUrl`); neither names or shows an item, so nothing about the
+   * items reaches the recipient outside the access checks.
+   */
+  @OnEvent({ name: 'ItemShare' })
+  async onItemShare({ ownerId, userId, senderName, count, link }: ArgOf<'ItemShare'>) {
+    const recipient = await this.userRepository.get(userId, { withDeleted: false });
+    if (!recipient) {
+      return;
+    }
+
+    const item = await this.notificationRepository.create({
+      userId,
+      type: NotificationType.ItemShare,
+      level: NotificationLevel.Success,
+      ...(await this.localText(
+        userId,
+        count === 1
+          ? { version: 1, key: 'item-share-one', args: { senderName } }
+          : { version: 1, key: 'item-share-many', args: { senderName, count } },
+        {
+          title: 'Shared with you',
+          body: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+        },
+      )),
+      data: JSON.stringify({ ownerId, count, link }),
+    });
+    this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+
+    const { emailNotifications } = getPreferences(recipient.metadata);
+    if (!emailNotifications.enabled || !emailNotifications.albumInvite) {
+      return;
+    }
+
+    const { server } = await this.getConfig({ withCache: false });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.ITEM_SHARE,
+      data: {
+        baseUrl: await this.getPublicUrl(server),
+        senderName,
+        recipientName: recipient.name,
+        count,
+        link: link ?? undefined,
+      },
+      customTemplate: '',
+    });
+
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: {
+        to: recipient.email,
+        subject: count === 1 ? `${senderName} shared an item with you` : `${senderName} shared ${count} items with you`,
+        html,
+        text,
+      },
+    });
+  }
+
   @OnEvent({ name: 'ClusterGroupRequest' })
   async onClusterGroupRequest({ clusterGroupId, userId, senderName }: ArgOf<'ClusterGroupRequest'>) {
     const item = await this.notificationRepository.create({
       userId,
       type: NotificationType.ClusterGroupRequest,
       level: NotificationLevel.Info,
-      title: 'Cluster Group Request',
-      description: `${senderName} asked you to join their cluster group`,
+      ...(await this.localText(
+        userId,
+        { version: 1, key: 'cluster-request', args: { senderName } },
+        { title: 'Cluster Group Request', body: `${senderName} asked you to join their cluster group` },
+      )),
       data: JSON.stringify({ clusterGroupId }),
     });
 
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  /**
+   * Somebody was named in a shared space comment (FL-55). One in-app
+   * notification per mentioned member, through the same repository and socket
+   * as every other notification. This reads only the space's name — never an
+   * asset — so it runs for every comment whatever the item's visibility, and
+   * needs no elevated session; the client decides what to show when the
+   * notification is opened.
+   */
+  @OnEvent({ name: 'SharedSpaceMention' })
+  async onSharedSpaceMention({ id, assetId, activityId, userIds, senderName }: ArgOf<'SharedSpaceMention'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    for (const userId of userIds) {
+      const item = await this.notificationRepository.create({
+        userId,
+        type: NotificationType.SharedSpaceMention,
+        level: NotificationLevel.Info,
+        ...(await this.localText(
+          userId,
+          { version: 1, key: 'space-mention', args: { senderName, albumName: album.albumName } },
+          { title: 'Mentioned in a shared space', body: `${senderName} mentioned you in ${album.albumName}` },
+        )),
+        data: JSON.stringify({ albumId: id, assetId, activityId }),
+      });
+
+      this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+    }
+  }
+
+  /**
+   * Somebody answered a member's comment in a shared space (FL-55, threaded
+   * replies). One in-app notification to the author of the comment that was
+   * answered, and no email, as for mentions. Like the mention handler this
+   * reads only the space's name, never an asset, so it needs no elevated
+   * session; the service has already checked the recipient is still a member.
+   */
+  @OnEvent({ name: 'SharedSpaceReply' })
+  async onSharedSpaceReply({
+    id,
+    assetId,
+    activityId,
+    parentActivityId,
+    userId,
+    senderName,
+  }: ArgOf<'SharedSpaceReply'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    const item = await this.notificationRepository.create({
+      userId,
+      type: NotificationType.SharedSpaceReply,
+      level: NotificationLevel.Info,
+      ...(await this.localText(
+        userId,
+        { version: 1, key: 'space-reply', args: { senderName, albumName: album.albumName } },
+        { title: 'Reply in a shared space', body: `${senderName} replied to your comment in ${album.albumName}` },
+      )),
+      data: JSON.stringify({ albumId: id, assetId, activityId, parentActivityId }),
+    });
+
+    this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  /**
+   * FL-155: one notice to every administrator. With a `dedupeKey`, an administrator who already got
+   * a notice with that key in the last `dedupeDays` (1 to 30, default 7) is skipped, so a repeating
+   * condition (a failing check-in, a clone warning) notifies once per window.
+   */
+  async notifyAdmins(notice: AdminNotice): Promise<number> {
+    const days = Math.min(30, Math.max(1, Math.floor(notice.dedupeDays ?? 7)));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let sent = 0;
+    for (const admin of await this.userRepository.getAdmins()) {
+      if (
+        notice.dedupeKey &&
+        (await this.notificationRepository.findRecentByDedupeKey(admin.id, notice.dedupeKey, since))
+      ) {
+        continue;
+      }
+      const item = await this.notificationRepository.create({
+        userId: admin.id,
+        type: notice.type,
+        level: notice.level,
+        ...(notice.systemTemplate
+          ? await this.localText(admin.id, notice.systemTemplate, { title: notice.title, body: notice.description })
+          : { title: notice.title, description: notice.description }),
+        data: notice.dedupeKey ? { dedupeKey: notice.dedupeKey } : null,
+      });
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
+      sent++;
+    }
+    return sent;
+  }
+
+  @OnEvent({ name: 'AdminNotify' })
+  async onAdminNotify(notice: ArgOf<'AdminNotify'>) {
+    try {
+      await this.notifyAdmins(notice);
+    } catch (error) {
+      this.logger.warn(`Unable to notify administrators (${notice.title}): ${error}`);
+    }
   }
 
   @OnEvent({ name: 'SessionDelete' })
@@ -273,14 +485,14 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
       },
       customTemplate: tempTemplate!,
     });
     const { messageId } = await this.emailRepository.sendEmail({
       to: user.email,
-      subject: 'Test email from Immich',
+      subject: 'Test email from Frameleaf',
       html,
       text,
       from: dto.from,
@@ -302,7 +514,7 @@ export class NotificationService extends BaseService {
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.WELCOME,
       data: {
-        baseUrl: getExternalDomain(server),
+        baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         username: user.email,
         password,
@@ -314,7 +526,7 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: 'Welcome to Immich',
+        subject: 'Welcome to Frameleaf',
         html,
         text,
       },
@@ -325,108 +537,144 @@ export class NotificationService extends BaseService {
 
   @OnJob({ name: JobName.NotifyAlbumInvite, queue: QueueName.Notification })
   async handleAlbumInvite({ id, recipientId, senderName }: JobOf<JobName.NotifyAlbumInvite>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
-    if (!album) {
+    const context = { albumId: id, recipientId, senderName, kind: 'invite' as const };
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
       return JobStatus.Skipped;
     }
-
-    const recipient = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!recipient) {
+    await this.sendAlbumLocalNotification(current.album, recipientId, NotificationType.AlbumInvite, senderName);
+    const mail = await this.prepareAlbumNotificationEmail(context);
+    if (!mail || !(await this.isAlbumEmailCurrent(mail))) {
       return JobStatus.Skipped;
     }
-
-    await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumInvite, senderName);
-
-    const { emailNotifications } = getPreferences(recipient.metadata);
-
-    if (!emailNotifications.enabled || !emailNotifications.albumInvite) {
-      return JobStatus.Skipped;
-    }
-
-    const attachment = await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient));
-
-    const { server, templates } = await this.getConfig({ withCache: false });
-    const { html, text } = await this.emailRepository.renderEmail({
-      template: EmailTemplate.ALBUM_INVITE,
-      data: {
-        baseUrl: getExternalDomain(server),
-        albumId: album.id,
-        albumName: album.albumName,
-        senderName,
-        recipientName: recipient.name,
-        cid: attachment ? attachment.cid : undefined,
-      },
-      customTemplate: templates.email.albumInviteTemplate,
-    });
-
-    await this.jobRepository.queue({
-      name: JobName.SendMail,
-      data: {
-        to: recipient.email,
-        subject: `You have been added to a shared album - ${album.albumName}`,
-        html,
-        text,
-        imageAttachments: attachment ? [attachment] : undefined,
-      },
-    });
-
+    await this.jobRepository.queue({ name: JobName.SendMail, data: mail });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.NotifyAlbumUpdate, queue: QueueName.Notification })
   async handleAlbumUpdate({ id, recipientId }: JobOf<JobName.NotifyAlbumUpdate>) {
-    const album = await this.albumRepository.getById(id, { withAssets: false });
-
-    if (!album) {
+    const context = { albumId: id, recipientId, kind: 'update' as const };
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
       return JobStatus.Skipped;
     }
-
-    const recipient = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!recipient) {
+    await this.sendAlbumLocalNotification(current.album, recipientId, NotificationType.AlbumUpdate);
+    const mail = await this.prepareAlbumNotificationEmail(context);
+    if (!mail || !(await this.isAlbumEmailCurrent(mail))) {
       return JobStatus.Skipped;
     }
-
-    await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumUpdate);
-
-    const attachment = await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient));
-
-    const { server, templates } = await this.getConfig({ withCache: false });
-
-    const user = await this.userRepository.get(recipientId, { withDeleted: false });
-    if (!user) {
-      return JobStatus.Skipped;
-    }
-
-    const { emailNotifications } = getPreferences(user.metadata);
-
-    if (!emailNotifications.enabled || !emailNotifications.albumUpdate) {
-      return JobStatus.Skipped;
-    }
-
-    const { html, text } = await this.emailRepository.renderEmail({
-      template: EmailTemplate.ALBUM_UPDATE,
-      data: {
-        baseUrl: getExternalDomain(server),
-        albumId: album.id,
-        albumName: album.albumName,
-        recipientName: user.name,
-        cid: attachment ? attachment.cid : undefined,
-      },
-      customTemplate: templates.email.albumUpdateTemplate,
-    });
-
-    await this.jobRepository.queue({
-      name: JobName.SendMail,
-      data: {
-        to: user.email,
-        subject: `New media has been added to an album - ${album.albumName}`,
-        html,
-        text,
-        imageAttachments: attachment ? [attachment] : undefined,
-      },
-    });
-
+    await this.jobRepository.queue({ name: JobName.SendMail, data: mail });
     return JobStatus.Success;
+  }
+
+  private async getCurrentAlbumNotification(context: NonNullable<IEmailJob['albumMailContext']>) {
+    const album = await this.albumRepository.getById(context.albumId, { withAssets: false });
+    if (!album) {
+      return;
+    }
+    const recipient = await this.userRepository.get(context.recipientId, { withDeleted: false });
+    if (!recipient) {
+      return;
+    }
+    const pendingInvite =
+      context.kind === 'invite' &&
+      album.kind === AlbumKind.Space &&
+      !!(await this.albumUserRepository.getInvite({ albumId: album.id, userId: recipient.id }));
+    if (pendingInvite) {
+      return { album, recipient, pendingInvite: true };
+    }
+    const allowed = await this.checkAccess({
+      auth: { user: recipient },
+      permission: Permission.AlbumRead,
+      ids: [album.id],
+    });
+    if (!allowed.has(album.id)) {
+      return;
+    }
+    return { album, recipient, pendingInvite: false };
+  }
+
+  private async prepareAlbumNotificationEmail(
+    context: NonNullable<IEmailJob['albumMailContext']>,
+  ): Promise<IEmailJob | undefined> {
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current) {
+      return;
+    }
+    const { album, recipient } = current;
+    const invite = context.kind === 'invite';
+    const { emailNotifications } = getPreferences(recipient.metadata);
+    if (!emailNotifications.enabled || !(invite ? emailNotifications.albumInvite : emailNotifications.albumUpdate)) {
+      return;
+    }
+    const attachment = current.pendingInvite
+      ? undefined
+      : await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient), recipient);
+    const { server, templates } = await this.getConfig({ withCache: false });
+    const data = {
+      baseUrl: await this.getPublicUrl(server),
+      albumId: album.id,
+      albumName: album.albumName,
+      recipientName: recipient.name,
+      senderName: context.senderName ?? '',
+      cid: attachment?.cid,
+    };
+    const { html, text } = await this.emailRepository.renderEmail(
+      invite
+        ? { template: EmailTemplate.ALBUM_INVITE, data, customTemplate: templates.email.albumInviteTemplate }
+        : { template: EmailTemplate.ALBUM_UPDATE, data, customTemplate: templates.email.albumUpdateTemplate },
+    );
+    return {
+      albumMailContext: context,
+      to: recipient.email,
+      subject: invite
+        ? `You have been added to a shared album - ${album.albumName}`
+        : `New media has been added to an album - ${album.albumName}`,
+      html,
+      text,
+      imageAttachments: attachment ? [attachment] : undefined,
+    };
+  }
+
+  private async isAlbumEmailCurrent(mail: IEmailJob) {
+    const context = mail.albumMailContext;
+    if (!context) {
+      return false;
+    }
+    const current = await this.getCurrentAlbumNotification(context);
+    if (!current || mail.to !== current.recipient.email) {
+      return false;
+    }
+    const { emailNotifications } = getPreferences(current.recipient.metadata);
+    if (
+      !emailNotifications.enabled ||
+      !(context.kind === 'invite' ? emailNotifications.albumInvite : emailNotifications.albumUpdate)
+    ) {
+      return false;
+    }
+    const attachment = current.pendingInvite
+      ? undefined
+      : await this.getAlbumThumbnailAttachment(
+          current.album,
+          await this.getEmailHiddenContentFilter(current.recipient),
+          current.recipient,
+        );
+    if (!isEqualObject(mail.imageAttachments ?? [], attachment ? [attachment] : [])) {
+      return false;
+    }
+    // Recheck the invitation or membership after the attachment/configuration reads.
+    if (!(await this.getCurrentAlbumNotification(context))) {
+      return false;
+    }
+    if (attachment && current.album.albumThumbnailAssetId) {
+      const visible = await this.checkAccess({
+        auth: { user: current.recipient },
+        permission: Permission.AssetView,
+        ids: [current.album.albumThumbnailAssetId],
+      });
+      return visible.has(current.album.albumThumbnailAssetId);
+    }
+    return true;
   }
 
   @OnJob({ name: JobName.SendMail, queue: QueueName.Notification })
@@ -436,7 +684,22 @@ export class NotificationService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { to, subject, html, text: plain } = data;
+    // Only known legacy album payloads are identifiable without the new durable binding. Unknown
+    // custom legacy mail remains the existing generic path; this does not certify its provenance.
+    if (
+      !data.albumMailContext &&
+      (data.subject.startsWith('You have been added to a shared album - ') ||
+        data.subject.startsWith('New media has been added to an album - ') ||
+        data.imageAttachments?.some(({ cid }) => cid === 'album-thumbnail'))
+    ) {
+      return JobStatus.Skipped;
+    }
+    const mail = data.albumMailContext ? await this.prepareAlbumNotificationEmail(data.albumMailContext) : data;
+    if (!mail || (mail.albumMailContext && !(await this.isAlbumEmailCurrent(mail)))) {
+      return JobStatus.Skipped;
+    }
+    // Current authority was checked immediately before transport; no transaction spans SMTP I/O.
+    const { to, subject, html, text: plain } = mail;
     const response = await this.emailRepository.sendEmail({
       to,
       subject,
@@ -445,7 +708,7 @@ export class NotificationService extends BaseService {
       from: notifications.smtp.from,
       replyTo: notifications.smtp.replyTo || notifications.smtp.from,
       smtp: notifications.smtp.transport,
-      imageAttachments: data.imageAttachments,
+      imageAttachments: mail.imageAttachments,
     });
 
     this.logger.log(`Sent mail with id: ${response.messageId} status: ${response.response}`);
@@ -458,6 +721,7 @@ export class NotificationService extends BaseService {
       albumThumbnailAssetId: string | null;
     },
     hiddenContent: HiddenContentFilter,
+    recipient: AuthDto['user'],
   ): Promise<EmailImageAttachment | undefined> {
     if (!album.albumThumbnailAssetId) {
       return;
@@ -470,6 +734,16 @@ export class NotificationService extends BaseService {
       return;
     }
 
+    // Background delivery never inherits a recipient's PIN elevation. Existing access predicates
+    // exclude actual Locked media while preserving owner rule-only explicit album shares.
+    const allowed = await this.checkAccess({
+      auth: { user: recipient },
+      permission: Permission.AssetView,
+      ids: [album.albumThumbnailAssetId],
+    });
+    if (!allowed.has(album.albumThumbnailAssetId)) {
+      return;
+    }
     const albumThumbnailFiles = await this.assetJobRepository.getAlbumThumbnailFiles(
       album.albumThumbnailAssetId,
       AssetFileType.Thumbnail,
@@ -498,6 +772,7 @@ export class NotificationService extends BaseService {
       includeNsfw: isNsfwHidingEnabled(machineLearning),
       tagIds: suppression.tagIds,
       personIds: suppression.personIds,
+      petIds: suppression.petIds,
       scope: suppression.scope,
     };
   }
@@ -513,13 +788,31 @@ export class NotificationService extends BaseService {
       userId,
       type,
       level: isInvite ? NotificationLevel.Success : NotificationLevel.Info,
-      title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
-      description: isInvite
-        ? `${senderName} shared an album (${album.albumName}) with you`
-        : `New media has been added to the album (${album.albumName})`,
+      ...(await this.localText(
+        userId,
+        isInvite
+          ? senderName === undefined
+            ? { version: 1, key: 'album-invite-anonymous', args: { albumName: album.albumName } }
+            : { version: 1, key: 'album-invite', args: { senderName, albumName: album.albumName } }
+          : { version: 1, key: 'album-update', args: { albumName: album.albumName } },
+        {
+          title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
+          body: isInvite
+            ? senderName === undefined
+              ? `An album (${album.albumName}) was shared with you`
+              : `${senderName} shared an album (${album.albumName}) with you`
+            : `New media has been added to the album (${album.albumName})`,
+        },
+      )),
       data: JSON.stringify({ albumId: album.id }),
     });
 
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  private async localText(userId: string, template: SystemNotificationTemplate, fallback: NotificationText) {
+    const preferences = getPreferences((await this.userRepository.getMetadata(userId).catch(() => [])) ?? []);
+    const { title, body } = renderSystemNotification(template, notificationLocaleOf(preferences), fallback);
+    return { title, description: body };
   }
 }

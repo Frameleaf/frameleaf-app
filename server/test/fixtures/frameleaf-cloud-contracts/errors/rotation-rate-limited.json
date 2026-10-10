@@ -1,0 +1,6 @@
+{
+  "code": "rate-limited",
+  "message": "A server can rotate its key 3 times an hour. Try again later.",
+  "retryable": true,
+  "requestId": "req_01J8ZK3M4N5P6Q7W"
+}

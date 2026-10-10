@@ -1,0 +1,53 @@
+{
+  "name": "darktable",
+  "repository": "darktable-org/darktable",
+  "version": "5.6.1",
+  "revision": "03179f8e080aa9cedebfe14b098b7ba88940a292",
+  "inputs": [
+    {
+      "name": "darktable",
+      "repository": "darktable-org/darktable",
+      "revision": "03179f8e080aa9cedebfe14b098b7ba88940a292",
+      "sha256": "135386b79b6923766f17fd5094d2d1d4b6243b759840b74542f24242875ce3ae",
+      "path": ".",
+      "url": "https://codeload.github.com/darktable-org/darktable/tar.gz/03179f8e080aa9cedebfe14b098b7ba88940a292"
+    },
+    {
+      "name": "rawspeed",
+      "repository": "darktable-org/rawspeed",
+      "revision": "7cf3dc3b9d9c82b414198b1f57460478be6c6c9d",
+      "sha256": "15b531f069f87e682d5c4e670115b371c85d9a1924b1a3682eacab2a9f398cd6",
+      "path": "src/external/rawspeed",
+      "url": "https://codeload.github.com/darktable-org/rawspeed/tar.gz/7cf3dc3b9d9c82b414198b1f57460478be6c6c9d"
+    },
+    {
+      "name": "whereami",
+      "repository": "gpakosz/whereami",
+      "revision": "e07bc35ecd92ee4c3ac71cf0fb6b01132bfa50de",
+      "sha256": "57fa59e0c8ddb80849c8ee7e35b446f8449cdcd9186a9c716e4c1b64e9cc4480",
+      "path": "src/external/whereami",
+      "url": "https://codeload.github.com/gpakosz/whereami/tar.gz/e07bc35ecd92ee4c3ac71cf0fb6b01132bfa50de"
+    },
+    {
+      "name": "opencl",
+      "repository": "KhronosGroup/OpenCL-Headers",
+      "revision": "8a97ebc88daa3495d6f57ec10bb515224400186f",
+      "sha256": "211b3897f91136a9d4ceeb7b892cae88388408ff6c4d06428e9d3f0face2ee53",
+      "path": "src/external/OpenCL",
+      "url": "https://codeload.github.com/KhronosGroup/OpenCL-Headers/tar.gz/8a97ebc88daa3495d6f57ec10bb515224400186f"
+    },
+    {
+      "name": "lensfun",
+      "repository": "lensfun/lensfun",
+      "revision": "101c745e847a5de4a1e569a94368ce2027198598",
+      "sha256": "a11cbe6aeec657839540448b253217c25d20b7a45b6aebfef406f7239933c7a6",
+      "path": "lensfun",
+      "url": "https://codeload.github.com/lensfun/lensfun/tar.gz/101c745e847a5de4a1e569a94368ce2027198598"
+    }
+  ],
+  "patches": {
+    "patch-darktable-lens.py": "28e4276ea97761df6af62be12dd0acc27fee0072ff5f2da1ba5a4c6e7e648d08",
+    "patch-darktable-mask-geometry.py": "a8ce7f506b1478ec6ff096adf7242f725889ca7582ea610125d019d1f8ff0b44"
+  },
+  "lensfunVersion": "0.3.4"
+}

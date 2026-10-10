@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
+import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   AudioStreamInfo,
   DecodeToBufferOptions,
   GenerateThumbnailOptions,
   ImageDimensions,
-  JobItem,
   JobOf,
   TranscodeCommand,
   VideoFormat,
+  VideoInfo,
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types.js';
@@ -19,12 +23,19 @@ import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/st
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigFFmpegDto, SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetEditAction, AssetEditActionItem, CropParameters } from 'src/dtos/editing.dto.js';
+import {
+  AssetEditAction,
+  AssetEditActionItem,
+  CropParameters,
+  TextOverlayPosition,
+  VideoAdjustModel,
+} from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetType,
   AssetVisibility,
   AudioCodec,
+  ChecksumAlgorithm,
   Colorspace,
   ImageFormat,
   ImmichWorker,
@@ -40,22 +51,85 @@ import {
   VideoCodec,
   VideoContainer,
 } from 'src/enum.js';
+import {
+  afterJobCommit,
+  attemptOutputPath,
+  deferJobAdoption,
+  jobSignal,
+  publishJobDiagnostic,
+  publishJobResult,
+  queueExecution,
+} from 'src/queue/context.js';
+import { SharpOperationError } from 'src/queue/sharp-pool.js';
+import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { straightenScale } from 'src/utils/develop-recipe.js';
+import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
+import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
+import {
+  type DecodeQualification,
+  DecodeSupport,
+  assertDecodeQualified,
+  qualifySourceDecode,
+  selectDecodeAcceleration,
+} from 'src/utils/media-decode.js';
+import {
+  EncoderPixelFormatPlan,
+  applyFloatEncodePixelFormat,
+  requiresFloatIntermediate,
+  selectEncoderPixelFormat,
+} from 'src/utils/media-encode.js';
 import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
+import {
+  EditedMasterColorDecision,
+  EditedMasterColorPolicy,
+  MediaPolicyError,
+  MediaPolicyViolation,
+  applyEditedMasterAudioPolicy,
+  applyEditedMasterPixelFormatPolicy,
+  assertOriginalPreserved,
+  assertRenderSourceIsOriginal,
+  buildEditedMasterLineage,
+  getEditedMasterColorArgs,
+  getEditedMasterColorRange,
+  getEditedMasterFfmpegConfig,
+  getEditedMasterLineagePath,
+  getEditedMasterTimingArgs,
+  qualifyMetadataOnlyRotation,
+  qualifyStreamCopyTrim,
+  resolveEditedMasterColorPolicy,
+  serializeEditedMasterLineage,
+  validateAudioMaster,
+  validateFullClipMasterTiming,
+  validateVideoMaster,
+} from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
+import { videoDevelopFilters } from 'src/utils/video-develop.js';
+
+/**
+ * Decimal places in a generated ffmpeg filter argument. Four has always been this service's
+ * precision; FL-93 names it so the rational path and the remaining float path round the same way.
+ */
+const FILTER_DECIMAL_PLACES = 4;
 
 interface UpsertFileOptions {
   assetId: string;
   type: AssetFileType;
   path: string;
   physicalFileId?: string | null;
+  renditionIdentity?: string | null;
   isEdited: boolean;
   isProgressive: boolean;
   isTransparent: boolean;
@@ -135,42 +209,34 @@ export class MediaService extends BaseService {
     const config = await this.getConfig({ withCache: true });
 
     const isFullsizeEnabled = config.image.fullsize.enabled;
-    for await (const assets of batched(
-      this.assetJobRepository.streamForThumbnailJob({ force, fullsizeEnabled: isFullsizeEnabled }),
-    )) {
-      const jobs: JobItem[] = [];
-      for (const asset of assets) {
-        if (force || !asset.isEdited) {
-          jobs.push({ name: JobName.AssetGenerateThumbnails, data: { id: asset.id } });
-        }
+    const selected = this.assetJobRepository.selectionForThumbnailJob({
+      force,
+      fullsizeEnabled: isFullsizeEnabled,
+      ...(process.env.FRAMELEAF_HDR_IMAGES === 'experimental' && { hdrBackfill: true }),
+    });
+    await this.jobRepository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      force ? selected : selected.where('asset.isEdited', '=', false),
+    );
+    await this.jobRepository.queueSelection(
+      JobName.AssetEditThumbnailGeneration,
+      selected.where('asset.isEdited', '=', true),
+    );
 
-        if (asset.isEdited) {
-          jobs.push({ name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } });
-        }
-      }
+    await this.jobRepository.queueSelection(
+      JobName.PersonGenerateThumbnail,
+      this.personRepository.selectionForThumbnails(!!force),
+    );
+    await this.jobRepository.collectFollowups(() =>
+      this.jobRepository.queue({ name: JobName.ProfileImageRepair, data: {} }),
+    );
 
-      await this.jobRepository.queueAll(jobs);
-    }
+    return JobStatus.Success;
+  }
 
-    for await (const people of batched(this.personRepository.getAll(force ? undefined : { thumbnailPath: '' }))) {
-      const jobs: JobItem[] = [];
-      for (const person of people) {
-        const { ownerId, personGroupId } = person;
-        if (!person.faceAssetId) {
-          const face = await this.personRepository.getRandomFace(personGroupId);
-          if (!face) {
-            continue;
-          }
-
-          await this.personRepository.update({ ownerId, personGroupId, faceAssetId: face.id });
-        }
-
-        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
-      }
-
-      await this.jobRepository.queueAll(jobs);
-    }
-
+  @OnJob({ name: JobName.ProfileImageRepair, queue: QueueName.ThumbnailGeneration })
+  async handleProfileImageRepair(): Promise<JobStatus> {
+    await this.replaceLockedProfileImages();
     return JobStatus.Success;
   }
 
@@ -200,6 +266,30 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  /** The generated file types this asset shares with a different primary asset (or one awaiting handover). */
+  private async getSharedGeneratedFileTypes(asset: { id: string; files: AssetFile[] }): Promise<Set<AssetFileType>> {
+    const shared = new Set<AssetFileType>();
+    for (const file of asset.files ?? []) {
+      if (file.isEdited) {
+        continue;
+      }
+      if (!file.physicalFileId) {
+        // no physical file yet (pre-upgrade, or a partner copy of such an asset that shares its path):
+        // the file belongs to the oldest asset naming the path, never to a later copy
+        const primaryAssetId = await this.physicalFileRepository.getGeneratedPathPrimaryAssetId(file.path);
+        if (primaryAssetId && primaryAssetId !== asset.id) {
+          shared.add(file.type);
+        }
+        continue;
+      }
+      const physicalFile = await this.physicalFileRepository.getPhysicalFile(file.physicalFileId);
+      if (physicalFile && physicalFile.canonicalAssetId !== asset.id) {
+        shared.add(file.type);
+      }
+    }
+    return shared;
+  }
+
   @OnJob({ name: JobName.AssetFileMigration, queue: QueueName.Migration })
   async handleAssetMigration({ id }: JobOf<JobName.AssetFileMigration>): Promise<JobStatus> {
     const { image } = await this.getConfig({ withCache: true });
@@ -208,16 +298,48 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    await this.storageCore.moveAssetImage(asset, AssetFileType.FullSize, image.fullsize.format);
-    await this.storageCore.moveAssetImage(asset, AssetFileType.Preview, image.preview.format);
-    await this.storageCore.moveAssetImage(asset, AssetFileType.Thumbnail, image.thumbnail.format);
-    await this.storageCore.moveAssetVideo(asset);
+    // universal storage: a generated file shared with other assets lives where its primary asset put
+    // it; only the primary moves it, so another owner's job never pulls it into their own folder
+    const shared = await this.getSharedGeneratedFileTypes(asset);
+    for (const [type, format] of [
+      [AssetFileType.FullSize, image.fullsize.format],
+      [AssetFileType.Preview, image.preview.format],
+      [AssetFileType.HdrPreview, ImageFormat.Jpeg],
+      [AssetFileType.HdrFullSize, ImageFormat.Jpeg],
+      [AssetFileType.Thumbnail, image.thumbnail.format],
+    ] as const) {
+      if (!shared.has(type)) {
+        await this.storageCore.moveAssetImage(asset, type, format);
+      }
+    }
+    if (!shared.has(AssetFileType.EncodedVideo)) {
+      await this.storageCore.moveAssetVideo(asset);
+    }
 
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.AssetEditThumbnailGeneration, queue: QueueName.Editor })
-  async handleAssetEditThumbnailGeneration({ id }: JobOf<JobName.AssetEditThumbnailGeneration>): Promise<JobStatus> {
+  async handleAssetEditThumbnailGeneration({
+    id,
+    operationId,
+  }: JobOf<JobName.AssetEditThumbnailGeneration>): Promise<JobStatus> {
+    // FL-43: a saved edit's render runs under its Activity job, when it was queued with one.
+    return this.editOperations.execute(operationId, (run) => this.renderEditThumbnails(id, run));
+  }
+
+  private editTracker?: EditOperationTracker;
+
+  private get editOperations() {
+    return (this.editTracker ??= new EditOperationTracker(
+      this.mediaOperationRepository,
+      this.jobRepository,
+      this.logger,
+    ));
+  }
+
+  private async renderEditThumbnails(id: string, run?: EditOperationRun): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -226,7 +348,11 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const generated = await this.generateEditedThumbnails(asset, config);
+    const generated = await this.generateEditedThumbnails(asset, config, run);
+    // FL-43: the asset's files change only under the job's claim; a stale or cancelled run stops here.
+    if (run && !(await run.validate())) {
+      return JobStatus.Skipped;
+    }
     await this.syncFiles(
       asset.files.filter((file) => file.isEdited),
       generated?.files ?? [],
@@ -234,23 +360,20 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      const extractedImage = await this.extractOriginalImage(asset, config.image);
-      const { info, data, colorspace } = extractedImage;
-
-      thumbhash = await this.mediaRepository.generateThumbhash(data, {
-        colorspace,
-        processInvalidImages: false,
-        raw: info,
-        edits: [],
-      });
+      thumbhash = (await this.extractOriginalImage(asset, config.image)).thumbhash;
     }
 
-    if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
+    if (
+      (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) &&
+      !deferJobAdoption(async (tx) => {
+        await sql`update asset set thumbhash = ${thumbhash} where id = ${asset.id}::uuid`.execute(tx);
+      })
+    ) {
       await this.assetRepository.update({ id: asset.id, thumbhash });
     }
 
     const fullsizeDimensions = generated?.fullsizeDimensions ?? getDimensions(asset.exifInfo!);
-    await this.assetRepository.update({ id: asset.id, ...fullsizeDimensions });
+    await publishJobResult(() => this.assetRepository.update({ id: asset.id, ...fullsizeDimensions }).then(() => {}));
 
     return JobStatus.Success;
   }
@@ -269,6 +392,19 @@ export class MediaService extends BaseService {
       this.logger.verbose(`Thumbnail generation skipped for asset ${id}: not visible`);
       return JobStatus.Skipped;
     }
+
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetJobRepository.getForGenerateThumbnailJob(asset.id);
+      if (
+        !current ||
+        current.originalPath !== asset.originalPath ||
+        current.coverTimestampMs !== asset.coverTimestampMs ||
+        JSON.stringify(current.edits) !== JSON.stringify(asset.edits)
+      ) {
+        throw new Error('Thumbnail source changed before publication');
+      }
+    });
 
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {
@@ -307,12 +443,15 @@ export class MediaService extends BaseService {
           format,
         },
         config,
+        // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
+        { coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined },
       );
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
       try {
         generated = await this.generateImageThumbnails(asset, config);
       } catch (error) {
+        executionSignal()?.throwIfAborted();
         if (this.shouldSkipThumbnailDecodeError(error, asset.originalFileName)) {
           this.logger.warn(`Skipping thumbnail generation for asset ${id}: ${error}`);
           return JobStatus.Skipped;
@@ -334,7 +473,9 @@ export class MediaService extends BaseService {
     const thumbhash = editedGenerated?.thumbhash || generated.thumbhash;
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
-      await this.assetRepository.update({ id: asset.id, thumbhash });
+      await publishJobResult(async () => {
+        await this.assetRepository.update({ id: asset.id, thumbhash });
+      });
     }
 
     return JobStatus.Success;
@@ -349,31 +490,20 @@ export class MediaService extends BaseService {
     return extracted;
   }
 
-  private async renderRawImage(originalPath: string, minSize: number) {
-    const buffer = await renderRawWithLibRaw(originalPath);
-    if (!(await this.shouldUseExtractedImage(buffer, minSize))) {
-      return null;
-    }
-
-    return { buffer, format: RawExtractedFormat.Tiff };
-  }
-
-  private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
-    const { image } = await this.getConfig({ withCache: true });
-    const colorspace = this.isSRGB(exifInfo) ? Colorspace.Srgb : image.colorspace;
-    const decodeOptions: DecodeToBufferOptions = {
-      colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
-      size: targetSize,
-      orientation: exifInfo.orientation ? Number(exifInfo.orientation) : undefined,
-    };
-
-    const { info, data } = await this.mediaRepository.decodeImage(thumbSource, decodeOptions);
-    return { info, data, colorspace };
+  private async renderRawImage(originalPath: string) {
+    const signal = executionSignal();
+    signal?.throwIfAborted();
+    return { buffer: await renderRawWithLibRaw(originalPath, signal), format: RawExtractedFormat.Tiff };
   }
 
   private shouldSkipThumbnailDecodeError(error: unknown, fileName: string) {
-    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof RawRenderError) {
+      return error.reason === 'unsupported';
+    }
+    if (!(error instanceof SharpOperationError)) {
+      return false;
+    }
+    const message = error.message;
     return (
       isUnsupportedRawDecodeError(error) ||
       (mimeTypes.isRaw(fileName) &&
@@ -384,164 +514,199 @@ export class MediaService extends BaseService {
     );
   }
 
-  private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
-    const isRaw = mimeTypes.isRaw(asset.originalFileName);
-    const extractEmbedded = image.extractEmbedded && isRaw;
-    const enhancedRawEnabled = image.enhancedRaw?.enabled;
-    let extracted = extractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
-    let renderedRaw = false;
-    let rawRenderError: unknown;
-
-    if (!extracted && extractEmbedded && enhancedRawEnabled) {
-      try {
-        extracted = await this.renderRawImage(asset.originalPath, image.preview.size);
-        renderedRaw = !!extracted;
-      } catch (error) {
-        rawRenderError = error;
-        this.logger.debug(`Could not render RAW image with LibRaw for ${asset.id}: ${error}`);
-      }
-    }
-
+  private async extractOriginalImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    useEdits = false,
+    outputs?: Record<'thumbnail' | 'preview' | 'fullsize', ThumbnailOutput>,
+    sdrBase?: string,
+  ) {
+    // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
+    const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
     const generateFullsize =
+      !!sdrBase ||
+      (mimeTypes.isWebSupportedImage(asset.originalPath) && asset.exifInfo.imageEncoding?.dynamicRange !== 'sdr') ||
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
       useEdits;
+    // Embedded camera images are fast previews only. Fullsize and edit input always comes from the sensor.
+    let extracted =
+      isRaw && image.extractEmbedded && !generateFullsize
+        ? await this.extractImage(asset.originalPath, image.preview.size).catch((error: unknown) => {
+            executionSignal()?.throwIfAborted();
+            if (!(error instanceof SharpOperationError)) {
+              throw error;
+            }
+            return null;
+          })
+        : null;
+    let sensorRendered = false;
+    if (isRaw && !extracted) {
+      extracted = await this.renderRawImage(asset.originalPath);
+      sensorRendered = true;
+    }
 
-    const decodeThumbSource = () => {
-      const convertFullsize =
-        generateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
-      const thumbSource = extracted ? extracted.buffer : asset.originalPath;
-      return this.decodeImage(
-        thumbSource,
-        // only specify orientation to extracted images which don't have EXIF orientation data
-        // or it can double rotate the image
-        extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
-        convertFullsize ? undefined : image.preview.size,
-      ).then((decoded) => ({ ...decoded, convertFullsize }));
+    const colorspace = this.isSRGB(asset.exifInfo) ? Colorspace.Srgb : image.colorspace;
+    const decodeSource = () => {
+      const convertFullsize = generateFullsize && (!extracted || sensorRendered);
+      const decodeOptions: DecodeToBufferOptions = {
+        colorspace,
+        processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
+        size: convertFullsize ? undefined : image.preview.size,
+        // Embedded previews take the asset's orientation. LibRaw and original-file decoders already apply it.
+        orientation:
+          extracted && !sensorRendered && asset.exifInfo.orientation ? Number(asset.exifInfo.orientation) : undefined,
+      };
+      return this.mediaRepository
+        .generateImageThumbnails(extracted ? extracted.buffer : (sdrBase ?? asset.originalPath), decodeOptions, {
+          outputs: outputs ? [outputs.thumbnail, outputs.preview, ...(convertFullsize ? [outputs.fullsize] : [])] : [],
+          edits: useEdits ? asset.edits : [],
+          checkTransparency: !extracted && mimeTypes.canBeTransparent(asset.originalPath),
+        })
+        .then((decoded) => ({ ...decoded, convertFullsize }));
     };
-
-    let decoded: Awaited<ReturnType<typeof decodeThumbSource>>;
+    let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
-      decoded = await decodeThumbSource();
+      decoded = await decodeSource();
     } catch (error) {
-      if (isRaw && enhancedRawEnabled && !renderedRaw) {
-        try {
-          extracted = await this.renderRawImage(asset.originalPath, image.preview.size);
-          renderedRaw = !!extracted;
-          if (extracted) {
-            decoded = await decodeThumbSource();
-          } else {
-            throw error;
-          }
-        } catch (fallbackError) {
-          throw rawRenderError ?? fallbackError;
-        }
-      } else {
-        throw rawRenderError ?? error;
+      executionSignal()?.throwIfAborted();
+      if (!(error instanceof SharpOperationError) || !error.decodeFailure || !isRaw || sensorRendered) {
+        throw error;
       }
+      // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
+      extracted = await this.renderRawImage(asset.originalPath);
+      sensorRendered = true;
+      decoded = await decodeSource();
     }
 
-    const { data, info, colorspace, convertFullsize } = decoded;
-
-    let isTransparent = false;
-    if (!extracted && mimeTypes.canBeTransparent(asset.originalPath)) {
-      ({ isTransparent } = await this.mediaRepository.getImageMetadata(asset.originalPath));
-    }
-
-    return {
-      extracted,
-      data,
-      info,
-      colorspace,
-      convertFullsize,
-      generateFullsize,
-      isTransparent,
-    };
+    return decoded;
   }
 
   private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
-    // Handle embedded preview extraction for RAW files
-    const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
-    const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
-
-    const previewFormat = image.preview.format;
-    this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
-
-    const thumbnailFormat = image.thumbnail.format;
-    this.warnOnTransparencyLoss(isTransparent, thumbnailFormat, asset.id);
-
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
-      format: previewFormat,
+      format: image.preview.format,
       isEdited: useEdits,
-      isProgressive: !!image.preview.progressive && previewFormat !== ImageFormat.Webp,
-      isTransparent,
+      isProgressive: !!image.preview.progressive && image.preview.format !== ImageFormat.Webp,
+      isTransparent: false,
     });
     const thumbnailFile = this.getImageFile(asset, {
       fileType: AssetFileType.Thumbnail,
-      format: thumbnailFormat,
+      format: image.thumbnail.format,
       isEdited: useEdits,
-      isProgressive: !!image.thumbnail.progressive && thumbnailFormat !== ImageFormat.Webp,
-      isTransparent,
+      isProgressive: !!image.thumbnail.progressive && image.thumbnail.format !== ImageFormat.Webp,
+      isTransparent: false,
     });
+    const fullsizeFile = this.getImageFile(asset, {
+      fileType: AssetFileType.FullSize,
+      format: image.fullsize.format,
+      isEdited: useEdits,
+      isProgressive: !!image.fullsize.progressive && image.fullsize.format !== ImageFormat.Webp,
+      isTransparent: false,
+    });
+    // Validate every possible output before the child opens any path for writing.
+    for (const file of [previewFile, thumbnailFile, fullsizeFile]) {
+      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
+    }
     this.storageCore.ensureFolders(previewFile.path);
 
-    // generate final images
-    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
-    const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
-    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
-    const promises = [
-      this.mediaRepository.generateThumbhash(data, baseOptions),
-      this.mediaRepository.generateThumbnail(data, thumbnailOptions, thumbnailFile.path),
-      this.mediaRepository.generateThumbnail(data, previewOptions, previewFile.path),
-    ];
-
-    let fullsizeFile: UpsertFileOptions | undefined;
-    if (convertFullsize) {
-      const fullsizeFormat = image.fullsize.format;
-      this.warnOnTransparencyLoss(isTransparent, fullsizeFormat, asset.id);
-      // convert a new fullsize image from the same source as the thumbnail
-      fullsizeFile = this.getImageFile(asset, {
-        fileType: AssetFileType.FullSize,
-        format: fullsizeFormat,
-        isEdited: useEdits,
-        isProgressive: !!image.fullsize.progressive && fullsizeFormat !== ImageFormat.Webp,
-        isTransparent,
-      });
-      const fullsizeOptions = {
-        ...baseOptions,
-        format: fullsizeFormat,
-        quality: image.fullsize.quality,
-        progressive: image.fullsize.progressive,
-      };
-      promises.push(this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path));
-    } else if (generateFullsize && extracted && extracted.format === RawExtractedFormat.Jpeg) {
-      fullsizeFile = this.getImageFile(asset, {
-        fileType: AssetFileType.FullSize,
-        format: extracted.format,
-        isEdited: false,
-        isProgressive: !!image.fullsize.progressive && image.fullsize.format !== ImageFormat.Webp,
-        isTransparent,
-      });
-      this.storageCore.ensureFolders(fullsizeFile.path);
-
-      // Write the buffer to disk with essential EXIF data
-      await this.storageRepository.createOrOverwriteFile(fullsizeFile.path, extracted.buffer);
-      await this.mediaRepository.writeExif(
-        {
-          orientation: asset.exifInfo.orientation,
-          colorspace: asset.exifInfo.colorspace,
-        },
-        fullsizeFile.path,
+    if (useEdits && !mimeTypes.isRaw(asset.originalFileName)) {
+      const stored = asset.exifInfo.imageEncoding;
+      const encoding =
+        !stored || stored.dynamicRange === 'unknown'
+          ? await this.mediaRepository.inspectImageEncoding(asset.originalPath)
+          : stored;
+      if (encoding?.dynamicRange === 'hdr') {
+        throw new BadRequestException(
+          'This edit requires the HDR-preserving Develop renderer; the previous rendition is retained',
+        );
+      }
+    }
+    let hdrFiles: UpsertFileOptions[] = useEdits
+      ? []
+      : asset.files
+          .filter(
+            (file) =>
+              !file.isEdited && (file.type === AssetFileType.HdrPreview || file.type === AssetFileType.HdrFullSize),
+          )
+          .map((file) => ({ ...file, assetId: asset.id }));
+    let hdrMaster: string | undefined;
+    // Disabled until authored-media and physical-display qualification. Reuses this job's admission and lease.
+    if (
+      !useEdits &&
+      process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+      asset.exifInfo.imageEncoding?.dynamicRange === 'hdr' &&
+      asset.exifInfo.imageEncoding.reconstructionAvailable
+    ) {
+      hdrFiles = [AssetFileType.HdrPreview, AssetFileType.HdrFullSize].map((fileType) =>
+        this.getImageFile(asset, {
+          fileType,
+          format: ImageFormat.Jpeg,
+          isEdited: false,
+          isProgressive: false,
+          isTransparent: false,
+        }),
       );
+      for (const file of hdrFiles) assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: file.path });
+      const contentChecksum =
+        asset.checksumAlgorithm === ChecksumAlgorithm.sha1Path
+          ? await this.cryptoRepository.hashFile(asset.originalPath, 'sha256')
+          : asset.checksum;
+      const outputs = await this.mediaRepository.generateHdrRenditions(
+        asset.originalPath,
+        [{ path: hdrFiles[0].path, size: image.preview.size }, { path: hdrFiles[1].path }],
+        undefined,
+        undefined,
+        contentChecksum,
+      );
+      for (let index = 0; index < hdrFiles.length; index++) {
+        const output = outputs[index];
+        hdrFiles[index].renditionIdentity = imageRenditionIdentity({
+          sourceChecksum: contentChecksum,
+          editRevision: 0,
+          rendererVersion: HDR_RENDITION_RENDERER_VERSION,
+          width: output.width,
+          height: output.height,
+          gamut: output.gamut,
+          dynamicRange: 'hdr',
+        });
+      }
+      hdrMaster = hdrFiles[1].path;
     }
 
-    const outputs = await Promise.all(promises);
+    const { info, thumbhash, convertFullsize, isTransparent } = await this.extractOriginalImage(
+      asset,
+      image,
+      useEdits,
+      {
+        thumbnail: { path: thumbnailFile.path, options: image.thumbnail },
+        preview: { path: previewFile.path, options: image.preview },
+        fullsize: {
+          path: fullsizeFile.path,
+          options: {
+            format: image.fullsize.format,
+            quality: image.fullsize.quality,
+            progressive: image.fullsize.progressive,
+          },
+        },
+      },
+      hdrMaster,
+    );
+    const files = convertFullsize ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
+    files.push(...hdrFiles);
+    for (const file of files) {
+      file.isTransparent = isTransparent;
+    }
+    this.warnOnTransparencyLoss(isTransparent, image.preview.format, asset.id);
+    this.warnOnTransparencyLoss(isTransparent, image.thumbnail.format, asset.id);
+    if (convertFullsize) {
+      this.warnOnTransparencyLoss(isTransparent, image.fullsize.format, asset.id);
+    }
 
     if (asset.exifInfo.projectionType === 'EQUIRECTANGULAR') {
       const promises = [
         this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, previewFile.path),
-        fullsizeFile
+        convertFullsize
           ? this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, fullsizeFile.path)
           : Promise.resolve(),
       ];
@@ -551,23 +716,32 @@ export class MediaService extends BaseService {
     const decodedDimensions = { width: info.width, height: info.height };
     const fullsizeDimensions = useEdits ? getOutputDimensions(asset.edits, decodedDimensions) : decodedDimensions;
 
-    return {
-      files: fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile],
-      thumbhash: outputs[0] as Buffer,
-      fullsizeDimensions,
-    };
+    return { files, thumbhash, fullsizeDimensions };
   }
 
   @OnJob({ name: JobName.PersonGenerateThumbnail, queue: QueueName.ThumbnailGeneration })
   async handleGeneratePersonThumbnail({
     ownerId,
     personGroupId,
-  }: JobOf<JobName.PersonGenerateThumbnail>): Promise<JobStatus> {
+    selectionFaceId,
+  }: JobOf<JobName.PersonGenerateThumbnail> & { selectionFaceId?: string }): Promise<JobStatus> {
     const { image } = await this.getConfig({ withCache: true });
-    const data = await this.personRepository.getDataForThumbnailGenerationJob({ ownerId, personGroupId });
+    const person = queueExecution.getStore()
+      ? await this.personRepository.getByGroupId({ personGroupId, ownerId })
+      : undefined;
+    if (selectionFaceId && person?.faceAssetId && person.faceAssetId !== selectionFaceId) return JobStatus.Skipped;
+    const sourceFaceId = person?.faceAssetId ?? selectionFaceId;
+    const sourceFace = sourceFaceId
+      ? await this.personRepository.getFaceById(sourceFaceId, { viewingUserId: ownerId })
+      : undefined;
+    if (sourceFace) await this.jobRepository.guardAssetSource(sourceFace.assetId);
+    const data = await this.personRepository.getDataForThumbnailGenerationJob(
+      { ownerId, personGroupId },
+      person?.faceAssetId ? undefined : selectionFaceId,
+    );
     if (!data) {
-      this.logger.error(`Could not generate person thumbnail for ${personGroupId}: missing data`);
-      return JobStatus.Failed;
+      this.logger.debug(`Skipping person thumbnail for ${personGroupId}: source is ineligible`);
+      return JobStatus.Skipped;
     }
 
     const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewPath, originalPath } = data;
@@ -587,12 +761,12 @@ export class MediaService extends BaseService {
 
     const { data: decodedImage, info } = await this.mediaRepository.decodeImage(inputImage, {
       colorspace: image.colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
       // if this is an extracted image, it may not have orientation metadata
       orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
     });
 
-    const thumbnailPath = StorageCore.getPersonThumbnailPath({ ownerId, personGroupId });
+    const thumbnailPath = attemptOutputPath(StorageCore.getPersonThumbnailPath({ ownerId, personGroupId }));
     this.storageCore.ensureFolders(thumbnailPath);
 
     const thumbnailOptions: GenerateThumbnailOptions = {
@@ -615,7 +789,42 @@ export class MediaService extends BaseService {
     };
 
     await this.mediaRepository.generateThumbnail(decodedImage, thumbnailOptions, thumbnailPath);
-    await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });
+    if (
+      !deferJobAdoption(async (tx) => {
+        await lockFilePath(tx, thumbnailPath);
+        await tx
+          .selectFrom('person')
+          .select('personGroupId')
+          .where('ownerId', '=', ownerId)
+          .where('personGroupId', '=', personGroupId)
+          .forUpdate()
+          .execute();
+        const currentPerson = await this.personRepository.getByGroupId({ personGroupId, ownerId });
+        const current = await this.personRepository.getDataForThumbnailGenerationJob(
+          { ownerId, personGroupId },
+          person?.faceAssetId ? undefined : selectionFaceId,
+        );
+        if (
+          !sourceFace ||
+          currentPerson?.faceAssetId !== person?.faceAssetId ||
+          JSON.stringify(current) !== JSON.stringify(data)
+        ) {
+          throw new Error('Person thumbnail source changed before publication');
+        }
+        await tx
+          .updateTable('person')
+          .set({ thumbnailPath, ...(sourceFaceId && { faceAssetId: sourceFaceId }) })
+          .where('ownerId', '=', ownerId)
+          .where('personGroupId', '=', personGroupId)
+          .execute();
+        const oldPath = currentPerson?.thumbnailPath;
+        if (oldPath && oldPath !== thumbnailPath) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
+        }
+      })
+    ) {
+      await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });
+    }
 
     return JobStatus.Success;
   }
@@ -715,6 +924,19 @@ export class MediaService extends BaseService {
     ];
   }
 
+  /**
+   * FL-59: the owner's chosen cover time, kept clear of the clip's final stretch like the automatic
+   * candidates are; undefined when the clip is too short to seek in.
+   */
+  private getVideoCoverStartTime(videoStream: VideoStreamInfo, format: VideoFormat, seconds: number) {
+    const duration = this.getVideoThumbnailDurationSeconds(videoStream, format);
+    if (!Number.isFinite(duration) || duration <= 1 || !Number.isFinite(seconds) || seconds < 0) {
+      return;
+    }
+    const tail = Math.min(Math.max(duration * 0.1, 0.5), 5);
+    return Number(Math.min(seconds, Math.max(duration - tail, 0)).toFixed(3));
+  }
+
   private getVideoThumbnailCandidatePath(output: string, index: number) {
     const { dir, ext, name } = path.parse(output);
     return path.join(dir, `${name}_candidate_${index}${ext}`);
@@ -762,7 +984,17 @@ export class MediaService extends BaseService {
   private async generateVideoThumbnails(
     asset: VideoThumbnailAsset,
     { ffmpeg, image }: SystemConfig,
-    options: { sourcePath?: string; isEdited?: boolean; fullsizeDimensions?: ImageDimensions } = {},
+    options: {
+      sourcePath?: string;
+      isEdited?: boolean;
+      fullsizeDimensions?: ImageDimensions;
+      /** FL-39: a retained version's thumbnails get unique paths, so history keeps its own files. */
+      pathSuffix?: string;
+      /** FL-39: receives every path this call may create, for cleanup if the version is not published. */
+      candidates?: string[];
+      /** FL-59: the owner's chosen cover, in seconds; the automatic pick is skipped. */
+      coverSeconds?: number;
+    } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
     const isEdited = options.isEdited ?? false;
@@ -780,28 +1012,40 @@ export class MediaService extends BaseService {
       isProgressive: false,
       isTransparent: false,
     });
-    this.storageCore.ensureFolders(previewFile.path);
-
+    if (options.pathSuffix) {
+      for (const file of [previewFile, thumbnailFile]) {
+        const parsed = path.parse(file.path);
+        file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
+      }
+    }
+    options.candidates?.push(previewFile.path, thumbnailFile.path);
     const { videoStream, format } = asset;
     if (!videoStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
     }
 
+    // FL-101: qualify the source before anything is created on disk. A refused source must not
+    // reach the point where an existing, valid preview has already been cleared out of the way.
+    assertDecodeQualified(qualifySourceDecode(videoStream, ffmpeg));
+
+    this.storageCore.ensureFolders(previewFile.path);
+
     const previewConfig = { ...ffmpeg, targetResolution: image.preview.size.toString() };
     const thumbConfig = { ...ffmpeg, targetResolution: image.thumbnail.size.toString() };
-    const startTime = await this.pickVideoThumbnailStartTime(
-      sourcePath,
-      previewFile.path,
-      videoStream,
-      format,
-      (timestamp) =>
+    const cover =
+      options.coverSeconds === undefined
+        ? undefined
+        : this.getVideoCoverStartTime(videoStream, format, options.coverSeconds);
+    const startTime =
+      cover ??
+      (await this.pickVideoThumbnailStartTime(sourcePath, previewFile.path, videoStream, format, (timestamp) =>
         ThumbnailConfig.create(previewConfig, timestamp).getCommand(
           TranscodeTarget.Video,
           videoStream,
           undefined,
           format,
         ),
-    );
+      ));
     const previewOptions = ThumbnailConfig.create(previewConfig, startTime).getCommand(
       TranscodeTarget.Video,
       videoStream,
@@ -820,7 +1064,7 @@ export class MediaService extends BaseService {
 
     const thumbhash = await this.mediaRepository.generateThumbhash(previewFile.path, {
       colorspace: image.colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
     });
 
     return {
@@ -834,12 +1078,103 @@ export class MediaService extends BaseService {
   async handleQueueVideoConversion(job: JobOf<JobName.AssetEncodeVideoQueueAll>): Promise<JobStatus> {
     const { force } = job;
 
-    for await (const assets of batched(this.assetJobRepository.streamForVideoConversion(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetEncodeVideo, data: { id: asset.id } })),
-      );
+    await this.jobRepository.queueSelection(
+      JobName.AssetEncodeVideo,
+      this.assetJobRepository.selectionForVideoConversion(force),
+    );
+
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-97: the Studio HDR intermediate of one placed HDR video (see utils/studio-hdr-proxy.ts). Made
+   * from the original once, and skipped for anything that is not a decodable BT.2020 PQ/HLG video.
+   */
+  @OnJob({ name: JobName.StudioHdrProxyGenerate, queue: QueueName.VideoConversion })
+  async handleStudioHdrProxy({ id }: JobOf<JobName.StudioHdrProxyGenerate>): Promise<JobStatus> {
+    const asset = await this.assetJobRepository.getForVideoConversion(id);
+    if (!asset) {
+      return JobStatus.Failed;
+    }
+    // Everyone but the owner's quick editor plays the edited master, so the unedited original's
+    // intermediate would show them what the owner cut away.
+    if (getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: true })) {
+      return JobStatus.Skipped;
+    }
+    // Taken before the transcode: an original replaced or rewritten meanwhile is not recorded.
+    const sourceFingerprint = await this.assetRepository.getStudioHdrSourceFingerprint(asset.id);
+    if (!sourceFingerprint) {
+      return JobStatus.Failed;
+    }
+    const current = (await this.assetRepository.getCurrentStudioHdrIntermediates([asset.id])).get(asset.id);
+    if (current && (await this.storageRepository.checkFileExists(current))) {
+      return JobStatus.Skipped;
+    }
+    // Deleted by FileDelete, under the path lock and only while no row references the file.
+    const releaseFiles = async (...files: Array<string | undefined>) => {
+      const paths = files.filter((file): file is string => !!file);
+      if (paths.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } });
+      }
+    };
+    const refuse = async (status: 'ineligible' | 'failed', reason: string) => {
+      this.logger.warn(`No Studio HDR intermediate for asset ${asset.id}: ${reason}`);
+      const { replacedPath } = await this.assetRepository.recordStudioHdrIntermediate({
+        assetId: asset.id,
+        ownerId: asset.ownerId,
+        sourceFingerprint,
+        status,
+      });
+      await releaseFiles(replacedPath);
+    };
+
+    const { videoStream } = asset;
+    if (!videoStream) {
+      await refuse('ineligible', 'no video stream was probed');
+      return JobStatus.Skipped;
+    }
+    const plan = planStudioHdrProxy(videoStream);
+    if (!plan.eligible) {
+      await refuse('ineligible', plan.reason);
+      return JobStatus.Skipped;
+    }
+    const { ffmpeg } = await this.getConfig({ withCache: true });
+    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    if (qualification.support === DecodeSupport.Refused) {
+      await refuse('ineligible', qualification.reason);
+      return JobStatus.Skipped;
     }
 
+    // A new name per generation, recorded only once the file is complete: the row never names a
+    // half-written or older file, and nothing queued earlier can name this one.
+    const output = StorageCore.getStudioHdrProxyPath(asset, randomUUID());
+    const discard = () => this.storageRepository.unlink(output).catch(() => {});
+    this.storageCore.ensureFolders(output);
+    try {
+      await this.mediaRepository.transcode(
+        asset.originalPath,
+        output,
+        getStudioHdrProxyCommand(videoStream, plan.transfer, ffmpeg.threads),
+      );
+    } catch (error: any) {
+      await discard();
+      // Recorded, so the next project read does not start the same failing transcode again.
+      await refuse('failed', `the transcode failed: ${error.message}`);
+      return JobStatus.Failed;
+    }
+    const { recorded, replacedPath } = await this.assetRepository.recordStudioHdrIntermediate({
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      sourceFingerprint,
+      status: 'ready',
+      path: output,
+    });
+    if (!recorded) {
+      await discard();
+      return JobStatus.Skipped;
+    }
+    await releaseFiles(replacedPath);
+    this.logger.log(`Made the Studio HDR intermediate of asset ${asset.id}`);
     return JobStatus.Success;
   }
 
@@ -850,9 +1185,16 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetJobRepository.getForVideoConversion(asset.id);
+      if (!current || current.originalPath !== asset.originalPath) {
+        throw new Error('Video source changed before publication');
+      }
+    });
+
     const input = asset.originalPath;
-    const output = StorageCore.getEncodedVideoPath(asset);
-    this.storageCore.ensureFolders(output);
+    const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
 
     const { videoStream, format } = asset;
     const audioStream = asset.audioStream ?? undefined;
@@ -866,6 +1208,24 @@ export class MediaService extends BaseService {
     }
 
     let { ffmpeg } = await this.getConfig({ withCache: true });
+
+    // FL-101: classify the source before the output directory exists, so a refusal leaves any
+    // existing proxy untouched and the original is never the thing that changes.
+    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    if (qualification.support === DecodeSupport.Refused) {
+      this.logger.warn(`Skipped transcoding for asset ${asset.id}: ${qualification.reason}`);
+      return JobStatus.Skipped;
+    }
+
+    // FL-101: hardware decoding is used only where the fixed-function path can hand back the
+    // source's own planes. This narrows `accelDecode`; it never changes `accel`, so hardware
+    // encoding is unaffected.
+    const decodeAcceleration = selectDecodeAcceleration(ffmpeg, qualification);
+    if (ffmpeg.accelDecode && !decodeAcceleration.accelDecode) {
+      this.logger.debug(`Asset ${asset.id}: ${decodeAcceleration.reason}`);
+    }
+    ffmpeg = decodeAcceleration.config;
+
     const target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
@@ -879,6 +1239,8 @@ export class MediaService extends BaseService {
 
       return JobStatus.Skipped;
     }
+
+    this.storageCore.ensureFolders(output);
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -920,6 +1282,25 @@ export class MediaService extends BaseService {
 
     this.logger.log(`Successfully encoded ${asset.id}`);
 
+    if (queueExecution.getStore()) {
+      await this.stageGeneratedFiles(
+        this.toExistingAssetFiles(
+          asset.files.filter((file) => file.type === AssetFileType.EncodedVideo && !file.isEdited),
+        ),
+        [
+          {
+            assetId: asset.id,
+            type: AssetFileType.EncodedVideo,
+            path: output,
+            isEdited: false,
+            isProgressive: false,
+            isTransparent: false,
+          },
+        ],
+      );
+      return JobStatus.Success;
+    }
+
     const { file: encodedVideo, pathToDelete } = await this.applyPhysicalDeduplicationToGeneratedFile({
       assetId: asset.id,
       type: AssetFileType.EncodedVideo,
@@ -937,7 +1318,31 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })
-  async handleAssetVideoEditGeneration({ id }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+  async handleAssetVideoEditGeneration({
+    id,
+    versionId,
+    operationId,
+  }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+    // FL-43: a video edit or export runs under its Activity job, when it was queued with one.
+    return this.editOperations.execute(operationId, (run) => this.renderVideoEdit(id, versionId, run));
+  }
+
+  private async renderVideoEdit(id: string, versionId: string | undefined, run?: EditOperationRun): Promise<JobStatus> {
+    // Every save, revert and export is a retained version. The
+    // job renders the requested (or the named export) version into its own master and proxy, and
+    // publication decides — transactionally — whether it is still the one to show. A version is an
+    // immutable row, so it is read before the entry guard: its render is not refused because a later
+    // save changed the recipe or another job replaced a thumbnail while it was encoding.
+    let version: VideoEditVersion | undefined;
+    let versionError: any;
+    try {
+      version = versionId
+        ? await this.assetEditRepository.getVideoVersion(id, versionId)
+        : await this.assetEditRepository.getRequestedVideoVersion(id);
+    } catch (error: any) {
+      versionError = error ?? new Error('Video version is unavailable');
+    }
+    await this.jobRepository.guardAssetSource(id, { derivatives: !version });
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -958,67 +1363,127 @@ export class MediaService extends BaseService {
       format,
     };
     const config = await this.getConfig({ withCache: true });
+
+    if (versionError) {
+      this.logger.error(
+        `Refusing to render a video version for asset ${asset.id}: ${versionError?.message ?? versionError}`,
+      );
+      return JobStatus.Failed;
+    }
+    if (versionId && !version) {
+      return JobStatus.Skipped;
+    }
+    if (version) {
+      if (version.status === 'ready') {
+        return JobStatus.Skipped;
+      }
+      return this.renderVideoVersion(version, { ...thumbnailAsset, files: asset.files }, config, run);
+    }
+
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
     const editedFiles = this.toExistingAssetFiles(asset.files.filter((file) => file.isEdited));
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetEditRepository.getAll(id);
+      if (
+        JSON.stringify(current) !== JSON.stringify(edits) ||
+        (await this.assetEditRepository.getRequestedVideoVersion(id))
+      ) {
+        throw new Error('Video edit changed before publication');
+      }
+    });
 
     if (edits.length === 0) {
+      if (run && !(await run.validate())) {
+        return JobStatus.Skipped;
+      }
       await this.syncFiles(editedFiles, []);
       const generated = await this.generateVideoThumbnails(thumbnailAsset, config);
       await this.syncFiles(
         this.toExistingAssetFiles(asset.files.filter((file) => !file.isEdited && this.isVideoThumbnailFile(file.type))),
         generated.files,
       );
-      await this.assetRepository.update({
-        id: asset.id,
-        thumbhash: generated.thumbhash,
-        duration: Math.round(format.duration * 1000),
-        ...generated.fullsizeDimensions,
-      });
+      await publishJobResult(() =>
+        this.assetRepository
+          .update({
+            id: asset.id,
+            thumbhash: generated.thumbhash,
+            duration: Math.round(format.duration * 1000),
+            ...generated.fullsizeDimensions,
+          })
+          .then(() => {}),
+      );
       return JobStatus.Success;
     }
 
-    const output = this.getEditedEncodedVideoPath(thumbnailAsset);
-    this.storageCore.ensureFolders(output);
+    const output = attemptOutputPath(this.getEditedEncodedVideoPath(thumbnailAsset));
 
-    const plan = this.getVideoEditCommandPlan(config.ffmpeg, edits, videoStream, audioStream, format);
-    this.logVideoEditCommandPlan(asset.id, plan);
-
+    // FL-39: an edit never overwrites the original, and a new master is always rendered from the
+    // original plus its recipe — never from a playback proxy or from an earlier, already lossy,
+    // edited master. Both are checked before the encoder is started, so a failure here leaves any
+    // existing valid edited master in place.
+    let colorDecision: EditedMasterColorDecision;
     try {
-      await this.mediaRepository.transcode(asset.originalPath, output, plan.command);
-    } catch (error: any) {
-      const message = error?.message ?? error;
-      this.logger.error(`Error occurred during video edit generation: ${message}`);
-
-      if (plan.config.accel === TranscodeHardwareAcceleration.Disabled) {
-        return JobStatus.Failed;
-      }
-
-      const fallbackPlan = this.getVideoEditSoftwareFallbackCommandPlan(
-        config.ffmpeg,
-        edits,
+      colorDecision = this.qualifyEditedMasterRender({
         videoStream,
-        audioStream,
-        format,
-        String(message),
-      );
-      this.logVideoEditCommandPlan(asset.id, fallbackPlan);
-
-      try {
-        await this.mediaRepository.transcode(asset.originalPath, output, fallbackPlan.command);
-      } catch (error: any) {
-        this.logger.error(`Error occurred during software video edit generation fallback: ${error?.message ?? error}`);
+        config: config.ffmpeg,
+        originalPath: asset.originalPath,
+        sourcePath: asset.originalPath,
+        outputPaths: [output],
+        derivedPaths: asset.files.map((file) => file.path),
+      });
+    } catch (error) {
+      if (error instanceof MediaPolicyError) {
+        this.logger.error(`Refusing to render an edited master for asset ${asset.id}: ${error.message}`);
         return JobStatus.Failed;
       }
+      throw error;
     }
 
-    await this.assetRepository.upsertFile({
+    this.storageCore.ensureFolders(output);
+
+    const rendered = await this.transcodeEditedMaster({
+      assetId: asset.id,
+      input: asset.originalPath,
+      output,
+      config: config.ffmpeg,
+      edits,
+      videoStream,
+      audioStream,
+      format,
+      colorDecision,
+    });
+    if (!rendered) {
+      run?.noteError('The edited video could not be encoded');
+      return JobStatus.Failed;
+    }
+
+    // FL-43: the edited master is adopted only under the job's claim; a stale run leaves the last one.
+    if (run && !(await run.validate())) {
+      return JobStatus.Skipped;
+    }
+
+    // FL-39: an edited master is a new file that records where it came from — the source asset and
+    // its original, the exact recipe revision, the renderer identity and the colour decision — so a
+    // stale or unreproducible master can always be recognised and re-rendered from the original.
+    await this.writeEditedMasterLineage({
+      masterPath: output,
+      assetId: asset.id,
+      originalPath: asset.originalPath,
+      checksum: asset.checksum,
+      edits,
+      colorDecision,
+      decode: qualifySourceDecode(videoStream, config.ffmpeg),
+    });
+
+    const encodedFile: UpsertFileOptions = {
       assetId: asset.id,
       type: AssetFileType.EncodedVideo,
       path: output,
       isEdited: true,
       isProgressive: false,
       isTransparent: false,
-    });
+    };
 
     const fullsizeDimensions = this.getVideoEditDimensions(edits, videoStream);
     const generated = await this.generateVideoThumbnails(thumbnailAsset, config, {
@@ -1026,19 +1491,409 @@ export class MediaService extends BaseService {
       isEdited: true,
       fullsizeDimensions,
     });
-    await this.syncFiles(
-      editedFiles.filter((file) => file.type !== AssetFileType.EncodedVideo),
-      generated.files,
+    await this.syncFiles(editedFiles, [encodedFile, ...generated.files]);
+
+    const duration = await this.getRenderedVideoDurationMs(edits, { videoStream, audioStream, format }, output);
+    await publishJobResult(() =>
+      this.assetRepository
+        .update({
+          id: asset.id,
+          thumbhash: generated.thumbhash,
+          duration,
+          ...fullsizeDimensions,
+        })
+        .then(() => {}),
     );
 
-    await this.assetRepository.update({
-      id: asset.id,
-      thumbhash: generated.thumbhash,
-      duration: this.getVideoEditDurationMs(edits, format),
-      ...fullsizeDimensions,
-    });
-
     return JobStatus.Success;
+  }
+
+  /**
+   * The checks every edited-master render passes before anything is created on disk (FL-39,
+   * FL-101, FL-102). Throws a {@link MediaPolicyError} when the render must not start.
+   */
+  private qualifyEditedMasterRender({
+    videoStream,
+    config,
+    originalPath,
+    sourcePath,
+    outputPaths,
+    derivedPaths,
+  }: {
+    videoStream: VideoStreamInfo;
+    config: ConfigFFmpegDto;
+    originalPath: string;
+    sourcePath: string;
+    outputPaths: string[];
+    derivedPaths: string[];
+  }): EditedMasterColorDecision {
+    for (const outputPath of outputPaths) {
+      assertOriginalPreserved({ originalPath, outputPath });
+    }
+    assertRenderSourceIsOriginal({ originalPath, sourcePath, derivedPaths });
+    // FL-101: the source has to be one this renderer can decode honestly before anything
+    // else is decided. Dolby Vision profile 5, an undescribable pixel format or a bit depth
+    // beyond what can be delivered all stop here — before ensureFolders, so an existing valid
+    // edited master survives the refusal untouched.
+    const qualification = qualifySourceDecode(videoStream, config);
+    assertDecodeQualified(qualification);
+    const colorDecision = resolveEditedMasterColorPolicy(videoStream, config);
+    // FL-102: reject an incompatible output option here too — a 10-bit source aimed at an
+    // encoder with no qualified 10-bit path is refused rather than quietly flattened. This is
+    // the same call, under the same condition, that `getVideoEditCommand` makes; doing it here
+    // as well keeps the refusal ahead of ensureFolders, where nothing has been disturbed yet.
+    if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
+      const masterConfig = getEditedMasterFfmpegConfig(config, videoStream);
+      selectEncoderPixelFormat({
+        codec: masterConfig.targetVideoCodec,
+        accel: masterConfig.accel,
+        layout: qualification.layout,
+        policy: colorDecision.policy,
+        colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
+      });
+    }
+    return colorDecision;
+  }
+
+  /** Renders an edited master, falling back to software once when a hardware plan fails. */
+  private async transcodeEditedMaster({
+    assetId,
+    input,
+    output,
+    config,
+    edits,
+    videoStream,
+    audioStream,
+    format,
+    colorDecision,
+  }: {
+    assetId: string;
+    input: string;
+    output: string;
+    config: ConfigFFmpegDto;
+    edits: AssetEditActionItem[];
+    videoStream: VideoStreamInfo;
+    audioStream: AudioStreamInfo | undefined;
+    format: VideoFormat;
+    colorDecision: EditedMasterColorDecision;
+  }): Promise<boolean> {
+    const plan = this.getVideoEditCommandPlan(config, edits, videoStream, audioStream, format, colorDecision);
+    this.logVideoEditCommandPlan(assetId, plan);
+
+    try {
+      await this.mediaRepository.transcode(input, output, plan.command);
+      return true;
+    } catch (error: any) {
+      jobSignal()?.throwIfAborted();
+      const message = error?.message ?? error;
+      this.logger.error(`Error occurred during video edit generation: ${message}`);
+
+      if (plan.config.accel === TranscodeHardwareAcceleration.Disabled) {
+        return false;
+      }
+
+      const fallbackPlan = this.getVideoEditSoftwareFallbackCommandPlan(
+        config,
+        edits,
+        videoStream,
+        audioStream,
+        format,
+        String(message),
+        colorDecision,
+      );
+      this.logVideoEditCommandPlan(assetId, fallbackPlan);
+
+      try {
+        await this.mediaRepository.transcode(input, output, fallbackPlan.command);
+        return true;
+      } catch (error: any) {
+        this.logger.error(`Error occurred during software video edit generation fallback: ${error?.message ?? error}`);
+        return false;
+      }
+    }
+  }
+
+  /**
+   * FL-39: renders one retained video version. The master is rendered from the version's own
+   * original with the current media policy, validated by probing it, and a separate playback
+   * proxy is transcoded from it — so master and proxy have independent paths and qualities.
+   * Nothing is referenced until {@link AssetEditRepository.publishVideoVersion} accepts the result;
+   * every file this render created is removed when it does not.
+   */
+  private async renderVideoVersion(
+    version: VideoEditVersion,
+    asset: VideoThumbnailAsset & { files: Array<{ path: string; type: AssetFileType; isEdited: boolean }> },
+    config: SystemConfig,
+    run?: EditOperationRun,
+  ): Promise<JobStatus> {
+    const suffix = `${version.id}_${randomUUID()}`;
+    // FL-43: a version is published only under its job's claim. A run that lost its claim, or whose
+    // job was cancelled, stops before publishing: its files are removed below and the version that
+    // is current stays current.
+    const mayPublish = async () => !run || (await run.validate());
+    const { dir, name } = path.parse(this.getEditedEncodedVideoPath(asset));
+    const master = attemptOutputPath(path.join(dir, `${name}.${suffix}.master.mp4`));
+    const proxy = attemptOutputPath(path.join(dir, `${name}.${suffix}.proxy.mp4`));
+    const candidates: string[] = [];
+    let published = false;
+    try {
+      // Bounds, orientation and audio come from the original this version was saved against,
+      // never from the current (possibly edited) asset metadata.
+      const original = await this.mediaRepository.probe(version.sourcePath);
+      const videoStream = original.videoStreams[0];
+      if (!videoStream) {
+        throw new Error('Original video metadata is unavailable');
+      }
+      const audioStream = original.audioStreams[0];
+      const source = { ...asset, videoStream, format: original.format };
+      const edits = version.recipe;
+
+      if (edits.length === 0 && version.purpose !== 'export') {
+        const originalPreview = asset.files.find((file) => file.type === AssetFileType.Preview && !file.isEdited);
+        if (!(await mayPublish())) {
+          return JobStatus.Skipped;
+        }
+        published = await this.publishVideoVersion(
+          version,
+          {
+            files: [],
+            masterPath: null,
+            thumbhash: originalPreview
+              ? await this.mediaRepository.generateThumbhash(originalPreview.path, {
+                  colorspace: config.image.colorspace,
+                  processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
+                })
+              : null,
+            ...this.getVideoEditDimensions([], videoStream),
+            duration: Math.round(original.format.duration * 1000),
+          },
+          run,
+          candidates,
+        );
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+
+      // FL-39: a master maps one audio track. Silently dropping the others is not an edit.
+      if (original.audioStreams.length > 1) {
+        throw new MediaPolicyError(
+          MediaPolicyViolation.UnsupportedPreservation,
+          'Edited masters with multiple audio tracks are not qualified; the original is preserved unchanged.',
+        );
+      }
+
+      const colorDecision = this.qualifyEditedMasterRender({
+        videoStream,
+        config: config.ffmpeg,
+        originalPath: version.sourcePath,
+        sourcePath: version.sourcePath,
+        outputPaths: [master, proxy],
+        derivedPaths: asset.files.map((file) => file.path),
+      });
+
+      candidates.push(master, getEditedMasterLineagePath(master), proxy);
+      this.storageCore.ensureFolders(master);
+      const rendered = await this.transcodeEditedMaster({
+        assetId: asset.id,
+        input: version.sourcePath,
+        output: master,
+        config: config.ffmpeg,
+        edits,
+        videoStream,
+        audioStream,
+        format: original.format,
+        colorDecision,
+      });
+      if (!rendered) {
+        throw new Error('Edited master render failed');
+      }
+
+      // FL-39: probe the master before anything can reference it.
+      const masterInfo = await this.mediaRepository.probe(master);
+      const masterVideo = masterInfo.videoStreams[0];
+      const dimensions = this.getVideoEditDimensions(edits, videoStream);
+      const metadataRotation = qualifyMetadataOnlyRotation({
+        edits,
+        videoStream,
+        audioStream,
+        format: original.format,
+      });
+      validateVideoMaster({
+        source: videoStream,
+        output: masterVideo,
+        dimensions,
+        expectedRotation: metadataRotation?.displayRotation ?? 0,
+        colorDecision,
+        packetCopy: !!metadataRotation,
+      });
+      // FL-102: the audio survives too — present, same layout and rate, and ending with the picture.
+      validateAudioMaster({
+        source: audioStream,
+        output: masterInfo.audioStreams[0],
+        outputVideo: masterVideo,
+        muted: edits.some((edit) => edit.action === AssetEditAction.Audio && !!edit.parameters.muted),
+      });
+      // Only full-clip timing-preserving recipes: trim/speed retain their separate semantics.
+      if (edits.every((edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed))) {
+        const sourcePackets = await this.mediaRepository.probePackets(version.sourcePath, videoStream.index);
+        const masterPackets = await this.mediaRepository.probePackets(master, masterVideo.index);
+        validateFullClipMasterTiming(videoStream, masterVideo, sourcePackets, masterPackets);
+      }
+
+      await this.writeEditedMasterLineage({
+        masterPath: master,
+        assetId: asset.id,
+        originalPath: version.sourcePath,
+        checksum: version.sourceChecksum,
+        edits,
+        colorDecision,
+        decode: qualifySourceDecode(videoStream, config.ffmpeg),
+      });
+
+      // The playback proxy follows the playback policy. A packet-preserving master keeps its
+      // rotation in the display matrix, which hardware decoders do not apply, so it is decoded in
+      // software and auto-rotated into the proxy.
+      await this.transcodePlaybackProxy(master, proxy, masterInfo, config.ffmpeg);
+      const proxyInfo = await this.mediaRepository.probe(proxy);
+      if (!proxyInfo.videoStreams[0]?.width || !proxyInfo.videoStreams[0]?.height) {
+        throw new Error('Video version playback proxy is invalid');
+      }
+
+      const proxyFile = {
+        assetId: version.assetId,
+        type: AssetFileType.EncodedVideo,
+        path: proxy,
+        isEdited: true,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const duration = await this.getRenderedVideoDurationMs(
+        edits,
+        { videoStream, audioStream, format: original.format },
+        masterInfo,
+      );
+
+      if (version.purpose === 'export') {
+        if (!(await mayPublish())) {
+          return JobStatus.Skipped;
+        }
+        published = await this.publishVideoVersion(
+          version,
+          {
+            masterPath: master,
+            files: [proxyFile],
+            ...dimensions,
+            duration,
+          },
+          run,
+          candidates,
+        );
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+
+      const generated = await this.generateVideoThumbnails(
+        { ...source, videoStream: masterVideo, format: masterInfo.format },
+        config,
+        { sourcePath: master, isEdited: true, fullsizeDimensions: dimensions, pathSuffix: suffix, candidates },
+      );
+      if (!(await mayPublish())) {
+        return JobStatus.Skipped;
+      }
+      published = await this.publishVideoVersion(
+        version,
+        {
+          masterPath: master,
+          files: [proxyFile, ...generated.files],
+          ...dimensions,
+          duration,
+          thumbhash: generated.thumbhash,
+        },
+        run,
+        candidates,
+      );
+      return published ? JobStatus.Success : JobStatus.Skipped;
+    } catch (error: any) {
+      jobSignal()?.throwIfAborted();
+      this.logger.error(`Video version ${version.id} render failed for asset ${asset.id}: ${error?.message ?? error}`);
+      await publishJobDiagnostic(() => this.assetEditRepository.failVideoVersion(version.assetId, version.id));
+      run?.noteError(error);
+      return JobStatus.Failed;
+    } finally {
+      if (!published) {
+        await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
+      }
+    }
+  }
+
+  /**
+   * Publishes a rendered version and queues any edited files it released (a pre-history edit's
+   * proxy, thumbnails and lineage) for deletion. FileDelete re-checks references under the path lock.
+   */
+  private async publishVideoVersion(
+    version: VideoEditVersion,
+    result: Parameters<AssetEditRepository['publishVideoVersion']>[1],
+    run?: EditOperationRun,
+    candidates: string[] = [],
+  ): Promise<boolean> {
+    let adopted = false;
+    if (
+      deferJobAdoption(async () => {
+        const publication = await this.assetEditRepository.publishVideoVersion(version, result);
+        adopted = publication.published;
+        if (!adopted) {
+          if (!publication.superseded) throw new Error('Video version changed before publication');
+          if (candidates.length > 0) {
+            await afterJobCommit(async () => {
+              await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
+            });
+          }
+          return;
+        }
+        const { releasedPaths } = publication;
+        if (releasedPaths.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
+        }
+      })
+    ) {
+      if (run && !(await run.complete(() => (adopted ? version.assetId : null)))) {
+        throw new Error('Edit operation lost its claim before publication');
+      }
+      // Keep private candidates until the enclosing queue and operation claims accept them.
+      // A rejected transaction leaves no canonical references and cannot delete prior output.
+      return true;
+    }
+    const { published, releasedPaths } = await this.assetEditRepository.publishVideoVersion(version, result);
+    if (releasedPaths.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
+    }
+    return published;
+  }
+
+  private async transcodePlaybackProxy(input: string, output: string, master: VideoInfo, config: ConfigFFmpegDto) {
+    const video = master.videoStreams[0];
+    const proxyConfig = video.rotation === 0 ? config : { ...config, accelDecode: false };
+    const command = BaseConfig.create(proxyConfig, this.videoInterfaces).getCommand(
+      TranscodeTarget.All,
+      video,
+      master.audioStreams[0],
+      master.format,
+    );
+    try {
+      await this.mediaRepository.transcode(input, output, command);
+    } catch (error: any) {
+      jobSignal()?.throwIfAborted();
+      if (proxyConfig.accel === TranscodeHardwareAcceleration.Disabled) {
+        throw error;
+      }
+      this.logger.error(
+        `Error occurred during playback proxy transcode, retrying in software: ${error?.message ?? error}`,
+      );
+      const software = BaseConfig.create(
+        { ...proxyConfig, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
+        this.videoInterfaces,
+      ).getCommand(TranscodeTarget.All, video, master.audioStreams[0], master.format);
+      await this.mediaRepository.transcode(input, output, software);
+    }
   }
 
   private isVideoThumbnailFile(type: AssetFileType) {
@@ -1066,17 +1921,66 @@ export class MediaService extends BaseService {
     return path.join(dir, `${name}_edited${ext}`);
   }
 
+  /**
+   * Writes the lineage sidecar that identifies an edited master (FL-39). A failure to write it is
+   * logged and does not fail the job: the master itself is already on disk and the original is
+   * untouched either way.
+   */
+  private async writeEditedMasterLineage({
+    masterPath,
+    assetId,
+    originalPath,
+    checksum,
+    edits,
+    colorDecision,
+    decode,
+  }: {
+    masterPath: string;
+    assetId: string;
+    originalPath: string;
+    checksum?: Buffer | null;
+    edits: AssetEditActionItem[];
+    colorDecision: EditedMasterColorDecision;
+    /** FL-101: the source's decode qualification, recorded for video masters. */
+    decode?: DecodeQualification;
+  }) {
+    const lineage = buildEditedMasterLineage({
+      sourceAssetId: assetId,
+      sourceOriginalPath: originalPath,
+      sourceChecksum: checksum ? checksum.toString('base64') : null,
+      edits,
+      color: colorDecision,
+      decode,
+    });
+
+    try {
+      await this.storageRepository.createOrOverwriteFile(
+        getEditedMasterLineagePath(masterPath),
+        serializeEditedMasterLineage(lineage),
+      );
+    } catch (error: any) {
+      this.logger.warn(`Failed to record edited-master lineage for asset ${assetId}: ${error?.message ?? error}`);
+    }
+
+    return lineage;
+  }
+
   private getVideoEditCommandPlan(
     config: ConfigFFmpegDto,
     edits: AssetEditActionItem[],
     videoStream: VideoStreamInfo,
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
+    colorDecision: EditedMasterColorDecision,
   ): VideoEditCommandPlan {
     const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits) || videoStream.rotation !== 0;
+    // FL-101: a CPU filter graph forces software decoding, and so does a source the
+    // fixed-function decoder cannot hand back faithfully. The qualification is recomputed from
+    // the stream rather than passed in, so no caller of this helper can skip it.
+    const decodeAcceleration = selectDecodeAcceleration(config, qualifySourceDecode(videoStream, config));
     const planConfig =
       config.accel === TranscodeHardwareAcceleration.Disabled || !hasCpuVideoFilters
-        ? config
+        ? decodeAcceleration.config
         : { ...config, accelDecode: false };
     const mode =
       config.accel === TranscodeHardwareAcceleration.Disabled
@@ -1086,7 +1990,7 @@ export class MediaService extends BaseService {
           : VideoEditAccelerationMode.HardwareNative;
 
     return {
-      command: this.getVideoEditCommand(planConfig, edits, videoStream, audioStream, format),
+      command: this.getVideoEditCommand(planConfig, edits, videoStream, audioStream, format, colorDecision),
       config: planConfig,
       hasCpuVideoFilters,
       mode,
@@ -1100,6 +2004,7 @@ export class MediaService extends BaseService {
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
     fallbackReason: string,
+    colorDecision: EditedMasterColorDecision,
   ): VideoEditCommandPlan {
     const fallbackConfig = {
       ...config,
@@ -1108,7 +2013,7 @@ export class MediaService extends BaseService {
     };
 
     return {
-      command: this.getVideoEditCommand(fallbackConfig, edits, videoStream, audioStream, format),
+      command: this.getVideoEditCommand(fallbackConfig, edits, videoStream, audioStream, format, colorDecision),
       config: fallbackConfig,
       hasCpuVideoFilters: this.hasCpuVideoEditFilters(edits),
       mode: VideoEditAccelerationMode.SoftwareFallback,
@@ -1145,10 +2050,8 @@ export class MediaService extends BaseService {
     const globalSpeed = edits
       .filter(isEditAction(AssetEditAction.Speed))
       .find((edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined);
-    const intervals =
-      globalSpeed === undefined
-        ? this.getSpeedIntervals(edits, startMs, endMs)
-        : [{ startMs, endMs, rate: globalSpeed.parameters.rate }];
+    // The whole-clip rate plays everywhere a speed range does not (FL-113, `develop.mjs` speedAt).
+    const intervals = this.getSpeedIntervals(edits, startMs, endMs, globalSpeed?.parameters.rate ?? 1);
 
     return { startMs, endMs, intervals };
   }
@@ -1176,19 +2079,65 @@ export class MediaService extends BaseService {
     videoStream: VideoStreamInfo,
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
+    colorDecision: EditedMasterColorDecision,
   ): TranscodeCommand {
     const videoFilters: string[] = [];
     const audioFilters: string[] = [];
-    const transcodeConfig = BaseConfig.create(
-      { ...config, targetResolution: 'original' },
-      this.videoInterfaces,
-    ) as BaseConfig;
+    // FL-39: the general playback transcode settings describe a proxy. They must not cap the
+    // edited master's resolution, quality target, bitrate or bit depth.
+    const masterConfig = getEditedMasterFfmpegConfig(config, videoStream);
+    const transcodeConfig = BaseConfig.create(masterConfig, this.videoInterfaces) as BaseConfig;
+
+    // FL-39: a recipe that only turns the picture by a right angle needs no re-encode at all. When
+    // it qualifies, every packet is preserved and the rotation lives in the container's display
+    // matrix instead. This is a fidelity choice, never a change of what the edit means.
+    const metadataRotation = qualifyMetadataOnlyRotation({ edits, videoStream, audioStream, format });
+    if (metadataRotation) {
+      return this.getMetadataOnlyRotationCommand(metadataRotation, videoStream, audioStream);
+    }
+
+    // FL-113: a fast trim with nothing else in the recipe copies the packets between keyframes.
+    const streamCopyTrim = qualifyStreamCopyTrim({ edits, videoStream, audioStream, format });
+    if (streamCopyTrim) {
+      return this.getStreamCopyTrimCommand(streamCopyTrim, videoStream, audioStream);
+    }
+
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
-    const transcodeFilters = transcodeConfig.getFilterOptions({
-      ...videoStream,
-      ...this.getVideoEditDimensions(edits, videoStream),
-      rotation: 0,
-    });
+    let transcodeFilters = applyEditedMasterPixelFormatPolicy(
+      transcodeConfig.getFilterOptions({
+        ...videoStream,
+        ...this.getVideoEditDimensions(edits, videoStream),
+        rotation: 0,
+      }),
+      videoStream,
+      colorDecision,
+    );
+
+    // FL-102: the render graph works in floating point, and the step back to integer planes is
+    // stated rather than left to swscale's defaults — a named intermediate, an explicit colour
+    // matrix and range, an explicit dither, and a pixel format chosen for *this* encoder.
+    //
+    // The conversion is inserted only for a preserving render on a software encoder. A
+    // tone-mapped render already ends in `tonemapx=…:format=yuv420p`, which is the deliberate
+    // reduction FL-39 chose; re-expanding that to float and quantising again would add dither
+    // noise to a picture that is already 8-bit. A hardware render's own filter chain owns the
+    // conversion and the device upload, so the plan there only names the surface format and
+    // supplies the refusal. `-pix_fmt` is still stated on every software command.
+    const qualification = qualifySourceDecode(videoStream, config);
+    let encodePlan: EncoderPixelFormatPlan | null = null;
+    if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
+      encodePlan = selectEncoderPixelFormat({
+        codec: masterConfig.targetVideoCodec,
+        accel: masterConfig.accel,
+        layout: qualification.layout,
+        policy: colorDecision.policy,
+        colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
+      });
+      if (colorDecision.policy === EditedMasterColorPolicy.Preserve) {
+        transcodeFilters = applyFloatEncodePixelFormat(transcodeFilters, encodePlan);
+      }
+    }
 
     const trim = edits.find((edit) => edit.action === AssetEditAction.Trim);
     const speedEdits = edits.filter(isEditAction(AssetEditAction.Speed));
@@ -1204,7 +2153,24 @@ export class MediaService extends BaseService {
       (edit) =>
         edit.parameters.startMs === undefined && edit.parameters.endMs === undefined && edit.parameters.rate !== 1,
     );
-    if (globalSpeed) {
+    // With speed ranges the segmented graph carries the whole-clip rate in its gaps (FL-113), so
+    // the whole-clip rate is applied here only when there are no ranges.
+    if (globalSpeed && speedSegments.length === 0) {
+      // The recipe spans the container timeline, including audio after the last picture.
+      // Hold that picture before changing speed so the source audio tail survives.
+      if (
+        !trim &&
+        audioStream &&
+        typeof videoStream.duration === 'number' &&
+        Number.isFinite(videoStream.duration) &&
+        videoStream.duration > 0 &&
+        Number.isFinite(format.duration) &&
+        format.duration > videoStream.duration
+      ) {
+        videoFilters.push(
+          `tpad=stop_mode=clone:stop_duration=${this.roundFilterNumber(format.duration - videoStream.duration)}`,
+        );
+      }
       videoFilters.push(`setpts=${this.roundFilterNumber(1 / globalSpeed.parameters.rate)}*PTS`);
       audioFilters.push(...this.getAudioTempoFilters(globalSpeed.parameters.rate));
     }
@@ -1236,6 +2202,17 @@ export class MediaService extends BaseService {
     const straighten = edits.find((edit) => edit.action === AssetEditAction.Straighten);
     if (straighten && straighten.parameters.angle !== 0) {
       videoFilters.push(`rotate=${this.roundFilterNumber(straighten.parameters.angle)}*PI/180:fillcolor=black`);
+      // `fill` (FL-113 quick editor): scale the straightened picture to cover its own frame, as the
+      // prototype and the still renderer do (`straightenScale`). Recipes without it keep their
+      // black corners, so an earlier save re-renders exactly as it did.
+      const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+      const cover = straightenScale(width, height, straighten.parameters.angle);
+      if (straighten.parameters.fill && cover > 1) {
+        videoFilters.push(
+          `scale=trunc(iw*${this.roundFilterNumber(cover)}/2)*2:trunc(ih*${this.roundFilterNumber(cover)}/2)*2`,
+          `crop=${width}:${height}`,
+        );
+      }
     }
 
     const mirrors = edits.filter((edit) => edit.action === AssetEditAction.Mirror);
@@ -1243,8 +2220,15 @@ export class MediaService extends BaseService {
       videoFilters.push(mirror.parameters.axis === 'horizontal' ? 'hflip' : 'vflip');
     }
 
-    if (edits.some((edit) => edit.action === AssetEditAction.Stabilize && edit.parameters.enabled)) {
+    const stabilize = edits.find(isEditAction(AssetEditAction.Stabilize));
+    if (stabilize?.parameters.enabled) {
       videoFilters.push('deshake');
+      // `cropEdges` (FL-113, `Editor.jsx` Stabilize: "Edges are cropped slightly to hide the
+      // correction"): crop 4% and scale back to the frame. Earlier recipes render as before.
+      if (stabilize.parameters.cropEdges) {
+        const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+        videoFilters.push('crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2', `scale=${width}:${height}`);
+      }
     }
 
     if (edits.some((edit) => edit.action === AssetEditAction.AutoEnhance && edit.parameters.enabled)) {
@@ -1253,7 +2237,11 @@ export class MediaService extends BaseService {
 
     const adjust = edits.find((edit) => edit.action === AssetEditAction.Adjust);
     if (adjust) {
-      videoFilters.push(...this.getAdjustmentFilters(adjust.parameters));
+      videoFilters.push(
+        ...(adjust.parameters.model === VideoAdjustModel.Develop
+          ? videoDevelopFilters(adjust.parameters)
+          : this.getAdjustmentFilters(adjust.parameters)),
+      );
     }
 
     const looks = edits.filter(
@@ -1267,8 +2255,9 @@ export class MediaService extends BaseService {
     }
 
     const overlays = edits.filter((edit) => edit.action === AssetEditAction.TextOverlay);
+    const outputDimensions = overlays.length > 0 ? this.getVideoEditDimensions(edits, videoStream) : null;
     for (const overlay of overlays) {
-      videoFilters.push(this.getTextOverlayFilter(overlay.parameters, timeline));
+      videoFilters.push(this.getTextOverlayFilter(overlay.parameters, timeline, outputDimensions!));
     }
 
     videoFilters.push(...transcodeFilters);
@@ -1277,11 +2266,24 @@ export class MediaService extends BaseService {
     const muted = !!audioEdit?.parameters.muted;
     if (audioEdit?.parameters.volume !== undefined && !muted) {
       audioFilters.push(`volume=${this.roundFilterNumber(audioEdit.parameters.volume)}`);
+      // `limit` (FL-113, `Editor.jsx` Audio): gain above 100% is limited so it cannot clip.
+      if (audioEdit.parameters.limit && audioEdit.parameters.volume > 1) {
+        audioFilters.push('alimiter=limit=0.98');
+      }
     }
 
     let outputOptions = [
       ...transcodeConfig.getBaseOutputOptions(TranscodeTarget.All, videoStream, muted ? undefined : audioStream),
     ];
+
+    // FL-16: the shared playback output options force a stereo downmix, which is acceptable for a
+    // proxy and never for a master. Strip it, and stream-copy the source track when the recipe
+    // leaves audio alone so the channel layout and sample rate survive exactly.
+    const audioPolicy = applyEditedMasterAudioPolicy(outputOptions, {
+      audioStream,
+      hasAudioFilters: audioFilters.length > 0 || speedSegments.length > 0,
+      muted,
+    });
 
     if (speedSegments.length > 0) {
       const { filters, maps } = this.getSegmentedSpeedFilterGraph(
@@ -1312,10 +2314,79 @@ export class MediaService extends BaseService {
       ...transcodeConfig.getPresetOptions(),
       ...transcodeConfig.getOutputThreadOptions(),
       ...transcodeConfig.getBitrateOptions(),
+      ...audioPolicy.args,
+      // FL-102: the encoder's input pixel format, stated on the command for a software encoder.
+      ...(encodePlan?.args ?? []),
+      // FL-16: rational timing and any variable-frame-rate mapping survive the render.
+      ...getEditedMasterTimingArgs(videoStream),
+      // FL-16: the master's colour intent is tagged explicitly, never inferred.
+      ...getEditedMasterColorArgs(
+        videoStream,
+        colorDecision,
+        colorDecision.policy === EditedMasterColorPolicy.Preserve ? (encodePlan?.statedRange ?? null) : null,
+      ),
     );
 
     return {
       inputOptions,
+      outputOptions,
+      twoPass: false,
+      progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
+    };
+  }
+
+  /**
+   * The packet-preserving master for a qualified right-angle rotation (FL-39): the picture is not
+   * decoded at all, so quality, timing, variable frame rate and audio are preserved exactly, and
+   * the rotation is written into the container's display matrix.
+   */
+  private getMetadataOnlyRotationCommand(
+    rotation: { angle: number; displayRotation: number },
+    videoStream: VideoStreamInfo,
+    audioStream: AudioStreamInfo | undefined,
+  ): TranscodeCommand {
+    const outputOptions = ['-c', 'copy', '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
+    if (audioStream) {
+      outputOptions.push('-map', `0:${audioStream.index}`);
+    }
+    outputOptions.push('-movflags', 'faststart');
+
+    return {
+      // `-display_rotation` is an input option: it replaces the stream's display matrix and turns
+      // off the decoder's auto-rotation, so the packets are copied through untouched.
+      inputOptions: ['-display_rotation', String(rotation.displayRotation)],
+      outputOptions,
+      twoPass: false,
+      progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
+    };
+  }
+
+  /**
+   * The keyframe-snapped fast trim (FL-113): the input is opened at the keyframe at or before the in
+   * point and every packet up to the out point is copied, so nothing is decoded or re-encoded.
+   */
+  private getStreamCopyTrimCommand(
+    trim: { startMs: number; endMs: number },
+    videoStream: VideoStreamInfo,
+    audioStream: AudioStreamInfo | undefined,
+  ): TranscodeCommand {
+    const outputOptions = [
+      '-t',
+      this.msToSeconds(trim.endMs - trim.startMs),
+      '-c',
+      'copy',
+      '-map',
+      `0:${videoStream.index}`,
+      '-map_metadata',
+      '-1',
+    ];
+    if (audioStream) {
+      outputOptions.push('-map', `0:${audioStream.index}`);
+    }
+    outputOptions.push('-avoid_negative_ts', 'make_zero', '-movflags', 'faststart');
+
+    return {
+      inputOptions: ['-ss', this.msToSeconds(trim.startMs)],
       outputOptions,
       twoPass: false,
       progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
@@ -1374,7 +2445,12 @@ export class MediaService extends BaseService {
     return { filters: filters.join(';'), maps: ['[vout]'] };
   }
 
-  private getSpeedIntervals(edits: AssetEditActionItem[], startMs: number, endMs: number): SpeedInterval[] {
+  private getSpeedIntervals(
+    edits: AssetEditActionItem[],
+    startMs: number,
+    endMs: number,
+    baseRate = 1,
+  ): SpeedInterval[] {
     const speedSegments = edits
       .filter(isEditAction(AssetEditAction.Speed))
       .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
@@ -1390,7 +2466,7 @@ export class MediaService extends BaseService {
       }
 
       if (segmentStartMs > cursorMs) {
-        intervals.push({ startMs: cursorMs, endMs: segmentStartMs, rate: 1 });
+        intervals.push({ startMs: cursorMs, endMs: segmentStartMs, rate: baseRate });
       }
 
       intervals.push({ startMs: segmentStartMs, endMs: segmentEndMs, rate: segment.parameters.rate });
@@ -1398,7 +2474,7 @@ export class MediaService extends BaseService {
     }
 
     if (cursorMs < endMs) {
-      intervals.push({ startMs: cursorMs, endMs, rate: 1 });
+      intervals.push({ startMs: cursorMs, endMs, rate: baseRate });
     }
 
     return intervals;
@@ -1496,6 +2572,7 @@ export class MediaService extends BaseService {
   private getTextOverlayFilter(
     parameters: Extract<AssetEditActionItem, { action: AssetEditAction.TextOverlay }>['parameters'],
     timeline: VideoEditTimeline,
+    output: ImageDimensions,
   ) {
     const color = parameters.color.replace('#', '0x');
     const escapedComma = `${String.fromCodePoint(92)},`;
@@ -1506,7 +2583,28 @@ export class MediaService extends BaseService {
       startMs !== undefined && endMs !== undefined
         ? `:enable='between(t${escapedComma}${this.msToSeconds(startMs)}${escapedComma}${this.msToSeconds(endMs)})'`
         : '';
-    return `drawtext=text='${this.escapeFfmpegText(parameters.text)}':x=w*${this.roundFilterNumber(parameters.x)}:y=h*${this.roundFilterNumber(parameters.y)}:fontsize=h*${this.roundFilterNumber(parameters.size)}:fontcolor=${color}${enable}`;
+    const { x, y } = parameters.position
+      ? this.getTextOverlayAnchor(parameters.position)
+      : { x: `w*${this.roundFilterNumber(parameters.x)}`, y: `h*${this.roundFilterNumber(parameters.y)}` };
+    // The prototype's shadow is `0 2px 6px` at its preview size; drawtext has no blur, so it is an
+    // offset shadow of the same proportion.
+    const shadow = parameters.shadow
+      ? `:shadowcolor=black@0.7:shadowx=0:shadowy=${Math.max(1, Math.round(output.height / 360))}`
+      : '';
+    return `drawtext=text='${this.escapeFfmpegText(parameters.text)}':x=${x}:y=${y}:fontsize=h*${this.roundFilterNumber(parameters.size)}:fontcolor=${color}${shadow}${enable}`;
+  }
+
+  /**
+   * Text aligned on the prototype's 3 × 3 grid (`Editor.jsx` `.ed-text-layer`, padding 4% of the
+   * width on every side).
+   */
+  private getTextOverlayAnchor(position: TextOverlayPosition) {
+    const margin = 'w*0.04';
+    const column = position.endsWith('left') ? 0 : position.endsWith('right') ? 2 : 1;
+    const row = position.startsWith('top') ? 0 : position.startsWith('bottom') ? 2 : 1;
+    const x = [margin, '(w-text_w)/2', `w-text_w-${margin}`][column];
+    const y = [margin, '(h-text_h)/2', `h-text_h-${margin}`][row];
+    return { x, y };
   }
 
   private getVideoEditDimensions(edits: AssetEditActionItem[], videoStream: VideoStreamInfo): ImageDimensions {
@@ -1529,6 +2627,26 @@ export class MediaService extends BaseService {
     }
 
     return { width, height };
+  }
+
+  /**
+   * The rendered length to record. A stream-copied fast trim starts at the keyframe at or before
+   * the in point, so it runs longer than out minus in (FL-113): its length is read from the file
+   * that was written. Every other render is exactly the recipe's timeline.
+   */
+  private async getRenderedVideoDurationMs(
+    edits: AssetEditActionItem[],
+    source: { videoStream: VideoStreamInfo; audioStream?: AudioStreamInfo; format: VideoFormat },
+    output: string | VideoInfo,
+  ): Promise<number> {
+    if (qualifyStreamCopyTrim({ edits, ...source })) {
+      const info = typeof output === 'string' ? await this.mediaRepository.probe(output) : output;
+      const probed = Math.round((info.format.duration ?? 0) * 1000);
+      if (probed > 0) {
+        return probed;
+      }
+    }
+    return this.getVideoEditDurationMs(edits, source.format);
   }
 
   private getVideoEditDurationMs(edits: AssetEditActionItem[], format: VideoFormat) {
@@ -1564,12 +2682,21 @@ export class MediaService extends BaseService {
       .replaceAll(',', () => `${escape},`);
   }
 
+  /**
+   * FL-93: a filter's time argument is produced by an exact decimal expansion of the
+   * millisecond value rather than by `toFixed` on a float division. For whole milliseconds the
+   * two agree exactly, so no existing command changes; what it buys is that a boundary derived
+   * from a cadence — a speed segment, a trim snapped to a frame — is rounded once, by the
+   * pinned half-away-from-zero rule, instead of inheriting whatever the float landed on. A
+   * fractional input is taken to microsecond precision, which is finer than any time base the
+   * fork encodes to.
+   */
   private msToSeconds(milliseconds: number) {
-    return this.roundFilterNumber(milliseconds / 1000);
+    return toDisplaySeconds(rational(Math.round(milliseconds * 1000), 1_000_000), FILTER_DECIMAL_PLACES);
   }
 
   private roundFilterNumber(value: number) {
-    return Number(value.toFixed(4)).toString();
+    return Number(value.toFixed(FILTER_DECIMAL_PLACES)).toString();
   }
 
   private toEvenDimension(value: number) {
@@ -1713,6 +2840,17 @@ export class MediaService extends BaseService {
   }
 
   private async syncFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
+    if (
+      [
+        JobName.AssetGenerateThumbnails,
+        JobName.AssetEditThumbnailGeneration,
+        JobName.AssetVideoEditGeneration,
+      ].includes(queueExecution.getStore()?.claim.name as JobName)
+    ) {
+      await this.stageGeneratedFiles(oldFiles, newFiles);
+      return;
+    }
+
     const toUpsert: UpsertFileOptions[] = [];
     const pathsToDelete: string[] = [];
     const toDelete = new Set(oldFiles);
@@ -1731,7 +2869,8 @@ export class MediaService extends BaseService {
       if (
         existingFile?.path !== newFile.path ||
         existingFile.isProgressive !== newFile.isProgressive ||
-        existingFile.isTransparent !== newFile.isTransparent
+        existingFile.isTransparent !== newFile.isTransparent ||
+        (existingFile.renditionIdentity ?? null) !== (newFile.renditionIdentity ?? null)
       ) {
         toUpsert.push(newFile);
 
@@ -1762,6 +2901,77 @@ export class MediaService extends BaseService {
     }
   }
 
+  /** Hash/stat happen without a connection. Only accepted output references enter the final SQL commit. */
+  private async stageGeneratedFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
+    const prepared: Array<{
+      file: UpsertFileOptions;
+      physical: { id: string; checksum: Buffer; size: number; type: PhysicalFileType } | undefined;
+    }> = [];
+    const discarded: string[] = [];
+    for (const input of newFiles) {
+      const original = await this.physicalFileRepository.getOriginalPhysicalFile(input.assetId);
+      const canonical =
+        !input.isEdited && original?.canonicalAssetId !== input.assetId
+          ? await this.physicalFileRepository.getCanonicalGeneratedFile(
+              input.assetId,
+              input.type,
+              input.renditionIdentity,
+            )
+          : undefined;
+      if (canonical) {
+        prepared.push({ file: { ...input, path: canonical.path, physicalFileId: canonical.id }, physical: undefined });
+        if (input.path !== canonical.path) {
+          discarded.push(input.path);
+        }
+      } else {
+        const physical =
+          !input.isEdited && original?.canonicalAssetId === input.assetId
+            ? {
+                id: randomUUID(),
+                checksum: await this.cryptoRepository.hashFile(input.path),
+                size: (await this.storageRepository.stat(input.path)).size,
+                type: this.toPhysicalFileType(input.type),
+              }
+            : undefined;
+        prepared.push({ file: { ...input, physicalFileId: physical?.id ?? null }, physical });
+      }
+    }
+    const retained = new Set(prepared.map(({ file }) => file.path));
+    const obsolete = oldFiles.filter((file) => !retained.has(file.path));
+    deferJobAdoption(async (tx) => {
+      for (const { file, physical } of prepared) {
+        if (physical) {
+          await sql`insert into physical_file(id, type, checksum, "sizeInBytes", path, "canonicalAssetId")
+            values (${physical.id}::uuid, ${physical.type}, ${physical.checksum}, ${physical.size}, ${file.path}, ${file.assetId}::uuid)
+            on conflict (path) do nothing`.execute(tx);
+        }
+        await sql`insert into asset_file("assetId", type, path, "isEdited", "isProgressive", "isTransparent", "physicalFileId", "renditionIdentity")
+          values (${file.assetId}::uuid, ${file.type}, ${file.path}, ${file.isEdited}, ${file.isProgressive}, ${file.isTransparent}, ${file.physicalFileId}::uuid, ${file.renditionIdentity ?? null})
+          on conflict ("assetId", type, "isEdited") do update set path = excluded.path,
+            "isProgressive" = excluded."isProgressive", "isTransparent" = excluded."isTransparent",
+            "physicalFileId" = excluded."physicalFileId", "renditionIdentity" = excluded."renditionIdentity"`.execute(
+          tx,
+        );
+      }
+      for (const file of obsolete) {
+        if (
+          prepared.every(
+            ({ file: replacement }) => replacement.type !== file.type || replacement.isEdited !== file.isEdited,
+          )
+        ) {
+          await sql`delete from asset_file where id = ${file.id}::uuid and type = ${file.type}
+            and "isEdited" = ${file.isEdited} and path = ${file.path}`.execute(tx);
+        }
+      }
+    });
+    const paths = [...discarded, ...obsolete.map((file) => file.path)];
+    if (paths.length > 0) {
+      await this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } }),
+      );
+    }
+  }
+
   private async applyPhysicalDeduplicationToGeneratedFile(
     file: UpsertFileOptions,
   ): Promise<{ file: UpsertFileOptions; pathToDelete?: string }> {
@@ -1769,12 +2979,12 @@ export class MediaService extends BaseService {
       return { file };
     }
 
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (!physicalDeduplication.enabled) {
-      return { file };
-    }
-
-    const canonical = await this.physicalFileRepository.getCanonicalGeneratedFile(file.assetId, file.type);
+    // universal storage is always on: a copy linked to another asset's original shares its generated files
+    const canonical = await this.physicalFileRepository.getCanonicalGeneratedFile(
+      file.assetId,
+      file.type,
+      file.renditionIdentity,
+    );
     if (canonical) {
       return {
         file: { ...file, path: canonical.path, physicalFileId: canonical.id },
@@ -1804,6 +3014,8 @@ export class MediaService extends BaseService {
       AssetFileType.Thumbnail,
       AssetFileType.Preview,
       AssetFileType.FullSize,
+      AssetFileType.HdrPreview,
+      AssetFileType.HdrFullSize,
       AssetFileType.EncodedVideo,
     ].includes(type);
   }
@@ -1812,6 +3024,12 @@ export class MediaService extends BaseService {
     switch (type) {
       case AssetFileType.Thumbnail: {
         return PhysicalFileType.Thumbnail;
+      }
+      case AssetFileType.HdrPreview: {
+        return PhysicalFileType.HdrPreview;
+      }
+      case AssetFileType.HdrFullSize: {
+        return PhysicalFileType.HdrFullSize;
       }
       case AssetFileType.Preview: {
         return PhysicalFileType.Preview;
@@ -1828,12 +3046,31 @@ export class MediaService extends BaseService {
     }
   }
 
-  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {
+  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig, run?: EditOperationRun) {
     if (asset.type !== AssetType.Image || (asset.files.length === 0 && asset.edits.length === 0)) {
       return;
     }
 
     const generated = asset.edits.length > 0 ? await this.generateImageThumbnails(asset, config, true) : undefined;
+
+    // FL-39: a still edited master records the same lineage as a video one. The highest-fidelity
+    // edited output is the master; the smaller renditions beside it are replaceable previews.
+    const editedMaster =
+      generated?.files.find((file) => file.isEdited && file.type === AssetFileType.FullSize) ??
+      generated?.files.find((file) => file.isEdited && file.type === AssetFileType.Preview);
+    if (editedMaster) {
+      await this.writeEditedMasterLineage({
+        masterPath: editedMaster.path,
+        assetId: asset.id,
+        originalPath: asset.originalPath,
+        checksum: asset.checksum,
+        edits: asset.edits,
+        colorDecision: {
+          policy: EditedMasterColorPolicy.Preserve,
+          reason: `Still develop recipe rendered from the original into ${config.image.fullsize.format}.`,
+        },
+      });
+    }
 
     const crop = asset.edits.find((e) => e.action === AssetEditAction.Crop);
     const cropBox = crop
@@ -1845,15 +3082,22 @@ export class MediaService extends BaseService {
         }
       : undefined;
 
-    const originalDimensions = getDimensions(asset.exifInfo!);
-    const assetFaces = await this.personRepository.getFaces(asset.id, { viewingUserId: asset.ownerId });
-    const ocrData = await this.ocrRepository.getByAssetId(asset.id, {});
+    // A cancelled/lost edit returns Skipped. It must not leave visibility changes queued for
+    // the enclosing job's successful completion after the operation itself refused publication.
+    if (run && !(await run.validate())) {
+      return;
+    }
+    await publishJobResult(async () => {
+      const originalDimensions = getDimensions(asset.exifInfo!);
+      const assetFaces = await this.personRepository.getFaces(asset.id, { viewingUserId: asset.ownerId });
+      const ocrData = await this.ocrRepository.getByAssetId(asset.id, {});
 
-    const faceStatuses = checkFaceVisibility(assetFaces, originalDimensions, cropBox);
-    await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
+      const faceStatuses = checkFaceVisibility(assetFaces, originalDimensions, cropBox);
+      await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
 
-    const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
-    await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);
+      const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
+      await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);
+    });
 
     return generated;
   }
@@ -1870,7 +3114,14 @@ export class MediaService extends BaseService {
     asset: ThumbnailPathEntity,
     options: ImagePathOptions & { isProgressive: boolean; isTransparent: boolean },
   ) {
-    const path = StorageCore.getImagePath(asset, options);
+    const originalPath = StorageCore.getImagePath(asset, options);
+    const path = [
+      JobName.AssetGenerateThumbnails,
+      JobName.AssetEditThumbnailGeneration,
+      JobName.AssetVideoEditGeneration,
+    ].includes(queueExecution.getStore()?.claim.name as JobName)
+      ? attemptOutputPath(originalPath)
+      : originalPath;
     return {
       assetId: asset.id,
       type: options.fileType,

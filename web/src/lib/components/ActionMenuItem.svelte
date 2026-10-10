@@ -1,7 +1,7 @@
 <script lang="ts">
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { isEnabled } from '$lib/utils';
-  import { type ActionItem } from '@immich/ui';
+  import { type ActionItem } from '@frameleaf/ui';
 
   type Props = {
     action: ActionItem;

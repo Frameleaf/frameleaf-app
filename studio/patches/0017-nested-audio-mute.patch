@@ -1,0 +1,60 @@
+Subject: Preserve detached embedded-audio mute inside compositions
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -800,6 +800,7 @@
+     }
+ 
+     if (subItem.type !== 'video' && subItem.type !== 'audio') continue
++    if (subItem.type === 'video' && subItem.embeddedAudioMuted) continue
+     if (subItem.type === 'video' && linkedSubCompVideoIds.has(subItem.id)) continue
+     const src =
+       (subItem.mediaId ? blobUrlManager.get(subItem.mediaId) : null) ??
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -356,9 +356,17 @@
+     expect(segments[0]).toMatchObject({ itemId: 'audio-1', type: 'audio' })
+   })
+ 
+-  it('skips precomp video audio when a linked audio companion exists inside the precomp', () => {
+-    const subVideo = makeVideoItem({ id: 'sub-video', linkedGroupId: 'group-1', trackId: 'sub-v1' })
+-    const subAudio = makeAudioItem({ id: 'sub-audio', linkedGroupId: 'group-1', trackId: 'sub-a1' })
++  it.each(['linked', 'detached'] as const)('keeps %s precomp video audio suppressed in both mixers', async (mode) => {
++    const subVideo = makeVideoItem({
++      id: 'sub-video',
++      linkedGroupId: mode === 'linked' ? 'group-1' : undefined,
++      embeddedAudioMuted: mode === 'detached',
++      trackId: 'sub-v1',
++      mediaId: undefined,
++    })
++    const subAudio = makeAudioItem({
++      id: 'sub-audio', linkedGroupId: 'group-1', trackId: 'sub-a1', mediaId: undefined,
++    })
+     const subComp = {
+       id: 'sub-comp-1',
+       name: 'Compound Clip',
+@@ -408,6 +416,19 @@
+ 
+     expect(segments).toHaveLength(1)
+     expect(segments[0]).toMatchObject({ itemId: 'sub-audio', type: 'audio' })
++
++    const full = await processAudio(composition)
++    expect(full).not.toBeNull()
++    const windows = []
++    for await (const window of processAudioWindows(composition)) windows.push(window)
++    expect(windows).toHaveLength(1)
++    for (const mixed of [full!, windows[0]!]) {
++      expect(mixed.channels).toBe(2)
++      for (const samples of mixed.samples) {
++        // Only the detached/linked audio plays; the original video must not double it.
++        expect(samples[48_000]).toBeCloseTo(0.1, 7)
++      }
++    }
+   })
+ 
+   it('expands linked audio companions around a cut-centered transition', () => {

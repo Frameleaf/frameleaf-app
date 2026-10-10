@@ -1,0 +1,132 @@
+diff --git a/src/connection.js b/src/connection.js
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -254,3 +254,3 @@
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket ? socket.write(chunk, fn) : false
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+@@ -440,2 +440,3 @@
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+@@ -453,2 +454,5 @@
+-    !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    !hadError && (query || sent.length) && error(errorResponse || Errors.connection('CONNECTION_CLOSED', options, socket))
++    query = results = errorResponse = null
++    result = new Result()
++    rows = 0
+     closedTime = performance.now()
+diff --git a/src/index.js b/src/index.js
+--- a/src/index.js
++++ b/src/index.js
+@@ -213,5 +213,6 @@
+     move(c, reserved)
+-    c.reserved = () => queue.length
++    const reservation = c.reserved = () => queue.length
+       ? c.execute(queue.shift())
+       : move(c, reserved)
++    c.onclose = onclose
+     c.reserved.release = true
+@@ -220,4 +221,7 @@
+     sql.release = () => {
++      if (c.reserved !== reservation)
++        return
+       c.reserved = null
++      c.onclose = null
+       onopen(c)
+     }
+@@ -227,3 +231,6 @@
+     function handler(q) {
++      if (c.reserved !== reservation)
++        return q.reject(Errors.connection('CONNECTION_CLOSED', options))
++
+       c.queue === full
+         ? queue.push(q)
+@@ -230,3 +237,8 @@
+         : c.execute(q) || move(c, full)
+     }
++
++    function onclose(error) {
++      while (queue.length)
++        queue.shift().reject(error)
++    }
+   }
+@@ -425,3 +437,3 @@
+     options.onclose && options.onclose(c.id)
+-    queries.length && connect(c, queries.shift())
++    queries.length && connect(c, queries.peek().reserve ? queries.peek() : queries.shift())
+   }
+diff --git a/cjs/src/index.js b/cjs/src/index.js
+--- a/cjs/src/index.js
++++ b/cjs/src/index.js
+@@ -213,5 +213,6 @@
+     move(c, reserved)
+-    c.reserved = () => queue.length
++    const reservation = c.reserved = () => queue.length
+       ? c.execute(queue.shift())
+       : move(c, reserved)
++    c.onclose = onclose
+     c.reserved.release = true
+@@ -220,4 +221,7 @@
+     sql.release = () => {
++      if (c.reserved !== reservation)
++        return
+       c.reserved = null
++      c.onclose = null
+       onopen(c)
+     }
+@@ -227,3 +231,6 @@
+     function handler(q) {
++      if (c.reserved !== reservation)
++        return q.reject(Errors.connection('CONNECTION_CLOSED', options))
++
+       c.queue === full
+         ? queue.push(q)
+@@ -230,3 +237,8 @@
+         : c.execute(q) || move(c, full)
+     }
++
++    function onclose(error) {
++      while (queue.length)
++        queue.shift().reject(error)
++    }
+   }
+@@ -425,3 +437,3 @@
+     options.onclose && options.onclose(c.id)
+-    queries.length && connect(c, queries.shift())
++    queries.length && connect(c, queries.peek().reserve ? queries.peek() : queries.shift())
+   }
+diff --git a/cjs/src/connection.js b/cjs/src/connection.js
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -254,3 +254,3 @@
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket ? socket.write(chunk, fn) : false
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+@@ -440,2 +440,3 @@
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+@@ -453,2 +454,5 @@
+-    !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    !hadError && (query || sent.length) && error(errorResponse || Errors.connection('CONNECTION_CLOSED', options, socket))
++    query = results = errorResponse = null
++    result = new Result()
++    rows = 0
+     closedTime = performance.now()
+diff --git a/src/queue.js b/src/queue.js
+--- a/src/queue.js
++++ b/src/queue.js
+@@ -17,2 +17,3 @@
+     push: (x) => (xs.push(x), x),
++    peek: () => xs[index],
+     shift: () => {
+diff --git a/cjs/src/queue.js b/cjs/src/queue.js
+--- a/cjs/src/queue.js
++++ b/cjs/src/queue.js
+@@ -17,2 +17,3 @@
+     push: (x) => (xs.push(x), x),
++    peek: () => xs[index],
+     shift: () => {

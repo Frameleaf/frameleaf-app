@@ -1,0 +1,220 @@
+# Deploy production (FL-142, FL-145, FL-146; owner decisions 2026-09-27): "We'll just setup deploys in
+# actions. A deploy production does the release and auto signs images."
+#
+# A manual dispatch of fork/main. It replaces the former automatic Frameleaf Release workflow and keeps
+# its promotion logic (.github/frameleaf-release.cjs `release`):
+#   release  - verify that the named candidate (the exact fork/main commit, or the digest of its
+#              frameleaf-server candidate) is a verified build of that commit (a successful same-SHA
+#              Deploy run, verified manifests; rolling tags are never evidence), run the deployment test on
+#              those exact images, then in the protected `production` environment promote the version,
+#              `release` and `latest` tags, sign every image digest with the Frameleaf cosign key, attach
+#              the release manifest as an attestation, and publish the GitHub release.
+#   rollout  - change a published release's staged rollout percentage (servers read it; FL-142).
+#   withdraw - kill switch: mark a release withdrawn so servers stop offering it, and restore an earlier
+#              release's verified, signed images as `release` and `latest`.
+# `dry-run` (the default) stops before anything is pushed, signed or edited.
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: release, rollout or withdraw
+        type: choice
+        options: [release, rollout, withdraw]
+        default: release
+      candidate:
+        description: 'release: the exact 40-character fork/main commit SHA, or the sha256: digest of its frameleaf-server candidate'
+        type: string
+        default: ''
+      rollout-percent:
+        description: 'release/rollout: the share of servers (0-100) offered the release'
+        type: string
+        default: '100'
+      release-tag:
+        description: 'rollout/withdraw: the frameleaf-v<version>-<n> release to change'
+        type: string
+        default: ''
+      restore-tag:
+        description: 'withdraw: the earlier release that becomes release and latest again'
+        type: string
+        default: ''
+      reason:
+        description: 'withdraw: why the release is withdrawn (published in the release notes)'
+        type: string
+        default: ''
+      dry-run:
+        description: Verify and run the deployment test only; push, sign and edit nothing
+        type: boolean
+        default: true
+
+concurrency:
+  group: frameleaf-release-promotion
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  candidate:
+    name: Verify the verified candidate
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/fork/main' || inputs.dry-run)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+      run: ${{ steps.candidate.outputs.run }}
+      server-image: ${{ steps.candidate.outputs['server-image'] }}
+      server-source: ${{ steps.candidate.outputs['server-source'] }}
+      ml-image: ${{ steps.candidate.outputs['ml-image'] }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Resolve the candidate and prove it is a verified build of that exact commit
+        id: candidate
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$ROLLOUT_PERCENT" =~ ^[0-9]{1,3}$ && "$ROLLOUT_PERCENT" -le 100 ]] || { echo "::error::Rollout must be a whole percentage from 0 to 100"; exit 1; }
+          node .github/frameleaf-release.cjs resolve-candidate
+
+  deploy-test:
+    name: Deployment test (${{ matrix.architecture }})
+    needs: candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      # The candidate's own Compose, environment example and database build, as its release bundles them.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Deploy the candidate images and test the installation
+        env:
+          SERVER_IMAGE: ${{ needs.candidate.outputs['server-image'] }}
+          ML_IMAGE: ${{ needs.candidate.outputs['ml-image'] }}
+          SOURCE_SHA: ${{ needs.candidate.outputs['server-source'] }}
+          SOURCE_ROOT: candidate
+        run: node .github/frameleaf-deploy-test.cjs
+
+  release:
+    name: Promote, sign and publish
+    needs: [candidate, deploy-test]
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Verify all manifests, promote, sign every digest and publish the release
+        env:
+          SOURCE_SHA: ${{ needs.candidate.outputs.sha }}
+          BUILD_RUN_ID: ${{ needs.candidate.outputs.run }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
+          SIGN: '1'
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs release
+
+  flags-plan:
+    name: Plan ${{ inputs.action }} (read only)
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Verify the release and what would change
+        env:
+          ACTION: ${{ inputs.action }}
+          RELEASE_TAG: ${{ inputs['release-tag'] }}
+          RESTORE_TAG: ${{ inputs['restore-tag'] }}
+          ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
+          REASON: ${{ inputs.reason }}
+          DRY_RUN: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs release-flags
+
+  flags:
+    name: Apply ${{ inputs.action }}
+    needs: flags-plan
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Change the release
+        env:
+          ACTION: ${{ inputs.action }}
+          RELEASE_TAG: ${{ inputs['release-tag'] }}
+          RESTORE_TAG: ${{ inputs['restore-tag'] }}
+          ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
+          REASON: ${{ inputs.reason }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs release-flags

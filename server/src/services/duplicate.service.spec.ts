@@ -4,12 +4,13 @@ import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 import { getForDuplicate } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.useFakeTimers();
 
@@ -35,6 +36,9 @@ describe(DuplicateService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DuplicateService));
+    mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set());
+    mocks.duplicateRepository.findMotionTransfer.mockResolvedValue(undefined);
+    mocks.duplicateRepository.withResolutionLock.mockImplementation((_id, callback) => callback(undefined as never));
   });
 
   it('should work', () => {
@@ -61,6 +65,43 @@ describe(DuplicateService.name, () => {
       ]);
     });
 
+    it('prefers a smaller HEIC and reports motion that still requires review', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const heic = AssetFactory.from({ originalFileName: 'capture.HEIC' }).exif({ fileSizeInByte: 1000 }).build();
+      const jpeg = AssetFactory.from({ originalFileName: 'capture.jpg', livePhotoVideoId: 'motion' })
+        .exif({ fileSizeInByte: 9000 })
+        .build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(jpeg), getForDuplicate(heic)] },
+      ]);
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+      expect(group.reviewRequiredReasons).toEqual(['distinct-motion']);
+    });
+
+    it('requires review when Develop history evidence is unavailable', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const asset = AssetFactory.from().exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([{ duplicateId: 'group', assets: [getForDuplicate(asset)] }]);
+      mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+    });
+
+    it('permits a verified motion transfer without pretending the keeper is already paired', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const heic = AssetFactory.from({ originalFileName: 'capture.HEIC' }).exif().build();
+      const jpeg = AssetFactory.from({ livePhotoVideoId: 'proven-motion' }).exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(jpeg), getForDuplicate(heic)] },
+      ]);
+      mocks.duplicateRepository.findMotionTransfer.mockResolvedValue('proven-motion');
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([heic.id]);
+      expect(group.reviewRequiredReasons).toBeUndefined();
+      expect(group.assets.find(({ id }) => id === heic.id)?.livePhotoVideoId).toBeNull();
+    });
+
     it('should hide private NSFW duplicate assets when requested', async () => {
       mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
       mocks.duplicateRepository.getAll.mockResolvedValue([]);
@@ -82,6 +123,26 @@ describe(DuplicateService.name, () => {
       ]);
       const result = await sut.getDuplicates(authStub.admin);
       expect(result[0].suggestedKeepAssetIds).toEqual([largeAsset.id]);
+    });
+  });
+
+  describe('Library care → Group near-duplicates for review (FL-69)', () => {
+    beforeEach(() => {
+      clearConfigCache();
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, duplicateDetection: { enabled: true } },
+        libraryCare: { duplicateReview: false },
+      });
+    });
+
+    it('queues no grouping while it is off', async () => {
+      await expect(sut.handleQueueSearchDuplicates({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('groups nothing while it is off', async () => {
+      await expect(sut.handleSearchDuplicates({ id: newUuid() })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.getForSearchDuplicatesJob).not.toHaveBeenCalled();
     });
   });
 
@@ -131,32 +192,28 @@ describe(DuplicateService.name, () => {
 
     it('should queue missing assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSearchDuplicates.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSearchDuplicates.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSearchDuplicates({});
 
-      expect(mocks.assetJob.streamForSearchDuplicates).toHaveBeenCalledWith(undefined);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectDuplicates,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForSearchDuplicates).toHaveBeenCalledWith(undefined);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectDuplicates,
+        mocks.assetJob.selectionForSearchDuplicates.mock.results[0].value,
+      );
     });
 
     it('should queue all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSearchDuplicates.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSearchDuplicates.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSearchDuplicates({ force: true });
 
-      expect(mocks.assetJob.streamForSearchDuplicates).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectDuplicates,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForSearchDuplicates).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectDuplicates,
+        mocks.assetJob.selectionForSearchDuplicates.mock.results[0].value,
+      );
     });
   });
 
@@ -181,17 +238,15 @@ describe(DuplicateService.name, () => {
 
     it('should queue videos with missing enhanced frames', async () => {
       const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.streamForVideoDuplicateFrames.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForVideoDuplicateFrames.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.assetJob.streamForVideoDuplicateFrames).toHaveBeenCalledWith({ force: undefined, frameCount: 4 });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateVideoDuplicateFrames,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForVideoDuplicateFrames).toHaveBeenCalledWith({ force: undefined, frameCount: 4 });
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetGenerateVideoDuplicateFrames,
+        mocks.assetJob.selectionForVideoDuplicateFrames.mock.results[0].value,
+      );
     });
 
     it('should skip when enhanced video duplicate detection is disabled', async () => {
@@ -212,7 +267,7 @@ describe(DuplicateService.name, () => {
       });
 
       await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.assetJob.streamForVideoDuplicateFrames).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForVideoDuplicateFrames).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });
@@ -518,7 +573,9 @@ describe(DuplicateService.name, () => {
   describe('resolve', () => {
     it('should handle mixed success and failure', async () => {
       const asset = AssetFactory.create();
-      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1', 'group-2']));
+      mocks.access.duplicate.checkOwnerAccess.mockImplementation((_owner, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => ['group-1', 'group-2'].includes(id)))),
+      );
       mocks.duplicateRepository.get.mockResolvedValueOnce(void 0);
       mocks.duplicateRepository.get.mockResolvedValueOnce({
         duplicateId: 'group-2',
@@ -551,6 +608,98 @@ describe(DuplicateService.name, () => {
   });
 
   describe('resolveGroup (via resolve)', () => {
+    it('attaches a proven motion reference before trashing the JPEG and retains its original link', async () => {
+      const keeper = AssetFactory.from({ originalFileName: 'capture.HEIC' }).build();
+      const jpeg = AssetFactory.from({ livePhotoVideoId: 'proven-motion' }).build();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_owner, ids) => Promise.resolve(ids));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper, jpeg] as unknown as MapAsset[],
+      });
+      mocks.duplicateRepository.findMotionTransfer.mockResolvedValue('proven-motion');
+      const [result] = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [jpeg.id] }],
+      });
+      expect(result.success).toBe(true);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: keeper.id, livePhotoVideoId: 'proven-motion' });
+      expect(mocks.asset.update.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.asset.updateAll.mock.invocationCallOrder[0],
+      );
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(
+        [jpeg.id],
+        expect.objectContaining({ livePhotoVideoId: null }),
+      );
+    });
+    it('retains committed success and a durable receipt when sidecar work fails, while attempting disposal events', async () => {
+      const keeper = AssetFactory.create();
+      const disposable = AssetFactory.create();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [
+          { ...keeper, tags: [] },
+          { ...disposable, tags: [{ id: 'tag-1', value: 'Travel' }] },
+        ] as unknown as MapAsset[],
+      });
+      mocks.job.queueAll.mockRejectedValue(new Error('queue unavailable'));
+      const [result] = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+      });
+      expect(result.success).toBe(true);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', {
+        assetIds: [disposable.id],
+        userId: authStub.admin.user.id,
+      });
+      expect(mocks.job.removeJob).not.toHaveBeenCalled();
+      const [, receipt] = mocks.job.queueInTransaction.mock.calls[0];
+      expect(receipt).toMatchObject({
+        name: JobName.DuplicateResolutionLifecycle,
+        data: { sidecarIds: [keeper.id], trashIds: [disposable.id] },
+      });
+      mocks.job.queueAll.mockResolvedValue(undefined);
+      await expect(sut.handleResolutionLifecycle(receipt.data as never)).resolves.toBe(JobStatus.Success);
+    });
+
+    it.each([{ isEdited: true }, { livePhotoVideoId: 'unique-motion' }])(
+      'refuses disposal of protected content %j before mutating anything',
+      async (protectedFields) => {
+        const keeper = AssetFactory.create();
+        const disposable = AssetFactory.create(protectedFields);
+        mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+        mocks.duplicateRepository.get.mockResolvedValue({
+          duplicateId: 'group-1',
+          assets: [keeper, disposable] as unknown as MapAsset[],
+        });
+        const result = await sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+        });
+        expect(result[0]).toMatchObject({ success: false, error: BulkIdErrorReason.VALIDATION });
+        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+        expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([AssetType.Image, AssetType.Video])('protects historical %s edits even after reset', async (type) => {
+      const keeper = AssetFactory.create();
+      const disposable = AssetFactory.create({ isEdited: false, type });
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([disposable.id]));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper, disposable] as unknown as MapAsset[],
+      });
+      mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set([disposable.id]));
+      const result = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] }],
+      });
+      expect(result[0]).toMatchObject({ success: false, error: BulkIdErrorReason.VALIDATION });
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
     it('should fail if duplicate group not found', async () => {
       mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['missing-id']));
       mocks.duplicateRepository.get.mockResolvedValue(void 0);

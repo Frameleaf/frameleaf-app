@@ -1,17 +1,20 @@
 [tasks.install]
-run = "pnpm install --filter immich --frozen-lockfile"
+run = "pnpm install --filter 'frameleaf...' --frozen-lockfile"
 
 [tasks.build]
 env._.path = "./node_modules/.bin"
-run = "nest build"
+run = "pnpm run build"
 
 [tasks.test]
 env._.path = "./node_modules/.bin"
-run = "vitest --config test/vitest.config.mjs"
+run = "pnpm run test"
+
+[tasks."test-runtime"]
+run = "pnpm run test:runtime"
 
 [tasks."test-medium"]
 env._.path = "./node_modules/.bin"
-run = "vitest --config test/vitest.config.medium.mjs"
+run = "pnpm run test:medium"
 
 [tasks.format]
 env._.path = "./node_modules/.bin"
@@ -23,14 +26,16 @@ run = "prettier --write ."
 
 [tasks.lint]
 env._.path = "./node_modules/.bin"
-run = "eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0"
+# Type-aware linting of src and test together outgrew Node's default 4 GB heap on the CI runner.
+env.NODE_OPTIONS = "--max-old-space-size=6144"
+run = "pnpm run lint"
 
 [tasks."lint-fix"]
 run = { task = "lint --fix" }
 
 [tasks.check]
 env._.path = "./node_modules/.bin"
-run = "tsc --noEmit"
+run = "pnpm run check"
 
 [tasks.sql]
 run = "node ./dist/bin/sync-sql.js"
@@ -40,7 +45,7 @@ run = "node ./dist/bin/sync-open-api.js"
 
 [tasks.migrations]
 env._.path = "./node_modules/.bin"
-run = "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations"
+run = "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations"
 description = "Run database migration commands (create, generate, run, sync-order, verify-order, ...)"
 
 [tasks."schema-drop"]
@@ -61,6 +66,7 @@ run = [
   { task = ":lint" },
   { task = ":check" },
   { task = ":test --run" },
+  { task = ":test-runtime" },
 ]
 
 [tasks.ci-medium]
@@ -68,6 +74,7 @@ run = [
   { task = ":install" },
   { task = "//:plugins" },
   { task = "//packages/plugin-core:build" },
+  { task = ":build" },
   { task = ":test-medium --run" },
 ]
 

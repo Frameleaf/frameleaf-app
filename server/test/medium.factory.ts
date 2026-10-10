@@ -11,6 +11,7 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem, AssetEditsCreateDto } from 'src/dtos/editing.dto.js';
 import {
   AlbumUserRole,
+  AssetLockReason,
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
@@ -21,13 +22,18 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -37,20 +43,29 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
@@ -60,12 +75,15 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -87,7 +105,8 @@ import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.servic
 import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
-import { getConfig, updateConfig } from 'src/utils/config.js';
+import { getConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
 import { automock, wait } from 'test/utils.js';
@@ -102,6 +121,12 @@ type MediumTestOptions = {
 };
 
 type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
+// Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
+type MediumRepositoryKey =
+  | BaseServiceDeps[number]
+  | typeof MediaOperationRepository
+  | typeof StudioProjectRepository
+  | typeof VideoMomentRepository;
 
 export const newMediumService = <S extends ClassConstructor<typeof BaseService>>(
   Service: S,
@@ -125,6 +150,35 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     this.sutDeps = this.makeDeps(options);
     this.sut = new Service(...this.sutDeps) as InstanceType<S>;
     this.database = options.database;
+    this.setMockDefaults();
+  }
+
+  /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
+  private setMockDefaults() {
+    if (this.options.mock.includes(SystemMetadataRepository)) {
+      this.getMock(SystemMetadataRepository).getEffectiveConfigEpoch.mockResolvedValue(null);
+    }
+    if (this.options.mock.includes(MlDestinationRepository)) {
+      const mlDestination = this.getMock(MlDestinationRepository);
+      mlDestination.getRoute.mockImplementation((workload) =>
+        Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
+      );
+      mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // Synthetic healthy destinations have no restored authority; fence tests override this mock.
+      mlDestination.assertRecoveryAuthority.mockResolvedValue();
+      mlDestination.getRoutes.mockResolvedValue([]);
+      mlDestination.getSpend.mockResolvedValue(0);
+      mlDestination.recordProbe.mockResolvedValue();
+      mlDestination.recordAccounting.mockResolvedValue();
+    }
+    if (this.options.mock.includes(WebsocketRepository)) {
+      // an asset change is pushed to the owner's other sessions (FL-53)
+      this.getMock(WebsocketRepository).clientSend.mockReturnValue();
+    }
+    if (this.options.mock.includes(MachineLearningRepository)) {
+      const machineLearning = this.getMock(MachineLearningRepository);
+      machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+    }
   }
 
   private makeDeps(options: MediumTestOptions) {
@@ -149,10 +203,15 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       if (options.mock.includes(dep)) {
         return newMockRepository(dep);
       }
+
+      // FL-326: every asset, tag and partner edit records partner-copy lineage; it is real unless mocked
+      if (dep === PartnerOriginRepository) {
+        return this.get(dep);
+      }
     }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
   }
 
-  get<T extends BaseServiceDeps[number]>(key: T): InstanceType<T> {
+  get<T extends MediumRepositoryKey>(key: T): InstanceType<T> {
     if (!Object.hasOwn(this.repoCache, key.name)) {
       const real = newRealRepository(key, this.options.database);
       this.repoCache[key.name] = real;
@@ -177,8 +236,9 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     return { user, result };
   }
 
-  async newPartner(dto: { sharedById: string; sharedWithId: string; inTimeline?: boolean }) {
-    const partner = { inTimeline: true, ...dto };
+  async newPartner(dto: { sharedById: string; sharedWithId: string; inTimeline?: boolean; shareLocation?: boolean }) {
+    // explicit, so a spec states the location sharing it relies on (a new partnership defaults to off)
+    const partner = { inTimeline: true, shareLocation: true, ...dto };
     const result = await this.get(PartnerRepository).create(partner);
     return { partner, result };
   }
@@ -197,6 +257,14 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async newAsset(dto: Partial<Insertable<AssetTable>> = {}) {
+    // FL-34: `locked` is a lock record, never a stored visibility. A test that seeds a Locked asset
+    // gets one on the timeline with a lock, and sees `locked` as every response reports it.
+    if (dto.visibility === AssetVisibility.Locked) {
+      const asset = mediumFactory.assetInsert({ ...dto, visibility: AssetVisibility.Timeline });
+      const result = await this.get(AssetRepository).create(asset, { reason: AssetLockReason.Marked, lockedBy: null });
+      return { asset: { ...asset, visibility: AssetVisibility.Locked }, result };
+    }
+
     const asset = mediumFactory.assetInsert(dto);
     const result = await this.get(AssetRepository).create(asset);
     return { asset, result };
@@ -357,13 +425,13 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async updateConfig(config: SystemConfig) {
-    return updateConfig(
+    return withEffectiveConfigWrite(
       {
         configRepo: this.get(ConfigRepository),
         metadataRepo: this.get(SystemMetadataRepository),
         logger: this.get(LoggingRepository),
       },
-      config,
+      (repos) => updateConfig(repos, config),
     );
   }
 }
@@ -372,7 +440,7 @@ export class SyncTestContext extends MediumTestContext<typeof SyncService> {
   constructor(database: Kysely<DB>) {
     super(SyncService, {
       database,
-      real: [SyncRepository, SyncCheckpointRepository, SessionRepository],
+      real: [SyncRepository, SyncCheckpointRepository, SessionRepository, PartnerRepository],
       mock: [LoggingRepository],
     });
   }
@@ -471,40 +539,53 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
   }
 }
 
-const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely<DB>): InstanceType<T> => {
+const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
+    case AdminAuditRepository:
     case AlbumRepository:
     case AlbumUserRepository:
     case ActivityRepository:
     case ApiKeyRepository:
     case AssetRepository:
+    case AssetDevelopRepository:
     case AssetEditRepository:
     case AssetFileRepository:
     case AssetJobRepository:
+    case ClassificationRepository:
     case ClusterGroupRepository:
     case DuplicateRepository:
     case IntegrityRepository:
+    case MediaOperationRepository:
     case MemoryRepository:
     case DownloadRepository:
-    case ForkSchemaRepository:
+    case AssetChecksumRepository:
+    case FrameleafAccountRepository:
+    case FrameleafUserLicenseRepository:
     case LibraryRepository:
     case NotificationRepository:
     case OcrRepository:
     case PartnerRepository:
+    case PartnerOriginRepository:
     case PersonRepository:
     case PhysicalFileRepository:
+    case PhysicalFileTrashRepository:
     case SearchRepository:
     case SessionRepository:
     case SharedLinkRepository:
     case SharedLinkAssetRepository:
+    case ItemShareRepository:
+    case AlbumSourceRepository:
     case SmartAlbumRepository:
     case StackRepository:
+    case StudioProjectRepository:
+    case TrashRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
     case SystemMetadataRepository:
     case UserRepository:
     case VersionHistoryRepository:
+    case VideoMomentRepository:
     case WorkflowRepository: {
       return new key(db) as InstanceType<T>;
     }
@@ -561,28 +642,38 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
 const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
-    case AlbumRepository:
-    case AssetRepository:
-    case AssetJobRepository:
+    case AdminAuditRepository:
+    case AlbumUserRepository:
     case ConfigRepository:
     case CryptoRepository:
-    case ForkSchemaRepository:
+    case AssetChecksumRepository:
     case LibraryRepository:
     case MemoryRepository:
     case IntegrityRepository:
     case NotificationRepository:
-    case OcrRepository:
     case PartnerRepository:
-    case PersonRepository:
+    case PartnerOriginRepository:
     case SessionRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
-    case SystemMetadataRepository:
-    case UserRepository:
     case VersionHistoryRepository:
-    case TagRepository:
     case WorkflowRepository: {
       return automock(key);
+    }
+
+    // Supply inert connection objects only to constructors that wrap their database dependency.
+    case AlbumRepository:
+    case AssetRepository:
+    case AssetJobRepository:
+    case OcrRepository:
+    case PersonRepository:
+    case SystemMetadataRepository:
+    case UserRepository: {
+      return automock(key, { args: [{}] });
+    }
+
+    case TagRepository: {
+      return automock(TagRepository, { args: [{}, { setContext: () => {} }] });
     }
 
     case MapRepository: {
@@ -591,7 +682,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case DatabaseRepository: {
       return automock(DatabaseRepository, {
-        args: [undefined, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
+        args: [{}, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
       });
     }
 
@@ -607,12 +698,23 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
       return automock(EventRepository, { args: [undefined, undefined, { setContext: () => {} }] });
     }
 
+    case FrameleafCloudRepository:
+    case MediaRepository:
+    case MetadataRepository:
+    case OAuthRepository: {
+      return automock(key, { args: [{ setContext: () => {} }] });
+    }
+
+    case InstanceIdentityRepository: {
+      return automock(InstanceIdentityRepository);
+    }
+
     case WebsocketRepository: {
       return automock(WebsocketRepository, { args: [undefined, { setContext: () => {} }] });
     }
 
     case JobRepository: {
-      return automock(JobRepository, {
+      const mock = automock(JobRepository, {
         args: [
           undefined,
           undefined,
@@ -622,6 +724,8 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
           },
         ],
       });
+      mock.collectFollowups.mockImplementation((action) => action());
+      return mock;
     }
 
     case LoggingRepository as unknown as ClassConstructor<T>: {
@@ -631,6 +735,10 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case MachineLearningRepository: {
       return automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+    }
+
+    case MlDestinationRepository: {
+      return automock(MlDestinationRepository);
     }
 
     case PluginRepository: {
@@ -782,7 +890,7 @@ const userInsert = (user: Partial<Insertable<UserTable>> & { clusterGroupId: str
   const id = user.id || newUuid();
 
   const defaults = {
-    email: `${id}@immich.cloud`,
+    email: `${id}@example.com`,
     name: `User ${id}`,
     deletedAt: null,
     isAdmin: false,

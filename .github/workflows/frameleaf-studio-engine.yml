@@ -1,0 +1,375 @@
+name: Frameleaf Studio engine
+'on':
+  pull_request:
+    branches: [fork/main, master/frameleaf-implementation]
+    paths:
+      - studio/**
+      - web/src/lib/frameleaf/studio/**
+      - scripts/frameleaf-studio-contracts.mjs
+      - scripts/frameleaf-studio-rights.mjs
+      - scripts/frameleaf-studio-evidence.mjs
+      - scripts/frameleaf-studio-evidence.test.mjs
+      - server/src/services/studio-project.service.ts
+      - server/src/repositories/studio-project.repository.ts
+      - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
+      - scripts/configure-dockerhub-mirror.sh
+      - scripts/dockerhub-mirror.test.mjs
+      - scripts/ci-registry-images.test.mjs
+      - .github/workflows/frameleaf-studio-engine.yml
+  push:
+    branches: [fork/main]
+    paths:
+      - studio/**
+      - web/src/lib/frameleaf/studio/**
+      - scripts/frameleaf-studio-contracts.mjs
+      - scripts/frameleaf-studio-rights.mjs
+      - scripts/frameleaf-studio-evidence.mjs
+      - scripts/frameleaf-studio-evidence.test.mjs
+      - server/src/services/studio-project.service.ts
+      - server/src/repositories/studio-project.repository.ts
+      - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
+      - scripts/configure-dockerhub-mirror.sh
+      - scripts/dockerhub-mirror.test.mjs
+      - .github/workflows/frameleaf-studio-engine.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  # FL-112: the command axis of readme.projects-storage.4 (trash, restore, permanent delete, empty
+  # trash) is measured on the Studio project service with a real PostgreSQL, so this job runs that
+  # one medium spec and hands its report to the engine job's evidence step.
+  lifecycle-evidence:
+    env:
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Setup Mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Prepare the server for medium tests
+        run: |
+          mise run //server:install
+          mise run //:plugins
+          mise run //packages/plugin-core:build
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Studio project lifecycle on a real database (FL-112)
+        working-directory: server
+        env:
+          STUDIO_LIFECYCLE_REPORT: ${{ runner.temp }}/studio-lifecycle-report.json
+        run: pnpm test:medium run test/medium/specs/services/studio-project-lifecycle.service.spec.ts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-lifecycle-report
+          path: ${{ runner.temp }}/studio-lifecycle-report.json
+          if-no-files-found: error
+  engine:
+    needs: lifecycle-evidence
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise for shared server contracts
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - name: Pin the isolated engine package manager
+        run: npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+      - name: Verify recovery safeguards
+        run: node --test studio/tools/engine.test.mjs studio/tools/resource-download-privacy.test.mjs
+      - name: Recover and verify immutable source, then prepare adapted workspace
+        id: prepare_source
+        env:
+          STUDIO_SOURCE_RECOVERY: '1'
+          REVIEWED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node studio/tools/engine.mjs prepare
+      - name: Verify microphone finalization lifecycle
+        run: node --test studio/tools/mic-recorder-lifecycle.test.mjs
+      - name: Check for the genuine source recovery receipt
+        id: source_recovery_receipt
+        if: ${{ always() && steps.prepare_source.outcome != 'skipped' }}
+        run: |
+          if [ -f "$RUNNER_TEMP/frameleaf-studio-source-recovery.json" ]; then
+            echo 'produced=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Retain genuine adapted source inventory for reviewed digest recovery
+        if: ${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-source-recovery
+          path: ${{ runner.temp }}/frameleaf-studio-source-recovery.json
+          if-no-files-found: error
+      - name: Direct ONNX cache byte admission (FL-111)
+        run: node --test studio/tools/onnx-cache-byte-admission.test.mjs
+      - name: Graph allocation audit (FL-97)
+        run: node studio/tools/allocation-audit.mjs
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+      # Test-only FL-103 red packet. Preparation must first admit the exact
+      # adapted source digest from a genuine hosted recovery receipt.
+      - name: Channel preservation after a clip gain edit (FL-103)
+        working-directory: studio/engine
+        run: ./node_modules/.bin/vp test run src/features/export/utils/canvas-audio-channel-preservation.test.ts
+      - name: Approved-fixture Whisper inference timing diagnostic (FL-103, FL-111)
+        timeout-minutes: 12
+        env:
+          STUDIO_WHISPER_TIMING: '1'
+          STUDIO_MODEL_CACHE: ${{ runner.temp }}
+          STUDIO_WHISPER_REPORT: ${{ runner.temp }}/whisper-timing-report.json
+        run: node --test studio/tools/lib/ephemeral-pipeline.test.mjs studio/tools/whisper-timing.test.mjs
+      - name: Retain genuine Whisper diagnostic provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: whisper-timing-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/whisper-timing-report.json
+          if-no-files-found: warn
+      - name: Install FFmpeg with libx265 for HDR master verification
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -encoders | grep -q libx265
+          ffmpeg -hide_banner -filters | grep -q zscale
+          ffmpeg -hide_banner -encoders | grep -q libsvtav1
+      - name: HDR diagnostic master metadata, PTS, audio and interrupted restart (FL-107)
+        env:
+          HDR_TIMING_REPORT: ${{ runner.temp }}/hdr-master-timing-report.json
+        run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs studio/tools/hdr-source-validation.test.mjs
+      - name: Install Chromium for compositor readback
+        working-directory: studio/engine
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/studio-playwright
+        # The CfT CDN redirects to a Google bucket that denied this runner's location.
+        # Keep the locked browser bytes and host GPU execution; use Microsoft's official image.
+        run: |
+          test "$(node -p "require('./node_modules/playwright/package.json').version")" = '1.60.0'
+          : "${PLAYWRIGHT_BROWSERS_PATH:?}"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          container_id=$(docker create --platform linux/amd64 mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948)
+          trap 'docker rm "$container_id"' EXIT
+          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+          for browser in chromium-1223 chromium_headless_shell-1223 ffmpeg-1011; do
+            docker cp "$container_id:/ms-playwright/$browser" "$PLAYWRIGHT_BROWSERS_PATH/"
+            test -f "$PLAYWRIGHT_BROWSERS_PATH/$browser/INSTALLATION_COMPLETE"
+          done
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium-1223/chrome-linux64/chrome"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1011/ffmpeg-linux"
+          npx --no-install playwright install-deps chromium
+      - name: Cross-browser harness and driver tests (FL-112)
+        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/ascii-reference.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+      - name: Build shared server contracts for render-worker tests
+        run: |
+          mise run //server:install
+          mise run //:plugins
+          mise run //server:build
+      - name: Render-worker hardware probe refuses software GPU evidence
+        env:
+          STUDIO_WORKER_PROBE_BROWSER_TEST: '1'
+        run: node --test studio/tools/render-worker-probe.test.mjs studio/tools/render-worker-claim.test.mjs studio/tools/render-worker-image-inputs.test.mjs studio/tools/render-worker-still-executor.test.mjs
+      - name: Compositor float range and alpha regression (software WebGPU)
+        env:
+          # Keep Canvas fixture ingress on CPU while the renderer uses software WebGPU.
+          FREECUT_CHROME_ARGS_REPLACE: --enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan --disable-accelerated-2d-canvas
+          HDR_MASTER_REPORT: ${{ runner.temp }}/hdr-master-browser-report.json
+          HDR_SIGNAL_REPORT: ${{ runner.temp }}/hdr-signal-browser-report.json
+          HDR_SOURCE_REPORT: ${{ runner.temp }}/hdr-source-browser-report.json
+          LINEAR_HDR_REPORT: ${{ runner.temp }}/linear-hdr-subtree-report.json
+          GRAPHICS_FLOAT_REPORT: ${{ runner.temp }}/graphics-float-report.json
+        run: |
+          setsid npm --prefix studio/engine run dev -- --host 127.0.0.1 --port 5186 --strictPort > "$RUNNER_TEMP/studio-float-vite.log" 2>&1 &
+          server_pid=$!
+          trap 'kill -- -"$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5186/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node studio/tools/linear-hdr-subtree.browser.mjs
+          STUDIO_MEASUREMENT_REPORT="$RUNNER_TEMP/hdr-pixelate-report.json" node studio/tools/hdr-pixelate.browser.mjs
+          STUDIO_MEASUREMENT_REPORT="$RUNNER_TEMP/hdr-geometry-report.json" node studio/tools/hdr-geometry.browser.mjs
+          node studio/tools/graphics-float.browser.mjs
+          node studio/tools/compositor-float.browser.mjs
+          node studio/tools/transition-float.browser.mjs
+          STUDIO_ADDITIVE_REPORT="$RUNNER_TEMP/linear-additive-report.json" node studio/tools/linear-additive.browser.mjs
+          node studio/tools/nested-float.browser.mjs
+          node studio/tools/chroma-key.browser.mjs
+          EFFECTS_MATRIX_REPORT="$RUNNER_TEMP/effects-matrix-report.json" node studio/tools/effects-matrix.browser.mjs
+          BLEND_MATRIX_REPORT="$RUNNER_TEMP/blend-matrix-report.json" node studio/tools/blend-matrix.browser.mjs
+          TRANSITION_MATRIX_REPORT="$RUNNER_TEMP/transition-matrix-report.json" node studio/tools/transition-matrix.browser.mjs
+          # Render spec (studio/spec): every effect and transition golden still holds on the engine.
+          STUDIO_TEST_ORIGIN=http://127.0.0.1:5186 node studio/tools/render-goldens.browser.mjs
+          MASK_PATH_KEYFRAMES_REPORT="$RUNNER_TEMP/mask-path-keyframes-report.json" node studio/tools/mask-path-keyframes.browser.mjs
+          node studio/tools/color-output.browser.mjs
+          node studio/tools/hdr-signal.browser.mjs
+          node studio/tools/hdr-source.browser.mjs
+          node studio/tools/hdr-master.browser.mjs
+          node studio/tools/scopes.browser.mjs
+          node studio/tools/scope-hdr-capture.browser.mjs
+          node studio/tools/preview-padding.browser.mjs
+          # FL-100: animation/render/control and linked Edit-axis fixtures use the adapter's pages, served
+          # by the engine's own toolchain on the fixture's default port.
+          (cd studio/adapters/web && exec setsid ../../engine/node_modules/.bin/vp dev --config test/keyframe-browser.config.mjs --host 127.0.0.1 --port 5199 --strictPort) > "$RUNNER_TEMP/studio-keyframe-vite.log" 2>&1 &
+          keyframe_server_pid=$!
+          trap 'kill -- -"$keyframe_server_pid" -"$server_pid" 2>/dev/null || true; wait "$keyframe_server_pid" "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5199/studio-engine/test/linked-edit-axis.browser.html > /dev/null; then break; fi
+            sleep 1
+          done
+          STUDIO_TEST_ORIGIN=http://127.0.0.1:5199 STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/keyframe-animation" node studio/tools/keyframe-animation.browser.mjs
+          STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/linked-edit-axis" node studio/tools/linked-edit-axis.browser.mjs
+      - name: Retain independent linear HDR physical oracle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-linear-hdr-subtree-report
+          path: ${{ runner.temp }}/linear-hdr-subtree-report.json
+          if-no-files-found: error
+      - name: Retain effect-free graphics float measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-graphics-float-report
+          path: ${{ runner.temp }}/graphics-float-report.json
+          if-no-files-found: error
+      # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
+      # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
+      # any developer machine's GPU. Fails the job (via the tracked-file diff) if conformance.json
+      # wasn't regenerated after a coverage change, the same freshness-check shape used for the
+      # OpenAPI client and other generated artifacts in this repo.
+      - name: Record Studio browser-conformance evidence (FL-112)
+        run: |
+          node scripts/frameleaf-studio-evidence.mjs --family effect --report "$RUNNER_TEMP/effects-matrix-report.json" --write
+          node scripts/frameleaf-studio-evidence.mjs --family blend --report "$RUNNER_TEMP/blend-matrix-report.json" --write
+          node scripts/frameleaf-studio-evidence.mjs --family transition --report "$RUNNER_TEMP/transition-matrix-report.json" --write
+          git diff --exit-code -- studio/conformance.json
+      - name: Upstream unit and Node headless contracts
+        run: |
+          npm --prefix studio/engine run test:run
+          npm --prefix studio/engine run headless:test:node
+      - name: Build and attest the isolated engine
+        run: |
+          npm --prefix studio/engine run build
+          node studio/tools/engine.mjs attest
+          cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
+      - name: Frameleaf adapter tests (FL-88, FL-92)
+        id: adapter_contracts
+        run: |
+          # The adapter compiles host modules from web/src, whose tsconfig extends the SvelteKit
+          # config that `svelte-kit sync` generates. This job has no web workspace, so stand in for it.
+          mkdir -p web/.svelte-kit
+          test -f web/.svelte-kit/tsconfig.json || echo '{}' > web/.svelte-kit/tsconfig.json
+          COMMAND_MATRIX_REPORT="$RUNNER_TEMP/command-matrix-report.json" node studio/tools/adapter.mjs test
+      - name: Recover genuine graph fixture answers after adapter failure
+        id: graph_fixture_recovery
+        if: ${{ failure() && steps.adapter_contracts.outcome == 'failure' }}
+        timeout-minutes: 8
+        env:
+          GRAPH_CONFORMANCE_WRITE: '1'
+          REVIEWED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -f studio/engine/frameleaf-source.json
+          test -x studio/engine/node_modules/.bin/vp
+          fixture_input_sha="$(sha256sum studio/graph-conformance-v1.json | cut -d ' ' -f 1)"
+          (
+            cd studio/engine
+            ./node_modules/.bin/vp test run --config "$GITHUB_WORKSPACE/studio/adapters/web/vite.config.mjs" "$GITHUB_WORKSPACE/studio/adapters/web/test/graph-conformance.test.ts" --testNamePattern 'replays every fixture through the engine without drift'
+          )
+          node studio/tools/engine.mjs verify
+          evidence="$RUNNER_TEMP/studio-graph-fixture-recovery"
+          mkdir -p "$evidence"
+          cp studio/graph-conformance-v1.json "$evidence/graph-conformance-v1.json"
+          git diff --binary -- studio/graph-conformance-v1.json > "$evidence/graph-conformance.patch"
+          {
+            printf 'reviewedHead=%s\n' "$REVIEWED_HEAD"
+            printf 'checkoutHead=%s\n' "$(git rev-parse HEAD)"
+            printf 'runId=%s\n' "$GITHUB_RUN_ID"
+            printf 'fixtureInputSha256=%s\n' "$fixture_input_sha"
+            sha256sum studio/engine-build.json studio/freecut-provenance.json studio/adapters/web/src/canonical-commands.ts studio/adapters/web/test/graph-conformance.test.ts
+            sha256sum studio/engine-package-lock.json studio/adapters/web/vite.config.mjs studio/tools/graph-reference.mjs
+            sha256sum "$evidence/graph-conformance-v1.json" "$evidence/graph-conformance.patch"
+          } > "$evidence/provenance.txt"
+      - name: Retain genuine graph fixture recovery for reviewed import
+        if: ${{ always() && steps.graph_fixture_recovery.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-graph-fixture-recovery
+          path: ${{ runner.temp }}/studio-graph-fixture-recovery
+          if-no-files-found: error
+      - name: Frameleaf editor build (FL-88)
+        run: |
+          node studio/tools/adapter.mjs build
+          test -f web/static/studio-engine/manifest.json
+          test -f web/static/studio-engine/notices/freecut.txt
+      # FL-112 (STU-405): record which conformance.json command-axis rows
+      # studio/adapters/web/test/command-matrix.test.ts's own report - written by the adapter test
+      # run just above, on the real command bridge/engine command handlers/graph history, not any
+      # developer machine's evidence - actually measured as passed. See
+      # applyCommandMatrixCoverage's doc: coverage is read per row from the report itself, not a
+      # hand-reviewed static set, since which cases a row passes varies by command.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: studio-lifecycle-report
+          path: ${{ runner.temp }}
+      - name: Record Studio command-matrix evidence (FL-112)
+        run: |
+          node scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --command-matrix-report "$RUNNER_TEMP/studio-lifecycle-report.json" --write
+          git diff --exit-code -- studio/conformance.json
+      - name: Reproduce from a fresh generated workspace
+        run: |
+          rm -rf studio/engine
+          node studio/tools/engine.mjs prepare
+          npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+          npm --prefix studio/engine run build
+          node studio/tools/engine.mjs attest
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const first = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frameleaf-build-first.json")); const second = JSON.parse(fs.readFileSync("studio/engine/frameleaf-build.json")); assert.deepEqual(second.artifacts, first.artifacts); assert.equal(second.artifactSha256, first.artifactSha256); assert.equal(second.sourceSha256, first.sourceSha256); console.log("Reproduced", second.artifactSha256);'
+          node studio/tools/feature-manifest.mjs --check
+      - name: Retain source, artifact and license evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-engine-provenance
+          path: |
+            ${{ runner.temp }}/frameleaf-build-first.json
+            studio/engine/frameleaf-source.json
+            ${{ runner.temp }}/hdr-master-timing-report.json
+            ${{ runner.temp }}/keyframe-animation
+            ${{ runner.temp }}/hdr-master-timing-report.json.artifacts-*/
+            ${{ runner.temp }}/hdr-master-browser-report.json
+            ${{ runner.temp }}/hdr-master-browser-report.json.artifacts-*/
+            ${{ runner.temp }}/mask-path-keyframes-report.json
+            ${{ runner.temp }}/effects-matrix-report.json
+            ${{ runner.temp }}/hdr-pixelate-report.json
+            ${{ runner.temp }}/hdr-geometry-report.json
+            ${{ runner.temp }}/blend-matrix-report.json
+            ${{ runner.temp }}/transition-matrix-report.json
+            ${{ runner.temp }}/linear-additive-report.json
+            ${{ runner.temp }}/hdr-signal-browser-report.json
+            ${{ runner.temp }}/hdr-source-browser-report.json
+            studio/engine/frameleaf-build.json
+          if-no-files-found: error

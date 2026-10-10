@@ -1,10 +1,13 @@
-import { getMaintenanceStatus, MaintenanceAction, maintenanceLogin } from '@immich/sdk';
+import { getMaintenanceStatus, MaintenanceAction, maintenanceLogin } from '@frameleaf/sdk';
+import { isLicenseRelay } from '$lib/frameleaf/license-relay';
 import { Route } from '$lib/route';
 import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { websocketStore } from '$lib/stores/websocket';
 
 export function maintenanceCreateUrl(url: URL) {
-  return new URL(Route.maintenanceMode({ continue: url.pathname + url.search }), url.origin).href;
+  // CLD-004: a licence link code (or an old key) is never carried on into another address
+  const target = isLicenseRelay(url.pathname + url.search) ? url.pathname : url.pathname + url.search;
+  return new URL(Route.maintenanceMode({ continue: target }), url.origin).href;
 }
 
 export function maintenanceReturnUrl(searchParams: URLSearchParams) {
@@ -15,19 +18,26 @@ export function maintenanceShouldRedirect(maintenanceMode: boolean, currentUrl: 
   return maintenanceMode !== currentUrl.pathname.startsWith(Route.maintenanceMode());
 }
 
-export const loadMaintenanceAuth = async () => {
-  const query = new URLSearchParams(location.search);
+/**
+ * Signs in to maintenance with the address's `token`, or the cookie a previous sign-in left.
+ * Resolves `rejected` only when the address carried a token the server refused (expired after its
+ * 4 hours, or from an earlier maintenance session), so the page can say so (FL-81); without a token a
+ * refusal just means the visitor is not an administrator.
+ */
+export const loadMaintenanceAuth = async (): Promise<'signed-in' | 'rejected' | 'anonymous'> => {
+  const token = new URLSearchParams(location.search).get('token') ?? undefined;
 
   try {
     const auth = await maintenanceLogin({
       maintenanceLoginDto: {
-        token: query.get('token') ?? undefined,
+        token,
       },
     });
 
     maintenanceStore.auth.set(auth);
+    return 'signed-in';
   } catch {
-    // silently fail
+    return token ? 'rejected' : 'anonymous';
   }
 };
 
@@ -37,7 +47,7 @@ export const loadMaintenanceStatus = async () => {
       const status = await getMaintenanceStatus();
       maintenanceStore.status.set(status);
 
-      if (status.action === MaintenanceAction.End) {
+      if (status.action === MaintenanceAction.End && !status.active) {
         websocketStore.serverRestarting.set({
           isMaintenanceMode: false,
         });

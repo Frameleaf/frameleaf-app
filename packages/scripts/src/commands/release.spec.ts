@@ -1,9 +1,5 @@
-import semver from 'semver';
 import { describe, expect, it } from 'vitest';
-import { getMobileBuild, getNewVersion, ReleaseError } from './release';
-
-const mobileBuild = (version: string) =>
-  getMobileBuild(semver.parse(version) as semver.SemVer);
+import { getNewVersion, ReleaseError } from './release';
 
 describe(getNewVersion.name, () => {
   describe('transitions', () => {
@@ -71,58 +67,5 @@ describe(getNewVersion.name, () => {
         expect(() => getNewVersion(version, type)).toThrow(ReleaseError);
       });
     });
-  });
-});
-
-describe(getMobileBuild.name, () => {
-  it('should encode the version', () => {
-    expect(mobileBuild('3.1.0')).toBe(3_010_099);
-    expect(mobileBuild('3.1.4')).toBe(3_010_499);
-    expect(mobileBuild('3.2.0-rc.0')).toBe(3_020_000);
-    expect(mobileBuild('3.2.0-rc.3')).toBe(3_020_003);
-  });
-
-  it('should be above the last hand-maintained build number', () => {
-    expect(mobileBuild('3.1.0')).toBeGreaterThan(3057);
-  });
-
-  it('should stay under the play store limit', () => {
-    expect(mobileBuild('99.99.99')).toBeLessThan(2_100_000_000);
-  });
-
-  it('should increase across a release cycle', () => {
-    const versions = [
-      '3.1.0',
-      '3.1.1',
-      '3.2.0-rc.0',
-      '3.2.0-rc.1',
-      '3.2.0',
-      '3.2.1',
-      '3.3.0-rc.0',
-      '4.0.0-rc.0',
-      '4.0.0',
-    ];
-
-    const builds = versions.map((version) => mobileBuild(version));
-    expect(builds).toEqual([...builds].sort((a, b) => a - b));
-    expect(new Set(builds).size).toBe(builds.length);
-  });
-
-  it('should rank a release above its own candidates', () => {
-    expect(mobileBuild('3.2.0')).toBeGreaterThan(mobileBuild('3.2.0-rc.98'));
-  });
-
-  it('should rank a patch on an older line below the newer line', () => {
-    expect(mobileBuild('3.1.5')).toBeLessThan(mobileBuild('3.2.0'));
-  });
-
-  it('should refuse versions it cannot encode', () => {
-    expect(() => mobileBuild('100.0.0')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.100.0')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.1.100')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.1.0-rc.99')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.1.0-beta')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.1.0-rc.-1')).toThrow('Cannot derive');
-    expect(() => mobileBuild('3.1.0-rc.x')).toThrow('Cannot derive');
   });
 });

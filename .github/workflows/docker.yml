@@ -18,43 +18,23 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: read
+      packages: read
     outputs:
       server: ${{ steps.filter.outputs.server }}
       machine-learning: ${{ steps.filter.outputs['machine-learning'] }}
+      server-release: ${{ steps.filter.outputs.server-release }}
+      machine-learning-release: ${{ steps.filter.outputs.machine-learning-release }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Detect image changes
+      - name: Prove unchanged verified image inputs
         id: filter
         env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          server=false
-          ml=false
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch || ! "$BEFORE" =~ ^[0-9a-f]{40}$ || "$BEFORE" =~ ^0+$ ]]; then
-            server=true
-            ml=true
-          else
-            while IFS= read -r path; do
-              case "$path" in
-                .github/frameleaf-release.cjs|.github/workflows/docker.yml|.github/workflows/local-multi-runner-build.yml)
-                  server=true
-                  ml=true
-                  ;;
-                server/*|open-api/*|packages/*|web/*|i18n/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
-                  server=true
-                  ;;
-                machine-learning/*)
-                  ml=true
-                  ;;
-              esac
-            done < <(git diff --name-only "$BEFORE" "$GITHUB_SHA")
-          fi
-          echo "server=${server}" | tee -a "$GITHUB_OUTPUT"
-          echo "machine-learning=${ml}" | tee -a "$GITHUB_OUTPUT"
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs plan-reuse
 
   integration:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -62,16 +42,14 @@ jobs:
     permissions:
       contents: read
 
-  certification:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: ./.github/workflows/fork-roundtrip.yml
-    permissions:
-      contents: read
-      packages: read
-
+  # FL-142 (owner decision 2026-09-27): nothing is pushed until the images just built pass a deployment
+  # test on this run's runners. The server and the CPU machine-learning image are built to OCI archives
+  # (no push), deployed together with the release Compose file and tested, and only then pushed by digest,
+  # byte for byte. Hardware ML variants, which hosted runners cannot run, are built and pushed only after
+  # that deployment test passed.
   server:
-    name: Build and Push Server
-    needs: [changes, integration, certification]
+    name: Build Server (archive, not pushed)
+    needs: [changes, integration]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -86,47 +64,133 @@ jobs:
       platforms: linux/amd64,linux/arm64
       target: prod
       device: cpu
+      mode: archive
 
-  retag-server:
-    name: Re-Tag Server
-    needs: [changes, integration, certification]
-    if: needs.changes.outputs.server != 'true'
-    runs-on: ubuntu-24.04
+  machine-learning:
+    name: Build ML CPU (archive, not pushed)
+    needs: [changes, integration]
+    if: needs.changes.outputs['machine-learning'] == 'true'
+    uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
+      contents: read
+      actions: read
       packages: write
+    with:
+      image: frameleaf-machine-learning
+      context: machine-learning
+      dockerfile: machine-learning/Dockerfile
+      source-sha: ${{ github.sha }}
+      suffix: ''
+      platforms: linux/amd64,linux/arm64
+      target: prod
+      device: cpu
+      mode: archive
+
+  deploy-test:
+    name: Deployment test (${{ matrix.architecture }})
+    needs: [changes, integration, server, machine-learning]
+    if: ${{ !cancelled() && needs.integration.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.server.result) && contains(fromJSON('["success","skipped"]'), needs['machine-learning'].result) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            architecture: arm64
     steps:
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.changes.outputs.server == 'true'
+        with:
+          name: frameleaf-server-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/server
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.changes.outputs['machine-learning'] == 'true'
+        with:
+          name: frameleaf-machine-learning-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/ml
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Tag unchanged server candidate
-        run: |
-          docker buildx imagetools create \
-            -t "ghcr.io/frameleaf/frameleaf-server:commit-${GITHUB_SHA}" \
-            "ghcr.io/frameleaf/frameleaf-server:latest"
+      - name: Resolve the images under test
+        env:
+          SERVER_BUILT: ${{ needs.changes.outputs.server }}
+          ML_BUILT: ${{ needs.changes.outputs['machine-learning'] }}
+          SERVER_RELEASE: ${{ needs.changes.outputs['server-release'] }}
+          ML_RELEASE: ${{ needs.changes.outputs['machine-learning-release'] }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs deploy-test-images
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Deploy the unpushed images and test the installation
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: node .github/frameleaf-deploy-test.cjs
 
-  machine-learning:
-    name: Build and Push ML
-    needs: [changes, integration, certification]
-    if: needs.changes.outputs['machine-learning'] == 'true'
+  server-publish:
+    name: Push Server (tested archive)
+    needs: [changes, deploy-test, server]
+    if: needs.changes.outputs.server == 'true' && needs['deploy-test'].result == 'success'
+    uses: ./.github/workflows/local-multi-runner-build.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      image: frameleaf-server
+      context: .
+      dockerfile: server/Dockerfile
+      source-sha: ${{ github.sha }}
+      platforms: linux/amd64,linux/arm64
+      target: prod
+      device: cpu
+      mode: publish
+
+  machine-learning-publish:
+    name: Push ML CPU (tested archive)
+    needs: [changes, deploy-test, machine-learning]
+    if: needs.changes.outputs['machine-learning'] == 'true' && needs['deploy-test'].result == 'success'
+    uses: ./.github/workflows/local-multi-runner-build.yml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      image: frameleaf-machine-learning
+      context: machine-learning
+      dockerfile: machine-learning/Dockerfile
+      source-sha: ${{ github.sha }}
+      suffix: ''
+      platforms: linux/amd64,linux/arm64
+      target: prod
+      device: cpu
+      mode: publish
+
+  machine-learning-hardware:
+    name: Build and Push ML hardware variants
+    needs: [changes, deploy-test]
+    if: needs.changes.outputs['machine-learning'] == 'true' && needs['deploy-test'].result == 'success'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - device: cpu
-            suffix: ''
-            platforms: linux/amd64,linux/arm64
-            target: prod
           - device: cuda
             suffix: '-cuda'
             platforms: linux/amd64
             target: prod
-          - device: cuda
-            suffix: '-cuda-runpod'
-            platforms: linux/amd64
-            target: prod-runpod
           - device: openvino
             suffix: '-openvino'
             platforms: linux/amd64
@@ -157,51 +221,93 @@ jobs:
       platforms: ${{ matrix.platforms }}
       target: ${{ matrix.target }}
       device: ${{ matrix.device }}
+      mode: push
 
-  retag-machine-learning:
-    name: Re-Tag ML
-    needs: [changes, integration, certification]
-    if: needs.changes.outputs['machine-learning'] != 'true'
+  retag-server:
+    name: Re-Tag Server
+    needs: [changes, integration, deploy-test]
+    if: needs.changes.outputs.server == 'false' && needs['deploy-test'].result == 'success'
     runs-on: ubuntu-24.04
     permissions:
+      contents: read
+      actions: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        suffix: ['', '-cuda', '-cuda-runpod', '-openvino', '-armnn', '-rknn', '-rocm']
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Tag unchanged ML candidate
+      - name: Publish verified unchanged candidate
         env:
+          IMAGE: frameleaf-server
+          SUFFIX: ''
+          REUSE_RELEASE: ${{ needs.changes.outputs['server-release'] }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs reuse-candidate
+
+  retag-machine-learning:
+    name: Re-Tag ML
+    needs: [changes, integration, deploy-test]
+    if: needs.changes.outputs['machine-learning'] == 'false' && needs['deploy-test'].result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: ['', '-cuda', '-openvino', '-armnn', '-rknn', '-rocm']
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish verified unchanged candidate
+        env:
+          IMAGE: frameleaf-machine-learning
           SUFFIX: ${{ matrix.suffix }}
-        run: |
-          docker buildx imagetools create \
-            -t "ghcr.io/frameleaf/frameleaf-machine-learning:commit-${GITHUB_SHA}${SUFFIX}" \
-            "ghcr.io/frameleaf/frameleaf-machine-learning:latest${SUFFIX}"
+          REUSE_RELEASE: ${{ needs.changes.outputs['machine-learning-release'] }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs reuse-candidate
 
   success-check-server:
     name: Docker Build & Push Server Success
-    needs: [integration, certification, server, retag-server]
+    needs: [integration, deploy-test, server-publish, retag-server]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require certified server publication
+      - name: Require deployment-tested server publication
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ([.server.result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
+        run: jq -e '.integration.result == "success" and ."deploy-test".result == "success" and ([."server-publish".result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
 
   success-check-ml:
     name: Docker Build & Push ML Success
-    needs: [integration, certification, machine-learning, retag-machine-learning]
+    needs:
+      [
+        integration,
+        deploy-test,
+        machine-learning-publish,
+        machine-learning-hardware,
+        retag-machine-learning,
+      ]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every certified ML variant
+      - name: Require every deployment-tested ML variant
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ([."machine-learning".result, ."retag-machine-learning".result] | any(. == "success"))' <<< "$RESULTS"
+        run: jq -e '.integration.result == "success" and ."deploy-test".result == "success" and ((."machine-learning-publish".result == "success" and ."machine-learning-hardware".result == "success") or ."retag-machine-learning".result == "success")' <<< "$RESULTS"

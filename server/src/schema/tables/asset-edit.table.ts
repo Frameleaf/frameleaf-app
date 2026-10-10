@@ -7,8 +7,8 @@ import {
   Table,
   Unique,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetEditAction, type AssetEditParameters } from 'src/dtos/editing.dto.js';
 import { asset_edit_audit, asset_edit_delete, asset_edit_insert } from 'src/schema/functions.js';

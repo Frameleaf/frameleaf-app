@@ -1,5 +1,8 @@
 import { CLIP_ZERO_SHOT_LABELS } from 'src/constants/clip-zero-shot-labels.js';
 import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { QueueExecution } from 'src/queue/types.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -17,6 +20,45 @@ const mockTagUpserts = (mocks: ServiceMocks) => {
 };
 
 describe(ZeroShotTaggingService.name, () => {
+  it('prepares queued ML tags without writes and publishes tags only inside accepted adoption', async () => {
+    const { sut, mocks } = newTestService(ZeroShotTaggingService);
+    withConfig(mocks, { clip: { modelName: 'queued-publication-model' } });
+    mocks.machineLearning.encodeText.mockResolvedValue(EMBEDDING);
+    mockTagUpserts(mocks);
+    const context: QueueExecution = {
+      claim: {
+        id: 'job',
+        token: 'token',
+        queue: 'smart-search',
+        name: 'smart-search-postprocess',
+        data: {},
+        workerId: 'worker',
+        attempt: 1,
+        runId: null,
+        itemKey: null,
+        deadlineMs: 1000,
+        startedAt: new Date(),
+      },
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    await queueExecution.run(context, () => sut.tagAsset(ASSET_ID, OWNER_ID, EMBEDDING));
+    expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+    expect(mocks.event.emit).not.toHaveBeenCalled();
+    expect(context.adoptions).toHaveLength(1);
+    await queueExecution.run(context, () =>
+      publicationTransaction.run({} as never, () => context.adoptions[0]({} as never)),
+    );
+    expect(mocks.tag.upsertAssetIds).toHaveBeenCalledOnce();
+    expect(mocks.event.emit).not.toHaveBeenCalled();
+    for (const notify of context.afterCommit ?? []) await notify();
+    expect(mocks.event.emit).toHaveBeenCalledWith('AssetTag', { assetId: ASSET_ID, userId: OWNER_ID });
+  });
+
   it('does nothing when smart search is disabled', async () => {
     const { sut, mocks } = newTestService(ZeroShotTaggingService);
     withConfig(mocks, { enabled: false });
@@ -46,7 +88,11 @@ describe(ZeroShotTaggingService.name, () => {
     await sut.tagAsset('asset-2', OWNER_ID, EMBEDDING);
 
     expect(mocks.machineLearning.encodeText).toHaveBeenCalledTimes(CLIP_ZERO_SHOT_LABELS.length);
-    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(expect.any(String), { modelName: 'memo-model' });
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
+      expect.any(String),
+      { modelName: 'memo-model' },
+    );
   });
 
   it('logs ML failures without throwing, and retries on the next call', async () => {

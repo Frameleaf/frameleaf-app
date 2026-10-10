@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton, LoadingSpinner } from '@immich/ui';
+  import { IconButton, LoadingSpinner } from '@frameleaf/ui';
   import { mdiClose, mdiMagnify } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -39,7 +39,7 @@
 <div
   class="flex items-center text-sm {roundedBottom
     ? 'rounded-2xl'
-    : 'rounded-t-lg'} h-full place-items-center gap-2 bg-gray-200 p-2 dark:bg-gray-800"
+    : 'rounded-t-lg'} h-full place-items-center gap-2 bg-(--fl-raised) p-2 text-(--fl-text)"
 >
   <IconButton
     shape="round"
@@ -51,7 +51,7 @@
     onclick={() => onSearch({ force: true })}
   />
   <input
-    class="w-full gap-2 bg-gray-200 dark:bg-gray-800 dark:text-white"
+    class="w-full gap-2 bg-(--fl-raised) text-(--fl-text) placeholder:text-(--fl-muted)"
     type="text"
     {placeholder}
     bind:value={name}

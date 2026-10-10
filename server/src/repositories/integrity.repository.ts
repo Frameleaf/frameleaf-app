@@ -1,21 +1,149 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { InteractiveAdmissionSource } from 'src/repositories/studio-source-admission.js';
+import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, IntegrityReport } from 'src/enum.js';
-import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
+import { IntegrityVerificationResult } from 'src/schema/tables/safety-proof.table.js';
+import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 export type ReportPaginationOptions = {
   cursor?: string;
   limit: number;
 };
-
 @Injectable()
 export class IntegrityRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
+  /** Source-owner revocation facts, independent of the requesting viewer's account. */
+  sourceEpochs(ids: string[]) {
+    return AssetLocalEffectRepository.sourceEpochs(this.db, ids);
+  }
 
+  /** Owner and original stream view observed together before the first async access decision. */
+  async interactiveAdmissionViews(ids: string[]): Promise<InteractiveAdmissionSource[]> {
+    if (ids.length === 0) return [];
+    const { rows } = await sql<InteractiveAdmissionSource>`SELECT a.id AS "assetId",a."ownerId",s."streamEpoch",
+      coalesce(s."nextSequence"-1,0)::text AS sequence FROM asset a
+      LEFT JOIN asset_local_effect_stream s ON s."ownerId"=a."ownerId"
+      WHERE a.id=ANY(${[...new Set(ids)].sort()}::uuid[]) ORDER BY a.id`.execute(this.db);
+    return rows;
+  }
+
+  /** Current own library only, using the owner-access lock and hidden-content predicates. */
+  getSafetyQuery(auth: AuthDto, hashes?: string[]) {
+    return this.getLifecycleSafetyQuery(auth, AssetStatus.Active, hashes);
+  }
+
+  /** Internal reversible lifecycle proof; the ordinary SafetyQuery remains active-only. */
+  getLifecycleSafetyQuery(auth: AuthDto, status: AssetStatus.Active | AssetStatus.Trashed, hashes?: string[]) {
+    const privacy = auth.hiddenContent ?? auth.hideNsfwAssets;
+    return this.getOwnedOriginalSafetyQuery(auth.user.id, hashes, status)
+      .$if(!auth.session?.hasElevatedPermission, (qb) =>
+        qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
+      )
+      .$call((qb) =>
+        withHiddenContentFilter(
+          qb,
+          typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {},
+        ),
+      );
+  }
+
+  /** Structural ownership/content query only. Callers must apply their actual privacy authority. */
+  getOwnedOriginalSafetyQuery(
+    ownerId: string,
+    hashes?: string[],
+    status: AssetStatus.Active | AssetStatus.Trashed = AssetStatus.Active,
+  ) {
+    const sha256 = sql<string | null>`CASE
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha256File} THEN encode(asset.checksum, 'hex')
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File} THEN (
+        SELECT encode(c.sha256, 'hex') FROM public.asset_checksum c
+        WHERE c."assetId" = asset.id AND c.sha1 = asset.checksum
+          AND asset."originalPath" = ANY(c."verifiedPaths")
+      )
+      WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1Path} THEN (
+        SELECT encode(c.sha256, 'hex') FROM public.asset_checksum c
+        WHERE c."assetId" = asset.id AND asset."originalPath" = ANY(c."verifiedPaths")
+          AND c.evidence ->> 'source' IN (${EXTERNAL_SCAN_CHECKSUM}, 'recovery')
+      ) ELSE NULL END`;
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('library', 'library.id', 'asset.libraryId')
+      .leftJoin('asset_integrity_verification as integrity', (join) =>
+        join
+          .onRef('integrity.assetId', '=', 'asset.id')
+          .onRef('integrity.originalPath', '=', 'asset.originalPath')
+          .onRef('integrity.expectedChecksum', '=', 'asset.checksum')
+          .on(sql<boolean>`integrity."checksumAlgorithm" IS NOT DISTINCT FROM asset."checksumAlgorithm"::text`),
+      )
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', status === AssetStatus.Active ? 'is' : 'is not', null)
+      .where('asset.status', '=', status)
+      .where('library.deletedAt', 'is', null)
+      .$if(hashes !== undefined, (qb) => qb.where(sha256, 'in', hashes!))
+      .select([
+        'asset.id',
+        'asset.createdAt as onServerSince',
+        'asset.isOffline',
+        'integrity.checkedAt as lastIntegrityAt',
+        'integrity.result as integrityResult',
+        sha256.as('sha256'),
+      ]);
+  }
+  /** Guard the attempted identity while publishing; a replaced original cannot inherit this outcome. */
+  @GenerateSql({
+    params: [
+      {
+        assetId: DummyValue.UUID,
+        originalPath: DummyValue.STRING,
+        expectedChecksum: DummyValue.BUFFER,
+        checksumAlgorithm: 'sha256-file',
+        actualSha256: DummyValue.STRING,
+        result: 'passed',
+      },
+    ],
+  })
+  async recordVerification(input: {
+    assetId: string;
+    originalPath: string;
+    expectedChecksum: Buffer;
+    checksumAlgorithm: string | null;
+    actualSha256: string | null;
+    result: IntegrityVerificationResult;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const current = await tx
+        .selectFrom('asset')
+        .select(['originalPath', 'checksum', 'checksumAlgorithm'])
+        .where('id', '=', input.assetId)
+        .forShare()
+        .executeTakeFirst();
+      if (
+        !current ||
+        current.originalPath !== input.originalPath ||
+        !current.checksum.equals(input.expectedChecksum) ||
+        current.checksumAlgorithm !== input.checksumAlgorithm
+      ) {
+        return false;
+      }
+      await tx
+        .insertInto('asset_integrity_verification')
+        .values(input)
+        .onConflict((oc) => oc.column('assetId').doUpdateSet({ ...input, checkedAt: sql<Date>`clock_timestamp()` }))
+        .execute();
+      return true;
+    });
+  }
   create(dto: Insertable<IntegrityReportTable> | Insertable<IntegrityReportTable>[]) {
     return this.db
       .insertInto('integrity_report')
@@ -29,7 +157,6 @@ export class IntegrityRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   getById(id: string) {
     return this.db
@@ -38,7 +165,6 @@ export class IntegrityRepository {
       .where('id', '=', id)
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [] })
   async getIntegrityReportSummary() {
     const counts = await this.db
@@ -46,12 +172,10 @@ export class IntegrityRepository {
       .select(['type', this.db.fn.countAll<number>().as('count')])
       .groupBy('type')
       .execute();
-
     return Object.fromEntries(
       Object.values(IntegrityReport).map((type) => [type, counts.find((count) => count.type === type)?.count || 0]),
     ) as Record<IntegrityReport, number>;
   }
-
   @GenerateSql({ params: [{ cursor: DummyValue.NUMBER, limit: 100 }, DummyValue.STRING] })
   async getIntegrityReport(pagination: ReportPaginationOptions, type: IntegrityReport) {
     const items = await this.db
@@ -62,13 +186,11 @@ export class IntegrityRepository {
       .orderBy('id', 'desc')
       .limit(pagination.limit + 1)
       .execute();
-
     return {
       items: items.slice(0, pagination.limit),
       nextCursor: items.at(pagination.limit)?.id,
     };
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   getAssetPathsByPaths(paths: string[]) {
     return this.db
@@ -80,23 +202,92 @@ export class IntegrityRepository {
       .where((eb) => eb.or([eb('originalPath', 'in', paths), eb('asset_file.path', 'in', paths)]))
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   getAssetFilePathsByPaths(paths: string[]) {
     return this.db.selectFrom('asset_file').select('path').where('path', 'in', paths).execute();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   async getVideoDuplicateFramePathsByPaths(paths: string[]) {
-    const phase = await getForkSchemaPhase(this.db);
     return this.db
-      .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+      .withSchema('public')
       .selectFrom('asset_video_duplicate_frame')
       .select('path')
       .where('path', 'in', paths)
       .execute();
   }
-
+  /**
+   * Edited masters, previews and developed files brought back (FL-113, FL-64) live beside the
+   * asset's thumbnails but are tracked by their develop version, not `asset_file`. Retained video
+   * versions (FL-39) own their master, its lineage sidecar, proxy and thumbnails the same way, and an
+   * edited master in `asset_file` owns its lineage sidecar, and a Studio HDR intermediate (FL-97)
+   * is owned by its fork row, as is a develop artifact (FL-233: a client's mask or generated fill,
+   * which cannot be regenerated). Without this
+   * the untracked-file check would report — and offer to delete — a person's saved edits.
+   */
+  async getDevelopRevisionPathsByPaths(paths: string[]): Promise<
+    {
+      path: string;
+    }[]
+  > {
+    if (paths.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{
+      path: string;
+    }>`
+      SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" IN (${sql.join(paths)})
+      UNION SELECT "hdrMasterPath" AS path FROM public.asset_develop_revision WHERE "hdrMasterPath" IN (${sql.join(paths)})
+      UNION SELECT "hdrPreviewPath" AS path FROM public.asset_develop_revision WHERE "hdrPreviewPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "proxyPath" AS path FROM public.video_edit_version WHERE "proxyPath" IN (${sql.join(paths)})
+      UNION
+      SELECT file->>'path' AS path FROM public.video_edit_version version, jsonb_array_elements(version.files) file
+      WHERE file->>'path' IN (${sql.join(paths)})
+      UNION
+      SELECT "masterPath" || '.lineage.json' AS path FROM public.video_edit_version
+      WHERE "masterPath" || '.lineage.json' IN (${sql.join(paths)})
+      UNION
+      SELECT path || '.lineage.json' AS path FROM public.asset_file
+      WHERE "isEdited" AND type = 'encoded_video' AND path || '.lineage.json' IN (${sql.join(paths)})
+      UNION
+      SELECT path FROM public.studio_hdr_intermediate WHERE path IN (${sql.join(paths)})
+      UNION
+      SELECT path FROM public.asset_develop_artifact WHERE path IN (${sql.join(paths)})
+      UNION
+      SELECT photo->>'previewPath' AS path FROM public.photography_workflow workflow,
+        jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
+      WHERE photo->>'previewPath' IN (${sql.join(paths)})
+      UNION
+      SELECT photo->>'thumbnailPath' AS path FROM public.photography_workflow workflow,
+        jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
+      WHERE photo->>'thumbnailPath' IN (${sql.join(paths)})
+      UNION
+      SELECT item->>'finalPath' AS path FROM public.photography_workflow workflow,
+        jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item
+      WHERE item->>'finalPath' IN (${sql.join(paths)})
+      UNION
+      SELECT output->>'approvalPreviewPath' AS path FROM public.photography_workflow workflow,
+      jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
+      jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
+      WHERE output->>'approvalPreviewPath' IN (${sql.join(paths)})
+      UNION
+      SELECT output->>'finalPath' AS path FROM public.photography_workflow workflow,
+      jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
+      jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
+      WHERE output->>'finalPath' IN (${sql.join(paths)})
+      UNION
+      SELECT workflow.value->'published'->>'logoPath' AS path FROM public.photography_workflow workflow
+      WHERE workflow.value->'published'->>'logoPath' IN (${sql.join(paths)})
+      UNION
+      SELECT workflow.value->'publication'->>'logoPath' AS path FROM public.photography_workflow workflow
+      WHERE workflow.value->'publication'->>'logoPath' IN (${sql.join(paths)})
+    `.execute(this.db);
+    return rows;
+  }
   @GenerateSql({ params: [DummyValue.STRING] })
   getPersonThumbnailPathsByPaths(paths: string[]) {
     return this.db
@@ -105,7 +296,6 @@ export class IntegrityRepository {
       .where('person.thumbnailPath', 'in', paths)
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   async getTrackedPaths(paths: string[]) {
     const tracked = await this.db
@@ -122,9 +312,12 @@ export class IntegrityRepository {
           .where('person.thumbnailPath', 'in', paths),
       )
       .execute();
-    return [...tracked, ...(await this.getVideoDuplicateFramePathsByPaths(paths))];
+    return [
+      ...tracked,
+      ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
+      ...(await this.getDevelopRevisionPathsByPaths(paths)),
+    ];
   }
-
   @GenerateSql({ params: [] })
   getAssetCount() {
     return this.db
@@ -132,7 +325,6 @@ export class IntegrityRepository {
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [], stream: true })
   streamAllAssetPaths() {
     return this.db
@@ -143,12 +335,10 @@ export class IntegrityRepository {
       .select(['originalPath', 'asset_file.path as encodedVideoPath'])
       .stream();
   }
-
   @GenerateSql({ params: [], stream: true })
   streamAllAssetFilePaths() {
     return this.db.selectFrom('asset_file').select(['path']).stream();
   }
-
   @GenerateSql({ params: [], stream: true })
   streamAssetPathsForMissingFiles() {
     return this.db
@@ -184,12 +374,21 @@ export class IntegrityRepository {
       )
       .select(['allPaths.path as path', 'allPaths.assetId', 'allPaths.fileAssetId', 'integrity_report.id as reportId'])
       .stream() as AsyncIterableIterator<
-      { path: string; reportId: string | null } & (
-        { assetId: string; fileAssetId: null } | { assetId: null; fileAssetId: string }
+      {
+        path: string;
+        reportId: string | null;
+      } & (
+        | {
+            assetId: string;
+            fileAssetId: null;
+          }
+        | {
+            assetId: null;
+            fileAssetId: string;
+          }
       )
     >;
   }
-
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
   streamAssetChecksums(startMarker?: Date) {
     return this.db
@@ -213,7 +412,6 @@ export class IntegrityRepository {
       .orderBy('asset.createdAt', 'asc')
       .stream();
   }
-
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReports(type: IntegrityReport) {
     return this.db
@@ -223,7 +421,6 @@ export class IntegrityRepository {
       .orderBy('createdAt', 'desc')
       .stream();
   }
-
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReportsWithAssetChecksum(type: IntegrityReport) {
     return this.db
@@ -237,7 +434,6 @@ export class IntegrityRepository {
       )
       .stream();
   }
-
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReportsByProperty(property?: 'assetId' | 'fileAssetId', filterType?: IntegrityReport) {
     return this.db
@@ -248,12 +444,10 @@ export class IntegrityRepository {
       .$if(property !== undefined, (eb) => eb.where(property!, 'is not', null))
       .stream();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   deleteById(id: string) {
     return this.db.deleteFrom('integrity_report').where('id', '=', id).execute();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   deleteByIds(ids: string[]) {
     return this.db.deleteFrom('integrity_report').where('id', 'in', ids).execute();

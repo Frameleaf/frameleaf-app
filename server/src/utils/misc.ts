@@ -49,8 +49,9 @@ export const getMethodNames = (instance: any) => {
   return methods;
 };
 
-export const getExternalDomain = (server: SystemConfig['server'], defaultDomain = 'https://my.immich.app') =>
-  server.externalDomain || defaultDomain;
+/** The configured external domain, else the caller's fallback (FL-190: never another project's host). */
+export const getExternalDomain = (server: SystemConfig['server'], defaultDomain?: string): string | undefined =>
+  server.externalDomain || defaultDomain || undefined;
 
 /**
  * @returns a list of strings representing the keys of the object in dot notation
@@ -93,7 +94,7 @@ export const unsetDeep = (object: unknown, key: string) => {
   return isEmpty(object) ? undefined : object;
 };
 
-const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
+export const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
 export const isSmartSearchEnabled = (machineLearning: SystemConfig['machineLearning']) =>
   isMachineLearningEnabled(machineLearning) && machineLearning.clip.enabled;
 export const isOcrEnabled = (machineLearning: SystemConfig['machineLearning']) =>
@@ -184,28 +185,44 @@ const isSchema = (schema: string | ReferenceObject | SchemaObject): schema is Sc
   return !(typeof schema === 'string' || '$ref' in schema);
 };
 
+/** Removes or rewrites JSON Schema 2020-12 keywords that OpenAPI 3.0 (this spec's version) does not allow. */
+export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      removeOpenApi30IncompatibleKeys(item);
+    }
+    return;
+  }
+
+  const object = target as Record<string, unknown>;
+  // Zod literals emit JSON Schema `const`; OpenAPI 3.0 expresses the same restriction as an enum.
+  // Require a schema type so a property map containing a field named `const` is left intact.
+  if (typeof object.type === 'string' && Object.hasOwn(object, 'const')) {
+    object.enum = object.nullable === true && object.const !== null ? [object.const, null] : [object.const];
+    delete object.const;
+  }
+  delete object.propertyNames;
+  delete object.contentEncoding;
+  // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
+  // it as an array of its item schema (the first one when they differ); request validation stays the tuple's and the
+  // schema's description says its shape. No minItems/maxItems are added: the published document never had them, and
+  // adding them reads as a breaking request change to the compatibility check.
+  if (Array.isArray(object.prefixItems)) {
+    const prefixItems = object.prefixItems as unknown[];
+    object.items ??= prefixItems[0];
+    delete object.prefixItems;
+  }
+
+  for (const value of Object.values(object)) {
+    removeOpenApi30IncompatibleKeys(value);
+  }
+};
+
 const patchOpenAPI = (document: OpenAPIObject) => {
-  const removeOpenApi30IncompatibleKeys = (target: unknown) => {
-    if (!target || typeof target !== 'object') {
-      return;
-    }
-
-    if (Array.isArray(target)) {
-      for (const item of target) {
-        removeOpenApi30IncompatibleKeys(item);
-      }
-      return;
-    }
-
-    const object = target as Record<string, unknown>;
-    delete object.propertyNames;
-    delete object.contentEncoding;
-
-    for (const value of Object.values(object)) {
-      removeOpenApi30IncompatibleKeys(value);
-    }
-  };
-
   document.paths = sortKeys(document.paths);
   // Allowed in OpenAPI v3.1 (JSON Schema 2020-12), but not in OpenAPI v3.0 (current spec).
   removeOpenApi30IncompatibleKeys(document);
@@ -321,13 +338,12 @@ const patchOpenAPI = (document: OpenAPIObject) => {
 
 export const useSwagger = (app: INestApplication, { write }: { write: boolean }) => {
   const builder = new DocumentBuilder()
-    .setTitle('Immich')
-    .setDescription('Immich API')
+    .setTitle('Frameleaf')
+    .setDescription('Frameleaf API')
     .setVersion(serverVersion.toString())
     .addBearerAuth({
       type: 'http',
-      scheme: 'Bearer',
-      in: 'header',
+      scheme: 'bearer',
     })
     .addCookieAuth(ImmichCookie.AccessToken)
     .addApiKey(
@@ -360,7 +376,7 @@ export const useSwagger = (app: INestApplication, { write }: { write: boolean })
     },
     jsonDocumentUrl: '/api/spec.json',
     yamlDocumentUrl: '/api/spec.yaml',
-    customSiteTitle: 'Immich API Documentation',
+    customSiteTitle: 'Frameleaf API documentation',
   };
 
   SwaggerModule.setup('doc', app, openApiDoc, customOptions);

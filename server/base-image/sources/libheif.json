@@ -1,0 +1,8 @@
+{
+  "name": "libheif",
+  "repository": "strukturag/libheif",
+  "version": "1.23.3",
+  "revision": "78c9746aea226b22885e8d35241353ce669c4ea5",
+  "frameleafPatchRevision": 2,
+  "patchChecksum": "9f03221d76751ec9eb70bf568cee8782ab6eeeb1ab95f8e6464faa115a6265ad"
+}

@@ -3,7 +3,9 @@ import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -25,6 +27,28 @@ const tagTriggerCache = new WeakMap<SystemConfig['smartAlbums']['builtIn'], Map<
 const sanitizeForLog = (value: string): string =>
   // eslint-disable-next-line no-control-regex
   value.replaceAll(/[\u{0000}-\u{001F}\u{007F}]/gu, '?').slice(0, 64);
+
+// predict wraps fetch errors in a cause; healthy malformed responses are item failures, not dependencies.
+const isMlTransportUnavailable = (error: unknown): boolean => {
+  const codes = new Set([
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_BODY_TIMEOUT',
+  ]);
+  for (let depth = 0; depth < 4 && error instanceof Error; depth++) {
+    if (error.name === 'TimeoutError' || codes.has((error as Error & { code?: string }).code ?? '')) return true;
+    error = error.cause;
+  }
+  return false;
+};
 
 /**
  * Memoized textual-CLIP embeddings for smart-album `clipQueries`, keyed on
@@ -158,7 +182,8 @@ export class SmartAlbumService extends BaseService {
       // CLIP match: cosine similarity between the asset's smart_search visual
       // embedding and each configured query phrase (encoded via the textual
       // CLIP model, cached per model+query). ML unavailability degrades
-      // gracefully — matchesClipQueries logs and returns false, never throws.
+      // gracefully for direct callers. Queue-owned evaluations retain refusals
+      // as pinned dependency waits and malformed results as failed attempts.
       const hasClipMatch =
         clipEligible && kindConfig.clipQueries.length > 0
           ? await this.matchesClipQueries(
@@ -172,7 +197,11 @@ export class SmartAlbumService extends BaseService {
       if (hasTagMatch || hasClipMatch) {
         matchedKinds.add(kind);
         const matchReason = hasTagMatch && hasClipMatch ? 'both' : hasTagMatch ? 'tag' : 'clip';
-        await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+        await publishJobResult(async () => {
+          const excluded = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, [smartAlbumId]);
+          if (!excluded.has(smartAlbumId))
+            await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+        });
       }
     }
 
@@ -189,7 +218,7 @@ export class SmartAlbumService extends BaseService {
       if (!matchedKinds.has(kind)) {
         const smartAlbumId = albumIdByKind.get(kind as BuiltInKind);
         if (smartAlbumId) {
-          await this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId);
+          await publishJobResult(() => this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId));
         }
       }
     }
@@ -217,7 +246,8 @@ export class SmartAlbumService extends BaseService {
    * True when the asset's visual embedding is within the similarity threshold
    * of ANY configured query phrase. Query embeddings are encoded via the
    * textual CLIP endpoint and memoized per (model, query). ML failures are
-   * logged and treated as "no match" so tag matching keeps working.
+   * logged and treated as "no match" for direct callers. Queue-owned evaluations
+   * propagate failures so no membership can publish from an incomplete evaluation.
    */
   private async matchesClipQueries(
     clip: SystemConfig['machineLearning']['clip'],
@@ -227,17 +257,22 @@ export class SmartAlbumService extends BaseService {
   ): Promise<boolean> {
     const assetVector = await getAssetVector();
     if (!assetVector) {
+      deferJobUntilDependency('source-unavailable');
       return false;
     }
     for (const query of queries) {
       try {
         const queryVector = await this.getClipQueryEmbedding(clip, query);
+        if (queueExecution.getStore() && queryVector && queryVector.length !== assetVector.length) {
+          throw new Error('Invalid smart-album query embedding dimensions');
+        }
         // Both vectors are unit-length, so the dot product IS the cosine
         // similarity (equivalently 1 - pgvector's <=> cosine distance).
         if (queryVector && dot(assetVector, queryVector) >= threshold) {
           return true;
         }
       } catch (error) {
+        if (queueExecution.getStore()) throw error;
         this.logger.warn(
           `Smart-album CLIP matching unavailable for query "${sanitizeForLog(query)}": ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -246,17 +281,32 @@ export class SmartAlbumService extends BaseService {
     return false;
   }
 
-  private getClipQueryEmbedding(
+  private async getClipQueryEmbedding(
     clip: SystemConfig['machineLearning']['clip'],
     query: string,
   ): Promise<Float32Array | undefined> {
+    if (queueExecution.getStore()) {
+      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+      try {
+        const raw = await this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName });
+        const parsed = parseEmbedding(raw);
+        if (!parsed || parsed.every((value) => value === 0)) throw new Error('Invalid smart-album query embedding');
+        return l2Normalize(parsed);
+      } catch (error) {
+        const context = queueExecution.getStore();
+        context?.signal.throwIfAborted();
+        if (!context?.dependencyReason && isMlTransportUnavailable(error))
+          deferJobUntilDependency('destination-unavailable');
+        throw error;
+      }
+    }
     const cacheKey = `${clip.modelName}\u{0}${query}`;
     const cached = clipQueryCache.get(cacheKey);
     if (cached) {
       return cached;
     }
-    const promise = this.machineLearningRepository
-      .encodeText(query, { modelName: clip.modelName })
+    const promise = this.selectRoutedMlDestination({ workload: MlWorkload.Clip })
+      .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
       .then((raw) => {
         const parsed = parseEmbedding(raw);
         return parsed ? l2Normalize(parsed) : undefined;
@@ -287,10 +337,10 @@ export class SmartAlbumService extends BaseService {
   }
 
   /**
-   * Bulk re-evaluate every already-described image asset against the smart-album
-   * rules. Called by the admin-triggered re-evaluate endpoint. The evaluation is
-   * cheap (tags are already stored; CLIP query embeddings are encoded once and
-   * cached) so we do it inline rather than fanning out per-asset jobs.
+   * Bulk re-evaluate every already-described image or video against the smart-album
+   * rules. Freeze the complete selection before the coordinator admits bounded
+   * per-asset work. Retries keep the same manifest instead of re-enumerating a
+   * changing library, and one failed asset cannot hide behind producer success.
    */
   @OnJob({ name: JobName.SmartAlbumReevaluateAll, queue: QueueName.BackgroundTask })
   async handleReevaluateAll(data: JobOf<JobName.SmartAlbumReevaluateAll>): Promise<JobStatus> {
@@ -299,8 +349,8 @@ export class SmartAlbumService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const kind = (data as { kind?: string } | undefined)?.kind;
-    if (kind && !(kind in smartAlbums.builtIn)) {
+    const kind = data?.kind;
+    if (kind && !Object.hasOwn(smartAlbums.builtIn, kind)) {
       // Sanitize: strip control chars + newlines + cap length so an admin-supplied
       // `kind` cannot inject log lines (CWE-117).
       const safeKind = sanitizeForLog(kind);
@@ -308,22 +358,44 @@ export class SmartAlbumService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const assets = this.assetJobRepository.streamForSmartAlbumReevaluation();
-    for await (const asset of assets) {
-      try {
-        await this.evaluate({
-          assetId: asset.id,
-          ownerId: asset.ownerId,
-          tags: asset.tags ?? [],
-          onlyKind: kind,
-        });
-      } catch (error) {
-        this.logger.warn(
-          `Smart-album re-evaluate failed for asset ${asset.id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    await this.jobRepository.queueSelection(
+      JobName.SmartAlbumReevaluate,
+      this.assetJobRepository.selectionForSmartAlbumReevaluation(),
+      { ...(kind && { kind }) },
+    );
+    return JobStatus.Success;
+  }
 
+  @OnJob({ name: JobName.SmartAlbumReevaluate, queue: QueueName.BackgroundTask })
+  async handleReevaluate({ id, kind }: JobOf<JobName.SmartAlbumReevaluate>): Promise<JobStatus> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      deferJobUntilDependency('workload-disabled');
+      return JobStatus.Skipped;
+    }
+    if (kind && !Object.hasOwn(smartAlbums.builtIn, kind)) return JobStatus.Skipped;
+
+    await this.jobRepository.guardAssetSource(id);
+    const asset = await this.assetJobRepository.getForSmartAlbumReevaluation(id);
+    // A frozen ID may have been deleted or become ineligible while waiting.
+    if (!asset) return JobStatus.Skipped;
+    const tags = asset.tags ?? [];
+    if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string')) {
+      throw new Error('Invalid smart-album description tags');
+    }
+    deferJobAdoption(async () => {
+      const current = await this.assetJobRepository.getForSmartAlbumReevaluation(id);
+      if (
+        !current ||
+        current.ownerId !== asset.ownerId ||
+        JSON.stringify(current.tags) !== JSON.stringify(asset.tags)
+      ) {
+        throw new Error('Smart-album evaluation inputs changed before publication');
+      }
+    });
+    // evaluate defers every membership mutation into the accepted claim transaction.
+    // Errors propagate to durable item failure; ML refusals remain pinned dependency waits.
+    await this.evaluate({ assetId: id, ownerId: asset.ownerId, tags, onlyKind: kind });
     return JobStatus.Success;
   }
 
@@ -349,10 +421,8 @@ export class SmartAlbumService extends BaseService {
    * Ensure the 6 built-in smart albums exist for the given user. Idempotent —
    * safe to call on every server start or user creation event.
    *
-   * Performance (server.md Medium #bootstrap): query existing automation rules
-   * through the phase-aware repository (legacy through dual-write, fork sidecar
-   * after cutover) before creating static upstream album rows.
-   * for this owner FIRST and only pass missing kinds to the repository. This
+   * Query this owner's existing rules in `public.smart_album` first and only
+   * pass missing built-in kinds to the repository for creation. This
    * skips the per-kind advisory-lock transaction when nothing is missing —
    * common case after a server restart.
    */

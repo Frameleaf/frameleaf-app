@@ -12,6 +12,8 @@ export interface MigrateRawOptions {
   faces: boolean; // --no-faces sets this to false
   serve: boolean;
   port: string | number;
+  preflight?: boolean;
+  verify?: boolean;
 }
 
 // Normalized options used throughout the migration.
@@ -26,6 +28,10 @@ export interface MigrateOptions {
   faces: boolean;
   serve: boolean;
   port: number;
+  /** Check both connections, key permissions, owners and ledger state; change nothing. */
+  preflight: boolean;
+  /** Re-run only the destination audit from an existing ledger; transfer nothing. */
+  verify: boolean;
 }
 
 // The phases a single run steps through, in order. Also the keys used for phase cursors.

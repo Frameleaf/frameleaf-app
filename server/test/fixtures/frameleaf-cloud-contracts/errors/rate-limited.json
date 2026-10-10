@@ -1,0 +1,7 @@
+{
+  "code": "rate-limited",
+  "message": "Too many backup credential requests from this server. Try again later.",
+  "retryable": true,
+  "data": { "retryAfterSec": 1740 },
+  "requestId": "req_01J8ZK3M4N5P6Q7X"
+}

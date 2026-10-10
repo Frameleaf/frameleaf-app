@@ -17,15 +17,9 @@ const MISE_FILES = [
   "deployment/mise.toml",
   "docs/mise.toml",
   "machine-learning/mise.toml",
-  "mobile/mise.toml",
 ];
 
-const LOCK_SOURCES = [
-  "mise.lock",
-  "pnpm-lock.yaml",
-  "machine-learning/uv.lock",
-  "mobile/pubspec.lock",
-];
+const LOCK_SOURCES = ["mise.lock", "pnpm-lock.yaml", "machine-learning/uv.lock"];
 const WORKFLOW_SOURCES = [".github/workflows/fork-integration.yml"];
 const CONTAINER_SOURCES = [
   "icloud-bridge/Dockerfile",
@@ -37,16 +31,6 @@ const CONTAINER_SOURCES = [
 ];
 
 const PROBES = {
-  "aqua:flutter/flutter": {
-    commands: ["flutter"],
-    args: ["--version"],
-    safe: false,
-  },
-  "github:CQLabs/homebrew-dcm": {
-    commands: ["dcm"],
-    args: ["--version"],
-    safe: false,
-  },
   "github:extism/cli": {
     commands: ["extism"],
     args: ["--version"],
@@ -66,10 +50,6 @@ const PROBES = {
     commands: ["wasm-opt"],
     args: ["--version"],
   },
-  bundler: { commands: ["bundle"], args: ["--version"], safe: true },
-  cocoapods: { commands: ["pod"], args: ["--version"], safe: false },
-  flutter: { commands: ["flutter"], args: ["--version"], safe: false },
-  gradle: { commands: ["gradle"], args: ["--version"], safe: false },
   java: { commands: ["java"], args: ["-version"], safe: true },
   node: { commands: ["node"], args: ["--version"], safe: true },
   "npm:@openapitools/openapi-generator-cli": {
@@ -201,56 +181,6 @@ function addDirectDeclarations(repository, head, declarations, sources) {
     source: pyproject.filePath,
   });
 
-  const pubspec = source(repository, "mobile/pubspec.yaml", head);
-  sources.push(pubspec);
-  declarations.push({
-    declared: pubspec.content.match(/^\s+sdk:\s*['"]([^'"]+)['"]/m)?.[1],
-    category: "tool",
-    kind: "constraint",
-    name: "dart",
-    source: pubspec.filePath,
-  });
-  declarations.push({
-    declared: pubspec.content.match(/^\s+flutter:\s*([^\s]+)\s*$/m)?.[1],
-    category: "tool",
-    kind: "exact",
-    name: "flutter",
-    source: pubspec.filePath,
-  });
-
-  const gradle = source(
-    repository,
-    "mobile/android/gradle/wrapper/gradle-wrapper.properties",
-    head,
-  );
-  sources.push(gradle);
-  declarations.push({
-    declared: gradle.content.match(/gradle-([0-9.]+)-(?:all|bin)\.zip/)?.[1],
-    category: "tool",
-    kind: "exact-wrapper",
-    name: "gradle",
-    source: gradle.filePath,
-  });
-
-  const podLock = source(repository, "mobile/ios/Podfile.lock", head);
-  sources.push(podLock);
-  declarations.push({
-    declared: podLock.content.match(/^COCOAPODS:\s*(\S+)/m)?.[1],
-    category: "tool",
-    kind: "lockfile",
-    name: "cocoapods",
-    source: podLock.filePath,
-  });
-
-  const bundleLock = source(repository, "mobile/android/Gemfile.lock", head);
-  sources.push(bundleLock);
-  declarations.push({
-    declared: bundleLock.content.match(/^BUNDLED WITH\s*\n\s*(\S+)/m)?.[1],
-    category: "tool",
-    kind: "lockfile",
-    name: "bundler",
-    source: bundleLock.filePath,
-  });
 }
 
 export function parseWorkflowPins(content, filePath) {

@@ -1,31 +1,26 @@
 <script lang="ts">
   import SupportedDatetimePanel from '$lib/components/admin-settings/SupportedDatetimePanel.svelte';
   import SupportedVariablesPanel from '$lib/components/admin-settings/SupportedVariablesPanel.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Route } from '$lib/route';
-  import { handleCreateJob } from '$lib/services/job.service';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
-  import {
-    getStorageTemplateOptions,
-    ManualJobName,
-    searchUsersAdmin,
-    type SystemConfigTemplateStorageOptionDto,
-    type UserAdminResponseDto,
-  } from '@immich/sdk';
-  import { Button, Heading, Link, LoadingSpinner, Text } from '@immich/ui';
+  import { getStorageTemplateOptions, type SystemConfigTemplateStorageOptionDto } from '@frameleaf/sdk';
+  import { Heading, Link, LoadingSpinner, Text } from '@frameleaf/ui';
   import handlebar from 'handlebars';
   import * as luxon from 'luxon';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { createBubbler, preventDefault } from 'svelte/legacy';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
 
   type Props = {
     minified?: boolean;
@@ -36,24 +31,15 @@
   const { minified = false, duration = 500, saveOnClose = false }: Props = $props();
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
-  let physicalDeduplication = $state(configToEdit.physicalDeduplication ?? { enabled: false, masterUserId: null });
-  const savedPhysicalDeduplication = $derived(config.physicalDeduplication ?? { enabled: false, masterUserId: null });
-  const hasUnsavedPhysicalDeduplication = $derived(
-    physicalDeduplication.enabled !== savedPhysicalDeduplication.enabled ||
-      physicalDeduplication.masterUserId !== savedPhysicalDeduplication.masterUserId,
-  );
-
-  $effect(() => {
-    configToEdit.physicalDeduplication = physicalDeduplication;
-  });
-
+  // On the settings page this form edits the one settings draft (FL-66). Onboarding uses it on
+  // its own, with a local copy that is saved when the step closes.
+  const settingsDraft = getSystemConfigDraft();
+  const standalone = $state(settingsDraft ? undefined : systemConfigManager.cloneValue());
+  const configToEdit = $derived(settingsDraft ? settingsDraft.draft : standalone!);
+  const config = $derived(settingsDraft ? settingsDraft.baseline : systemConfigManager.value);
   const bubble = createBubbler();
   let templateOptions: SystemConfigTemplateStorageOptionDto | undefined = $state();
   let selectedPreset = $state('');
-  let users = $state<UserAdminResponseDto[]>([]);
-  let physicalDeduplicationDryRunQueued = $state(false);
 
   const getTemplateOptions = async () => {
     templateOptions = await getStorageTemplateOptions();
@@ -111,26 +97,6 @@
     configToEdit.storageTemplate.template = selectedPreset;
   };
 
-  const getUsers = async () => {
-    users = await searchUsersAdmin({ withDeleted: false });
-  };
-
-  const handlePhysicalDeduplicationMasterSelection = (event: Event) => {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    physicalDeduplication.masterUserId = value || null;
-    physicalDeduplicationDryRunQueued = false;
-  };
-
-  const handlePhysicalDeduplicationDryRun = async () => {
-    const success = await handleCreateJob({ name: ManualJobName.PhysicalDeduplicationDryRun });
-    physicalDeduplicationDryRunQueued = success === true;
-  };
-
-  const handlePhysicalDeduplicationApply = async () => {
-    await handleCreateJob({ name: ManualJobName.PhysicalDeduplicationApply });
-    physicalDeduplicationDryRunQueued = false;
-  };
-
   let parsedTemplate = $derived(() => {
     try {
       return renderTemplate(configToEdit.storageTemplate.template);
@@ -140,31 +106,37 @@
   });
 
   onDestroy(async () => {
-    if (saveOnClose) {
+    if (saveOnClose && !settingsDraft) {
       await handleSystemConfigSave({ storageTemplate: configToEdit.storageTemplate });
     }
   });
+
+  // FL-135: this installation's documentation, or no link at all
+  const templateDocs = $derived(helpLinks.docs('administration/storage-template'));
+  const implicationsDocs = $derived(
+    helpLinks.docs('administration/backup-and-restore#asset-types-and-storage-locations'),
+  );
 </script>
 
 <section class="mt-2 dark:text-immich-dark-fg">
-  <div in:fade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
-    <p class="text-sm dark:text-immich-dark-fg">
-      <FormatMessage key="admin.storage_template_more_details">
-        {#snippet children({ tag, message })}
-          {#if tag === 'template-link'}
-            <Link href="https://docs.immich.app/administration/storage-template">{message}</Link>
-          {:else if tag === 'implications-link'}
-            <Link href="https://docs.immich.app/administration/backup-and-restore#asset-types-and-storage-locations">
-              {message}
-            </Link>
-          {/if}
-        {/snippet}
-      </FormatMessage>
-    </p>
+  <div in:motionFade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
+    {#if templateDocs && implicationsDocs}
+      <p class="text-sm dark:text-immich-dark-fg">
+        <FormatMessage key="admin.storage_template_more_details">
+          {#snippet children({ tag, message })}
+            {#if tag === 'template-link'}
+              <Link href={templateDocs}>{message}</Link>
+            {:else if tag === 'implications-link'}
+              <Link href={implicationsDocs}>{message}</Link>
+            {/if}
+          {/snippet}
+        </FormatMessage>
+      </p>
+    {/if}
   </div>
   {#await getTemplateOptions() then}
-    <div id="directory-path-builder" class="flex flex-col gap-4 {minified ? '' : 'ms-4 mt-4'}">
-      <SettingSwitch
+    <div id="directory-path-builder" class="flex flex-col gap-4">
+      <SettingToggle
         title={$t('admin.storage_template_enable_description')}
         {disabled}
         bind:checked={configToEdit.storageTemplate.enabled}
@@ -172,7 +144,7 @@
       />
 
       {#if !minified}
-        <SettingSwitch
+        <SettingToggle
           title={$t('admin.storage_template_hash_verification_enabled')}
           {disabled}
           subtitle={$t('admin.storage_template_hash_verification_enabled_description')}
@@ -185,76 +157,15 @@
       {#if !minified}
         <hr />
 
-        <div class="flex flex-col gap-4">
+        <!-- Universal storage replaces the master-user deduplication setting: always on, nothing to choose. -->
+        <div class="flex flex-col gap-2">
           <Heading size="tiny" color="primary">
-            {$t('admin.physical_deduplication')}
+            {$t('frameleaf_universal_storage_title')}
           </Heading>
-
-          <SettingSwitch
-            title={$t('admin.physical_deduplication_enable')}
-            {disabled}
-            subtitle={$t('admin.physical_deduplication_description')}
-            bind:checked={physicalDeduplication.enabled}
-            isEdited={physicalDeduplication.enabled !== savedPhysicalDeduplication.enabled}
-            onToggle={() => (physicalDeduplicationDryRunQueued = false)}
-          />
-
-          <div>
-            <div class="flex place-items-center gap-1">
-              <label class="min-h-6 text-sm font-medium text-primary" for="physical-deduplication-master-user">
-                {$t('admin.physical_deduplication_master_user')}
-              </label>
-              {#if physicalDeduplication.masterUserId !== savedPhysicalDeduplication.masterUserId}
-                <div class="rounded-full bg-orange-100 px-2 text-[10px] text-orange-900">
-                  {$t('unsaved_change')}
-                </div>
-              {/if}
-            </div>
-            <p class="pb-2 text-sm immich-form-label">
-              {$t('admin.physical_deduplication_master_user_description')}
-            </p>
-
-            {#await getUsers() then}
-              <select
-                class="immich-form-input w-full rounded-lg bg-slate-200 p-2 text-sm hover:cursor-pointer dark:bg-gray-600"
-                disabled={disabled || !physicalDeduplication.enabled}
-                id="physical-deduplication-master-user"
-                name="physical-deduplication-master-user"
-                value={physicalDeduplication.masterUserId ?? ''}
-                onchange={handlePhysicalDeduplicationMasterSelection}
-              >
-                <option value="">{$t('admin.physical_deduplication_select_master_user')}</option>
-                {#each users as user (user.id)}
-                  <option value={user.id}>{user.name} ({user.email})</option>
-                {/each}
-              </select>
-            {:catch}
-              <Text size="small">{$t('errors.unable_to_load_users')}</Text>
-            {/await}
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <Button
-              shape="round"
-              size="small"
-              color="secondary"
-              disabled={disabled ||
-                !physicalDeduplication.enabled ||
-                !physicalDeduplication.masterUserId ||
-                hasUnsavedPhysicalDeduplication}
-              onclick={handlePhysicalDeduplicationDryRun}
-            >
-              {$t('admin.physical_deduplication_dry_run')}
-            </Button>
-            <Button
-              shape="round"
-              size="small"
-              disabled={disabled || !physicalDeduplicationDryRunQueued || hasUnsavedPhysicalDeduplication}
-              onclick={handlePhysicalDeduplicationApply}
-            >
-              {$t('admin.physical_deduplication_apply')}
-            </Button>
-          </div>
+          <Text size="small">{$t('frameleaf_universal_storage_description')}</Text>
+          <p class="text-sm">
+            <Link href={Route.physicalDeduplication()}>{$t('frameleaf_settings_dedup_link')}</Link>
+          </p>
         </div>
       {/if}
 
@@ -269,7 +180,7 @@
           {#await getSupportDateTimeFormat()}
             <LoadingSpinner />
           {:then options}
-            <div transition:fade={{ duration: 200 }}>
+            <div transition:motionFade={{ duration: 200 }}>
               <SupportedDatetimePanel {options} />
             </div>
           {/await}
@@ -342,7 +253,7 @@
             </div>
 
             <div class="flex gap-2 align-bottom">
-              <SettingInputField
+              <SettingField
                 label={$t('template')}
                 disabled={disabled || !configToEdit.storageTemplate.enabled}
                 required
@@ -352,12 +263,7 @@
               />
 
               <div class="flex-0">
-                <SettingInputField
-                  label={$t('extension')}
-                  inputType={SettingInputFieldType.TEXT}
-                  value=".jpg"
-                  disabled
-                />
+                <SettingField label={$t('extension')} inputType={SettingInputFieldType.TEXT} value=".jpg" disabled />
               </div>
             </div>
 
@@ -385,7 +291,7 @@
       {/if}
 
       {#if !minified}
-        <SettingButtonsRow bind:configToEdit keys={['storageTemplate', 'physicalDeduplication']} {disabled} />
+        <SettingActions keys={['storageTemplate']} {disabled} />
       {/if}
     </div>
   {/await}

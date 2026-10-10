@@ -1,10 +1,12 @@
-import type { AlbumResponseDto } from '@immich/sdk';
+import type { AlbumResponseDto } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { motionScrollBehavior } from '$lib/frameleaf/motion';
 import { sortAlbums } from '$lib/utils/album-utils';
 import { normalizeSearchString } from '$lib/utils/string-utils';
 
-export const SCROLL_PROPERTIES: ScrollIntoViewOptions = { block: 'center', behavior: 'smooth' };
+/** FL-139: centred, and without the smooth scroll under Reduce Motion. */
+export const scrollProperties = (): ScrollIntoViewOptions => ({ block: 'center', behavior: motionScrollBehavior() });
 
 export enum AlbumModalRowType {
   SECTION = 'section',

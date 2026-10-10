@@ -22,7 +22,7 @@ wget -O .env https://github.com/Frameleaf/frameleaf-app/releases/latest/download
 
 You can alternatively download these two files from your browser and move them to the directory that you created, in which case ensure that you rename `example.env` to `.env`.
 
-For hardware acceleration, download `hwaccel.ml.yml` and `hwaccel.transcoding.yml` from the same release before enabling their Compose references. Existing installations should retain their current `.env` and storage paths instead of replacing them with the example.
+For hardware acceleration, download `hwaccel.ml.yml` and `hwaccel.transcoding.yml` from the same release before enabling their Compose references. Existing canonical Frameleaf installations should retain their current `.env` and storage paths instead of replacing them with the example. New installations require a fresh PostgreSQL 19 database and data volume; supported source libraries use the [one-time offline importer](/administration/import-immich.md) and independent verified media copies.
 
 ### Step 2 - Populate the .env file with custom values
 

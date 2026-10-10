@@ -21,9 +21,6 @@ class BrandAssetContractTests(unittest.TestCase):
         paths = {
             brand_assets.MANIFEST_PATH,
             brand_assets.INVENTORY_PATH,
-            brand_assets.GUIDE_PATH,
-            brand_assets.BACKLOG_PATH,
-            brand_assets.JIRA_MAP_PATH,
             brand_assets.SOURCE_MANIFEST_PATH,
             *(Path(path) for path, _ in brand_assets.REFERENCE_SPECS),
             *(Path(path) for path, _, _ in brand_assets.COMPATIBILITY_SENTINELS),
@@ -46,8 +43,10 @@ class BrandAssetContractTests(unittest.TestCase):
     def test_repository_contract_passes(self):
         inventory = brand_assets.validate(ROOT)
         self.assertEqual(inventory["counts"]["suppliedVectors"], 7)
-        self.assertFalse(inventory["qualification"]["nativeIntegrated"])
         self.assertEqual(inventory["sourceManifest"]["sha256"], brand_assets.SOURCE_MANIFEST_SHA256)
+        self.assertTrue({"assessment", "qualification"}.isdisjoint(inventory))
+        source_manifest = brand_assets.load_json(ROOT / brand_assets.SOURCE_MANIFEST_PATH)
+        self.assertTrue({"sourceState", "issue", "productionParity", "testScope"}.isdisjoint(source_manifest))
         rendered = json.dumps(brand_assets.build_inventory(ROOT), sort_keys=True)
         self.assertEqual(rendered, json.dumps(brand_assets.build_inventory(ROOT), sort_keys=True))
         self.assertNotIn(str(ROOT), rendered)
@@ -129,36 +128,20 @@ class BrandAssetContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "processing instructions"):
                 brand_assets.svg_facts(path)
 
-    def test_false_implementation_and_qualification_are_rejected(self):
-        for field in ("webIntegrated", "nativeIntegrated", "productionQualified", "releaseQualified"):
-            def mutation(root, field=field):
-                path = root / brand_assets.INVENTORY_PATH
-                value = json.loads(path.read_text())
-                value["qualification"][field] = True
-                path.write_text(json.dumps(value))
-            with self.subTest(field=field):
-                self.assert_invalid(mutation)
-
     def test_global_rebrand_compatibility_sentinel_is_rejected(self):
         def mutation(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("immich_mobile", "frameleaf_mobile"))
+            path = root / "server/package.json"
+            value = json.loads(path.read_text())
+            value["name"] = "immich"
+            path.write_text(json.dumps(value))
         self.assert_invalid(mutation)
 
     def test_commented_and_disabled_compatibility_decoys_are_rejected(self):
-        def yaml_decoy(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("name: immich_mobile", "# name: immich_mobile\nname: frameleaf_mobile"))
-
-        def yaml_asset_decoy(root):
-            path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("image_path_android: 'assets/immich-logo.png'", "# image_path_android: 'assets/immich-logo.png'\n  image_path_android: 'assets/frameleaf-logo.png'"))
-
         def json_decoy(root):
             path = root / "packages/sdk/package.json"
             value = json.loads(path.read_text())
-            value["name"] = "@frameleaf/sdk"
-            value["compatibilityComment"] = '"name": "@immich/sdk"'
+            value["name"] = "@immich/sdk"
+            value["compatibilityComment"] = '"name": "@frameleaf/sdk"'
             path.write_text(json.dumps(value))
 
         def toml_decoy(root):
@@ -167,48 +150,11 @@ class BrandAssetContractTests(unittest.TestCase):
 
         def svelte_decoy(root):
             path = root / "web/src/routes/+layout.svelte"
-            path.write_text(path.read_text().replace("from '@immich/sdk'", "from '@frameleaf/sdk'\n  // import x from '@immich/sdk'"))
+            path.write_text(path.read_text().replace("from '@frameleaf/sdk'", "from '@immich/sdk'\n  // import x from '@frameleaf/sdk'"))
 
-        for mutation in (yaml_decoy, yaml_asset_decoy, json_decoy, toml_decoy, svelte_decoy):
+        for mutation in (json_decoy, toml_decoy, svelte_decoy):
             with self.subTest(mutation=mutation):
                 self.assert_invalid(mutation)
-
-    def test_backlog_status_and_jira_identity_are_enforced(self):
-        def qualified_owner(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["status"] = "done"
-            path.write_text(json.dumps(value))
-
-        def wrong_jira(root):
-            path = root / brand_assets.JIRA_MAP_PATH
-            value = json.loads(path.read_text())
-            value["issues"]["REL-103"]["key"] = "FL-25"
-            path.write_text(json.dumps(value))
-
-        def wrong_owner_path(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["paths"].pop()
-            path.write_text(json.dumps(value))
-
-        def wrong_jira_id_and_url(root):
-            path = root / brand_assets.JIRA_MAP_PATH
-            value = json.loads(path.read_text())
-            value["issues"]["REL-103"].update({"id": "99999", "url": "https://heroit.atlassian.net/browse/FL-999"})
-            path.write_text(json.dumps(value))
-
-        def wrong_owner_type(root):
-            path = root / brand_assets.BACKLOG_PATH
-            value = json.loads(path.read_text())
-            next(item for item in value["items"] if item["id"] == "REL-103")["type"] = "task"
-            path.write_text(json.dumps(value))
-
-        self.assert_invalid(qualified_owner)
-        self.assert_invalid(wrong_jira)
-        self.assert_invalid(wrong_owner_path)
-        self.assert_invalid(wrong_jira_id_and_url)
-        self.assert_invalid(wrong_owner_type)
 
     def test_authority_manifests_and_false_claim_additions_are_rejected(self):
         def coherent_manifest_mutation(root):

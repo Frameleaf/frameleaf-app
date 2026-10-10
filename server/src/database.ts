@@ -34,6 +34,7 @@ export type AlbumUser = {
 };
 
 export type AssetFile = {
+  renditionIdentity?: string | null;
   id: string;
   type: AssetFileType;
   path: string;
@@ -105,6 +106,31 @@ export type Memory = {
   ownerId: string;
   isSaved: boolean;
   assets: ShallowDehydrateObject<MapAsset>[];
+};
+
+/** a private highlight export run (FL-62) */
+export type MemoryExport = {
+  id: string;
+  ownerId: string;
+  memoryId: string;
+  title: string;
+  format: string;
+  status: string;
+  assetIds: string[];
+  assetCount: number;
+  processedAssets: number;
+  path: string | null;
+  sizeInBytes: number | string | null;
+  error: string | null;
+  cancelRequestedAt: Date | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  expiresAt: Date | null;
+  settings: Record<string, unknown> | null;
+  studioProjectId: string | null;
+  studioExportVersionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type Asset = {
@@ -191,6 +217,8 @@ export type SharedLink = {
   type: SharedLinkType;
   userId: string;
   slug: string | null;
+  /** Only the link owner's display name is loaded; see `SharedLinkRepository.get`. */
+  owner?: { name: string } | null;
 };
 
 export type Album = Selectable<AlbumTable> & {
@@ -212,6 +240,7 @@ export type Partner = {
   updatedAt: Date;
   updateId: string;
   inTimeline: boolean;
+  shareLocation: boolean;
 };
 
 export type Place = {
@@ -273,6 +302,8 @@ export type AssetFace = {
   updatedAt: Date;
   updateId: string;
   isVisible: boolean;
+  /** FL-57 correction stamp; optional because not every face query selects it. */
+  correctedAt?: Date | null;
 };
 
 export type Plugin = Selectable<PluginTable>;
@@ -368,6 +399,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.type',
     'asset_file.physicalFileId',
+    'asset_file.renditionIdentity',
     'asset_file.isEdited',
   ],
   assetFilesForThumbnail: [
@@ -375,6 +407,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.type',
     'asset_file.physicalFileId',
+    'asset_file.renditionIdentity',
     'asset_file.isEdited',
     'asset_file.isProgressive',
     'asset_file.isTransparent',
@@ -409,9 +442,7 @@ export const columns = {
     'plugin_method.types',
     'plugin_method.schema',
     'plugin_method.hostFunctions',
-    // NOTE: allowedHosts is intentionally omitted — PluginRepository selects it
-    // through its hasAllowedHostsColumn compatibility shim so pre-migration
-    // schemas keep working.
+    'plugin_method.allowedHosts',
     'plugin_method.uiHints',
   ],
   syncAsset: [
@@ -517,6 +548,7 @@ export const columns = {
     'asset_exif.lensModel',
     'asset_exif.fNumber',
     'asset_exif.focalLength',
+    'asset_exif.imageEncoding',
     'asset_exif.iso',
     'asset_exif.exposureTime',
     'asset_exif.profileDescription',
@@ -563,6 +595,7 @@ export const columns = {
     'asset_exif.fNumber',
     'asset_exif.focalLength',
     'asset_exif.fps',
+    'asset_exif.imageEncoding',
     'asset_exif.iso',
     'asset_exif.latitude',
     'asset_exif.lensModel',
@@ -590,4 +623,15 @@ export const lockableProperties = [
   'rating',
   'timeZone',
   'tags',
+  // FL-36 (V-24): a place name the owner typed; reverse geocoding never overwrites it.
+  'city',
+  'state',
+  'country',
 ] as const;
+
+/**
+ * FL-36: the place names the owner can set (V-24). The sidecar has no field for them, so unlike the
+ * other locks they are kept after the sidecar is written; they are released when the owner moves the
+ * item without naming its place, so geocoding names the new spot.
+ */
+export const placeProperties = ['city', 'state', 'country'] as const satisfies readonly LockableProperty[];

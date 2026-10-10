@@ -1,12 +1,15 @@
+ARG CPU_IMAGE=python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+ARG CUDA_IMAGE=nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000
 ARG DEVICE=cpu
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-cpu
+# Native CPU semantic masks share the existing Torch 2.5 / vision 0.20 Python 3.12 ABI.
+FROM ${CPU_IMAGE} AS builder-cpu
 
-FROM builder-cpu AS builder-openvino
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-openvino
 
 # The fork's Qwen stack uses torch 2.5 / torchvision 0.20, which require Python <=3.12.
 # Use the same CUDA base in both stages and a portable Python installation.
-FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000 AS builder-cuda
+FROM ${CUDA_IMAGE} AS builder-cuda
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.15@sha256:a5727064a0de127bdb7c9d3c1383f3a9ac307d9f2d8a391edc7896c54289ced0 /uv /bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
@@ -46,7 +49,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --extra ${DEVICE} --no-dev --no-editable --no-install-project --compile-bytecode --no-progress --active --link-mode copy
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS prod-cpu
+FROM ${CPU_IMAGE} AS prod-cpu
 
 ENV MACHINE_LEARNING_MODEL_ARENA=false
 
@@ -67,7 +70,7 @@ RUN apt-get update && \
     apt-get remove wget -yqq && \
     rm -rf /var/lib/apt/lists/*
 
-FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000 AS prod-cuda
+FROM ${CUDA_IMAGE} AS prod-cuda
 
 ENV MACHINE_LEARNING_MODEL_ARENA=false
 
@@ -86,7 +89,7 @@ RUN apt-get update && apt-get install --no-install-recommends -yqq migraphx miop
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-FROM prod-cpu AS prod-armnn
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS prod-armnn
 
 ENV LD_LIBRARY_PATH=/opt/armnn \
     MACHINE_LEARNING_MODEL_ARENA=false
@@ -152,6 +155,9 @@ RUN echo "hard core 0" >> /etc/security/limits.conf && \
 COPY --from=builder /opt/venv /opt/venv
 COPY scripts/healthcheck.py .
 COPY immich_ml immich_ml
+COPY scripts/verify-semantic-runtime.py scripts/provision-semantic-models.py scripts/qualify-semantic-models.py ./scripts/
+# Only CPU/CUDA advertise this native runtime; no weights are fetched during image construction.
+RUN case "$DEVICE" in cpu|cuda) python scripts/verify-semantic-runtime.py ;; esac
 
 ARG BUILD_ID
 ARG BUILD_IMAGE
@@ -160,15 +166,15 @@ ARG BUILD_SOURCE_COMMIT
 ARG BUILD_SOURCE_REPOSITORY=Frameleaf/frameleaf-app
 ARG BUILD_IMAGE_NAME=frameleaf-machine-learning
 
-ENV IMMICH_BUILD=${BUILD_ID}
-ENV IMMICH_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
-ENV IMMICH_BUILD_IMAGE=${BUILD_IMAGE}
-ENV IMMICH_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
-ENV IMMICH_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_SOURCE_REF=${BUILD_SOURCE_REF}
-ENV IMMICH_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
-ENV IMMICH_SOURCE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_BUILD=${BUILD_ID}
+ENV FRAMELEAF_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
+ENV FRAMELEAF_BUILD_IMAGE=${BUILD_IMAGE}
+ENV FRAMELEAF_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
+ENV FRAMELEAF_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_SOURCE_REF=${BUILD_SOURCE_REF}
+ENV FRAMELEAF_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_SOURCE_COMMIT_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
 
 LABEL org.opencontainers.image.source="https://github.com/${BUILD_SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${BUILD_SOURCE_COMMIT}"
@@ -180,15 +186,3 @@ ENTRYPOINT ["tini", "--"]
 CMD ["python", "-m", "immich_ml"]
 
 HEALTHCHECK CMD python3 healthcheck.py
-
-# Runpod-tuned variant: same image plus environment defaults that make sense
-# when the container is run as a remote inference server on RunPod cloud GPUs.
-# Built via `--target prod-runpod` from the CUDA prod stage.
-FROM prod AS prod-runpod
-
-ENV MACHINE_LEARNING_PRELOAD__CLIP__VISUAL=ViT-B-16-SigLIP-384__webli \
-    MACHINE_LEARNING_PRELOAD__CLIP__TEXTUAL=ViT-B-16-SigLIP-384__webli \
-    MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__DETECTION=buffalo_l \
-    MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__RECOGNITION=buffalo_l \
-    MACHINE_LEARNING_HTTP_KEEPALIVE_TIMEOUT_S=90 \
-    MACHINE_LEARNING_MODEL_TTL=0

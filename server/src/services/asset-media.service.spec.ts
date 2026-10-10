@@ -1,15 +1,22 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
+import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
@@ -18,10 +25,12 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
-import { getForAsset } from 'test/mappers.js';
+import { getForAsset, getForPartner } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
@@ -177,6 +186,7 @@ describe(AssetMediaService.name, () => {
   beforeEach(() => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(AssetMediaService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -341,6 +351,30 @@ describe(AssetMediaService.name, () => {
       );
     });
 
+    it('should lock an upload into the Locked view instead of storing visibility locked (FL-34)', async () => {
+      const file = {
+        uuid: 'random-uuid',
+        originalPath: 'fake_path/asset_1.jpeg',
+        mimeType: 'image/jpeg',
+        checksum: Buffer.from('file hash', 'utf8'),
+        originalName: 'asset_1.jpeg',
+        size: 42,
+      };
+
+      mocks.asset.create.mockResolvedValue(assetEntity);
+
+      await expect(
+        sut.uploadAsset(authStub.user1, { ...createDto, visibility: AssetVisibility.Locked }, file),
+      ).resolves.toEqual({ id: 'id_1', status: AssetMediaStatus.CREATED });
+
+      // the lock is written in the asset's own transaction, never as a second step
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline }),
+        { reason: AssetLockReason.Marked, lockedBy: authStub.user1.user.id },
+      );
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
     it('should handle a file upload', async () => {
       const file = {
         uuid: 'random-uuid',
@@ -366,79 +400,105 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should reuse a master physical original for a cross-user duplicate when enabled', async () => {
+    describe('universal storage linking', () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/duplicate.jpeg',
+        originalPath: '/data/upload/user1/ra/nd/random-uuid.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'duplicate.jpeg',
         size: 42,
       };
-      const asset = {
-        ...assetEntity,
-        id: 'new-asset',
-        ownerId: authStub.user1.user.id,
-        originalPath: file.originalPath,
-      };
-      const physicalFile = { id: 'physical-file-id', path: '/data/library/master.jpeg' };
 
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(asset);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue({
-        id: 'master-asset-id',
-        checksum: file.checksum,
-        originalPath: '/data/library/master.jpeg',
-        physicalOriginalFileId: null,
-        sizeInBytes: file.size,
-      });
-      mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue(physicalFile as never);
+      it('links content another library already holds to its file and answers created, not duplicate', async () => {
+        const asset = {
+          ...assetEntity,
+          id: 'new-asset',
+          ownerId: authStub.user1.user.id,
+          originalPath: file.originalPath,
+        };
+        const physicalFile = { id: 'physical-file-id', path: '/data/library/other/shared.jpeg' };
+        mocks.asset.create.mockResolvedValue(asset);
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: true } as never);
 
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'new-asset',
-        status: AssetMediaStatus.CREATED,
-      });
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'new-asset',
+          status: AssetMediaStatus.CREATED,
+        });
 
-      expect(mocks.asset.create).toHaveBeenCalled();
-      expect(mocks.physicalFile.getMasterOriginalCandidate).toHaveBeenCalledWith(
-        'master-user-id',
-        file.checksum,
-        file.size,
-      );
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith('new-asset', physicalFile);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
-      });
-    });
-
-    it('should keep normal storage when no master physical original exists', async () => {
-      const file = {
-        uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
-        mimeType: 'image/jpeg',
-        checksum: Buffer.from('file hash', 'utf8'),
-        originalName: 'asset_1.jpeg',
-        size: 42,
-      };
-
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(assetEntity);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(null as never);
-
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'id_1',
-        status: AssetMediaStatus.CREATED,
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
+          'new-asset',
+          { checksum: file.checksum, sizeInBytes: file.size },
+          expect.objectContaining({ exists: expect.any(Function) }),
+        );
+        // the temporary upload is released through the reference-counted FileDelete
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              originalPath: physicalFile.path,
+              physicalOriginalFileId: physicalFile.id,
+            }),
+          }),
+        );
       });
 
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
-      expect(mocks.job.queue).not.toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
+      it('needs no master account: the link is attempted with the old settings left unset', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ physicalDeduplication: { enabled: false, masterUserId: null } });
+        mocks.asset.create.mockResolvedValue(assetEntity);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalled();
+        expect(mocks.physicalFile.getMasterOriginalCandidate).not.toHaveBeenCalled();
+      });
+
+      it('registers new content as its own primary file and keeps the upload', async () => {
+        const physicalFile = { id: 'own-physical-file', path: file.originalPath };
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: false } as never);
+
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'id_1',
+          status: AssetMediaStatus.CREATED,
+        });
+
+        expect(mocks.job.queue).not.toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({ asset: expect.objectContaining({ physicalOriginalFileId: physicalFile.id }) }),
+        );
+      });
+
+      it('takes content in the file trash back out instead of storing it twice (Review Focus 3)', async () => {
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await options.untrash!('/data/file-trash/id/duplicate.jpeg', '/data/upload/restored.jpeg');
+        expect(mocks.storage.rename).toHaveBeenCalledWith(
+          '/data/file-trash/id/duplicate.jpeg',
+          '/data/upload/restored.jpeg',
+        );
+      });
+
+      it('checks that the linked file exists on disk', async () => {
+        mocks.asset.create.mockResolvedValue(assetEntity);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await expect(options.exists('/data/library/other/shared.jpeg')).resolves.toBe(true);
+        expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/library/other/shared.jpeg');
       });
     });
 
@@ -523,6 +583,33 @@ describe(AssetMediaService.name, () => {
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
 
+    it('should never name a Locked duplicate to a session that has not unlocked it (FL-34)', async () => {
+      const file = {
+        uuid: 'random-uuid',
+        originalPath: 'fake_path/asset_1.jpeg',
+        mimeType: 'image/jpeg',
+        checksum: Buffer.from('file hash', 'utf8'),
+        originalName: 'asset_1.jpeg',
+        size: 0,
+      };
+      const error = new Error('unique key violation');
+      (error as any).constraint_name = ASSET_CHECKSUM_CONSTRAINT;
+
+      mocks.asset.create.mockRejectedValue(error);
+      // the named lookup withholds Locked; only the owner-scoped server-side check finds it
+      mocks.asset.getUploadAssetIdByChecksum.mockImplementation((_ownerId, _checksum, options) =>
+        Promise.resolve(options?.lockedOwnerId ? 'locked-asset-id' : undefined),
+      );
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+      expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenNthCalledWith(1, authStub.user1.user.id, file.checksum);
+      expect(mocks.sharedLink.addAssets).not.toHaveBeenCalled();
+      expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
+    });
+
     it('should handle a live photo', async () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden })
         .owner(authStub.user1.user)
@@ -581,6 +668,46 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('downloadVideoEditVersion', () => {
+    it('requires download access before querying a version', async () => {
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.assetEdit.getVideoVersion).not.toHaveBeenCalled();
+    });
+
+    it.each(['pending', 'failed'])('refuses a %s master', async (status) => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        ownerId: authStub.admin.user.id,
+        status,
+        masterPath: '/master.mp4',
+      } as any);
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('downloads the retained master, independently of the playback proxy', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        id: 'version-1',
+        ownerId: authStub.admin.user.id,
+        status: 'ready',
+        masterPath: '/master.mp4',
+        proxyPath: '/proxy.mp4',
+      } as any);
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/master.mp4',
+          fileName: 'asset-1-version-1.mp4',
+          contentType: 'video/mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+        }),
+      );
+    });
+  });
+
   describe('downloadOriginal', () => {
     it('should require the asset.download permission', async () => {
       await expect(sut.downloadOriginal(authStub.admin, 'asset-1', {})).rejects.toBeInstanceOf(BadRequestException);
@@ -591,7 +718,6 @@ describe(AssetMediaService.name, () => {
         undefined,
       );
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
     });
 
     it('should download a file', async () => {
@@ -689,19 +815,475 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('explicit original still exports', () => {
+    afterEach(() => vitest.unstubAllEnvs());
+    const source = () => {
+      const asset = { ...AssetFactory.create(), livePhotoVideoId: '22222222-2222-4222-8222-222222222222' };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      return asset;
+    };
+    it.each(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'] as const)(
+      'exports %s as a private still and retains motion',
+      async (format) => {
+        vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+        mocks.media.getHdrCodecCapabilities.mockResolvedValue({
+          libheif: 'qualified-build',
+          libultrahdr: 'qualified-build',
+          heicDecoder: true,
+          avifDecoder: true,
+          heicPqEncoder: true,
+        });
+        const asset = source();
+        const result = await sut.downloadOriginal(AuthFactory.create(), asset.id, { format });
+        try {
+          expect(result.contentType).toBe(format === 'hdr-heic' ? 'image/heic' : 'image/jpeg');
+          expect(result.cacheControl).toBe(CacheControl.PrivateWithoutCache);
+          expect(result.fileName).toContain('_still_');
+          expect(mocks.media.exportPhotoStill).toHaveBeenCalledWith(
+            asset.originalPath,
+            result.path,
+            format,
+            asset.checksum,
+            undefined,
+          );
+          expect(asset.livePhotoVideoId).toBe('22222222-2222-4222-8222-222222222222');
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+          expect(mocks.asset.update).not.toHaveBeenCalled();
+        } finally {
+          result.release?.();
+        }
+        await vitest.waitFor(async () => expect(stat(dirname(result.path))).rejects.toMatchObject({ code: 'ENOENT' }));
+      },
+    );
+    it('refuses changed source identity after rendering and removes unpublished output', async () => {
+      const asset = source();
+      mocks.asset.getById
+        .mockResolvedValueOnce(getForAsset(asset))
+        .mockResolvedValueOnce(getForAsset({ ...asset, checksum: Buffer.alloc(32) }));
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      const output = mocks.media.exportPhotoStill.mock.calls[0][1];
+      await expect(stat(dirname(output))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it('joins cancellation and removes private files without returning an export', async () => {
+      const asset = source();
+      const abort = new AbortController();
+      mocks.media.exportPhotoStill.mockImplementation(() => {
+        abort.abort();
+        return Promise.resolve();
+      });
+      await expect(
+        sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' }, abort.signal),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it('revalidates download access after rendering', async () => {
+      const asset = source();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set([asset.id])).mockResolvedValue(new Set());
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it.each([
+      [new Error('HDR_RECONSTRUCTION_UNAVAILABLE'), 'hdr_reconstruction_unavailable'],
+      [new SharpResourceLimitError('surfaces'), 'photo_export_resource_limit'],
+    ])('reports a classified export refusal and removes private output', async (error, code) => {
+      const asset = source();
+      mocks.media.exportPhotoStill.mockRejectedValue(error);
+      try {
+        await sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' });
+        expect.unreachable('Export must be refused');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({ code });
+      }
+      await expect(stat(dirname(mocks.media.exportPhotoStill.mock.calls[0][1]))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+    it('keeps metadata-hidden shared-link download restrictions before conversion', async () => {
+      const asset = source();
+      const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      await expect(sut.downloadOriginal(auth, asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.media.exportPhotoStill).not.toHaveBeenCalled();
+    });
+    it('refuses motion, substituted edits, and explicit HDR while processing is disabled', async () => {
+      const asset = source();
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset({ ...asset, type: AssetType.Video }));
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      mocks.asset.getForOriginal.mockResolvedValueOnce({ ...asset, editedPath: '/private/edited.jpg' });
+      await expect(
+        sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'sdr-jpeg', edited: true }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+      await expect(sut.downloadOriginal(AuthFactory.create(), asset.id, { format: 'hdr-jpeg' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.media.exportPhotoStill).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('downloadOriginal location policy (FL-54)', () => {
+    const lease = { path: '/tmp/immich-location-free/copy.jpg', release: vitest.fn() };
+
+    const setup = ({ shareLocation }: { shareLocation: boolean }) => {
+      const me = UserFactory.create();
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(me).build()),
+      ]);
+      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
+      return { auth: AuthFactory.create(me), asset };
+    };
+
+    it('serves the owner the original bytes without a partner lookup or a copy', async () => {
+      const owner = UserFactory.create();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+
+      const response = await sut.downloadOriginal(AuthFactory.create(owner), asset.id, {});
+
+      expect(response.path).toBe(asset.originalPath);
+      expect(response.release).toBeUndefined();
+      expect(mocks.partner.getAll).not.toHaveBeenCalled();
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('serves anyone who can reach an original its bytes untouched (FL-326: locations are always shared)', async () => {
+      const { auth, asset } = setup({ shareLocation: true });
+
+      const response = await sut.downloadOriginal(auth, asset.id, {});
+
+      expect(response.path).toBe(asset.originalPath);
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('never checks thumbnails or previews, which are re-encoded without metadata', async () => {
+      const { auth, asset } = setup({ shareLocation: false });
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ownerId: asset.ownerId,
+        isEdited: false,
+        originalPath: '/original/photo.cr2',
+        originalFileName: 'photo.cr2',
+        path: '/thumbs/photo-preview.jpeg',
+      });
+
+      await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW });
+
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('refuses a shared link that hides metadata even when its download flag is on', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const auth = AuthFactory.from().sharedLink({ showExif: false, allowDownload: true }).build();
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('serves a shared link that shows metadata the file untouched', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+      const auth = AuthFactory.from().sharedLink({ showExif: true, allowDownload: true }).build();
+
+      await expect(sut.downloadOriginal(auth, asset.id, {})).resolves.toMatchObject({ path: asset.originalPath });
+      expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('viewThumbnail', () => {
+    it('refuses explicit HDR when processing is disabled instead of returning SDR', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: '/data/preview.jpg',
+      });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, dynamicRange: 'hdr' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('serves an authorized HDR derivative without redirecting to the original', async () => {
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.create();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForThumbnail.mockResolvedValueOnce({
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+          renditionIdentity: null,
+          ...asset,
+          path: '/data/preview.jpg',
+        });
+        mocks.asset.getForThumbnail.mockResolvedValueOnce({
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+          renditionIdentity: '1'.repeat(64),
+          ...asset,
+          path: '/data/hdr-preview.jpg',
+        });
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, dynamicRange: 'hdr' }),
+        ).resolves.toMatchObject({ path: '/data/hdr-preview.jpg', contentType: 'image/jpeg' });
+        expect(mocks.asset.getForThumbnail).toHaveBeenLastCalledWith(asset.id, AssetFileType.HdrPreview, false);
+      } finally {
+        vitest.unstubAllEnvs();
+      }
+    });
+
+    it('serves the last accepted HDR edit through regeneration and keeps default delivery SDR', async () => {
+      vitest.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        const asset = AssetFactory.from({ ownerId: authStub.admin.user.id })
+          .file({ type: AssetFileType.Preview })
+          .build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForThumbnail.mockResolvedValue({
+          ...asset,
+          path: asset.files[0].path,
+          renditionIdentity: null,
+          imageEncoding: { dynamicRange: 'hdr', gainMap: 'ultra-hdr', reconstructionAvailable: true },
+        });
+        mocks.asset.getCurrentDevelop.mockResolvedValue({
+          id: 'revision',
+          ownerId: asset.ownerId,
+          status: AssetDevelopRevisionStatus.Rendering,
+          masterPath: '/old-sdr-master.jpg',
+          previewPath: '/old-sdr-preview.jpg',
+          hdrMasterPath: '/old-hdr-master.jpg',
+          hdrPreviewPath: '/old-hdr-preview.jpg',
+          hdrRenditionChecksum: Buffer.alloc(32),
+          renderedAt: new Date(),
+        });
+        for (const [dynamicRange, path] of [
+          [undefined, '/old-sdr-preview.jpg'],
+          ['sdr', '/old-sdr-preview.jpg'],
+          ['auto', '/old-hdr-preview.jpg'],
+          ['hdr', '/old-hdr-preview.jpg'],
+        ] as const) {
+          await expect(
+            sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true, dynamicRange }),
+          ).resolves.toMatchObject({ path, cacheControl: CacheControl.PrivateWithoutCache });
+        }
+        vitest.stubEnv('FRAMELEAF_HDR_IMAGES', '');
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.PREVIEW,
+            edited: true,
+            dynamicRange: 'hdr',
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.PREVIEW,
+            edited: true,
+            dynamicRange: 'auto',
+          }),
+        ).resolves.toMatchObject({ path: '/old-sdr-preview.jpg' });
+      } finally {
+        vitest.unstubAllEnvs();
+      }
+    });
+
+    it.each(['auto', 'sdr'] as const)(
+      'keeps an unedited SDR source full resolution in %s viewing',
+      async (dynamicRange) => {
+        const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: false });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForThumbnail.mockResolvedValue({
+          ...asset,
+          path: null,
+          renditionIdentity: null,
+          imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        });
+        await expect(
+          sut.viewThumbnail(authStub.admin, asset.id, {
+            size: AssetMediaSize.FULLSIZE,
+            edited: true,
+            dynamicRange,
+          }),
+        ).resolves.toEqual({ targetSize: 'original' });
+      },
+    );
+
+    it.each([
+      { allowDownload: false, showExif: true },
+      { allowDownload: true, showExif: false },
+    ])('keeps restricted shared viewers on sanitized SDR pixels (%j)', async (policy) => {
+      const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: false });
+      const auth = AuthFactory.from().sharedLink(policy).build();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: null,
+        renditionIdentity: null,
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+      });
+      await expect(
+        sut.viewThumbnail(auth, asset.id, {
+          size: AssetMediaSize.FULLSIZE,
+          edited: true,
+          dynamicRange: 'auto',
+        }),
+      ).resolves.toEqual({ targetSize: AssetMediaSize.PREVIEW });
+    });
+
+    it('does not bypass a legacy edit for full-resolution SDR viewing', async () => {
+      const asset = AssetFactory.create({ originalPath: '/data/original.jpg', isEdited: true });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: '/data/edited.jpg',
+        renditionIdentity: null,
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+      });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, {
+          size: AssetMediaSize.FULLSIZE,
+          edited: true,
+          dynamicRange: 'sdr',
+        }),
+      ).resolves.toMatchObject({ path: '/data/edited.jpg' });
+    });
+
+    it('does not redirect an HDR or unknown source to the original for default SDR viewing', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/original.jpg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      for (const dynamicRange of ['hdr', 'unknown'] as const) {
+        mocks.asset.getForThumbnail.mockResolvedValue({
+          renditionIdentity: null,
+          ...asset,
+          path: null,
+          imageEncoding: { dynamicRange, gainMap: 'none', reconstructionAvailable: false },
+        });
+        await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+          targetSize: AssetMediaSize.PREVIEW,
+        });
+      }
+    });
+
+    it('serves the owner current develop pixels but keeps the face source on ordinary edited pixels', async () => {
+      const asset = AssetFactory.from({ ownerId: authStub.admin.user.id })
+        .file({ type: AssetFileType.Preview, path: '/data/legacy-preview.jpg' })
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: '/data/legacy-preview.jpg',
+      });
+      mocks.asset.getCurrentDevelop.mockResolvedValue({
+        id: 'revision-id',
+        ownerId: asset.ownerId,
+        status: AssetDevelopRevisionStatus.Rendered,
+        previewPath: '/data/develop-preview.jpg',
+        masterPath: '/data/develop-master.jpg',
+      });
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true }),
+      ).resolves.toMatchObject({ path: '/data/develop-preview.jpg', cacheControl: CacheControl.PrivateWithoutCache });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE, edited: true }, 'relay'),
+      ).resolves.toMatchObject({ path: '/data/develop-preview.jpg' });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW, edited: true, faceSource: true }),
+      ).resolves.toMatchObject({ path: '/data/legacy-preview.jpg' });
+      expect(mocks.asset.getCurrentDevelop).toHaveBeenCalledTimes(2);
+    });
+
     it('should require asset.view permissions', async () => {
       await expect(sut.viewThumbnail(authStub.admin, 'id', {})).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
+    });
+
+    it('allows full-size files except through the relay while originals are not allowed there (FL-161)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.fullSizeAllowed(null)).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('lan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('wan')).resolves.toBe(true);
+      await expect(sut.fullSizeAllowed('relay')).resolves.toBe(false);
+    });
+
+    it('serves the preview instead of redirecting to the original through the relay (FL-161)', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/library/admin/image.jpeg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: null,
+      });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'relay'),
+      ).resolves.toEqual({ targetSize: AssetMediaSize.PREVIEW });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'wan'),
+      ).resolves.toEqual({
+        targetSize: 'original',
+      });
+      await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+        targetSize: 'original',
+      });
+    });
+
+    it('redirects to the original through the relay once an administrator allowed originals there (FL-161)', async () => {
+      const asset = AssetFactory.from({ originalPath: '/data/library/admin/image.jpeg' }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: null,
+      });
+      mocks.systemMetadata.get.mockResolvedValue({
+        frameleafCloud: { remoteAccess: { allowOriginalsOverRelay: true, allowPasswordOverRelay: false } },
+      } as never);
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE }, 'relay'),
+      ).resolves.toEqual({ targetSize: 'original' });
     });
 
     it('should fall back to preview if the requested thumbnail file does not exist', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
@@ -716,7 +1298,12 @@ describe(AssetMediaService.name, () => {
     it('should get preview file', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -732,7 +1319,12 @@ describe(AssetMediaService.name, () => {
         .file({ type: AssetFileType.Thumbnail, path: '/uploads/user-id/webp/path.ext' })
         .build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -747,7 +1339,12 @@ describe(AssetMediaService.name, () => {
     it('should get original thumbnail by default', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -762,7 +1359,12 @@ describe(AssetMediaService.name, () => {
     it('should get edited thumbnail when edited=true', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail, isEdited: true }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
       ).resolves.toEqual(
@@ -779,7 +1381,12 @@ describe(AssetMediaService.name, () => {
     it('should get original thumbnail when edited=false', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
       ).resolves.toEqual(
@@ -796,7 +1403,12 @@ describe(AssetMediaService.name, () => {
     it('should not return the unedited version if requested using a shared link', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
       await expect(
         sut.viewThumbnail(authStub.adminSharedLink, asset.id, {
           size: AssetMediaSize.THUMBNAIL,
@@ -817,7 +1429,12 @@ describe(AssetMediaService.name, () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
 
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        path: asset.files[0].path,
+      });
 
       const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
 
@@ -832,13 +1449,60 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('playbackStudioHdrVideo (FL-97)', () => {
+    const video = { originalPath: '/original/v.mov', encodedVideoPath: null, editedVideoPath: null };
+
+    it('serves the current Studio HDR intermediate under playback access and location rules', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({ ...video, ownerId: authStub.admin.user.id });
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(
+        new Map([[asset.id, '/encoded/v-studio-hdr.mp4']]),
+      );
+
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/encoded/v-studio-hdr.mp4',
+          contentType: 'video/mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+        }),
+      );
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).toHaveBeenCalledWith([asset.id]);
+    });
+
+    it('is not found without a current intermediate (none yet, a replaced original or a published edit)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({ ...video, ownerId: authStub.admin.user.id });
+
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('requires asset.view access, as playback does', async () => {
+      await expect(sut.playbackStudioHdrVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).not.toHaveBeenCalled();
+    });
+
+    it('never serves a shared link, even one that may view the asset', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getCurrentStudioHdrIntermediates.mockResolvedValue(
+        new Map([[asset.id, '/encoded/v-studio-hdr.mp4']]),
+      );
+
+      await expect(sut.playbackStudioHdrVideo(authStub.adminSharedLink, asset.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.asset.getCurrentStudioHdrIntermediates).not.toHaveBeenCalled();
+    });
+  });
+
   describe('playbackVideo', () => {
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
     it('should throw an error if the video asset could not be found', async () => {
@@ -857,6 +1521,7 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: asset.files[0].path,
         editedVideoPath: null,
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -878,9 +1543,48 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: '/path/to/encoded/video.mp4',
         editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/path/to/encoded/video_edited.mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'video/mp4',
+        }),
+      );
+    });
+
+    it('plays the unedited source for the owner when the quick editor asks (FL-113)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: '/path/to/encoded/video.mp4',
+        editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: authStub.admin.user.id,
+      });
+
+      await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/path/to/encoded/video.mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'video/mp4',
+        }),
+      );
+    });
+
+    it('never gives anyone but the owner the unedited source', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: '/path/to/encoded/video.mp4',
+        editedVideoPath: '/path/to/encoded/video_edited.mp4',
+        ownerId: 'someone-else',
+      });
+
+      await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
         new ImmichFileResponse({
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
@@ -896,6 +1600,7 @@ describe(AssetMediaService.name, () => {
         originalPath: asset.originalPath,
         encodedVideoPath: null,
         editedVideoPath: null,
+        ownerId: authStub.admin.user.id,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -909,6 +1614,20 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('bulkUploadCheck', () => {
+    it('should name Locked duplicates only for the elevated owner (FL-34)', async () => {
+      const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+
+      await sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
+      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(authStub.admin.user.id, [file1]);
+
+      const elevated = authStub.adminWithElevatedPermission;
+      await sut.bulkUploadCheck(elevated, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
+      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(elevated.user.id, [file1], {
+        lockedOwnerId: elevated.user.id,
+      });
+    });
+
     it('should accept hex and base64 checksums', async () => {
       const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
       const file2 = Buffer.from('53be335e99f18a66ff12e9a901c7a6171dd76573', 'hex');

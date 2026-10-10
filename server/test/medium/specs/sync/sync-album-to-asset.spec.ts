@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -314,5 +314,39 @@ describe(SyncRequestType.AlbumToAssetsV1, () => {
     await albumRepo.delete(album.id);
     await wait(2);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  describe('Locked media (FL-32)', () => {
+    it("should not sync another member's Locked asset", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+      expect(response.map(({ type }) => type)).not.toContain(SyncEntityType.AlbumToAssetV1);
+      expect(response.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
+    });
+
+    it("should sync the user's own Locked asset in somebody else's album", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+      expect(response).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: SyncEntityType.AlbumToAssetV1,
+            data: { albumId: album.id, assetId: asset.id },
+          }),
+        ]),
+      );
+    });
   });
 });

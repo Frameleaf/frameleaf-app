@@ -1,7 +1,7 @@
 <script lang="ts">
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
-  import { ConfirmModal, Link } from '@immich/ui';
-  import { mdiCancel } from '@mdi/js';
+  import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -9,19 +9,42 @@
   };
 
   let { onClose }: Props = $props();
+
+  // FL-135: this installation's documentation, or no link at all
+  const commandsDocs = $derived(helpLinks.docs('administration/server-commands'));
 </script>
 
-<ConfirmModal title={$t('admin.disable_login')} icon={mdiCancel} size="small" {onClose}>
+<ConfirmDialog title={$t('admin.disable_login')} confirmText={$t('confirm')} danger {onClose}>
   {#snippet prompt()}
-    <div class="flex flex-col gap-4 text-center">
+    <div class="prompt">
       <p>{$t('admin.authentication_settings_disable_all')}</p>
       <p>
         <FormatMessage key="admin.authentication_settings_reenable">
           {#snippet children({ message })}
-            <Link href="https://docs.immich.app/administration/server-commands">{message}</Link>
+            {#if commandsDocs}
+              <a href={commandsDocs} target="_blank" rel="noopener noreferrer">{message}</a>
+            {:else}
+              {message}
+            {/if}
           {/snippet}
         </FormatMessage>
       </p>
     </div>
   {/snippet}
-</ConfirmModal>
+</ConfirmDialog>
+
+<style>
+  .prompt {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-3);
+    line-height: 1.5;
+  }
+  p {
+    margin: 0;
+  }
+  a {
+    color: var(--fl-text);
+    text-decoration: underline;
+  }
+</style>

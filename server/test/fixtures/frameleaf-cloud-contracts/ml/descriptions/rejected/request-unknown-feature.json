@@ -1,0 +1,10 @@
+{
+  "language": "en",
+  "length": "standard",
+  "style": "natural",
+  "maxTags": 8,
+  "features": {
+    "identityNames": false,
+    "faces": true
+  }
+}

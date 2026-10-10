@@ -3,12 +3,17 @@ import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
+import { deferJobAdoption } from 'src/queue/context.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { tokenizeForSearch } from 'src/utils/database.js';
 
 @Injectable()
 export class OcrRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getById(id: string) {
@@ -56,23 +61,30 @@ export class OcrRepository {
       DummyValue.STRING,
     ],
   })
-  upsert(assetId: string, ocrDataList: Insertable<AssetOcrTable>[], searchText: string) {
-    let query = this.db.with('deleted_ocr', (db) => db.deleteFrom('asset_ocr').where('assetId', '=', assetId));
-    // eslint-disable-next-line unicorn/prefer-ternary
-    if (ocrDataList.length > 0) {
-      (query as any) = query
-        .with('inserted_ocr', (db) => db.insertInto('asset_ocr').values(ocrDataList))
-        .with('inserted_search', (db) =>
-          db
-            .insertInto('ocr_search')
-            .values({ assetId, text: searchText })
-            .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ text: eb.ref('excluded.text') }))),
+  async upsert(assetId: string, ocrDataList: Insertable<AssetOcrTable>[], searchText: string) {
+    const adopt = async (db: Kysely<DB>) => {
+      let query = db.with('deleted_ocr', (db) => db.deleteFrom('asset_ocr').where('assetId', '=', assetId));
+      // eslint-disable-next-line unicorn/prefer-ternary
+      if (ocrDataList.length > 0) {
+        (query as any) = query
+          .with('inserted_ocr', (db) => db.insertInto('asset_ocr').values(ocrDataList))
+          .with('inserted_search', (db) =>
+            db
+              .insertInto('ocr_search')
+              .values({ assetId, text: searchText })
+              .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ text: eb.ref('excluded.text') }))),
+          );
+      } else {
+        (query as any) = query.with('deleted_search', (db) =>
+          db.deleteFrom('ocr_search').where('assetId', '=', assetId),
         );
-    } else {
-      (query as any) = query.with('deleted_search', (db) => db.deleteFrom('ocr_search').where('assetId', '=', assetId));
-    }
+      }
 
-    return query.selectNoFrom(sql`1`.as('dummy')).execute();
+      await query.selectNoFrom(sql`1`.as('dummy')).execute();
+    };
+    if (!deferJobAdoption(adopt)) {
+      await adopt(this.db);
+    }
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [], []] })
@@ -106,7 +118,17 @@ export class OcrRepository {
           .execute();
       }
 
-      const searchText = visible.map((item) => item.text.trim()).join(' ');
+      // FL-63: the searchable text is rebuilt from every line that is visible now, tokenized the way
+      // `upsert` writes it. Built from `visible` alone it lost the lines this edit did not touch (an
+      // edit without a crop passes only the lines it restored), so a rotated photo stopped being
+      // found by its text, and a later crop could still be found by text it no longer shows.
+      const lines = await trx
+        .selectFrom('asset_ocr')
+        .select('asset_ocr.text')
+        .where('asset_ocr.assetId', '=', assetId)
+        .where('asset_ocr.isVisible', '=', true)
+        .execute();
+      const searchText = lines.flatMap((line) => tokenizeForSearch(line.text)).join(' ');
       await trx.updateTable('ocr_search').set({ text: searchText }).where('assetId', '=', assetId).execute();
     });
   }

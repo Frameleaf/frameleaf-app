@@ -5,6 +5,7 @@ import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapSt
 import { Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { type LockedVisibilityOptions, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { UUIDAssetIDParamDto } from 'src/validation.js';
 
@@ -16,6 +17,8 @@ export class StackService extends BaseService {
       ownerId: auth.user.id,
       primaryAssetId: dto.primaryAssetId,
       ...options,
+      // a stack led by Locked media, and its Locked members, only for the owner's elevated session
+      ...getLockedVisibilityOptions(auth),
     };
     const stacks = await this.stackRepository.search(query);
 
@@ -25,47 +28,67 @@ export class StackService extends BaseService {
   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.assetIds });
 
-    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
+    let sequenced = false;
+    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds, auth, (value) => {
+      sequenced = value;
+    });
+    // a stack that holds a Locked photo became Locked as a whole (FL-53)
+    if (stack.lockedAssetIds.length > 0) {
+      await this.afterAssetsLocked(stack.lockedAssetIds, sequenced);
+      // push a real-time update for every asset the new stack carried into the Locked folder, so an
+      // open web client reflects the whole stack at once, not only the photo that was already Locked
+      if (!sequenced) await this.notifyAssetsUpdated(stack.lockedAssetIds, auth.user.id);
+    }
 
-    await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
     return mapStack(stack, { auth });
   }
 
   async get(auth: AuthDto, id: string): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.StackRead, ids: [id] });
-    const stack = await this.findOrFail(id, this.nsfwOptions(auth));
+    const stack = await this.findOrFail(id, this.readOptions(auth));
     return mapStack(stack, { auth });
   }
 
   async update(auth: AuthDto, id: string, dto: StackUpdateDto): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.StackUpdate, ids: [id] });
-    const stack = await this.findOrFail(id, this.nsfwOptions(auth));
+    const stack = await this.findOrFail(id, this.readOptions(auth));
     if (dto.primaryAssetId && stack.assets.every(({ id }) => id !== dto.primaryAssetId)) {
       throw new BadRequestException('Primary asset must be in the stack');
     }
 
-    const options = this.nsfwOptions(auth);
+    const options = this.readOptions(auth);
     const update = { id, primaryAssetId: dto.primaryAssetId };
-    const updatedStack = options
-      ? await this.stackRepository.update(id, update, options)
-      : await this.stackRepository.update(id, update);
-
-    await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
+    let sequenced = false;
+    const updatedStack = await this.stackRepository.update(id, update, options, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
 
     return mapStack(updatedStack, { auth });
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.StackDelete, ids: [id] });
-    await this.stackRepository.delete(id);
-    await this.eventRepository.emit('StackDelete', { stackId: id, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.delete(id, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackDelete', { stackId: id, userId: auth.user.id });
   }
 
   async deleteAll(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.StackDelete, ids: dto.ids });
-    await this.stackRepository.deleteAll(dto.ids);
-    await this.eventRepository.emit('StackDeleteAll', { stackIds: dto.ids, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.deleteAll(dto.ids, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackDeleteAll', { stackIds: dto.ids, userId: auth.user.id });
   }
 
   async removeAsset(auth: AuthDto, dto: UUIDAssetIDParamDto): Promise<void> {
@@ -82,11 +105,15 @@ export class StackService extends BaseService {
       throw new BadRequestException("Cannot remove stack's primary asset");
     }
 
-    await this.assetRepository.update({ id: assetId, stackId: null });
-    await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
+    let sequenced = false;
+    await this.stackRepository.removeMember(stackId, assetId, auth, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
   }
 
-  private findOrFail(id: string, options?: HiddenContentQueryOptions) {
+  private findOrFail(id: string, options?: HiddenContentQueryOptions & LockedVisibilityOptions) {
     return findOrFail(
       () => (options ? this.stackRepository.getById(id, options) : this.stackRepository.getById(id)),
       'Asset stack',
@@ -95,5 +122,11 @@ export class StackService extends BaseService {
 
   private nsfwOptions(auth: AuthDto) {
     return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
+  }
+
+  /** What a stack read may show this viewer: hidden-content settings, and their Locked media only when elevated. */
+  private readOptions(auth: AuthDto): (HiddenContentQueryOptions & LockedVisibilityOptions) | undefined {
+    const options = { ...this.nsfwOptions(auth), ...getLockedVisibilityOptions(auth) };
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 }

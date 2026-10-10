@@ -1,10 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
+# Deprecated alias of frameleaf-dev (FL-294).
 
-if [[ "$IMMICH_ENV" == "production" ]]; then
-  echo "This command can only be run in development environments"
-  exit 1
-fi
-
-cd /usr/src/app || exit
-pnpm --filter @immich/plugin-sdk build
-pnpm --filter immich exec nest start --debug "0.0.0.0:9230" --watch -- "$@"
+exec "$(dirname "$0")/frameleaf-dev" "$@"

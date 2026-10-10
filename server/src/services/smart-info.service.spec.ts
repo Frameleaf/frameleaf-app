@@ -4,7 +4,7 @@ import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(SmartInfoService.name, () => {
   let sut: SmartInfoService;
@@ -156,6 +156,7 @@ describe(SmartInfoService.name, () => {
   });
 
   describe('handleQueueEncodeClip', () => {
+    beforeEach(() => mocks.database.getDimensionSize.mockResolvedValue(768));
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
@@ -166,24 +167,31 @@ describe(SmartInfoService.name, () => {
 
     it('should queue the assets without clip embeddings', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForEncodeClip.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForEncodeClip.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueEncodeClip({ force: false });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForEncodeClip).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SmartSearch,
+        mocks.assetJob.selectionForEncodeClip.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForEncodeClip).toHaveBeenCalledWith(false);
       expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
     });
 
     it('should queue all the assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForEncodeClip.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForEncodeClip.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueEncodeClip({ force: true });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForEncodeClip).toHaveBeenCalledWith(true);
-      expect(mocks.database.setDimensionSize).toHaveBeenCalledExactlyOnceWith(768);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SmartSearch,
+        mocks.assetJob.selectionForEncodeClip.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForEncodeClip).toHaveBeenCalledWith(true);
+      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
     });
   });
 
@@ -215,10 +223,12 @@ describe(SmartInfoService.name, () => {
       expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         asset.files[0].path,
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
     });
 
     it('should skip invisible assets', async () => {
@@ -252,10 +262,12 @@ describe(SmartInfoService.name, () => {
 
       expect(mocks.database.wait).toHaveBeenCalledWith(512);
       expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         asset.files[0].path,
         expect.objectContaining({ modelName: 'ViT-B-16-SigLIP-384__webli' }),
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
     });
   });
 

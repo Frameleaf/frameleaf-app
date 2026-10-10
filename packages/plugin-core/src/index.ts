@@ -1,5 +1,5 @@
-import { wrapper } from '@immich/plugin-sdk';
-import { AssetVisibility } from '@immich/sdk';
+import { wrapper } from '@frameleaf/plugin-sdk';
+import { AssetVisibility } from '@frameleaf/sdk';
 import type { Manifest } from '../dist/index.d.ts';
 
 type MatchValueConfig = {

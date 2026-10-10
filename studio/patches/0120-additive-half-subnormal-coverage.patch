@@ -1,0 +1,25 @@
+--- a/src/infrastructure/gpu-transitions/linear-additive.ts
++++ b/src/infrastructure/gpu-transitions/linear-additive.ts
+@@ -1,3 +1,5 @@
++import { effectRangeWgsl } from '@/infrastructure/gpu-effects/common'
++
+ /**
+  * FL-97: additive dissolve in linear display-referred BT.709 (1 = reference white).
+  * The pinned 0.22 flash is a dimensionless light gain, not an encoded offset.
+@@ -22,6 +24,7 @@
+ }`
+ 
+ export const LINEAR_ADDITIVE_WGSL = /* wgsl */ `
++${effectRangeWgsl(true)}
+ struct AdditiveDissolveParams {
+   progress: f32,
+   width: f32,
+@@ -34,7 +37,7 @@
+ @group(0) @binding(3) var<uniform> params: AdditiveDissolveParams;
+ 
+ fn linearTransitionStraight(color: vec4f) -> vec4f {
+-  let coverage = quantizeToF16(color.a);
++  let coverage = fl_half_coverage(color.a);
+   if (coverage <= 0.0) { return vec4f(0.0); }
+   return vec4f(color.rgb / color.a, coverage);
+ }

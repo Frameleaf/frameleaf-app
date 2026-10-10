@@ -11,6 +11,12 @@ describe(CliService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(CliService));
+    const metadata = new Map<SystemMetadataKey, unknown>();
+    mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve(metadata.get(key) as never));
+    mocks.systemMetadata.set.mockImplementation((key, value) => {
+      metadata.set(key, value);
+      return Promise.resolve();
+    });
   });
 
   describe('listUsers', () => {
@@ -73,7 +79,7 @@ describe(CliService.name, () => {
 
       mocks.user.getAdmin.mockResolvedValue(admin);
       mocks.user.update.mockResolvedValue(admin);
-      mocks.session.invalidateAll.mockResolvedValue(void 0);
+      mocks.session.invalidateAll.mockResolvedValue(['admin-session']);
 
       const ask = vitest.fn().mockResolvedValue({ newPassword: 'new-password', invalidateSessions: true });
 
@@ -86,20 +92,19 @@ describe(CliService.name, () => {
   describe('disablePasswordLogin', () => {
     it('should disable password login', async () => {
       await sut.disablePasswordLogin();
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledWith(
-        { passwordLogin: { enabled: false } },
-        expect.objectContaining({ passwordLogin: expect.objectContaining({ enabled: false }) }),
-      );
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {
+        passwordLogin: { enabled: false },
+      });
+      expect((await sut.getConfig({ withCache: false })).passwordLogin.enabled).toBe(false);
     });
   });
 
   describe('enablePasswordLogin', () => {
     it('should enable password login', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({ passwordLogin: { enabled: false } });
       await sut.enablePasswordLogin();
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledWith(
-        {},
-        expect.objectContaining({ passwordLogin: expect.objectContaining({ enabled: true }) }),
-      );
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {});
+      expect((await sut.getConfig({ withCache: false })).passwordLogin.enabled).toBe(true);
     });
   });
 
@@ -174,7 +179,7 @@ describe(CliService.name, () => {
       });
     });
 
-    const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
     it('should return a valid login URL', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
@@ -208,23 +213,20 @@ describe(CliService.name, () => {
 
   describe('disableOAuthLogin', () => {
     it('should disable oauth login', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({ oauth: { enabled: true } });
       await sut.disableOAuthLogin();
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledWith(
-        {},
-        expect.objectContaining({ oauth: expect.objectContaining({ enabled: false }) }),
-      );
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {});
+      expect((await sut.getConfig({ withCache: false })).oauth.enabled).toBe(false);
     });
   });
 
   describe('enableOAuthLogin', () => {
     it('should enable oauth login', async () => {
       await sut.enableOAuthLogin();
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledWith(
-        { oauth: { enabled: true } },
-        expect.objectContaining({ oauth: expect.objectContaining({ enabled: true }) }),
-      );
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {
+        oauth: { enabled: true },
+      });
+      expect((await sut.getConfig({ withCache: false })).oauth.enabled).toBe(true);
     });
   });
-
-  // NOTE: revertSchemaToUpstream tests removed — see commands/index.ts comment.
 });

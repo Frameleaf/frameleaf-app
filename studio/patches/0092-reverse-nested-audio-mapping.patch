@@ -1,0 +1,954 @@
+diff --git a/src/features/export/deps/timeline-frame-contract.ts b/src/features/export/deps/timeline-frame-contract.ts
+index eb7ee2fe13..307495ff56 100644
+--- a/src/features/export/deps/timeline-frame-contract.ts
++++ b/src/features/export/deps/timeline-frame-contract.ts
+@@ -1,5 +1,7 @@
+ export { resolveEffectiveTrackStates } from '@/features/timeline/utils/group-utils'
+ export {
++  normalizeCompositionFps,
++  mapSourceWindowOverlap,
+   timelineToSourceFrames,
+   sourceToTimelineFrames,
+ } from '@/features/timeline/utils/source-calculations'
+diff --git a/src/features/export/deps/timeline-frame.ts b/src/features/export/deps/timeline-frame.ts
+index b315b49f3b..0af47ae898 100644
+--- a/src/features/export/deps/timeline-frame.ts
++++ b/src/features/export/deps/timeline-frame.ts
+@@ -1,5 +1,7 @@
+ export {
+   resolveEffectiveTrackStates,
++  normalizeCompositionFps,
++  mapSourceWindowOverlap,
+   timelineToSourceFrames,
+   sourceToTimelineFrames,
+ } from './timeline-frame-contract'
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+index 3138dd2006..63484a1a38 100644
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -1,3 +1,4 @@
++import { getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import type { CompositionInputProps } from '@/types/export'
+ import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+@@ -27,7 +28,7 @@ vi.mock('mediabunny', () => {
+     }
+ 
+     async computeDuration() {
+-      return 10
++      return 120
+     }
+ 
+     dispose() {
+@@ -44,11 +45,14 @@ vi.mock('mediabunny', () => {
+         throw new Error('Mediabunny range decode failed')
+       }
+       const sampleRate = this.track.src.includes('44100') ? 44100 : 48000
+-      const frameCount = Math.max(1, Math.round((endTime - startTime) * sampleRate))
++      const packet=this.track.src.includes('packet-ramp')
++      const actualStart=packet?Math.floor(startTime*sampleRate/2048)*2048/sampleRate:startTime
++      const actualEnd=packet?Math.ceil(endTime*sampleRate/2048)*2048/sampleRate:endTime
++      const frameCount = Math.max(1, Math.round((actualEnd - actualStart) * sampleRate))
+       // 'ramp' sources yield a monotone ramp tied to the ABSOLUTE source
+       // position, so tests can observe reversal and speed consumption.
+       const ramp = this.track.src.includes('ramp')
+-      const startIndex = Math.round(startTime * sampleRate)
++      const startIndex = Math.round(actualStart * sampleRate)
+       const makePlane = () => {
+         const plane = new Float32Array(frameCount)
+         if (ramp) {
+@@ -61,7 +65,8 @@ vi.mock('mediabunny', () => {
+         }
+         return plane
+       }
+-      const planes = this.track.src.includes('center-51')
++      const authoredPlanes=/planes-(1|2|6|8)/.exec(this.track.src)
++      const planes = authoredPlanes ? Array.from({length:Number(authoredPlanes[1])},(_,c)=>Float32Array.from(makePlane(),v=>v*(c+1))) : this.track.src.includes('center-51')
+         ? [
+             new Float32Array(frameCount),
+             new Float32Array(frameCount),
+@@ -73,11 +78,13 @@ vi.mock('mediabunny', () => {
+         : [makePlane(), makePlane()]
+ 
+       yield {
++        timestamp:actualStart,
+         numberOfFrames: frameCount,
+         numberOfChannels: planes.length,
+         sampleRate,
+-        copyTo(destination: Float32Array, options: { planeIndex: number }) {
+-          destination.set(planes[options.planeIndex] ?? planes[0]!)
++        copyTo(destination: Float32Array, options: { planeIndex: number;frameOffset?:number;frameCount?:number }) {
++          const plane=planes[options.planeIndex]??planes[0]!
++          destination.set(plane.subarray(options.frameOffset??0,(options.frameOffset??0)+(options.frameCount??plane.length)))
+         },
+         close() {},
+         trackSrc: this.track.src,
+@@ -1834,13 +1841,13 @@ it('FL103 linked transition rebuilding preserves one original track stage per se
+  for(const frame of [10,27,30,33,50]){const sample=Math.round(frame*48000/30);expect(full!.samples[0]![sample]).toBeCloseTo(baseline!.samples[0]![sample]!*0.1,6)}
+ })
+ 
+-it('FL103 refuses reversed composition track automation maps before either mixer can publish output',async()=>{
++it('0092 reversed composition produces full PCM while incompatible windowing remains refused',async()=>{
+  const child={id:'reverse-child',name:'child',fps:30,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],items:[makeAudioItem({id:'leaf',trackId:'child-a',durationInFrames:60})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'curve',frame:0,gainDb:-20}]}]}
+  useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
+  const wrapper={id:'reverse',type:'composition',trackId:'parent',compositionId:child.id,from:0,durationInFrames:30,sourceStart:0,sourceEnd:30,sourceFps:30,isReversed:true} as CompositionItem
+  const composition:CompositionInputProps={fps:30,durationInFrames:30,tracks:[makeTrack({id:'parent',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
+- await expect(processAudio(composition)).rejects.toThrow('Unsupported reversed composition track automation map')
+- await expect(processAudioWindows(composition).next()).rejects.toThrow('Unsupported reversed composition track automation map')
++ const full=await processAudio(composition);expect(full!.samples[0]![12000]).toBeCloseTo(0.01,7)
++ await expect(processAudioWindows(composition).next()).rejects.toThrow('Audio timeline requires full-segment processing')
+ })
+ 
+ 
+@@ -1926,3 +1933,101 @@ it.each([['full','impulse44100'],['window','impulse44100'],['full','ramp44100'],
+  }
+  } finally { clearAudioDecodeCache(); vi.unstubAllGlobals() }
+ })
++
++
++it.each([[false,false],[true,false],[false,true],[true,true]])('0092 working reversed nested PCM: leaf media reverse %s clipped %s preserves original fade/keyframe owner',async(leafReversed,clipped)=>{
++ clearAudioDecodeCache()
++ const points=[{id:'start',frame:12,gainDb:-20},{id:'end',frame:60,gainDb:0}]
++ const leaf=makeAudioItem({id:'signed-leaf',trackId:'child-a',src:'blob:ramp',from:12,durationInFrames:48,sourceStart:0,sourceEnd:48,sourceFps:24,volume:-3,isReversed:leafReversed,audioFadeIn:0.4,audioFadeOut:0.7,audioFadeInCurve:0.6,audioFadeOutCurve:-0.7,audioFadeInCurveX:0.2,audioFadeOutCurveX:0.8})
++ const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'signed-child',name:'child',fps:24,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[{itemId:leaf.id,properties:[{property:'volume',keyframes:[{id:'a',frame:0,value:-3,easing:'linear'},{id:'b',frame:48,value:-9,easing:'linear'}]}]}],items:[leaf],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:points}]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const lower=clipped?20:12, upper=clipped?52:60, duration=(upper-lower)/0.8
++ const wrapper={id:'signed-wrapper',type:'composition',trackId:'parent',compositionId:child.id,from:30,durationInFrames:duration,sourceStart:lower,sourceEnd:upper,sourceFps:24,isReversed:true} as CompositionItem
++ const composition:CompositionInputProps={fps:30,durationInFrames:100,masterBusDb:-6,tracks:[{...makeTrack({id:'parent',order:0,kind:'audio',items:[wrapper]}),volume:-3}],transitions:[],keyframes:[]}
++ const untouched=structuredClone(child)
++ const full=await processAudio(composition)
++ expect(full).not.toBeNull()
++ for(const elapsed of [2,10,20,duration-2]){
++   const rootFrame=30+elapsed, ownerFrame=upper-elapsed*0.8, relative=ownerFrame-12
++   const sample=Math.round(rootFrame*48000/30)
++   const decodedStart=(leafReversed?48-(upper-12):lower-12)*48000/24
++   const decodedLength=(upper-lower)*48000/24
++   const offset=Math.round(elapsed*48000/30)
++   const sourceIndex=decodedStart+(leafReversed?offset:decodedLength-1-offset)
++   const fade=getAudioFadeMultiplier({frame:relative,durationInFrames:48,fadeInFrames:0.4*24,fadeOutFrames:0.7*24,fadeInCurve:0.6,fadeOutCurve:-0.7,fadeInCurveX:0.2,fadeOutCurveX:0.8})
++   const db=(-3-relative/8)+(-20+(ownerFrame-12)*20/48)-3-6
++   expect(full!.samples[0]![sample]).toBeCloseTo(sourceIndex/1_000_000*fade*10**(db/20),6)
++ }
++ expect(child).toEqual(untouched)
++})
++
++it.each([false,true])('0092 decoder intersects timestamped packet planes with half-open trim before media reversal %s',async(reverse)=>{
++ clearAudioDecodeCache()
++ const item=makeAudioItem({id:'packet',trackId:'a',src:'blob:packet-ramp',from:0,durationInFrames:30,sourceStart:1,sourceEnd:31,sourceFps:30,isReversed:reverse})
++ const composition:CompositionInputProps={fps:30,durationInFrames:30,tracks:[makeTrack({id:'a',order:0,kind:'audio',items:[item]})],transitions:[],keyframes:[]}
++ const full=await processAudio(composition)
++ for(const i of [0,1,135,2047,47999]) expect(full!.samples[0]![i]).toBeCloseTo((reverse?49599-i:1600+i)/1_000_000,7)
++ if(!reverse){const chunks=[];for await(const c of processAudioWindows(composition))chunks.push(c);const whole=new Float32Array(chunks.reduce((n,c)=>n+c.samples[0]!.length,0));let at=0;for(const c of chunks){whole.set(c.samples[0]!,at);at+=c.samples[0]!.length};expect(whole.length).toBe(48000);for(const i of [0,2047,47999])expect(whole[i]).toBeCloseTo((1600+i)/1_000_000,7)}
++})
++
++it.each([0,30])('0092 double reversed wrappers cancel media direction; independent original owner clocks agree in full/window at absolute origin %s',async(origin)=>{
++ clearAudioDecodeCache()
++ const leaf=makeAudioItem({id:'double-leaf',trackId:'leaf-a',src:'blob:packet-ramp',from:0,durationInFrames:60,sourceStart:1,sourceEnd:61,sourceFps:30,volume:-3,audioFadeIn:0.2,audioFadeOut:0.6,audioFadeInCurve:0.7,audioFadeOutCurve:-0.5})
++ const inner:import('@/features/timeline/stores/compositions-store').SubComposition={id:'inner',name:'inner',fps:30,width:1920,height:1080,durationInFrames:60,items:[leaf],tracks:[{...makeTrack({id:'leaf-a',order:0,kind:'audio'}),gainEnvelope:[{id:'l0',frame:0,gainDb:0},{id:'l1',frame:60,gainDb:-20}]}],transitions:[],keyframes:[]}
++ const nested={id:'nested-reverse',type:'composition',trackId:'middle-a',compositionId:'inner',from:0,durationInFrames:60,sourceStart:0,sourceEnd:60,sourceFps:30,isReversed:true} as CompositionItem
++ const middle:import('@/features/timeline/stores/compositions-store').SubComposition={id:'middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[{...makeTrack({id:'middle-a',order:0,kind:'audio'}),gainEnvelope:[{id:'m0',frame:0,gainDb:0},{id:'m1',frame:60,gainDb:-12}]}],transitions:[],keyframes:[]}
++ useCompositionsStore.setState({compositions:[inner,middle],compositionById:{inner,middle},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'outer',type:'composition',trackId:'root-a',compositionId:'middle',from:0,durationInFrames:60,sourceStart:0,sourceEnd:60,sourceFps:30,isReversed:true} as CompositionItem
++ const composition:CompositionInputProps={fps:30,durationInFrames:60,masterOriginFrame:origin,masterBusDb:-6,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ expect(supportsWindowedAudioProcessing(composition)).toBe(true)
++ const full=await processAudio(composition);const windows=[];for await(const window of processAudioWindows(composition)) windows.push(window)
++ const windowPlane=new Float32Array(windows.reduce((n,w)=>n+w.samples[0]!.length,0));let at=0;for(const w of windows){windowPlane.set(w.samples[0]!,at);at+=w.samples[0]!.length}
++ for(const frame of [0,3,15,30,45,59]){const i=frame*1600;const fade=getAudioFadeMultiplier({frame,durationInFrames:60,fadeInFrames:6,fadeOutFrames:18,fadeInCurve:0.7,fadeOutCurve:-0.5});const db=-3-6-frame/3-(60-frame)/5;const expected=(1600+i)/1_000_000*fade*10**(db/20);expect(full!.samples[0]![i]).toBeCloseTo(expected,7);expect(windowPlane[i]).toBeCloseTo(expected,7)}
++})
++it('0092 reversed wrapper reuses original ownership and exclusive leaf media upper bound without rewriting definitions or mute routing',async()=>{
++ const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'upper-child',name:'upper',fps:30,width:1920,height:1080,durationInFrames:60,transitions:[],keyframes:[],items:[makeAudioItem({id:'upper-leaf',trackId:'child-a',src:'blob:packet-ramp',from:12,durationInFrames:48,sourceStart:10,sourceEnd:70,sourceFps:30,isReversed:true,audioDucking:{targetTrackIds:['root-a'],duckOthersDb:-12}})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'gain',frame:0,gainDb:-6}]}]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'upper-w',type:'composition',trackId:'root-a',compositionId:child.id,from:30,durationInFrames:24,sourceStart:20,sourceEnd:44,sourceFps:30,isReversed:true} as CompositionItem
++ const comp:CompositionInputProps={fps:30,durationInFrames:150,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper,{...wrapper,id:'reuse',from:90}]})],transitions:[],keyframes:[]}
++ const before=JSON.stringify(child),segments=extractAudioSegments(comp,30)
++ expect(segments.map(s=>[s.startFrame,s.durationFrames,s.sourceStartFrame,s.isReversed])).toEqual([[30,24,38,false],[90,24,38,false]])
++ expect(collectDuckingSources(comp,30).map(s=>[s.startFrame,s.endFrame])).toEqual([[30,54],[90,114]])
++ const full=await processAudio(comp);for(const frame of [2,10,20]){const expected=(38*1600+frame*1600)/1e6*10**(-6/20);expect(full!.samples[0]![(30+frame)*1600]).toBeCloseTo(expected,7);expect(full!.samples[0]![(90+frame)*1600]).toBeCloseTo(expected,7)}
++ expect(JSON.stringify(child)).toBe(before)
++ useCompositionsStore.getState().updateComposition(child.id,{tracks:child.tracks.map(t=>({...t,muted:true}))});expect(await processAudio(comp)).toBeNull()
++})
++
++it.each([1,2,6,8])('0092 normal-speed reversed wrapper preserves %s authored PCM planes and uniform track/master stages',async(channels)=>{
++ clearAudioDecodeCache()
++ const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'layout',name:'layout',fps:30,width:1920,height:1080,durationInFrames:24,transitions:[],keyframes:[],items:[makeAudioItem({id:'layout-leaf',trackId:'child-a',src:`blob:ramp-planes-${channels}`,from:0,durationInFrames:24,sourceStart:0,sourceEnd:24,sourceFps:30})],tracks:[{...makeTrack({id:'child-a',order:0,kind:'audio'}),gainEnvelope:[{id:'p',frame:0,gainDb:-6}]}]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{layout:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'layout-wrapper',type:'audio',src:'',compositionId:child.id,trackId:'root-a',from:0,durationInFrames:24,sourceStart:0,sourceEnd:24,sourceFps:30,isReversed:true} as AudioItem&{compositionId:string}
++ const composition:CompositionInputProps={fps:30,durationInFrames:24,masterBusDb:-3,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ expect(supportsWindowedAudioProcessing(composition)).toBe(false)
++ const full=await processAudio(composition);expect(full!.channels).toBe(channels)
++ for(let c=0;c<channels;c++)for(const i of [0,1,12000,38399])expect(full!.samples[c]![i]).toBeCloseTo((38399-i)/1e6*(c+1)*10**(-9/20),7)
++})
++it('0092 nested reversed speed2 uses actual full PCM stretch and original owner gain; window predicate stays closed',async()=>{
++ clearAudioDecodeCache()
++ const child:import('@/features/timeline/stores/compositions-store').SubComposition={id:'speed-child',name:'speed',fps:30,width:1920,height:1080,durationInFrames:180,transitions:[],keyframes:[],items:[makeAudioItem({id:'speed-leaf',trackId:'child-a',src:'blob:ramp',from:0,durationInFrames:180,sourceStart:0,sourceEnd:180,sourceFps:30})],tracks:[makeTrack({id:'child-a',order:0,kind:'audio'})]}
++ useCompositionsStore.setState({compositions:[child],compositionById:{[child.id]:child},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'speed-wrapper',type:'composition',trackId:'root-a',compositionId:child.id,from:0,durationInFrames:90,sourceStart:0,sourceEnd:180,sourceFps:30,speed:2,isReversed:true} as CompositionItem
++ const comp:CompositionInputProps={fps:30,durationInFrames:90,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ expect(supportsWindowedAudioProcessing(comp)).toBe(false)
++ const plain=await processAudio(comp)
++ useCompositionsStore.getState().updateComposition(child.id,{tracks:child.tracks.map(t=>({...t,gainEnvelope:[{id:'a',frame:0,gainDb:-20},{id:'b',frame:180,gainDb:0}]}))})
++ const curved=await processAudio(comp)
++ expect(plain!.samples[0]!.length).toBe(144000)
++ expect(plain!.samples[0]![48000]).toBeGreaterThan(0.16);expect(plain!.samples[0]![48000]).toBeLessThan(0.22)
++ for(const frame of [20,30,50,60]){const i=frame*1600;const owner=180-2*frame;expect(curved!.samples[0]![i]).toBeCloseTo(plain!.samples[0]![i]!*10**((-20+owner/9)/20),7)}
++})
++it('0092 nested omitted sourceFps uses each original child definition cadence instead of inheriting root cadence',()=>{
++ const leaf=makeAudioItem({id:'default-fps-leaf',trackId:'leaf-a',from:0,durationInFrames:48,sourceStart:0,sourceEnd:48,src:'blob:ramp'})
++ const inner:import('@/features/timeline/stores/compositions-store').SubComposition={id:'fps-inner',name:'inner',fps:24,width:1920,height:1080,durationInFrames:48,items:[leaf],tracks:[makeTrack({id:'leaf-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
++ const nested={id:'fps-nested',type:'composition',trackId:'middle-a',compositionId:inner.id,from:0,durationInFrames:60,sourceStart:0,sourceEnd:48,isReversed:true} as CompositionItem
++ const middle:import('@/features/timeline/stores/compositions-store').SubComposition={id:'fps-middle',name:'middle',fps:30,width:1920,height:1080,durationInFrames:60,items:[nested],tracks:[makeTrack({id:'middle-a',order:0,kind:'audio'})],transitions:[],keyframes:[]}
++ useCompositionsStore.setState({compositions:[inner,middle],compositionById:{[inner.id]:inner,[middle.id]:middle},mediaDependencyIds:[],mediaDependencyVersion:0})
++ const wrapper={id:'fps-outer',type:'composition',trackId:'root-a',compositionId:middle.id,from:30,durationInFrames:60,sourceStart:0,sourceEnd:60,isReversed:true} as CompositionItem
++ const comp:CompositionInputProps={fps:30,durationInFrames:90,tracks:[makeTrack({id:'root-a',order:0,kind:'audio',items:[wrapper]})],transitions:[],keyframes:[]}
++ expect(extractAudioSegments(comp,30)[0]).toMatchObject({startFrame:30,durationFrames:60,sourceFps:24,isReversed:false,clipOwner:{scale:0.8,offset:-24}})
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+index 35b9af6fba..32955bfcb9 100644
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -23,6 +23,8 @@ import type { Transition } from '@/types/transition'
+ import { createLogger } from '@/shared/logging/logger'
+ import { resolveTransitionWindows } from '@/shared/timeline/transitions/transition-planner'
+ import {
++  normalizeCompositionFps,
++  mapSourceWindowOverlap,
+   timelineToSourceFrames,
+   sourceToTimelineFrames,
+ } from '@/features/export/deps/timeline-frame'
+@@ -45,6 +47,7 @@ import {
+   isCompositionAudioItem,
+ } from '@/shared/utils/linked-media'
+ import {
++  getAudioFadeMultiplier,
+   evaluateAudioFadeInCurve,
+   evaluateAudioFadeOutCurve,
+   type AudioClipFadeSpan,
+@@ -89,6 +92,8 @@ export function clearAudioDecodeCache(): void {
+ interface AudioSegment {
+   trackGainStages?: TrackGainStage[]
+   trackRootOrigin?: number
++  // Original owning-sequence clock, independent of leaf media direction.
++  clipOwner?: { offset: number; scale: number; from: number; duration: number; fps: number }
+   itemId: string
+   trackId: string
+   src: string
+@@ -629,6 +634,7 @@ interface CompositionWrapperTiming {
+   wrapperSourceFps: number
+   sourceOffset: number
+   wrapperSourceEnd: number
++  isReversed: boolean
+ }
+ 
+ function resolveCompositionWrapper(
+@@ -638,13 +644,16 @@ function resolveCompositionWrapper(
+     sourceStart: number
+     trimStart: number
+     sourceEnd: number
++    isReversed: boolean
+   }>,
+   fps: number,
++  fallbackSourceFps=fps,
+ ): CompositionWrapperTiming {
+   const wrapperSpeed = compositionItem.speed ?? 1
+-  const wrapperSourceFps = compositionItem.sourceFps ?? fps
++  const wrapperSourceFps = normalizeCompositionFps(compositionItem.sourceFps,normalizeCompositionFps(fallbackSourceFps,30))
+   const sourceOffset = compositionItem.sourceStart ?? compositionItem.trimStart ?? 0
+   return {
++    isReversed: compositionItem.isReversed === true,
+     compFrom: compositionItem.from,
+     wrapperSpeed,
+     wrapperSourceFps,
+@@ -669,6 +678,7 @@ interface NestedItemWindow {
+   effectiveEnd: number
+   effectiveDuration: number
+   effectiveSourceStart: number
++  effectiveSourceFps: number
+ }
+ 
+ /**
+@@ -687,27 +697,21 @@ function mapNestedItemWindow(
+   fps: number,
+ ): NestedItemWindow | null {
+   const { compFrom, wrapperSpeed, wrapperSourceFps, sourceOffset, wrapperSourceEnd } = wrapper
+-  const overlapStart = Math.max(subItem.from, sourceOffset)
+-  const overlapEnd = Math.min(subItem.from + subItem.durationInFrames, wrapperSourceEnd)
+-  if (overlapEnd <= overlapStart) return null
+-
+-  const effectiveStart =
+-    compFrom +
+-    sourceToTimelineFrames(overlapStart - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
+-  const effectiveEnd =
+-    compFrom +
+-    sourceToTimelineFrames(overlapEnd - sourceOffset, wrapperSpeed, wrapperSourceFps, fps)
+-  const effectiveDuration = Math.max(1, effectiveEnd - effectiveStart)
++  const mapping = mapSourceWindowOverlap({itemStart:subItem.from,itemDuration:subItem.durationInFrames,
++    wrapperDuration:sourceToTimelineFrames(wrapperSourceEnd-sourceOffset,wrapperSpeed,wrapperSourceFps,fps),
++    wrapperSpeed,wrapperSourceFps,wrapperSourceStart:sourceOffset,wrapperSourceEnd,
++    wrapperIsReversed:wrapper.isReversed,timelineFps:fps,fallbackSourceFps:wrapperSourceFps})
++  if (!mapping) return null
++  const {overlapStart,overlapEnd}=mapping
++  const effectiveStart=compFrom+mapping.mappedFrom
++  const effectiveEnd=compFrom+mapping.mappedEnd
++  const effectiveDuration=mapping.mappedDuration
+ 
+   const baseSourceStart = subItem.sourceStart ?? subItem.trimStart ?? 0
+-  const effectiveSourceStart =
+-    baseSourceStart +
+-    timelineToSourceFrames(
+-      overlapStart - subItem.from,
+-      subItem.speed ?? 1,
+-      wrapperSourceFps,
+-      subItem.sourceFps ?? wrapperSourceFps,
+-    )
++  const sourceFps=normalizeCompositionFps(subItem.sourceFps,(subItem.compositionId ? useCompositionsStore.getState().getComposition(subItem.compositionId)?.fps : undefined)??wrapperSourceFps)
++  const effectiveSourceStart=subItem.isReversed
++    ? (subItem.sourceEnd??baseSourceStart+timelineToSourceFrames(subItem.durationInFrames,subItem.speed??1,wrapperSourceFps,sourceFps))-timelineToSourceFrames(overlapEnd-subItem.from,subItem.speed??1,wrapperSourceFps,sourceFps)
++    : baseSourceStart+timelineToSourceFrames(overlapStart-subItem.from,subItem.speed??1,wrapperSourceFps,sourceFps)
+ 
+   return {
+     overlapStart,
+@@ -716,6 +720,7 @@ function mapNestedItemWindow(
+     effectiveEnd,
+     effectiveDuration,
+     effectiveSourceStart,
++    effectiveSourceFps:sourceFps,
+   }
+ }
+ 
+@@ -737,17 +742,18 @@ function buildNestedWrapper(
+     from: window.effectiveStart,
+     durationInFrames: window.effectiveDuration,
+     speed: (subItem.speed ?? 1) * wrapperSpeed,
++    isReversed: (subItem.isReversed === true) !== wrapper.isReversed,
+     sourceStart: window.effectiveSourceStart,
+-    sourceFps: subItem.sourceFps ?? wrapperSourceFps,
++    sourceFps: window.effectiveSourceFps,
+     ...(subItem.sourceEnd !== undefined && {
+       sourceEnd: Math.max(
+         window.effectiveSourceStart + 1,
+         subItem.sourceEnd -
+           timelineToSourceFrames(
+-            subItem.from + subItem.durationInFrames - window.overlapEnd,
++            subItem.isReversed ? window.overlapStart - subItem.from : subItem.from + subItem.durationInFrames - window.overlapEnd,
+             subItem.speed ?? 1,
+             wrapperSourceFps,
+-            subItem.sourceFps ?? wrapperSourceFps,
++            window.effectiveSourceFps,
+           ),
+       ),
+     }),
+@@ -763,6 +769,7 @@ function appendCompositionAudioSegments(params: {
+     tracks: TimelineTrack[]
+     keyframes?: CompositionInputProps['keyframes']
+     durationInFrames: number
++    fps?: number
+   }
+   fps: number
+   audioEqStages?: ResolvedAudioEqSettings[]
+@@ -782,19 +789,18 @@ function appendCompositionAudioSegments(params: {
+   const wrapperAudioPitchShiftSemitones =
+     (params.audioPitchShiftSemitones ?? 0) + getAudioPitchShiftSemitones(compositionItem)
+   const linkedSubCompVideoIds = getLinkedVideoIdsWithAudio(subComp.items)
+-  const wrapper = resolveCompositionWrapper(compositionItem, fps)
++  const wrapper = resolveCompositionWrapper(compositionItem, fps,subComp.fps??fps)
+   const { wrapperSpeed, wrapperSourceFps } = wrapper
+   const trackRootOrigin=params.trackRootOrigin??0
+   const wrapperTrackStages=params.trackGainStages??[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}]
+-  const ownerScale=wrapperSpeed*wrapperSourceFps/fps
+-  const ownerOffset=wrapper.sourceOffset-(wrapper.compFrom+trackRootOrigin)*ownerScale
++  const ownerScale=(wrapper.isReversed ? -1 : 1)*wrapperSpeed*wrapperSourceFps/normalizeCompositionFps(fps,30)
++  const ownerOffset=(wrapper.isReversed ? wrapper.wrapperSourceEnd : wrapper.sourceOffset)-(wrapper.compFrom+trackRootOrigin)*ownerScale
+   const trackMuted = (track.muted ?? false) || compositionItem.muted === true
+ 
+   for (const subItem of subComp.items) {
+     const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
+     const subTrackMuted = (subTrack?.muted ?? false) || subItem.muted === true
+     const trackGainStages=[...wrapperTrackStages,...(subTrack?[{trackId:subTrack.id,points:subTrack.gainEnvelope??[],gainDb:subTrack.volume??0,muted:subTrack.muted===true,offset:ownerOffset,scale:ownerScale}]:[])]
+-    if(compositionItem.isReversed && trackGainStages.some(s=>s.points.length)) throw new Error('Unsupported reversed composition track automation map')
+     const window = mapNestedItemWindow(subItem, wrapper, fps)
+     if (!window) continue
+     const { overlapStart, overlapEnd, effectiveStart, effectiveDuration } = window
+@@ -892,13 +898,15 @@ function appendCompositionAudioSegments(params: {
+       startFrame: effectiveStart,
+       durationFrames: effectiveDuration,
+       sourceStartFrame: effectiveSourceStart,
+-      sourceFps: subItem.sourceFps ?? fps,
++      sourceFps: normalizeCompositionFps(subItem.sourceFps,wrapperSourceFps),
+       volume: (subItem.volume ?? 0) + (track.volume ?? 0) + (subTrack?.volume ?? 0),
+       trackVolumeDb: (track.volume ?? 0) + (subTrack?.volume ?? 0),
+       trackGainStages,
++      trackRootOrigin,
++      clipOwner:{offset:ownerOffset,scale:ownerScale,from:subItem.from,duration:subItem.durationInFrames,fps:wrapperSourceFps},
+       panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
+-      fadeInFrames: adjustedFadeInFrames,
+-      fadeOutFrames: adjustedFadeOutFrames,
++      fadeInFrames: (subItem.audioFadeIn ?? 0)*wrapperSourceFps,
++      fadeOutFrames: (subItem.audioFadeOut ?? 0)*wrapperSourceFps,
+       fadeInCurve: subItem.audioFadeInCurve ?? 0,
+       fadeOutCurve: subItem.audioFadeOutCurve ?? 0,
+       fadeInCurveX: subItem.audioFadeInCurveX ?? 0.52,
+@@ -926,7 +934,7 @@ function appendCompositionAudioSegments(params: {
+         }),
+       ],
+       speed,
+-      isReversed: subItem.isReversed === true,
++      isReversed: (subItem.isReversed === true) !== wrapper.isReversed,
+       muted: trackMuted || subTrackMuted,
+       type: subItem.type as 'video' | 'audio',
+       audioCodec: getMediaAudioCodecById(subItem.mediaId),
+@@ -1198,8 +1206,11 @@ function appendDecodedAudioSample(
+   state: AudioDecodeAccumulator,
+   sample: MediabunnyAudioSample,
+   itemId: string,
++  range?: { startTime:number; endTime:number },
+ ): void {
+-  const frameCount = Math.max(0, sample.numberOfFrames)
++  const frameOffset=range ? Math.max(0,Math.ceil((range.startTime-sample.timestamp)*sample.sampleRate-1e-7)) : 0
++  const frameEnd=range ? Math.min(sample.numberOfFrames,Math.ceil((range.endTime-sample.timestamp)*sample.sampleRate-1e-7)) : sample.numberOfFrames
++  const frameCount = Math.max(0, frameEnd-frameOffset)
+   const sampleChannels = Math.max(1, sample.numberOfChannels)
+   if (frameCount === 0) return
+ 
+@@ -1224,6 +1235,8 @@ function appendDecodedAudioSample(
+     sample.copyTo(channelData, {
+       planeIndex: Math.min(channel, sampleChannels - 1),
+       format: 'f32-planar',
++      frameOffset,
++      frameCount,
+     })
+     state.channelChunks[channel]!.push(channelData)
+   }
+@@ -1258,7 +1271,8 @@ async function decodeAudioRangeFromSink(
+ 
+   for await (const sample of sink.samples(startTime, endTime)) {
+     try {
+-      appendDecodedAudioSample(state, sample, itemId)
++      if (!Number.isFinite(sample.timestamp)) throw new Error('Audio packet has no presentation timestamp')
++      appendDecodedAudioSample(state, sample, itemId, {startTime,endTime})
+     } finally {
+       sample.close()
+     }
+@@ -1583,7 +1597,7 @@ function collectNestedDuckingSources(
+   const subComp = useCompositionsStore.getState().getComposition(compositionItem.compositionId)
+   if (!subComp) return []
+ 
+-  const wrapper = resolveCompositionWrapper(compositionItem, fps)
++  const wrapper = resolveCompositionWrapper(compositionItem, fps,subComp.fps??fps)
+   const nestedVisited = new Set(visited)
+   nestedVisited.add(compositionItem.compositionId)
+ 
+@@ -1742,6 +1756,22 @@ function applyVolume(samples: Float32Array, volumeDb: number): Float32Array {
+  * @param fps - Frames per second
+  * @param sampleRate - Audio sample rate
+  */
++function applyMappedClipGain(samples:Float32Array,segment:AudioSegment,fps:number,sampleRate:number,origin:number):void {
++  const owner=segment.clipOwner
++  if (!owner) return
++  for(let i=0;i<samples.length;i++) {
++    const rootFrame=(origin+i)/sampleRate*fps+(segment.trackRootOrigin??0)
++    const frame=owner.offset+owner.scale*rootFrame-owner.from
++    const db=segment.volumeKeyframes?.length ? interpolatePropertyValue(segment.volumeKeyframes,frame,segment.volume-segment.trackVolumeDb)+segment.trackVolumeDb : segment.volume
++    const fade=getAudioFadeMultiplier({frame,durationInFrames:owner.duration,fadeInFrames:segment.fadeInFrames,
++      fadeOutFrames:segment.fadeOutFrames,fadeInCurve:segment.fadeInCurve,fadeOutCurve:segment.fadeOutCurve,
++      fadeInCurveX:segment.fadeInCurveX,fadeOutCurveX:segment.fadeOutCurveX,
++      contentStartOffsetFrames:segment.contentStartOffsetFrames,contentEndOffsetFrames:segment.contentEndOffsetFrames,
++      fadeInDelayFrames:segment.fadeInDelayFrames,fadeOutLeadFrames:segment.fadeOutLeadFrames})
++    samples[i]=samples[i]!*dbToGain(db)*fade
++  }
++}
++
+ function applyAnimatedVolume(
+   samples: Float32Array,
+   volumeKeyframes: VolumeKeyframe[],
+@@ -2596,7 +2626,7 @@ async function processAudioWindowChannels(
+   )
+   for (let channel = 0; channel < processed.length; channel++) {
+     let samples = processed[channel]!
+-    if (segment.volumeKeyframes?.length) {
++    if (!segment.clipOwner && segment.volumeKeyframes?.length) {
+       samples = applyAnimatedVolume(
+         samples,
+         segment.volumeKeyframes,
+@@ -2607,10 +2637,10 @@ async function processAudioWindowChannels(
+         fps,
+         decoded.sampleRate,
+       )
+-    } else if (segment.volume !== 0) {
++    } else if (!segment.clipOwner && segment.volume !== 0) {
+       samples = applyVolume(samples, segment.volume)
+     }
+-    samples = applyWindowedSegmentFades(
++    if (!segment.clipOwner) samples = applyWindowedSegmentFades(
+       samples,
+       segment,
+       decodedSegmentOffset,
+@@ -2631,6 +2661,7 @@ async function processAudioWindowChannels(
+     if (decoded.sampleRate !== sampleRate) {
+       samples = await resample(samples, decoded.sampleRate, sampleRate)
+     }
++    applyMappedClipGain(samples,segment,fps,sampleRate,intersection.intersectionStart)
+     // Owner gain is sampled on the actual contribution clock after resampling.
+     if (segment.trackGainStages) {
+       applyTrackGain([samples], segment.trackGainStages, fps, sampleRate,
+@@ -2721,7 +2752,8 @@ export async function* processAudioWindows(
+   composition: CompositionInputProps,
+   signal?: AbortSignal,
+ ): AsyncGenerator<{ samples: Float32Array[]; sampleRate: number; channels: number }> {
+-  const { fps, durationInFrames = 0 } = composition
++  const { fps:rawFps, durationInFrames = 0 } = composition
++  const fps=normalizeCompositionFps(rawFps,30)
+   await resolveSubCompMediaUrls(composition)
+ 
+   const segments = extractAudioSegments(composition, fps).filter((segment) => !segment.muted)
+@@ -2802,7 +2834,8 @@ export async function processAudio(
+   sampleRate: number
+   channels: number
+ } | null> {
+-  const { fps, durationInFrames = 0 } = composition
++  const { fps:rawFps, durationInFrames = 0 } = composition
++  const fps=normalizeCompositionFps(rawFps,30)
+ 
+   await resolveSubCompMediaUrls(composition)
+ 
+@@ -2943,7 +2976,7 @@ export async function processAudio(
+         let channelSamples = processedChannels[c]!
+ 
+         // Apply volume (animated if keyframes exist, static otherwise)
+-        if (segment.volumeKeyframes && segment.volumeKeyframes.length > 0) {
++        if (!segment.clipOwner && segment.volumeKeyframes && segment.volumeKeyframes.length > 0) {
+           channelSamples = applyAnimatedVolume(
+             channelSamples,
+             segment.volumeKeyframes,
+@@ -2954,19 +2987,19 @@ export async function processAudio(
+             fps,
+             decoded.sampleRate,
+           )
+-        } else if (segment.volume !== 0) {
++        } else if (!segment.clipOwner && segment.volume !== 0) {
+           channelSamples = applyVolume(channelSamples, segment.volume)
+         }
+ 
+         // Apply fades
+-        if (segment.clipFadeSpans && segment.clipFadeSpans.length > 0) {
++        if (!segment.clipOwner && segment.clipFadeSpans && segment.clipFadeSpans.length > 0) {
+           channelSamples = applyClipFadeSpans(
+             channelSamples,
+             segment.clipFadeSpans,
+             decoded.sampleRate,
+             fps,
+           )
+-        } else if (fadeInSamples > 0 || fadeOutSamples > 0) {
++        } else if (!segment.clipOwner && (fadeInSamples > 0 || fadeOutSamples > 0)) {
+           channelSamples = applyFades(
+             channelSamples,
+             fadeInSamples,
+@@ -3007,6 +3040,7 @@ export async function processAudio(
+         if (decoded.sampleRate !== config.sampleRate) {
+           channelSamples = await resample(channelSamples, decoded.sampleRate, config.sampleRate)
+         }
++        applyMappedClipGain(channelSamples,segment,fps,config.sampleRate,Math.floor((segment.startFrame/fps)*config.sampleRate))
+         if (segment.trackGainStages) {
+           const contributionStart = Math.floor((segment.startFrame / fps) * config.sampleRate)
+           applyTrackGain([channelSamples], segment.trackGainStages, fps, config.sampleRate,
+diff --git a/src/features/timeline/utils/source-calculations.signed.test.ts b/src/features/timeline/utils/source-calculations.signed.test.ts
+new file mode 100644
+index 0000000000..d17e805047
+--- /dev/null
++++ b/src/features/timeline/utils/source-calculations.signed.test.ts
+@@ -0,0 +1,8 @@
++import { expect,it } from 'vite-plus/test'
++import {mapSourceWindowOverlap} from './source-calculations'
++it.each([[24,30],[24000/1001,30000/1001],[23.976,29.97]])('0092 signed overlap preserves exact cadence ratio %s/%s', (child,root)=>{
++ const base={itemStart:20,itemDuration:16,wrapperDuration:60,wrapperSpeed:1,wrapperSourceFps:child,wrapperSourceStart:12,wrapperSourceEnd:60,timelineFps:root,fallbackSourceFps:child}
++ expect(mapSourceWindowOverlap(base)).toMatchObject({overlapStart:20,overlapEnd:36,mappedFrom:10,mappedEnd:30,mappedDuration:20})
++ expect(mapSourceWindowOverlap({...base,wrapperIsReversed:true})).toMatchObject({overlapStart:20,overlapEnd:36,mappedFrom:30,mappedEnd:50,mappedDuration:20})
++ expect(mapSourceWindowOverlap({...base,itemStart:60,itemDuration:10,wrapperIsReversed:true})).toBeNull()
++})
+diff --git a/src/features/timeline/utils/source-calculations.ts b/src/features/timeline/utils/source-calculations.ts
+index b3201a7bce..c460af725c 100644
+--- a/src/features/timeline/utils/source-calculations.ts
++++ b/src/features/timeline/utils/source-calculations.ts
+@@ -1,3 +1,4 @@
++import { cadenceFromFps } from '@/shared/utils/audio-clock-cadence'
+ import type { TimelineItem } from '@/types/timeline'
+ 
+ /**
+@@ -24,6 +25,13 @@ function normalizeFps(fps: number | undefined, fallback: number): number {
+   return fps
+ }
+ 
++
++/** Runtime composition clocks use the admitted exact broadcast fraction; edit quantizers stay unchanged. */
++export function normalizeCompositionFps(fps:number|undefined,fallback:number):number {
++ const value=normalizeFps(fps,fallback)
++ try{const {num,den}=cadenceFromFps(value);return num/den}catch{return value}
++}
++
+ /**
+  * Extract source properties from a media item with defaults.
+  */
+@@ -107,11 +115,12 @@ export function mapSourceWindowOverlap(params: {
+   wrapperSourceFps?: number
+   wrapperSourceStart: number
+   wrapperSourceEnd?: number
++  wrapperIsReversed?: boolean
+   timelineFps: number
+   fallbackSourceFps: number
+ }): SourceWindowOverlapMapping | null {
+   const wrapperSpeed = params.wrapperSpeed ?? DEFAULT_SPEED
+-  const wrapperSourceFps = params.wrapperSourceFps ?? params.fallbackSourceFps
++  const wrapperSourceFps = normalizeCompositionFps(params.wrapperSourceFps,normalizeCompositionFps(params.fallbackSourceFps,DEFAULT_TIMELINE_FPS))
+   const wrapperSourceEnd =
+     params.wrapperSourceEnd ??
+     params.wrapperSourceStart +
+@@ -129,18 +138,13 @@ export function mapSourceWindowOverlap(params: {
+     return null
+   }
+ 
+-  const mappedFrom = sourceToTimelineFrames(
+-    overlapStart - params.wrapperSourceStart,
+-    wrapperSpeed,
+-    wrapperSourceFps,
+-    params.timelineFps,
+-  )
+-  const mappedEnd = sourceToTimelineFrames(
+-    overlapEnd - params.wrapperSourceStart,
+-    wrapperSpeed,
+-    wrapperSourceFps,
+-    params.timelineFps,
+-  )
++  const mapDistance=(frames:number):number=>{
++    try{const source=cadenceFromFps(wrapperSourceFps),timeline=cadenceFromFps(params.timelineFps)
++      return Math.floor(frames*timeline.num*source.den/(wrapperSpeed*source.num*timeline.den))
++    }catch{return sourceToTimelineFrames(frames,wrapperSpeed,wrapperSourceFps,params.timelineFps)}
++  }
++  const mappedFrom=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapEnd : overlapStart-params.wrapperSourceStart)
++  const mappedEnd=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapStart : overlapEnd-params.wrapperSourceStart)
+ 
+   return {
+     overlapStart,
+diff --git a/src/runtime/composition-runtime/components/composition-content.keyframes.test.tsx b/src/runtime/composition-runtime/components/composition-content.keyframes.test.tsx
+index 7acdfd2401..c043c3628f 100644
+--- a/src/runtime/composition-runtime/components/composition-content.keyframes.test.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.keyframes.test.tsx
+@@ -88,6 +88,7 @@ vi.mock('../hooks/use-transition-participant-sync', () => ({
+ }))
+ 
+ vi.mock('./item-content', async () => {
++  const { useVideoConfig } = await import('@/runtime/composition-runtime/deps/player')
+   const { useItemKeyframesFromContext } = await import('../contexts/keyframes-context')
+ 
+   return {
+@@ -95,9 +96,10 @@ vi.mock('./item-content', async () => {
+       item,
+       muted,
+     }: {
+-      item: { id: string; src?: string; audioSrc?: string }
++      item: { id: string; src?: string; audioSrc?: string;from?:number;durationInFrames?:number;sourceStart?:number;isReversed?:boolean;_audioOwnerTime?:unknown }
+       muted?: boolean
+     }) => {
++      const renderFps=useVideoConfig().fps
+       const keyframes = useItemKeyframesFromContext(item.id)
+       const keyframeCount =
+         keyframes?.properties.reduce((count, property) => count + property.keyframes.length, 0) ?? 0
+@@ -105,10 +107,14 @@ vi.mock('./item-content', async () => {
+       return (
+         <div
+           data-testid={`sub-item-${item.id}`}
++          data-render-fps={renderFps}
+           data-muted={muted ? 'true' : 'false'}
+           data-keyframe-count={String(keyframeCount)}
+           data-src={item.src ?? ''}
+           data-audio-src={item.audioSrc ?? ''}
++          data-source-start={item.sourceStart}
++          data-reversed={String(item.isReversed)}
++          data-owner={JSON.stringify(item._audioOwnerTime)}
+         />
+       )
+     },
+@@ -439,3 +445,17 @@ describe('CompositionContent keyframes', () => {
+     expect(visibilityStyles.every((style) => style.includes('visibility: hidden'))).toBe(true)
+   })
+ })
++
++it.each([[false,24,30],[true,24,30],[false,23.976,29.97],[true,23.976,29.97]] as const)('0092 actual preview expansion mirrors wrapper windows and keeps ancestor owner time independent of leaf reverse %s on %s/%s',(leafReverse,childFps,rootFps)=>{
++ const child=makeTestSubComposition({id:'signed-preview',name:'signed',fps:childFps,durationInFrames:60,items:[makeNestedAudioItem({id:'signed-preview-leaf',trackId:'a',from:12,durationInFrames:48,sourceStart:10,sourceEnd:70,sourceFps:24,isReversed:leafReverse})],tracks:[makeNestedTimelineTrack({id:'a',name:'A',kind:'audio'})]})
++ storeTestSubComposition(child)
++ const wrapper=makeParentCompositionItem({id:'signed-wrapper',compositionId:child.id,from:0,durationInFrames:40,sourceStart:20,sourceEnd:52,sourceFps:childFps,isReversed:true})
++ render(<VideoConfigProvider fps={rootFps} width={1280} height={720} durationInFrames={120}><CompositionContent item={wrapper}/></VideoConfigProvider>)
++ const node=screen.getByTestId('sub-item-signed-preview-leaf')
++ expect(Number(node.dataset.renderFps)).toBe(rootFps===30?30:30000/1001)
++ expect(node.dataset.reversed).toBe(String(!leafReverse))
++ expect(node.dataset.sourceStart).toBe(String(leafReverse?30:18))
++ expect(JSON.parse(node.dataset.owner!)).toEqual({offset:40,scale:-0.8,duration:48,fps:childFps===24?24:24000/1001})
++ const sequence=node.closest('[data-sequence-from]')!
++ expect(sequence.getAttribute('data-sequence-from')).toBe('0');expect(sequence.getAttribute('data-sequence-duration')).toBe('40')
++})
+diff --git a/src/runtime/composition-runtime/components/composition-content.tsx b/src/runtime/composition-runtime/components/composition-content.tsx
+index c0dcd237af..6f12ba61bc 100644
+--- a/src/runtime/composition-runtime/components/composition-content.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.tsx
+@@ -17,6 +17,7 @@ import { VideoConfigProvider } from '@/runtime/composition-runtime/deps/player'
+ import { useVideoConfig } from '../hooks/use-player-compat'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+ import {
++  normalizeCompositionFps,
+   mapSourceWindowOverlap,
+   timelineToSourceFrames,
+ } from '@/runtime/composition-runtime/deps/timeline'
+@@ -62,6 +63,7 @@ interface CompositionWindow {
+   sourceStart?: number
+   sourceEnd?: number
+   trimStart?: number
++  isReversed?: boolean
+ }
+ 
+ interface CompositionContentProps {
+@@ -131,36 +133,44 @@ function mapSubCompItemToWrapperWindow(params: {
+     wrapperSourceFps: wrapper.sourceFps,
+     wrapperSourceStart,
+     wrapperSourceEnd: wrapper.sourceEnd,
++    wrapperIsReversed: wrapper.isReversed,
+     timelineFps: parentFps,
+     fallbackSourceFps: subCompFps,
+   })
+ 
+   if (!mapping) return null
+ 
+-  const mappedItem: TimelineItem = {
++  const mappedItem: TimelineItem & { _audioOwnerTime?: {offset:number;scale:number;duration:number;fps:number} } = {
+     ...subItem,
+     from: mapping.mappedFrom,
+     durationInFrames: mapping.mappedDuration,
+     speed: (subItem.speed ?? 1) * mapping.wrapperSpeed,
++    // Only ancestor direction transforms this original timeline-authored clock.
++    _audioOwnerTime: {offset:(wrapper.isReversed ? mapping.overlapEnd : mapping.overlapStart)-subItem.from,
++      scale:(wrapper.isReversed ? -1:1)*mapping.wrapperSpeed*mapping.wrapperSourceFps/normalizeCompositionFps(parentFps,30),
++      duration:subItem.durationInFrames,fps:normalizeCompositionFps(subCompFps,30)},
+   }
+ 
+   if (subItem.type === 'video' || subItem.type === 'audio' || subItem.type === 'composition') {
+     const childSourceFps = subItem.sourceFps ?? subCompFps
+     const childSpeed = subItem.speed ?? 1
+     const sourceStartDelta = timelineToSourceFrames(
+-      mapping.clippedStartFrames,
++      subItem.isReversed ? mapping.clippedEndFrames : mapping.clippedStartFrames,
+       childSpeed,
+       subCompFps,
+       childSourceFps,
+     )
+     const sourceEndDelta = timelineToSourceFrames(
+-      mapping.clippedEndFrames,
++      subItem.isReversed ? mapping.clippedStartFrames : mapping.clippedEndFrames,
+       childSpeed,
+       subCompFps,
+       childSourceFps,
+     )
+-    const nextSourceStart = (subItem.sourceStart ?? 0) + sourceStartDelta
++    const nextSourceStart = subItem.isReversed
++      ? (subItem.sourceEnd??(subItem.sourceStart??0)+timelineToSourceFrames(subItem.durationInFrames,childSpeed,subCompFps,childSourceFps))-timelineToSourceFrames(mapping.overlapEnd-subItem.from,childSpeed,subCompFps,childSourceFps)
++      : (subItem.sourceStart ?? 0) + sourceStartDelta
+ 
++    mappedItem.isReversed = (subItem.isReversed === true) !== (wrapper.isReversed === true)
+     mappedItem.sourceStart = nextSourceStart
+     if (subItem.sourceEnd !== undefined) {
+       mappedItem.sourceEnd = Math.max(nextSourceStart + 1, subItem.sourceEnd - sourceEndDelta)
+@@ -178,8 +188,8 @@ function mapSubCompItemToWrapperWindow(params: {
+  * `from` on the parent timeline.
+  *
+  * The sub-comp is rendered at its own native resolution inside a VideoConfigProvider,
+- * then CSS-scaled to fit the parent container dimensions. This ensures sub-items
+- * use the correct coordinate space (sub-comp dimensions, not main canvas).
++ * then CSS-scaled to fit the parent container dimensions. The mapped sequences
++ * retain the parent output cadence; authored owner-time metadata retains child cadence.
+  */
+ export const CompositionContent = React.memo<CompositionContentProps>(
+   ({
+@@ -214,6 +224,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+         sourceStart: item.sourceStart,
+         sourceEnd: item.sourceEnd,
+         trimStart: item.trimStart,
++        isReversed:item.isReversed,
+       }),
+       [
+         item.durationInFrames,
+@@ -222,6 +233,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+         item.sourceStart,
+         item.speed,
+         item.trimStart,
++        item.isReversed,
+       ],
+     )
+ 
+@@ -292,8 +304,8 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+     const visualFrame = useVisualFreezeFrame(relativeFrame)
+     const sourceOffset = item.sourceStart ?? item.trimStart ?? 0
+     const subCompFrame =
+-      sourceOffset +
+-      timelineToSourceFrames(
++      (item.isReversed ? (item.sourceEnd ?? sourceOffset+timelineToSourceFrames(item.durationInFrames,item.speed??1,mainFps,item.sourceFps??subComp?.fps??mainFps)) : sourceOffset) +
++      (item.isReversed ? -1:1)*timelineToSourceFrames(
+         relativeFrame,
+         item.speed ?? 1,
+         mainFps,
+@@ -579,7 +591,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+           <VideoConfigProvider
+             width={subComp.width}
+             height={subComp.height}
+-            fps={subComp.fps}
++            fps={normalizeCompositionFps(mainFps,30)}
+             durationInFrames={subComp.durationInFrames}
+           >
+             <KeyframesProvider
+diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+index d5afedd5e9..eeecde168d 100644
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -1,5 +1,7 @@
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import { KeyframesContext } from '../../contexts/keyframes-context-core'
+ import { resolveTrackGainStages } from '@/shared/utils/track-audio'
+-import { useCallback, useEffect, useMemo } from 'react'
++import { useCallback, useEffect, useMemo, useContext } from 'react'
+ import { useClockPlaybackRate, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useVideoConfig, useIsPlaying } from '../../hooks/use-player-compat'
+ import { useGizmoStore } from '@/runtime/composition-runtime/deps/stores'
+@@ -43,7 +45,7 @@ export function useTrackAudioPanStages(itemId: string, ancestorItemIds?: string[
+ 
+ export function useTrackGainStages(itemId: string, ancestors?: string[]) {
+   const items=useTimelineStore(s=>s.items), tracks=useTimelineStore(s=>s.tracks), compositions=useCompositionsStore(s=>s.compositions)
+-  const {fps}=useVideoConfig()
++  const fps=useTimelineSettingsStore(s=>s.fps)
+   return useMemo(()=>resolveTrackGainStages(items,tracks,compositions,itemId,ancestors,fps),[items,tracks,compositions,itemId,ancestors,fps])
+ }
+ 
+@@ -77,6 +79,11 @@ export function useAudioPlaybackState({
+   const resolvedAudioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
+   const sequenceContext = useSequenceContext()
+   const frame = sequenceContext?.localFrame ?? 0
++  const ownerItem=useContext(KeyframesContext)?.getItem(itemId) as ({_audioOwnerTime?:{offset:number;scale:number;duration:number;fps:number}})|undefined
++  const owner=ownerItem?._audioOwnerTime
++  const gainFrame=owner ? owner.offset+owner.scale*frame : frame
++  const gainDuration=owner?.duration??durationInFrames
++  const gainFps=owner?.fps
+   const { fps } = useVideoConfig()
+   const playing = useIsPlaying()
+   const transportPlaybackRate = useClockPlaybackRate()
+@@ -106,16 +113,16 @@ export function useAudioPlaybackState({
+   const staticVolumeDb = preview?.volume ?? volume - trackVolumeDb
+   const effectiveVolumeDb =
+     volumeKeyframes.length > 0
+-      ? interpolatePropertyValue(volumeKeyframes, frame, staticVolumeDb)
++      ? interpolatePropertyValue(volumeKeyframes, gainFrame, staticVolumeDb)
+       : staticVolumeDb
+ 
+   const clipFadeMultiplier = clipFadeSpans
+-    ? getAudioClipFadeMultiplier(frame, clipFadeSpans)
++    ? getAudioClipFadeMultiplier(gainFrame, clipFadeSpans)
+     : getAudioFadeMultiplier({
+-        frame,
+-        durationInFrames,
+-        fadeInFrames: (preview?.audioFadeIn ?? audioFadeIn) * fps,
+-        fadeOutFrames: (preview?.audioFadeOut ?? audioFadeOut) * fps,
++        frame:gainFrame,
++        durationInFrames:gainDuration,
++        fadeInFrames: (preview?.audioFadeIn ?? audioFadeIn) * (gainFps??fps),
++        fadeOutFrames: (preview?.audioFadeOut ?? audioFadeOut) * (gainFps??fps),
+         contentStartOffsetFrames,
+         contentEndOffsetFrames,
+         fadeInDelayFrames,
+diff --git a/src/runtime/composition-runtime/components/preview-track-gain.test.tsx b/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
+index 018dd3e184..8a85b50c66 100644
+--- a/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
++++ b/src/runtime/composition-runtime/components/preview-track-gain.test.tsx
+@@ -1,3 +1,6 @@
++import React from 'react'
++import { KeyframesContext } from '../contexts/keyframes-context-core'
++import { getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
+ // @vitest-environment jsdom
+ import { cleanup, renderHook } from '@testing-library/react'
+ import { afterEach, expect, it, vi } from 'vite-plus/test'
+@@ -91,3 +94,20 @@ it('FL103 decoded/native preview removes exactly one scalar while active stage o
+  const {result}=renderHook(()=>({audio:useAudioPlaybackState({itemId:'clip',durationInFrames:60,volume:-15,trackVolumeDb:-12}).resolvedVolume,video:useVideoAudioState(clip,false,[]).audioVolume}))
+  expect(result.current.audio).toBeCloseTo(0.5*10**(-9/20),8);expect(result.current.video).toBeCloseTo(result.current.audio,8)
+ })
++
++it.each([-0.8,0.8])('0092 original clip owner clock in decoded/native preview at signed scale %s',scale=>{
++  state.keyframes={itemId:'clip',properties:[{property:'volume',keyframes:[{id:'a',frame:0,value:-3,easing:'linear'},{id:'b',frame:48,value:-9,easing:'linear'}]}]}
++  const owner={offset:scale<0?40:8,scale,duration:48,fps:24}
++  const clip={id:'clip',trackId:'audio',type:'video',durationInFrames:40,volume:-3,trackVolumeDb:-12,
++    audioFadeIn:0.4,audioFadeOut:0.7,audioFadeInCurve:0.6,audioFadeOutCurve:-0.7,audioFadeInCurveX:0.2,audioFadeOutCurveX:0.8,
++    _audioOwnerTime:owner} as VideoItem&{trackVolumeDb:number;_audioOwnerTime:typeof owner}
++  const wrapper=({children}:{children:React.ReactNode})=><KeyframesContext.Provider value={{keyframes:[],getItemKeyframes:()=>undefined,getItem:()=>clip}}>{children}</KeyframesContext.Provider>
++  const {result}=renderHook(()=>({audio:useAudioPlaybackState({itemId:'clip',durationInFrames:40,volume:-15,trackVolumeDb:-12,
++    audioFadeIn:0.4,audioFadeOut:0.7,audioFadeInCurve:0.6,audioFadeOutCurve:-0.7,audioFadeInCurveX:0.2,audioFadeOutCurveX:0.8}).resolvedVolume,
++    video:useVideoAudioState(clip,false,[]).audioVolume}),{wrapper})
++  const frame=owner.offset+15*scale
++  const fade=getAudioFadeMultiplier({frame,durationInFrames:48,fadeInFrames:9.6,fadeOutFrames:16.8,fadeInCurve:0.6,fadeOutCurve:-0.7,fadeInCurveX:0.2,fadeOutCurveX:0.8})
++  const expected=0.5*10**((-3-frame/8-12)/20)*fade
++  expect(result.current.audio).toBeCloseTo(expected,8)
++  expect(result.current.video).toBeCloseTo(expected,8)
++})
+diff --git a/src/runtime/composition-runtime/components/video-audio-context.ts b/src/runtime/composition-runtime/components/video-audio-context.ts
+index 34694ce337..176af38152 100644
+--- a/src/runtime/composition-runtime/components/video-audio-context.ts
++++ b/src/runtime/composition-runtime/components/video-audio-context.ts
+@@ -17,6 +17,7 @@ import {
+ } from '@/runtime/composition-runtime/deps/keyframes'
+ import type { VideoItem } from '@/types/timeline'
+ import {
++  getAudioFadeMultiplier,
+   evaluateAudioFadeInCurve,
+   evaluateAudioFadeOutCurve,
+ } from '@/shared/utils/audio-fade-curve'
+@@ -202,7 +203,9 @@ export function useVideoAudioState(
+   // Adjust frame for shared Sequences (split clips)
+   // In a shared Sequence, localFrame is relative to the shared Sequence start,
+   // not relative to this specific item. _sequenceFrameOffset corrects this.
+-  const frame = sequenceFrame - (item._sequenceFrameOffset ?? 0)
++  const outputFrame = sequenceFrame - (item._sequenceFrameOffset ?? 0)
++  const owner=(item as VideoItem & {_audioOwnerTime?:{offset:number;scale:number;duration:number;fps:number}})._audioOwnerTime
++  const frame=owner ? owner.offset+owner.scale*outputFrame : outputFrame
+ 
+   // Read preview values from unified preview system
+   const itemPreview = useGizmoStore(useCallback((s) => s.preview?.[item.id], [item.id]))
+@@ -297,6 +300,11 @@ export function useVideoAudioState(
+     }
+   }
+ 
++  if(owner) fadeMultiplier=getAudioFadeMultiplier({frame,durationInFrames:owner.duration,
++    fadeInFrames:audioFadeIn*owner.fps,fadeOutFrames:audioFadeOut*owner.fps,
++    fadeInCurve:audioFadeInCurve,fadeOutCurve:audioFadeOutCurve,
++    fadeInCurveX:audioFadeInCurveX,fadeOutCurveX:audioFadeOutCurveX})
++
+   // Convert dB to linear (0 dB = unity gain = 1.0)
+   // +20dB = 10x, -20dB = 0.1x, -60dB ≈ 0.001x
+   const linearVolume = Math.pow(10, volumeDb / 20)
+@@ -306,6 +314,8 @@ export function useVideoAudioState(
+   // Apply master bus gain (project) then monitor volume (per-device).
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+ 
++
++
+   return {
+     audioVolume: itemVolume * effectiveMonitorVolume * mixerGain,
+     resolvedAudioEqStages,
+diff --git a/src/shared/utils/track-audio.ts b/src/shared/utils/track-audio.ts
+index 101e3b1d8b..a781450213 100644
+--- a/src/shared/utils/track-audio.ts
++++ b/src/shared/utils/track-audio.ts
+@@ -189,11 +189,11 @@ export function resolveTrackGainStages(
+       )
+         continue
+       const sourceFps = item.sourceFps ?? child.fps ?? ownerFps
+-      cadenceFromFps(sourceFps)
+-      cadenceFromFps(ownerFps)
++      const sourceCadence=cadenceFromFps(sourceFps)
++      const ownerCadence=cadenceFromFps(ownerFps)
+       const speed = item.speed ?? 1
+       if (!Number.isFinite(speed) || speed <= 0) throw new Error('Unsupported track owner map')
+-      const ratio = (speed * sourceFps) / ownerFps
++      const ratio = speed*sourceCadence.num*ownerCadence.den/(sourceCadence.den*ownerCadence.num)
+       const start = item.sourceStart ?? item.trimStart ?? 0
+       const end = item.sourceEnd ?? start + item.durationInFrames * ratio
+       const localScale = item.isReversed ? -ratio : ratio

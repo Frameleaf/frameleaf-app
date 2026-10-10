@@ -1,4 +1,4 @@
-import { BeforeUpdateTrigger, Column, ColumnOptions } from '@immich/sql-tools';
+import { BeforeUpdateTrigger, Column, ColumnOptions } from '@frameleaf/sql-tools';
 import { SetMetadata, applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiOperationOptions, ApiTags } from '@nestjs/swagger';
 import { chunk, flatten } from 'lodash-es';
@@ -115,7 +115,7 @@ export const DummyValue = {
   UUID_1,
   UUID_SET: new Set([UUID]),
   PAGINATION: { take: 10, skip: 0 },
-  EMAIL: 'user@immich.app',
+  EMAIL: 'user@example.com',
   STRING: 'abcdefghi',
   NUMBER: 50,
   BUFFER: Buffer.from('abcdefghi'),
@@ -270,7 +270,7 @@ export class HistoryBuilder {
 export const extraModels: Function[] = [];
 
 export const ExtraModel = (): ClassDecorator => {
-  // eslint-disable-next-line unicorn/consistent-function-scoping, @typescript-eslint/no-unsafe-function-type
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   return (object: Function) => {
     extraModels.push(object);
   };

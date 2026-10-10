@@ -7,10 +7,13 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
+import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
+import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
+  AssetFileType,
   AssetStatus,
   AssetType,
   AssetTypeSchema,
@@ -20,6 +23,7 @@ import {
 } from 'src/enum.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 const SanitizedAssetResponseSchema = z
@@ -33,6 +37,18 @@ const SanitizedAssetResponseSchema = z
       )
       .nullable(),
     originalMimeType: z.string().optional().describe('Original MIME type'),
+    imageEncoding: ImageEncodingSchema.optional().describe(
+      'Source image color encoding; unprocessed or unavailable evidence remains unknown',
+    ),
+    imageRenditions: z
+      .object({
+        sdrPreview: z.boolean(),
+        sdrFullsize: z.boolean(),
+        hdrPreview: z.boolean(),
+        hdrFullsize: z.boolean(),
+      })
+      .optional()
+      .describe('Available current still renditions; omitted when file evidence was not loaded'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     localDateTime: z
       .string()
@@ -64,9 +80,12 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     createdAt: z
       .string()
       .meta({ format: 'date-time' })
-      .describe('The UTC timestamp when the asset was originally uploaded to Immich.'),
+      .describe('The UTC timestamp when the asset was originally uploaded to Frameleaf.'),
     ownerId: z.uuidv4().describe('Owner user ID'),
     owner: UserResponseSchema.optional(),
+    origin: PartnerOriginSchema.optional().describe(
+      'FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})',
+    ),
     libraryId: z
       .uuidv4()
       .nullish()
@@ -143,6 +162,8 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
+  /** FL-34: selected by reads that know the lock (`isLocked()` in `src/utils/locked.ts`) */
+  isLocked?: boolean | null;
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
@@ -158,12 +179,38 @@ export type MapAsset = {
   width: number | null;
   height: number | null;
   isEdited: boolean;
+  hasCurrentDevelop?: boolean;
 };
 
 export type AssetMapOptions = {
   stripMetadata?: boolean;
   withStack?: boolean;
   auth?: AuthDto;
+};
+
+const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
+  if (entity.type !== AssetType.Image || !entity.files || entity.hasCurrentDevelop !== false) return;
+  const available = (type: AssetFileType, hdr = false) =>
+    entity.files!.some(
+      (file) =>
+        file.type === type &&
+        file.isEdited === entity.isEdited &&
+        !!file.path &&
+        (!hdr ||
+          (process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+            !!file.renditionIdentity &&
+            /^[a-f0-9]{64}$/.test(file.renditionIdentity))),
+    );
+  return {
+    sdrPreview: available(AssetFileType.Preview),
+    sdrFullsize:
+      available(AssetFileType.FullSize) ||
+      (!entity.isEdited &&
+        entity.exifInfo?.imageEncoding?.dynamicRange === 'sdr' &&
+        mimeTypes.isWebSupportedImage(entity.originalPath)),
+    hdrPreview: available(AssetFileType.HdrPreview, true),
+    hdrFullsize: available(AssetFileType.HdrFullSize, true),
+  };
 };
 
 const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
@@ -196,6 +243,8 @@ const mapStack = (entity: { stack?: Stack | null }) => {
 
 export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOptions = {}): AssetResponseDto {
   const { stripMetadata = false, withStack = false } = options;
+  // FL-34: `locked` for a locked asset, whatever its stored visibility
+  const visibility = effectiveVisibilityOf(entity);
 
   if (stripMetadata) {
     const sanitizedAssetResponse: SanitizedAssetResponseDto = {
@@ -206,6 +255,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       localDateTime: asDateTimeString(entity.localDateTime),
       duration: entity.duration,
       livePhotoVideoId: entity.livePhotoVideoId,
+      imageEncoding:
+        entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+      imageRenditions: mapImageRenditions(entity),
       hasMetadata: false,
       width: entity.width,
       height: entity.height,
@@ -229,9 +281,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
     isFavorite: options.auth?.user.id === entity.ownerId && entity.isFavorite,
-    isArchived: entity.visibility === AssetVisibility.Archive,
+    isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
-    visibility: entity.visibility,
+    visibility,
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,
@@ -240,6 +292,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     checksum: hexOrBufferToBase64(entity.checksum)!,
     stack: withStack ? mapStack(entity) : undefined,
     isOffline: entity.isOffline,
+    imageEncoding:
+      entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+    imageRenditions: mapImageRenditions(entity),
     hasMetadata: true,
     duplicateId: entity.duplicateId,
     resized: true,

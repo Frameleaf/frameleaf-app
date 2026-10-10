@@ -1,0 +1,66 @@
+{
+  "description": "Adjacent transpositions of valid keys, all refused with reason check",
+  "reason": "check",
+  "transpositions": [
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 1,
+      "input": "FL-SBAC-DEFG-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 2,
+      "input": "FL-SACB-DEFG-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 3,
+      "input": "FL-SABD-CEFG-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 4,
+      "input": "FL-SABC-EDFG-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 5,
+      "input": "FL-SABC-DFEG-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 6,
+      "input": "FL-SABC-DEGF-H23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 7,
+      "input": "FL-SABC-DEFH-G23J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 8,
+      "input": "FL-SABC-DEFG-2H3J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 9,
+      "input": "FL-SABC-DEFG-H32J"
+    },
+    {
+      "valid": "FL-SABC-DEFG-H23J",
+      "position": 10,
+      "input": "FL-SABC-DEFG-H2J3"
+    },
+    {
+      "valid": "FL-IABC-DEFG-H233",
+      "position": 1,
+      "input": "FL-IBAC-DEFG-H233"
+    },
+    {
+      "valid": "FL-IABC-DEFG-H233",
+      "position": 2,
+      "input": "FL-IACB-DEFG-H233"
+    }
+  ]
+}

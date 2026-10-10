@@ -1,4 +1,4 @@
-import { DatabaseConnectionParams, createPostgres } from '@immich/sql-tools';
+import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
 import {
   AliasedRawBuilder,
   DeduplicateJoinsPlugin,
@@ -39,9 +39,9 @@ import {
   AssetOrderBy,
   AssetType,
   AssetVisibility,
-  DatabaseExtension,
   ExifOrientation,
   ImageEnrichmentFilter,
+  PetObservationState,
   SearchOrderField,
 } from 'src/enum.js';
 import {
@@ -51,29 +51,63 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import {
+  isDefaultVisible,
+  isLocked,
+  isNotLocked,
+  lockedAssetIdExists,
+  notLockedOrOwnedBy,
+  revealedLockScope,
+  visibilityIn,
+  visibilityIs,
+} from 'src/utils/locked.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { DATABASE_CLOSE_TIMEOUT_SECONDS } from 'src/utils/shutdown.js';
 
+/**
+ * FL-299: closing the pool (`Kysely.destroy()`, which the driver turns into `end()` with no timeout)
+ * waits for every query in flight, however long it runs. A stop reaches this after its running jobs and
+ * `AppShutdown` handlers are done, so whatever is still querying belongs to work the stop abandons (a
+ * boot-time import, the handler of a job already handed back). It gets
+ * {@link DATABASE_CLOSE_TIMEOUT_SECONDS} to finish, then its connection is closed, as the exit at the
+ * worker deadline would have closed it.
+ */
+export const boundPoolClose = <
+  T extends {
+    end: (options?: { timeout?: number }) => Promise<void>;
+  },
+>(
+  postgres: T,
+): T => {
+  const end = postgres.end.bind(postgres);
+  postgres.end = (options) => end({ timeout: DATABASE_CLOSE_TIMEOUT_SECONDS, ...options });
+  return postgres;
+};
 export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
   return {
     dialect: new PostgresJSDialect({
-      postgres: createPostgres({
-        connection,
-        onNotice: (notice: Notice) => {
-          if (notice['severity'] !== 'NOTICE') {
-            console.warn('Postgres notice:', notice);
-          }
-        },
-      }),
+      postgres: boundPoolClose(
+        boundExecutionReservations(
+          createPostgres({
+            connection,
+            maxConnections: DATABASE_POOL_SIZE,
+            onNotice: (notice: Notice) => {
+              if (notice['severity'] !== 'NOTICE') {
+                console.warn('Postgres notice:', notice);
+              }
+            },
+          }),
+        ),
+      ),
     }),
     log(event) {
       if (event.level !== 'error') {
         return;
       }
-
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
-
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
         error: event.error,
@@ -83,68 +117,150 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
     },
   };
 };
-
 const uniqueIds = (ids: string[]) => [...new Set(ids)];
-
 export const asUuid = (id: string | Expression<string>) => sql<string>`${id}::uuid`;
-
 export const anyUuid = (ids: string[]) => sql<string>`any(${`{${ids}}`}::uuid[])`;
-
 export const unnest = (array: string[]) => sql<Record<string, string>>`unnest(array[${sql.join(array)}]::text[])`;
-
 export const removeUndefinedKeys = <T extends object>(update: T, template: unknown) => {
   for (const key in update) {
     if ((template as T)[key] === undefined) {
       delete update[key];
     }
   }
-
   return update;
 };
-
 export const ASSET_CHECKSUM_CONSTRAINT = 'UQ_assets_owner_checksum';
 export const VIDEO_STREAM_SESSION_PK_CONSTRAINT = 'video_stream_session_pkey';
-
 export const isAssetChecksumConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === ASSET_CHECKSUM_CONSTRAINT;
-
 export const isVideoStreamSessionPkConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === VIDEO_STREAM_SESSION_PK_CONSTRAINT;
-
-export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
-  return qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]);
+/**
+ * Timeline and Archive media that is not locked (FL-34, `src/utils/locked.ts`). With `revealOwnerId`
+ * (the viewer, elevated) that owner's own revealed locks show too (FL-195).
+ */
+export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, revealOwnerId?: string) {
+  return qb.where(isDefaultVisible('asset', revealOwnerId));
 }
-
+/**
+ * FL-34: the single SQL test for "this asset is Locked" in expression-builder form. Locked is the lock
+ * record (`asset_lock`, see `src/utils/locked.ts`); every Locked privacy filter goes through these two
+ * (directly, or through `withLockedOwnerScope` / `withAlbumVisibility`). `alias` names the asset table
+ * in the query (default `asset`).
+ */
+export function isLockedAsset<QDB, TB extends keyof QDB>(_eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return isLocked(alias);
+}
+/** The negation of {@link isLockedAsset}. */
+export function isNotLockedAsset<QDB, TB extends keyof QDB>(_eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return isNotLocked(alias);
+}
+/**
+ * What an album read shows (owner decision, September 22, 2026): Timeline and Archive media that is not
+ * locked, plus the locked media of `lockedOwnerId` — the viewer, when their session is elevated. Locked
+ * media of anyone else never shows, whatever the viewer's own session. Without an owner this is
+ * `withDefaultVisibility`.
+ */
+export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
+  if (!lockedOwnerId) {
+    return withDefaultVisibility(qb);
+  }
+  return qb
+    .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+    .where(notLockedOrOwnedBy(lockedOwnerId, 'asset'));
+}
+/**
+ * Keeps locked media owner-private in a read that may span several owners (partners, shared albums):
+ * only `lockedOwnerId`'s own locked media can match — the viewer, when their session is elevated. A
+ * partner's or another member's locked media never does, whatever the viewer's own session, and
+ * without an owner no locked media matches at all.
+ */
+export function withLockedOwnerScope<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
+  return qb.where(notLockedOrOwnedBy(lockedOwnerId, 'asset'));
+}
+/**
+ * The condition behind {@link withLockedOwnerScope}, for a query that reaches the asset table through a
+ * join or under another alias: not locked, or locked and owned by `lockedOwnerId`.
+ */
+export function lockedOwnerScope<QDB, TB extends keyof QDB>(
+  _eb: ExpressionBuilder<QDB, TB>,
+  lockedOwnerId?: string,
+  alias = 'asset',
+) {
+  return notLockedOrOwnedBy(lockedOwnerId, alias);
+}
+/**
+ * FL-34: the video part of a live photo keeps visibility `hidden` and locks with its still (stacks and
+ * live photos lock as a whole). This matches such a motion part whose still is locked, unless the
+ * still belongs to `lockedOwnerId` (the viewer, when their session is elevated). Filters apply it
+ * negated to any read that can return hidden assets; the `hidden` test first keeps the lookup off every
+ * other row. It also guards a motion part linked to a locked still after the lock was written.
+ */
+export function isMotionOfLockedStill(eb: ExpressionBuilder<DB, 'asset'>, lockedOwnerId?: string) {
+  return eb.and([
+    eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+    eb.exists(
+      eb
+        .selectFrom('asset as lockedStill')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
+        .where((eb) => isLockedAsset(eb, 'lockedStill'))
+        .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
+    ),
+  ]);
+}
+/**
+ * FL-34: whether a stack's primary asset is Locked media that `lockedOwnerId` (the viewer, when
+ * their session is elevated) does not own. Such a stack is left out of a read, so its primary id
+ * never reaches anyone but that owner's elevated session. A stack with a Locked member becomes
+ * Locked as a whole (owner decision, September 22, 2026); this guards reads until that holds.
+ */
+export function hasHiddenLockedPrimary(eb: ExpressionBuilder<DB, 'stack'>, lockedOwnerId?: string) {
+  return eb.exists(
+    eb
+      .selectFrom('asset as lockedPrimary')
+      .select(sql.lit(1).as('exists'))
+      .whereRef('lockedPrimary.id', '=', 'stack.primaryAssetId')
+      .where((eb) => isLockedAsset(eb, 'lockedPrimary'))
+      .$if(!!lockedOwnerId, (qb) => qb.where('lockedPrimary.ownerId', '!=', lockedOwnerId!)),
+  );
+}
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
   eb.fn
     .toJson(eb.table('asset_exif'))
     .$castTo<ShallowDehydrateObject<Selectable<AssetExifTable>> | null>()
     .as('exifInfo');
-
 // TODO come up with a better query that only selects the fields we need
 export function withExif<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
   return qb.leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId').select(selectExifInfo);
 }
-
 export function withExifInner<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
   return qb
     .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
     .select((eb) => eb.fn.toJson(eb.table('asset_exif')).as('exifInfo'))
-    .$narrowType<{ exifInfo: NotNull }>();
+    .$narrowType<{
+      exifInfo: NotNull;
+    }>();
 }
-
 export const dummy = sql`(select 1)`.as('dummy');
-
 export function withAudioStream(eb: ExpressionBuilder<DB, 'asset_exif' | 'asset_audio'>) {
   return jsonObjectFrom(
     eb
       .selectFrom(dummy)
-      .select(['asset_audio.index', 'asset_audio.codecName', 'asset_audio.profile', 'asset_audio.bitrate'])
+      .select([
+        'asset_audio.index',
+        'asset_audio.codecName',
+        'asset_audio.profile',
+        'asset_audio.bitrate',
+        // FL-102: channel-aware audio. A render needs these to preserve the layout.
+        'asset_audio.channels',
+        'asset_audio.channelLayout',
+        'asset_audio.sampleRate',
+      ])
       .where('asset_audio.assetId', 'is not', sql.lit(null))
       .$castTo<AudioStreamInfo | null>(),
   );
 }
-
 export function withVideoStream(eb: ExpressionBuilder<DB, 'asset_exif' | 'asset_video'>) {
   return jsonObjectFrom(
     eb
@@ -180,9 +296,13 @@ export function withVideoStream(eb: ExpressionBuilder<DB, 'asset_exif' | 'asset_
         'asset_video.dvBlSignalCompatibilityId',
       ])
       .where('asset_video.assetId', 'is not', sql.lit(null)),
-  ).$castTo<(VideoStreamInfo & { timeBase: number }) | null>();
+  ).$castTo<
+    | (VideoStreamInfo & {
+        timeBase: number;
+      })
+    | null
+  >();
 }
-
 export function withVideoFormat(eb: ExpressionBuilder<DB, 'asset' | 'asset_video'>) {
   return jsonObjectFrom(
     eb
@@ -191,7 +311,6 @@ export function withVideoFormat(eb: ExpressionBuilder<DB, 'asset' | 'asset_video
       .where('asset_video.assetId', 'is not', sql.lit(null)),
   ).$castTo<VideoFormat | null>();
 }
-
 export function withVideoPackets(eb: ExpressionBuilder<DB, 'asset' | 'asset_keyframe'>) {
   return jsonObjectFrom(
     eb
@@ -207,13 +326,11 @@ export function withVideoPackets(eb: ExpressionBuilder<DB, 'asset' | 'asset_keyf
       ]),
   ).$castTo<VideoPacketInfo | null>();
 }
-
 export function withSmartSearch<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
   return qb
     .leftJoin('smart_search', 'asset.id', 'smart_search.assetId')
     .select((eb) => jsonObjectFrom(eb.table('smart_search')).as('smartSearch'));
 }
-
 export function withFaces(eb: ExpressionBuilder<DB, 'asset'>, withHidden?: boolean, withDeletedFace?: boolean) {
   return jsonArrayFrom(
     eb
@@ -224,7 +341,6 @@ export function withFaces(eb: ExpressionBuilder<DB, 'asset'>, withHidden?: boole
       .$if(!withHidden, (qb) => qb.where('asset_face.isVisible', '=', true)),
   ).as('faces');
 }
-
 export function withFiles(eb: ExpressionBuilder<DB, 'asset'>, type?: AssetFileType) {
   return jsonArrayFrom(
     eb
@@ -234,7 +350,6 @@ export function withFiles(eb: ExpressionBuilder<DB, 'asset'>, type?: AssetFileTy
       .$if(!!type, (qb) => qb.where('asset_file.type', '=', type!)),
   ).as('files');
 }
-
 export function withFilePath(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFileType, isEdited = false) {
   return eb
     .selectFrom('asset_file')
@@ -243,14 +358,12 @@ export function withFilePath(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFile
     .where('asset_file.type', '=', sql.lit(type))
     .where('asset_file.isEdited', '=', sql.lit(isEdited));
 }
-
 export type WithFacesAndPeopleOptions = {
   /** whose version of the person to select */
   viewingUserId?: string;
   withHidden?: boolean;
   withDeletedFace?: boolean;
 };
-
 export function withFacesAndPeople({ viewingUserId, withHidden, withDeletedFace }: WithFacesAndPeopleOptions) {
   return (eb: ExpressionBuilder<DB, 'asset'>) =>
     jsonArrayFrom(
@@ -274,7 +387,6 @@ export function withFacesAndPeople({ viewingUserId, withHidden, withDeletedFace 
         .$if(!withHidden, (qb) => qb.where('asset_face.isVisible', 'is', true)),
     ).as('faces');
 }
-
 export function hasPeople<O>(qb: SelectQueryBuilder<DB, 'asset', O>, personGroupIds: string[]) {
   return qb.innerJoin(
     (eb) =>
@@ -290,7 +402,33 @@ export function hasPeople<O>(qb: SelectQueryBuilder<DB, 'asset', O>, personGroup
     (join) => join.onRef('has_people.assetId', '=', 'asset.id'),
   );
 }
-
+/**
+ * The pet twin of `hasPeople` (FL-58): assets in which `ownerId` confirmed every one of `petIds`.
+ *
+ * Only the owner's durable `pet_observation` rows count, and only `confirmed` ones: a `rejected`
+ * observation is the owner saying the pet is *not* there, and the replaceable model output
+ * (`pet_detection`, `pet_candidate`) is a proposal, never a fact about the library. Pets are private
+ * to their owner, so the pet itself must belong to `ownerId`; another account's pet id matches nothing
+ * rather than widening what the caller sees. Without an owner nothing matches.
+ */
+export function hasPets<O>(qb: SelectQueryBuilder<DB, 'asset', O>, petIds: string[], ownerId: string | undefined) {
+  const ids = uniqueIds(petIds);
+  return qb.innerJoin(
+    (eb) =>
+      eb
+        .selectFrom('pet_observation')
+        .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+        .select('pet_observation.assetId')
+        .where('pet_observation.petId', '=', anyUuid(ids))
+        .where('pet_observation.state', '=', PetObservationState.Confirmed)
+        .$if(!!ownerId, (qb) => qb.where('pet.ownerId', '=', ownerId!))
+        .$if(!ownerId, (qb) => qb.where((eb) => eb.lit(false)))
+        .groupBy('pet_observation.assetId')
+        .having((eb) => eb.fn.count('pet_observation.petId').distinct(), '=', ids.length)
+        .as('has_pets'),
+    (join) => join.onRef('has_pets.assetId', '=', 'asset.id'),
+  );
+}
 export function inSharedAlbum(eb: ExpressionBuilder<DB, 'asset'>, userId: string) {
   return eb.exists(
     eb
@@ -305,7 +443,6 @@ export function inSharedAlbum(eb: ExpressionBuilder<DB, 'asset'>, userId: string
       .whereRef('album_asset.assetId', '=', 'asset.id'),
   );
 }
-
 export function inAlbums<O>(qb: SelectQueryBuilder<DB, 'asset', O>, albumIds: string[]) {
   return qb.innerJoin(
     (eb) =>
@@ -319,7 +456,6 @@ export function inAlbums<O>(qb: SelectQueryBuilder<DB, 'asset', O>, albumIds: st
     (join) => join.onRef('has_album.assetId', '=', 'asset.id'),
   );
 }
-
 export function hasTags<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagIds: string[]) {
   return qb.innerJoin(
     (eb) =>
@@ -334,19 +470,16 @@ export function hasTags<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagIds: strin
     (join) => join.onRef('has_tags.assetId', '=', 'asset.id'),
   );
 }
-
 export function withOwner(eb: ExpressionBuilder<DB, 'asset'>) {
   return jsonObjectFrom(eb.selectFrom('user').select(columns.user).whereRef('user.id', '=', 'asset.ownerId')).as(
     'owner',
   );
 }
-
 export function withLibrary(eb: ExpressionBuilder<DB, 'asset'>) {
   return jsonObjectFrom(
     eb.selectFrom('library').selectAll('library').whereRef('library.id', '=', 'asset.libraryId'),
   ).as('library');
 }
-
 export function withTags(eb: ExpressionBuilder<DB, 'asset'>) {
   return jsonArrayFrom(
     eb
@@ -356,11 +489,9 @@ export function withTags(eb: ExpressionBuilder<DB, 'asset'>) {
       .whereRef('asset.id', '=', 'tag_asset.assetId'),
   ).as('tags');
 }
-
 export function truncatedDate<O>(order: AssetOrderBy = AssetOrderBy.TakenAt, size?: 'DAY' | 'MONTH') {
   return sql<O>`date_trunc(${sql.lit(size ?? 'MONTH')}, ${sql.ref(order === AssetOrderBy.CreatedAt ? 'asset.createdAt' : 'localDateTime')} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 }
-
 export function withTagId<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagId: string) {
   return qb.where((eb) =>
     eb.exists(
@@ -372,14 +503,12 @@ export function withTagId<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagId: stri
     ),
   );
 }
-
 const isCJK = (c: number): boolean =>
-  (c >= 0x4e_00 && c <= 0x9f_ff) ||
-  (c >= 0xac_00 && c <= 0xd7_af) ||
-  (c >= 0x30_40 && c <= 0x30_9f) ||
-  (c >= 0x30_a0 && c <= 0x30_ff) ||
-  (c >= 0x34_00 && c <= 0x4d_bf);
-
+  (c >= 19_968 && c <= 40_959) ||
+  (c >= 44_032 && c <= 55_215) ||
+  (c >= 12_352 && c <= 12_447) ||
+  (c >= 12_448 && c <= 12_543) ||
+  (c >= 13_312 && c <= 19_903);
 export const tokenizeForSearch = (text: string): string[] => {
   /* eslint-disable unicorn/prefer-code-point */
   const tokens: string[] = [];
@@ -390,7 +519,6 @@ export const tokenizeForSearch = (text: string): string[] => {
       i++;
       continue;
     }
-
     const start = i;
     if (isCJK(c)) {
       while (i < text.length && isCJK(text.charCodeAt(i))) {
@@ -412,7 +540,6 @@ export const tokenizeForSearch = (text: string): string[] => {
   }
   return tokens;
 };
-
 // needed to properly type the return with the EditActionItem discriminated union type
 type AliasedEditActions = AliasedRawBuilder<AssetEditActionItem[], 'edits'>;
 export function withEdits(eb: ExpressionBuilder<DB, 'asset'>): AliasedEditActions {
@@ -423,149 +550,190 @@ export function withEdits(eb: ExpressionBuilder<DB, 'asset'>): AliasedEditAction
       .whereRef('asset_edit.assetId', '=', 'asset.id'),
   ).as('edits') as AliasedEditActions;
 }
-
 const joinDeduplicationPlugin = new DeduplicateJoinsPlugin();
 /** TODO: This should only be used for search-related queries, not as a general purpose query builder */
-
+/**
+ * FL-137: someone else's item reaches a search only as their partner share allows it
+ * (`AccessRepository.asset.checkPartnerAccess`): never from their trash or their archive. The viewer's
+ * own items are not restricted here.
+ */
+const partnerSearchable = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string) =>
+  eb.or([
+    eb('asset.ownerId', '=', asUuid(viewerId)),
+    eb.and([
+      eb('asset.deletedAt', 'is', null),
+      eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Hidden)]),
+    ]),
+  ]);
+/** FL-137: an album shows someone else's item only while it is out of their trash (`checkAlbumAccess`). */
+const othersNotTrashed = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string) =>
+  eb.or([eb('asset.ownerId', '=', asUuid(viewerId)), eb('asset.deletedAt', 'is', null)]);
 export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearchBuilderOptions) {
   options.withDeleted ||= !!(options.trashedAfter || options.trashedBefore || options.isOffline);
-
-  return kysely
-    .withPlugin(joinDeduplicationPlugin)
-    .selectFrom('asset')
-    .$if(!!options.visibility, (qb) =>
-      options.visibility === 'not-locked'
-        ? qb.where('asset.visibility', '!=', AssetVisibility.Locked)
-        : qb.where('asset.visibility', '=', options.visibility!),
-    )
-    .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
-    .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
-    .$if(options.tagIds === null, (qb) =>
-      qb.where((eb) => eb.not(eb.exists((eb) => eb.selectFrom('tag_asset').whereRef('assetId', '=', 'asset.id')))),
-    )
-    .$if(!!options.personIds && options.personIds.length > 0, (qb) => hasPeople(qb, options.personIds!))
-    .$if(!!options.createdBefore, (qb) => qb.where('asset.createdAt', '<=', options.createdBefore!))
-    .$if(!!options.createdAfter, (qb) => qb.where('asset.createdAt', '>=', options.createdAfter!))
-    .$if(!!options.updatedBefore, (qb) => qb.where('asset.updatedAt', '<=', options.updatedBefore!))
-    .$if(!!options.updatedAfter, (qb) => qb.where('asset.updatedAt', '>=', options.updatedAfter!))
-    .$if(!!options.trashedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.trashedBefore!))
-    .$if(!!options.trashedAfter, (qb) => qb.where('asset.deletedAt', '>=', options.trashedAfter!))
-    .$if(!!options.takenBefore, (qb) => qb.where('asset.fileCreatedAt', '<=', options.takenBefore!))
-    .$if(!!options.takenAfter, (qb) => qb.where('asset.fileCreatedAt', '>=', options.takenAfter!))
-    .$if(options.city !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.city', options.city === null ? 'is' : '=', options.city!),
-    )
-    .$if(options.state !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.state', options.state === null ? 'is' : '=', options.state!),
-    )
-    .$if(options.country !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.country', options.country === null ? 'is' : '=', options.country!),
-    )
-    .$if(options.make !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.make', options.make === null ? 'is' : '=', options.make!),
-    )
-    .$if(options.model !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.model', options.model === null ? 'is' : '=', options.model!),
-    )
-    .$if(options.lensModel !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.lensModel', options.lensModel === null ? 'is' : '=', options.lensModel!),
-    )
-    .$if(options.rating !== undefined, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.rating', options.rating === null ? 'is' : '=', options.rating!),
-    )
-    .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
-    .$call((qb) => withHiddenContentFilter(qb, options))
-    .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
-    .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
-    .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
-    .$if(!!options.encodedVideoPath, (qb) =>
-      qb
-        .innerJoin('asset_file', (join) =>
-          join
-            .onRef('asset.id', '=', 'asset_file.assetId')
-            .on('asset_file.type', '=', AssetFileType.EncodedVideo)
-            .on('asset_file.isEdited', '=', false),
-        )
-        .where('asset_file.path', '=', options.encodedVideoPath!),
-    )
-    .$if(!!options.originalPath, (qb) =>
-      qb.where(sql`f_unaccent(asset."originalPath")`, 'ilike', sql`'%' || f_unaccent(${options.originalPath}) || '%'`),
-    )
-    .$if(!!options.originalFileName, (qb) =>
-      qb.where(
-        sql`f_unaccent(asset."originalFileName")`,
-        'ilike',
-        sql`'%' || f_unaccent(${options.originalFileName}) || '%'`,
-      ),
-    )
-    .$if(!!options.description, (qb) =>
-      qb
-        .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where(sql`f_unaccent(asset_exif.description)`, 'ilike', sql`'%' || f_unaccent(${options.description}) || '%'`),
-    )
-    .$if(!!options.ocr, (qb) =>
-      qb
-        .innerJoin('ocr_search', 'asset.id', 'ocr_search.assetId')
-        .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
-    )
-    .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
-    .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
-    .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
-    .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
-    .$if(options.isEncoded !== undefined, (qb) =>
-      qb.where((eb) => {
-        const exists = eb.exists((eb) =>
-          eb
-            .selectFrom('asset_file')
-            .whereRef('assetId', '=', 'asset.id')
-            .where('type', '=', AssetFileType.EncodedVideo),
-        );
-        return options.isEncoded ? exists : eb.not(exists);
-      }),
-    )
-    .$if(options.isMotion !== undefined, (qb) =>
-      qb.where('asset.livePhotoVideoId', options.isMotion ? 'is not' : 'is', null),
-    )
-    .$if(!!options.isNotInAlbum && (!options.albumIds || options.albumIds.length === 0), (qb) =>
-      qb.where((eb) => eb.not(eb.exists((eb) => eb.selectFrom('album_asset').whereRef('assetId', '=', 'asset.id')))),
-    )
-    .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
-    .$if(!!options.withExif, withExifInner)
-    .$if(!!(options.withFaces || options.withPeople), (qb) =>
-      qb.select(withFacesAndPeople({ viewingUserId: options.viewingUserId! })),
-    )
-    .$if(!options.withDeleted, (qb) => qb.where('asset.deletedAt', 'is', null));
+  return (
+    kysely
+      .withPlugin(joinDeduplicationPlugin)
+      .selectFrom('asset')
+      .$if(!!options.visibility, (qb) =>
+        options.visibility === 'not-locked'
+          ? qb.where(isNotLocked('asset'))
+          : // FL-195: an elevated owner's own marks and detections match an ordinary visibility too
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+      )
+      // any read that could still match Locked media (no visibility asked, or Locked itself) is narrowed
+      // to the viewer's own Locked media: partners and album members never contribute theirs
+      .$if(options.visibility === undefined || options.visibility === AssetVisibility.Locked, (qb) =>
+        withLockedOwnerScope(qb, options.lockedOwnerId),
+      )
+      .$if(!!options.hideLockedMotion, (qb) =>
+        qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))),
+      )
+      .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
+      .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
+      .$if(options.tagIds === null, (qb) =>
+        qb.where((eb) => eb.not(eb.exists((eb) => eb.selectFrom('tag_asset').whereRef('assetId', '=', 'asset.id')))),
+      )
+      .$if(!!options.personIds && options.personIds.length > 0, (qb) => hasPeople(qb, options.personIds!))
+      .$if(!!options.petIds && options.petIds.length > 0, (qb) => hasPets(qb, options.petIds!, options.viewingUserId))
+      .$if(!!options.createdBefore, (qb) => qb.where('asset.createdAt', '<=', options.createdBefore!))
+      .$if(!!options.createdAfter, (qb) => qb.where('asset.createdAt', '>=', options.createdAfter!))
+      .$if(!!options.updatedBefore, (qb) => qb.where('asset.updatedAt', '<=', options.updatedBefore!))
+      .$if(!!options.updatedAfter, (qb) => qb.where('asset.updatedAt', '>=', options.updatedAfter!))
+      .$if(!!options.trashedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.trashedBefore!))
+      .$if(!!options.trashedAfter, (qb) => qb.where('asset.deletedAt', '>=', options.trashedAfter!))
+      .$if(!!options.takenBefore, (qb) => qb.where('asset.fileCreatedAt', '<=', options.takenBefore!))
+      .$if(!!options.takenAfter, (qb) => qb.where('asset.fileCreatedAt', '>=', options.takenAfter!))
+      .$if(options.city !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.city', options.city === null ? 'is' : '=', options.city!),
+      )
+      .$if(options.state !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.state', options.state === null ? 'is' : '=', options.state!),
+      )
+      .$if(options.country !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.country', options.country === null ? 'is' : '=', options.country!),
+      )
+      .$if(options.make !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.make', options.make === null ? 'is' : '=', options.make!),
+      )
+      .$if(options.model !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.model', options.model === null ? 'is' : '=', options.model!),
+      )
+      .$if(options.lensModel !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.lensModel', options.lensModel === null ? 'is' : '=', options.lensModel!),
+      )
+      .$if(options.rating !== undefined, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where('asset_exif.rating', options.rating === null ? 'is' : '=', options.rating!),
+      )
+      .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
+      .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
+      .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
+      .$if(!!options.userIds && !!options.viewingUserId, (qb) =>
+        qb.where((eb) => partnerSearchable(eb, options.viewingUserId!)),
+      )
+      // FL-137: an album search reaches other people's items, which are never theirs to see in the trash,
+      // whatever withDeleted, trashedAfter/Before or isOffline ask for; a shared link sees no trash at all
+      .$if(!options.userIds && !!options.albumIds?.length, (qb) =>
+        options.sharedLink || !options.viewingUserId
+          ? qb.where('asset.deletedAt', 'is', null)
+          : qb.where((eb) => othersNotTrashed(eb, options.viewingUserId!)),
+      )
+      .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
+        qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
+      )
+      .$if(!!options.encodedVideoPath, (qb) =>
+        qb
+          .innerJoin('asset_file', (join) =>
+            join
+              .onRef('asset.id', '=', 'asset_file.assetId')
+              .on('asset_file.type', '=', AssetFileType.EncodedVideo)
+              .on('asset_file.isEdited', '=', false),
+          )
+          .where('asset_file.path', '=', options.encodedVideoPath!),
+      )
+      .$if(!!options.originalPath, (qb) =>
+        qb.where(
+          sql`f_unaccent(asset."originalPath")`,
+          'ilike',
+          sql`'%' || f_unaccent(${options.originalPath}) || '%'`,
+        ),
+      )
+      .$if(!!options.originalFileName, (qb) =>
+        qb.where(
+          sql`f_unaccent(asset."originalFileName")`,
+          'ilike',
+          sql`'%' || f_unaccent(${options.originalFileName}) || '%'`,
+        ),
+      )
+      .$if(!!options.description, (qb) =>
+        qb
+          .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          .where(
+            sql`f_unaccent(asset_exif.description)`,
+            'ilike',
+            sql`'%' || f_unaccent(${options.description}) || '%'`,
+          ),
+      )
+      .$if(!!options.ocr, (qb) =>
+        qb
+          .innerJoin('ocr_search', 'asset.id', 'ocr_search.assetId')
+          .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
+      )
+      .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
+      .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
+      .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+      .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
+      .$if(options.isEncoded !== undefined, (qb) =>
+        qb.where((eb) => {
+          const exists = eb.exists((eb) =>
+            eb
+              .selectFrom('asset_file')
+              .whereRef('assetId', '=', 'asset.id')
+              .where('type', '=', AssetFileType.EncodedVideo),
+          );
+          return options.isEncoded ? exists : eb.not(exists);
+        }),
+      )
+      .$if(options.isMotion !== undefined, (qb) =>
+        qb.where('asset.livePhotoVideoId', options.isMotion ? 'is not' : 'is', null),
+      )
+      .$if(!!options.isNotInAlbum && (!options.albumIds || options.albumIds.length === 0), (qb) =>
+        qb.where((eb) => eb.not(eb.exists((eb) => eb.selectFrom('album_asset').whereRef('assetId', '=', 'asset.id')))),
+      )
+      .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
+      .$if(!!options.withExif, withExifInner)
+      .$if(!!(options.withFaces || options.withPeople), (qb) =>
+        qb.select(withFacesAndPeople({ viewingUserId: options.viewingUserId! })),
+      )
+      .$if(!options.withDeleted, (qb) => qb.where('asset.deletedAt', 'is', null))
+  );
 }
-
 type AssetExpressionBuilder = ExpressionBuilder<DB, 'asset' | 'asset_exif'>;
-
 const albumAssets = (eb: AssetExpressionBuilder) =>
   eb.selectFrom('album_asset').whereRef('album_asset.assetId', '=', 'asset.id');
-
 const visibleFaces = (eb: AssetExpressionBuilder) =>
   eb
     .selectFrom('asset_face')
     .whereRef('asset_face.assetId', '=', 'asset.id')
     .where('asset_face.deletedAt', 'is', null)
     .where('asset_face.isVisible', '=', true);
-
 const tagAssets = (eb: AssetExpressionBuilder) =>
   eb.selectFrom('tag_asset').whereRef('tag_asset.assetId', '=', 'asset.id');
-
 // shared any/all/none mechanics; `matchesAll` only receives deduplicated multi-id lists,
 // so its `count(distinct id) = ids.length` check stays satisfiable
 function idsPredicates(
@@ -589,7 +757,6 @@ function idsPredicates(
   }
   return predicates;
 }
-
 function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   const matching = (ids: string[]) => albumAssets(eb).where('album_asset.albumId', '=', anyUuid(ids));
   return idsPredicates(eb, filter, {
@@ -603,7 +770,6 @@ function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
       ),
   });
 }
-
 function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   const matching = (ids: string[]) => visibleFaces(eb).where('asset_face.personGroupId', '=', anyUuid(ids));
   return idsPredicates(eb, filter, {
@@ -617,7 +783,32 @@ function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
       ),
   });
 }
-
+/**
+ * FL-58: `petIds` reads the owner's durable decisions only — `confirmed` observations of the viewer's
+ * own pets (see `hasPets`). Without a viewer the positive groups match nothing and `none` excludes
+ * nothing, so a missing owner can never widen a result.
+ */
+const confirmedPetObservations = (eb: AssetExpressionBuilder, ownerId: string | undefined) =>
+  eb
+    .selectFrom('pet_observation')
+    .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+    .whereRef('pet_observation.assetId', '=', 'asset.id')
+    .where('pet_observation.state', '=', PetObservationState.Confirmed)
+    .where((eb) => (ownerId ? eb('pet.ownerId', '=', ownerId) : eb.lit(false)));
+function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefined, ownerId: string | undefined) {
+  const matching = (ids: string[]) =>
+    confirmedPetObservations(eb, ownerId).where('pet_observation.petId', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => eb.exists(matching(ids)),
+    matchesAll: (ids) =>
+      eb.exists(
+        matching(ids)
+          .select('pet_observation.assetId')
+          .groupBy('pet_observation.assetId')
+          .having((eb) => eb.fn.count('pet_observation.petId').distinct(), '=', ids.length),
+      ),
+  });
+}
 function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   const matching = (ids: string[]) =>
     tagAssets(eb)
@@ -634,7 +825,6 @@ function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
       ),
   });
 }
-
 type ComparisonFilter<T> = {
   eq?: T | null;
   ne?: T | null;
@@ -645,7 +835,6 @@ type ComparisonFilter<T> = {
   in?: T[];
   notIn?: T[];
 };
-
 // one operator dispatch for every filter shape; the DTO schemas constrain which
 // operators (and null literals) each filter can actually carry
 function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
@@ -680,7 +869,6 @@ function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpressio
   }
   return predicates;
 }
-
 type StringColumn =
   | 'asset_exif.city'
   | 'asset_exif.state'
@@ -691,7 +879,6 @@ type StringColumn =
   | 'asset_exif.description'
   | 'asset.originalFileName'
   | 'asset.originalPath';
-
 function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColumn, filter: StringPatternFilter = {}) {
   const ref = sql.ref(column);
   const predicates = comparisonPredicates(eb, column, filter);
@@ -699,7 +886,11 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
   }
   if (filter.notLike !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%')`);
+    // FL-49: "does not contain" keeps items with no value at all (a photo without a lens does not contain
+    // "24-70"), as the search palette's -camera: and -lens: do in the design reference (search.mjs)
+    predicates.push(
+      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%'))`,
+    );
   }
   if (filter.startsWith !== undefined) {
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (f_unaccent(${filter.startsWith}) || '%')`);
@@ -709,7 +900,6 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   }
   return predicates;
 }
-
 function checksumPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {}) {
   return comparisonPredicates(eb, 'asset.checksum', {
     eq: filter.eq === undefined ? undefined : fromChecksum(filter.eq),
@@ -718,16 +908,18 @@ function checksumPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {
     notIn: filter.notIn?.map((checksum) => fromChecksum(checksum)),
   });
 }
-
 const encodedVideoFiles = (eb: AssetExpressionBuilder) =>
   eb
     .selectFrom('asset_file')
     .whereRef('asset_file.assetId', '=', 'asset.id')
     .where('asset_file.type', '=', AssetFileType.EncodedVideo);
-
 function existsPredicates(
   eb: AssetExpressionBuilder,
-  filter: { eq: boolean } | undefined,
+  filter:
+    | {
+        eq: boolean;
+      }
+    | undefined,
   subquery: () => Expression<unknown>,
 ): Expression<SqlBool>[] {
   if (!filter) {
@@ -736,16 +928,83 @@ function existsPredicates(
   const exists = eb.exists(subquery());
   return [filter.eq ? exists : eb.not(exists)];
 }
-
+/**
+ * A visibility condition as the caller means it (FL-34): `locked` is the lock record, and any other
+ * value is that stored visibility on an asset that is not locked (`visibilityIs`) — or, with
+ * `revealOwnerId` (the viewer, elevated), one of that owner's own revealed locks (FL-195).
+ */
+function visibilityPredicates(
+  filter: ComparisonFilter<AssetVisibility> = {},
+  revealOwnerId?: string,
+): Expression<SqlBool>[] {
+  const predicates: Expression<SqlBool>[] = [];
+  if (filter.eq !== undefined && filter.eq !== null) {
+    predicates.push(visibilityIs(filter.eq, 'asset', revealOwnerId));
+  }
+  if (filter.ne !== undefined && filter.ne !== null) {
+    predicates.push(sql<SqlBool>`not ${visibilityIs(filter.ne, 'asset', revealOwnerId)}`);
+  }
+  if (filter.in !== undefined) {
+    predicates.push(visibilityIn(filter.in, 'asset', revealOwnerId));
+  }
+  if (filter.notIn !== undefined) {
+    predicates.push(sql<SqlBool>`not ${visibilityIn(filter.notIn, 'asset', revealOwnerId)}`);
+  }
+  return predicates;
+}
+/**
+ * FL-349: a panorama is a still whose projection (GPano `ProjectionType`, stored upper-cased) is
+ * equirectangular or cylindrical, or an Insta360 `.insp` file — the reading `isPanorama` in
+ * `src/utils/asset.util.ts` uses for the 360° viewer, widened to cylindrical sweeps.
+ */
+export const isPanoramaAsset = sql<SqlBool>`(
+  "asset"."type" = ${sql.lit(AssetType.Image)}
+  and (
+    coalesce("asset_exif"."projectionType", '') in ('EQUIRECTANGULAR', 'CYLINDRICAL')
+    or lower("asset"."originalFileName") like '%.insp'
+  )
+)`;
+/** FL-349: how screenshots are named, matched case-insensitively anywhere in the file name. */
+const SCREENSHOT_FILE_NAME_PATTERN =
+  'screen[ _-]?shot|screen[ _-]?capture|bildschirmfoto|captura de pantalla|capture d.[ée]cran|schermafbeelding|schermata|スクリーンショット|屏幕截图|截屏|스크린샷';
+/**
+ * FL-349: a screenshot is a still named the way phones and computers name screenshots (Android
+ * `Screenshot_…`, macOS and Windows `Screenshot …` / `Screen Shot …`, and the common localised names),
+ * or a PNG that carries no camera make and no camera model, which is how iOS saves them (as
+ * `IMG_….PNG`). No stored field records the iOS "Screenshot" user comment, so this is the signal
+ * available without re-reading every file.
+ */
+export const isScreenshotAsset = sql<SqlBool>`(
+  "asset"."type" = ${sql.lit(AssetType.Image)}
+  and (
+    "asset"."originalFileName" ~* ${SCREENSHOT_FILE_NAME_PATTERN}
+    or (
+      lower("asset"."originalFileName") like '%.png'
+      and nullif("asset_exif"."make", '') is null
+      and nullif("asset_exif"."model", '') is null
+    )
+  )
+)`;
+function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expression<SqlBool>): Expression<SqlBool>[] {
+  if (!filter) {
+    return [];
+  }
+  return [filter.eq ? predicate : sql<SqlBool>`not coalesce(${predicate}, false)`];
+}
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
-function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch) {
+function branchPredicates(
+  eb: AssetExpressionBuilder,
+  branch: SearchFilterBranch,
+  viewerId: string | undefined,
+  revealOwnerId?: string,
+) {
   const { encodedVideoPath } = branch;
   return [
     ...comparisonPredicates(eb, 'asset.id', branch.id),
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
-    ...comparisonPredicates(eb, 'asset.visibility', branch.visibility),
+    ...visibilityPredicates(branch.visibility, revealOwnerId),
     ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
@@ -753,12 +1012,14 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...existsPredicates(eb, branch.hasAlbums, () => albumAssets(eb)),
     ...existsPredicates(eb, branch.hasPeople, () => visibleFaces(eb)),
     ...existsPredicates(eb, branch.hasTags, () => tagAssets(eb)),
+    ...boolPredicates(branch.isPanorama, isPanoramaAsset),
+    ...boolPredicates(branch.isScreenshot, isScreenshotAsset),
     ...comparisonPredicates(eb, 'asset_exif.city', branch.city),
     ...comparisonPredicates(eb, 'asset_exif.state', branch.state),
     ...comparisonPredicates(eb, 'asset_exif.country', branch.country),
-    ...comparisonPredicates(eb, 'asset_exif.make', branch.make),
-    ...comparisonPredicates(eb, 'asset_exif.model', branch.model),
-    ...comparisonPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
+    ...stringPatternPredicates(eb, 'asset_exif.make', branch.make),
+    ...stringPatternPredicates(eb, 'asset_exif.model', branch.model),
+    ...stringPatternPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
     ...stringPatternPredicates(eb, 'asset_exif.description', branch.description),
     ...stringPatternPredicates(eb, 'asset.originalFileName', branch.originalFileName),
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
@@ -777,11 +1038,13 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
+    ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
     ...albumIdsPredicates(eb, branch.albumIds),
     ...personIdsPredicates(eb, branch.personIds),
+    ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath
@@ -795,7 +1058,6 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
       : []),
   ];
 }
-
 // ordering is deliberately left to the caller so aggregate-only consumers (counts, stats)
 // can compose the same filters without stripping an order by
 export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuilderV3Options, scope?: AssetSearchScope) {
@@ -806,14 +1068,18 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
   };
   const filter = options.filter ?? {};
   const branches = filter.or ?? [];
-  const ownershipPredicate = (eb: AssetExpressionBuilder) => eb('asset.ownerId', '=', anyUuid(scope.userIds));
+  // FL-58: whose pets a `petIds` condition may name. The service scope always carries the caller.
+  const viewerId = scope.viewingUserId ?? (scope.lockedOwnerId || undefined);
+  const ownershipPredicate = (eb: AssetExpressionBuilder) =>
+    viewerId
+      ? eb.and([eb('asset.ownerId', '=', anyUuid(scope.userIds)), partnerSearchable(eb, viewerId)])
+      : eb('asset.ownerId', '=', anyUuid(scope.userIds));
   // search universe: own+partner assets unless album-confined, which searches the albums instead;
   // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
   const topConfined = isAlbumConfined(filter);
   const anyBranchConfined = branches.some((branch) => isAlbumConfined(branch));
   const scopePerBranch = !topConfined && anyBranchConfined;
   const scopeGlobally = !topConfined && !anyBranchConfined;
-
   return (
     kysely
       .withPlugin(joinDeduplicationPlugin)
@@ -824,21 +1090,27 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
-      .where((eb) =>
-        eb.or([eb('asset.visibility', '!=', AssetVisibility.Locked), eb('asset.ownerId', '=', scope.lockedOwnerId)]),
+      .$if(!!scope.locationHiddenOwnerIds?.length, (qb) =>
+        qb.where('asset.ownerId', 'not in', scope.locationHiddenOwnerIds!),
+      )
+      .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
+      .$if(!!scope.sharedLink, (qb) => qb.where('asset.deletedAt', 'is', null))
+      .$if(!scope.sharedLink && !!viewerId, (qb) => qb.where((eb) => othersNotTrashed(eb, viewerId!)))
+      .$if(!!scope.lockedMotion, (qb) =>
+        qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
-        const predicates = branchPredicates(eb, filter);
+        const predicates = branchPredicates(eb, filter, viewerId, options.revealLockedOwnerId);
         if (branches.length > 0) {
           predicates.push(
             eb.or(
               branches.map((branch) =>
                 eb.and([
-                  ...branchPredicates(eb, branch),
+                  ...branchPredicates(eb, branch, viewerId, options.revealLockedOwnerId),
                   ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
                 ]),
               ),
@@ -849,14 +1121,12 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       })
   );
 }
-
 const searchOrderColumns = {
   [SearchOrderField.FileCreatedAt]: { column: 'asset.fileCreatedAt', nullable: false },
   [SearchOrderField.LocalDateTime]: { column: 'asset.localDateTime', nullable: false },
   [SearchOrderField.FileSizeInBytes]: { column: 'asset_exif.fileSizeInByte', nullable: true },
   [SearchOrderField.Rating]: { column: 'asset_exif.rating', nullable: true },
 } as const;
-
 export function withSearchOrder(qb: ReturnType<typeof searchAssetBuilder>, order?: SearchOrder) {
   const { field, direction } = order ?? DEFAULT_SEARCH_ORDER;
   const { column, nullable } = searchOrderColumns[field];
@@ -871,9 +1141,7 @@ export function withSearchOrder(qb: ReturnType<typeof searchAssetBuilder>, order
       .orderBy('asset.id', direction)
   );
 }
-
 const scopeExample: AssetSearchScope = { userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
-
 export const searchMetadataV3Examples: GenerateSqlQueries[] = [
   { name: 'baseline', params: [{ take: 100 }, {}, scopeExample] },
   {
@@ -931,6 +1199,10 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
     ],
   },
   {
+    name: 'string-pattern-camera',
+    params: [{ take: 100 }, { filter: { make: { like: DummyValue.STRING } } }, scopeExample],
+  },
+  {
     name: 'string-similarity-ocr',
     params: [{ take: 100 }, { filter: { ocr: { matches: DummyValue.STRING } } }, scopeExample],
   },
@@ -967,6 +1239,20 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
     ],
   },
   {
+    name: 'ids-pets-any',
+    params: [{ take: 100 }, { filter: { petIds: { any: [DummyValue.UUID] } } }, scopeExample],
+  },
+  {
+    name: 'ids-pets-all',
+    params: [
+      { take: 100 },
+      {
+        filter: { petIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } },
+      },
+      scopeExample,
+    ],
+  },
+  {
     name: 'has-albums-false',
     params: [{ take: 100 }, { filter: { hasAlbums: { eq: false } } }, scopeExample],
   },
@@ -994,6 +1280,16 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
       { take: 100 },
       {
         filter: { takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
+      },
+      scopeExample,
+    ],
+  },
+  {
+    name: 'local-date-range',
+    params: [
+      { take: 100 },
+      {
+        filter: { localDateTime: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
       },
       scopeExample,
     ],
@@ -1050,7 +1346,6 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
     params: [{ take: 100, skip: 100 }, { filter: { isFavorite: { eq: true } } }, scopeExample],
   },
 ];
-
 export const searchRandomV3Examples: GenerateSqlQueries[] = [
   { name: 'baseline', params: [100, {}, scopeExample] },
   {
@@ -1058,7 +1353,6 @@ export const searchRandomV3Examples: GenerateSqlQueries[] = [
     params: [100, { filter: { isFavorite: { eq: true } } }, scopeExample],
   },
 ];
-
 export const searchSmartV3Examples: GenerateSqlQueries[] = [
   {
     name: 'baseline',
@@ -1080,7 +1374,6 @@ export const searchSmartV3Examples: GenerateSqlQueries[] = [
     params: [{ take: 100, skip: 100 }, { embedding: DummyValue.VECTOR }, scopeExample],
   },
 ];
-
 export const searchStatisticsV3Examples: GenerateSqlQueries[] = [
   { name: 'baseline', params: [{}, scopeExample] },
   {
@@ -1107,92 +1400,58 @@ export const searchStatisticsV3Examples: GenerateSqlQueries[] = [
     ],
   },
 ];
-
-export type ReindexVectorIndexOptions = { indexName: string; lists?: number };
-
-type VectorIndexQueryOptions = { table: string; vectorExtension: VectorExtension } & ReindexVectorIndexOptions;
-
-export function vectorIndexQuery({ vectorExtension, table, indexName, lists }: VectorIndexQueryOptions): string {
-  switch (vectorExtension) {
-    case DatabaseExtension.VectorChord: {
-      return `
-        CREATE INDEX IF NOT EXISTS ${indexName} ON ${table} USING vchordrq (embedding vector_cosine_ops) WITH (options = $$
-        residual_quantization = false
-        [build.internal]
-        lists = [${lists ?? 1}]
-        spherical_centroids = true
-        build_threads = 4
-        sampling_factor = 1024
-        $$)`;
-    }
-    case DatabaseExtension.Vector: {
-      return `
-        CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}
-        USING hnsw (embedding vector_cosine_ops)
-        WITH (ef_construction = 300, m = 16)`;
-    }
-    default: {
-      throw new Error(`Unsupported vector extension: '${vectorExtension}'`);
-    }
-  }
+export type ReindexVectorIndexOptions = {
+  indexName: string;
+  lists?: number;
+};
+type VectorIndexQueryOptions = {
+  table: string;
+  vectorExtension: VectorExtension;
+} & ReindexVectorIndexOptions;
+export function vectorIndexQuery({ table, indexName }: VectorIndexQueryOptions): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(table) || !/^[a-z_][a-z0-9_]*$/.test(indexName))
+    throw new Error('Invalid vector index identifier');
+  return `CREATE INDEX IF NOT EXISTS "${indexName}" ON public."${table}" USING hnsw (embedding vector_cosine_ops) WITH (ef_construction = 300, m = 16)`;
 }
-
-export const updateLockedColumns = <T extends Record<string, unknown> & { lockedProperties?: LockableProperty[] }>(
+export const updateLockedColumns = <
+  T extends Record<string, unknown> & {
+    lockedProperties?: LockableProperty[];
+  },
+>(
   exif: T,
 ) => {
   exif.lockedProperties = lockableProperties.filter((property) => Object.hasOwn(exif, property));
   return exif;
 };
-
-export const nsfwAssetIdExists = (assetId: Expression<unknown>) => sql<boolean>`case
-      when ${assetId} is null then false
-      when coalesce((select phase from immich_fork.state where id = 1), 'inactive') in ('legacy', 'dual-write', 'ready') then exists (
-        select 1
-        from asset as nsfw_asset
-        where nsfw_asset.id = ${assetId}
-          and nsfw_asset.is_nsfw = true
-      )
-      when (select phase from immich_fork.state where id = 1) = 'active' then not exists (
-        select 1
-        from immich_fork.asset_privacy as privacy_asset
-        where privacy_asset."assetId" = ${assetId}
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end`;
-
+export const nsfwAssetIdExists = (assetId: Expression<unknown>) => sql<boolean>`exists (
+  select 1 from public.asset as nsfw_asset
+  where nsfw_asset.id = ${assetId} and nsfw_asset.is_nsfw = true
+)`;
 const nsfwAssetExists = (assetAlias = 'asset') => nsfwAssetIdExists(sql.ref(`${assetAlias}.id`));
-
 export function withNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
   return qb.where(nsfwAssetExists(assetAlias));
 }
-
 export function withoutNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
   return qb.where(sql<boolean>`not ${nsfwAssetExists(assetAlias)}`);
 }
-
 const nsfwOnlyFilter: HiddenContentFilter = {
   userId: '',
   includeNsfw: true,
   tagIds: [],
   personIds: [],
+  petIds: [],
   scope: 'visible',
 };
-
 export const getHiddenContentFilter = (options?: HiddenContentQueryOptions): HiddenContentFilter | undefined => {
   return options?.onlyHiddenContent ?? options?.hiddenContent ?? (options?.excludeNsfw ? nsfwOnlyFilter : undefined);
 };
-
 const scopedToOwner = (filter: HiddenContentFilter, assetAlias: string) =>
   filter.scope === 'owned' ? sql<boolean>`${sql.ref(`${assetAlias}.ownerId`)} = ${asUuid(filter.userId)}` : sql`true`;
-
 const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'asset') => {
   const predicates: ReturnType<typeof sql>[] = [];
-
   if (filter.includeNsfw) {
     predicates.push(nsfwAssetExists(assetAlias));
   }
-
   if (filter.tagIds.length > 0) {
     predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
       select 1
@@ -1202,7 +1461,6 @@ const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'ass
         and tag_closure.id_ancestor = ${anyUuid(filter.tagIds)}
     ))`);
   }
-
   if (filter.personIds.length > 0) {
     predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
       select 1
@@ -1213,18 +1471,58 @@ const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'ass
         and asset_face."isVisible" is true
     ))`);
   }
-
+  if (filter.petIds.length > 0) {
+    // FL-58: only the owner's own confirmed observations of their own pets; a rejected observation
+    // or a model proposal (pet_detection/pet_candidate) never suppresses anything
+    predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
+      select 1
+      from pet_observation
+      inner join pet on pet.id = pet_observation."petId"
+      where pet_observation."assetId" = ${sql.ref(`${assetAlias}.id`)}
+        and pet_observation."petId" = ${anyUuid(filter.petIds)}
+        and pet_observation.state = ${PetObservationState.Confirmed}
+        and pet."ownerId" = ${asUuid(filter.userId)}
+    ))`);
+  }
   return predicates.length === 0 ? sql<boolean>`false` : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
 };
-
-export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
-  sql<boolean>`exists (
+export const hiddenContentAssetIdExists = (
+  assetId: Expression<unknown>,
+  filter: HiddenContentFilter,
+) => sql<boolean>`exists (
     select 1
     from asset as hidden_content_asset
     where hidden_content_asset.id = ${assetId}
       and ${hiddenContentAssetExists(filter, 'hidden_content_asset')}
   )`;
-
+/**
+ * True when the asset under `assetAlias` is hidden from a session with these options: locked and not
+ * revealed to it (`revealedLockScope`), or matched by its hidden-content filter (the Locked rules,
+ * sensitive content). A suppressed-only view (`onlyHiddenContent`) is an unlocked session's, which
+ * hides nothing of its own.
+ */
+export const hiddenFromSession = (options: HiddenContentQueryOptions = {}, assetAlias = 'asset') => {
+  const notRevealed = sql<boolean>`not ${revealedLockScope(options.revealLockedOwnerId, assetAlias)}`;
+  const filter = options.onlyHiddenContent ? undefined : getHiddenContentFilter(options);
+  return filter ? sql<boolean>`(${notRevealed} or ${hiddenContentAssetExists(filter, assetAlias)})` : notRevealed;
+};
+/**
+ * FL-195 follow-up (owner decision, September 27, 2026: "Memories that have locked photos should be
+ * hidden unless unlocked"): a memory with even one item hidden from the session (`hiddenFromSession`)
+ * is hidden entirely — its title, date, cover, places and counts — not only its hidden items. Any item
+ * counts, trashed or archived ones included, since a generated title or place may describe it. Once
+ * the session may see every item (the owner's unlocked session), the memory shows normally.
+ */
+export const memoryHasNoHiddenItem = (
+  memoryId: Expression<unknown>,
+  options: HiddenContentQueryOptions = {},
+) => sql<boolean>`not exists (
+      select 1
+      from memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+      where hidden_memory_asset."memoriesId" = ${memoryId}
+        and ${hiddenFromSession(options, 'hidden_memory_item')}
+    )`;
 export function withHiddenContentOnly<QDB, TB extends keyof QDB, O>(
   qb: SelectQueryBuilder<QDB, TB, O>,
   filter: HiddenContentFilter,
@@ -1232,7 +1530,6 @@ export function withHiddenContentOnly<QDB, TB extends keyof QDB, O>(
 ) {
   return qb.where(hiddenContentAssetExists(filter, assetAlias));
 }
-
 export function withoutHiddenContent<QDB, TB extends keyof QDB, O>(
   qb: SelectQueryBuilder<QDB, TB, O>,
   filter: HiddenContentFilter,
@@ -1240,7 +1537,6 @@ export function withoutHiddenContent<QDB, TB extends keyof QDB, O>(
 ) {
   return qb.where(sql<boolean>`not ${hiddenContentAssetExists(filter, assetAlias)}`);
 }
-
 export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
   qb: SelectQueryBuilder<QDB, TB, O>,
   options?: HiddenContentQueryOptions,
@@ -1250,30 +1546,58 @@ export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
   if (!filter) {
     return qb;
   }
-
   return options?.onlyHiddenContent
     ? withHiddenContentOnly(qb, filter, assetAlias)
     : withoutHiddenContent(qb, filter, assetAlias);
 }
-
 const taggedAssetExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
       select 1
       from tag_closure
       inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
       where tag_closure.id_ancestor = ${tagId}
     )`;
-
-const nonHiddenTaggedAssetExists = (tagId: Expression<unknown>, filter = nsfwOnlyFilter) => sql<boolean>`exists (
+const nonHiddenTaggedAssetExists = (
+  tagId: Expression<unknown>,
+  filter: HiddenContentFilter | undefined,
+  hideLocked: boolean,
+) => sql<boolean>`exists (
       select 1
       from tag_closure
       inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
       where tag_closure.id_ancestor = ${tagId}
-        and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}
+        ${filter ? sql`and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}` : sql``}
+        ${hideLocked ? sql`and not ${lockedAssetIdExists(sql.ref('tag_asset.assetId'))}` : sql``}
     )`;
-
-export const tagHasVisibleAssetOrNoAssets = (tagId: Expression<unknown>, filter?: HiddenContentFilter) =>
-  sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter)})`;
-
+/**
+ * FL-46 / FL-34 (owner decision, September 27, 2026): a tag the session may see. A tag without items
+ * always shows; otherwise it, or a tag under it, must carry an item the session sees: not hidden by
+ * `filter` (the Locked rules, NSFW) and, with `hideLocked` (a session that is not unlocked), not
+ * locked for any reason. A tag carried only by hidden items is therefore hidden itself until one
+ * visible item carries it. Without a filter and without `hideLocked` every tag shows.
+ */
+export const tagHasVisibleAssetOrNoAssets = (
+  tagId: Expression<unknown>,
+  filter?: HiddenContentFilter,
+  {
+    hideLocked = false,
+  }: {
+    hideLocked?: boolean;
+  } = {},
+) =>
+  filter || hideLocked
+    ? sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)})`
+    : sql<boolean>`true`;
+/**
+ * FL-46: the tag is one of the suppressed tags or nested under one. Suppressing a tag hides the
+ * photos of every tag below it (see `hiddenContentAssetExists`), so those tags are suppressed too.
+ * The closure table holds a row for each tag with itself, which covers the tag's own id.
+ */
+export const tagIsSuppressed = (tagId: Expression<unknown>, suppressedTagIds: string[]) => sql<boolean>`exists (
+      select 1
+      from tag_closure
+      where tag_closure.id_descendant = ${tagId}
+        and tag_closure.id_ancestor = ${anyUuid(suppressedTagIds)}
+    )`;
 const enrichmentExists = (assetAlias: string, predicate: ReturnType<typeof sql>) => sql<boolean>`exists (
       select 1
       from asset_metadata
@@ -1281,7 +1605,6 @@ const enrichmentExists = (assetAlias: string, predicate: ReturnType<typeof sql>)
         and asset_metadata.key = ${AssetMetadataKey.MlEnrichment}
         and ${predicate}
     )`;
-
 const tagExists = (assetAlias: string, tag: string) => sql<boolean>`exists (
       select 1
       from tag_asset
@@ -1289,37 +1612,29 @@ const tagExists = (assetAlias: string, tag: string) => sql<boolean>`exists (
       where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
         and tag.value = ${tag}
     )`;
-
 export function withImageEnrichmentFilter<O>(
   qb: SelectQueryBuilder<DB, any, O>,
   filter: ImageEnrichmentFilter,
   assetAlias = 'asset',
 ) {
   const imageOnly = qb.where(sql.ref(`${assetAlias}.type`), '=', AssetType.Image);
-
   switch (filter) {
     case ImageEnrichmentFilter.Nsfw: {
       return imageOnly.where(nsfwAssetExists(assetAlias));
     }
-
     case ImageEnrichmentFilter.NsfwReview: {
       return imageOnly.where((eb) =>
         eb.or([
-          sql<boolean>`${nsfwAssetExists(assetAlias)} and ${enrichmentExists(
-            assetAlias,
-            sql`asset_metadata.value #> '{nsfwDetection,review}' is null`,
-          )}`,
+          sql<boolean>`${nsfwAssetExists(assetAlias)} and ${enrichmentExists(assetAlias, sql`asset_metadata.value #> '{nsfwDetection,review}' is null`)}`,
           tagExists(assetAlias, 'nsfw_review'),
         ]),
       );
     }
-
     case ImageEnrichmentFilter.NsfwReviewed: {
       return imageOnly.where(
         enrichmentExists(assetAlias, sql`asset_metadata.value #> '{nsfwDetection,review}' is not null`),
       );
     }
-
     case ImageEnrichmentFilter.NsfwOverridden: {
       return imageOnly.where(
         enrichmentExists(
@@ -1328,34 +1643,24 @@ export function withImageEnrichmentFilter<O>(
         ),
       );
     }
-
     case ImageEnrichmentFilter.ImageDescriptionFailed: {
       return imageOnly.where(
         enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{description,status}' = 'failed'`),
       );
     }
-
     case ImageEnrichmentFilter.NsfwDetectionFailed: {
       return imageOnly.where(
         enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'failed'`),
       );
     }
-
     case ImageEnrichmentFilter.MissingImageDescription: {
       return imageOnly.where(
-        sql<boolean>`not ${enrichmentExists(
-          assetAlias,
-          sql`asset_metadata.value #>> '{description,status}' = 'success'`,
-        )}`,
+        sql<boolean>`not ${enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{description,status}' = 'success'`)}`,
       );
     }
-
     case ImageEnrichmentFilter.MissingNsfwDetection: {
       return imageOnly.where(
-        sql<boolean>`not ${enrichmentExists(
-          assetAlias,
-          sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'success'`,
-        )}`,
+        sql<boolean>`not ${enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'success'`)}`,
       );
     }
   }

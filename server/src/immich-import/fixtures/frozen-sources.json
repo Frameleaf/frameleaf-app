@@ -1,0 +1,3883 @@
+{
+  "provenance": "Immutable immich-app/immich stable tags; structural catalogs from exact-tag 3.1.0 dump and pinned migration deltas. See structure/provenance.json. No source DDL executes during import.",
+  "versions": {
+    "3.0.0": {
+      "commit": "05d838b560d5e9316e6512af2af692975a82bb45",
+      "schema": "b634621f74d8ff3bb22eadf1c5895ada41c1a1dbb00184426b60c19360d2b01a",
+      "migrations": "f965ee234e7782d5925189d25a617833112756d4b3e8adc752023d0f1cc7b12c",
+      "structure": "3.0.0"
+    },
+    "3.0.1": {
+      "commit": "f77c8a4699aec043ec4a1b404559a7a291d592dc",
+      "schema": "b634621f74d8ff3bb22eadf1c5895ada41c1a1dbb00184426b60c19360d2b01a",
+      "migrations": "f965ee234e7782d5925189d25a617833112756d4b3e8adc752023d0f1cc7b12c",
+      "structure": "3.0.0"
+    },
+    "3.0.2": {
+      "commit": "443b856ac3914dd5edc1a10827664c5b1a0abf76",
+      "schema": "b634621f74d8ff3bb22eadf1c5895ada41c1a1dbb00184426b60c19360d2b01a",
+      "migrations": "f965ee234e7782d5925189d25a617833112756d4b3e8adc752023d0f1cc7b12c",
+      "structure": "3.0.0"
+    },
+    "3.0.3": {
+      "commit": "cd308ad93093735135f99d85ce6980c8e93df231",
+      "schema": "b634621f74d8ff3bb22eadf1c5895ada41c1a1dbb00184426b60c19360d2b01a",
+      "migrations": "18a9b9d7fc99d7805bf2921914759b6f13f3c3ed3a3b0501264e4b092d5a53f2",
+      "structure": "3.0.0"
+    },
+    "3.1.0": {
+      "commit": "8aa95c67470a02a8ddedf03c2e52963af33065ff",
+      "schema": "144555f1e44dc9ffe4b6b224ae05e65b4da47a1f5302ae32f47c9f07786b669e",
+      "migrations": "21406df1b4396fd14374046b7abf8761a2245c4a31a05a1f10003e904deaea70",
+      "structure": "3.1.0"
+    },
+    "3.2.0": {
+      "commit": "1b6098c9dbfffe978bec2d414606ed7a4c8e019a",
+      "schema": "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6",
+      "migrations": "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5",
+      "structure": "3.2.0"
+    },
+    "3.2.1": {
+      "commit": "6420baac8307bb9ad14963578782fa0539947332",
+      "schema": "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6",
+      "migrations": "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5",
+      "structure": "3.2.0"
+    },
+    "3.2.2": {
+      "commit": "60b51cb3bc909e72fe963f4dfb1947515cb9ab3b",
+      "schema": "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6",
+      "migrations": "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5",
+      "structure": "3.2.0"
+    },
+    "3.2.3": {
+      "commit": "1506358881986894f14f833d9a61f7d5b6e165a0",
+      "schema": "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6",
+      "migrations": "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5",
+      "structure": "3.2.0"
+    },
+    "3.2.4": {
+      "commit": "db355f79d910bbfc6378117ed10868493c97b922",
+      "schema": "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6",
+      "migrations": "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5",
+      "structure": "3.2.0"
+    }
+  },
+  "schemas": {
+    "b634621f74d8ff3bb22eadf1c5895ada41c1a1dbb00184426b60c19360d2b01a": {
+      "activity": {
+        "columns": ["id", "createdAt", "updatedAt", "albumId", "userId", "assetId", "comment", "isLiked", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "assetId": "uuid",
+          "comment": "text",
+          "isLiked": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "album_asset_audit": {
+        "columns": ["id", "albumId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_asset": {
+        "columns": ["albumId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["albumId", "assetId"],
+        "types": {
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "album_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user": {
+        "columns": ["albumId", "userId", "role", "createId", "createdAt", "updateId", "updatedAt"],
+        "key": ["albumId", "userId"],
+        "types": {
+          "albumId": "uuid",
+          "userId": "uuid",
+          "role": "album_user_role_enum",
+          "createId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "album": {
+        "columns": [
+          "id",
+          "albumName",
+          "createdAt",
+          "albumThumbnailAssetId",
+          "updatedAt",
+          "description",
+          "deletedAt",
+          "isActivityEnabled",
+          "order",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumName": "character varying",
+          "createdAt": "timestamp with time zone",
+          "albumThumbnailAssetId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "description": "text",
+          "deletedAt": "timestamp with time zone",
+          "isActivityEnabled": "boolean",
+          "order": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "api_key": {
+        "columns": ["id", "name", "key", "userId", "createdAt", "updatedAt", "permissions", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "key": "bytea",
+          "userId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "permissions": "character varying[]",
+          "updateId": "uuid"
+        }
+      },
+      "asset_audit": {
+        "columns": ["id", "assetId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_audio": {
+        "columns": ["assetId", "bitrate", "index", "profile", "codecName"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "codecName": "text"
+        }
+      },
+      "asset_video": {
+        "columns": [
+          "assetId",
+          "bitrate",
+          "frameCount",
+          "timeBase",
+          "index",
+          "profile",
+          "level",
+          "colorPrimaries",
+          "colorTransfer",
+          "colorMatrix",
+          "dvProfile",
+          "dvLevel",
+          "dvBlSignalCompatibilityId",
+          "codecName",
+          "formatName",
+          "formatLongName",
+          "pixelFormat"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "frameCount": "integer",
+          "timeBase": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "level": "smallint",
+          "colorPrimaries": "smallint",
+          "colorTransfer": "smallint",
+          "colorMatrix": "smallint",
+          "dvProfile": "smallint",
+          "dvLevel": "smallint",
+          "dvBlSignalCompatibilityId": "smallint",
+          "codecName": "text",
+          "formatName": "text",
+          "formatLongName": "text",
+          "pixelFormat": "text"
+        }
+      },
+      "asset_keyframe": {
+        "columns": ["assetId", "pts", "accDuration", "ownDuration", "totalDuration", "packetCount", "outputFrames"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "pts": "integer[]",
+          "accDuration": "integer[]",
+          "ownDuration": "integer[]",
+          "totalDuration": "integer",
+          "packetCount": "integer",
+          "outputFrames": "integer"
+        }
+      },
+      "asset_edit_audit": {
+        "columns": ["id", "editId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "editId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_edit": {
+        "columns": ["id", "assetId", "action", "parameters", "sequence", "updatedAt", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "action": "character varying",
+          "parameters": "jsonb",
+          "sequence": "integer",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "asset_exif": {
+        "columns": [
+          "assetId",
+          "make",
+          "model",
+          "exifImageWidth",
+          "exifImageHeight",
+          "fileSizeInByte",
+          "orientation",
+          "dateTimeOriginal",
+          "modifyDate",
+          "lensModel",
+          "fNumber",
+          "focalLength",
+          "iso",
+          "latitude",
+          "longitude",
+          "city",
+          "state",
+          "country",
+          "description",
+          "fps",
+          "exposureTime",
+          "livePhotoCID",
+          "timeZone",
+          "projectionType",
+          "profileDescription",
+          "colorspace",
+          "bitsPerSample",
+          "autoStackId",
+          "rating",
+          "tags",
+          "updatedAt",
+          "updateId",
+          "lockedProperties"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "make": "character varying",
+          "model": "character varying",
+          "exifImageWidth": "integer",
+          "exifImageHeight": "integer",
+          "fileSizeInByte": "bigint",
+          "orientation": "character varying",
+          "dateTimeOriginal": "timestamp with time zone",
+          "modifyDate": "timestamp with time zone",
+          "lensModel": "character varying",
+          "fNumber": "double precision",
+          "focalLength": "double precision",
+          "iso": "integer",
+          "latitude": "double precision",
+          "longitude": "double precision",
+          "city": "character varying",
+          "state": "character varying",
+          "country": "character varying",
+          "description": "text",
+          "fps": "double precision",
+          "exposureTime": "character varying",
+          "livePhotoCID": "character varying",
+          "timeZone": "character varying",
+          "projectionType": "character varying",
+          "profileDescription": "character varying",
+          "colorspace": "character varying",
+          "bitsPerSample": "integer",
+          "autoStackId": "character varying",
+          "rating": "integer",
+          "tags": "character varying[]",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "lockedProperties": "character varying[]"
+        }
+      },
+      "asset_face_audit": {
+        "columns": ["id", "assetFaceId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetFaceId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_face": {
+        "columns": [
+          "id",
+          "assetId",
+          "personId",
+          "imageWidth",
+          "imageHeight",
+          "boundingBoxX1",
+          "boundingBoxY1",
+          "boundingBoxX2",
+          "boundingBoxY2",
+          "sourceType",
+          "deletedAt",
+          "updatedAt",
+          "updateId",
+          "isVisible"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "personId": "uuid",
+          "imageWidth": "integer",
+          "imageHeight": "integer",
+          "boundingBoxX1": "integer",
+          "boundingBoxY1": "integer",
+          "boundingBoxX2": "integer",
+          "boundingBoxY2": "integer",
+          "sourceType": "sourcetype",
+          "deletedAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "isVisible": "boolean"
+        }
+      },
+      "asset_file": {
+        "columns": [
+          "id",
+          "assetId",
+          "createdAt",
+          "updatedAt",
+          "type",
+          "path",
+          "updateId",
+          "isEdited",
+          "isProgressive",
+          "isTransparent"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "type": "character varying",
+          "path": "character varying",
+          "updateId": "uuid",
+          "isEdited": "boolean",
+          "isProgressive": "boolean",
+          "isTransparent": "boolean"
+        }
+      },
+      "asset_job_status": {
+        "columns": ["assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "ocrAt"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "facesRecognizedAt": "timestamp with time zone",
+          "metadataExtractedAt": "timestamp with time zone",
+          "duplicatesDetectedAt": "timestamp with time zone",
+          "ocrAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata_audit": {
+        "columns": ["id", "assetId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata": {
+        "columns": ["assetId", "key", "value", "updateId", "updatedAt"],
+        "key": ["assetId", "key"],
+        "types": {
+          "assetId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr_audit": {
+        "columns": ["id", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr": {
+        "columns": [
+          "id",
+          "assetId",
+          "x1",
+          "y1",
+          "x2",
+          "y2",
+          "x3",
+          "y3",
+          "x4",
+          "y4",
+          "boxScore",
+          "textScore",
+          "text",
+          "isVisible",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "x1": "real",
+          "y1": "real",
+          "x2": "real",
+          "y2": "real",
+          "x3": "real",
+          "y3": "real",
+          "x4": "real",
+          "y4": "real",
+          "boxScore": "real",
+          "textScore": "real",
+          "text": "text",
+          "isVisible": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "asset": {
+        "columns": [
+          "id",
+          "ownerId",
+          "type",
+          "originalPath",
+          "fileCreatedAt",
+          "fileModifiedAt",
+          "isFavorite",
+          "duration",
+          "checksum",
+          "checksumAlgorithm",
+          "livePhotoVideoId",
+          "updatedAt",
+          "createdAt",
+          "originalFileName",
+          "thumbhash",
+          "isOffline",
+          "libraryId",
+          "isExternal",
+          "deletedAt",
+          "localDateTime",
+          "stackId",
+          "duplicateId",
+          "status",
+          "updateId",
+          "visibility",
+          "width",
+          "height",
+          "isEdited"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "originalPath": "character varying",
+          "fileCreatedAt": "timestamp with time zone",
+          "fileModifiedAt": "timestamp with time zone",
+          "isFavorite": "boolean",
+          "duration": "integer",
+          "checksum": "bytea",
+          "checksumAlgorithm": "asset_checksum_algorithm_enum",
+          "livePhotoVideoId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone",
+          "originalFileName": "character varying",
+          "thumbhash": "bytea",
+          "isOffline": "boolean",
+          "libraryId": "uuid",
+          "isExternal": "boolean",
+          "deletedAt": "timestamp with time zone",
+          "localDateTime": "timestamp with time zone",
+          "stackId": "uuid",
+          "duplicateId": "uuid",
+          "status": "assets_status_enum",
+          "updateId": "uuid",
+          "visibility": "asset_visibility_enum",
+          "width": "integer",
+          "height": "integer",
+          "isEdited": "boolean"
+        }
+      },
+      "face_search": {
+        "columns": ["faceId", "embedding"],
+        "key": ["faceId"],
+        "types": {
+          "faceId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "geodata_places": {
+        "columns": [
+          "id",
+          "name",
+          "longitude",
+          "latitude",
+          "countryCode",
+          "admin1Code",
+          "admin2Code",
+          "modificationDate",
+          "admin1Name",
+          "admin2Name",
+          "alternateNames"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "name": "character varying(200)",
+          "longitude": "double precision",
+          "latitude": "double precision",
+          "countryCode": "character(2)",
+          "admin1Code": "character varying(20)",
+          "admin2Code": "character varying(80)",
+          "modificationDate": "date",
+          "admin1Name": "character varying",
+          "admin2Name": "character varying",
+          "alternateNames": "character varying"
+        }
+      },
+      "integrity_report": {
+        "columns": ["id", "type", "path", "createdAt", "assetId", "fileAssetId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "type": "character varying",
+          "path": "character varying",
+          "createdAt": "timestamp with time zone",
+          "assetId": "uuid",
+          "fileAssetId": "uuid"
+        }
+      },
+      "library": {
+        "columns": [
+          "id",
+          "name",
+          "ownerId",
+          "importPaths",
+          "exclusionPatterns",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "refreshedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "ownerId": "uuid",
+          "importPaths": "text[]",
+          "exclusionPatterns": "text[]",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "refreshedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_asset_audit": {
+        "columns": ["id", "memoryId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory_asset": {
+        "columns": ["memoriesId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["memoriesId", "assetId"],
+        "types": {
+          "memoriesId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_audit": {
+        "columns": ["id", "memoryId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "ownerId",
+          "type",
+          "data",
+          "isSaved",
+          "memoryAt",
+          "seenAt",
+          "showAt",
+          "hideAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "data": "jsonb",
+          "isSaved": "boolean",
+          "memoryAt": "timestamp with time zone",
+          "seenAt": "timestamp with time zone",
+          "showAt": "timestamp with time zone",
+          "hideAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "move_history": {
+        "columns": ["id", "entityId", "pathType", "oldPath", "newPath"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "entityId": "uuid",
+          "pathType": "character varying",
+          "oldPath": "character varying",
+          "newPath": "character varying"
+        }
+      },
+      "naturalearth_countries": {
+        "columns": ["id", "admin", "admin_a3", "type", "coordinates"],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "admin": "character varying(50)",
+          "admin_a3": "character varying(3)",
+          "type": "character varying(50)",
+          "coordinates": "polygon"
+        }
+      },
+      "notification": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "updateId",
+          "userId",
+          "level",
+          "type",
+          "data",
+          "title",
+          "description",
+          "readAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "userId": "uuid",
+          "level": "character varying",
+          "type": "character varying",
+          "data": "jsonb",
+          "title": "character varying",
+          "description": "text",
+          "readAt": "timestamp with time zone"
+        }
+      },
+      "ocr_search": {
+        "columns": ["assetId", "text"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "text": "text"
+        }
+      },
+      "partner_audit": {
+        "columns": ["id", "sharedById", "sharedWithId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "partner": {
+        "columns": ["sharedById", "sharedWithId", "createdAt", "createId", "updatedAt", "inTimeline", "updateId"],
+        "key": ["sharedById", "sharedWithId"],
+        "types": {
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "createId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "inTimeline": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "person_audit": {
+        "columns": ["id", "personId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "personId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "person": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "ownerId",
+          "name",
+          "thumbnailPath",
+          "isHidden",
+          "birthDate",
+          "faceAssetId",
+          "isFavorite",
+          "color",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "ownerId": "uuid",
+          "name": "character varying",
+          "thumbnailPath": "character varying",
+          "isHidden": "boolean",
+          "birthDate": "date",
+          "faceAssetId": "uuid",
+          "isFavorite": "boolean",
+          "color": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "plugin_method": {
+        "columns": [
+          "id",
+          "pluginId",
+          "name",
+          "title",
+          "description",
+          "types",
+          "hostFunctions",
+          "allowedHosts",
+          "schema",
+          "uiHints"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "pluginId": "uuid",
+          "name": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "types": "character varying[]",
+          "hostFunctions": "boolean",
+          "allowedHosts": "character varying[]",
+          "schema": "jsonb",
+          "uiHints": "character varying[]"
+        }
+      },
+      "plugin": {
+        "columns": [
+          "id",
+          "enabled",
+          "name",
+          "version",
+          "title",
+          "description",
+          "author",
+          "wasmBytes",
+          "templates",
+          "sha256hash",
+          "createdAt",
+          "updatedAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "name": "character varying",
+          "version": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "author": "character varying",
+          "wasmBytes": "bytea",
+          "templates": "jsonb",
+          "sha256hash": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "session": {
+        "columns": [
+          "id",
+          "token",
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "userId",
+          "parentId",
+          "deviceType",
+          "deviceOS",
+          "appVersion",
+          "updateId",
+          "isPendingSyncReset",
+          "pinExpiresAt",
+          "oauthSid"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "token": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "userId": "uuid",
+          "parentId": "uuid",
+          "deviceType": "character varying",
+          "deviceOS": "character varying",
+          "appVersion": "character varying",
+          "updateId": "uuid",
+          "isPendingSyncReset": "boolean",
+          "pinExpiresAt": "timestamp with time zone",
+          "oauthSid": "character varying"
+        }
+      },
+      "shared_link_asset": {
+        "columns": ["assetId", "sharedLinkId"],
+        "key": ["assetId", "sharedLinkId"],
+        "types": {
+          "assetId": "uuid",
+          "sharedLinkId": "uuid"
+        }
+      },
+      "shared_link": {
+        "columns": [
+          "id",
+          "description",
+          "userId",
+          "key",
+          "type",
+          "createdAt",
+          "expiresAt",
+          "allowUpload",
+          "albumId",
+          "allowDownload",
+          "showExif",
+          "password",
+          "slug"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "description": "character varying",
+          "userId": "uuid",
+          "key": "bytea",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "allowUpload": "boolean",
+          "albumId": "uuid",
+          "allowDownload": "boolean",
+          "showExif": "boolean",
+          "password": "character varying",
+          "slug": "character varying"
+        }
+      },
+      "smart_search": {
+        "columns": ["assetId", "embedding"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "stack_audit": {
+        "columns": ["id", "stackId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "stackId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "stack": {
+        "columns": ["id", "createdAt", "updatedAt", "updateId", "primaryAssetId", "ownerId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "primaryAssetId": "uuid",
+          "ownerId": "uuid"
+        }
+      },
+      "session_sync_checkpoint": {
+        "columns": ["sessionId", "type", "createdAt", "updatedAt", "ack", "updateId"],
+        "key": ["sessionId", "type"],
+        "types": {
+          "sessionId": "uuid",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "ack": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "system_metadata": {
+        "columns": ["key", "value"],
+        "key": ["key"],
+        "types": {
+          "key": "character varying",
+          "value": "jsonb"
+        }
+      },
+      "tag_asset": {
+        "columns": ["assetId", "tagId"],
+        "key": ["assetId", "tagId"],
+        "types": {
+          "assetId": "uuid",
+          "tagId": "uuid"
+        }
+      },
+      "tag_closure": {
+        "columns": ["id_ancestor", "id_descendant"],
+        "key": ["id_ancestor", "id_descendant"],
+        "types": {
+          "id_ancestor": "uuid",
+          "id_descendant": "uuid"
+        }
+      },
+      "tag": {
+        "columns": ["id", "userId", "value", "createdAt", "updatedAt", "color", "parentId", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "value": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "color": "character varying",
+          "parentId": "uuid",
+          "updateId": "uuid"
+        }
+      },
+      "user_audit": {
+        "columns": ["id", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata_audit": {
+        "columns": ["id", "userId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata": {
+        "columns": ["userId", "key", "value", "updateId", "updatedAt"],
+        "key": ["userId", "key"],
+        "types": {
+          "userId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "user": {
+        "columns": [
+          "id",
+          "email",
+          "password",
+          "pinCode",
+          "createdAt",
+          "profileImagePath",
+          "isAdmin",
+          "shouldChangePassword",
+          "avatarColor",
+          "deletedAt",
+          "oauthId",
+          "updatedAt",
+          "storageLabel",
+          "name",
+          "quotaSizeInBytes",
+          "quotaUsageInBytes",
+          "status",
+          "profileChangedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "email": "character varying",
+          "password": "character varying",
+          "pinCode": "character varying",
+          "createdAt": "timestamp with time zone",
+          "profileImagePath": "character varying",
+          "isAdmin": "boolean",
+          "shouldChangePassword": "boolean",
+          "avatarColor": "character varying",
+          "deletedAt": "timestamp with time zone",
+          "oauthId": "character varying",
+          "updatedAt": "timestamp with time zone",
+          "storageLabel": "character varying",
+          "name": "character varying",
+          "quotaSizeInBytes": "bigint",
+          "quotaUsageInBytes": "bigint",
+          "status": "character varying",
+          "profileChangedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "version_history": {
+        "columns": ["id", "createdAt", "version"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "version": "character varying"
+        }
+      },
+      "video_stream_session": {
+        "columns": ["id", "assetId", "expiresAt", "createdAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "expiresAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone"
+        }
+      },
+      "video_stream_variant": {
+        "columns": ["id", "sessionId", "createdAt", "bitrate", "codec", "resolution"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sessionId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "bitrate": "integer",
+          "codec": "video_stream_variant_codec_enum",
+          "resolution": "smallint"
+        }
+      },
+      "video_stream_segment": {
+        "columns": ["variantId", "index", "durationUs"],
+        "key": ["variantId", "index"],
+        "types": {
+          "variantId": "uuid",
+          "index": "integer",
+          "durationUs": "integer"
+        }
+      },
+      "workflow_step": {
+        "columns": ["id", "enabled", "workflowId", "pluginMethodId", "config", "order"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "workflowId": "uuid",
+          "pluginMethodId": "uuid",
+          "config": "jsonb",
+          "order": "integer"
+        }
+      },
+      "workflow": {
+        "columns": ["id", "ownerId", "trigger", "name", "description", "createdAt", "updatedAt", "updateId", "enabled"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "trigger": "character varying",
+          "name": "character varying",
+          "description": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "enabled": "boolean"
+        }
+      },
+      "migration_overrides": {
+        "columns": ["name", "value"],
+        "key": ["name"],
+        "types": {
+          "name": "character varying",
+          "value": "jsonb"
+        }
+      }
+    },
+    "144555f1e44dc9ffe4b6b224ae05e65b4da47a1f5302ae32f47c9f07786b669e": {
+      "activity": {
+        "columns": ["id", "createdAt", "updatedAt", "albumId", "userId", "assetId", "comment", "isLiked", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "assetId": "uuid",
+          "comment": "text",
+          "isLiked": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "album_asset_audit": {
+        "columns": ["id", "albumId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_asset": {
+        "columns": ["albumId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["albumId", "assetId"],
+        "types": {
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "album_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user": {
+        "columns": ["albumId", "userId", "role", "createId", "createdAt", "updateId", "updatedAt"],
+        "key": ["albumId", "userId"],
+        "types": {
+          "albumId": "uuid",
+          "userId": "uuid",
+          "role": "album_user_role_enum",
+          "createId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "album": {
+        "columns": [
+          "id",
+          "albumName",
+          "createdAt",
+          "albumThumbnailAssetId",
+          "updatedAt",
+          "description",
+          "deletedAt",
+          "isActivityEnabled",
+          "order",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumName": "character varying",
+          "createdAt": "timestamp with time zone",
+          "albumThumbnailAssetId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "description": "text",
+          "deletedAt": "timestamp with time zone",
+          "isActivityEnabled": "boolean",
+          "order": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "api_key": {
+        "columns": ["id", "name", "key", "userId", "createdAt", "updatedAt", "permissions", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "key": "bytea",
+          "userId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "permissions": "character varying[]",
+          "updateId": "uuid"
+        }
+      },
+      "asset_audit": {
+        "columns": ["id", "assetId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_audio": {
+        "columns": ["assetId", "bitrate", "index", "profile", "codecName"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "codecName": "text"
+        }
+      },
+      "asset_video": {
+        "columns": [
+          "assetId",
+          "bitrate",
+          "frameCount",
+          "timeBase",
+          "index",
+          "profile",
+          "level",
+          "colorPrimaries",
+          "colorTransfer",
+          "colorMatrix",
+          "dvProfile",
+          "dvLevel",
+          "dvBlSignalCompatibilityId",
+          "codecName",
+          "formatName",
+          "formatLongName",
+          "pixelFormat"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "frameCount": "integer",
+          "timeBase": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "level": "smallint",
+          "colorPrimaries": "smallint",
+          "colorTransfer": "smallint",
+          "colorMatrix": "smallint",
+          "dvProfile": "smallint",
+          "dvLevel": "smallint",
+          "dvBlSignalCompatibilityId": "smallint",
+          "codecName": "text",
+          "formatName": "text",
+          "formatLongName": "text",
+          "pixelFormat": "text"
+        }
+      },
+      "asset_keyframe": {
+        "columns": ["assetId", "pts", "accDuration", "ownDuration", "totalDuration", "packetCount", "outputFrames"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "pts": "integer[]",
+          "accDuration": "integer[]",
+          "ownDuration": "integer[]",
+          "totalDuration": "integer",
+          "packetCount": "integer",
+          "outputFrames": "integer"
+        }
+      },
+      "asset_edit_audit": {
+        "columns": ["id", "editId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "editId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_edit": {
+        "columns": ["id", "assetId", "action", "parameters", "sequence", "updatedAt", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "action": "character varying",
+          "parameters": "jsonb",
+          "sequence": "integer",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "asset_exif": {
+        "columns": [
+          "assetId",
+          "make",
+          "model",
+          "exifImageWidth",
+          "exifImageHeight",
+          "fileSizeInByte",
+          "orientation",
+          "dateTimeOriginal",
+          "modifyDate",
+          "lensModel",
+          "fNumber",
+          "focalLength",
+          "iso",
+          "latitude",
+          "longitude",
+          "city",
+          "state",
+          "country",
+          "description",
+          "fps",
+          "exposureTime",
+          "livePhotoCID",
+          "timeZone",
+          "projectionType",
+          "profileDescription",
+          "colorspace",
+          "bitsPerSample",
+          "autoStackId",
+          "rating",
+          "tags",
+          "updatedAt",
+          "updateId",
+          "lockedProperties"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "make": "character varying",
+          "model": "character varying",
+          "exifImageWidth": "integer",
+          "exifImageHeight": "integer",
+          "fileSizeInByte": "bigint",
+          "orientation": "character varying",
+          "dateTimeOriginal": "timestamp with time zone",
+          "modifyDate": "timestamp with time zone",
+          "lensModel": "character varying",
+          "fNumber": "double precision",
+          "focalLength": "double precision",
+          "iso": "integer",
+          "latitude": "double precision",
+          "longitude": "double precision",
+          "city": "character varying",
+          "state": "character varying",
+          "country": "character varying",
+          "description": "text",
+          "fps": "double precision",
+          "exposureTime": "character varying",
+          "livePhotoCID": "character varying",
+          "timeZone": "character varying",
+          "projectionType": "character varying",
+          "profileDescription": "character varying",
+          "colorspace": "character varying",
+          "bitsPerSample": "integer",
+          "autoStackId": "character varying",
+          "rating": "integer",
+          "tags": "character varying[]",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "lockedProperties": "character varying[]"
+        }
+      },
+      "asset_face_audit": {
+        "columns": ["id", "assetFaceId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetFaceId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_face": {
+        "columns": [
+          "id",
+          "assetId",
+          "personId",
+          "imageWidth",
+          "imageHeight",
+          "boundingBoxX1",
+          "boundingBoxY1",
+          "boundingBoxX2",
+          "boundingBoxY2",
+          "sourceType",
+          "deletedAt",
+          "updatedAt",
+          "updateId",
+          "isVisible"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "personId": "uuid",
+          "imageWidth": "integer",
+          "imageHeight": "integer",
+          "boundingBoxX1": "integer",
+          "boundingBoxY1": "integer",
+          "boundingBoxX2": "integer",
+          "boundingBoxY2": "integer",
+          "sourceType": "sourcetype",
+          "deletedAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "isVisible": "boolean"
+        }
+      },
+      "asset_file": {
+        "columns": [
+          "id",
+          "assetId",
+          "createdAt",
+          "updatedAt",
+          "type",
+          "path",
+          "updateId",
+          "isEdited",
+          "isProgressive",
+          "isTransparent"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "type": "character varying",
+          "path": "character varying",
+          "updateId": "uuid",
+          "isEdited": "boolean",
+          "isProgressive": "boolean",
+          "isTransparent": "boolean"
+        }
+      },
+      "asset_job_status": {
+        "columns": ["assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "ocrAt"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "facesRecognizedAt": "timestamp with time zone",
+          "metadataExtractedAt": "timestamp with time zone",
+          "duplicatesDetectedAt": "timestamp with time zone",
+          "ocrAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata_audit": {
+        "columns": ["id", "assetId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata": {
+        "columns": ["assetId", "key", "value", "updateId", "updatedAt"],
+        "key": ["assetId", "key"],
+        "types": {
+          "assetId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr_audit": {
+        "columns": ["id", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr": {
+        "columns": [
+          "id",
+          "assetId",
+          "x1",
+          "y1",
+          "x2",
+          "y2",
+          "x3",
+          "y3",
+          "x4",
+          "y4",
+          "boxScore",
+          "textScore",
+          "text",
+          "isVisible",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "x1": "real",
+          "y1": "real",
+          "x2": "real",
+          "y2": "real",
+          "x3": "real",
+          "y3": "real",
+          "x4": "real",
+          "y4": "real",
+          "boxScore": "real",
+          "textScore": "real",
+          "text": "text",
+          "isVisible": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "asset": {
+        "columns": [
+          "id",
+          "ownerId",
+          "type",
+          "originalPath",
+          "fileCreatedAt",
+          "fileModifiedAt",
+          "isFavorite",
+          "duration",
+          "checksum",
+          "checksumAlgorithm",
+          "livePhotoVideoId",
+          "updatedAt",
+          "createdAt",
+          "originalFileName",
+          "thumbhash",
+          "isOffline",
+          "libraryId",
+          "isExternal",
+          "deletedAt",
+          "localDateTime",
+          "stackId",
+          "duplicateId",
+          "status",
+          "updateId",
+          "visibility",
+          "width",
+          "height",
+          "isEdited"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "originalPath": "character varying",
+          "fileCreatedAt": "timestamp with time zone",
+          "fileModifiedAt": "timestamp with time zone",
+          "isFavorite": "boolean",
+          "duration": "integer",
+          "checksum": "bytea",
+          "checksumAlgorithm": "asset_checksum_algorithm_enum",
+          "livePhotoVideoId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone",
+          "originalFileName": "character varying",
+          "thumbhash": "bytea",
+          "isOffline": "boolean",
+          "libraryId": "uuid",
+          "isExternal": "boolean",
+          "deletedAt": "timestamp with time zone",
+          "localDateTime": "timestamp with time zone",
+          "stackId": "uuid",
+          "duplicateId": "uuid",
+          "status": "assets_status_enum",
+          "updateId": "uuid",
+          "visibility": "asset_visibility_enum",
+          "width": "integer",
+          "height": "integer",
+          "isEdited": "boolean"
+        }
+      },
+      "face_search": {
+        "columns": ["faceId", "embedding"],
+        "key": ["faceId"],
+        "types": {
+          "faceId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "geodata_places": {
+        "columns": [
+          "id",
+          "name",
+          "longitude",
+          "latitude",
+          "countryCode",
+          "admin1Code",
+          "admin2Code",
+          "modificationDate",
+          "admin1Name",
+          "admin2Name",
+          "alternateNames"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "name": "character varying(200)",
+          "longitude": "double precision",
+          "latitude": "double precision",
+          "countryCode": "character(2)",
+          "admin1Code": "character varying(20)",
+          "admin2Code": "character varying(80)",
+          "modificationDate": "date",
+          "admin1Name": "character varying",
+          "admin2Name": "character varying",
+          "alternateNames": "character varying"
+        }
+      },
+      "integrity_report": {
+        "columns": ["id", "type", "path", "createdAt", "assetId", "fileAssetId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "type": "character varying",
+          "path": "character varying",
+          "createdAt": "timestamp with time zone",
+          "assetId": "uuid",
+          "fileAssetId": "uuid"
+        }
+      },
+      "library": {
+        "columns": [
+          "id",
+          "name",
+          "ownerId",
+          "importPaths",
+          "exclusionPatterns",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "refreshedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "ownerId": "uuid",
+          "importPaths": "text[]",
+          "exclusionPatterns": "text[]",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "refreshedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_asset_audit": {
+        "columns": ["id", "memoryId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory_asset": {
+        "columns": ["memoriesId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["memoriesId", "assetId"],
+        "types": {
+          "memoriesId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_audit": {
+        "columns": ["id", "memoryId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "ownerId",
+          "type",
+          "data",
+          "isSaved",
+          "memoryAt",
+          "seenAt",
+          "showAt",
+          "hideAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "data": "jsonb",
+          "isSaved": "boolean",
+          "memoryAt": "timestamp with time zone",
+          "seenAt": "timestamp with time zone",
+          "showAt": "timestamp with time zone",
+          "hideAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "move_history": {
+        "columns": ["id", "entityId", "pathType", "oldPath", "newPath"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "entityId": "uuid",
+          "pathType": "character varying",
+          "oldPath": "character varying",
+          "newPath": "character varying"
+        }
+      },
+      "naturalearth_countries": {
+        "columns": ["id", "admin", "admin_a3", "type", "coordinates"],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "admin": "character varying(50)",
+          "admin_a3": "character varying(3)",
+          "type": "character varying(50)",
+          "coordinates": "polygon"
+        }
+      },
+      "notification": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "updateId",
+          "userId",
+          "level",
+          "type",
+          "data",
+          "title",
+          "description",
+          "readAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "userId": "uuid",
+          "level": "character varying",
+          "type": "character varying",
+          "data": "jsonb",
+          "title": "character varying",
+          "description": "text",
+          "readAt": "timestamp with time zone"
+        }
+      },
+      "ocr_search": {
+        "columns": ["assetId", "text"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "text": "text"
+        }
+      },
+      "partner_audit": {
+        "columns": ["id", "sharedById", "sharedWithId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "partner": {
+        "columns": ["sharedById", "sharedWithId", "createdAt", "createId", "updatedAt", "inTimeline", "updateId"],
+        "key": ["sharedById", "sharedWithId"],
+        "types": {
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "createId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "inTimeline": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "person_audit": {
+        "columns": ["id", "personId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "personId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "person": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "ownerId",
+          "name",
+          "thumbnailPath",
+          "isHidden",
+          "birthDate",
+          "faceAssetId",
+          "isFavorite",
+          "color",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "ownerId": "uuid",
+          "name": "character varying",
+          "thumbnailPath": "character varying",
+          "isHidden": "boolean",
+          "birthDate": "date",
+          "faceAssetId": "uuid",
+          "isFavorite": "boolean",
+          "color": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "plugin_method": {
+        "columns": [
+          "id",
+          "pluginId",
+          "name",
+          "title",
+          "description",
+          "types",
+          "hostFunctions",
+          "allowedHosts",
+          "schema",
+          "uiHints"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "pluginId": "uuid",
+          "name": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "types": "character varying[]",
+          "hostFunctions": "boolean",
+          "allowedHosts": "character varying[]",
+          "schema": "jsonb",
+          "uiHints": "character varying[]"
+        }
+      },
+      "plugin": {
+        "columns": [
+          "id",
+          "enabled",
+          "name",
+          "version",
+          "title",
+          "description",
+          "author",
+          "wasmBytes",
+          "templates",
+          "sha256hash",
+          "createdAt",
+          "updatedAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "name": "character varying",
+          "version": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "author": "character varying",
+          "wasmBytes": "bytea",
+          "templates": "jsonb",
+          "sha256hash": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "session": {
+        "columns": [
+          "id",
+          "token",
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "userId",
+          "parentId",
+          "deviceType",
+          "deviceOS",
+          "appVersion",
+          "updateId",
+          "isPendingSyncReset",
+          "pinExpiresAt",
+          "oauthSid",
+          "oauthBearerToken"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "token": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "userId": "uuid",
+          "parentId": "uuid",
+          "deviceType": "character varying",
+          "deviceOS": "character varying",
+          "appVersion": "character varying",
+          "updateId": "uuid",
+          "isPendingSyncReset": "boolean",
+          "pinExpiresAt": "timestamp with time zone",
+          "oauthSid": "character varying",
+          "oauthBearerToken": "character varying"
+        }
+      },
+      "shared_link_asset": {
+        "columns": ["assetId", "sharedLinkId"],
+        "key": ["assetId", "sharedLinkId"],
+        "types": {
+          "assetId": "uuid",
+          "sharedLinkId": "uuid"
+        }
+      },
+      "shared_link": {
+        "columns": [
+          "id",
+          "description",
+          "userId",
+          "key",
+          "type",
+          "createdAt",
+          "expiresAt",
+          "allowUpload",
+          "albumId",
+          "allowDownload",
+          "showExif",
+          "password",
+          "slug"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "description": "character varying",
+          "userId": "uuid",
+          "key": "bytea",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "allowUpload": "boolean",
+          "albumId": "uuid",
+          "allowDownload": "boolean",
+          "showExif": "boolean",
+          "password": "character varying",
+          "slug": "character varying"
+        }
+      },
+      "smart_search": {
+        "columns": ["assetId", "embedding"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "stack_audit": {
+        "columns": ["id", "stackId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "stackId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "stack": {
+        "columns": ["id", "createdAt", "updatedAt", "updateId", "primaryAssetId", "ownerId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "primaryAssetId": "uuid",
+          "ownerId": "uuid"
+        }
+      },
+      "session_sync_checkpoint": {
+        "columns": ["sessionId", "type", "createdAt", "updatedAt", "ack", "updateId"],
+        "key": ["sessionId", "type"],
+        "types": {
+          "sessionId": "uuid",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "ack": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "system_metadata": {
+        "columns": ["key", "value"],
+        "key": ["key"],
+        "types": {
+          "key": "character varying",
+          "value": "jsonb"
+        }
+      },
+      "tag_asset": {
+        "columns": ["assetId", "tagId"],
+        "key": ["assetId", "tagId"],
+        "types": {
+          "assetId": "uuid",
+          "tagId": "uuid"
+        }
+      },
+      "tag_closure": {
+        "columns": ["id_ancestor", "id_descendant"],
+        "key": ["id_ancestor", "id_descendant"],
+        "types": {
+          "id_ancestor": "uuid",
+          "id_descendant": "uuid"
+        }
+      },
+      "tag": {
+        "columns": ["id", "userId", "value", "createdAt", "updatedAt", "color", "parentId", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "value": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "color": "character varying",
+          "parentId": "uuid",
+          "updateId": "uuid"
+        }
+      },
+      "user_audit": {
+        "columns": ["id", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata_audit": {
+        "columns": ["id", "userId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata": {
+        "columns": ["userId", "key", "value", "updateId", "updatedAt"],
+        "key": ["userId", "key"],
+        "types": {
+          "userId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "user": {
+        "columns": [
+          "id",
+          "email",
+          "password",
+          "pinCode",
+          "createdAt",
+          "profileImagePath",
+          "isAdmin",
+          "shouldChangePassword",
+          "avatarColor",
+          "deletedAt",
+          "oauthId",
+          "updatedAt",
+          "storageLabel",
+          "name",
+          "quotaSizeInBytes",
+          "quotaUsageInBytes",
+          "status",
+          "profileChangedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "email": "character varying",
+          "password": "character varying",
+          "pinCode": "character varying",
+          "createdAt": "timestamp with time zone",
+          "profileImagePath": "character varying",
+          "isAdmin": "boolean",
+          "shouldChangePassword": "boolean",
+          "avatarColor": "character varying",
+          "deletedAt": "timestamp with time zone",
+          "oauthId": "character varying",
+          "updatedAt": "timestamp with time zone",
+          "storageLabel": "character varying",
+          "name": "character varying",
+          "quotaSizeInBytes": "bigint",
+          "quotaUsageInBytes": "bigint",
+          "status": "character varying",
+          "profileChangedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "version_history": {
+        "columns": ["id", "createdAt", "version"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "version": "character varying"
+        }
+      },
+      "video_stream_session": {
+        "columns": ["id", "assetId", "expiresAt", "createdAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "expiresAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone"
+        }
+      },
+      "video_stream_variant": {
+        "columns": ["id", "sessionId", "createdAt", "bitrate", "codec", "resolution"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sessionId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "bitrate": "integer",
+          "codec": "video_stream_variant_codec_enum",
+          "resolution": "smallint"
+        }
+      },
+      "video_stream_segment": {
+        "columns": ["variantId", "index", "durationUs"],
+        "key": ["variantId", "index"],
+        "types": {
+          "variantId": "uuid",
+          "index": "integer",
+          "durationUs": "integer"
+        }
+      },
+      "workflow_step": {
+        "columns": ["id", "enabled", "workflowId", "pluginMethodId", "config", "order"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "workflowId": "uuid",
+          "pluginMethodId": "uuid",
+          "config": "jsonb",
+          "order": "integer"
+        }
+      },
+      "workflow": {
+        "columns": ["id", "ownerId", "trigger", "name", "description", "createdAt", "updatedAt", "updateId", "enabled"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "trigger": "character varying",
+          "name": "character varying",
+          "description": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "enabled": "boolean"
+        }
+      },
+      "migration_overrides": {
+        "columns": ["name", "value"],
+        "key": ["name"],
+        "types": {
+          "name": "character varying",
+          "value": "jsonb"
+        }
+      }
+    },
+    "1b63aaf5fffa962104152652469ae456914a0b85a2460006e83f5b4e1de2cda6": {
+      "activity": {
+        "columns": ["id", "createdAt", "updatedAt", "albumId", "userId", "assetId", "comment", "isLiked", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "assetId": "uuid",
+          "comment": "text",
+          "isLiked": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "album_asset_audit": {
+        "columns": ["id", "albumId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_asset": {
+        "columns": ["albumId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["albumId", "assetId"],
+        "types": {
+          "albumId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "album_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user_audit": {
+        "columns": ["id", "albumId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "album_user": {
+        "columns": ["albumId", "userId", "role", "createId", "createdAt", "updateId", "updatedAt"],
+        "key": ["albumId", "userId"],
+        "types": {
+          "albumId": "uuid",
+          "userId": "uuid",
+          "role": "album_user_role_enum",
+          "createId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "album": {
+        "columns": [
+          "id",
+          "albumName",
+          "createdAt",
+          "albumThumbnailAssetId",
+          "updatedAt",
+          "description",
+          "deletedAt",
+          "isActivityEnabled",
+          "order",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "albumName": "character varying",
+          "createdAt": "timestamp with time zone",
+          "albumThumbnailAssetId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "description": "text",
+          "deletedAt": "timestamp with time zone",
+          "isActivityEnabled": "boolean",
+          "order": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "api_key": {
+        "columns": ["id", "name", "key", "userId", "createdAt", "updatedAt", "permissions", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "key": "bytea",
+          "userId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "permissions": "character varying[]",
+          "updateId": "uuid"
+        }
+      },
+      "asset_audit": {
+        "columns": ["id", "assetId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_audio": {
+        "columns": ["assetId", "bitrate", "index", "profile", "codecName"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "codecName": "text"
+        }
+      },
+      "asset_video": {
+        "columns": [
+          "assetId",
+          "bitrate",
+          "frameCount",
+          "timeBase",
+          "index",
+          "profile",
+          "level",
+          "colorPrimaries",
+          "colorTransfer",
+          "colorMatrix",
+          "dvProfile",
+          "dvLevel",
+          "dvBlSignalCompatibilityId",
+          "codecName",
+          "formatName",
+          "formatLongName",
+          "pixelFormat"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "bitrate": "integer",
+          "frameCount": "integer",
+          "timeBase": "integer",
+          "index": "smallint",
+          "profile": "smallint",
+          "level": "smallint",
+          "colorPrimaries": "smallint",
+          "colorTransfer": "smallint",
+          "colorMatrix": "smallint",
+          "dvProfile": "smallint",
+          "dvLevel": "smallint",
+          "dvBlSignalCompatibilityId": "smallint",
+          "codecName": "text",
+          "formatName": "text",
+          "formatLongName": "text",
+          "pixelFormat": "text"
+        }
+      },
+      "asset_keyframe": {
+        "columns": ["assetId", "pts", "accDuration", "ownDuration", "totalDuration", "packetCount", "outputFrames"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "pts": "integer[]",
+          "accDuration": "integer[]",
+          "ownDuration": "integer[]",
+          "totalDuration": "integer",
+          "packetCount": "integer",
+          "outputFrames": "integer"
+        }
+      },
+      "asset_edit_audit": {
+        "columns": ["id", "editId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "editId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_edit": {
+        "columns": ["id", "assetId", "action", "parameters", "sequence", "updatedAt", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "action": "character varying",
+          "parameters": "jsonb",
+          "sequence": "integer",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "asset_exif": {
+        "columns": [
+          "assetId",
+          "make",
+          "model",
+          "exifImageWidth",
+          "exifImageHeight",
+          "fileSizeInByte",
+          "orientation",
+          "dateTimeOriginal",
+          "modifyDate",
+          "lensModel",
+          "fNumber",
+          "focalLength",
+          "iso",
+          "latitude",
+          "longitude",
+          "city",
+          "state",
+          "country",
+          "description",
+          "fps",
+          "exposureTime",
+          "livePhotoCID",
+          "timeZone",
+          "projectionType",
+          "profileDescription",
+          "colorspace",
+          "bitsPerSample",
+          "autoStackId",
+          "rating",
+          "tags",
+          "updatedAt",
+          "updateId",
+          "lockedProperties"
+        ],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "make": "character varying",
+          "model": "character varying",
+          "exifImageWidth": "integer",
+          "exifImageHeight": "integer",
+          "fileSizeInByte": "bigint",
+          "orientation": "character varying",
+          "dateTimeOriginal": "timestamp with time zone",
+          "modifyDate": "timestamp with time zone",
+          "lensModel": "character varying",
+          "fNumber": "double precision",
+          "focalLength": "double precision",
+          "iso": "integer",
+          "latitude": "double precision",
+          "longitude": "double precision",
+          "city": "character varying",
+          "state": "character varying",
+          "country": "character varying",
+          "description": "text",
+          "fps": "double precision",
+          "exposureTime": "character varying",
+          "livePhotoCID": "character varying",
+          "timeZone": "character varying",
+          "projectionType": "character varying",
+          "profileDescription": "character varying",
+          "colorspace": "character varying",
+          "bitsPerSample": "integer",
+          "autoStackId": "character varying",
+          "rating": "integer",
+          "tags": "character varying[]",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "lockedProperties": "character varying[]"
+        }
+      },
+      "asset_face_audit": {
+        "columns": ["id", "assetFaceId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetFaceId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_face": {
+        "columns": [
+          "id",
+          "assetId",
+          "personGroupId",
+          "imageWidth",
+          "imageHeight",
+          "boundingBoxX1",
+          "boundingBoxY1",
+          "boundingBoxX2",
+          "boundingBoxY2",
+          "sourceType",
+          "deletedAt",
+          "updatedAt",
+          "updateId",
+          "isVisible"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "personGroupId": "uuid",
+          "imageWidth": "integer",
+          "imageHeight": "integer",
+          "boundingBoxX1": "integer",
+          "boundingBoxY1": "integer",
+          "boundingBoxX2": "integer",
+          "boundingBoxY2": "integer",
+          "sourceType": "sourcetype",
+          "deletedAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "isVisible": "boolean"
+        }
+      },
+      "asset_file": {
+        "columns": [
+          "id",
+          "assetId",
+          "createdAt",
+          "updatedAt",
+          "type",
+          "path",
+          "updateId",
+          "isEdited",
+          "isProgressive",
+          "isTransparent"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "type": "character varying",
+          "path": "character varying",
+          "updateId": "uuid",
+          "isEdited": "boolean",
+          "isProgressive": "boolean",
+          "isTransparent": "boolean"
+        }
+      },
+      "asset_job_status": {
+        "columns": ["assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "ocrAt"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "facesRecognizedAt": "timestamp with time zone",
+          "metadataExtractedAt": "timestamp with time zone",
+          "duplicatesDetectedAt": "timestamp with time zone",
+          "ocrAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata_audit": {
+        "columns": ["id", "assetId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_metadata": {
+        "columns": ["assetId", "key", "value", "updateId", "updatedAt"],
+        "key": ["assetId", "key"],
+        "types": {
+          "assetId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr_audit": {
+        "columns": ["id", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "asset_ocr": {
+        "columns": [
+          "id",
+          "assetId",
+          "x1",
+          "y1",
+          "x2",
+          "y2",
+          "x3",
+          "y3",
+          "x4",
+          "y4",
+          "boxScore",
+          "textScore",
+          "text",
+          "isVisible",
+          "updatedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "x1": "real",
+          "y1": "real",
+          "x2": "real",
+          "y2": "real",
+          "x3": "real",
+          "y3": "real",
+          "x4": "real",
+          "y4": "real",
+          "boxScore": "real",
+          "textScore": "real",
+          "text": "text",
+          "isVisible": "boolean",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "asset": {
+        "columns": [
+          "id",
+          "ownerId",
+          "type",
+          "originalPath",
+          "fileCreatedAt",
+          "fileModifiedAt",
+          "isFavorite",
+          "duration",
+          "checksum",
+          "checksumAlgorithm",
+          "livePhotoVideoId",
+          "updatedAt",
+          "createdAt",
+          "originalFileName",
+          "thumbhash",
+          "isOffline",
+          "libraryId",
+          "isExternal",
+          "deletedAt",
+          "localDateTime",
+          "stackId",
+          "duplicateId",
+          "status",
+          "updateId",
+          "visibility",
+          "width",
+          "height",
+          "isEdited"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "originalPath": "character varying",
+          "fileCreatedAt": "timestamp with time zone",
+          "fileModifiedAt": "timestamp with time zone",
+          "isFavorite": "boolean",
+          "duration": "integer",
+          "checksum": "bytea",
+          "checksumAlgorithm": "asset_checksum_algorithm_enum",
+          "livePhotoVideoId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone",
+          "originalFileName": "character varying",
+          "thumbhash": "bytea",
+          "isOffline": "boolean",
+          "libraryId": "uuid",
+          "isExternal": "boolean",
+          "deletedAt": "timestamp with time zone",
+          "localDateTime": "timestamp with time zone",
+          "stackId": "uuid",
+          "duplicateId": "uuid",
+          "status": "assets_status_enum",
+          "updateId": "uuid",
+          "visibility": "asset_visibility_enum",
+          "width": "integer",
+          "height": "integer",
+          "isEdited": "boolean"
+        }
+      },
+      "cluster_group_request": {
+        "columns": ["id", "clusterGroupId", "userId", "createdAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "clusterGroupId": "uuid",
+          "userId": "uuid",
+          "createdAt": "timestamp with time zone"
+        }
+      },
+      "cluster_group": {
+        "columns": ["id", "name", "createdAt", "updatedAt", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "face_search": {
+        "columns": ["faceId", "embedding"],
+        "key": ["faceId"],
+        "types": {
+          "faceId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "geodata_places": {
+        "columns": [
+          "id",
+          "name",
+          "longitude",
+          "latitude",
+          "countryCode",
+          "admin1Code",
+          "admin2Code",
+          "modificationDate",
+          "admin1Name",
+          "admin2Name",
+          "alternateNames"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "name": "character varying(200)",
+          "longitude": "double precision",
+          "latitude": "double precision",
+          "countryCode": "character(2)",
+          "admin1Code": "character varying(20)",
+          "admin2Code": "character varying(80)",
+          "modificationDate": "date",
+          "admin1Name": "character varying",
+          "admin2Name": "character varying",
+          "alternateNames": "character varying"
+        }
+      },
+      "integrity_report": {
+        "columns": ["id", "type", "path", "createdAt", "assetId", "fileAssetId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "type": "character varying",
+          "path": "character varying",
+          "createdAt": "timestamp with time zone",
+          "assetId": "uuid",
+          "fileAssetId": "uuid"
+        }
+      },
+      "library": {
+        "columns": [
+          "id",
+          "name",
+          "ownerId",
+          "importPaths",
+          "exclusionPatterns",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "refreshedAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "name": "character varying",
+          "ownerId": "uuid",
+          "importPaths": "text[]",
+          "exclusionPatterns": "text[]",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "refreshedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_asset_audit": {
+        "columns": ["id", "memoryId", "assetId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "assetId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory_asset": {
+        "columns": ["memoriesId", "assetId", "createdAt", "updatedAt", "updateId"],
+        "key": ["memoriesId", "assetId"],
+        "types": {
+          "memoriesId": "uuid",
+          "assetId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "memory_audit": {
+        "columns": ["id", "memoryId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "memoryId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "memory": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "ownerId",
+          "type",
+          "data",
+          "isSaved",
+          "memoryAt",
+          "seenAt",
+          "showAt",
+          "hideAt",
+          "updateId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "ownerId": "uuid",
+          "type": "character varying",
+          "data": "jsonb",
+          "isSaved": "boolean",
+          "memoryAt": "timestamp with time zone",
+          "seenAt": "timestamp with time zone",
+          "showAt": "timestamp with time zone",
+          "hideAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "move_history": {
+        "columns": ["id", "entityId", "pathType", "oldPath", "newPath"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "entityId": "uuid",
+          "pathType": "character varying",
+          "oldPath": "character varying",
+          "newPath": "character varying"
+        }
+      },
+      "naturalearth_countries": {
+        "columns": ["id", "admin", "admin_a3", "type", "coordinates"],
+        "key": ["id"],
+        "types": {
+          "id": "integer",
+          "admin": "character varying(50)",
+          "admin_a3": "character varying(3)",
+          "type": "character varying(50)",
+          "coordinates": "polygon"
+        }
+      },
+      "notification": {
+        "columns": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "deletedAt",
+          "updateId",
+          "userId",
+          "level",
+          "type",
+          "data",
+          "title",
+          "description",
+          "readAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "deletedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "userId": "uuid",
+          "level": "character varying",
+          "type": "character varying",
+          "data": "jsonb",
+          "title": "character varying",
+          "description": "text",
+          "readAt": "timestamp with time zone"
+        }
+      },
+      "ocr_search": {
+        "columns": ["assetId", "text"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "text": "text"
+        }
+      },
+      "partner_audit": {
+        "columns": ["id", "sharedById", "sharedWithId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "partner": {
+        "columns": ["sharedById", "sharedWithId", "createdAt", "createId", "updatedAt", "inTimeline", "updateId"],
+        "key": ["sharedById", "sharedWithId"],
+        "types": {
+          "sharedById": "uuid",
+          "sharedWithId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "createId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "inTimeline": "boolean",
+          "updateId": "uuid"
+        }
+      },
+      "person_audit": {
+        "columns": ["id", "personGroupId", "ownerId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "personGroupId": "uuid",
+          "ownerId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "person_group_audit": {
+        "columns": ["id", "personGroupId", "clusterGroupId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "personGroupId": "uuid",
+          "clusterGroupId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "person_group": {
+        "columns": ["id", "clusterGroupId", "createdAt", "createId", "updatedAt", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "clusterGroupId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "createId": "uuid",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid"
+        }
+      },
+      "person": {
+        "columns": [
+          "ownerId",
+          "personGroupId",
+          "createdAt",
+          "updatedAt",
+          "name",
+          "thumbnailPath",
+          "isHidden",
+          "birthDate",
+          "faceAssetId",
+          "isFavorite",
+          "color",
+          "updateId"
+        ],
+        "key": ["ownerId", "personGroupId"],
+        "types": {
+          "ownerId": "uuid",
+          "personGroupId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "name": "character varying",
+          "thumbnailPath": "character varying",
+          "isHidden": "boolean",
+          "birthDate": "date",
+          "faceAssetId": "uuid",
+          "isFavorite": "boolean",
+          "color": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "plugin_method": {
+        "columns": [
+          "id",
+          "pluginId",
+          "name",
+          "title",
+          "description",
+          "types",
+          "hostFunctions",
+          "allowedHosts",
+          "schema",
+          "uiHints"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "pluginId": "uuid",
+          "name": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "types": "character varying[]",
+          "hostFunctions": "boolean",
+          "allowedHosts": "character varying[]",
+          "schema": "jsonb",
+          "uiHints": "character varying[]"
+        }
+      },
+      "plugin": {
+        "columns": [
+          "id",
+          "enabled",
+          "name",
+          "version",
+          "title",
+          "description",
+          "author",
+          "wasmBytes",
+          "templates",
+          "sha256hash",
+          "createdAt",
+          "updatedAt"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "name": "character varying",
+          "version": "character varying",
+          "title": "character varying",
+          "description": "character varying",
+          "author": "character varying",
+          "wasmBytes": "bytea",
+          "templates": "jsonb",
+          "sha256hash": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "session": {
+        "columns": [
+          "id",
+          "token",
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "userId",
+          "parentId",
+          "deviceType",
+          "deviceOS",
+          "appVersion",
+          "updateId",
+          "isPendingSyncReset",
+          "pinExpiresAt",
+          "oauthSid",
+          "oauthBearerToken"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "token": "bytea",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "userId": "uuid",
+          "parentId": "uuid",
+          "deviceType": "character varying",
+          "deviceOS": "character varying",
+          "appVersion": "character varying",
+          "updateId": "uuid",
+          "isPendingSyncReset": "boolean",
+          "pinExpiresAt": "timestamp with time zone",
+          "oauthSid": "character varying",
+          "oauthBearerToken": "character varying"
+        }
+      },
+      "shared_link_asset": {
+        "columns": ["assetId", "sharedLinkId"],
+        "key": ["assetId", "sharedLinkId"],
+        "types": {
+          "assetId": "uuid",
+          "sharedLinkId": "uuid"
+        }
+      },
+      "shared_link": {
+        "columns": [
+          "id",
+          "description",
+          "userId",
+          "key",
+          "type",
+          "createdAt",
+          "expiresAt",
+          "allowUpload",
+          "albumId",
+          "allowDownload",
+          "showExif",
+          "password",
+          "slug"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "description": "character varying",
+          "userId": "uuid",
+          "key": "bytea",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "expiresAt": "timestamp with time zone",
+          "allowUpload": "boolean",
+          "albumId": "uuid",
+          "allowDownload": "boolean",
+          "showExif": "boolean",
+          "password": "character varying",
+          "slug": "character varying"
+        }
+      },
+      "smart_search": {
+        "columns": ["assetId", "embedding"],
+        "key": ["assetId"],
+        "types": {
+          "assetId": "uuid",
+          "embedding": "vector"
+        }
+      },
+      "stack_audit": {
+        "columns": ["id", "stackId", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "stackId": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "stack": {
+        "columns": ["id", "createdAt", "updatedAt", "updateId", "primaryAssetId", "ownerId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "primaryAssetId": "uuid",
+          "ownerId": "uuid"
+        }
+      },
+      "session_sync_checkpoint": {
+        "columns": ["sessionId", "type", "createdAt", "updatedAt", "ack", "updateId"],
+        "key": ["sessionId", "type"],
+        "types": {
+          "sessionId": "uuid",
+          "type": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "ack": "character varying",
+          "updateId": "uuid"
+        }
+      },
+      "system_metadata": {
+        "columns": ["key", "value"],
+        "key": ["key"],
+        "types": {
+          "key": "character varying",
+          "value": "jsonb"
+        }
+      },
+      "tag_asset": {
+        "columns": ["assetId", "tagId"],
+        "key": ["assetId", "tagId"],
+        "types": {
+          "assetId": "uuid",
+          "tagId": "uuid"
+        }
+      },
+      "tag_closure": {
+        "columns": ["id_ancestor", "id_descendant"],
+        "key": ["id_ancestor", "id_descendant"],
+        "types": {
+          "id_ancestor": "uuid",
+          "id_descendant": "uuid"
+        }
+      },
+      "tag": {
+        "columns": ["id", "userId", "value", "createdAt", "updatedAt", "color", "parentId", "updateId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "value": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "color": "character varying",
+          "parentId": "uuid",
+          "updateId": "uuid"
+        }
+      },
+      "user_audit": {
+        "columns": ["id", "userId", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata_audit": {
+        "columns": ["id", "userId", "key", "deletedAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "userId": "uuid",
+          "key": "character varying",
+          "deletedAt": "timestamp with time zone"
+        }
+      },
+      "user_metadata": {
+        "columns": ["userId", "key", "value", "updateId", "updatedAt"],
+        "key": ["userId", "key"],
+        "types": {
+          "userId": "uuid",
+          "key": "character varying",
+          "value": "jsonb",
+          "updateId": "uuid",
+          "updatedAt": "timestamp with time zone"
+        }
+      },
+      "user": {
+        "columns": [
+          "id",
+          "email",
+          "password",
+          "pinCode",
+          "createdAt",
+          "profileImagePath",
+          "isAdmin",
+          "shouldChangePassword",
+          "avatarColor",
+          "deletedAt",
+          "oauthId",
+          "updatedAt",
+          "storageLabel",
+          "name",
+          "quotaSizeInBytes",
+          "quotaUsageInBytes",
+          "status",
+          "profileChangedAt",
+          "updateId",
+          "clusterGroupId"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "email": "character varying",
+          "password": "character varying",
+          "pinCode": "character varying",
+          "createdAt": "timestamp with time zone",
+          "profileImagePath": "character varying",
+          "isAdmin": "boolean",
+          "shouldChangePassword": "boolean",
+          "avatarColor": "character varying",
+          "deletedAt": "timestamp with time zone",
+          "oauthId": "character varying",
+          "updatedAt": "timestamp with time zone",
+          "storageLabel": "character varying",
+          "name": "character varying",
+          "quotaSizeInBytes": "bigint",
+          "quotaUsageInBytes": "bigint",
+          "status": "character varying",
+          "profileChangedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "clusterGroupId": "uuid"
+        }
+      },
+      "version_history": {
+        "columns": ["id", "createdAt", "version"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "version": "character varying"
+        }
+      },
+      "video_stream_session": {
+        "columns": ["id", "assetId", "expiresAt", "createdAt"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "assetId": "uuid",
+          "expiresAt": "timestamp with time zone",
+          "createdAt": "timestamp with time zone"
+        }
+      },
+      "video_stream_variant": {
+        "columns": ["id", "sessionId", "createdAt", "bitrate", "codec", "resolution"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "sessionId": "uuid",
+          "createdAt": "timestamp with time zone",
+          "bitrate": "integer",
+          "codec": "video_stream_variant_codec_enum",
+          "resolution": "smallint"
+        }
+      },
+      "video_stream_segment": {
+        "columns": ["variantId", "index", "durationUs"],
+        "key": ["variantId", "index"],
+        "types": {
+          "variantId": "uuid",
+          "index": "integer",
+          "durationUs": "integer"
+        }
+      },
+      "workflow_log": {
+        "columns": ["id", "createdAt", "workflowId", "result", "workflowStepId", "triggerDataId", "runId"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "createdAt": "timestamp with time zone",
+          "workflowId": "uuid",
+          "result": "character varying",
+          "workflowStepId": "uuid",
+          "triggerDataId": "uuid",
+          "runId": "uuid"
+        }
+      },
+      "workflow_step": {
+        "columns": ["id", "enabled", "workflowId", "pluginMethodId", "config", "order"],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "enabled": "boolean",
+          "workflowId": "uuid",
+          "pluginMethodId": "uuid",
+          "config": "jsonb",
+          "order": "integer"
+        }
+      },
+      "workflow": {
+        "columns": [
+          "id",
+          "ownerId",
+          "trigger",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "updateId",
+          "enabled",
+          "logging"
+        ],
+        "key": ["id"],
+        "types": {
+          "id": "uuid",
+          "ownerId": "uuid",
+          "trigger": "character varying",
+          "name": "character varying",
+          "description": "character varying",
+          "createdAt": "timestamp with time zone",
+          "updatedAt": "timestamp with time zone",
+          "updateId": "uuid",
+          "enabled": "boolean",
+          "logging": "boolean"
+        }
+      },
+      "migration_overrides": {
+        "columns": ["name", "value"],
+        "key": ["name"],
+        "types": {
+          "name": "character varying",
+          "value": "jsonb"
+        }
+      }
+    }
+  },
+  "migrations": {
+    "f965ee234e7782d5925189d25a617833112756d4b3e8adc752023d0f1cc7b12c": [
+      "1744910873969-InitialMigration",
+      "1744991379464-AddNotificationsTable",
+      "1745244781846-AddUserAvatarColorColumn",
+      "1745902563899-AddAssetVisibilityColumn",
+      "1746636476623-DropExtraIndexes",
+      "1746768490606-AddUserPincode",
+      "1746844028242-AddLockedVisibilityEnum",
+      "1746987967923-AddPinExpiresAtColumn",
+      "1747329504572-AddNewSessionColumns",
+      "1747338664832-SessionRename",
+      "1747664684909-AddAlbumAuditTables",
+      "1749067526135-UserOnboardingDefault",
+      "1750107668827-PartnerCreateId",
+      "1750189909087-AddAlbumUserCreateFields",
+      "1750323941566-UnsetPrewarmDimParameter",
+      "1750676477029-AlbumAssetUpdateId",
+      "1750694237564-AlbumAssetAuditTable",
+      "1750780093818-AddAlbumToAssetDeleteTrigger",
+      "1751035357937-MemorySyncChanges",
+      "1751304834247-StackSyncChanges",
+      "1751924596408-AddOverrides",
+      "1752004072340-UpdateIndexOverrides",
+      "1752152941084-PeopleAuditTable",
+      "1752161055253-RenameGeodataPKConstraint",
+      "1752161055254-AddActivityAssetFk",
+      "1752169992364-AddIsPendingSyncReset",
+      "1752250924342-UserMetadataSync",
+      "1752267649968-StandardizeNames",
+      "1752759108283-ConvertToAbsolutePaths",
+      "1753104909784-AssetFaceUpdateIdAndAuditTable",
+      "1753464178233-RenameApiKeyPermissions",
+      "1753471866748-AddSharedLinkSlug",
+      "1753800911775-ProfileImageCheckpointRemoval",
+      "1754389095885-ResetAlbumAssetSync",
+      "1756318797207-AssetMetadataTables",
+      "1758705774125-CreateAssetOCRTable",
+      "1758705789125-CreateOCRSearchTable",
+      "1758705804128-UpsertOcrAssetJobStatus",
+      "1761078763279-AddAppVersionColumnToSession",
+      "1761755618862-FixColumnNames",
+      "1762297277677-AddPluginAndWorkflowTables",
+      "1764483051488-OCRBigramsForCJK",
+      "1764698859174-SidecarInAssetFile",
+      "1764705680041-ChangeWorkflowTableColumnsName",
+      "1764957138636-AddLockedPropertiesToAssetExif",
+      "1768336661963-AddAssetWidthHeight",
+      "1768336671610-CreateAssetEditTable",
+      "1768336694315-CreateIsVisibleColumns",
+      "1768587436457-AddEditCountToAsset",
+      "1768757482271-SwitchToIsEdited",
+      "1768828334807-AddIsEditedToAssetFile",
+      "1768847456553-AddTagsToExif",
+      "1769105700133-AddAssetEditSequence",
+      "1769441657564-AddIsProgressiveColumn",
+      "1769635093204-DropThumbnailJobStatusColumns",
+      "1771478781948-PeopleSearchIndex",
+      "1771535611395-ConvertRating0ToNull",
+      "1771639515206-AddIsTransparentColumn",
+      "1771873044511-ChangesTokensToBuffers",
+      "1771873813973-AssetEditSync",
+      "1772121424533-AddAssetExifGistEarthcoord",
+      "1772129818245-FixStupidWhiteSpace",
+      "1772609167000-UpdateOpusCodecName",
+      "1773242919341-EncodedVideoAssetFiles",
+      "1773956345315-DuplicateSharedLinkAssets",
+      "1774393726320-AssetFaceSyncReset",
+      "1774548649115-AddChecksumAlgorithm.ts",
+      "1775165531374-AddPersonNameTrigramIndex",
+      "1776217577402-DropAuditTable",
+      "1776263790468-DropDeviceIdAndDeviceAssetId",
+      "1776332807985-SetOAuthAllowInsecureRequests",
+      "1776442031775-AddOauthSidToSession",
+      "1776792304485-ReconcileSqlToolsUpgradeChanges",
+      "1776848612954-MigrateAlbumOwnerIdToAlbumUser",
+      "1777415973792-AddVideoStreamTables",
+      "1777654048096-CreateAudioVideoTables",
+      "1777667825574-ChangeDurationToInteger",
+      "1777897107000-PartnerAssetSyncReset",
+      "1778614946174-UpdateWorkflowTables",
+      "1779806699547-AddPluginTemplates",
+      "1780435471692-DeleteMismatchedAssetFaces",
+      "1780592070031-ConvertNegativeRatingToNull",
+      "1780592071031-AssetOcrSync",
+      "1781089983296-CreateIntegrityReportTable",
+      "1782414436633-AddPluginMethodAllowedHosts"
+    ],
+    "18a9b9d7fc99d7805bf2921914759b6f13f3c3ed3a3b0501264e4b092d5a53f2": [
+      "1744910873969-InitialMigration",
+      "1744991379464-AddNotificationsTable",
+      "1745244781846-AddUserAvatarColorColumn",
+      "1745902563899-AddAssetVisibilityColumn",
+      "1746636476623-DropExtraIndexes",
+      "1746768490606-AddUserPincode",
+      "1746844028242-AddLockedVisibilityEnum",
+      "1746987967923-AddPinExpiresAtColumn",
+      "1747329504572-AddNewSessionColumns",
+      "1747338664832-SessionRename",
+      "1747664684909-AddAlbumAuditTables",
+      "1749067526135-UserOnboardingDefault",
+      "1750107668827-PartnerCreateId",
+      "1750189909087-AddAlbumUserCreateFields",
+      "1750323941566-UnsetPrewarmDimParameter",
+      "1750676477029-AlbumAssetUpdateId",
+      "1750694237564-AlbumAssetAuditTable",
+      "1750780093818-AddAlbumToAssetDeleteTrigger",
+      "1751035357937-MemorySyncChanges",
+      "1751304834247-StackSyncChanges",
+      "1751924596408-AddOverrides",
+      "1752004072340-UpdateIndexOverrides",
+      "1752152941084-PeopleAuditTable",
+      "1752161055253-RenameGeodataPKConstraint",
+      "1752161055254-AddActivityAssetFk",
+      "1752169992364-AddIsPendingSyncReset",
+      "1752250924342-UserMetadataSync",
+      "1752267649968-StandardizeNames",
+      "1752759108283-ConvertToAbsolutePaths",
+      "1753104909784-AssetFaceUpdateIdAndAuditTable",
+      "1753464178233-RenameApiKeyPermissions",
+      "1753471866748-AddSharedLinkSlug",
+      "1753800911775-ProfileImageCheckpointRemoval",
+      "1754389095885-ResetAlbumAssetSync",
+      "1756318797207-AssetMetadataTables",
+      "1758705774125-CreateAssetOCRTable",
+      "1758705789125-CreateOCRSearchTable",
+      "1758705804128-UpsertOcrAssetJobStatus",
+      "1761078763279-AddAppVersionColumnToSession",
+      "1761755618862-FixColumnNames",
+      "1762297277677-AddPluginAndWorkflowTables",
+      "1764483051488-OCRBigramsForCJK",
+      "1764698859174-SidecarInAssetFile",
+      "1764705680041-ChangeWorkflowTableColumnsName",
+      "1764957138636-AddLockedPropertiesToAssetExif",
+      "1768336661963-AddAssetWidthHeight",
+      "1768336671610-CreateAssetEditTable",
+      "1768336694315-CreateIsVisibleColumns",
+      "1768587436457-AddEditCountToAsset",
+      "1768757482271-SwitchToIsEdited",
+      "1768828334807-AddIsEditedToAssetFile",
+      "1768847456553-AddTagsToExif",
+      "1769105700133-AddAssetEditSequence",
+      "1769441657564-AddIsProgressiveColumn",
+      "1769635093204-DropThumbnailJobStatusColumns",
+      "1771478781948-PeopleSearchIndex",
+      "1771535611395-ConvertRating0ToNull",
+      "1771639515206-AddIsTransparentColumn",
+      "1771873044511-ChangesTokensToBuffers",
+      "1771873813973-AssetEditSync",
+      "1772121424533-AddAssetExifGistEarthcoord",
+      "1772129818245-FixStupidWhiteSpace",
+      "1772609167000-UpdateOpusCodecName",
+      "1773242919341-EncodedVideoAssetFiles",
+      "1773956345315-DuplicateSharedLinkAssets",
+      "1774393726320-AssetFaceSyncReset",
+      "1774548649115-AddChecksumAlgorithm.ts",
+      "1775165531374-AddPersonNameTrigramIndex",
+      "1776217577402-DropAuditTable",
+      "1776263790468-DropDeviceIdAndDeviceAssetId",
+      "1776332807985-SetOAuthAllowInsecureRequests",
+      "1776442031775-AddOauthSidToSession",
+      "1776792304485-ReconcileSqlToolsUpgradeChanges",
+      "1776848612954-MigrateAlbumOwnerIdToAlbumUser",
+      "1777415973792-AddVideoStreamTables",
+      "1777654048096-CreateAudioVideoTables",
+      "1777667825574-ChangeDurationToInteger",
+      "1777897107000-PartnerAssetSyncReset",
+      "1778614946174-UpdateWorkflowTables",
+      "1779806699547-AddPluginTemplates",
+      "1780435471692-DeleteMismatchedAssetFaces",
+      "1780592070031-ConvertNegativeRatingToNull",
+      "1780592071031-AssetOcrSync",
+      "1781089983296-CreateIntegrityReportTable",
+      "1782414436633-AddPluginMethodAllowedHosts",
+      "1782500000000-RestoreLivePhotoStillVisibility"
+    ],
+    "21406df1b4396fd14374046b7abf8761a2245c4a31a05a1f10003e904deaea70": [
+      "1744910873969-InitialMigration",
+      "1744991379464-AddNotificationsTable",
+      "1745244781846-AddUserAvatarColorColumn",
+      "1745902563899-AddAssetVisibilityColumn",
+      "1746636476623-DropExtraIndexes",
+      "1746768490606-AddUserPincode",
+      "1746844028242-AddLockedVisibilityEnum",
+      "1746987967923-AddPinExpiresAtColumn",
+      "1747329504572-AddNewSessionColumns",
+      "1747338664832-SessionRename",
+      "1747664684909-AddAlbumAuditTables",
+      "1749067526135-UserOnboardingDefault",
+      "1750107668827-PartnerCreateId",
+      "1750189909087-AddAlbumUserCreateFields",
+      "1750323941566-UnsetPrewarmDimParameter",
+      "1750676477029-AlbumAssetUpdateId",
+      "1750694237564-AlbumAssetAuditTable",
+      "1750780093818-AddAlbumToAssetDeleteTrigger",
+      "1751035357937-MemorySyncChanges",
+      "1751304834247-StackSyncChanges",
+      "1751924596408-AddOverrides",
+      "1752004072340-UpdateIndexOverrides",
+      "1752152941084-PeopleAuditTable",
+      "1752161055253-RenameGeodataPKConstraint",
+      "1752161055254-AddActivityAssetFk",
+      "1752169992364-AddIsPendingSyncReset",
+      "1752250924342-UserMetadataSync",
+      "1752267649968-StandardizeNames",
+      "1752759108283-ConvertToAbsolutePaths",
+      "1753104909784-AssetFaceUpdateIdAndAuditTable",
+      "1753464178233-RenameApiKeyPermissions",
+      "1753471866748-AddSharedLinkSlug",
+      "1753800911775-ProfileImageCheckpointRemoval",
+      "1754389095885-ResetAlbumAssetSync",
+      "1756318797207-AssetMetadataTables",
+      "1758705774125-CreateAssetOCRTable",
+      "1758705789125-CreateOCRSearchTable",
+      "1758705804128-UpsertOcrAssetJobStatus",
+      "1761078763279-AddAppVersionColumnToSession",
+      "1761755618862-FixColumnNames",
+      "1762297277677-AddPluginAndWorkflowTables",
+      "1764483051488-OCRBigramsForCJK",
+      "1764698859174-SidecarInAssetFile",
+      "1764705680041-ChangeWorkflowTableColumnsName",
+      "1764957138636-AddLockedPropertiesToAssetExif",
+      "1768336661963-AddAssetWidthHeight",
+      "1768336671610-CreateAssetEditTable",
+      "1768336694315-CreateIsVisibleColumns",
+      "1768587436457-AddEditCountToAsset",
+      "1768757482271-SwitchToIsEdited",
+      "1768828334807-AddIsEditedToAssetFile",
+      "1768847456553-AddTagsToExif",
+      "1769105700133-AddAssetEditSequence",
+      "1769441657564-AddIsProgressiveColumn",
+      "1769635093204-DropThumbnailJobStatusColumns",
+      "1771478781948-PeopleSearchIndex",
+      "1771535611395-ConvertRating0ToNull",
+      "1771639515206-AddIsTransparentColumn",
+      "1771873044511-ChangesTokensToBuffers",
+      "1771873813973-AssetEditSync",
+      "1772121424533-AddAssetExifGistEarthcoord",
+      "1772129818245-FixStupidWhiteSpace",
+      "1772609167000-UpdateOpusCodecName",
+      "1773242919341-EncodedVideoAssetFiles",
+      "1773956345315-DuplicateSharedLinkAssets",
+      "1774393726320-AssetFaceSyncReset",
+      "1774548649115-AddChecksumAlgorithm.ts",
+      "1775165531374-AddPersonNameTrigramIndex",
+      "1776217577402-DropAuditTable",
+      "1776263790468-DropDeviceIdAndDeviceAssetId",
+      "1776332807985-SetOAuthAllowInsecureRequests",
+      "1776442031775-AddOauthSidToSession",
+      "1776792304485-ReconcileSqlToolsUpgradeChanges",
+      "1776848612954-MigrateAlbumOwnerIdToAlbumUser",
+      "1777415973792-AddVideoStreamTables",
+      "1777654048096-CreateAudioVideoTables",
+      "1777667825574-ChangeDurationToInteger",
+      "1777897107000-PartnerAssetSyncReset",
+      "1778614946174-UpdateWorkflowTables",
+      "1779806699547-AddPluginTemplates",
+      "1780435471692-DeleteMismatchedAssetFaces",
+      "1780592070031-ConvertNegativeRatingToNull",
+      "1780592071031-AssetOcrSync",
+      "1781089983296-CreateIntegrityReportTable",
+      "1782414436633-AddPluginMethodAllowedHosts",
+      "1782500000000-RestoreLivePhotoStillVisibility",
+      "1784647658615-AddOAuthBearerTokenToSession",
+      "1784836013770-MinFacePreferenceMigration"
+    ],
+    "a22d29049a0b89d4a98053ace1e2b20721215d2f0b5cd8d454af8aaf6616b9b5": [
+      "1744910873969-InitialMigration",
+      "1744991379464-AddNotificationsTable",
+      "1745244781846-AddUserAvatarColorColumn",
+      "1745902563899-AddAssetVisibilityColumn",
+      "1746636476623-DropExtraIndexes",
+      "1746768490606-AddUserPincode",
+      "1746844028242-AddLockedVisibilityEnum",
+      "1746987967923-AddPinExpiresAtColumn",
+      "1747329504572-AddNewSessionColumns",
+      "1747338664832-SessionRename",
+      "1747664684909-AddAlbumAuditTables",
+      "1749067526135-UserOnboardingDefault",
+      "1750107668827-PartnerCreateId",
+      "1750189909087-AddAlbumUserCreateFields",
+      "1750323941566-UnsetPrewarmDimParameter",
+      "1750676477029-AlbumAssetUpdateId",
+      "1750694237564-AlbumAssetAuditTable",
+      "1750780093818-AddAlbumToAssetDeleteTrigger",
+      "1751035357937-MemorySyncChanges",
+      "1751304834247-StackSyncChanges",
+      "1751924596408-AddOverrides",
+      "1752004072340-UpdateIndexOverrides",
+      "1752152941084-PeopleAuditTable",
+      "1752161055253-RenameGeodataPKConstraint",
+      "1752161055254-AddActivityAssetFk",
+      "1752169992364-AddIsPendingSyncReset",
+      "1752250924342-UserMetadataSync",
+      "1752267649968-StandardizeNames",
+      "1752759108283-ConvertToAbsolutePaths",
+      "1753104909784-AssetFaceUpdateIdAndAuditTable",
+      "1753464178233-RenameApiKeyPermissions",
+      "1753471866748-AddSharedLinkSlug",
+      "1753800911775-ProfileImageCheckpointRemoval",
+      "1754389095885-ResetAlbumAssetSync",
+      "1756318797207-AssetMetadataTables",
+      "1758705774125-CreateAssetOCRTable",
+      "1758705789125-CreateOCRSearchTable",
+      "1758705804128-UpsertOcrAssetJobStatus",
+      "1761078763279-AddAppVersionColumnToSession",
+      "1761755618862-FixColumnNames",
+      "1762297277677-AddPluginAndWorkflowTables",
+      "1764483051488-OCRBigramsForCJK",
+      "1764698859174-SidecarInAssetFile",
+      "1764705680041-ChangeWorkflowTableColumnsName",
+      "1764957138636-AddLockedPropertiesToAssetExif",
+      "1768336661963-AddAssetWidthHeight",
+      "1768336671610-CreateAssetEditTable",
+      "1768336694315-CreateIsVisibleColumns",
+      "1768587436457-AddEditCountToAsset",
+      "1768757482271-SwitchToIsEdited",
+      "1768828334807-AddIsEditedToAssetFile",
+      "1768847456553-AddTagsToExif",
+      "1769105700133-AddAssetEditSequence",
+      "1769441657564-AddIsProgressiveColumn",
+      "1769635093204-DropThumbnailJobStatusColumns",
+      "1771478781948-PeopleSearchIndex",
+      "1771535611395-ConvertRating0ToNull",
+      "1771639515206-AddIsTransparentColumn",
+      "1771873044511-ChangesTokensToBuffers",
+      "1771873813973-AssetEditSync",
+      "1772121424533-AddAssetExifGistEarthcoord",
+      "1772129818245-FixStupidWhiteSpace",
+      "1772609167000-UpdateOpusCodecName",
+      "1773242919341-EncodedVideoAssetFiles",
+      "1773956345315-DuplicateSharedLinkAssets",
+      "1774393726320-AssetFaceSyncReset",
+      "1774548649115-AddChecksumAlgorithm.ts",
+      "1775165531374-AddPersonNameTrigramIndex",
+      "1776217577402-DropAuditTable",
+      "1776263790468-DropDeviceIdAndDeviceAssetId",
+      "1776332807985-SetOAuthAllowInsecureRequests",
+      "1776442031775-AddOauthSidToSession",
+      "1776792304485-ReconcileSqlToolsUpgradeChanges",
+      "1776848612954-MigrateAlbumOwnerIdToAlbumUser",
+      "1777415973792-AddVideoStreamTables",
+      "1777654048096-CreateAudioVideoTables",
+      "1777667825574-ChangeDurationToInteger",
+      "1777897107000-PartnerAssetSyncReset",
+      "1778614946174-UpdateWorkflowTables",
+      "1779806699547-AddPluginTemplates",
+      "1780435471692-DeleteMismatchedAssetFaces",
+      "1780592070031-ConvertNegativeRatingToNull",
+      "1780592071031-AssetOcrSync",
+      "1781089983296-CreateIntegrityReportTable",
+      "1782414436633-AddPluginMethodAllowedHosts",
+      "1782500000000-RestoreLivePhotoStillVisibility",
+      "1784647658615-AddOAuthBearerTokenToSession",
+      "1784836013770-MinFacePreferenceMigration",
+      "1784986754473-ConvertUserPasswordEmptyStringToNull",
+      "1784986754474-AlbumDescriptionNullable",
+      "1786385711807-AlbumOwnerDeleteTrigger",
+      "1786741078327-AddWorkflowLogsTable",
+      "1786972746371-AssetOcrUpdatedAtTrigger",
+      "1786972746372-AssetOcrSyncReset",
+      "1787148183729-ClusterGroups",
+      "1787148183730-DeleteMismatchedMemoryAssets"
+    ]
+  }
+}

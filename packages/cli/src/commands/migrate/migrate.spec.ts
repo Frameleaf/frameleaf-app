@@ -1,4 +1,4 @@
-import { AssetUploadAction } from '@immich/sdk';
+import { AssetUploadAction } from '@frameleaf/sdk';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

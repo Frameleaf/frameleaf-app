@@ -1,12 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
-import { UserLicenseSchema } from 'src/dtos/user.dto.js';
+import { UserSupporterSchema } from 'src/dtos/user.dto.js';
 
-const LicenseKeySchema = UserLicenseSchema.pick({
-  licenseKey: true,
-  activationKey: true,
-}).meta({ id: 'LicenseKeyDto' });
+/** FL-156: the person's own supporter key, as `users/me/license` returns it. */
+const LicenseResponseSchema = UserSupporterSchema.meta({ id: 'LicenseResponseDto' });
 
-const LicenseResponseSchema = UserLicenseSchema.meta({ id: 'LicenseResponseDto' });
-
-export class LicenseKeyDto extends createZodDto(LicenseKeySchema) {}
 export class LicenseResponseDto extends createZodDto(LicenseResponseSchema) {}
+export { UserSupporterSchema } from 'src/dtos/user.dto.js';

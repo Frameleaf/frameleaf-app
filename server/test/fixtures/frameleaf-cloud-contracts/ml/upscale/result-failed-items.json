@@ -1,0 +1,94 @@
+{
+  "schema": "frameleaf.upscale/v1",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "licence": "BSD-3-Clause and Apache-2.0",
+  "scale": 2,
+  "format": "png",
+  "items": [
+    {
+      "inputId": "a1",
+      "input": {
+        "width": 1200,
+        "height": 800
+      },
+      "scale": 2,
+      "outputs": [
+        {
+          "outputId": "a1",
+          "contentType": "image/png",
+          "width": 2400,
+          "height": 1600,
+          "bytes": 5120331,
+          "sha256": "7d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+        }
+      ],
+      "metrics": {
+        "tiles": 6,
+        "seconds": 0.804
+      },
+      "warnings": []
+    },
+    {
+      "inputId": "a2",
+      "input": {
+        "width": 480,
+        "height": 480
+      },
+      "scale": null,
+      "outputs": [],
+      "metrics": {
+        "tiles": 0,
+        "seconds": 0
+      },
+      "warnings": [
+        "input-animated"
+      ]
+    },
+    {
+      "inputId": "a3",
+      "input": null,
+      "scale": null,
+      "outputs": [],
+      "metrics": {
+        "tiles": 0,
+        "seconds": 0.002
+      },
+      "warnings": [
+        "input-unreadable"
+      ]
+    },
+    {
+      "inputId": "a4",
+      "input": {
+        "width": 6000,
+        "height": 4000
+      },
+      "scale": null,
+      "outputs": [],
+      "metrics": {
+        "tiles": 0,
+        "seconds": 0
+      },
+      "warnings": [
+        "input-too-large"
+      ]
+    },
+    {
+      "inputId": "a5",
+      "input": {
+        "width": 3000,
+        "height": 2000
+      },
+      "scale": null,
+      "outputs": [],
+      "metrics": {
+        "tiles": 12,
+        "seconds": 14.5
+      },
+      "warnings": [
+        "out-of-memory"
+      ]
+    }
+  ]
+}

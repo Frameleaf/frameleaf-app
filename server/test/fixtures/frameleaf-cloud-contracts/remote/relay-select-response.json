@@ -1,0 +1,10 @@
+{
+  "relay": {
+    "id": "eu1",
+    "host": "eu1.relays.frameleaf.cloud",
+    "region": "eu",
+    "pingHost": "ping.eu1.relays.frameleaf.cloud",
+    "port": 443
+  },
+  "changed": false
+}

@@ -48,7 +48,7 @@ export class ApiKeyService extends BaseService {
   }
 
   async rotate(auth: AuthDto, id: string): Promise<ApiKeyCreateResponseDto> {
-    const existing = await findOrFail(() => this.apiKeyRepository.getById(auth.user.id, id), 'API Key not found');
+    const existing = await findOrFail(() => this.apiKeyRepository.getById(auth.user.id, id), 'API Key');
 
     if (
       auth.apiKey &&

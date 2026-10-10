@@ -1,4 +1,4 @@
-import { getServerFeatures, type ServerFeaturesDto } from '@immich/sdk';
+import { getServerFeatures, type ServerFeaturesDto } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 class FeatureFlagsManager {
@@ -7,6 +7,8 @@ class FeatureFlagsManager {
   constructor() {
     eventManager.on({
       SystemConfigUpdate: () => void this.#loadFeatureFlags(),
+      // FL-156: the Frameleaf Cloud link and licence decide the cloud flags
+      FrameleafCloudUpdate: () => void this.#loadFeatureFlags(),
     });
   }
 

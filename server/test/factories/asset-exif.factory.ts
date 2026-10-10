@@ -17,6 +17,7 @@ export class AssetExifFactory {
       assetId: factory.uuid(),
       autoStackId: null,
       bitsPerSample: null,
+      imageEncoding: null,
       city: 'Austin',
       colorspace: null,
       country: 'United States of America',

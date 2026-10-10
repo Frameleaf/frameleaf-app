@@ -1,0 +1,6 @@
+{
+  "code": "rate-limited",
+  "message": "Too many link codes from this server. Try again later.",
+  "retryable": true,
+  "requestId": "req_01J8ZK3M4N5P6QH7"
+}

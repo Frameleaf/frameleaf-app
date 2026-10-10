@@ -1,13 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import handlebar from 'handlebars';
 import { DateTime } from 'luxon';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import type { JobOf, StorageAsset } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
+import { StorageMigrationStatusResponseDto } from 'src/dtos/queue.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -133,6 +135,45 @@ export class StorageTemplateService extends BaseService {
     return { ...storageTokens, presetOptions: storagePresets };
   }
 
+  /** FL-349: where the storage template migration stands, for the admin Migration page. */
+  async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    const name = QueueName.StorageTemplateMigration;
+    const [isActive, isPaused, hasUnfinishedWork, statistics] = await Promise.all([
+      this.jobRepository.isActive(name),
+      this.jobRepository.isPaused(name),
+      this.jobRepository.hasUnfinishedWork(name),
+      this.jobRepository.getJobCounts(name),
+    ]);
+    return {
+      enabled: storageTemplate.enabled,
+      template: storageTemplate.template,
+      isActive,
+      isPaused,
+      hasUnfinishedWork,
+      statistics,
+    };
+  }
+
+  /**
+   * FL-349: start the storage template migration in the background — the same job as starting the
+   * `storageTemplateMigration` queue. Refused while the template is off (the run would move nothing)
+   * or while a migration is already running.
+   */
+  async runMigration(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    if (!storageTemplate.enabled) {
+      throw new BadRequestException('The storage template is turned off');
+    }
+    const name = QueueName.StorageTemplateMigration;
+    if (await this.jobRepository.isActive(name)) {
+      throw new ConflictException('A storage migration is already running');
+    }
+    await this.eventRepository.emit('QueueStart', { name });
+    await this.jobRepository.queue({ name: JobName.StorageTemplateMigration });
+    return this.getMigrationStatus();
+  }
+
   @OnEvent({ name: 'AssetMetadataExtracted' })
   async onAssetMetadataExtracted({ source, assetId }: ArgOf<'AssetMetadataExtracted'>) {
     await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { source, id: assetId } });
@@ -212,6 +253,83 @@ export class StorageTemplateService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * FL-179: storage moves that are still recorded (deferred during a handoff or a normalization, or
+   * interrupted) are queued again as part of the nightly database cleanup, and each finds its record
+   * and finishes. A record that can never finish is dropped: its asset is gone, the asset already uses
+   * the new path, the move does not apply to the asset (an external or motion part), or the file is at
+   * neither path. One that is only blocked for now (a disabled template, a handoff, a mismatched
+   * mapping) is kept and tried again.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      const pending = await this.moveRepository.getPendingAssetMoves();
+      const originals = new Set<string>();
+      const generated = new Set<string>();
+      const finished: PendingAssetMove[] = [];
+      for (const move of pending) {
+        const isTemplateMove = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
+        if (await this.isMoveFinished(move, isTemplateMove)) {
+          finished.push(move);
+          continue;
+        }
+        (isTemplateMove ? originals : generated).add(move.entityId);
+      }
+      if (finished.length > 0) {
+        this.logger.log(`Forgetting ${finished.length} recorded storage moves that cannot finish`);
+        await this.moveRepository.deleteMoves(finished);
+      }
+      await this.jobRepository.queueAll([
+        ...[...originals].map((id) => ({ name: JobName.StorageTemplateMigrationSingle as const, data: { id } })),
+        ...[...generated].map((id) => ({ name: JobName.AssetFileMigration as const, data: { id } })),
+      ]);
+    } catch (error: any) {
+      this.logger.warn(`Pending storage moves deferred: ${error}`);
+    }
+  }
+
+  private async isMoveFinished(move: PendingAssetMove, isTemplateMove: boolean): Promise<boolean> {
+    if (!move.assetExists || move.currentPath === move.newPath) {
+      return true;
+    }
+    if (
+      isTemplateMove &&
+      (move.isExternal || (move.originalPath !== null && StorageCore.isAndroidMotionPath(move.originalPath)))
+    ) {
+      return true;
+    }
+    // Only a file that is certainly gone ends the record: a storage that cannot be read tonight (an
+    // offline mount, EIO, EACCES) may still hold the only copy the record can recover.
+    for (const file of [move.oldPath, move.newPath]) {
+      if ((await this.getFileState(file)) !== 'missing' || !(await this.isMediaFolderReachable(file))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** `missing` only when the filesystem says so (ENOENT); any other failure leaves it unknown. */
+  private async getFileState(file: string): Promise<'present' | 'missing' | 'unknown'> {
+    try {
+      await this.storageRepository.stat(file);
+      return 'present';
+    } catch (error: any) {
+      return error?.code === 'ENOENT' ? 'missing' : 'unknown';
+    }
+  }
+
+  /** Whether the media folder holding `file` is mounted: its mount-check file (`.immich`) is there. */
+  private async isMediaFolderReachable(file: string): Promise<boolean> {
+    for (const folder of Object.values(StorageFolder)) {
+      const base = StorageCore.getBaseFolder(folder);
+      if (file.startsWith(`${base}/`)) {
+        return (await this.getFileState(path.join(base, '.immich'))) === 'present';
+      }
+    }
+    return false;
+  }
+
   @OnEvent({ name: 'AssetDelete' })
   async handleMoveHistoryCleanup({ assetId }: ArgOf<'AssetDelete'>) {
     this.logger.debug(`Cleaning up move history for asset ${assetId}`);
@@ -235,24 +353,32 @@ export class StorageTemplateService extends BaseService {
         return;
       }
 
+      // the sidecar follows the original, never ahead of it
+      let moved = true;
       try {
         const isSharedNonCanonical =
           physicalOriginalFileId &&
           !(await this.physicalFileRepository.isOriginalCanonical(id, physicalOriginalFileId));
 
         if (!isSharedNonCanonical) {
-          await this.storageCore.moveFile({
+          moved = await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetPathType.Original,
             oldPath,
             newPath,
             assetInfo: { sizeInBytes: fileSizeInByte, checksum },
           });
-          await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
+          // FL-179: the move already pointed the shared physical file at the new path; this repairs one
+          // left behind by an earlier move. It never runs when the file is not at the new path.
+          if (moved) {
+            await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
+          }
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
-        if (sidecarPath) {
+        // A shared copy cannot reserve a template original path; keep its per-asset sidecar path.
+        // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
+        if (sidecarPath && moved && !isSharedNonCanonical) {
           await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,

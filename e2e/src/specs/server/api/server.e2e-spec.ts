@@ -1,4 +1,4 @@
-import { LoginResponseDto } from '@immich/sdk';
+import { LoginResponseDto } from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -70,10 +70,24 @@ describe('/server', () => {
   });
 
   describe('GET /server/ping', () => {
-    it('should respond with pong', async () => {
+    it('should respond with pong and this server’s identity (FL-229)', async () => {
       const { status, body } = await request(app).get('/server/ping');
       expect(status).toBe(200);
-      expect(body).toEqual({ res: 'pong' });
+      expect(body).toEqual({
+        res: 'pong',
+        id: expect.any(String),
+        linked: false,
+        name: expect.any(String),
+        // FL-292: the e2e server has its administrator; whether Frameleaf Cloud is configured varies
+        setup: 'complete',
+        cloud: expect.stringMatching(/^(available|unavailable)$/),
+      });
+    });
+
+    it('returns the same stable id on a later ping (FL-229)', async () => {
+      const first = await request(app).get('/server/ping');
+      const second = await request(app).get('/server/ping');
+      expect(first.body.id).toBe(second.body.id);
     });
   });
 
@@ -92,12 +106,38 @@ describe('/server', () => {
     });
   });
 
+  describe('POST /server/version-check (FL-80)', () => {
+    it('requires authentication', async () => {
+      const { status } = await request(app).post('/server/version-check');
+      expect(status).toBe(401);
+    });
+
+    it('is refused to a non-administrator', async () => {
+      const { status } = await request(app)
+        .post('/server/version-check')
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(403);
+    });
+  });
+
+  describe('GET /server/version-check (FL-80)', () => {
+    it('reads the last recorded check for any account', async () => {
+      const { status, body } = await request(app)
+        .get('/server/version-check')
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(200);
+      expect(body).toHaveProperty('checkedAt');
+      expect(body).toHaveProperty('releaseVersion');
+    });
+  });
+
   describe('GET /server/features', () => {
     it('should respond with the server features', async () => {
       const { status, body } = await request(app).get('/server/features');
       expect(status).toBe(200);
       expect(body).toEqual({
         smartSearch: false,
+        askSearch: false,
         configFile: false,
         duplicateDetection: false,
         facialRecognition: false,
@@ -111,12 +151,38 @@ describe('/server', () => {
         nsfwDetection: false,
         nsfwHiding: false,
         passwordLogin: true,
-        physicalDeduplication: false,
+        physicalDeduplication: true,
         realtimeTranscoding: false,
         search: true,
         sidecar: true,
         trash: true,
         email: false,
+        // FL-156: nothing cloud-connected until the server is linked to Frameleaf Cloud or licensed
+        frameleafCloud: false,
+        remoteAccess: false,
+        cloudMl: false,
+        cloudBackup: false,
+        supporter: false,
+        imageCapabilities: {
+          experimentalEnabled: false,
+          qualified: false,
+          renderer: 'frameleaf-develop-hdr/4',
+          codecs: { libheif: expect.any(String), libultrahdr: expect.any(String) },
+          decode: [
+            'gain-map-jpeg',
+            'sdr-heic',
+            'pq-heic',
+            'hlg-heic',
+            'sdr-avif',
+            'pq-avif',
+            'hlg-avif',
+            'apple-gain-map-heic',
+            'iso-adaptive-heif',
+          ],
+          render: ['linear-hdr-develop'],
+          export: ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'],
+          unavailable: [],
+        },
       });
     });
   });
@@ -128,6 +194,7 @@ describe('/server', () => {
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = body;
       expect(rest).toEqual({
         loginPageMessage: '',
+        serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',
         trashDays: 30,
@@ -137,9 +204,16 @@ describe('/server', () => {
         publicUsers: true,
         isOnboarded: false,
         maintenanceMode: false,
-        mapDarkStyleUrl: 'https://tiles.immich.cloud/v1/style/dark.json',
-        mapLightStyleUrl: 'https://tiles.immich.cloud/v1/style/light.json',
+        mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
+        mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         minFaces: 3,
+        frameleaf: {
+          via: null,
+          cloudConfigured: true,
+          signInAvailable: false,
+          signInRequired: false,
+          publicUrl: null,
+        },
       });
       expect(defaultImageDescriptionRawPromptTemplate).toEqual(expect.any(String));
       expect(defaultImageDescriptionRawPromptTemplate).toContain('{schema}');
@@ -196,61 +270,34 @@ describe('/server', () => {
     });
   });
 
-  describe('GET /server/license', () => {
-    it('should return the server license', async () => {
-      await request(app).put('/server/license').set('Authorization', `Bearer ${admin.accessToken}`).send(serverLicense);
-      const { status, body } = await request(app)
-        .get('/server/license')
-        .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
-      expect(body).toEqual({
-        ...serverLicense,
-        activatedAt: expect.any(String),
-      });
+  describe('/server/license (retired product key)', () => {
+    it('answers 404 now that licence certificates replace the product key (FL-156)', async () => {
+      const auth = { Authorization: `Bearer ${admin.accessToken}` };
+      const set = await request(app).put('/server/license').set(auth).send(serverLicense);
+      expect(set.status).toBe(404);
+      const get = await request(app).get('/server/license').set(auth);
+      expect(get.status).toBe(404);
+      const remove = await request(app).delete('/server/license').set(auth);
+      expect(remove.status).toBe(404);
     });
   });
 
-  describe('DELETE /server/license', () => {
-    it('should delete the server license', async () => {
-      await request(app)
-        .delete('/server/license')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send(serverLicense);
-      const { status } = await request(app).get('/server/license').set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(404);
-    });
-  });
-
-  describe('PUT /server/license', () => {
-    it('should set the server license', async () => {
+  describe('GET /admin/license (FL-156)', () => {
+    it('reports no key and no plan on a new server', async () => {
       const { status, body } = await request(app)
-        .put('/server/license')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send(serverLicense);
-      expect(status).toBe(200);
-      expect(body).toEqual({ ...serverLicense, activatedAt: expect.any(String) });
-      const { body: licenseBody } = await request(app)
-        .get('/server/license')
+        .get('/admin/license')
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(licenseBody).toEqual({ ...serverLicense, activatedAt: expect.any(String) });
+      expect(status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({ state: 'none', kind: null, licensed: false, key: null, plan: null }),
+      );
     });
 
-    it('should reject license not starting with IMSV-', async () => {
-      const { status, body } = await request(app)
-        .put('/server/license')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ licenseKey: 'IMCL-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD-ABCD', activationKey: 'activationKey' });
-      expect(status).toBe(400);
-      expect(body.message).toBe('Invalid license key');
-    });
-
-    it('should reject license with invalid activation key', async () => {
-      const { status, body } = await request(app)
-        .put('/server/license')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ licenseKey: serverLicense.licenseKey, activationKey: `invalid${serverLicense.activationKey}` });
-      expect(status).toBe(400);
-      expect(body.message).toBe('Invalid license key');
+    it('is refused to a non-administrator', async () => {
+      const { status } = await request(app)
+        .get('/admin/license')
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+      expect(status).toBe(403);
     });
   });
 });

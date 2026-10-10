@@ -1,0 +1,529 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import { validateBaseRaster } from './geometry-raster-calibration.mjs'
+const envelope = JSON.parse(
+  readFileSync(new URL('./geometry-raster-envelopes.json', import.meta.url)),
+)
+const args = {
+  swift: [
+    '--enable-unsafe-webgpu',
+    '--use-angle=swiftshader',
+    '--use-vulkan=swiftshader',
+    '--enable-features=Vulkan',
+    '--disable-accelerated-2d-canvas',
+  ],
+  metal: [
+    '--enable-unsafe-webgpu',
+    '--enable-features=Vulkan',
+    '--ignore-gpu-blocklist',
+    '--use-angle=metal',
+  ],
+}
+const source100 = '01983a71b49ed5721ed9692b6bfd92b3122c651b7f48d1a5c7e675007f410156'
+const source99 = 'a90bde5db2117561f3cbce4e23e7b118660741eb7adb6a39ea12eb5bbeab559f'
+const source97 = '614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711'
+const source105 = '86795b1fd91eca8d7804ce35c00930b36f507d6675287ffce9d621ac5c28b959'
+const sourceComposed = '7c83bc88923abb5e8995544567d437d260461569ef5dfaf14b893a4d664d9481'
+const sourceFiller = '5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec'
+const binding = (
+  backend,
+  sourceSha256 = 'e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689',
+) => ({
+  browser: '148.0.7778.96',
+  sourceSha256,
+  quadSha256: envelope.receipts[0].quadSha256,
+  backendArgs: args[backend],
+})
+const fromBits = (b) => new Float32Array(new Uint32Array([b]).buffer)[0]
+const bits = (v) => new Uint32Array(new Float32Array([v]).buffer)[0]
+// Synthetic validator fixtures only; live same-device captures are browser evidence.
+function fixture(fixed) {
+  const values = []
+  for (let i = 0; i < fixed.W * fixed.H; i++) {
+    const x = i % fixed.W,
+      y = Math.floor(i / fixed.W)
+    values.push(
+      fromBits(fixed.components[i * 2].witnessBits),
+      fromBits(fixed.components[i * 2 + 1].witnessBits),
+      x + 0.5,
+      y + 0.5,
+      i,
+      (2 * y + 1) * fixed.W > (2 * x + 1) * fixed.H ? 0 : 1,
+      fixed.W,
+      fixed.H,
+    )
+  }
+  const state = { ...fixed.state, alphaToCoverageEnabled: false }
+  return {
+    adapter:
+      fixed.backend === 'swift'
+        ? { vendor: 'google', architecture: 'swiftshader' }
+        : { vendor: 'apple', architecture: 'metal-3' },
+    rows: [
+      {
+        states: state,
+        results: ['independent', 'production', 'productionTriangle'].map((kind) => ({
+          kind,
+          state,
+          values: [...values],
+          bits: values.map(bits),
+        })),
+      },
+    ],
+  }
+}
+test('all fixed local shapes/backends admit exact source/state/pixel/triangle/UV fixtures', () => {
+  for (const f of envelope.envelopes)
+    assert.equal(
+      validateBaseRaster(fixture(f), envelope, binding(f.backend)).components.length,
+      f.components.length,
+    )
+})
+test('exact source97 admits all fixed validator fixtures without changing bounds', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const { binding: observedBinding, ...observed } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend, source97),
+    )
+    const { binding: previousBinding, ...previous } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend),
+    )
+    assert.deepEqual(observedBinding, binding(f.backend, source97))
+    assert.deepEqual(previousBinding, binding(f.backend))
+    assert.deepEqual(observed, previous)
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+test('synthetic exact source99 fixtures admit all fixed shapes without changing bounds', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const { binding: observedBinding, ...observed } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend, source99),
+    )
+    const { binding: previousBinding, ...previous } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend),
+    )
+    assert.deepEqual(observedBinding, binding(f.backend, source99))
+    assert.deepEqual(previousBinding, binding(f.backend))
+    assert.deepEqual(observed, previous)
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+test('synthetic exact source100 fixtures admit all fixed shapes without changing bounds', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const { binding: observedBinding, ...observed } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend, source100),
+    )
+    const { binding: previousBinding, ...previous } = validateBaseRaster(
+      fixture(f),
+      envelope,
+      binding(f.backend),
+    )
+    assert.deepEqual(observedBinding, binding(f.backend, source100))
+    assert.deepEqual(previousBinding, binding(f.backend))
+    assert.deepEqual(observed, previous)
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+test('both U and V endpoints refuse at every pixel and preserve immutable tables', () => {
+  const original = JSON.stringify(envelope)
+  let controls = 0
+  for (const f of envelope.envelopes) {
+    for (const c of f.components) {
+      for (const delta of [-1, 1]) {
+        const r = fixture(f),
+          at = c.pixel * 8 + c.component,
+          v = fromBits(delta < 0 ? c.lowBits - 1 : c.highBits + 1)
+        r.rows[0].results[0].values[at] = v
+        r.rows[0].results[0].bits[at] = bits(v)
+        assert.throws(() => validateBaseRaster(r, envelope, binding(f.backend)), /RASTER_UV/)
+        controls++
+      }
+    }
+  }
+  assert.equal(controls, 2464)
+  assert.equal(JSON.stringify(envelope), original)
+})
+for (const source of [source100, source105])
+  test(`synthetic ${source} U and V endpoints refuse at every pixel with immutable tables`, () => {
+    const original = JSON.stringify(envelope)
+    let controls = 0
+    for (const f of envelope.envelopes) {
+      for (const c of f.components) {
+        for (const delta of [-1, 1]) {
+          const r = fixture(f),
+            at = c.pixel * 8 + c.component,
+            v = fromBits(delta < 0 ? c.lowBits - 1 : c.highBits + 1)
+          r.rows[0].results[0].values[at] = v
+          r.rows[0].results[0].bits[at] = bits(v)
+          assert.throws(
+            () => validateBaseRaster(r, envelope, binding(f.backend, source)),
+            /RASTER_UV/,
+          )
+          controls++
+        }
+      }
+    }
+    assert.equal(controls, 2464)
+    assert.equal(JSON.stringify(envelope), original)
+  })
+for (const [name, mutate] of [
+  [
+    'unknown browser',
+    (r, b) => {
+      b.browser = '149'
+    },
+  ],
+  [
+    'unknown source',
+    (r, b) => {
+      b.sourceSha256 = '0'.repeat(64)
+    },
+  ],
+  [
+    'wrong quad',
+    (r, b) => {
+      b.quadSha256 = '0'.repeat(64)
+    },
+  ],
+  [
+    'wrong backend args',
+    (r, b) => {
+      b.backendArgs = []
+    },
+  ],
+  [
+    'unknown adapter',
+    (r) => {
+      r.adapter.vendor = 'unknown'
+    },
+  ],
+  [
+    'sample count',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, sampleCount: 4 }
+    },
+  ],
+  [
+    'sample mask',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, sampleMask: 0 }
+    },
+  ],
+  [
+    'alpha to coverage',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, alphaToCoverageEnabled: true }
+    },
+  ],
+  [
+    'scissor',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, scissor: [1, 0, 7, 6] }
+    },
+  ],
+  [
+    'viewport',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, viewport: [0, 0, 9, 6, 0, 1] }
+    },
+  ],
+  [
+    'topology',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, topology: 'triangle-strip' }
+    },
+  ],
+  [
+    'draw count',
+    (r) => {
+      r.rows[0].states = { ...r.rows[0].states, drawVertices: 3 }
+    },
+  ],
+  [
+    'swapped pixel',
+    (r) => {
+      r.rows[0].results[0].values[4] = 1
+    },
+  ],
+  [
+    'builtin position',
+    (r) => {
+      r.rows[0].results[0].values[2] = 1
+    },
+  ],
+  [
+    'triangle',
+    (r) => {
+      r.rows[0].results[0].values[5] = 1 - r.rows[0].results[0].values[5]
+    },
+  ],
+  [
+    'clipped capture',
+    (r) => {
+      r.rows[0].results[0].values.fill(0, 0, 8)
+    },
+  ],
+  [
+    'forged bits',
+    (r) => {
+      r.rows[0].results[0].bits[0]++
+    },
+  ],
+])
+  test(`raster admission refuses ${name}`, () => {
+    for (const f of envelope.envelopes)
+      for (const source of [binding('swift').sourceSha256, source97, source99, source100, source105, sourceComposed, sourceFiller]) {
+        const r = fixture(f),
+          b = binding(f.backend, source)
+        mutate(r, b)
+        assert.throws(() => validateBaseRaster(r, envelope, b))
+      }
+  })
+
+test('source99 near-match, unknown sources and wrong browser refuse', () => {
+  for (const f of envelope.envelopes) {
+    for (const source of [source99.slice(0, -1) + 'e', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source99),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+})
+
+test('source100 near-match, unknown sources and wrong browser refuse', () => {
+  for (const f of envelope.envelopes) {
+    for (const source of [source100.slice(0, -1) + '7', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source100),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+})
+
+test('exact source102 admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const source102 = '680d0070383b0b7d5721a9cd874325abc19b3d635490b90d0f0d90b72b67d5c0'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source102))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source100))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [source102.slice(0, -1) + '1', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source102),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('exact source103 admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const source103 = 'c212cc40fde85a70a9054489b2da1a15dec75cea6bd9e9333230875d68a2d470'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source103))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source100))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [source103.slice(0, -1) + '1', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source103),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('exact source104 admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const source104 = '6a94f497df2b949fe43059094ed7cdaff656b06dd47422021fc55b079c7f7889'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source104))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source100))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [source104.slice(0, -1) + '1', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source104),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('exact source105 admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const source104 = '6a94f497df2b949fe43059094ed7cdaff656b06dd47422021fc55b079c7f7889'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source105))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source104))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [source105.slice(0, -1) + '8', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source105),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('exact composed scope/audio source admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, sourceComposed))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source105))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [sourceComposed.slice(0, -1) + '2', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, sourceComposed),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('exact filler undo source admits fixed fixtures without changing bounds or unknown-source refusals', () => {
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, sourceFiller))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, source105))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const source of [sourceFiller.slice(0, -1) + 'd', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, source)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, sourceFiller),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+test('reviewed additive source retains raster bounds and strict source/browser admission', () => {
+  const source = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, sourceFiller))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + 'e', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+for (const source of [
+  '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904',
+  '723f55c7faae8dc989406bbf7df7a1f795ef1d2053b17379fb71beb87005fcca',
+  '6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3',
+  '19daa0b620454002022c6eac56b13537c232fe5270104021e5c9c6b63f884c4c',
+  'cb8c9b6ec30597c44a26cead6dc11fba3770870192b156c68c8ddfe7e032a54f',
+  '85ef9a025dba470a1cb73d0a1ee6616a0e8d428602567fe7d9930959215dd302',
+  '2f020b4240175b0ee7e4d75110582b0015c981171761d1021a15fce38b98418e',
+  'da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327',
+]) test(`reviewed producer ${source} retains raster policy and strict admission`, () => {
+  const previousSource = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, previousSource))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + '5', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})

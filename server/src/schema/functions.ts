@@ -1,4 +1,5 @@
-import { registerFunction } from '@immich/sql-tools';
+import { registerFunction } from '@frameleaf/sql-tools';
+import { BACKUP_DELETION_CAPTURE_BODY } from 'src/utils/cloud-backup-deletion-sql.js';
 
 export const immich_uuid_v7 = registerFunction({
   name: 'immich_uuid_v7',
@@ -366,4 +367,68 @@ export const album_parent_cycle_check = registerFunction({
       END IF;
       RETURN NEW;
     END`,
+});
+
+export const tag_delete_audit = registerFunction({
+  name: 'tag_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO tag_audit ("tagId", "userId") SELECT id, "userId" FROM OLD; RETURN NULL; END`,
+});
+export const tag_asset_delete_audit = registerFunction({
+  name: 'tag_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+    INSERT INTO tag_asset_audit ("tagId", "assetId", "userId")
+    SELECT deleted."tagId", deleted."assetId", coalesce(tag."userId", asset."ownerId")
+    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted."tagId" LEFT JOIN asset ON asset.id = deleted."assetId"
+    WHERE coalesce(tag."userId", asset."ownerId") IS NOT NULL
+      AND (tag."userId" IS NULL OR asset."ownerId" IS NULL OR tag."userId" = asset."ownerId");
+    RETURN NULL; END`,
+});
+
+export const tag_asset_update_id = registerFunction({
+  name: 'tag_asset_update_id',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const pet_delete_audit = registerFunction({
+  name: 'pet_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO pet_audit ("petId", "ownerId") SELECT id, "ownerId" FROM OLD; RETURN NULL; END`,
+});
+export const pet_observation_delete_audit = registerFunction({
+  name: 'pet_observation_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN
+ INSERT INTO pet_observation_audit ("observationId", "petId", "assetId", "ownerId")
+ SELECT deleted.id, deleted."petId", deleted."assetId", coalesce(pet."ownerId", asset."ownerId")
+ FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted."petId" LEFT JOIN asset ON asset.id = deleted."assetId"
+ WHERE coalesce(pet."ownerId", asset."ownerId") IS NOT NULL
+ AND (pet."ownerId" IS NULL OR asset."ownerId" IS NULL OR pet."ownerId" = asset."ownerId");
+ RETURN NULL; END`,
+});
+export const pet_update_id = registerFunction({
+  name: 'pet_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+export const pet_observation_update_id = registerFunction({
+  name: 'pet_observation_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const asset_backup_deletion_capture = registerFunction({
+  name: 'asset_backup_deletion_capture',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: BACKUP_DELETION_CAPTURE_BODY,
 });

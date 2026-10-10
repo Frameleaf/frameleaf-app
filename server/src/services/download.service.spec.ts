@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
+import { UserMetadataKey } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -27,9 +28,26 @@ describe(DownloadService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DownloadService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   describe('downloadArchive', () => {
+    it.each([true, false])(
+      'uses the actual rendition extension for edited HEIC archive downloads: %s',
+      async (edited) => {
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC', originalPath: '/original.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([{ ...asset, editedPath: '/edited.jpeg' }]);
+        mocks.storage.createZipStream.mockReturnValue(archive);
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited });
+        expect(archive.addFile).toHaveBeenCalledWith(
+          edited ? '/edited.jpeg' : '/original.HEIC',
+          edited ? 'IMG_1.jpeg' : 'IMG_1.HEIC',
+        );
+      },
+    );
+
     it('should skip asset ids that could not be found', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
@@ -272,6 +290,24 @@ describe(DownloadService.name, () => {
       expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', { excludeNsfw: true });
     });
 
+    it('should include the elevated owner as the Locked owner of an album download (FL-32)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
+      mocks.downloadRepository.downloadAlbumId.mockReturnValue(
+        makeStream([
+          { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
+          { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(auth, { albumId: 'album-1' })).resolves.toEqual(downloadResponse);
+
+      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', {
+        lockedOwnerId: auth.user.id,
+      });
+    });
+
     it('should return a list of archives (userId)', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
@@ -301,6 +337,23 @@ describe(DownloadService.name, () => {
       await expect(sut.getDownloadInfo(auth, { userId: auth.user.id })).resolves.toEqual(downloadResponse);
 
       expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(auth.user.id, { excludeNsfw: true });
+    });
+
+    it('should include Locked media in a timeline download only for an elevated session (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.downloadRepository.downloadUserId.mockReturnValue(
+        makeStream([
+          { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
+          { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(auth, { userId: auth.user.id })).resolves.toEqual(downloadResponse);
+
+      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(auth.user.id, {
+        lockedOwnerId: auth.user.id,
+      });
     });
 
     it('should split archives by size', async () => {
@@ -375,6 +428,28 @@ describe(DownloadService.name, () => {
 
       expect(mocks.downloadRepository.downloadAssetIds).toHaveBeenCalledWith(assetIds, { excludeNsfw: true });
       expect(mocks.downloadRepository.downloadMotionAssetIds).toHaveBeenCalledWith(['asset-2'], { excludeNsfw: true });
+    });
+
+    it('should include the video portion of an android live photo when the owner prefers embedded videos', async () => {
+      const assetIds = ['asset-1'];
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { download: { includeEmbeddedVideos: true } } },
+      ]);
+      mocks.downloadRepository.downloadAssetIds.mockReturnValue(
+        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+      );
+      mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
+        makeStream([
+          { id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/data/encoded-video/uuid-MP.mp4' },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(authStub.admin, { assetIds })).resolves.toEqual({
+        totalSize: 28_456,
+        archives: [{ assetIds: ['asset-1', 'asset-2'], size: 28_456 }],
+      });
     });
 
     it('should skip the video portion of an android live photo by default', async () => {

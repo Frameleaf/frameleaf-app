@@ -1,7 +1,6 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
-import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
-import { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 
@@ -39,21 +38,6 @@ export const combineVerifications = <T extends Record<string, TableVerification>
   tables: T,
 ): DerivedBackfillResult<T> => ({ count: processed, digest: digestValue(tables), tables });
 
-export const getForkSchemaPhase = async (db: Kysely<DB>): Promise<ForkSchemaPhase> => {
-  const schema = await sql<{ stateTable: string | null }>`
-    SELECT to_regclass('immich_fork.state')::text AS "stateTable"
-  `.execute(db);
-  if (!schema.rows[0]?.stateTable) {
-    return 'legacy';
-  }
-  const state = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id = 1`.execute(db);
-  return state.rows[0]?.phase ?? 'inactive';
-};
-
-export const readsForkSidecar = (phase: ForkSchemaPhase): boolean => isForkAuthoritative(phase);
-export const writesLegacy = (phase: ForkSchemaPhase): boolean => isLegacyAuthoritative(phase);
-export const writesForkSidecar = (phase: ForkSchemaPhase): boolean => isForkWriteEnabled(phase);
-
 export const lockForkAssetParent = async (
   db: Kysely<DB>,
   assetId: string,
@@ -66,7 +50,7 @@ export const lockForkAssetParent = async (
     .forKeyShare()
     .executeTakeFirst();
   if (!asset) {
-    throw new Error(`Cannot write fork derived result for missing asset ${assetId}`);
+    throw new Error(`Cannot write derived result for missing asset ${assetId}`);
   }
   return asset;
 };

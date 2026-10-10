@@ -6,7 +6,9 @@ sidebar_position: 30
 
 Docker Compose is the recommended method to run Frameleaf. Use the files attached to a published [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases); they select the Frameleaf server and machine-learning images.
 
-For an existing installation, retain its Compose project name, `.env`, storage paths and volume names. The displayed container names change to `frameleaf_*`, while service names, database settings and `IMMICH_*` variables remain compatible. Review the [container migration notes](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md) before upgrading; do not create a second stack against the same database directory.
+Start with a fresh canonical PostgreSQL 19 database and data volume. Import a supported source library through the [one-time offline importer](/administration/import-immich.md), using independent verified media copies.
+
+When updating an existing canonical Frameleaf installation, retain its Compose project name, `.env`, storage paths and volume names. The displayed container names are `frameleaf_*`; service identifiers and the [deprecated environment aliases](/install/environment-variables#deprecated-names) remain available. Review the [container installation notes](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md) before upgrading; do not create a second stack against the same database directory.
 
 import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
 import DockerComposeSteps from '/docs/partials/_docker-compose-install-steps.mdx';

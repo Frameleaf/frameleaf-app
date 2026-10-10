@@ -1,11 +1,16 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
-import { AssetEditActionSchema } from 'src/dtos/editing.dto.js';
+import { AlbumSourceLinkResponseSchema } from 'src/dtos/album-source.dto.js';
+import { ImageEncodingSchema } from 'src/dtos/image-encoding.dto.js';
+import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
+import { PIN_LIMIT, PinnedCollectionSchema, PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
+  AlbumKindSchema,
   AlbumUserRole,
   AlbumUserRoleSchema,
   AssetOrderSchema,
+  AssetStatus,
   AssetTypeSchema,
   AssetVisibilitySchema,
   MemoryTypeSchema,
@@ -70,7 +75,7 @@ const SyncAssetV1Schema = z
     checksum: z.string().describe('Checksum'),
     fileCreatedAt: isoDatetimeToDate.nullable().describe('File created at'),
     fileModifiedAt: isoDatetimeToDate.nullable().describe('File modified at'),
-    createdAt: isoDatetimeToDate.nullable().describe('Uploaded to Immich at'),
+    createdAt: isoDatetimeToDate.nullable().describe('Uploaded to Frameleaf at'),
     localDateTime: isoDatetimeToDate.nullable().describe('Local date time'),
     duration: z.string().nullable().describe('Duration'),
     type: AssetTypeSchema,
@@ -95,7 +100,7 @@ const SyncAssetV2Schema = z
     checksum: z.string().describe('Checksum'),
     fileCreatedAt: isoDatetimeToDate.nullable().describe('File created at'),
     fileModifiedAt: isoDatetimeToDate.nullable().describe('File modified at'),
-    createdAt: isoDatetimeToDate.nullable().describe('Uploaded to Immich at'),
+    createdAt: isoDatetimeToDate.nullable().describe('Uploaded to Frameleaf at'),
     localDateTime: isoDatetimeToDate.nullable().describe('Local date time'),
     duration: z.int32().min(0).nullable().describe('Duration'),
     type: AssetTypeSchema,
@@ -159,6 +164,7 @@ const SyncAssetExifV1Schema = z
     profileDescription: z.string().nullable().describe('Profile description'),
     rating: z.int().nullable().describe('Rating'),
     fps: z.number().meta({ format: 'double' }).nullable().describe('FPS'),
+    imageEncoding: ImageEncodingSchema.nullish(),
   })
   .meta({ id: 'SyncAssetExifV1' });
 
@@ -181,7 +187,7 @@ const SyncAssetEditV1Schema = z
   .object({
     id: z.uuidv4().describe('Edit ID'),
     assetId: z.uuidv4().describe('Asset ID'),
-    action: AssetEditActionSchema,
+    action: z.string().describe('Edit action; future values pass through unchanged'),
     parameters: z.record(z.string(), z.unknown()).describe('Edit parameters'),
     sequence: z.int().describe('Edit sequence'),
   })
@@ -250,6 +256,14 @@ const SyncAlbumV2Schema = z
   })
   .meta({ id: 'SyncAlbumV2' });
 
+const SyncAlbumV3Schema = SyncAlbumV2Schema.extend({
+  parentId: z.uuid().nullable(),
+  kind: AlbumKindSchema,
+  icon: z.string().nullable(),
+  sortOrder: z.number().meta({ format: 'double' }).nullable(),
+  deletedAt: isoDatetimeToDate.nullable(),
+}).meta({ id: 'SyncAlbumV3' });
+
 const SyncAlbumToAssetV1Schema = z
   .object({
     albumId: z.uuidv4().describe('Album ID'),
@@ -274,6 +288,8 @@ class SyncAlbumUserV1 extends createZodDto(SyncAlbumUserV1Schema) {}
 class SyncAlbumV1 extends createZodDto(SyncAlbumV1Schema) {}
 @ExtraModel()
 class SyncAlbumV2 extends createZodDto(SyncAlbumV2Schema) {}
+@ExtraModel()
+class SyncAlbumV3 extends createZodDto(SyncAlbumV3Schema) {}
 @ExtraModel()
 class SyncAlbumToAssetV1 extends createZodDto(SyncAlbumToAssetV1Schema) {}
 @ExtraModel()
@@ -399,6 +415,13 @@ const SyncUserMetadataDeleteV1Schema = z
   })
   .meta({ id: 'SyncUserMetadataDeleteV1' });
 
+const SyncPinnedCollectionsV1Schema = PinnedCollectionsResponseSchema.extend({ userId: z.uuidv4() }).meta({
+  id: 'SyncPinnedCollectionsV1',
+});
+
+@ExtraModel()
+class SyncPinnedCollectionsV1 extends createZodDto(SyncPinnedCollectionsV1Schema) {}
+
 const SyncAckV1Schema = z.object({}).meta({ id: 'SyncAckV1' });
 const SyncResetV1Schema = z.object({}).meta({ id: 'SyncResetV1' });
 const SyncCompleteV1Schema = z.object({}).meta({ id: 'SyncCompleteV1' });
@@ -473,7 +496,218 @@ class SyncResetV1 extends createZodDto(SyncResetV1Schema) {}
 @ExtraModel()
 class SyncCompleteV1 extends createZodDto(SyncCompleteV1Schema) {}
 
+@ExtraModel()
+class SyncPetV1 extends createZodDto(PetResponseSchema.meta({ id: 'SyncPetV1' })) {}
+@ExtraModel()
+class SyncSharedSpaceV1 extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      name: z.string(),
+      description: z.string().nullable(),
+      icon: z.string().nullable(),
+      kind: z.literal('space'),
+      createdAt: isoDatetimeToDate,
+      updatedAt: isoDatetimeToDate,
+    })
+    .meta({ id: 'SyncSharedSpaceV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid() }).meta({ id: 'SyncSharedSpaceDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceMemberV1 extends createZodDto(
+  z
+    .object({
+      spaceId: z.uuid(),
+      userId: z.uuid(),
+      role: AlbumUserRoleSchema,
+      createdAt: isoDatetimeToDate,
+      updatedAt: isoDatetimeToDate,
+    })
+    .describe('Accepted membership only; pending invitations confer no sync access')
+    .meta({ id: 'SyncSharedSpaceMemberV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceMemberDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), userId: z.uuid() }).meta({ id: 'SyncSharedSpaceMemberDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceAlbumV1 extends createZodDto(
+  z
+    .object({
+      spaceId: z.uuid(),
+      albumId: z.uuid(),
+      name: z.string(),
+      icon: z.string().nullable(),
+      assetCount: z.number().int().nonnegative(),
+      thumbnailAssetId: z.uuid().nullable(),
+      linkedAt: isoDatetimeToDate,
+    })
+    .describe('Published album reference only; does not grant target AlbumRead access')
+    .meta({ id: 'SyncSharedSpaceAlbumV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpaceAlbumDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), albumId: z.uuid() }).meta({ id: 'SyncSharedSpaceAlbumDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpacePersonV1 extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      spaceId: z.uuid(),
+      name: z.string(),
+      coverAssetId: z.uuid().nullable(),
+      assetCount: z.number().int().nonnegative(),
+      linkedAt: isoDatetimeToDate,
+    })
+    .describe('Published link identity only; excludes the underlying private person')
+    .meta({ id: 'SyncSharedSpacePersonV1' }),
+) {}
+@ExtraModel()
+class SyncSharedSpacePersonDeleteV1 extends createZodDto(
+  z.object({ spaceId: z.uuid(), id: z.uuid() }).meta({ id: 'SyncSharedSpacePersonDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncAlbumSourceLinkV1 extends createZodDto(
+  AlbumSourceLinkResponseSchema.omit({ albumName: true }).meta({ id: 'SyncAlbumSourceLinkV1' }),
+) {}
+@ExtraModel()
+class SyncAlbumSourceLinkDeleteV1 extends createZodDto(
+  z.object({ linkId: z.uuid() }).meta({ id: 'SyncAlbumSourceLinkDeleteV1' }),
+) {}
+@ExtraModel()
+class SyncPetDeleteV1 extends createZodDto(z.object({ petId: z.uuid() }).meta({ id: 'SyncPetDeleteV1' })) {}
+@ExtraModel()
+class SyncPetObservationV1 extends createZodDto(PetObservationResponseSchema.meta({ id: 'SyncPetObservationV1' })) {}
+@ExtraModel()
+class SyncPetObservationDeleteV1 extends createZodDto(
+  z.object({ observationId: z.uuid(), petId: z.uuid(), assetId: z.uuid() }).meta({ id: 'SyncPetObservationDeleteV1' }),
+) {}
+
+const SyncTagV1Schema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    value: z.string(),
+    parentId: z.uuid().nullable(),
+    color: z.string().nullable(),
+    createdAt: isoDatetimeToDate,
+    updatedAt: isoDatetimeToDate,
+  })
+  .meta({ id: 'SyncTagV1' });
+const SyncTagDeleteV1Schema = z.object({ tagId: z.uuid() }).meta({ id: 'SyncTagDeleteV1' });
+const SyncAssetTagV1Schema = z.object({ tagId: z.uuid(), assetId: z.uuid() }).meta({ id: 'SyncAssetTagV1' });
+@ExtraModel()
+class SyncTagV1 extends createZodDto(SyncTagV1Schema) {}
+@ExtraModel()
+class SyncTagDeleteV1 extends createZodDto(SyncTagDeleteV1Schema) {}
+@ExtraModel()
+class SyncAssetTagV1 extends createZodDto(SyncAssetTagV1Schema) {}
+@ExtraModel()
+class SyncAssetTagDeleteV1 extends createZodDto(SyncAssetTagV1Schema.meta({ id: 'SyncAssetTagDeleteV1' })) {}
+
+@ExtraModel()
+class SyncDuplicateGroupV1 extends createZodDto(
+  z.object({ groupId: z.uuid(), assetIds: z.array(z.uuid()).min(2) }).meta({ id: 'SyncDuplicateGroupV1' }),
+) {}
+@ExtraModel()
+class SyncDuplicateGroupDeleteV1 extends createZodDto(
+  z.object({ groupId: z.uuid() }).meta({ id: 'SyncDuplicateGroupDeleteV1' }),
+) {}
+
+@ExtraModel()
+class SyncPinnedCollectionV1 extends createZodDto(
+  PinnedCollectionSchema.extend({
+    targetId: z.string(),
+    unavailable: z.literal(false),
+    position: z
+      .int()
+      .min(0)
+      .max(PIN_LIMIT - 1),
+  }).meta({
+    id: 'SyncPinnedCollectionV1',
+    description:
+      'Current authorized pin hydration at its complete-list position. Unavailable pins retain their V1 snapshot placeholder but have no event hydration.',
+  }),
+) {}
+@ExtraModel()
+class SyncPinnedCollectionDeleteV1 extends createZodDto(
+  z.object({ pinId: z.uuid() }).meta({
+    id: 'SyncPinnedCollectionDeleteV1',
+    description:
+      'Remove available mirror hydration only. The opaque stored pin may remain as an unavailable V1 snapshot placeholder.',
+  }),
+) {}
+
+@ExtraModel()
+class SyncAssetTrashStateV1 extends createZodDto(
+  z
+    .object({ assetId: z.uuid(), deletedAt: isoDatetimeToDate, status: z.enum(AssetStatus), isOffline: z.boolean() })
+    .meta({ id: 'SyncAssetTrashStateV1' }),
+) {}
+@ExtraModel()
+class SyncAssetTrashStateDeleteV1 extends createZodDto(
+  z.object({ assetId: z.uuid() }).meta({ id: 'SyncAssetTrashStateDeleteV1' }),
+) {}
+
+/** Each grant replaces the source-scoped asset; unrelated grants are retained. */
+@ExtraModel()
+class SyncAlbumAssetAccessV1 extends createZodDto(
+  z.object({ albumId: z.uuid(), asset: SyncAssetV2Schema }).meta({ id: 'SyncAlbumAssetAccessV1' }),
+) {}
+@ExtraModel()
+class SyncPartnerAssetAccessV1 extends createZodDto(
+  z.object({ sharedById: z.uuid(), asset: SyncAssetV2Schema }).meta({ id: 'SyncPartnerAssetAccessV1' }),
+) {}
+@ExtraModel()
+class SyncAlbumAssetAccessDeleteV1 extends createZodDto(
+  z.object({ albumId: z.uuid(), assetId: z.uuid() }).meta({
+    id: 'SyncAlbumAssetAccessDeleteV1',
+    description:
+      'Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.',
+  }),
+) {}
+@ExtraModel()
+class SyncPartnerAssetAccessDeleteV1 extends createZodDto(
+  z.object({ sharedById: z.uuid(), assetId: z.uuid() }).meta({
+    id: 'SyncPartnerAssetAccessDeleteV1',
+    description:
+      'Drop this partner-source asset and its descriptive mirror data, preserving independently authorized sources.',
+  }),
+) {}
+
 export type SyncItem = {
+  [SyncEntityType.AlbumAssetAccessV1]: SyncAlbumAssetAccessV1;
+  [SyncEntityType.AlbumAssetAccessDeleteV1]: SyncAlbumAssetAccessDeleteV1;
+  [SyncEntityType.PartnerAssetAccessV1]: SyncPartnerAssetAccessV1;
+  [SyncEntityType.PartnerAssetAccessDeleteV1]: SyncPartnerAssetAccessDeleteV1;
+  [SyncEntityType.PinnedCollectionV1]: SyncPinnedCollectionV1;
+  [SyncEntityType.PinnedCollectionDeleteV1]: SyncPinnedCollectionDeleteV1;
+  [SyncEntityType.AssetTrashStateV1]: SyncAssetTrashStateV1;
+  [SyncEntityType.AssetTrashStateDeleteV1]: SyncAssetTrashStateDeleteV1;
+  [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
+  [SyncEntityType.DuplicateGroupDeleteV1]: SyncDuplicateGroupDeleteV1;
+  [SyncEntityType.SharedSpaceAlbumV1]: SyncSharedSpaceAlbumV1;
+  [SyncEntityType.SharedSpaceAlbumDeleteV1]: SyncSharedSpaceAlbumDeleteV1;
+  [SyncEntityType.SharedSpacePersonV1]: SyncSharedSpacePersonV1;
+  [SyncEntityType.SharedSpacePersonDeleteV1]: SyncSharedSpacePersonDeleteV1;
+  [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
+  [SyncEntityType.SharedSpaceDeleteV1]: SyncSharedSpaceDeleteV1;
+  [SyncEntityType.SharedSpaceMemberV1]: SyncSharedSpaceMemberV1;
+  [SyncEntityType.SharedSpaceMemberDeleteV1]: SyncSharedSpaceMemberDeleteV1;
+  [SyncEntityType.PetV1]: SyncPetV1;
+  [SyncEntityType.PetDeleteV1]: SyncPetDeleteV1;
+  [SyncEntityType.AlbumSourceLinkV1]: SyncAlbumSourceLinkV1;
+  [SyncEntityType.AlbumSourceLinkDeleteV1]: SyncAlbumSourceLinkDeleteV1;
+  [SyncEntityType.PetObservationV1]: SyncPetObservationV1;
+  [SyncEntityType.PetObservationDeleteV1]: SyncPetObservationDeleteV1;
+  [SyncEntityType.TagV1]: SyncTagV1;
+  [SyncEntityType.TagDeleteV1]: SyncTagDeleteV1;
+  [SyncEntityType.AssetTagV1]: SyncAssetTagV1;
+  [SyncEntityType.AssetTagDeleteV1]: SyncAssetTagDeleteV1;
   [SyncEntityType.AuthUserV1]: SyncAuthUserV1;
   [SyncEntityType.AuthUserV2]: SyncAuthUserV2;
   [SyncEntityType.UserV1]: SyncUserV1;
@@ -481,6 +715,9 @@ export type SyncItem = {
   [SyncEntityType.PartnerV1]: SyncPartnerV1;
   [SyncEntityType.PartnerDeleteV1]: SyncPartnerDeleteV1;
   [SyncEntityType.AssetV2]: SyncAssetV2;
+  [SyncEntityType.AssetV3]: SyncAssetV2;
+  [SyncEntityType.AssetBootstrapV1]: SyncAssetV2;
+  [SyncEntityType.AssetDeleteV2]: SyncAssetDeleteV1;
   [SyncEntityType.AssetDeleteV1]: SyncAssetDeleteV1;
   [SyncEntityType.AssetMetadataV1]: SyncAssetMetadataV1;
   [SyncEntityType.AssetMetadataDeleteV1]: SyncAssetMetadataDeleteV1;
@@ -496,6 +733,9 @@ export type SyncItem = {
   [SyncEntityType.PartnerAssetExifBackfillV1]: SyncAssetExifV1;
   [SyncEntityType.AlbumV1]: SyncAlbumV1;
   [SyncEntityType.AlbumV2]: SyncAlbumV2;
+  [SyncEntityType.AlbumV3]: SyncAlbumV3;
+  [SyncEntityType.AlbumBootstrapV1]: SyncAlbumV3;
+  [SyncEntityType.AlbumDeleteV2]: SyncAlbumDeleteV1;
   [SyncEntityType.AlbumDeleteV1]: SyncAlbumDeleteV1;
   [SyncEntityType.AlbumUserV1]: SyncAlbumUserV1;
   [SyncEntityType.AlbumUserBackfillV1]: SyncAlbumUserV1;
@@ -525,6 +765,7 @@ export type SyncItem = {
   [SyncEntityType.AssetFaceV3]: SyncAssetFaceV3;
   [SyncEntityType.AssetFaceDeleteV1]: SyncAssetFaceDeleteV1;
   [SyncEntityType.UserMetadataV1]: SyncUserMetadataV1;
+  [SyncEntityType.PinnedCollectionsV1]: SyncPinnedCollectionsV1;
   [SyncEntityType.UserMetadataDeleteV1]: SyncUserMetadataDeleteV1;
   [SyncEntityType.SyncAckV1]: SyncAckV1;
   [SyncEntityType.SyncCompleteV1]: SyncCompleteV1;
@@ -538,12 +779,117 @@ const SyncStreamSchema = z
   })
   .meta({ id: 'SyncStreamDto' });
 
+// Freeze the existing GET response contract. New sync families belong to the V2 ACK view.
+const LegacySyncAckEntityTypeSchema = z.enum([
+  SyncEntityType.AlbumAssetAccessV1,
+  SyncEntityType.AlbumAssetAccessDeleteV1,
+  SyncEntityType.PartnerAssetAccessV1,
+  SyncEntityType.PartnerAssetAccessDeleteV1,
+  SyncEntityType.PinnedCollectionV1,
+  SyncEntityType.PinnedCollectionDeleteV1,
+  SyncEntityType.AssetTrashStateV1,
+  SyncEntityType.AssetTrashStateDeleteV1,
+  SyncEntityType.DuplicateGroupV1,
+  SyncEntityType.DuplicateGroupDeleteV1,
+  SyncEntityType.SharedSpaceV1,
+  SyncEntityType.SharedSpaceDeleteV1,
+  SyncEntityType.SharedSpaceMemberV1,
+  SyncEntityType.SharedSpaceMemberDeleteV1,
+  SyncEntityType.SharedSpaceAlbumV1,
+  SyncEntityType.SharedSpaceAlbumDeleteV1,
+  SyncEntityType.SharedSpacePersonV1,
+  SyncEntityType.SharedSpacePersonDeleteV1,
+  SyncEntityType.PetV1,
+  SyncEntityType.PetDeleteV1,
+  SyncEntityType.PetObservationV1,
+  SyncEntityType.PetObservationDeleteV1,
+  SyncEntityType.TagV1,
+  SyncEntityType.TagDeleteV1,
+  SyncEntityType.AssetTagV1,
+  SyncEntityType.AssetTagDeleteV1,
+  SyncEntityType.AuthUserV1,
+  SyncEntityType.AuthUserV2,
+  SyncEntityType.UserV1,
+  SyncEntityType.UserDeleteV1,
+  SyncEntityType.AssetV1,
+  SyncEntityType.AssetV2,
+  SyncEntityType.AssetV3,
+  SyncEntityType.AssetBootstrapV1,
+  SyncEntityType.AssetDeleteV2,
+  SyncEntityType.AssetDeleteV1,
+  SyncEntityType.AssetExifV1,
+  SyncEntityType.AssetEditV1,
+  SyncEntityType.AssetEditDeleteV1,
+  SyncEntityType.AssetMetadataV1,
+  SyncEntityType.AssetMetadataDeleteV1,
+  SyncEntityType.AssetOcrV1,
+  SyncEntityType.AssetOcrDeleteV1,
+  SyncEntityType.PartnerV1,
+  SyncEntityType.PartnerDeleteV1,
+  SyncEntityType.PartnerAssetV1,
+  SyncEntityType.PartnerAssetV2,
+  SyncEntityType.PartnerAssetBackfillV1,
+  SyncEntityType.PartnerAssetBackfillV2,
+  SyncEntityType.PartnerAssetDeleteV1,
+  SyncEntityType.PartnerAssetExifV1,
+  SyncEntityType.PartnerAssetExifBackfillV1,
+  SyncEntityType.PartnerStackBackfillV1,
+  SyncEntityType.PartnerStackDeleteV1,
+  SyncEntityType.PartnerStackV1,
+  SyncEntityType.AlbumV1,
+  SyncEntityType.AlbumV2,
+  SyncEntityType.AlbumV3,
+  SyncEntityType.AlbumBootstrapV1,
+  SyncEntityType.AlbumDeleteV2,
+  SyncEntityType.AlbumDeleteV1,
+  SyncEntityType.AlbumUserV1,
+  SyncEntityType.AlbumUserBackfillV1,
+  SyncEntityType.AlbumUserDeleteV1,
+  SyncEntityType.AlbumAssetCreateV1,
+  SyncEntityType.AlbumAssetCreateV2,
+  SyncEntityType.AlbumAssetUpdateV1,
+  SyncEntityType.AlbumAssetUpdateV2,
+  SyncEntityType.AlbumAssetBackfillV1,
+  SyncEntityType.AlbumAssetBackfillV2,
+  SyncEntityType.AlbumAssetExifCreateV1,
+  SyncEntityType.AlbumAssetExifUpdateV1,
+  SyncEntityType.AlbumAssetExifBackfillV1,
+  SyncEntityType.AlbumToAssetV1,
+  SyncEntityType.AlbumToAssetDeleteV1,
+  SyncEntityType.AlbumToAssetBackfillV1,
+  SyncEntityType.MemoryV1,
+  SyncEntityType.MemoryDeleteV1,
+  SyncEntityType.MemoryToAssetV1,
+  SyncEntityType.MemoryToAssetDeleteV1,
+  SyncEntityType.StackV1,
+  SyncEntityType.StackDeleteV1,
+  SyncEntityType.PersonV1,
+  SyncEntityType.PersonDeleteV1,
+  SyncEntityType.AssetFaceV1,
+  SyncEntityType.AssetFaceV2,
+  SyncEntityType.AssetFaceV3,
+  SyncEntityType.AssetFaceDeleteV1,
+  SyncEntityType.UserMetadataV1,
+  SyncEntityType.PinnedCollectionsV1,
+  SyncEntityType.UserMetadataDeleteV1,
+  SyncEntityType.SyncAckV1,
+  SyncEntityType.SyncResetV1,
+  SyncEntityType.SyncCompleteV1,
+]);
+
 const SyncAckSchema = z
+  .object({
+    type: LegacySyncAckEntityTypeSchema,
+    ack: z.string().describe('Acknowledgment ID'),
+  })
+  .meta({ id: 'SyncAckDto' });
+
+const SyncAckV2Schema = z
   .object({
     type: SyncEntityTypeSchema,
     ack: z.string().describe('Acknowledgment ID'),
   })
-  .meta({ id: 'SyncAckDto' });
+  .meta({ id: 'SyncAckV2Dto' });
 
 const SyncAckSetSchema = z
   .object({
@@ -559,5 +905,6 @@ const SyncAckDeleteSchema = z
 
 export class SyncStreamDto extends createZodDto(SyncStreamSchema) {}
 export class SyncAckDto extends createZodDto(SyncAckSchema) {}
+export class SyncAckV2Dto extends createZodDto(SyncAckV2Schema) {}
 export class SyncAckSetDto extends createZodDto(SyncAckSetSchema) {}
 export class SyncAckDeleteDto extends createZodDto(SyncAckDeleteSchema) {}

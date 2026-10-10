@@ -1,0 +1,12 @@
+{
+  "commands": [
+    { "id": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f", "type": "backup.run", "createdAt": "2026-09-26T03:58:12.000Z", "expiresAt": "2026-09-27T03:58:12.000Z" }
+  ],
+  "entitlementsChanged": false,
+  "servicesChanged": false,
+  "nextHeartbeatSec": 300,
+  "cloneSuspected": false,
+  "notices": [{ "id": "maintenance-2026-10-01", "level": "info", "message": "Frameleaf Cloud has planned maintenance on 1 October from 02:00 to 03:00 UTC." }],
+  "observedIp": "203.0.113.7",
+  "pricing": { "pricesVersion": "2026-09-25.1", "licensedDiscountPercent": 20, "effectiveFrom": "2026-09-25T00:00:00Z" }
+}

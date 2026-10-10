@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { MemoryType, type MemoryResponseDto, type OnThisDayDto } from '@immich/sdk';
+import { MemoryType, type MemoryResponseDto, type OnThisDayDto } from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { toAssetResponseDto } from 'src/ui/generators/timeline/rest-response.js';
 import type { MockTimelineAsset } from 'src/ui/generators/timeline/timeline-config.js';
@@ -30,6 +30,8 @@ export function generateMemory(config: MemoryConfig, assets: MockTimelineAsset[]
     createdAt: now,
     updatedAt: now,
     isSaved: config.isSaved ?? false,
+    isHidden: false,
+    title: null,
     ownerId: config.ownerId,
     type: MemoryType.OnThisDay,
   };

@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "provider": "frameleaf",
+  "region": "eu-central-1",
+  "endpoint": "https://s3.eu-central-1.backup.frameleaf.cloud",
+  "storageId": "0194b445-9c8a-7001-8000-000000000002",
+  "location": { "locationId": "loc-07", "cityId": "amsterdam", "city": "Amsterdam", "country": "Netherlands", "countryCode": "NL" },
+  "bucket": "fl-eu-0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "accessKeyId": "EXAMPLEACCESSKEY0002",
+  "expiresAt": "2027-03-24T12:00:00.000Z",
+  "rotateAfterSec": 7171200,
+  "quotaBytes": 1000000000000,
+  "readOnly": false,
+  "versioning": true,
+  "sseC": { "required": true, "algorithm": "AES256" },
+  "policy": { "denies": ["s3:DeleteObjectVersion", "s3:PutBucketVersioning", "s3:DeleteBucket", "s3:PutBucketPolicy", "s3:PutLifecycleConfiguration"] },
+  "previousKeyExpiresAt": null
+}

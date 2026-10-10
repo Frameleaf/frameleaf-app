@@ -1,0 +1,1751 @@
+{
+  "capabilities": [
+    "analysisWorker",
+    "generationWorker",
+    "gpuWorker",
+    "renderWorker",
+    "restorationWorker",
+    "transcriptionWorker"
+  ],
+  "commands": [
+    {
+      "capability": "transcriptionWorker",
+      "description": "Replace the sequence caption list with a validated, time-ordered set.",
+      "id": "captions.set",
+      "manifestIds": ["readme.local-ai-analysis.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "captions": "object[]"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Place library media on a track at a time, linking its camera audio.",
+      "id": "clip.add",
+      "manifestIds": ["command.addItem", "readme.timeline-editing.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "duration": "duration?",
+        "kind": "string?",
+        "trackId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove one clip or a selection with its linked clips, optionally closing the gap.",
+      "id": "clip.delete",
+      "manifestIds": ["command.removeItems", "readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string?",
+        "clipIds": "string[]?",
+        "ripple": "boolean?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Group selected clips so transforms and keyframes apply to them together.",
+      "id": "clip.group",
+      "manifestIds": ["extra.compose"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipIds": "string[]",
+        "name": "string?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Insert a marked source range at the playhead, rippling later clips right.",
+      "id": "clip.insert",
+      "manifestIds": ["readme.local-ai-analysis.4", "readme.timeline-editing.7"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "sourceIn": "time",
+        "sourceOut": "time",
+        "trackId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Join contiguous parts of one source back into a clip, with their linked parts.",
+      "id": "clip.join",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipIds": "string[]"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Move a clip to another time and optionally another track, carrying linked clips unless linkedSelectionEnabled is false (defaults to true).",
+      "id": "clip.move",
+      "manifestIds": ["command.moveItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "linkedSelectionEnabled": "boolean?",
+        "start": "time",
+        "trackId": "string?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Overwrite the track at the playhead with a marked source range.",
+      "id": "clip.overwrite",
+      "manifestIds": ["readme.timeline-editing.7"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "at": "time",
+        "sourceIn": "time",
+        "sourceOut": "time",
+        "trackId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Push or pull everything from a clip onward, on every track, by a signed delta.",
+      "id": "clip.push",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Point a placed clip and its synchronised linked clips at another library asset.",
+      "id": "clip.relink",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "clipId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Move a clip to another index on its track; the track re-flows contiguously.",
+      "id": "clip.reorder",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "index": "number",
+        "trackId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Move the cut between two adjacent clips without changing the sequence length.",
+      "id": "clip.roll",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "clipId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set clip volume, mute, fades, pitch shift and the clip EQ stage.",
+      "id": "clip.setAudio",
+      "manifestIds": ["readme.audio.1", "readme.audio.2", "readme.audio.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "eq": "object?",
+        "fadeIn": "duration?",
+        "fadeOut": "duration?",
+        "muted": "boolean?",
+        "pitchCents": "number?",
+        "pitchSemitones": "number?",
+        "volume": "number?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the clip blend mode and compositing opacity.",
+      "id": "clip.setBlendMode",
+      "manifestIds": [
+        "blend.color",
+        "blend.color-burn",
+        "blend.color-dodge",
+        "blend.darken",
+        "blend.difference",
+        "blend.dissolve",
+        "blend.divide",
+        "blend.exclusion",
+        "blend.hard-light",
+        "blend.hard-mix",
+        "blend.hue",
+        "blend.lighten",
+        "blend.linear-burn",
+        "blend.linear-dodge",
+        "blend.linear-light",
+        "blend.luminosity",
+        "blend.multiply",
+        "blend.normal",
+        "blend.overlay",
+        "blend.pin-light",
+        "blend.saturation",
+        "blend.screen",
+        "blend.soft-light",
+        "blend.subtract",
+        "blend.vivid-light",
+        "readme.effects-masks-compositing.6"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "blendMode": "string",
+        "clipId": "string",
+        "opacity": "number?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the crop rectangle and corner-pin quad edited with the preview gizmos.",
+      "id": "clip.setCrop",
+      "manifestIds": ["readme.preview-playback.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "cornerPin": "object?",
+        "crop": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the colour grade: look, intensity, primaries and the three colour wheels.",
+      "id": "clip.setGrade",
+      "manifestIds": ["extra.color-workspace"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "grade": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the from and to rectangles of a still clip, or clear the move.",
+      "id": "clip.setKenBurns",
+      "manifestIds": ["readme.keyframe-animation.6"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "kenBurns": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Link or unlink audio and video clips so later edits move them together.",
+      "id": "clip.setLink",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipIds": "string[]",
+        "linked": "boolean"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear the clip mask, including pen path geometry.",
+      "id": "clip.setMask",
+      "manifestIds": ["readme.effects-masks-compositing.7"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "mask": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Rate-stretch a bounded clip and its linked clips to a new speed.",
+      "id": "clip.setSpeed",
+      "manifestIds": ["readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "speed": "rate"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set position, scale, rotation and opacity for a clip.",
+      "id": "clip.setTransform",
+      "manifestIds": ["command.setTransform", "readme.preview-playback.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "transform": "object"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Parent a clip transform to another clip, or clear the pick-whip link.",
+      "id": "clip.setTransformParent",
+      "manifestIds": ["command.setTransformParent", "extra.parenting"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "parentId": "string?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add, retime, realign or remove the transition at the cut before a clip.",
+      "id": "clip.setTransition",
+      "manifestIds": [
+        "command.addTransition",
+        "command.removeTransition",
+        "command.updateTransition",
+        "readme.timeline-editing.4",
+        "readme.transitions.1",
+        "readme.transitions.2",
+        "readme.transitions.3",
+        "transition.additiveDissolve",
+        "transition.blurDissolve",
+        "transition.chromatic",
+        "transition.clockWipe",
+        "transition.dipToColorDissolve",
+        "transition.dissolve",
+        "transition.fade",
+        "transition.filmGateSlip",
+        "transition.flip",
+        "transition.glitch",
+        "transition.iris",
+        "transition.lensWarpZoom",
+        "transition.lightLeakBurn",
+        "transition.liquidDistort",
+        "transition.nonAdditiveDissolve",
+        "transition.pixelate",
+        "transition.radialBlur",
+        "transition.slide",
+        "transition.smoothCut",
+        "transition.sparkles",
+        "transition.wipe"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "transition": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Slide a clip along the track, trimming its neighbours instead of rippling.",
+      "id": "clip.slide",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Slip the source range inside a clip without moving the clip.",
+      "id": "clip.slip",
+      "manifestIds": ["readme.preview-playback.4", "readme.timeline-editing.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "delta": "duration"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Split clips at a time, carrying linked clips and Ken Burns geometry across.",
+      "id": "clip.split",
+      "manifestIds": ["command.split"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "clipIds": "string[]?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Trim a clip out point, optionally rippling the rest of the track.",
+      "id": "clip.trimEnd",
+      "manifestIds": ["command.trimEnd"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "end": "time",
+        "ripple": "boolean?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Trim a clip in point, optionally rippling the rest of the track.",
+      "id": "clip.trimStart",
+      "manifestIds": ["command.trimStart"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "ripple": "boolean?",
+        "start": "time"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Dissolve a group, leaving its clips in place.",
+      "id": "clip.ungroup",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "groupId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Patch clip fields the narrower commands do not own: name, text, style, position.",
+      "id": "clip.update",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "patch": "object"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Create a compound clip from a selection and place it, openable as its own sequence.",
+      "id": "composition.add",
+      "manifestIds": [
+        "command.addClip",
+        "extra.compose",
+        "readme.timeline-editing.1",
+        "readme.timeline-editing.2"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time?",
+        "clipIds": "string[]?",
+        "name": "string",
+        "trackId": "string?"
+      },
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Override published control values on one instance of a composition.",
+      "id": "composition.setControlOverrides",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "compositionClipId": "string",
+        "overrides": "object"
+      },
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Publish the controls a composition exposes to its instances.",
+      "id": "composition.setPublishedControls",
+      "manifestIds": ["extra.published-controls"],
+      "mutatesGraph": true,
+      "payload": {
+        "compositionId": "string",
+        "controls": "object[]"
+      },
+      "scope": "composition",
+      "undoable": true
+    },
+    {
+      "capability": "gpuWorker",
+      "description": "Add a GPU effect to a clip effect stack at an index.",
+      "id": "effect.add",
+      "manifestIds": [
+        "command.addEffect",
+        "readme.effects-masks-compositing.1",
+        "readme.effects-masks-compositing.2",
+        "readme.effects-masks-compositing.3",
+        "readme.effects-masks-compositing.4",
+        "readme.effects-masks-compositing.5"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "effect": "string",
+        "index": "number?",
+        "params": "object?"
+      },
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove one effect from a clip effect stack.",
+      "id": "effect.remove",
+      "manifestIds": ["command.removeEffect"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "effectId": "string"
+      },
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Reorder the effect stack, which changes the rendered result.",
+      "id": "effect.reorder",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "effectId": "string",
+        "index": "number"
+      },
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": "gpuWorker",
+      "description": "Set the parameters of one effect instance, including LUT and key controls.",
+      "id": "effect.update",
+      "manifestIds": [
+        "effect.gpu-ascii",
+        "effect.gpu-block-glitch",
+        "effect.gpu-blocks",
+        "effect.gpu-box-blur",
+        "effect.gpu-brightness",
+        "effect.gpu-bulge",
+        "effect.gpu-chroma-key",
+        "effect.gpu-color-glitch",
+        "effect.gpu-color-wheels",
+        "effect.gpu-contrast",
+        "effect.gpu-crt",
+        "effect.gpu-curves",
+        "effect.gpu-dither",
+        "effect.gpu-droste",
+        "effect.gpu-edge-detect",
+        "effect.gpu-exposure",
+        "effect.gpu-fluted-glass",
+        "effect.gpu-gaussian-blur",
+        "effect.gpu-glass-mosaic",
+        "effect.gpu-glow",
+        "effect.gpu-gradient-map",
+        "effect.gpu-grain",
+        "effect.gpu-grayscale",
+        "effect.gpu-halftone",
+        "effect.gpu-hue-shift",
+        "effect.gpu-ink",
+        "effect.gpu-invert",
+        "effect.gpu-kaleidoscope",
+        "effect.gpu-levels",
+        "effect.gpu-lut",
+        "effect.gpu-mirror",
+        "effect.gpu-motion-blur",
+        "effect.gpu-pixel-sort",
+        "effect.gpu-pixel-sort-hq",
+        "effect.gpu-pixelate",
+        "effect.gpu-posterize",
+        "effect.gpu-power-window",
+        "effect.gpu-radial-blur",
+        "effect.gpu-rgb-split",
+        "effect.gpu-ripple-glass",
+        "effect.gpu-saturation",
+        "effect.gpu-scanlines",
+        "effect.gpu-secondary-qualifier",
+        "effect.gpu-sepia",
+        "effect.gpu-sharpen",
+        "effect.gpu-temperature",
+        "effect.gpu-threshold",
+        "effect.gpu-trigger-wave",
+        "effect.gpu-twirl",
+        "effect.gpu-vhs",
+        "effect.gpu-vibrance",
+        "effect.gpu-vignette",
+        "effect.gpu-wave",
+        "effect.gpu-zoom-blur"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "effectId": "string",
+        "params": "object"
+      },
+      "scope": "effect",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Redo the last undone revision, as a server-side revision move.",
+      "id": "history.redo",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "toRevision": "number?"
+      },
+      "scope": "history",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Undo the last undoable revision; the stack lives with the stored project.",
+      "id": "history.undo",
+      "manifestIds": ["readme.timeline-editing.6"],
+      "mutatesGraph": true,
+      "payload": {
+        "toRevision": "number?"
+      },
+      "scope": "history",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Ask the durable job model to cancel a queued or running job.",
+      "id": "job.cancel",
+      "manifestIds": ["extra.render-queue"],
+      "mutatesGraph": false,
+      "payload": {
+        "jobId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "description": "Queue AI captioning of media with an explicit destination.",
+      "id": "job.enqueueCaptioning",
+      "manifestIds": ["readme.local-ai-analysis.2"],
+      "mutatesGraph": false,
+      "payload": {
+        "clipIds": "string[]?",
+        "destinationId": "string",
+        "sampleCadence": "duration?",
+        "sequenceId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "description": "Queue a render of any sequence to an explicit destination.",
+      "id": "job.enqueueExport",
+      "manifestIds": [
+        "readme.export.1",
+        "readme.export.2",
+        "readme.export.3",
+        "readme.export.4",
+        "readme.export.5",
+        "readme.export.6",
+        "readme.export.7"
+      ],
+      "mutatesGraph": false,
+      "payload": {
+        "audioFormat": "string?",
+        "colour": "string",
+        "container": "string?",
+        "destinationId": "string",
+        "format": "string",
+        "quality": "string?",
+        "resolution": "string",
+        "sequenceId": "string",
+        "subtitles": "string?",
+        "videoCodec": "string?"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "description": "Queue filler-word detection; the edit itself is applied after review.",
+      "id": "job.enqueueFillerRemoval",
+      "manifestIds": ["extra.filler-removal"],
+      "mutatesGraph": false,
+      "payload": {
+        "clipIds": "string[]?",
+        "destinationId": "string",
+        "sequenceId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "description": "Queue frame interpolation for a clip to an explicit destination.",
+      "id": "job.enqueueInterpolation",
+      "manifestIds": ["extra.interpolation-rife"],
+      "mutatesGraph": false,
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string",
+        "factor": "number?",
+        "targetFps": "rate"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "generationWorker",
+      "description": "Queue local music generation; the result arrives as an importable asset.",
+      "id": "job.enqueueMusicGeneration",
+      "manifestIds": ["extra.musicgen", "readme.local-ai-analysis.6"],
+      "mutatesGraph": false,
+      "payload": {
+        "destinationId": "string",
+        "duration": "duration",
+        "preset": "string?",
+        "prompt": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "description": "Queue proxy, thumbnail and waveform generation for project media.",
+      "id": "job.enqueueProxy",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": false,
+      "payload": {
+        "assetIds": "string[]",
+        "destinationId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "description": "Queue a Frameleaf restoration pass with an explicit, never implicit, destination.",
+      "id": "job.enqueueRestoration",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {
+        "assetId": "string?",
+        "destinationId": "string",
+        "keepGrain": "boolean?",
+        "mode": "string",
+        "preview": "boolean",
+        "restorationId": "string?",
+        "upscale": "number"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "renderWorker",
+      "description": "Queue a reversed conform of a clip source.",
+      "id": "job.enqueueReverseConform",
+      "manifestIds": ["extra.reverse-conform"],
+      "mutatesGraph": false,
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "description": "Queue scene detection over project media.",
+      "id": "job.enqueueSceneDetection",
+      "manifestIds": ["readme.local-ai-analysis.3"],
+      "mutatesGraph": false,
+      "payload": {
+        "assetIds": "string[]",
+        "destinationId": "string",
+        "mode": "string",
+        "verifyWithModel": "boolean?"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "analysisWorker",
+      "description": "Queue silence detection; the edit itself is applied after review.",
+      "id": "job.enqueueSilenceRemoval",
+      "manifestIds": ["extra.silence-removal"],
+      "mutatesGraph": false,
+      "payload": {
+        "destinationId": "string",
+        "minimumSilence": "duration?",
+        "sequenceId": "string",
+        "thresholdDb": "number?"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "generationWorker",
+      "description": "Queue a local text-to-speech voiceover; the result arrives as an asset.",
+      "id": "job.enqueueTextToSpeech",
+      "manifestIds": [
+        "extra.tts-kokoro",
+        "extra.tts-moss",
+        "extra.tts-supertonic",
+        "readme.local-ai-analysis.5"
+      ],
+      "mutatesGraph": false,
+      "payload": {
+        "destinationId": "string",
+        "engine": "string?",
+        "text": "string",
+        "voice": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "transcriptionWorker",
+      "description": "Queue on-device transcription; captions land through captions.set.",
+      "id": "job.enqueueTranscription",
+      "manifestIds": ["readme.local-ai-analysis.1"],
+      "mutatesGraph": false,
+      "payload": {
+        "destinationId": "string",
+        "language": "string",
+        "sequenceId": "string"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": "restorationWorker",
+      "description": "Queue an upscale pass for a clip to an explicit destination.",
+      "id": "job.enqueueUpscale",
+      "manifestIds": ["extra.upscale-anime4k"],
+      "mutatesGraph": false,
+      "payload": {
+        "clipId": "string",
+        "destinationId": "string",
+        "factor": "number"
+      },
+      "scope": "job",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Add a keyframe on an animatable property at a time.",
+      "id": "keyframe.add",
+      "manifestIds": [
+        "command.addKeyframe",
+        "readme.keyframe-animation.5",
+        "readme.keyframe-animation.6"
+      ],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "clipId": "string",
+        "easing": "string?",
+        "property": "string",
+        "value": "object"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove keyframes from one property.",
+      "id": "keyframe.remove",
+      "manifestIds": ["command.removeKeyframes"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "keyframeIds": "string[]",
+        "property": "string"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set easing, an explicit bezier or spring parameters on selected keyframes.",
+      "id": "keyframe.setEasing",
+      "manifestIds": ["readme.keyframe-animation.2"],
+      "mutatesGraph": true,
+      "payload": {
+        "bezier": "object?",
+        "clipId": "string",
+        "easing": "string",
+        "keyframeIds": "string[]",
+        "property": "string",
+        "spring": "object?"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Retime or revalue one keyframe from the graph editor or dopesheet, or set its velocity handles and path tangents.",
+      "id": "keyframe.update",
+      "manifestIds": ["readme.keyframe-animation.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time?",
+        "clipId": "string",
+        "keyframeId": "string",
+        "property": "string",
+        "spatial": "object?",
+        "temporalEase": "object?",
+        "value": "object?"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remap Lottie colours and themes, edit its text and adjust value slots.",
+      "id": "lottie.update",
+      "manifestIds": ["readme.media-import.2"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "colors": "object?",
+        "slots": "object?",
+        "text": "object?"
+      },
+      "scope": "media",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add a marker on the sequence at a time.",
+      "id": "marker.add",
+      "manifestIds": ["readme.timeline-editing.6"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "colour": "string?",
+        "name": "string?"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove a sequence marker.",
+      "id": "marker.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "markerId": "string"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Rename, recolour or move a sequence marker.",
+      "id": "marker.update",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "markerId": "string",
+        "patch": "object"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Reference library assets from the project without copying an original.",
+      "id": "media.import",
+      "manifestIds": ["readme.media-import.1"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetIds": "string[]"
+      },
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Relink project media to another asset when the original moved.",
+      "id": "media.relink",
+      "manifestIds": ["readme.media-import.4"],
+      "mutatesGraph": true,
+      "payload": {
+        "assetId": "string",
+        "mediaId": "string"
+      },
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Drop unused media references from the project; originals are untouched.",
+      "id": "media.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "mediaIds": "string[]"
+      },
+      "scope": "media",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Place a music bed on the music track.",
+      "id": "music.add",
+      "manifestIds": ["command.addItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "duration": "duration?",
+        "musicId": "string",
+        "volume": "number?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Tell the host the engine no longer needs the frame it last requested.",
+      "id": "preview.release",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {},
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": "gpuWorker",
+      "description": "Ask for one frame of the current revision, rendered at an exact rational time.",
+      "id": "preview.request",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {
+        "at": "time",
+        "quality": "string",
+        "viewportHeight": "number",
+        "viewportWidth": "number"
+      },
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Apply a project template, including canvas and frame rate defaults; a rate change on existing content needs timing keep-time or keep-frames.",
+      "id": "project.applyTemplate",
+      "manifestIds": ["readme.timeline-editing.8"],
+      "mutatesGraph": true,
+      "payload": {
+        "templateId": "string",
+        "timing": "string?"
+      },
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Export a validated portable project bundle, optionally with copies of the media the person owns.",
+      "id": "project.exportBundle",
+      "manifestIds": ["readme.projects-storage.5"],
+      "mutatesGraph": false,
+      "payload": {
+        "includeMedia": "boolean?",
+        "sequenceIds": "string[]?"
+      },
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Import a validated portable project bundle into this project.",
+      "id": "project.importBundle",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "bundleUploadId": "string"
+      },
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Rename the project.",
+      "id": "project.rename",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "name": "string"
+      },
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the project master bus, which is not the monitor or device volume.",
+      "id": "project.setMasterAudio",
+      "manifestIds": ["readme.preview-playback.6"],
+      "mutatesGraph": true,
+      "payload": {
+        "ducking": "boolean?",
+        "gainDb": "number?",
+        "gainEnvelope": "Array<{id:string,at:Rational,gainDb:number}>?",
+        "muted": "boolean?"
+      },
+      "scope": "project",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set editor preferences stored with the project: mode, guides, loop, ducking.",
+      "id": "project.setSettings",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "patch": "object"
+      },
+      "scope": "project",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Bake a procedural motion modifier into explicit keyframes.",
+      "id": "property.bakeModifier",
+      "manifestIds": ["readme.keyframe-animation.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "modifierId": "string",
+        "property": "string"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear a property expression.",
+      "id": "property.setExpression",
+      "manifestIds": ["extra.expressions"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "expression": "string?",
+        "property": "string"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Attach or clear a procedural motion modifier on a property.",
+      "id": "property.setModifier",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "modifier": "object?",
+        "property": "string"
+      },
+      "scope": "keyframe",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add a timestamped review comment.",
+      "id": "review.add",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {
+        "text": "string",
+        "time": "time"
+      },
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Remove a review comment.",
+      "id": "review.remove",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {
+        "commentId": "string"
+      },
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Edit or resolve a review comment.",
+      "id": "review.update",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "payload": {
+        "commentId": "string",
+        "patch": "object"
+      },
+      "scope": "review",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Add a sequence to the project.",
+      "id": "sequence.add",
+      "manifestIds": ["readme.timeline-editing.2"],
+      "mutatesGraph": true,
+      "payload": {
+        "fps": "rate?",
+        "height": "number?",
+        "name": "string",
+        "width": "number?"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Duplicate a sequence, including its tracks and clips.",
+      "id": "sequence.duplicate",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "name": "string?",
+        "sequenceId": "string"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove a sequence; the project keeps at least one.",
+      "id": "sequence.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "sequenceId": "string"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Switch the active sequence, which is stored on the project.",
+      "id": "sequence.setActive",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "sequenceId": "string"
+      },
+      "scope": "sequence",
+      "undoable": false
+    },
+    {
+      "capability": null,
+      "description": "Set sequence name, caption language and caption burn-in.",
+      "id": "sequence.setFields",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "captionLanguage": "string?",
+        "captionsBurnIn": "boolean?",
+        "name": "string?"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the sequence canvas and frame rate, including auto-match from first media; a rate change on existing content needs timing keep-time or keep-frames.",
+      "id": "sequence.setSettings",
+      "manifestIds": ["readme.timeline-editing.8"],
+      "mutatesGraph": true,
+      "payload": {
+        "fps": "rate?",
+        "height": "number?",
+        "sequenceId": "string",
+        "timing": "string?",
+        "width": "number?"
+      },
+      "scope": "sequence",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add a shape or a pen path, on a new top layer or a named video track, optionally as a mask.",
+      "id": "shape.add",
+      "manifestIds": ["command.addItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "duration": "duration?",
+        "mask": "object?",
+        "shapeType": "string",
+        "style": "object?",
+        "trackId": "string?",
+        "transform": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear the fill, stroke, geometry and pen-path fields of a shape.",
+      "id": "shape.setStyle",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "style": "object"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set per-character, per-word or per-line text animation.",
+      "id": "text.setMotion",
+      "manifestIds": ["readme.keyframe-animation.4"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "motion": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add a title clip on the title track.",
+      "id": "title.add",
+      "manifestIds": ["command.addText"],
+      "mutatesGraph": true,
+      "payload": {
+        "animation": "string?",
+        "at": "time",
+        "duration": "duration?",
+        "position": "string?",
+        "style": "string?",
+        "text": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear single style fields and the styled spans of a title.",
+      "id": "title.setStyle",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "spanLayout": "string?",
+        "spans": "object[]?",
+        "style": "object"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Add a track of a kind at an index.",
+      "id": "track.add",
+      "manifestIds": ["command.addTrack"],
+      "mutatesGraph": true,
+      "payload": {
+        "index": "number?",
+        "kind": "string",
+        "name": "string?"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Close the gap at a time on a track, or every gap on it, rippling later clips.",
+      "id": "track.closeGap",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time?",
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Remove a track and the clips on it.",
+      "id": "track.remove",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Reorder tracks, which changes compositing order.",
+      "id": "track.reorder",
+      "manifestIds": [],
+      "mutatesGraph": true,
+      "payload": {
+        "index": "number",
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set track name, mute, lock, solo and gain.",
+      "id": "track.set",
+      "manifestIds": ["readme.timeline-editing.5"],
+      "mutatesGraph": true,
+      "payload": {
+        "patch": "object",
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set the track fader, pan and the track EQ stage.",
+      "id": "track.setAudio",
+      "manifestIds": ["readme.audio.1", "readme.audio.3"],
+      "mutatesGraph": true,
+      "payload": {
+        "eq": "object?",
+        "gainDb": "number?",
+        "pan": "number?",
+        "trackId": "string"
+      },
+      "scope": "track",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Place a recorded or generated voiceover on the voice track.",
+      "id": "voiceover.add",
+      "manifestIds": ["extra.microphone"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "duration": "duration",
+        "uploadId": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    }
+  ],
+  "counts": {
+    "commands": 97,
+    "commandsWithoutManifestRow": 23,
+    "manifestRows": 210,
+    "manifestRowsDeclaredNonCommand": 28,
+    "manifestRowsMapped": 182,
+    "nonCommandRowsLinkedToCommands": 16
+  },
+  "engine": "freecut",
+  "engineRevision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+  "fieldTypes": [
+    "Array<{id:string,at:Rational,gainDb:number}>",
+    "boolean",
+    "duration",
+    "number",
+    "object",
+    "object[]",
+    "rate",
+    "string",
+    "string[]",
+    "time"
+  ],
+  "generator": "scripts/frameleaf-studio-commands.mjs",
+  "manifestPath": "studio/freecut-feature-manifest.json",
+  "nonCommandRows": [
+    {
+      "commands": ["clip.setTransform"],
+      "id": "extra.bento",
+      "reason": "Arranges the selected clips on the canvas by writing their transforms; it has no command of its own."
+    },
+    {
+      "commands": [],
+      "id": "extra.portable-headless",
+      "reason": "Workspace and lifecycle API the host owns; not an in-editor command.",
+      "withoutCommand": "The headless render contract is the render worker; its probes cover it, not a command."
+    },
+    {
+      "commands": [],
+      "id": "module.docs",
+      "reason": "Source module inventory row, not an action.",
+      "withoutCommand": "In-app help pages are read-only documentation; nothing edits the project."
+    },
+    {
+      "commands": ["history.redo", "history.undo"],
+      "id": "module.editor",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [
+        "effect.add",
+        "effect.remove",
+        "effect.reorder",
+        "effect.update"
+      ],
+      "id": "module.effects",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": ["job.enqueueExport", "project.exportBundle"],
+      "id": "module.export",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [
+        "keyframe.add",
+        "keyframe.remove",
+        "keyframe.setEasing",
+        "keyframe.update",
+        "property.bakeModifier",
+        "property.setExpression",
+        "property.setModifier"
+      ],
+      "id": "module.keyframes",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": ["clip.add", "lottie.update"],
+      "id": "module.lottie-browser",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [
+        "clip.relink",
+        "media.import",
+        "media.relink",
+        "media.remove"
+      ],
+      "id": "module.media-library",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [
+        "clip.setCrop",
+        "clip.setMask",
+        "clip.setTransform",
+        "clip.setTransformParent",
+        "preview.release",
+        "preview.request"
+      ],
+      "id": "module.preview",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": ["project.exportBundle", "project.importBundle"],
+      "id": "module.project-bundle",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [
+        "project.applyTemplate",
+        "project.rename",
+        "project.setSettings",
+        "sequence.add",
+        "sequence.duplicate",
+        "sequence.remove",
+        "sequence.setActive",
+        "sequence.setFields",
+        "sequence.setSettings"
+      ],
+      "id": "module.projects",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": ["clip.insert", "job.enqueueSceneDetection"],
+      "id": "module.scene-browser",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [],
+      "id": "module.settings",
+      "reason": "Source module inventory row, not an action.",
+      "withoutCommand": "Editor preferences and hotkeys are per-device state, not the project graph."
+    },
+    {
+      "commands": [
+        "clip.add",
+        "clip.delete",
+        "clip.insert",
+        "clip.join",
+        "clip.move",
+        "clip.overwrite",
+        "clip.push",
+        "clip.reorder",
+        "clip.roll",
+        "clip.setLink",
+        "clip.setSpeed",
+        "clip.slide",
+        "clip.slip",
+        "clip.split",
+        "clip.trimEnd",
+        "clip.trimStart",
+        "marker.add",
+        "marker.remove",
+        "marker.update",
+        "track.add",
+        "track.closeGap",
+        "track.remove",
+        "track.reorder",
+        "track.set"
+      ],
+      "id": "module.timeline",
+      "reason": "Source module inventory row, not an action."
+    },
+    {
+      "commands": [],
+      "id": "module.workspace-gate",
+      "reason": "Source module inventory row, not an action.",
+      "withoutCommand": "Replaced by server project storage: there is no workspace folder to ask for."
+    },
+    {
+      "commands": ["clip.setAudio", "clip.setTransition", "track.setAudio"],
+      "id": "readme.audio.4",
+      "reason": "Render-path preservation obligation proved by export evidence, not by a command."
+    },
+    {
+      "commands": ["clip.update", "effect.update"],
+      "id": "readme.effects-masks-compositing.8",
+      "reason": "Colour picker and eyedropper; an input control whose result travels in another payload."
+    },
+    {
+      "commands": [],
+      "id": "readme.local-ai-analysis.7",
+      "reason": "Model cache and unload controls live in settings, outside the project graph.",
+      "withoutCommand": "Model cache and unload controls are per-device settings, not the project graph."
+    },
+    {
+      "commands": ["media.import", "preview.request"],
+      "id": "readme.media-import.3",
+      "reason": "ProRes decode is a deployment capability, not an editing command."
+    },
+    {
+      "commands": ["preview.request"],
+      "id": "readme.preview-playback.2",
+      "reason": "Playback clock and composition runtime; no graph change."
+    },
+    {
+      "commands": [],
+      "id": "readme.preview-playback.3",
+      "reason": "Scrub overlays, prewarming and adaptive quality; no graph change.",
+      "withoutCommand": "Playback performance only; nothing changes the graph."
+    },
+    {
+      "commands": [],
+      "id": "readme.preview-playback.5",
+      "reason": "Colour scopes are read-only measurement surfaces.",
+      "withoutCommand": "The scopes measure the picture and never edit it."
+    },
+    {
+      "commands": [],
+      "id": "readme.projects-storage.1",
+      "reason": "Project storage is server-side here; the workspace folder API does not apply.",
+      "withoutCommand": "Replaced by server project storage; covered by the save and reopen cases of the graph axis."
+    },
+    {
+      "commands": [],
+      "id": "readme.projects-storage.2",
+      "reason": "Workspace switching is replaced by the account library; not an editing command.",
+      "withoutCommand": "Replaced by the server project library; covered by the project service."
+    },
+    {
+      "commands": [],
+      "id": "readme.projects-storage.3",
+      "reason": "Project storage and migration are host lifecycle, not editing commands.",
+      "withoutCommand": "Projects are stored as server revisions; covered by the save and reopen cases of the graph axis."
+    },
+    {
+      "commands": [],
+      "id": "readme.projects-storage.4",
+      "reason": "Project trash and delete flows are host lifecycle with their own authorization.",
+      "withoutCommand": "Trash, restore and permanent delete are measured on the project service against a real database, not through an editor command."
+    },
+    {
+      "commands": [],
+      "id": "readme.projects-storage.6",
+      "reason": "Auto-save, thumbnails and orphan cleanup are host obligations, not commands.",
+      "withoutCommand": "Autosave is the save and reopen cases of the graph axis; the rest is server housekeeping."
+    }
+  ],
+  "schemaVersion": 1,
+  "scopes": [
+    "clip",
+    "composition",
+    "effect",
+    "history",
+    "job",
+    "keyframe",
+    "media",
+    "preview",
+    "project",
+    "review",
+    "sequence",
+    "track"
+  ],
+  "webVocabularyPath": "web/src/lib/frameleaf/studio/commands.ts"
+}

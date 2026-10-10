@@ -7,6 +7,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
+  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -14,33 +15,55 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
+import { discoverMediaLocation } from 'src/utils/media-location.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
-const docsMessage = `Please see https://docs.immich.app/administration/system-integrity#folder-checks for more information.`;
+const docsMessage = `Please see https://help.frameleaf.app/administration/system-integrity#folder-checks for more information.`;
 
 @Injectable()
 export class StorageService extends BaseService {
+  private attemptSweepTimer?: NodeJS.Timeout;
+  private attemptSweepActive?: Promise<void>;
+
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  startAttemptSweep() {
+    this.attemptSweepTimer ??= setInterval(() => void this.sweepAttemptOutputs(), 60_000);
+    this.attemptSweepTimer.unref();
+    void this.sweepAttemptOutputs();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async stopAttemptSweep() {
+    clearInterval(this.attemptSweepTimer);
+    this.attemptSweepTimer = undefined;
+    await this.attemptSweepActive;
+    await closeAttemptSweep();
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  sweepAttemptOutputs(): Promise<void> {
+    return (this.attemptSweepActive ??= this.physicalFileRepository
+      .sweepAttempts([
+        StorageCore.getBaseFolder(StorageFolder.Thumbnails),
+        StorageCore.getBaseFolder(StorageFolder.EncodedVideo),
+      ])
+      .then((result) => {
+        if (result?.deleted) this.logger.log(`Attempt output cleanup: ${result.deleted} files removed`);
+      })
+      .catch((error) => {
+        this.logger.warn(`Attempt output cleanup deferred: ${error}`);
+      })
+      .finally(() => {
+        this.attemptSweepActive = undefined;
+      }));
+  }
+
   private detectMediaLocation(): string {
-    const envData = this.configRepository.getEnv();
-    if (envData.storage.mediaLocation) {
-      return envData.storage.mediaLocation;
-    }
-
-    const targets: string[] = [];
-    const candidates = ['/data', '/usr/src/app/upload'];
-
-    for (const candidate of candidates) {
-      const isExists = this.storageRepository.existsSync(candidate);
-      if (isExists) {
-        targets.push(candidate);
-      }
-    }
-
-    if (targets.length === 1) {
-      return targets[0];
-    }
-
-    return '/usr/src/app/upload';
+    return discoverMediaLocation(this.configRepository.getEnv().storage.mediaLocation, (path) =>
+      this.storageRepository.existsSync(path),
+    );
   }
 
   initializeMediaLocation(): void {
@@ -138,7 +161,8 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files } = job;
+    const { files, removedAssetId, original } = job;
+    const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
 
     // TODO: one job per file
     for (const file of files) {
@@ -153,8 +177,25 @@ export class StorageService extends BaseService {
         // paths without checking whether those paths were already shared
         // master files, and unlinked the only copy. Refuse to delete anything
         // a live row still names, whatever the caller intended.
-        const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(file, () =>
-          this.storageRepository.unlink(file),
+        // universal storage: an unreferenced original goes to the file trash, never unlinked
+        const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
+          file,
+          () => this.storageRepository.unlink(file),
+          {
+            removedAssetId,
+            trash: {
+              move,
+              ...(original?.path === file && {
+                original: {
+                  checksum: Buffer.from(original.checksum, 'hex'),
+                  sizeInBytes: original.sizeInBytes,
+                  ownerId: original.ownerId,
+                  assetId: original.assetId,
+                  originalFileName: original.originalFileName,
+                },
+              }),
+            },
+          },
         );
 
         if (!deleted) {

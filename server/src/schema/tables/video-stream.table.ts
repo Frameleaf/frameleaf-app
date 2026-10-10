@@ -6,8 +6,8 @@ import {
   PrimaryColumn,
   PrimaryGeneratedColumn,
   Table,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { VideoSegmentCodec } from 'src/enum.js';
 import { video_stream_variant_codec_enum } from 'src/schema/enums.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';

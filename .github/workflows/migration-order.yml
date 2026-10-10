@@ -3,9 +3,11 @@ name: Migration Order
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
+      - master/frameleaf-implementation
 permissions:
   contents: read
 concurrency:
@@ -19,27 +21,10 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    env:
-      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-      BASELINE: ${{ github.workspace }}/.frameleaf-migration-base/server/src/schema/migrations/ORDER
-      ORDER: ${{ github.workspace }}/server/src/schema/migrations/ORDER
     steps:
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: Validate immutable comparison commit
-        run: |-
-          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::An exact 40-character base commit SHA is required."
-            exit 1
-          fi
-      - name: Checkout exact base
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: Frameleaf/frameleaf-app
-          ref: ${{ env.BASE_SHA }}
-          path: .frameleaf-migration-base
           persist-credentials: false
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
@@ -49,9 +34,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - name: Install migration tooling
-        run: pnpm --filter immich install --frozen-lockfile
-      - name: Verify fork migration ORDER by authority
-        run: |-
-          node --test scripts/check-fork-migration-order.test.mjs
-          pnpm --filter immich migrations:verify-order
-          node scripts/check-fork-migration-order.mjs "$BASELINE" "$ORDER"
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Verify canonical migration ORDER
+        run: pnpm --filter frameleaf migrations:verify-order

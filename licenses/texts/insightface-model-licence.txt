@@ -1,0 +1,5 @@
+## License
+
+The library code is released under the **MIT License**, for academic and
+commercial use. **The pretrained models provided with this library are for
+non-commercial research only**, whether downloaded automatically or manually.

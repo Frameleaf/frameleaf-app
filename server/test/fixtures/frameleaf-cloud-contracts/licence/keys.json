@@ -1,0 +1,37 @@
+{
+  "keys": [
+    {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "aoOLz-bGfkSqlIqm3iMpc4jJxM0CPbw45ZSoBitaVgo",
+      "kid": "S1A_16lonsDGAW-PcD2rTp5uL87jIZR_LG_1q5R1Pik",
+      "alg": "EdDSA",
+      "use": "sig",
+      "status": "active",
+      "notBefore": "2026-09-16T00:00:00.000Z",
+      "retireAfter": null
+    },
+    {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "eDKP3rx1X_SHZbZSudq42G0uxgvx1XOfW71tUEkOGuY",
+      "kid": "fGtezlBJ3jGNodlA-cPkwCPXpNqfUtDpVSDWN5hd8Q4",
+      "alg": "EdDSA",
+      "use": "sig",
+      "status": "next",
+      "notBefore": "2027-03-15T00:00:00.000Z",
+      "retireAfter": null
+    },
+    {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "ovhoJ7PIz-CF0VeXDK9K3Vmqas5IajqjiWWPnL3NP0E",
+      "kid": "ZFCeOOGPorPa26JzzSb99atJfiiKMyZBVRXd3Pal-MY",
+      "alg": "EdDSA",
+      "use": "sig",
+      "status": "retired",
+      "notBefore": "2026-03-20T00:00:00.000Z",
+      "retireAfter": "2026-10-16T00:00:00.000Z"
+    }
+  ]
+}

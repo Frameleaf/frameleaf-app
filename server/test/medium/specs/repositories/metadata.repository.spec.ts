@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -45,6 +46,44 @@ describe(MetadataRepository.name, () => {
       const fileContent = readFileSync(sidecarFile).toString();
       expect(fileContent).toEqual(expect.stringContaining('digiKam:TagsList'));
       expect(fileContent).toEqual(expect.stringContaining('<rdf:li/>'));
+    });
+
+    it('fails when the sidecar could not be written (FL-195)', async () => {
+      const { sut } = setup();
+      const dir = mkdtempSync(join(tmpdir(), 'metadata-medium-write-tags'));
+      // exiftool cannot create the file, as when a concurrent rewrite of the same sidecar lost it
+      const sidecarFile = join(dir, 'missing', 'sidecar.xmp');
+
+      await expect(sut.writeTags(sidecarFile, { Description: 'lost' })).rejects.toThrow();
+    });
+  });
+
+  describe('sidecar writes (FL-195)', () => {
+    it('run one at a time per asset, and side by side for different assets', async () => {
+      const { ctx } = newMediumService(BaseService, {
+        database,
+        real: [DatabaseRepository],
+        mock: [LoggingRepository],
+      });
+      const db = ctx.get(DatabaseRepository);
+      const events: string[] = [];
+      const write = (assetId: string, name: string) =>
+        db.withAssetSidecarLock(assetId, async () => {
+          events.push(`${name} start`);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          events.push(`${name} end`);
+        });
+
+      const one = '00000000-0000-4000-8000-000000000001';
+      const two = '00000000-0000-4000-8000-000000000002';
+      await Promise.all([write(one, 'a'), write(one, 'b')]);
+      expect(
+        events.indexOf('a end') < events.indexOf('b start') || events.indexOf('b end') < events.indexOf('a start'),
+      ).toBe(true);
+
+      events.length = 0;
+      await Promise.all([write(one, 'c'), write(two, 'd')]);
+      expect(events.slice(0, 2).toSorted()).toEqual(['c start', 'd start']);
     });
   });
 

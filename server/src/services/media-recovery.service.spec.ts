@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetLockReason, AssetStatus, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import {
   MediaRecoveryRepository,
@@ -22,15 +22,19 @@ describe(MediaRecoveryService.name, () => {
   let original: string;
   let candidate: RecoveryCandidate;
   let reservation: RecoveryReservation;
+  const importedId = randomUUID();
   const repository = {
     getResource: vi.fn(),
+    enqueueLocalEffects: vi.fn().mockResolvedValue(0),
     findCandidates: vi.fn(),
     reserve: vi.fn(),
     commit: vi.fn(),
     commitVerifiedReuse: vi.fn(),
+    identityReuseAuthority: vi.fn(),
   };
   beforeEach(async () => {
     vi.clearAllMocks();
+    repository.identityReuseAuthority.mockResolvedValue({ required: false });
     directory = await mkdtemp(join(tmpdir(), 'icloud-recovery-test-'));
     const mocks = getMocks();
     mocks.media.decodeImage.mockResolvedValue({ data: bytes, info: {} } as never);
@@ -47,7 +51,6 @@ describe(MediaRecoveryService.name, () => {
       originalFileName: 'photo.jpg',
       type: AssetType.Image,
       includeHidden: false,
-      recoverExternalAsManaged: false,
     };
     await writeFile(input.stagedPath, bytes);
     const verified = await integrity.validate({
@@ -75,11 +78,11 @@ describe(MediaRecoveryService.name, () => {
       isOffline: false,
       hidden: false,
       physicalOriginalFileId: null,
-      forkPhysicalFileId: null,
       sizeInBytes: bytes.length,
       damaged: false,
       matchesContent: true,
       identityConflict: false,
+      lockReason: null,
     };
     repository.getResource.mockResolvedValue({
       stagingPath: input.stagedPath,
@@ -89,12 +92,12 @@ describe(MediaRecoveryService.name, () => {
       sha256: verified.sha256,
     });
     repository.findCandidates.mockResolvedValue([candidate]);
-    repository.reserve.mockImplementation(({ outcome, proposedPath }) => {
+    repository.reserve.mockImplementation(({ outcome, proposedPath, candidate: target }) => {
       expect(proposedPath === original || proposedPath.includes('/.icloud-recovery/')).toBe(true);
       reservation = {
         promotedPath: outcome === 'reused' ? original : join(directory, '.icloud-recovery', 'final.jpg'),
         target: {
-          assetId: candidate.id,
+          assetId: target?.id ?? importedId,
           updateId: candidate.updateId,
           originalPath: original,
           checksumHex: candidate.checksum.toString('hex'),
@@ -102,7 +105,6 @@ describe(MediaRecoveryService.name, () => {
           isExternal: false,
           libraryId: null,
           physicalOriginalFileId: null,
-          forkPhysicalFileId: null,
           outcome,
         },
       };
@@ -125,6 +127,73 @@ describe(MediaRecoveryService.name, () => {
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
   });
+  it('awaits the durable local-effect wake after a committed edited sync result', async () => {
+    repository.getResource.mockResolvedValue({
+      ...(await repository.getResource(input)),
+      role: 'edited-image',
+      auditRequestId: null,
+    });
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    repository.enqueueLocalEffects.mockImplementationOnce(async () => {
+      expect(repository.commit).toHaveBeenCalledOnce();
+      entered.resolve();
+      await release.promise;
+      return 1;
+    });
+    let complete = false;
+    const pending = sut.reconcile(input).then((result) => {
+      complete = true;
+      return result;
+    });
+    await entered.promise;
+    expect(complete).toBe(false);
+    release.resolve();
+    expect(await pending).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });
+  });
+  it('retries a failed postcommit wake and awaits it on mapped edited receipt settlement', async () => {
+    await writeFile(original, bytes);
+    repository.getResource.mockResolvedValue({
+      ...(await repository.getResource(input)),
+      role: 'edited-image',
+      auditRequestId: null,
+      assetId: candidate.id,
+    });
+    repository.enqueueLocalEffects.mockRejectedValueOnce(new Error('queue unavailable'));
+    await expect(sut.verifyMapped(input)).rejects.toThrow('local_effects_pending');
+    expect(repository.commitVerifiedReuse).toHaveBeenCalledOnce();
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    repository.enqueueLocalEffects.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return 1;
+    });
+    let complete = false;
+    const pending = sut.verifyMapped(input).then((result) => {
+      complete = true;
+      return result;
+    });
+    await entered.promise;
+    expect(complete).toBe(false);
+    release.resolve();
+    expect(await pending).toEqual({ outcome: 'reused', assetId: candidate.id });
+    expect(repository.enqueueLocalEffects).toHaveBeenCalledTimes(2);
+  });
+  it.each(['audit_authority_changed', 'audit_authority_expired'])(
+    'preserves the manual audit control refusal %s without confusing ordinary recovery errors',
+    async (reason) => {
+      input.audit = { auditRequestId: randomUUID(), operationId: randomUUID(), operationClaimToken: randomUUID() };
+      repository.getResource.mockRejectedValueOnce(new Error(reason));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'manual_audit_authority_changed' });
+      repository.getResource.mockRejectedValueOnce(new Error('fixture_integrity_or_commit_error'));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'recovery_not_committed' });
+      input.audit = undefined;
+      repository.getResource.mockRejectedValueOnce(new Error(reason));
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'retry', reason: 'recovery_not_committed' });
+    },
+  );
+
   it('repairs missing originals at a new path with the same ID and retained stage', async () => {
     expect(await sut.reconcile(input)).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });
     expect(await readFile(reservation.promotedPath)).toEqual(bytes);
@@ -143,7 +212,6 @@ describe(MediaRecoveryService.name, () => {
   });
   it.each([
     [{ hidden: true }, 'needs-review', 'hidden_match_requires_consent'],
-    [{ isExternal: true }, 'needs-review', 'external_conversion_requires_consent'],
     [{ status: AssetStatus.Trashed }, 'preserve-trashed', 'destination_not_active'],
   ])('preserves lifecycle/privacy %j', async (patch, outcome, reason) => {
     Object.assign(candidate, patch);
@@ -184,12 +252,58 @@ describe(MediaRecoveryService.name, () => {
     expect(await sut.verifyMapped(input)).toBeUndefined();
     expect(repository.commitVerifiedReuse).not.toHaveBeenCalled();
   });
-  it('reuses a healthy external original without conversion consent', async () => {
-    candidate.isExternal = true;
+  // owner decision (FL-69): recovery always stores a managed copy; an external match is evidence only
+  it.each(['healthy', 'missing', 'damaged'])(
+    'imports a new managed asset beside a %s external original and leaves it untouched',
+    async (condition) => {
+      candidate.isExternal = true;
+      candidate.libraryId = randomUUID();
+      if (condition !== 'missing') {
+        await writeFile(original, condition === 'damaged' ? 'damaged original' : bytes);
+      }
+      const external = { ...candidate, checksum: Buffer.from(candidate.checksum) };
+      expect(await sut.verifyMapped(input)).toBeUndefined();
+      expect(repository.commitVerifiedReuse).not.toHaveBeenCalled();
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'imported', assetId: importedId });
+      expect(repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ candidate: undefined, outcome: 'imported', matchedExternalAssetId: candidate.id }),
+      );
+      expect(reservation.promotedPath).not.toBe(original);
+      expect(await readFile(reservation.promotedPath)).toEqual(bytes);
+      expect(candidate).toEqual(external);
+      if (condition === 'missing') {
+        await expect(readFile(original)).rejects.toThrow();
+      } else {
+        expect(await readFile(original)).toEqual(condition === 'damaged' ? Buffer.from('damaged original') : bytes);
+      }
+    },
+  );
+  describe('a Locked external original (FL-69)', () => {
+    beforeEach(() => {
+      Object.assign(candidate, { isExternal: true, hidden: true, lockReason: AssetLockReason.Marked });
+    });
+    it('still asks for consent before importing a copy of it', async () => {
+      expect(await sut.reconcile(input)).toMatchObject({
+        outcome: 'needs-review',
+        reason: 'hidden_match_requires_consent',
+      });
+      expect(repository.reserve).not.toHaveBeenCalled();
+    });
+    it('imports the copy with consent, naming the original so the copy is locked like it', async () => {
+      input.includeHidden = true;
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'imported', assetId: importedId });
+      expect(repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ candidate: undefined, matchedExternalAssetId: candidate.id }),
+      );
+    });
+  });
+  it('keeps reusing a managed original when an external original matches too', async () => {
     await writeFile(original, bytes);
+    repository.findCandidates.mockResolvedValue([{ ...candidate, id: randomUUID(), isExternal: true }, candidate]);
     expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
-    expect(await sut.verifyMapped(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
-    expect(await readFile(original)).toEqual(bytes);
+    expect(repository.reserve).toHaveBeenCalledWith(
+      expect.not.objectContaining({ matchedExternalAssetId: expect.anything() }),
+    );
   });
   it('keeps an established mapping when another same-owner content match exists', async () => {
     repository.findCandidates.mockResolvedValue([{ ...candidate, id: randomUUID() }, candidate]);

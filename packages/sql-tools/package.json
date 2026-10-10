@@ -1,0 +1,35 @@
+{
+  "name": "@frameleaf/sql-tools",
+  "description": "Kysely-based tools and utilities for managing postgres schema",
+  "version": "0.6.3-frameleaf.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Frameleaf/frameleaf-app.git",
+    "directory": "packages/sql-tools"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "sql-tools": "./sql-tools.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "graph-data-structure": "^4.5.0",
+    "kysely": "^0.29.0",
+    "kysely-postgres-js": "^3.0.0",
+    "pg-connection-string": "^2.11.0",
+    "postgres": "^3.4.8"
+  },
+  "scripts": {
+    "check": "node --check dist/index.js && node --check dist/cli.js"
+  }
+}

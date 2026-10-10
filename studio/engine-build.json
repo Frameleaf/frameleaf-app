@@ -1,0 +1,630 @@
+{
+  "schemaVersion": 1,
+  "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+  "node": "24.21.0",
+  "npm": "11.8.0",
+  "lockfileSha256": "5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc",
+  "patches": [
+    {
+      "path": "patches/0001-isolated-package.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ffe6b9980e37480d13fc83c217a2742dfe611eaedc67f41114e6a126664e92d3"
+    },
+    {
+      "path": "patches/0002-stable-worker-sourcemaps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d61d6cdf8c235c762c8648a4f9de45e887faa7cb05403b08363e636d68f6cf23"
+    },
+    {
+      "path": "patches/0003-deferred-profiler-dom-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b70496aa09a662ea2c321f2b0ea90bfd450d2411b239cc9924bcf56169adc973"
+    },
+    {
+      "path": "patches/0004-resource-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "841e56682551ad05ab52d092d69c65b3b57be3e45c31791d46ce11a27512a3df"
+    },
+    {
+      "path": "patches/0005-compositor-float-targets.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "42d37323cfee40acfc12101079935118a31686af931caf6c23425acfe81f7ea7"
+    },
+    {
+      "path": "patches/0006-audio-export-failure.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4289d910eff2d61116c2e5c975e852bab22d9b1478b4e918e486697f9fa8c357"
+    },
+    {
+      "path": "patches/0007-audio-track-gain.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c43bab3ac0ceb390b9a3cc56f10b302a4bac854b7e0b014e9cead8f837f96f44"
+    },
+    {
+      "path": "patches/0008-soft-light-signed-domain.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d9554dd9844e8ade57fa655f4fc8950681d27b8480f1ff9111da824d2b0ad7aa"
+    },
+    {
+      "path": "patches/0009-lut-cache-size.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5cb44300e559c29be2e22782b7e42b5a380f057d2f706fa5ced858a25d9fabe0"
+    },
+    {
+      "path": "patches/0010-expression-dependency-errors.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "beb0a25e842f901fc1d438cc363a3a2dd67903e725ac58637f9170a4af038422"
+    },
+    {
+      "path": "patches/0011-multichannel-speed-export.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5dc6b80107808ea3b6ddd07f6dcca6a8559f6086749425c7cab66a5bbcd67eb5"
+    },
+    {
+      "path": "patches/0012-split-all-unlinked-tracks.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1cdf2f2f018b3f767c1e31b42122750609c6442394b76f6a8225f8a842d51c65"
+    },
+    {
+      "path": "patches/0013-linear-dodge-float.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9ad71bba349f591c8da5479c3be172be1fb13a13aac4e958ecb752fa66ad8025"
+    },
+    {
+      "path": "patches/0014-effects-float-transport.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "18d8d00da4eda7cc1d2760c7300ed9ac87d4a39271d4c2177be0aa2820d5b67c"
+    },
+    {
+      "path": "patches/0015-transition-float-alpha.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "08216ade8ccf1a918793eac25799f0a982e758d52468ca4546cb015b9f5b8a3a"
+    },
+    {
+      "path": "patches/0016-nested-float-transport.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "39fd2b12f6971cebb4e020f23888d399eb36c89eb110a03ccebc1630e5de3e43"
+    },
+    {
+      "path": "patches/0017-nested-audio-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8a5cfb4bf9a5da0added73a949a9685116f308a68c73eb80e9c477dcf939928a"
+    },
+    {
+      "path": "patches/0018-scope-seek-correspondence.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6d9ef79ad3097b13ba84d502df72553b67ed03d4ec61ebba62596622b99ec40"
+    },
+    {
+      "path": "patches/0019-scope-graph-correspondence.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ea93d32bfbf71a274905b961b9ea8c8e87aab1f7683f8498a80dcd8c1f0d3d5e"
+    },
+    {
+      "path": "patches/0020-nested-preview-audio-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1b9d62f5cbcec97c69a118f094716c74c8c0b3d8a4e02bb9817c54ce45d2d5f4"
+    },
+    {
+      "path": "patches/0021-chroma-hard-edge.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "69ec404e5930d5ebdd97bdeb72526a8f6d5f4e7bb34a2dfc71c99f67b4330cc6"
+    },
+    {
+      "path": "patches/0022-expression-dependency-budget.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "35d020c532ccac245a8853ea5a304e694df21236c05dcb7367707e641a8302a9"
+    },
+    {
+      "path": "patches/0023-export-subtitle-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1659ceda6602c10e6948efa70eaec917ea4a1e993ef8d0f6a6793d991450d13c"
+    },
+    {
+      "path": "patches/0024-project-master-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "cfb4b7914ab47d57a97332aa0e11f275a59af04eabf5a0968c6f20cb36f2a4b1"
+    },
+    {
+      "path": "patches/0025-relink-workspace-source.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "769b414bfba9c5aa0bcf808a11d48442856a16fbd5578f1815e9f1b91660b47f"
+    },
+    {
+      "path": "patches/0026-chroma-hard-edge-precision.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9348dfca4d6a22cdaed93ceb6bbed1423d804e3f4ab58a8ff976f4f99c1c71b5"
+    },
+    {
+      "path": "patches/0027-effect-frame-clock-and-animation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "36f9b02ccb9cefcb51367ff1102146b9daef37c6f4daef6f9d360cc363f77951"
+    },
+    {
+      "path": "patches/0028-approved-model-revisions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6135f53db8d70a12e206e52bae319e1e7ed89366293315a7bbb1ac065f032d34"
+    },
+    {
+      "path": "patches/0029-bundled-onnx-runtimes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fa7b79dcefc3bb94c70430324d126b648f72cb08001f0f9dee6aeb1507358cd2"
+    },
+    {
+      "path": "patches/0030-pinned-supertonic-space.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0e91354be3792ecf92efb8e58ac857af3f2b0adda2bb706459ed0ff0babae159"
+    },
+    {
+      "path": "patches/0031-managed-color-working-range.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8a4da43e50c4f59391dc7b443818e2cd7e03488150877e4d18c4bac824f02068"
+    },
+    {
+      "path": "patches/0032-float-route-hdr-signal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "99c81be66dcf324c49b2d8bb0e2c22d3f4f179faef0c7ac35c30f702dc7e15ee"
+    },
+    {
+      "path": "patches/0033-hdr-from-sources.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "04d0bf2ea4d219e1ad9e12b4ab389c115faa8a85d6c5e713155de553874e8e93"
+    },
+    {
+      "path": "patches/0034-stable-asset-sourcemaps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e95d9c941c67250a8864dc793ecfe1ee05707c6b2021bd07fd129f0348f04278"
+    },
+    {
+      "path": "patches/0035-retime-policy.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3fcb6bf87959f469b58b0e7513ff27d3b17bb5815dd1b956700b197841010439"
+    },
+    {
+      "path": "patches/0036-hdr-intermediate-source.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4dcc8d63e2790d4aa422ee92e0c2bf6a672a1b0d0e192d7bc52548f35fa68db5"
+    },
+    {
+      "path": "patches/0037-renderable-opacity.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7574ec6fd1c175f9974d6c760b7d20fcdf4aeb4508cf63b8ad839d43b3fcfc4a"
+    },
+    {
+      "path": "patches/0038-scopes-measure-what-they-show.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "43923b02c3a55b95b561d805343dc782d7cbab4f15617cebc5dfdd4bbff53951"
+    },
+    {
+      "path": "patches/0039-effect-parameter-meaning.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e2d99a8146cb2300089c5a7c0754015b33ab99e869db5e7d3485f86b36627f86"
+    },
+    {
+      "path": "patches/0040-dissolve-dithers-opacity.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "22fd0014c374cafa313321df225e5df6af9ac455b5c18acafb9fb27e679e566b"
+    },
+    {
+      "path": "patches/0041-headless-signal-frame.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "74952aa643ca29ff5ab91e3aa0fcfbd279248e5c7f7d8011ff543594ea6da12d"
+    },
+    {
+      "path": "patches/0042-color-output-disposal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "889daaa0296ee35e5b8b09f9ef56ef085bd4789f238dd356894eb778f809c310"
+    },
+    {
+      "path": "patches/0043-hdr-raster-input.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "23c6c87a1e97deb59005dbe9bae52655a100a7fdadb1f9adc210df96cb39f54c"
+    },
+    {
+      "path": "patches/0044-preview-padding-copy.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a6438376c53e2c77b7e0daa5ade903bb75070a40e22b0a3115a59ae5058de5ef"
+    },
+    {
+      "path": "patches/0045-hidden-overlay-displayed-frame.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "99ac43d1fa4f1717af2b12dda9f4934d8618fd34d38740e9e82bd8463579924e"
+    },
+    {
+      "path": "patches/0046-preview-canvas-transform-placement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4f1bd7d0871cb6f7a273848253b2d57f61b4880b5f8dee97bdfa9322b22df734"
+    },
+    {
+      "path": "patches/0047-edge-keyframe-marker-overflow.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "bf1a61a74bbbc8080b731092d59153964d7a7ee4b528c6debcd2a947ef91f9c4"
+    },
+    {
+      "path": "patches/0048-transition-input-meaning.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f5ca84b7fdb886e5137918e0db2f52879c31f3ba1ea752f1fa40c0db23f91f6a"
+    },
+    {
+      "path": "patches/0049-portable-lut-import.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "68777610978a6f7ec08080cfdd7b157ad333b6ae3ffd34a9e7d40f8513b58ed9"
+    },
+    {
+      "path": "patches/0050-caption-import-export-modes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "bf66f5b8a1f1912769e103e739059236c1966563bfa316b4e9cfc69c5f382fba"
+    },
+    {
+      "path": "patches/0051-extracted-caption-export-modes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "57dc16773bf2bd9a2b9f4c37521c59682cb36d56dfbf19bdcdc9d3fc76a1e68b"
+    },
+    {
+      "path": "patches/0052-microphone-finalization-authority.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "477781b250207c9083fcb9be06895b37e94989ea403647e211ad59c454f3a206"
+    },
+    {
+      "path": "patches/0053-expression-unary-depth.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "940f288a26bc0a3daee238fe15b38d51e34965dc0962a0c50b95a75120cb6205"
+    },
+    {
+      "path": "patches/0054-channel-preservation-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2659a78ebe3deae8e260a53b586533937f4f90f796457a53e4e6deb2189e67ca"
+    },
+    {
+      "path": "patches/0055-channel-preserving-gain-mix.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8c177c21b6e3cb41aa2420e39988ea71ff914ce042a597226838eb90b5146143"
+    },
+    {
+      "path": "patches/0056-hdr-video-fallback-refusal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0049764c4ea88aa324776a9d66a48858ad768be93489691374f0f235f6db0562"
+    },
+    {
+      "path": "patches/0058-preview-layout-keyboard-accessibility.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "29221c1c109bdd747f3172a013900e39b0c37a854834d399a4f370be4abfb90e"
+    },
+    {
+      "path": "patches/0059-mask-path-keyframes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0065a9ed5b89cbeffd52114170fb425c717af2f1cc7ca9df1e573d115fc6be40"
+    },
+    {
+      "path": "patches/0061-microphone-terminal-events.patch",
+      "sha256": "68d479169647bfd597224f7f10914d250616dd73a83cad69de04511fafbbee6f",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0063-onnx-cache-byte-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "16a8dd6cfd8060eb8d35f0c00a5d8f2eea82491b03dfb80a25977e3f54e2d19d"
+    },
+    {
+      "path": "patches/0064-project-master-hydration.patch",
+      "sha256": "4c2ad8e90ee46ba2033193a68a598d2c1dff64582fbaff8ab636e2f22e25ae22",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0066-timeline-toolbar-scrollport.patch",
+      "sha256": "13428c4fc8f0c4ae4b8c61d64e2b17f1b65a7a7f6bdc469e3a52ccc63df2a2cf",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0065-linear-display-hdr-subtree.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "beddeae556f10a6bcd8123e829ec556f0ff841a22e27f27fb417d4c1160b37dd"
+    },
+    {
+      "path": "patches/0067-persisted-clip-mute.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b2d7cae5041561c510ed7bda6036592ee72bfe9a056371ad03051b6806892538"
+    },
+    {
+      "path": "patches/0068-linear-hdr-brightness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "aa162a5234a2bfa65ca65ec47c9a76d43e8d4e14610310cc48a0492585f4b9cc"
+    },
+    {
+      "path": "patches/0069-persisted-track-pan.patch",
+      "sha256": "ae8df7e533b71f551d38c549c3089fe044449b73f80436039a3998ba4076a4d1",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0070-linear-hdr-contrast.patch",
+      "sha256": "d89410f0e7b0eab89820346eeaa20514fd3f1a45f4caa6a991e34d71d77cafa7",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0071-linear-hdr-raster-input.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "55ca40998116fca367f1a1d08ed67fe553fbd82764d87ad17b31dd8b9b31d7b1"
+    },
+    {
+      "path": "patches/0071-linear-hdr-exposure.patch",
+      "sha256": "49efc3a2f4146e20611d7164aee8ca365411b6f4bcc734b38e28e797fb3dc813",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0072-linear-hdr-saturation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "759136860afe1eec83a23d7f63a932915ed749509235573fd8ce452694dddb1a"
+    },
+    {
+      "path": "patches/0073-headless-sdr-still-signal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "045448634510e45965ad8b652562562f9052c6c2be79f999ec58d7be3edb6b6d"
+    },
+    {
+      "path": "patches/0074-hdr-raster-large-image-budget.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4e92a872dccfabecd437e214bd359dbe49a3dfa9d467e8f2e3a6657348db3fc5"
+    },
+    {
+      "path": "patches/0075-local-validation-test-contracts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "26778e6994e7c34c352c0fb1f755de4b710de5750b47b0edcdd06acb01bfad40"
+    },
+    {
+      "path": "patches/0076-master-gain-envelope.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5dc9a273be7fbe4e97c31228ca9327a37f3edd1234ef1237181038977ba3e582"
+    },
+    {
+      "path": "patches/0078-moss-byte-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "77bdea35464fef84567fb18b4c8aefc0394506a0944d176203a00a2c6267b058"
+    },
+    {
+      "path": "patches/0080-upstream-audio-contract-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6d70a73fc70c3f68441540a6ca8e59b20f61ebfda2ec472389c624f13ffaf49a"
+    },
+    {
+      "path": "patches/0082-video-byte-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ebf6668bde64e3fee0e8c16818901dbeeee68f11d1f3af891bacfb78356031da"
+    },
+    {
+      "path": "patches/0081-linear-hdr-spatial-blur.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3c319dac2eaa672984ac463d1e9cc1e7bb8eabd452f237b1b4867a2efdbabdf5"
+    },
+    {
+      "path": "patches/0083-linear-hdr-temperature.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3d00b43d3d2f80d6bee0c99d46a96cdb56389a28de41d25985cea7d766b474ca"
+    },
+    {
+      "path": "patches/0084-linear-hdr-affine-color.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1842f24e0ca4479a4419a8422bef7fb7528d5bc02b5825eac29e58ee1ecb035d"
+    },
+    {
+      "path": "patches/0085-file-lut-float-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "299c8adad9da408a7f4e92963f111f63d90b391f931a66c8fb5fd6c60f7b39f9"
+    },
+    {
+      "path": "patches/0086-scope-capture-retry.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "037f7ea5361557b097eff755d3a4fcad3cd0da3d9d6a5bef5dd980ef9551e5ef"
+    },
+    {
+      "path": "patches/0087-preview-track-gain.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "51cf183c97dc3dde68257df4cab21976d9d2527c090a9895a37279219925e8c0"
+    },
+    {
+      "path": "patches/0088-source-monitor-linked-partitions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a3825c6f063230e0403d3e91f6d83302ee6729adc5fc229e048b291920c28a73"
+    },
+    {
+      "path": "patches/0089-linear-hdr-vibrance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8399344be7f803ecda59eb150cf177616b0597bfdb9209c6685f5ebaa203df1d"
+    },
+    {
+      "path": "patches/0090-track-gain-automation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c35bb781740d188b051a833530d86160203059102d6e8d943192cf99b2221eba"
+    },
+    {
+      "path": "patches/0091-strict-lottie-resource-admission.patch",
+      "sha256": "064e6b1a6c0a40aac5aef49637a64e754962792b57e1287aaa43ff60961ee247",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0092-reverse-nested-audio-mapping.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3bd04f4e4c4e90911fc049a403536c1e09a85e8f8715de377105f34a5c0c4632"
+    },
+    {
+      "path": "patches/0093-lottie-range-source-clock.patch",
+      "sha256": "38ed91a5a4b77ef407b8bce8e8c3c2ea23e3cddc8b3547baba3cb42347a48d07",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0095-decoded-channel-fixture-timestamps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fcf9823b752f7ec782879dbac5828806b2e58525b77abca2f51ae71de985e6f9"
+    },
+    {
+      "path": "patches/0094-linear-hdr-pixelate.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c174f96b2de818dd168bbf74f0b2897f590960dc1ca43e8ef38158e0be597ac3"
+    },
+    {
+      "path": "patches/0097-linear-hdr-geometry.patch",
+      "sha256": "cbfa3e72f455e1b20b4f28cab44bb343c120beb7a4eaca8633ddaa2f637010b7",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0096-lease-gated-private-media-streams.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "170459465d2367418a2882c3cafa254df4ff63560dcc636001f514c8fc8f5a61"
+    },
+    {
+      "path": "patches/0098-scope-color-source-correspondence.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a4397d3c6d50173e2fcb632ca472b13f939dbc77da23040b7778cc38096d5f13"
+    },
+    {
+      "path": "patches/0099-native-linked-chain-join.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "93e70f7de8b71dd62e1f5ac434a257f6dbc49b78f97b39a7c651bc9a4be43233"
+    },
+    {
+      "path": "patches/0100-preserve-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6773faccb20c02e5dabba33a9387eb7199b033548ad04979dc6a9040d48ab0d"
+    },
+    {
+      "path": "patches/0101-recorded-audio-decoded-duration.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "95adf0bb31c891b2232fc502424994b1d2d6814f6b3377b4ba1c739079a94923"
+    },
+    {
+      "path": "patches/0102-scope-displayed-frame-correspondence.patch",
+      "sha256": "56acb04a30928d3e6154f968cbd4d6808355583d5236baed1098802c5a345e7c",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0103-native-rate-stretch-lock-admission.patch",
+      "sha256": "c3464a13943783f6f5c115a436fd40bee879b523b5558828b13b52e0ecbab31b",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0104-browser-whisper-tiny-selector.patch",
+      "sha256": "c57d67bbf395e68e83c385e18034219a4f00c8a1533703eb4c2edf4fbde3487b",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0105-subtitle-sidecar-shared-producer.patch",
+      "sha256": "6cd8fd7f0fe8bada9ca1ea80c1c143692150ec7bed7bd0c258604b0fc05e31a9",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0106-browser-whisper-tiny-settings-test.patch",
+      "sha256": "52d2e4d90c9d8d2e5e191a0418780dad0e797a85a2db781ca95af376daab7c95",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0107-histogram-bin-correspondence.patch",
+      "sha256": "ee37477f84d5309ea4b5441550f62e9a58e657c65e2efd87694c283add9d7ee5",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0108-microphone-acquisition-retirement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c4f442213790711e3d85382a2eaea9e321640175e81d599943ddee953b7aac8c"
+    },
+    {
+      "path": "patches/0109-microphone-monitor-retirement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f099c8f0828114efae58e979802c48cc35712c2f5e0b7750d139d5fe19fca57c"
+    },
+    {
+      "path": "patches/0110-scope-revision-binding.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "fc824d7223d3e1c628b0cd76be787f6f039dccfb270d85bdc2bf6846926d977b"
+    },
+    {
+      "path": "patches/0111-multichannel-shared-retiming.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1c28fe3886e8c64ebd0d2ce944fa6ad543032976a73e303cb37f351ad69ac875"
+    },
+    {
+      "path": "patches/0112-filler-apply-undo-routing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "947139bbfe0b3624e26068bfd85c49d4dc943c43d73997368e969d9ece810034"
+    },
+    {
+      "path": "patches/0113-crop-rotation-keyboard-entry.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f2654c4ba8a405a02648f0869b8b937d9b5ff94b72d8f116f8cfa1b1ed60c43"
+    },
+    {
+      "path": "patches/0114-explicit-seek-scope-currentness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "84343a37c06cbab32598d0073072dee5e6ea65c0b7d9a7becadf1182b9b1e7fa"
+    },
+    {
+      "path": "patches/0115-caption-order-independent-lookup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "31bcfd1874b2f5de4afff3e9259412ca932e9557928f4d41814d392caf86e51a"
+    },
+    {
+      "path": "patches/0116-still-default-project-duration.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "28558d507d6d08bf312c47e3bd16b0e0608d3cb8d2eec6c19959878d9229909e"
+    },
+    {
+      "path": "patches/0118-adaptive-preview-render-size.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "26a6a89d91cab552055e002094e8f51aed0846a2c981943db05f6664ae069a5f"
+    },
+    {
+      "path": "patches/0117-durable-media-relink.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e4ae0e6649505e6b8c79ecd18637affa331fddb1384fcbd4471a6678819c44d2"
+    },
+    {
+      "path": "patches/0119-linear-hdr-additive-dissolve.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d8361eeb34d96415483288c4eb84e5638ef47c4c725dbb094b448e812e8fd19d"
+    },
+    {
+      "path": "patches/0120-additive-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "081806cdda71e4f08711c86bbb6c09071e1bf658836aa9ca57ecc08d245bcc57"
+    },
+    {
+      "path": "patches/0121-property-slider-optional-actions-test.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ab5e3087011ed22eb27e4eeefaebdb659ce3aa1b49f0c2999f26c640ad25a776"
+    },
+    {
+      "path": "patches/0122-rolling-edit-linked-track-lock-preflight.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0b145069a4c5460163f4c9d1b056440f3e34ca353994478407db450ae947912c"
+    },
+    {
+      "path": "patches/0123-removal-preview-lifetime-context.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5d0ad7eab48db5fd795d5951e946990b845ad554f652069dd10db3f36d04cb61"
+    },
+    {
+      "path": "patches/0124-normalization-inherited-track-state.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e119801be4e11c1fea390f54bbba849fdd3f4b0a731a40cd8bc6437222364e9f"
+    },
+    {
+      "path": "patches/0125-shared-proxy-deletion-alias-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2e5d07f39fa4005d1f3c180b464b545929debc1bffcd33108826417c6db9b06b"
+    },
+    {
+      "path": "patches/0126-project-copy-media-entry-references.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c93159a43e624d238d086aac29014fd2c4927abfe199a012aa0f5ff0faccfa52"
+    },
+    {
+      "path": "patches/0127-persisted-lottie-discriminator.patch",
+      "sha256": "d037a57d7ccc013b58528e2bce8c878e9acfeadf96053572e5bb6692ac60e27a",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0128-persisted-subtitle-discriminator.patch",
+      "sha256": "814f21171d2100a1680365d2a9b7c9b57d1485330417367d6feda4dd4c211e0f",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    }
+  ],
+  "sourceSha256": "da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327"
+}

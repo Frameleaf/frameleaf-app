@@ -1,0 +1,793 @@
+import { fork } from 'node:child_process';
+import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import { buddyBackupCommand } from 'src/utils/buddy-backup-offline.js';
+import { BuddyRecoveryFiles, readBuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
+import { finalizeBuddyBootBinding, loadBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
+import { type BuddyBootConfiguration, stageBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
+import { ENV_ALIASES } from 'src/utils/env-aliases.js';
+import { EnvSchema } from 'src/utils/environment-schema.js';
+
+const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+describe('Replacement-local Buddy boot authority', () => {
+  let root: string;
+  let identity: string;
+  let directory: string;
+  let bindingPath: string;
+  let recoveryId: string;
+  let snapshotId: string;
+  let files: BuddyRecoveryFiles;
+  let binding: Record<string, unknown>;
+  let configuration: BuddyBootConfiguration;
+
+  const saveBinding = (changes: Record<string, unknown> = {}) =>
+    writeFile(bindingPath, JSON.stringify({ ...binding, ...changes }), { mode: 0o600 });
+  const prepare = async (
+    mode: 'keep' | 'replace' = 'replace',
+    environmentKeys = ['FRAMELEAF_PORT'],
+    scope: 'settings' | 'server' = 'settings',
+    storageRoots = [join(root, 'media')],
+  ) => {
+    await stageBuddyBootConfiguration(directory, snapshotId, configuration);
+    const bytes = Buffer.from('recovered settings');
+    const target = join(root, 'selected-settings.json');
+    const file = { role: 'configuration', path: target, sha256: digest(bytes), size: bytes.length, mtime: null };
+    await writeFile(join(directory, 'objects', file.sha256), bytes, { mode: 0o600 });
+    const manifest: BuddyManifest = {
+      version: 1,
+      frameleafVersion: 'synthetic',
+      vaultId: binding.vaultId as string,
+      snapshotId,
+      sequence: 1,
+      previous: null,
+      library: {
+        format: 'frameleaf-backup-manifest',
+        version: 2,
+        instanceId: randomUUID(),
+        createdAt: new Date().toISOString(),
+        assets: {},
+        database: scope === 'server' ? { key: 'database.sql.gz', sha256: digest(bytes), size: bytes.length } : null,
+        albums: {},
+        people: {},
+        profiles: {},
+      },
+      contents: {},
+      assetLinks: {},
+      assetFiles: {},
+      dependencies: [],
+      configurationFiles: [file],
+      environment: { FRAMELEAF_PORT: '2491', NODE_OPTIONS: '--untrusted-historical-option' },
+      bootConfiguration: configuration,
+      storageRoot: join(root, 'media'),
+      storageRoots,
+      settings: { system: {}, users: [] },
+    };
+    const prepared = Buffer.from(JSON.stringify({ version: 1, scope, mode, manifest, files: [file] }));
+    await writeFile(join(directory, 'prepared.json'), prepared, { mode: 0o600 });
+    files = new BuddyRecoveryFiles(root, recoveryId, async () => {});
+    await files.state('publishing');
+    const plan = await readBuddyRecovery(root, recoveryId);
+    await files.publish(plan, [], [target]);
+    await files.verify(plan, [], [target]);
+    await files.state('complete');
+    expect((await readFile(target)).equals(bytes)).toBe(true);
+    binding = {
+      ...binding,
+      scope,
+      mode,
+      environmentKeys,
+      artifactDigest: digest(await readFile(join(directory, 'boot-configuration.json'))),
+      preparedDigest: digest(prepared),
+    };
+    await saveBinding();
+  };
+  const marker = async (id = recoveryId) => {
+    await mkdir(join(identity, 'buddy'), { recursive: true, mode: 0o700 });
+    await writeFile(
+      join(identity, 'buddy', 'recovery-active.json'),
+      JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: id } }),
+      { mode: 0o600 },
+    );
+  };
+
+  beforeEach(async () => {
+    for (const key of Object.keys(EnvSchema.shape)) vi.stubEnv(key, undefined);
+    for (const { legacy } of ENV_ALIASES) vi.stubEnv(legacy, undefined);
+    root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-boot-binding-')));
+    await chmod(root, 0o700);
+    identity = join(root, 'identity');
+    recoveryId = randomUUID();
+    snapshotId = randomUUID();
+    directory = join(root, 'recovery', recoveryId);
+    for (const path of [identity, join(root, 'media'), join(directory, 'objects')])
+      await mkdir(path, { recursive: true, mode: 0o700 });
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    await writeFile(join(identity, 'instance-key.pem'), privateKey.export({ type: 'pkcs8', format: 'pem' }), {
+      mode: 0o600,
+    });
+    const jwk = publicKey.export({ format: 'jwk' });
+    bindingPath = join(identity, 'buddy-boot-binding.json');
+    binding = {
+      version: 1,
+      state: 'ready',
+      recoveryId,
+      snapshotId,
+      vaultId: randomUUID(),
+      replacementIdentity: createHash('sha256')
+        .update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x }))
+        .digest('base64url'),
+      scope: 'settings',
+      recoveryDirectory: directory,
+    };
+    configuration = {
+      version: 1,
+      entries: [
+        { key: 'FRAMELEAF_PORT', state: 'value', value: 2391 },
+        { key: 'DB_PASSWORD', state: 'value', value: 'synthetic-historical-database-secret' },
+        { key: 'FRAMELEAF_EDGE_SECRET', state: 'value', value: 'synthetic-historical-edge-secret' },
+        { key: 'FRAMELEAF_IDENTITY_DIR', state: 'value', value: join(root, 'historical-identity') },
+      ],
+    };
+    vi.stubEnv('FRAMELEAF_IDENTITY_DIR', identity);
+    vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', bindingPath);
+    vi.stubEnv('FRAMELEAF_PORT', '2283');
+    vi.stubEnv('DB_PASSWORD', 'synthetic-replacement-database-secret');
+    vi.stubEnv('DB_PASSWORD_FILE', join(root, 'replacement-database-secret-source'));
+    vi.stubEnv('FRAMELEAF_EDGE_SECRET', 'synthetic-replacement-edge-secret');
+    await prepare();
+  });
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('loads only selected application values after real fenced publication', async () => {
+    const before = { ...process.env };
+    await loadBuddyBootBinding();
+    expect(JSON.stringify(process.env) === JSON.stringify({ ...before, FRAMELEAF_PORT: '2391' })).toBe(true);
+    await loadBuddyBootBinding();
+    expect(JSON.stringify(process.env) === JSON.stringify({ ...before, FRAMELEAF_PORT: '2391' })).toBe(true);
+  });
+
+  it.each(['process', 'thread'] as const)('passes validated and cleared values to fresh %s workers', async (kind) => {
+    vi.stubEnv('FRAMELEAF_PORT', undefined);
+    vi.stubEnv('IMMICH_PORT', '2491');
+    await loadBuddyBootBinding();
+    const workerFile = join(root, 'observe-environment.mjs');
+    await writeFile(
+      workerFile,
+      `import { parentPort } from 'node:worker_threads';
+const result = {
+  selected: process.env.FRAMELEAF_PORT === '2391',
+  aliasCleared: process.env.IMMICH_PORT === undefined,
+  replacementSecret: process.env.DB_PASSWORD === 'synthetic-replacement-database-secret',
+};
+if (parentPort) {
+  parentPort.postMessage(result);
+  parentPort.close();
+} else {
+  process.send(result, () => process.disconnect());
+}
+`,
+      { mode: 0o600 },
+    );
+    // Match the supervisor's environment inheritance for initial starts and restarts.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const worker =
+        kind === 'process'
+          ? fork(workerFile, [], {
+              execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? '--inspect=0.0.0.0:9231' : arg)),
+              stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+            })
+          : new Worker(workerFile);
+      try {
+        const signal = AbortSignal.timeout(5000);
+        const [[result], [code]] = await Promise.all([
+          once(worker, 'message', { signal }),
+          once(worker, 'exit', { signal }),
+        ]);
+        expect(result).toEqual({ selected: true, aliasCleared: true, replacementSecret: true });
+        expect(code).toBe(0);
+      } finally {
+        if (worker instanceof Worker) await worker.terminate();
+        else worker.kill();
+      }
+    }
+  });
+
+  it.each([
+    ['foreign identity', { replacementIdentity: 'A'.repeat(43) }],
+    ['foreign snapshot', { snapshotId: randomUUID() }],
+    ['foreign vault', { vaultId: randomUUID() }],
+    ['foreign recovery', { recoveryId: randomUUID() }],
+    ['server scope without database', { scope: 'server' }],
+    ['unfinished request', { state: 'request' }],
+    ['foreign mode', { mode: 'keep' }],
+    ['dependency credential', { environmentKeys: ['DB_PASSWORD'] }],
+    ['identity path', { environmentKeys: ['FRAMELEAF_IDENTITY_DIR'] }],
+    ['security value', { environmentKeys: ['FRAMELEAF_EDGE_SECRET'] }],
+    ['link token', { environmentKeys: ['FRAMELEAF_LINK_TOKEN'] }],
+    ['entitlement', { environmentKeys: ['FRAMELEAF_LICENSE_EXTRA_JWKS_FILE'] }],
+    ['duplicate key', { environmentKeys: ['FRAMELEAF_PORT', 'FRAMELEAF_PORT'] }],
+    ['runtime option', { environmentKeys: ['NODE_OPTIONS'] }],
+    ['legacy key', { environmentKeys: ['IMMICH_PORT'] }],
+    ['undeclared application key', { environmentKeys: ['FRAMELEAF_HOST'] }],
+    ['incomplete shutdown pair', { environmentKeys: ['FRAMELEAF_SHUTDOWN_GRACE_SECONDS'] }],
+    ['forged plan digest', { preparedDigest: '0'.repeat(64) }],
+    ['forged artifact digest', { artifactDigest: '0'.repeat(64) }],
+    ['unknown authority field', { unrecognized: true }],
+  ])('refuses %s without changing any environment value', async (_name, change) => {
+    const before = { ...process.env };
+    await saveBinding(change);
+    await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    expect(JSON.stringify(process.env) === JSON.stringify(before)).toBe(true);
+  });
+
+  it.each(['publishing', 'files-ready', 'database-ready', 'rolled-back'] as const)(
+    'refuses a %s publication journal',
+    async (state) => {
+      await files.state(state);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(process.env.FRAMELEAF_PORT).toBe('2283');
+    },
+  );
+
+  it('rejects public authority files, changed artifact bytes and symlink artifacts', async () => {
+    await chmod(bindingPath, 0o644);
+    await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    await chmod(bindingPath, 0o600);
+    const artifact = join(directory, 'boot-configuration.json');
+    const bytes = await readFile(artifact);
+    await writeFile(artifact, Buffer.concat([bytes, Buffer.from(' ')]));
+    await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    const foreign = join(root, 'foreign-artifact.json');
+    await writeFile(foreign, bytes, { mode: 0o600 });
+    await rm(artifact);
+    await symlink(foreign, artifact);
+    await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    expect(process.env.FRAMELEAF_PORT).toBe('2283');
+  });
+
+  it('finalizes the same local request only with completed publication and a live matching maintenance fence', async () => {
+    await marker();
+    await saveBinding({ state: 'request' });
+    await files.state('files-ready');
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2283');
+    await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+    await files.state('complete');
+    const assert = vi.fn(() =>
+      assert.mock.calls.length === 3
+        ? Promise.reject(new Error('synthetic fence lost before readiness'))
+        : Promise.resolve(),
+    );
+    await expect(finalizeBuddyBootBinding(root, recoveryId, assert)).rejects.toThrow();
+    expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+    await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+    const ready = await readFile(bindingPath);
+    expect(JSON.parse(ready.toString()).state).toBe('ready');
+    await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+    expect((await readFile(bindingPath)).equals(ready)).toBe(true);
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2283');
+    await marker(randomUUID());
+    await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    await rm(join(identity, 'buddy', 'recovery-active.json'));
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391');
+  });
+
+  it('preserves effective local aliases in keep mode and removes them in replace/unset mode', async () => {
+    vi.stubEnv('FRAMELEAF_PORT', undefined);
+    vi.stubEnv('IMMICH_PORT', '2284');
+    await prepare('keep');
+    await loadBuddyBootBinding();
+    expect(process.env.IMMICH_PORT).toBe('2284');
+    expect(process.env.FRAMELEAF_PORT).toBeUndefined();
+    vi.stubEnv('IMMICH_PORT', undefined);
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391');
+    vi.stubEnv('FRAMELEAF_PORT', undefined);
+    vi.stubEnv('IMMICH_PORT', '2284');
+    await prepare('replace');
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391');
+    expect(process.env.IMMICH_PORT).toBeUndefined();
+    configuration.entries = [{ key: 'FRAMELEAF_PORT', state: 'unset' }];
+    await prepare('replace');
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBeUndefined();
+  });
+
+  it('prepares owner requests, retains fenced readiness and revokes without racing or trusting foreign authority', async () => {
+    configuration.entries.push(
+      { key: 'FRAMELEAF_WORKERS_INCLUDE', state: 'value', value: 'api' },
+      { key: 'FRAMELEAF_WORKERS_EXCLUDE', state: 'value', value: 'edge' },
+      { key: 'FRAMELEAF_MEDIA_LOCATION', state: 'value', value: join(root, 'media') },
+    );
+    const keys = [
+      'FRAMELEAF_PORT',
+      'FRAMELEAF_WORKERS_INCLUDE',
+      'FRAMELEAF_WORKERS_EXCLUDE',
+      'FRAMELEAF_MEDIA_LOCATION',
+    ];
+    await prepare('replace', keys, 'server');
+    const metadata = await lstat(join(root, 'media'), { bigint: true });
+    const profile = join(root, 'mount-profile.json');
+    await writeFile(
+      profile,
+      JSON.stringify({
+        roots: [{ path: join(root, 'media'), device: String(metadata.dev), inode: String(metadata.ino) }],
+      }),
+      { mode: 0o600 },
+    );
+    bindingPath = join(identity, 'owner-request.json');
+    vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', bindingPath);
+    const command = [
+      'binding-prepare',
+      '--binding',
+      bindingPath,
+      '--recovery',
+      directory,
+      '--keys',
+      keys.join(','),
+      '--worker-service',
+      'supervisor',
+      '--mount-profile',
+      profile,
+    ];
+    const before = JSON.stringify(process.env);
+    await buddyBackupCommand(command);
+    const request = await readFile(bindingPath);
+    expect(JSON.parse(request.toString())).toMatchObject({
+      state: 'request',
+      replacementIdentity: binding.replacementIdentity,
+      recoveryId,
+      snapshotId,
+      preparedDigest: digest(await readFile(join(directory, 'prepared.json'))),
+    });
+    await expect(buddyBackupCommand(command)).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    expect(await readFile(bindingPath)).toEqual(request);
+    await expect(loadBuddyBootBinding()).rejects.toThrow();
+    await marker();
+    await files.state('files-ready');
+    await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+    expect(await readFile(bindingPath)).toEqual(request);
+    await files.state('complete');
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let calls = 0;
+    const finalizing = finalizeBuddyBootBinding(root, recoveryId, async () => {
+      if (++calls !== 2) return;
+      entered.resolve();
+      await resume.promise;
+    });
+    await entered.promise; // The actual finalizer holds the shared local exclusion.
+    try {
+      await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+      await expect(loadBuddyBootBinding()).rejects.toThrow();
+      expect(await readFile(bindingPath)).toEqual(request);
+    } finally {
+      resume.resolve();
+    }
+    await finalizing;
+    expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('ready');
+    expect(JSON.stringify(process.env)).toBe(before);
+    await rm(join(identity, 'buddy', 'recovery-active.json'));
+    await loadBuddyBootBinding();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391');
+    expect(process.env.DB_PASSWORD_FILE).toBe(join(root, 'replacement-database-secret-source'));
+    const keyPath = join(identity, 'instance-key.pem');
+    const originalKey = await readFile(keyPath);
+    const foreign = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' });
+    await writeFile(keyPath, foreign, { mode: 0o600 });
+    const ready = await readFile(bindingPath);
+    await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+    expect(await readFile(bindingPath)).toEqual(ready);
+    await writeFile(keyPath, originalKey, { mode: 0o600 });
+    for (const key of ['DB_PASSWORD', 'DB_PASSWORD_FILE', 'FRAMELEAF_EDGE_SECRET', 'FRAMELEAF_LINK_TOKEN']) {
+      await expect(
+        buddyBackupCommand([
+          'binding-prepare',
+          '--binding',
+          join(identity, 'forbidden.json'),
+          '--recovery',
+          directory,
+          '--keys',
+          key,
+        ]),
+      ).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+    }
+    const lockPath = join(identity, '.buddy-boot-control.lock');
+    await writeFile(lockPath, 'owner inspection required', { mode: 0o600 });
+    await expect(buddyBackupCommand(['binding-revoke', '--binding', bindingPath])).rejects.toThrow();
+    expect(await readFile(lockPath, 'utf8')).toBe('owner inspection required');
+    expect(await readFile(bindingPath)).toEqual(ready);
+    await rm(lockPath);
+    // Revocation must remain possible even after recovery evidence is no longer available.
+    await rm(join(directory, 'boot-configuration.json'));
+    await buddyBackupCommand(['binding-revoke', '--binding', bindingPath]);
+    const revoked = await readFile(bindingPath);
+    expect(JSON.parse(revoked.toString())).toMatchObject({
+      state: 'revoked',
+      recoveryId,
+      replacementIdentity: binding.replacementIdentity,
+    });
+    await buddyBackupCommand(['binding-revoke', '--binding', bindingPath]);
+    expect(await readFile(bindingPath)).toEqual(revoked);
+    await expect(loadBuddyBootBinding()).rejects.toThrow();
+    await marker();
+    await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+    await expect(buddyBackupCommand(command)).rejects.toThrow();
+    expect(process.env.FRAMELEAF_PORT).toBe('2391'); // Revocation does not roll back a running process.
+    for (const action of ['recover', 'export']) {
+      await expect(buddyBackupCommand([action])).rejects.toThrow('Usage: frameleaf-admin buddy-backup recover|export');
+    }
+    await expect(
+      buddyBackupCommand(['binding-revoke', '--binding', bindingPath, '--keys', 'FRAMELEAF_PORT']),
+    ).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+  });
+
+  describe('Original mount service adapter', () => {
+    let external: string;
+    let mounts: { path: string; device: string; inode: string }[];
+    const prepareMounts = async (mode: 'keep' | 'replace' = 'replace') => {
+      external = join(root, 'external', 'library');
+      await mkdir(external, { recursive: true, mode: 0o700 });
+      configuration.entries.push({ key: 'FRAMELEAF_MEDIA_LOCATION', state: 'value', value: join(root, 'media') });
+      // Capture may repeat an external library root; the local profile grants each directory once.
+      await prepare(mode, ['FRAMELEAF_PORT', 'FRAMELEAF_MEDIA_LOCATION'], 'server', [
+        join(root, 'media'),
+        external,
+        external,
+      ]);
+      mounts = await Promise.all(
+        [join(root, 'media'), external].map(async (path) => {
+          const metadata = await lstat(path, { bigint: true });
+          return { path, device: String(metadata.dev), inode: String(metadata.ino) };
+        }),
+      );
+      binding.mountService = { roots: mounts };
+      await saveBinding();
+    };
+
+    it('admits the original roots after fenced completion and clears the media alias on ordinary boot', async () => {
+      await prepareMounts();
+      vi.stubEnv('IMMICH_MEDIA_LOCATION', join(root, 'replacement-media'));
+      await marker();
+      await saveBinding({ state: 'request' });
+      const before = JSON.stringify(process.env);
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('ready');
+      const ready = await readFile(bindingPath);
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      expect((await readFile(bindingPath)).equals(ready)).toBe(true);
+      await loadBuddyBootBinding();
+      expect(JSON.stringify(process.env)).toBe(before);
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_MEDIA_LOCATION).toBe(join(root, 'media'));
+      expect(process.env.IMMICH_MEDIA_LOCATION).toBeUndefined();
+      expect(process.env.FRAMELEAF_PORT).toBe('2391');
+      expect(process.env.FRAMELEAF_IDENTITY_DIR).toBe(identity);
+      expect(process.env.DB_PASSWORD).toBe('synthetic-replacement-database-secret');
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_MEDIA_LOCATION).toBe(join(root, 'media'));
+    });
+
+    it('keeps an effective local media alias only when it names the original root', async () => {
+      await prepareMounts('keep');
+      vi.stubEnv('IMMICH_MEDIA_LOCATION', join(root, 'media'));
+      const before = JSON.stringify(process.env);
+      await loadBuddyBootBinding();
+      expect(JSON.stringify(process.env)).toBe(before);
+      vi.stubEnv('IMMICH_MEDIA_LOCATION', join(root, 'wrong-root'));
+      const wrong = JSON.stringify(process.env);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(wrong);
+    });
+
+    it.each([
+      'no mount grant',
+      'settings recovery',
+      'unselected media input',
+      'dependency credential',
+      'missing original root',
+      'duplicate directory',
+      'extra directory',
+      'noncanonical path',
+      'wrong device',
+      'wrong inode',
+      'unknown field',
+    ])('refuses %s before changing any selected boot input', async (name) => {
+      await prepareMounts();
+      const changes: Record<string, Record<string, unknown>> = {
+        'no mount grant': { mountService: undefined },
+        'settings recovery': { scope: 'settings' },
+        'unselected media input': { environmentKeys: ['FRAMELEAF_PORT'] },
+        'dependency credential': { environmentKeys: [...(binding.environmentKeys as string[]), 'DB_PASSWORD'] },
+        'missing original root': { mountService: { roots: mounts.slice(0, 1) } },
+        'duplicate directory': { mountService: { roots: [mounts[0], mounts[0]] } },
+        'extra directory': { mountService: { roots: [...mounts, { ...mounts[0], path: root }] } },
+        'noncanonical path': { mountService: { roots: [{ ...mounts[0], path: `${mounts[0].path}/` }, mounts[1]] } },
+        'wrong device': {
+          mountService: { roots: [mounts[0], { ...mounts[1], device: String(BigInt(mounts[1].device) + 1n) }] },
+        },
+        'wrong inode': {
+          mountService: { roots: [mounts[0], { ...mounts[1], inode: String(BigInt(mounts[1].inode) + 1n) }] },
+        },
+        'unknown field': { mountService: { roots: mounts, remap: true } },
+      };
+      await saveBinding(changes[name]);
+      const before = JSON.stringify(process.env);
+      await marker();
+      await saveBinding({ ...changes[name], state: 'request' });
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await saveBinding(changes[name]);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it.each(['missing', 'file', 'symlink', 'symlink ancestor', 'replaced directory'])(
+      'refuses a %s external root before readiness or environment mutation',
+      async (kind) => {
+        await prepareMounts();
+        const moved = join(root, 'external-original');
+        if (kind === 'symlink ancestor') {
+          await rename(join(root, 'external'), moved);
+          await symlink(moved, join(root, 'external'));
+        } else {
+          await rename(external, moved);
+        }
+        switch (kind) {
+          case 'file': {
+            await writeFile(external, 'synthetic regular file');
+            break;
+          }
+          case 'symlink': {
+            await symlink(moved, external);
+            break;
+          }
+          case 'replaced directory': {
+            await mkdir(external, { mode: 0o700 });
+            break;
+          }
+        }
+        await marker();
+        await saveBinding({ state: 'request' });
+        const before = JSON.stringify(process.env);
+        await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+          'Invalid replacement-local Buddy boot authority',
+        );
+        expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+        await rm(join(identity, 'buddy', 'recovery-active.json'));
+        await saveBinding();
+        await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+        expect(JSON.stringify(process.env)).toBe(before);
+      },
+    );
+
+    it.each(['unset', 'different original path'])('refuses an effective %s media input', async (kind) => {
+      await prepareMounts();
+      configuration.entries = configuration.entries.filter((entry) => entry.key !== 'FRAMELEAF_MEDIA_LOCATION');
+      configuration.entries.push(
+        kind === 'unset'
+          ? { key: 'FRAMELEAF_MEDIA_LOCATION', state: 'unset' }
+          : { key: 'FRAMELEAF_MEDIA_LOCATION', state: 'value', value: join(root, 'different') },
+      );
+      await prepare(
+        'replace',
+        ['FRAMELEAF_PORT', 'FRAMELEAF_MEDIA_LOCATION'],
+        'server',
+        mounts.map((mount) => mount.path),
+      );
+      await marker();
+      await saveBinding({ state: 'request' });
+      const before = JSON.stringify(process.env);
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await saveBinding();
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it.each(['directory', 'maintenance marker'])(
+      'rechecks the %s at the fenced atomic readiness write',
+      async (kind) => {
+        await prepareMounts();
+        await marker();
+        await saveBinding({ state: 'request' });
+        const before = JSON.stringify(process.env);
+        const assert = vi.fn(async () => {
+          if (assert.mock.calls.length !== 3) return;
+          if (kind === 'directory') await rename(external, join(root, 'external-moved'));
+          else await rm(join(identity, 'buddy', 'recovery-active.json'));
+        });
+        await expect(finalizeBuddyBootBinding(root, recoveryId, assert)).rejects.toThrow(
+          'Invalid replacement-local Buddy boot authority',
+        );
+        expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+        expect(JSON.stringify(process.env)).toBe(before);
+      },
+    );
+
+    it('refuses a media-root change that would relocate the implicit replacement identity', async () => {
+      await prepareMounts();
+      const replacementMedia = join(root, 'replacement-media');
+      const nextIdentity = join(replacementMedia, 'frameleaf', 'identity');
+      await mkdir(join(replacementMedia, 'frameleaf'), { recursive: true, mode: 0o700 });
+      await rename(identity, nextIdentity);
+      identity = nextIdentity;
+      bindingPath = join(identity, 'buddy-boot-binding.json');
+      vi.stubEnv('FRAMELEAF_IDENTITY_DIR', undefined);
+      vi.stubEnv('FRAMELEAF_MEDIA_LOCATION', replacementMedia);
+      vi.stubEnv('FRAMELEAF_BUDDY_BOOT_BINDING_FILE', bindingPath);
+      await marker();
+      await saveBinding({ state: 'request' });
+      const before = JSON.stringify(process.env);
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await saveBinding();
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+  });
+
+  describe('Supervisor worker service adapter', () => {
+    const workerKeys = ['FRAMELEAF_WORKERS_INCLUDE', 'FRAMELEAF_WORKERS_EXCLUDE'];
+    const prepareWorkers = async (mode: 'keep' | 'replace' = 'replace', included = 'api,microservices,edge') => {
+      configuration.entries.push(
+        { key: 'FRAMELEAF_WORKERS_INCLUDE', state: 'value', value: included },
+        { key: 'FRAMELEAF_WORKERS_EXCLUDE', state: 'value', value: 'api' },
+      );
+      await prepare(mode, workerKeys, 'server');
+      binding.workerService = 'supervisor';
+      await saveBinding();
+    };
+
+    it.each(['process', 'thread'] as const)(
+      'restores the admitted profile for fresh %s workers and restarts',
+      async (kind) => {
+        await prepareWorkers();
+        vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+        vi.stubEnv('IMMICH_WORKERS_EXCLUDE', 'edge');
+        const before = { ...process.env };
+        await loadBuddyBootBinding();
+        const expected: NodeJS.ProcessEnv = {
+          ...before,
+          FRAMELEAF_WORKERS_INCLUDE: 'api,microservices,edge',
+          FRAMELEAF_WORKERS_EXCLUDE: 'api',
+        };
+        delete expected.IMMICH_WORKERS_INCLUDE;
+        delete expected.IMMICH_WORKERS_EXCLUDE;
+        expect(JSON.stringify(process.env) === JSON.stringify(expected)).toBe(true);
+        const workerFile = join(root, 'observe-worker-profile.mjs');
+        await writeFile(
+          workerFile,
+          `import { parentPort } from 'node:worker_threads';
+import { parseWorkerSelection } from ${JSON.stringify(new URL('environment-values.ts', import.meta.url).href)};
+const result = parseWorkerSelection(process.env).join(',');
+if (parentPort) {
+  parentPort.postMessage(result);
+  parentPort.close();
+} else {
+  process.send(result, () => process.disconnect());
+}
+`,
+          { mode: 0o600 },
+        );
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const worker =
+            kind === 'process'
+              ? fork(workerFile, [], {
+                  execArgv: ['--experimental-transform-types'],
+                  stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+                })
+              : new Worker(workerFile, { execArgv: ['--experimental-transform-types'], stdout: true, stderr: true });
+          try {
+            const signal = AbortSignal.timeout(5000);
+            const [[result], [code]] = await Promise.all([
+              once(worker, 'message', { signal }),
+              once(worker, 'exit', { signal }),
+            ]);
+            expect(result).toBe('microservices,edge');
+            expect(code).toBe(0);
+          } finally {
+            if (worker instanceof Worker) await worker.terminate();
+            else worker.kill();
+          }
+        }
+      },
+    );
+
+    it('keeps the whole local worker profile when either local input is present', async () => {
+      await prepareWorkers('keep');
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+      const before = JSON.stringify(process.env);
+      await loadBuddyBootBinding();
+      expect(JSON.stringify(process.env)).toBe(before);
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', undefined);
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api,microservices,edge');
+      expect(process.env.FRAMELEAF_WORKERS_EXCLUDE).toBe('api');
+    });
+
+    it('clears an explicitly unset profile and restores ordinary supervisor defaults', async () => {
+      configuration.entries.push(...workerKeys.map((key) => ({ key, state: 'unset' as const })));
+      await prepare('replace', workerKeys, 'server');
+      await saveBinding({ workerService: 'supervisor' });
+      vi.stubEnv('IMMICH_WORKERS_INCLUDE', 'api');
+      vi.stubEnv('IMMICH_WORKERS_EXCLUDE', 'edge');
+      await loadBuddyBootBinding();
+      const { parseWorkerSelection } = await import('src/utils/environment-values.js');
+      expect(parseWorkerSelection(process.env)).toEqual(['api', 'microservices', 'edge']);
+      for (const key of [...workerKeys, 'IMMICH_WORKERS_INCLUDE', 'IMMICH_WORKERS_EXCLUDE']) {
+        expect(process.env[key]).toBeUndefined();
+      }
+    });
+
+    it.each([
+      ['no service grant', { workerService: undefined }],
+      ['unknown service', { workerService: 'postgres' }],
+      ['settings recovery', { scope: 'settings' }],
+      ['incomplete profile', { environmentKeys: ['FRAMELEAF_WORKERS_INCLUDE'] }],
+      ['dependency credential', { environmentKeys: [...workerKeys, 'DB_PASSWORD'] }],
+    ])('refuses %s without changing any boot input', async (_name, change) => {
+      await prepareWorkers();
+      await saveBinding(change);
+      const before = JSON.stringify(process.env);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it('refuses an invalid worker before finalizing readiness or changing boot inputs', async () => {
+      await prepareWorkers('replace', 'api,first-launch');
+      await marker();
+      await saveBinding({ state: 'request' });
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow(
+        'Invalid replacement-local Buddy boot authority',
+      );
+      expect(JSON.parse(await readFile(bindingPath, 'utf8')).state).toBe('request');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await saveBinding();
+      const before = JSON.stringify(process.env);
+      await expect(loadBuddyBootBinding()).rejects.toThrow('Invalid replacement-local Buddy boot authority');
+      expect(JSON.stringify(process.env)).toBe(before);
+    });
+
+    it('retains the replacement profile in maintenance and activates only after fenced completion', async () => {
+      await prepareWorkers();
+      vi.stubEnv('FRAMELEAF_WORKERS_INCLUDE', 'api');
+      await marker();
+      await saveBinding({ state: 'request' });
+      await files.state('files-ready');
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api');
+      await expect(finalizeBuddyBootBinding(root, recoveryId, async () => {})).rejects.toThrow();
+      await files.state('complete');
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api');
+      await rm(join(identity, 'buddy', 'recovery-active.json'));
+      await loadBuddyBootBinding();
+      expect(process.env.FRAMELEAF_WORKERS_INCLUDE).toBe('api,microservices,edge');
+      expect(process.env.FRAMELEAF_WORKERS_EXCLUDE).toBe('api');
+    });
+  });
+});

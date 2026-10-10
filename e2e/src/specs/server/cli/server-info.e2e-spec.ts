@@ -11,7 +11,7 @@ describe(`immich server-info`, () => {
   it('should return the server info', async () => {
     const { stderr, stdout, exitCode } = await immichCli(['server-info']);
     expect(stdout.split('\n')).toEqual([
-      expect.stringContaining('Server Info (via admin@immich.cloud'),
+      expect.stringContaining('Server Info (via admin@example.com'),
       '  Url: http://127.0.0.1:2285/api',
       expect.stringContaining('Version:'),
       '  Formats:',

@@ -4,18 +4,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
-from rapidocr.inference_engine.base import FileInfo, InferSession
-from rapidocr.utils.download_file import DownloadFile, DownloadFileInput
-from rapidocr.utils.typings import EngineType, LangDet, OCRVersion, TaskType
-from rapidocr.utils.typings import ModelType as RapidModelType
 
-from immich_ml.config import log
 from immich_ml.models.base import InferenceModel
 from immich_ml.schemas import ModelFormat, ModelSession, ModelTask, ModelType
 from immich_ml.sessions.ort import OrtSession
 
 from .postprocess import DBPostProcess
 from .schemas import TextDetectionOutput
+from .source import download_ocr_model
 
 
 class TextDetector(InferenceModel):
@@ -32,22 +28,7 @@ class TextDetector(InferenceModel):
         self.postprocess = DBPostProcess(thresh=0.3, max_candidates=1000, unclip_ratio=1.6, use_dilation=True)
 
     def _download(self) -> None:
-        model_info = InferSession.get_model_url(
-            FileInfo(
-                engine_type=EngineType.ONNXRUNTIME,
-                ocr_version=OCRVersion.PPOCRV5,
-                task_type=TaskType.DET,
-                lang_type=LangDet.CH,
-                model_type=RapidModelType.MOBILE if "mobile" in self.model_name else RapidModelType.SERVER,
-            )
-        )
-        download_params = DownloadFileInput(
-            file_url=model_info["model_dir"],
-            sha256=model_info["SHA256"],
-            save_path=self.model_path,
-            logger=log,
-        )
-        DownloadFile.run(download_params)
+        download_ocr_model(self)
 
     def _load(self) -> ModelSession:
         # TODO: support other runtime sessions

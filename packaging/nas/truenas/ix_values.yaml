@@ -1,0 +1,33 @@
+images:
+  image:
+    repository: ghcr.io/frameleaf/frameleaf-server
+    tag: "@SERVER_TAG@"
+  container_utils_image:
+    repository: ixsystems/container-utils
+    tag: 1.0.2@sha256:46eba20714c1cc6784f60e245c32c33a2d9f616e47d804694a9854248c89a992
+  ml_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_TAG@"
+  ml_cuda_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_CUDA_TAG@"
+  ml_rocm_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_ROCM_TAG@"
+  ml_openvino_image:
+    repository: ghcr.io/frameleaf/frameleaf-machine-learning
+    tag: "@ML_OPENVINO_TAG@"
+  pgvector_19_image:
+    repository: "@PG_REPOSITORY@"
+    tag: "@PG_TAG@"
+
+consts:
+  server_container_name: server
+  ml_container_name: machine-learning
+  postgres_container_name: postgres
+  perms_container_name: permissions
+  ml_port: 32002
+  ml_cache_path: /mlcache
+  db_user: frameleaf
+  db_name: frameleaf
+  base_path: /data

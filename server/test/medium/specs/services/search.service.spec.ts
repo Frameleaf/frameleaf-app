@@ -3,6 +3,7 @@ import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { SearchSuggestionType } from 'src/dtos/search.dto.js';
 import {
   AlbumUserRole,
+  AssetLockReason,
   AssetMetadataKey,
   AssetOrder,
   AssetType,
@@ -64,6 +65,120 @@ describe(SearchService.name, () => {
   it('should work', () => {
     const { sut } = setup();
     expect(sut).toBeDefined();
+  });
+
+  it.each(['another owner', 'Locked', 'hidden', 'archived', 'trashed', 'video'] as const)(
+    'does not let %s media satisfy the Explore city threshold (FL-137)',
+    async (excluded) => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const visibleIds = [];
+      for (let i = 0; i < 4; i++) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+        await ctx.newExif({ assetId: asset.id, city: 'Private threshold' });
+        visibleIds.push(asset.id);
+      }
+      const { asset: privateAsset } = await ctx.newAsset({
+        ownerId: excluded === 'another owner' ? stranger.id : user.id,
+        type: excluded === 'video' ? AssetType.Video : AssetType.Image,
+        visibility:
+          excluded === 'Locked'
+            ? AssetVisibility.Locked
+            : excluded === 'archived'
+              ? AssetVisibility.Archive
+              : AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: privateAsset.id, city: 'Private threshold' });
+      if (excluded === 'trashed') await ctx.softDeleteAsset(privateAsset.id);
+      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Private'] });
+      if (excluded === 'hidden') await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [privateAsset.id] });
+      const auth = {
+        ...factory.auth({ user }),
+        hiddenContent: {
+          userId: user.id,
+          includeNsfw: true,
+          tagIds: [tag.id],
+          personIds: [],
+          petIds: [],
+          scope: 'owned' as const,
+        },
+      };
+      const cities = async () =>
+        (await sut.getExploreData(auth)).find(({ fieldName }) => fieldName === 'exifInfo.city');
+      await expect(cities()).resolves.toEqual({ fieldName: 'exifInfo.city', items: [] });
+
+      const { asset: fifth } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      await ctx.newExif({ assetId: fifth.id, city: 'Private threshold' });
+      visibleIds.push(fifth.id);
+      const qualifying = await cities();
+      expect(qualifying?.items).toHaveLength(1);
+      expect(qualifying?.items[0].value).toBe('Private threshold');
+      expect(visibleIds).toContain(qualifying?.items[0].data.id);
+
+      await ctx.newMetadata({ assetId: fifth.id, key: AssetMetadataKey.MlEnrichment, value: nsfwMetadata(true) });
+      await expect(cities()).resolves.toEqual({ fieldName: 'exifInfo.city', items: [] });
+    },
+  );
+
+  it.each([
+    ['exifInfo.city', 'Locked'],
+    ['exifInfo.city', 'suppressed'],
+    ['createdAt', 'Locked'],
+    ['createdAt', 'suppressed'],
+  ] as const)('omits a %s cover made %s between selection and hydration (FL-137)', async (fieldName, privacy) => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    for (let i = 0; i < 5; i++) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+      await ctx.newExif({ assetId: asset.id, city: 'Hydration privacy' });
+    }
+    const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Private'] });
+    const auth = {
+      ...factory.auth({ user }),
+      hiddenContent: {
+        userId: user.id,
+        includeNsfw: true,
+        tagIds: [tag.id],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      },
+    };
+    const before = await sut.getExploreData(auth);
+    expect(before.find((field) => field.fieldName === 'exifInfo.city')?.items).toHaveLength(1);
+    expect(before.find((field) => field.fieldName === 'createdAt')?.items).toHaveLength(5);
+
+    const repository = ctx.get(AssetRepository);
+    const hydrate = repository.getByIdsWithAllRelationsButStacks.bind(repository);
+    let hydration = 0;
+    let protectedId = '';
+    const intercept = vi.spyOn(repository, 'getByIdsWithAllRelationsButStacks').mockImplementation(async (...args) => {
+      if (++hydration === (fieldName === 'exifInfo.city' ? 1 : 2)) {
+        protectedId = args[0][0];
+        expect(protectedId).toBeDefined();
+        if (privacy === 'Locked') {
+          await repository.lock([protectedId], AssetLockReason.Marked, user.id);
+        } else {
+          await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [protectedId] });
+        }
+      }
+      return hydrate(...args);
+    });
+    const response = await sut.getExploreData(auth);
+    intercept.mockRestore();
+    expect(protectedId).not.toBe('');
+    expect(response.find((field) => field.fieldName === fieldName)?.items).toHaveLength(
+      fieldName === 'exifInfo.city' ? 0 : 4,
+    );
+    expect(response.find((field) => field.fieldName === fieldName)?.items.map(({ data }) => data.id)).not.toContain(
+      protectedId,
+    );
+    // The owner's unlocked read still reveals the same item under the ordinary Explore policy.
+    const unlocked = await sut.getExploreData(factory.auth({ user, session: { hasElevatedPermission: true } }));
+    expect(unlocked.find((field) => field.fieldName === 'createdAt')?.items.map(({ data }) => data.id)).toContain(
+      protectedId,
+    );
   });
 
   it('should return assets', async () => {
@@ -161,6 +276,68 @@ describe(SearchService.name, () => {
       const result = await sut.searchStatistics(auth, { visibility: AssetVisibility.Locked });
 
       expect(result).toEqual({ total: 0 });
+    });
+  });
+
+  describe("a partner's Locked media", () => {
+    const partnerLibrary = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
+
+      const { asset: ownLocked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: partnerTimeline } = await ctx.newAsset({ ownerId: partner.id });
+      const { asset: partnerLocked } = await ctx.newAsset({ ownerId: partner.id, visibility: AssetVisibility.Locked });
+      for (const { id } of [ownLocked, partnerTimeline, partnerLocked]) {
+        await ctx.newExif({ assetId: id, fileSizeInByte: 1000 });
+      }
+
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      return { user, partner, ownLocked, partnerTimeline, partnerLocked, elevated };
+    };
+
+    it('never comes back from an elevated metadata search, while the viewer keeps their own', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, ownLocked, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+
+      const response = await sut.searchMetadata(elevated, {});
+      const ids = response.assets.items.map(({ id }) => id);
+
+      // FL-326: a partner's own rows are never searched, Locked or not; their items arrive as copies
+      expect(ids).toEqual([ownLocked.id]);
+      expect(ids).not.toContain(partnerTimeline.id);
+      expect(ids).not.toContain(partnerLocked.id);
+    });
+
+    it('is not counted, sampled or listed by size in an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, partnerLocked } = await partnerLibrary(ctx);
+
+      await expect(sut.searchStatistics(elevated, {})).resolves.toEqual({ total: 1 });
+
+      const random = await sut.searchRandom(elevated, { size: 50 });
+      expect(random.map(({ id }) => id)).not.toContain(partnerLocked.id);
+
+      const large = await sut.searchLargeAssets(elevated, { size: 50 });
+      expect(large.map(({ id }) => id)).not.toContain(partnerLocked.id);
+    });
+
+    it('does not come back even when the partner shares the album it sits in', async () => {
+      const { sut, ctx } = setup();
+      const { user, partner, elevated, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+      const { album } = await ctx.newAlbum({ ownerId: partner.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerTimeline.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerLocked.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
+
+      const everything = await sut.searchMetadata(elevated, { albumIds: [album.id] });
+      expect(everything.assets.items.map(({ id }) => id)).toEqual([partnerTimeline.id]);
+
+      const lockedOnly = await sut.searchMetadata(elevated, {
+        albumIds: [album.id],
+        visibility: AssetVisibility.Locked,
+      });
+      expect(lockedOnly.assets.items).toEqual([]);
     });
   });
 
@@ -318,6 +495,7 @@ describe(SearchService.name, () => {
         includeNsfw: true,
         tagIds: [tag.id],
         personIds: [person.personGroupId],
+        petIds: [],
         scope: 'owned',
       };
       const hiddenAuth = {
@@ -471,6 +649,96 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('FL-49 search palette conditions', () => {
+    it('matches cameras and lenses by "contains", included or excluded', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: sony } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: sony.id, make: 'SONY', model: 'ILCE-7M4', lensModel: 'FE 24-70mm F2.8 GM II' });
+      const { asset: canon } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: canon.id, make: 'Canon', model: 'EOS R5', lensModel: 'RF 15-35mm' });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ make: { like: 'son' } })).resolves.toEqual([sony.id]);
+      await expect(ids({ model: { like: 'r5' } })).resolves.toEqual([canon.id]);
+      await expect(ids({ lensModel: { like: '24-70' } })).resolves.toEqual([sony.id]);
+      const { asset: noExif } = await ctx.newAsset({ ownerId: user.id });
+      // A photo with no lens does not contain "24-70", so an exclusion keeps it
+      await expect(ids({ lensModel: { notLike: '24-70' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(ids({ make: { notLike: 'son' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(sut.searchStatistics(auth, { filter: { make: { like: 'o' } } })).resolves.toEqual({ total: 2 });
+    });
+
+    it('finds panoramas by projection and screenshots by name or a camera-less PNG (FL-349)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const still = async (
+        originalFileName: string,
+        exif: { projectionType?: string; make?: string; model?: string },
+      ) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalFileName });
+        await ctx.newExif({ assetId: asset.id, make: null, ...exif });
+        return asset.id;
+      };
+      const sphere = await still('PANO_0001.jpg', { projectionType: 'EQUIRECTANGULAR' });
+      const sweep = await still('PANO_0002.jpg', { projectionType: 'CYLINDRICAL' });
+      const insta = await still('IMG_0003.insp', {});
+      const android = await still('Screenshot_20260101-101010_Maps.jpg', {});
+      const mac = await still('Screen Shot 2026-01-01 at 10.10.10.png', { make: 'Apple' });
+      const ios = await still('IMG_0004.PNG', {});
+      const photo = await still('IMG_0005.HEIC', { make: 'Apple', model: 'iPhone 17 Pro' });
+      const cameraPng = await still('DSC_0006.png', { make: 'NIKON', model: 'Z 8' });
+      const { asset: video } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'Screen Recording 2026.mov',
+        type: AssetType.Video,
+      });
+      await ctx.newExif({ assetId: video.id, projectionType: 'EQUIRECTANGULAR' });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ isPanorama: { eq: true } })).resolves.toEqual([sphere, sweep, insta].sort());
+      await expect(ids({ isScreenshot: { eq: true } })).resolves.toEqual([android, mac, ios].sort());
+      await expect(ids({ isScreenshot: { eq: false } })).resolves.toEqual(
+        [sphere, sweep, insta, photo, cameraPng, video.id].sort(),
+      );
+      await expect(ids({ isPanorama: { eq: false }, isScreenshot: { eq: false } })).resolves.toEqual(
+        [photo, cameraPng, video.id].sort(),
+      );
+      await expect(ids({ or: [{ isPanorama: { eq: true } }, { isScreenshot: { eq: true } }] })).resolves.toEqual(
+        [sphere, sweep, insta, android, mac, ios].sort(),
+      );
+    });
+
+    it('narrows by the local capture date, which is what the histogram buckets by', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      // 23:30 on July 31 where it was taken, already August 1 in UTC
+      const { asset: lateJuly } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-01T05:30:00.000Z'),
+        localDateTime: new Date('2026-07-31T23:30:00.000Z'),
+      });
+      const { asset: august } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-12T10:00:00.000Z'),
+        localDateTime: new Date('2026-08-12T12:00:00.000Z'),
+      });
+      const auth = factory.auth({ user });
+      const localDateTime = { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-09-01T00:00:00.000Z') };
+
+      const result = await sut.searchMetadata(auth, { filter: { localDateTime } });
+      expect(result.assets.items.map(({ id }) => id)).toEqual([august.id]);
+      const histogram = await sut.searchHistogram(auth, { filter: { localDateTime }, granularity: 'month' as never });
+      expect(histogram.total).toBe(1);
+      const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
+      expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
+    });
+  });
+
   describe('getSearchSuggestions', () => {
     it('should filter out empty search suggestions', async () => {
       const { sut, ctx } = setup();
@@ -504,6 +772,39 @@ describe(SearchService.name, () => {
       const response = await sut.searchRandom(auth, {});
 
       expect(response.length).toBe(0);
+    });
+  });
+
+  describe('getCityAssetCounts (FL-51)', () => {
+    it("counts timeline photos and videos per city and never Locked, trashed or other users' media", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const inCity = async (city: string, dto: Parameters<typeof ctx.newAsset>[0]) => {
+        const { asset } = await ctx.newAsset(dto);
+        await ctx.newExif({ assetId: asset.id, city, latitude: 48.85, longitude: 2.35 });
+        return asset;
+      };
+
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Image });
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Rome', { ownerId: user.id });
+      await inCity('Rome', { ownerId: user.id, deletedAt: new Date() });
+      await inCity('Rome', { ownerId: user.id, visibility: AssetVisibility.Archive });
+      await inCity('Secret', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Lisbon', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: stranger.id });
+
+      const counts = await sut.getCityAssetCounts(factory.auth({ user: { id: user.id } }));
+      expect(counts).toEqual([
+        { city: 'Lisbon', count: 1 },
+        { city: 'Paris', count: 2 },
+        { city: 'Rome', count: 1 },
+      ]);
+      // the places list itself shows photo cities only, so the video-only city is counted but not listed
+      const listed = await sut.getAssetsByCity(factory.auth({ user: { id: user.id } }));
+      expect(listed.map((asset) => asset.exifInfo?.city)).toEqual(['Paris', 'Rome']);
     });
   });
 });

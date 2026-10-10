@@ -2,9 +2,14 @@
 
 -- AssetEditRepository.replaceAll
 begin
-delete from "asset_edit"
+select
+  "type"
+from
+  "asset"
 where
-  "assetId" = $1
+  "id" = $1
+  and "deletedAt" is null
+for update
 rollback
 
 -- AssetEditRepository.getAll

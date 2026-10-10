@@ -36,6 +36,14 @@ select
       (
         "asset"."type" = $1
         and "asset"."visibility" != $2
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "photos",
   count(*) filter (
@@ -43,6 +51,14 @@ select
       (
         "asset"."type" = $3
         and "asset"."visibility" != $4
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "videos",
   coalesce(sum("asset_exif"."fileSizeInByte"), $5) as "usage"
@@ -52,6 +68,14 @@ from
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "library"."id" = $6
 group by
   "library"."id"
@@ -59,8 +83,272 @@ select
   0::int as "photos",
   0::int as "videos",
   0::int as "usage",
+  0::int as "usagePhysical",
   0::int as "total"
 from
   "library"
 where
   "library"."id" = $1
+
+-- LibraryRepository.getManagedUploadStatistics
+select
+  "user"."id" as "ownerId",
+  count(*) filter (
+    where
+      (
+        "asset"."type" = $1
+        and "asset"."visibility" != $2
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) as "photos",
+  count(*) filter (
+    where
+      (
+        "asset"."type" = $3
+        and "asset"."visibility" != $4
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) as "videos",
+  coalesce(sum("asset_exif"."fileSizeInByte"), 0) as "usage",
+  (
+    SELECT
+      coalesce(sum("size"), 0)::bigint
+    FROM
+      (
+        SELECT DISTINCT
+          ON ("scoped"."originalPath") "scoped_exif"."fileSizeInByte" AS "size"
+        FROM
+          "asset" AS "scoped"
+          LEFT JOIN "asset_exif" AS "scoped_exif" ON "scoped_exif"."assetId" = "scoped"."id"
+        WHERE
+          "scoped"."deletedAt" IS NULL
+          AND not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "scoped"."id"
+          )
+          AND "scoped"."libraryId" IS NULL
+          AND "scoped"."ownerId" = "user"."id"
+      ) AS "distinct_originals"
+  ) as "usagePhysical"
+from
+  "user"
+  left join "asset" on "asset"."ownerId" = "user"."id"
+  and "asset"."libraryId" is null
+  and "asset"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+where
+  "user"."deletedAt" is null
+  and "user"."status" = $5
+group by
+  "user"."id"
+order by
+  "user"."createdAt" asc
+
+-- LibraryRepository.getAssetIdPage
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."libraryId" = $1::uuid
+  and "asset"."id" > $2::uuid
+order by
+  "asset"."id" asc
+limit
+  $3
+
+-- LibraryRepository.countOnlineAssetsUnder
+select
+  count(*) as "count"
+from
+  "asset"
+where
+  "asset"."libraryId" = $1::uuid
+  and "asset"."isOffline" = $2
+  and "asset"."deletedAt" is null
+  and starts_with("asset"."originalPath", $3)
+
+-- LibraryRepository.getRemovalCounts
+select
+  (
+    select
+      count(*) filter (
+        where
+          (
+            "asset"."type" = $1
+            and "asset"."visibility" != $2
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
+      ) as "count"
+    from
+      "asset"
+    where
+      "asset"."libraryId" = $3::uuid
+  ) as "photos",
+  (
+    select
+      count(*) filter (
+        where
+          (
+            "asset"."type" = $4
+            and "asset"."visibility" != $5
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
+      ) as "count"
+    from
+      "asset"
+    where
+      "asset"."libraryId" = $6::uuid
+  ) as "videos",
+  (
+    select
+      coalesce(sum("asset_exif"."fileSizeInByte"), 0) as "usage"
+    from
+      "asset"
+      left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+    where
+      "asset"."libraryId" = $7::uuid
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+  ) as "usage",
+  (
+    select
+      count(*) as "count"
+    from
+      "asset"
+    where
+      "asset"."libraryId" = $8::uuid
+      and "asset"."isOffline" = $9
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+  ) as "offline",
+  (
+    select
+      count(distinct "album_asset"."albumId") as "count"
+    from
+      "album_asset"
+    where
+      "album_asset"."assetId" in (
+        select
+          "asset"."id"
+        from
+          "asset"
+        where
+          "asset"."libraryId" = $10::uuid
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+      )
+  ) as "albums",
+  (
+    select
+      count(distinct "shared_link_asset"."sharedLinkId") as "count"
+    from
+      "shared_link_asset"
+    where
+      "shared_link_asset"."assetId" in (
+        select
+          "asset"."id"
+        from
+          "asset"
+        where
+          "asset"."libraryId" = $11::uuid
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+      )
+  ) as "sharedLinks",
+  (
+    select
+      count(*) as "count"
+    from
+      "asset_face"
+    where
+      "asset_face"."assetId" in (
+        select
+          "asset"."id"
+        from
+          "asset"
+        where
+          "asset"."libraryId" = $12::uuid
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+      )
+      and "asset_face"."deletedAt" is null
+  ) as "faces",
+  (
+    select
+      count(*) as "count"
+    from
+      "asset"
+    where
+      "asset"."libraryId" = $13::uuid
+  ) as "all"

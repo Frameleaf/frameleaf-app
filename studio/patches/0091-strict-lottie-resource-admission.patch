@@ -1,0 +1,1062 @@
+diff --git a/headless/lib/workspace.mjs b/headless/lib/workspace.mjs
+index 8ba2682364..0687f154a0 100644
+--- a/headless/lib/workspace.mjs
++++ b/headless/lib/workspace.mjs
+@@ -15,7 +15,7 @@ const NON_SOURCE_NAMES = new Set([
+   'cache',
+ ])
+
+-const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image'])
++const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image', 'lottie'])
+
+ function readProject(projectJsonPath) {
+   if (!fs.existsSync(projectJsonPath)) {
+diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/features/export/utils/canvas-render-orchestrator.ts
+index 45770b555b..960303deab 100644
+--- a/src/features/export/utils/canvas-render-orchestrator.ts
++++ b/src/features/export/utils/canvas-render-orchestrator.ts
+@@ -253,6 +253,7 @@ async function assertAudioOnlyEncoderSupported(
+ }
+
+ export interface RenderEngineOptions {
++  strict?: boolean
+   settings: ClientExportSettings
+   composition: CompositionInputProps
+   onProgress: (progress: RenderProgress) => void
+@@ -781,7 +782,10 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
+   let frameRenderer: Awaited<ReturnType<typeof createCompositionRenderer>> | null = null
+
+   try {
+-    frameRenderer = await createCompositionRenderer(renderCompositionInput, renderCanvas, ctx)
++    frameRenderer = await createCompositionRenderer(renderCompositionInput, renderCanvas, ctx, {
++      strictLottie: options.strict,
++      signal,
++    })
+     // Preload media
+     await frameRenderer.preload()
+     videoRenderingStarted = true
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+index 691597a162..2c9548e4a3 100644
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -687,6 +687,8 @@ export async function createCompositionRenderer(
+   canvas: OffscreenCanvas,
+   ctx: OffscreenCanvasRenderingContext2D,
+   options: {
++    strictLottie?: boolean
++    signal?: AbortSignal
+     hdrRasters?: Readonly<Record<string, HdrRasterInput>>
+     mode?: CompositionRendererMode
+     getPreviewTransformOverride?: (itemId: string) => Partial<ResolvedTransform> | undefined
+@@ -732,6 +734,7 @@ export async function createCompositionRenderer(
+   const getLiveItemSnapshot = options.getLiveItemSnapshot
+   const getLiveKeyframes = options.getLiveKeyframes
+   const domVideoElementProvider = options.domVideoElementProvider
++  const strictLottie = options.strictLottie
+   const hasDom = typeof document !== 'undefined'
+   const previewStrictDecode = executionPolicy.usesStrictPreviewDecode
+
+@@ -1089,7 +1092,7 @@ export async function createCompositionRenderer(
+
+   // Lottie animations: rendered on demand via dotlottie-web (no frame pre-extraction).
+   const lottieItems: LottieItem[] = []
+-  const lottieProvider = new LottieExportProvider()
++  const lottieProvider = new LottieExportProvider(options.strictLottie, options.signal)
+
+   // Preview only: a persistent renderer outlives edits, so when a top-level
+   // Lottie's text/color overrides change we must rebuild its dotlottie renderer
+@@ -1114,9 +1117,20 @@ export async function createCompositionRenderer(
+
+     const promise = (async () => {
+       throwIfAborted(signal)
+-      const w = item.sourceWidth && item.sourceWidth > 0 ? item.sourceWidth : 512
+-      const h = item.sourceHeight && item.sourceHeight > 0 ? item.sourceHeight : 512
+-      const spec = await resolveLottieRenderSpec(src, item)
++      const spec = await resolveLottieRenderSpec(src, item, {
++        strict: strictLottie,
++        signal: options.signal,
++      })
++      const w = strictLottie
++        ? spec.dimensions!.width
++        : item.sourceWidth && item.sourceWidth > 0
++          ? item.sourceWidth
++          : 512
++      const h = strictLottie
++        ? spec.dimensions!.height
++        : item.sourceHeight && item.sourceHeight > 0
++          ? item.sourceHeight
++          : 512
+       throwIfAborted(signal)
+       if (isDisposed) return
+       await lottieProvider.preload(
+@@ -1250,9 +1264,20 @@ export async function createCompositionRenderer(
+         if (!isRenderableLottieSrc(item.src)) return
+         const signature = lottieOverrideSignature(item)
+         if (lottieProvider.getSignature(baseItem.id) === signature) return
+-        const w = item.sourceWidth && item.sourceWidth > 0 ? item.sourceWidth : 512
+-        const h = item.sourceHeight && item.sourceHeight > 0 ? item.sourceHeight : 512
+-        const spec = await resolveLottieRenderSpec(item.src, item)
++        const spec = await resolveLottieRenderSpec(item.src, item, {
++          strict: strictLottie,
++          signal: options.signal,
++        })
++        const w = strictLottie
++          ? spec.dimensions!.width
++          : item.sourceWidth && item.sourceWidth > 0
++            ? item.sourceWidth
++            : 512
++        const h = strictLottie
++          ? spec.dimensions!.height
++          : item.sourceHeight && item.sourceHeight > 0
++            ? item.sourceHeight
++            : 512
+         await lottieProvider.rebuild(
+           baseItem.id,
+           item.src,
+@@ -1856,15 +1881,22 @@ export async function createCompositionRenderer(
+         await Promise.all(
+           lottieItems.map(async (lottieItem) => {
+             try {
+-              const w =
+-                lottieItem.sourceWidth && lottieItem.sourceWidth > 0 ? lottieItem.sourceWidth : 512
+-              const h =
+-                lottieItem.sourceHeight && lottieItem.sourceHeight > 0
+-                  ? lottieItem.sourceHeight
+-                  : 512
+               // Resolve animation/theme + text/color edits before warming so
+               // exports reflect them.
+-              const spec = await resolveLottieRenderSpec(lottieItem.src, lottieItem)
++              const spec = await resolveLottieRenderSpec(lottieItem.src, lottieItem, {
++                strict: strictLottie,
++                signal: options.signal,
++              })
++              const w = strictLottie
++                ? spec.dimensions!.width
++                : lottieItem.sourceWidth && lottieItem.sourceWidth > 0
++                  ? lottieItem.sourceWidth
++                  : 512
++              const h = strictLottie
++                ? spec.dimensions!.height
++                : lottieItem.sourceHeight && lottieItem.sourceHeight > 0
++                  ? lottieItem.sourceHeight
++                  : 512
+               if (isDisposed) return
+               await lottieProvider.preload(
+                 lottieItem.id,
+@@ -1880,6 +1912,7 @@ export async function createCompositionRenderer(
+               // renderer into a torn-down provider (dispose() → destroy()).
+               if (isDisposed) return
+             } catch (err) {
++              if (strictLottie) throw new Error('LOTTIE_LOAD_OR_EDIT_FAILED')
+               getLog().error('Failed to preload Lottie', { itemId: lottieItem.id, error: err })
+             }
+           }),
+diff --git a/src/features/project-bundle/schemas/project-schema.ts b/src/features/project-bundle/schemas/project-schema.ts
+index 64f877cd08..a8b4408dce 100644
+--- a/src/features/project-bundle/schemas/project-schema.ts
++++ b/src/features/project-bundle/schemas/project-schema.ts
+@@ -106,25 +106,16 @@ const vectorPropertyKeyframesSchema = z.object({
+
+ const linkedPropertyExpressionSchema = z.object({
+   type: z.literal('link'),
+-  targetProperty: z.union([
+-    animatablePropertySchema,
+-    z.enum(['position', 'scale', 'anchor']),
+-  ]),
++  targetProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
+   sourceItemId: z.string().min(1),
+-  sourceProperty: z.union([
+-    animatablePropertySchema,
+-    z.enum(['position', 'scale', 'anchor']),
+-  ]),
++  sourceProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
+   enabled: z.boolean(),
+   timeOffsetFrames: z.number(),
+ })
+
+ const propertyExpressionSchema = z.object({
+   type: z.literal('expression'),
+-  targetProperty: z.union([
+-    animatablePropertySchema,
+-    z.enum(['position', 'scale', 'anchor']),
+-  ]),
++  targetProperty: z.union([animatablePropertySchema, z.enum(['position', 'scale', 'anchor'])]),
+   source: z.string(),
+   enabled: z.boolean(),
+ })
+@@ -150,6 +141,7 @@ const itemTypeSchema = z.enum([
+   'audio',
+   'text',
+   'image',
++  'lottie',
+   'shape',
+   'composition',
+   'adjustment',
+@@ -439,12 +431,7 @@ const compositionControlSchema = z.object({
+       id: z.string().min(1),
+       name: z.string().min(1),
+       targetItemId: z.string().min(1),
+-      property: z.enum([
+-        'text.text',
+-        'text.color',
+-        'shape.fillColor',
+-        'shape.strokeColor',
+-      ]),
++      property: z.enum(['text.text', 'text.color', 'shape.fillColor', 'shape.strokeColor']),
+       kind: z.enum(['text', 'color']),
+       defaultValue: z.string(),
+     }),
+@@ -459,6 +446,15 @@ const timelineItemSchema = z
+     durationInFrames: z.number().int().min(1),
+     label: z.string(),
+     mediaId: z.string().optional(),
++    importId: z.string().optional(),
++    graphicId: z.string().optional(),
++    animationId: z.string().min(1).optional(),
++    themeId: z.string().min(1).optional(),
++    textOverrides: z.record(z.string(), z.string()).optional(),
++    colorOverrides: z.record(z.string(), z.string().regex(/^#[a-fA-F0-9]{6}$/)).optional(),
++    slotOverrides: z
++      .record(z.string(), z.union([z.number(), z.tuple([z.number(), z.number()])]))
++      .optional(),
+     originId: z.string().optional(),
+     linkedGroupId: z.string().optional(),
+     type: itemTypeSchema,
+@@ -746,6 +742,7 @@ const projectSchema = z
+     rootFolderName: z.string().optional(),
+     metadata: projectResolutionSchema,
+     timeline: timelineSchema.optional(),
++    studioVectorDependencies: z.unknown().optional(), // Host validates this immutable resource contract.
+   })
+   .strict()
+
+diff --git a/src/features/project-bundle/services/test-fixtures.test.ts b/src/features/project-bundle/services/test-fixtures.test.ts
+index 9592926732..bb896dfd82 100644
+--- a/src/features/project-bundle/services/test-fixtures.test.ts
++++ b/src/features/project-bundle/services/test-fixtures.test.ts
+@@ -3,6 +3,7 @@
+ import { describe, expect, it } from 'vite-plus/test'
+ import { getAvailableFixtures, generateFixture } from './test-fixtures'
+ import { validateSnapshotData } from './json-import-service'
++import { validateProject } from '../schemas/project-schema'
+
+ describe('test fixtures', () => {
+   it('generates snapshots accepted by the current import validator', async () => {
+@@ -15,3 +16,33 @@ describe('test fixtures', () => {
+     }
+   })
+ })
++
++it('preserves Lottie edits and immutable dependency declarations through actual bundle project validation', () => {
++  const { project } = generateFixture('single-image')
++  const input = structuredClone(project) as unknown as {
++    timeline: { items: Record<string, unknown>[] }
++    studioVectorDependencies?: unknown
++  }
++  Object.assign(input.timeline.items[0]!, {
++    type: 'lottie',
++    animationId: 'selected',
++    themeId: 'theme',
++    textOverrides: { '1': 'Edited' },
++    colorOverrides: { c0: '#ff00aa' },
++    slotOverrides: { point: [1, 2], value: 3 },
++  })
++  input.studioVectorDependencies = { version: 1, bindings: [] }
++  const result = validateProject(input)
++  expect(result.success).toBe(true)
++  expect(result.data?.timeline?.items[0]).toMatchObject({
++    type: 'lottie',
++    animationId: 'selected',
++    themeId: 'theme',
++    textOverrides: { '1': 'Edited' },
++    colorOverrides: { c0: '#ff00aa' },
++    slotOverrides: { point: [1, 2], value: 3 },
++  })
++  expect(result.data?.studioVectorDependencies).toEqual(input.studioVectorDependencies)
++  Object.assign(input.timeline.items[0]!, { slotOverrides: { point: [1, NaN] } })
++  expect(validateProject(input).success).toBe(false)
++})
+diff --git a/src/headless/main.ts b/src/headless/main.ts
+index 4a26e42e72..9dbc4b8914 100644
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -684,7 +684,12 @@ async function renderTimeline(input: HeadlessTimelineInput): Promise<HeadlessRen
+   const result =
+     settings.mode === 'audio'
+       ? await renderAudioOnly({ settings, composition, onProgress: reportProgress })
+-      : await renderComposition({ settings, composition, onProgress: reportProgress })
++      : await renderComposition({
++          settings,
++          composition,
++          onProgress: reportProgress,
++          strict: input.strict,
++        })
+
+   const fileName = effectiveFileName(input.outputFileName, settings)
+   triggerDownload(result.blob, fileName)
+diff --git a/src/infrastructure/lottie/lottie-frame-provider.ts b/src/infrastructure/lottie/lottie-frame-provider.ts
+index 27fc994ef7..914da9c47f 100644
+--- a/src/infrastructure/lottie/lottie-frame-provider.ts
++++ b/src/infrastructure/lottie/lottie-frame-provider.ts
+@@ -16,6 +16,7 @@ import { requireResource } from '@/shared/utils/resource-admission.mjs'
+ import { DotLottie } from '@lottiefiles/dotlottie-web'
+ import { isLiveObjectUrl } from '@/infrastructure/browser/object-url-registry'
+ import type { LottieSlotValue } from './lottie-slots'
++import { requireLottieDimensions } from './lottie-metadata'
+ // Bundle the WASM alongside the app so it resolves without the default CDN.
+ // Use the package's `exports`-mapped subpath (NOT `/dist/...`) so Node's strict
+ // exports resolution (Vitest) can resolve it too, not just Vite.
+@@ -136,8 +137,12 @@ export class LottieRenderer {
+   private _ready: Promise<void>
+   private _loaded = false
+   private _destroyed = false
++  private readonly strict: boolean
++  private cancelReady: (() => void) | undefined
+
+   constructor(config: {
++    strict?: boolean
++    signal?: AbortSignal
+     canvas: HTMLCanvasElement | OffscreenCanvas
+     /** Blob/URL to the animation file. */
+     src?: string
+@@ -164,6 +169,8 @@ export class LottieRenderer {
+     requireResource('asset:lottiefiles')
+     ensureLottieWasm()
+     this._canvas = config.canvas
++    this.strict = config.strict === true
++    if (this.strict) requireLottieDimensions(config.canvas.width, config.canvas.height)
+     const autoResize = config.autoResize ?? false
+     this.dotLottie = new DotLottie({
+       canvas: config.canvas,
+@@ -180,19 +187,64 @@ export class LottieRenderer {
+       },
+     })
+
+-    this._ready = new Promise<void>((resolve) => {
++    this._ready = new Promise<void>((resolve, reject) => {
++      let timer: ReturnType<typeof setTimeout> | undefined
++      let settled = false
++      const clear = () => {
++        clearTimeout(timer)
++        config.signal?.removeEventListener('abort', cancel)
++        this.cancelReady = undefined
++      }
++      const fail = () => {
++        if (settled) return
++        settled = true
++        clear()
++        this._loaded = false
++        reject(new Error('LOTTIE_LOAD_OR_EDIT_FAILED'))
++      }
++      const cancel = () => {
++        fail()
++        if (!this._destroyed) {
++          this._destroyed = true
++          this.dotLottie.destroy()
++        }
++      }
++      this.cancelReady = this.strict ? cancel : undefined
++      if (this.strict) {
++        timer = setTimeout(cancel, 10_000)
++        config.signal?.addEventListener('abort', cancel, { once: true })
++        if (config.signal?.aborted) {
++          cancel()
++          return
++        }
++      }
+       const onLoad = () => {
++        if (this._destroyed || settled) return
+         this._loaded = true
+         // Apply the theme + slot overrides to the loaded animation before the
+         // first render; the external setFrame that follows draws them.
+         if (config.themeData) {
+           try {
+-            this.dotLottie.setThemeData(config.themeData)
++            if (!this.dotLottie.setThemeData(config.themeData) && this.strict) {
++              fail()
++              return
++            }
+           } catch {
++            if (this.strict) {
++              fail()
++              return
++            }
+             // ignore a malformed/unsupported theme — render stays as-authored
+           }
+         }
+-        this.applySlots(config.slots)
++        try {
++          this.applySlots(config.slots)
++        } catch {
++          fail()
++          return
++        }
++        clear()
++        settled = true
+         resolve()
+       }
+       // Guard against a load that already completed synchronously.
+@@ -202,6 +254,10 @@ export class LottieRenderer {
+       }
+       this.dotLottie.addEventListener('load', onLoad)
+       this.dotLottie.addEventListener('loadError', () => {
++        if (this.strict) {
++          fail()
++          return
++        }
+         log.warn('lottie load failed', { src: config.src })
+         resolve() // resolve so callers don't hang; renders no-op
+       })
+@@ -245,12 +301,29 @@ export class LottieRenderer {
+         // `getSlotType` reports position slots as 'vector'; `setVectorSlot`
+         // handles both.
+         const type = this.dotLottie.getSlotType(id)
+-        if (type === 'scalar' && typeof value === 'number') {
+-          this.dotLottie.setScalarSlot(id, value)
+-        } else if (type === 'vector' && Array.isArray(value)) {
+-          this.dotLottie.setVectorSlot(id, value)
++        if (
++          type === 'scalar' &&
++          typeof value === 'number' &&
++          (!this.strict || Number.isFinite(value))
++        ) {
++          if (!this.dotLottie.setScalarSlot(id, value) && this.strict)
++            throw new Error('LOTTIE_SLOT_UNAVAILABLE')
++        } else if (
++          type === 'vector' &&
++          Array.isArray(value) &&
++          (!this.strict || (value.length === 2 && value.every(Number.isFinite)))
++        ) {
++          if (!this.dotLottie.setVectorSlot(id, value) && this.strict)
++            throw new Error('LOTTIE_SLOT_UNAVAILABLE')
++        } else if (this.strict) throw new Error('LOTTIE_SLOT_UNAVAILABLE')
++        if (this.strict) {
++          const applied = this.dotLottie.getSlot(id) as { a?: unknown; k?: unknown } | undefined
++          if (applied?.a !== 0 || JSON.stringify(applied.k) !== JSON.stringify(value)) {
++            throw new Error('LOTTIE_SLOT_UNAPPLIED')
++          }
+         }
+       } catch {
++        if (this.strict) throw new Error('LOTTIE_SLOT_UNAVAILABLE')
+         // ignore a single bad slot — the rest still apply
+       }
+     }
+@@ -259,11 +332,17 @@ export class LottieRenderer {
+   /** Render a specific Lottie frame synchronously into the bound canvas. */
+   renderFrame(lottieFrame: number): void {
+     requireResource('asset:lottiefiles')
+-    if (this._destroyed || !this._loaded) return
++    if (this._destroyed || !this._loaded) {
++      if (this.strict) throw new Error('LOTTIE_PROVIDER_NOT_READY')
++      return
++    }
++    if (this.strict && !Number.isFinite(lottieFrame)) throw new Error('LOTTIE_FRAME_INVALID')
+     this.dotLottie.setFrame(lottieFrame)
+   }
+
+   destroy(): void {
++    if (this._destroyed) return
++    this.cancelReady?.()
+     if (this._destroyed) return
+     this._destroyed = true
+     try {
+@@ -304,6 +383,10 @@ export async function renderLottieThumbnail(
+  * per source, preloaded before the frame loop. Keyed by the item's `src`.
+  */
+ export class LottieExportProvider {
++  constructor(
++    private readonly strict = false,
++    private readonly signal?: AbortSignal,
++  ) {}
+   private readonly renderers = new Map<string, LottieRenderer>()
+   /** Override signature the current renderer for a key was built with. */
+   private readonly signatures = new Map<string, string>()
+@@ -327,14 +410,24 @@ export class LottieExportProvider {
+     slots?: Record<string, LottieSlotValue>,
+   ): Promise<void> {
+     requireResource('asset:lottiefiles')
++    if (this.strict) requireLottieDimensions(width, height)
+     if (this.renderers.has(key)) return
+     const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+     const renderer = new LottieRenderer(
+-      data ? { canvas, data, themeData, slots } : { canvas, src, themeData, slots },
++      data
++        ? { canvas, data, themeData, slots, strict: this.strict, signal: this.signal }
++        : { canvas, src, themeData, slots, strict: this.strict, signal: this.signal },
+     )
+     this.renderers.set(key, renderer)
+     if (signature !== undefined) this.signatures.set(key, signature)
+-    await renderer.ready
++    try {
++      await renderer.ready
++    } catch (error) {
++      renderer.destroy()
++      this.renderers.delete(key)
++      this.signatures.delete(key)
++      throw error
++    }
+   }
+
+   /** The override signature the key's current renderer was built with. */
+@@ -365,11 +458,23 @@ export class LottieExportProvider {
+     if (inFlight && inFlight.signature === signature) return inFlight.promise
+
+     const promise = (async () => {
++      if (this.strict) requireLottieDimensions(width, height)
+       const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+       const renderer = new LottieRenderer(
+-        data ? { canvas, data, themeData, slots } : { canvas, src, themeData, slots },
++        data
++          ? { canvas, data, themeData, slots, strict: this.strict, signal: this.signal }
++          : { canvas, src, themeData, slots, strict: this.strict, signal: this.signal },
+       )
+-      await renderer.ready
++      try {
++        await renderer.ready
++      } catch (error) {
++        try {
++          renderer.destroy()
++        } catch {
++          // Preserve the readiness failure even if native disposal also fails.
++        }
++        throw error
++      }
+       const previous = this.renderers.get(key)
+       this.renderers.set(key, renderer)
+       this.signatures.set(key, signature)
+diff --git a/src/infrastructure/lottie/lottie-metadata.ts b/src/infrastructure/lottie/lottie-metadata.ts
+index 48960464bf..482ecccf7d 100644
+--- a/src/infrastructure/lottie/lottie-metadata.ts
++++ b/src/infrastructure/lottie/lottie-metadata.ts
+@@ -18,6 +18,25 @@ export interface LottieMetadata {
+   durationSeconds: number
+ }
+
++/** Intrinsic allocation bounds shared by strict byte admission and canvas construction. */
++export function requireLottieDimensions(
++  width: unknown,
++  height: unknown,
++): { width: number; height: number } {
++  if (
++    typeof width !== 'number' ||
++    typeof height !== 'number' ||
++    !Number.isSafeInteger(width) ||
++    !Number.isSafeInteger(height) ||
++    width <= 0 ||
++    height <= 0 ||
++    width * height > 64_000_000
++  ) {
++    throw new Error('LOTTIE_CANVAS_DIMENSIONS_REFUSED')
++  }
++  return { width, height }
++}
++
+ /**
+  * Extract intrinsic metadata from a raw Lottie JSON object/string.
+  * Returns null when the payload isn't a recognizable Lottie.
+@@ -253,16 +272,69 @@ export function extractLottieAnimation(
+  * object, auto-detecting `.json` vs `.lottie`. See {@link extractLottieAnimation}
+  * for `inlineImages`. Returns null on any fetch/parse failure.
+  */
++async function readStrictLottieBytes(
++  response: Response,
++  signal?: AbortSignal,
++): Promise<ArrayBuffer> {
++  if (!response.ok || !response.body) {
++    await response.body?.cancel()
++    throw new Error('LOTTIE_LOAD_FAILED')
++  }
++  const reader = response.body.getReader()
++  const chunks: Uint8Array[] = []
++  let length = 0
++  try {
++    while (true) {
++      signal?.throwIfAborted()
++      const { done, value } = await reader.read()
++      signal?.throwIfAborted()
++      if (done) break
++      length += value.byteLength
++      if (length > 16 * 1024 * 1024) throw new Error('LOTTIE_BYTE_LIMIT')
++      chunks.push(value)
++    }
++    const bytes = new Uint8Array(length)
++    let offset = 0
++    for (const chunk of chunks) {
++      bytes.set(chunk, offset)
++      offset += chunk.length
++    }
++    return bytes.buffer
++  } finally {
++    await reader.cancel()
++    reader.releaseLock()
++  }
++}
++
+ export async function fetchLottieAnimation(
+   src: string,
+   inlineImages = false,
+   animationId?: string,
++  options: { strict?: boolean; signal?: AbortSignal } = {},
+ ): Promise<Record<string, unknown> | null> {
+-    requireResource('asset:lottiefiles')
++  requireResource('asset:lottiefiles')
+   try {
+-    const buffer = await (await fetch(src)).arrayBuffer()
++    const response = await fetch(src, {
++      signal: options.signal,
++      ...(options.strict ? { redirect: 'error' } : {}),
++    })
++    const buffer = options.strict
++      ? await readStrictLottieBytes(response, options.signal)
++      : await response.arrayBuffer()
++    if (options.strict) {
++      options.signal?.throwIfAborted()
++      // Durable archive admission/materialization is separate; never use the permissive
++      // suffix-selected ZIP extractor as proof that a requested selection was applied.
++      if (
++        buffer.byteLength > 16 * 1024 * 1024 ||
++        isZipArchive(new Uint8Array(buffer)) ||
++        animationId
++      )
++        throw new Error('LOTTIE_SELECTION_UNAVAILABLE')
++    }
+     return extractLottieAnimation(new Uint8Array(buffer), inlineImages, animationId)
+-  } catch {
++  } catch (error) {
++    if (options.strict) throw error
+     return null
+   }
+ }
+@@ -381,7 +453,7 @@ export function readLottieMarkers(animation: unknown): LottieMarker[] {
+
+ /** Fetch a Lottie `src` and summarize its dotLottie manifest. Null on failure. */
+ export async function fetchLottieManifest(src: string): Promise<LottieManifestInfo | null> {
+-    requireResource('asset:lottiefiles')
++  requireResource('asset:lottiefiles')
+   try {
+     const buffer = await (await fetch(src)).arrayBuffer()
+     return extractLottieManifest(new Uint8Array(buffer))
+@@ -391,12 +463,25 @@ export async function fetchLottieManifest(src: string): Promise<LottieManifestIn
+ }
+
+ /** Fetch a Lottie `src` and read a theme's rule JSON. Null on failure/absence. */
+-export async function fetchLottieThemeData(src: string, themeId: string): Promise<string | null> {
+-    requireResource('asset:lottiefiles')
++export async function fetchLottieThemeData(
++  src: string,
++  themeId: string,
++  options: { strict?: boolean; signal?: AbortSignal } = {},
++): Promise<string | null> {
++  requireResource('asset:lottiefiles')
+   try {
+-    const buffer = await (await fetch(src)).arrayBuffer()
++    const response = await fetch(src, {
++      signal: options.signal,
++      ...(options.strict ? { redirect: 'error' } : {}),
++    })
++    const buffer = options.strict
++      ? await readStrictLottieBytes(response, options.signal)
++      : await response.arrayBuffer()
++    options.signal?.throwIfAborted()
++    if (options.strict) throw new Error('LOTTIE_THEME_UNAVAILABLE')
+     return extractLottieThemeData(new Uint8Array(buffer), themeId)
+-  } catch {
++  } catch (error) {
++    if (options.strict) throw error
+     return null
+   }
+ }
+diff --git a/src/infrastructure/lottie/lottie-text.test.ts b/src/infrastructure/lottie/lottie-text.test.ts
+index e5011b802b..8ab3bf06f8 100644
+--- a/src/infrastructure/lottie/lottie-text.test.ts
++++ b/src/infrastructure/lottie/lottie-text.test.ts
+@@ -85,3 +85,112 @@ describe('text slots', () => {
+     expect(parsed.layers[2].t.d.k[0].s.t).toBe('Plain') // unbound layer untouched
+   })
+ })
++
++import { afterEach, vi } from 'vite-plus/test'
++import { resolveLottieRenderSpec } from './lottie-text'
++afterEach(() => vi.unstubAllGlobals())
++describe('strict durable Lottie edit admission', () => {
++  it('rejects required edits that have no target instead of falling back to authored data', async () => {
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => new Response(JSON.stringify(animation()))),
++    )
++    await expect(
++      resolveLottieRenderSpec(
++        'https://owned.invalid/animation',
++        { sourceWidth: 100, sourceHeight: 100, textOverrides: { '99': 'Lost' } },
++        { strict: true },
++      ),
++    ).rejects.toThrow()
++  })
++  it('accepts existing targets even when the requested text equals the source text', async () => {
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => new Response(JSON.stringify(animation()))),
++    )
++    const result = await resolveLottieRenderSpec(
++      'https://owned.invalid/animation',
++      { sourceWidth: 100, sourceHeight: 100, textOverrides: { '1': 'Hello' } },
++      { strict: true },
++    )
++    expect(JSON.parse(result.data!).layers[1].t.d.k[0].s.t).toBe('Hello')
++  })
++  it('rejects failed HTTP loads with no edits as well', async () => {
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => new Response('failed', { status: 404 })),
++    )
++    await expect(
++      resolveLottieRenderSpec('https://owned.invalid/animation', {}, { strict: true }),
++    ).rejects.toThrow()
++  })
++  it('rejects missing selected animation or theme', async () => {
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => new Response(JSON.stringify(animation()))),
++    )
++    await expect(
++      resolveLottieRenderSpec(
++        'https://owned.invalid/animation',
++        { sourceWidth: 100, sourceHeight: 100, animationId: 'absent' },
++        { strict: true },
++      ),
++    ).rejects.toThrow()
++    await expect(
++      resolveLottieRenderSpec(
++        'https://owned.invalid/animation',
++        { sourceWidth: 100, sourceHeight: 100, themeId: 'absent' },
++        { strict: true },
++      ),
++    ).rejects.toThrow()
++  })
++})
++
++it('strict transport refuses oversized and canceled streams before extraction', async () => {
++  let cancelled = false
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(
++      async () =>
++        new Response(
++          new ReadableStream({
++            start(controller) {
++              controller.enqueue(new Uint8Array(16 * 1024 * 1024 + 1))
++            },
++            cancel() {
++              cancelled = true
++            },
++          }),
++        ),
++    ),
++  )
++  await expect(
++    resolveLottieRenderSpec('https://owned.invalid/animation', {}, { strict: true }),
++  ).rejects.toThrow('LOTTIE_BYTE_LIMIT')
++  expect(cancelled).toBe(true)
++  const controller = new AbortController()
++  controller.abort()
++  await expect(
++    resolveLottieRenderSpec(
++      'https://owned.invalid/animation',
++      {},
++      { strict: true, signal: controller.signal },
++    ),
++  ).rejects.toThrow()
++})
++
++it('strict dimensions match the loaded parent and never invent a missing intrinsic size', async () => {
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(async () => new Response(JSON.stringify(animation()))),
++  )
++  for (const input of [
++    {},
++    { sourceWidth: 101, sourceHeight: 100 },
++    { sourceWidth: 100, sourceHeight: 1e12 },
++  ]) {
++    await expect(
++      resolveLottieRenderSpec('https://owned.invalid/animation', input, { strict: true }),
++    ).rejects.toThrow('LOTTIE_SOURCE_DIMENSIONS_CHANGED')
++  }
++})
+diff --git a/src/infrastructure/lottie/lottie-text.ts b/src/infrastructure/lottie/lottie-text.ts
+index 1b5f7a82d1..dde769c691 100644
+--- a/src/infrastructure/lottie/lottie-text.ts
++++ b/src/infrastructure/lottie/lottie-text.ts
+@@ -10,8 +10,12 @@
+  * table referenced by `t.d.sid`) are surfaced and patched too (keyed `s:<id>`).
+  * Only top-level text layers are handled — nested precomp assets are out of scope.
+  */
+-import { applyLottieColorOverrides } from './lottie-color'
+-import { fetchLottieAnimation, fetchLottieThemeData } from './lottie-metadata'
++import { applyLottieColorOverrides, extractLottieColorLayers } from './lottie-color'
++import {
++  fetchLottieAnimation,
++  fetchLottieThemeData,
++  requireLottieDimensions,
++} from './lottie-metadata'
+
+ /** A single editable text layer discovered in a Lottie animation. */
+ export interface LottieTextLayer {
+@@ -192,6 +196,8 @@ export function applyLottieTextOverrides(
+
+ /** The animation-level selections + overrides that shape a Lottie render. */
+ export interface LottieRenderInput {
++  sourceWidth?: number
++  sourceHeight?: number
+   /** Selected animation id in a multi-animation `.lottie` (default: primary). */
+   animationId?: string
+   /** Selected dotLottie theme id, applied via `setThemeData` after load. */
+@@ -204,6 +210,7 @@ export interface LottieRenderInput {
+
+ /** Everything the renderer needs beyond `src` to reflect the item's edits. */
+ export interface LottieRenderSpec {
++  dimensions?: { width: number; height: number }
+   /**
+    * Patched/selected animation JSON to load as `data`, or null to load `src`
+    * directly (nothing to patch and the primary animation is selected).
+@@ -230,27 +237,44 @@ export interface LottieRenderSpec {
+ export async function resolveLottieRenderSpec(
+   src: string,
+   input: LottieRenderInput,
++  options: { strict?: boolean; signal?: AbortSignal } = {},
+ ): Promise<LottieRenderSpec> {
+   const hasText = !!input.textOverrides && Object.keys(input.textOverrides).length > 0
+   const hasColor = !!input.colorOverrides && Object.keys(input.colorOverrides).length > 0
+   // Extract/patch the animation JSON only when overrides apply or a specific
+   // (non-primary) animation is selected; a theme alone rides on the src load.
+-  const needsData = hasText || hasColor || !!input.animationId
++  const needsData = options.strict || hasText || hasColor || !!input.animationId
+
+   let data: string | null = null
++  let dimensions: LottieRenderSpec['dimensions']
+   if (needsData) {
+     // Inline archive images so the patched JSON is self-contained for the renderer.
+-    const animation = await fetchLottieAnimation(src, true, input.animationId)
++    const animation = await fetchLottieAnimation(src, true, input.animationId, options)
+     if (animation) {
++      if (options.strict) {
++        dimensions = requireLottieDimensions(animation.w, animation.h)
++        if (input.sourceWidth !== dimensions.width || input.sourceHeight !== dimensions.height)
++          throw new Error('LOTTIE_SOURCE_DIMENSIONS_CHANGED')
++        const textKeys = new Set(extractLottieTextLayers(animation).map((target) => target.key))
++        const colorKeys = new Set(extractLottieColorLayers(animation).map((target) => target.key))
++        if (
++          Object.keys(input.textOverrides ?? {}).some((key) => !textKeys.has(key)) ||
++          Object.keys(input.colorOverrides ?? {}).some((key) => !colorKeys.has(key))
++        ) {
++          throw new Error('LOTTIE_EDIT_TARGET_UNAVAILABLE')
++        }
++      }
+       // Appliers mutate the object in place; we re-serialize once at the end.
+       if (hasText) applyLottieTextOverrides(animation, input.textOverrides!)
+       if (hasColor) applyLottieColorOverrides(animation, input.colorOverrides!)
+       data = JSON.stringify(animation)
+-    }
++    } else if (options.strict) throw new Error('LOTTIE_ANIMATION_UNAVAILABLE')
+   }
+
+-  const themeData = input.themeId ? await fetchLottieThemeData(src, input.themeId) : null
++  const themeData = input.themeId ? await fetchLottieThemeData(src, input.themeId, options) : null
++  if (options.strict && input.themeId && !themeData) throw new Error('LOTTIE_THEME_UNAVAILABLE')
++  options.signal?.throwIfAborted()
+   const slots =
+     input.slotOverrides && Object.keys(input.slotOverrides).length > 0 ? input.slotOverrides : null
+-  return { data, themeData, slots }
++  return { data, themeData, slots, ...(dimensions && { dimensions }) }
+ }
+diff --git a/src/infrastructure/lottie/lottie-frame-provider.strict.test.ts b/src/infrastructure/lottie/lottie-frame-provider.strict.test.ts
+new file mode 100644
+index 0000000000..2c9145841f
+--- /dev/null
++++ b/src/infrastructure/lottie/lottie-frame-provider.strict.test.ts
+@@ -0,0 +1,185 @@
++// @vitest-environment node
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++const native = vi.hoisted(() => ({
++  loaded: true,
++  setter: true,
++  theme: true,
++  instances: [] as any[],
++}))
++vi.mock('@lottiefiles/dotlottie-web', () => ({
++  DotLottie: class {
++    static setWasmUrl() {}
++    isLoaded = native.loaded
++    listeners = new Map<string, () => void>()
++    totalFrames = 48
++    duration = 2
++    destroy = vi.fn()
++    setFrame = vi.fn()
++    slots = new Map<string, unknown>()
++    getSlot = vi.fn((id: string) => this.slots.get(id))
++    setThemeData = vi.fn(() => native.theme)
++    getSlotType = vi.fn((id: string) =>
++      id === 'scalar' ? 'scalar' : id === 'vector' ? 'vector' : undefined,
++    )
++    setScalarSlot = vi.fn((id: string, value: unknown) => {
++      this.slots.set(id, { a: 0, k: value })
++      return native.setter
++    })
++    setVectorSlot = vi.fn((id: string, value: unknown) => {
++      this.slots.set(id, { a: 0, k: value })
++      return native.setter
++    })
++    constructor() {
++      native.instances.push(this)
++    }
++    addEventListener(event: string, listener: () => void) {
++      this.listeners.set(event, listener)
++    }
++  },
++}))
++import { LottieRenderer, LottieExportProvider } from './lottie-frame-provider'
++afterEach(() => {
++  native.loaded = true
++  native.setter = true
++  native.theme = true
++  native.instances = []
++  vi.useRealTimers()
++})
++const canvas = { width: 64, height: 32 } as OffscreenCanvas
++const config = { canvas, data: '{"layers":[]}', strict: true }
++describe('strict native provider admission (controlled native API, no pixel qualification)', () => {
++  it('applies every finite known slot before rendering, retaining transparent deterministic configuration', async () => {
++    const renderer = new LottieRenderer({ ...config, slots: { scalar: 2, vector: [1, -1] } })
++    await renderer.ready
++    renderer.renderFrame(12)
++    expect(native.instances[0].setScalarSlot).toHaveBeenCalledWith('scalar', 2)
++    expect(native.instances[0].setVectorSlot).toHaveBeenCalledWith('vector', [1, -1])
++    expect(native.instances[0].setFrame).toHaveBeenCalledWith(12)
++    renderer.destroy()
++    expect(native.instances[0].destroy).toHaveBeenCalledTimes(1)
++  })
++  it('refuses missing slots, nonfinite values, failed setters and failed themes', async () => {
++    for (const slots of [{ missing: 1 }, { scalar: NaN }, { vector: [1, Infinity] }]) {
++      const renderer = new LottieRenderer({ ...config, slots: slots as any })
++      await expect(renderer.ready).rejects.toThrow()
++      renderer.destroy()
++    }
++    native.setter = false
++    const failed = new LottieRenderer({ ...config, slots: { scalar: 1 } })
++    await expect(failed.ready).rejects.toThrow()
++    failed.destroy()
++    native.theme = false
++    const themed = new LottieRenderer({ ...config, themeData: '{"rules":[]}' })
++    await expect(themed.ready).rejects.toThrow()
++    themed.destroy()
++  })
++  it('refuses seek-before-load, abort and destroyed-provider use without sampling', async () => {
++    native.loaded = false
++    const abort = new AbortController()
++    const renderer = new LottieRenderer({ ...config, signal: abort.signal })
++    const rejection = expect(renderer.ready).rejects.toThrow()
++    expect(() => renderer.renderFrame(1)).toThrow()
++    abort.abort()
++    await rejection
++    expect(() => renderer.renderFrame(1)).toThrow()
++    renderer.destroy()
++    expect(native.instances[0].destroy).toHaveBeenCalledTimes(1)
++    expect(native.instances[0].setFrame).not.toHaveBeenCalled()
++  })
++})
++
++it('strict canvas allocation rejects omitted/noninteger/excessive dimensions before construction', async () => {
++  const allocated: number[][] = []
++  vi.stubGlobal(
++    'OffscreenCanvas',
++    class {
++      width: number
++      height: number
++      constructor(width: number, height: number) {
++        this.width = width
++        this.height = height
++        allocated.push([width, height])
++      }
++    },
++  )
++  try {
++    for (const [width, height] of [
++      [undefined, 32],
++      [64, undefined],
++      [0, 32],
++      [1.5, 32],
++      [1e12, 32],
++      [8001, 8000],
++    ]) {
++      const provider = new LottieExportProvider(true)
++      await expect(
++        provider.preload('item', 'unused', width as number, height as number, '{"layers":[]}'),
++      ).rejects.toThrow('LOTTIE_CANVAS_DIMENSIONS_REFUSED')
++      provider.destroy()
++    }
++    expect(allocated).toEqual([])
++  } finally {
++    vi.unstubAllGlobals()
++  }
++})
++
++it('failed strict rebuild destroys only the replacement, preserves the readiness error and permits retry', async () => {
++  vi.stubGlobal(
++    'OffscreenCanvas',
++    class {
++      constructor(
++        public width: number,
++        public height: number,
++      ) {}
++    },
++  )
++  const readyGetter = Object.getOwnPropertyDescriptor(LottieRenderer.prototype, 'ready')!.get!
++  let replacementReady: Promise<void> | undefined
++  const readySpy = vi
++    .spyOn(LottieRenderer.prototype, 'ready', 'get')
++    .mockImplementation(function (this: LottieRenderer) {
++      const ready = readyGetter.call(this) as Promise<void>
++      replacementReady = ready
++      return ready
++    })
++  try {
++    for (const failure of ['load', 'theme', 'slot']) {
++      native.loaded = true
++      native.theme = true
++      native.setter = true
++      const provider = new LottieExportProvider(true)
++      await provider.preload('item', 'unused', 64, 32, '{"layers":[]}', 'installed')
++      const installed = provider.get('item')!
++      const installedNative = native.instances.at(-1)
++      native.loaded = failure !== 'load'
++      native.theme = failure !== 'theme'
++      native.setter = failure !== 'slot'
++      const rejected = provider
++        .rebuild('item', 'unused', 64, 32, '{"layers":[]}', 'replacement', '{"rules":[]}', {
++          scalar: 1,
++        })
++        .catch((error) => error)
++      const replacement = native.instances.at(-1)
++      const readinessError = replacementReady!.catch((error) => error)
++      if (failure === 'load') replacement.listeners.get('loadError')!()
++      const originalError = await readinessError
++      expect(await rejected).toBe(originalError)
++      expect(originalError.message).toBe('LOTTIE_LOAD_OR_EDIT_FAILED')
++      expect(replacement.destroy).toHaveBeenCalledTimes(1)
++      expect(provider.get('item')).toBe(installed)
++      expect(provider.getSignature('item')).toBe('installed')
++      expect(installedNative.destroy).not.toHaveBeenCalled()
++      native.loaded = true
++      native.theme = true
++      native.setter = true
++      await provider.rebuild('item', 'unused', 64, 32, '{"layers":[]}', 'replacement')
++      expect(provider.get('item')).not.toBe(installed)
++      expect(provider.getSignature('item')).toBe('replacement')
++      expect(installedNative.destroy).toHaveBeenCalledTimes(1)
++      provider.destroy()
++    }
++  } finally {
++    readySpy.mockRestore()
++    vi.unstubAllGlobals()
++  }
++})

@@ -1,0 +1,660 @@
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -160,8 +160,14 @@
+   const { media, participant } = prepared
+   if (media.kind !== 'media') return false
+ 
++  const pipeline = rctx.gpuMediaPipeline
++  if (!pipeline) return false
++  const render = (params: Parameters<typeof pipeline.renderSourceToTexture>[2]) =>
++    media.texture
++      ? pipeline.renderTextureToTexture(media.texture, outputTexture, params)
++      : pipeline.renderSourceToTexture(media.source, outputTexture, params)
+   return (
+-    rctx.gpuMediaPipeline?.renderSourceToTexture(media.source, outputTexture, {
++    render({
+       sourceWidth: media.sourceWidth,
+       sourceHeight: media.sourceHeight,
+       outputWidth: rctx.canvasSettings.width,
+@@ -723,6 +729,24 @@
+     frame,
+     rctx,
+   )
++  if (rctx.hdrVideo && rctx.gpuMediaPipeline) {
++    const hdr = await rctx.hdrVideo.frameTexture(participant.item, sourceTime)
++    if (hdr) {
++      recordPreviewVideoSource({
++        frame,
++        itemId: participant.item.id,
++        path: 'hdr-intermediate',
++        sourceTime,
++      })
++      return {
++        kind: 'media',
++        item: participant.item,
++        texture: hdr.texture,
++        sourceWidth: hdr.width,
++        sourceHeight: hdr.height,
++      }
++    }
++  }
+   const domVideo = rctx.domVideoElementProvider?.(participant.item.id) ?? null
+   const hasActiveRamp =
+     participant.renderSpan.sourceTimeRamp !== undefined &&
+--- a/src/features/export/utils/canvas-item-renderer/types.ts
++++ b/src/features/export/utils/canvas-item-renderer/types.ts
+@@ -205,6 +205,14 @@
+   // GPU media renderer (lazily initialized, shares device with gpuPipeline)
+   gpuMediaPipeline?: MediaRenderPipeline | null
+ 
++  /** FL-97: HDR intermediates of library clips; set only while the project is HDR. */
++  hdrVideo?: {
++    frameTexture(
++      item: VideoItem,
++      sourceTime: number,
++    ): Promise<{ texture: GPUTexture; width: number; height: number } | null>
++  } | null
++
+   // GPU media blend renderer for non-normal subcomp layer blending.
+   gpuMediaBlendPipeline?: MediaBlendPipeline | null
+ 
+@@ -322,11 +330,22 @@
+       kind: 'media'
+       item: ImageItem | VideoItem
+       source: RenderImageSource | VideoFrame
++      texture?: undefined
+       sourceWidth: number
+       sourceHeight: number
+       close?: () => void
+     }
+   | {
++      /** FL-97: an HDR frame already in working values (owned by the HDR source). */
++      kind: 'media'
++      item: VideoItem
++      source?: undefined
++      texture: GPUTexture
++      sourceWidth: number
++      sourceHeight: number
++      close?: () => void
++    }
++  | {
+       kind: 'shape'
+       item: ShapeItem
+       sourceWidth: number
+--- a/src/features/export/utils/canvas-video-extractor.ts
++++ b/src/features/export/utils/canvas-video-extractor.ts
+@@ -9,6 +9,7 @@
+  */
+ 
+ import { createMediabunnyInputSource } from '@/infrastructure/browser/mediabunny-input-source'
++import type { HdrPlanarFrame } from '@/infrastructure/gpu-color/hdr-frame-upload'
+ import { ensureProResDecoderRegistered } from '@/infrastructure/browser/register-prores-decoder'
+ import { createLogger } from '@/shared/logging/logger'
+ import { getAdaptiveStreamStart } from '@/shared/utils/keyframe-index-registry'
+@@ -38,6 +39,14 @@
+   ) => void
+   toVideoFrame(): VideoFrame | null
+   close(): void
++  /** WebCodecs pixel format; null when the decoder keeps an opaque (e.g. hardware) layout. */
++  format?: string | null
++  rotation?: number
++  /** The region `copyTo` copies by default. */
++  visibleRect?: { width: number; height: number }
++  colorSpace?: { transfer?: string | null; matrix?: string | null; fullRange?: boolean | null }
++  allocationSize?: () => number
++  copyTo?: (destination: Uint8Array) => Promise<Array<{ offset: number; stride: number }>>
+ }
+ 
+ interface MediabunnyInput {
+@@ -499,6 +508,64 @@
+     }
+   }
+ 
++  /**
++   * FL-97: the decoded planes of the frame at `timestamp`, untouched, when the
++   * sample is the 10-bit BT.2020 PQ/HLG layout the Studio HDR intermediate decodes
++   * to; 'unsupported' for any other layout (the caller keeps the SDR route, as
++   * drawing through a canvas would quantise and clip the highlights); null when no
++   * frame covers `timestamp`.
++   */
++  async captureHdrFrame(
++    timestamp: number,
++  ): Promise<(HdrPlanarFrame & { sourceTime: number }) | 'unsupported' | null> {
++    const duration = this.duration
++    const clampedTime =
++      duration > 0
++        ? Math.max(0, Math.min(timestamp, duration - VideoFrameExtractor.TIMESTAMP_EPSILON))
++        : Math.max(0, timestamp)
++    try {
++      await this.ensureSampleForTimestamp(clampedTime)
++    } catch (error) {
++      this.sampleLoopError = error
++      this.lastFailureKind = 'decode-error'
++      return null
++    }
++    const sample = this.currentSample
++    if (!sample || !this.currentSampleCoversTimestamp(clampedTime)) return null
++    if (this.hdrFrameSample === sample) return this.hdrFrame
++    const transfer = sample.colorSpace?.transfer
++    const hdrTransfer = transfer === 'pq' ? 'pq' : transfer === 'hlg' ? 'hlg' : null
++    let frame: (HdrPlanarFrame & { sourceTime: number }) | 'unsupported' = 'unsupported'
++    if (
++      hdrTransfer &&
++      sample.format === 'I420P10' &&
++      sample.colorSpace?.matrix === 'bt2020-ncl' &&
++      sample.colorSpace.fullRange !== true &&
++      (sample.rotation ?? 0) === 0 &&
++      sample.copyTo &&
++      sample.allocationSize &&
++      sample.visibleRect
++    ) {
++      const data = new Uint8Array(sample.allocationSize())
++      const layout = await sample.copyTo(data)
++      frame = {
++        format: 'I420P10',
++        width: sample.visibleRect.width,
++        height: sample.visibleRect.height,
++        transfer: hdrTransfer,
++        data,
++        layout,
++        sourceTime: sample.timestamp,
++      }
++    }
++    this.hdrFrameSample = sample
++    this.hdrFrame = frame
++    return frame
++  }
++
++  private hdrFrameSample: MediabunnySample | null = null
++  private hdrFrame: (HdrPlanarFrame & { sourceTime: number }) | 'unsupported' | null = null
++
+   private async captureCurrentOrientedFrame(): Promise<ImageBitmap | VideoFrame | null> {
+     const sample = this.currentSample
+     if (!sample) {
+@@ -727,6 +794,8 @@
+     }
+     this.sink = null
+     this.input = null
++    this.hdrFrameSample = null
++    this.hdrFrame = null
+     this.videoTrack = null
+     this.ready = false
+     this.drawFailureCount = 0
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -106,6 +106,7 @@
+   type ItemRenderContext,
+   type SubCompRenderData,
+ } from './canvas-item-renderer'
++import { HdrVideoSources } from './hdr-video-sources'
+ import { ScrubbingCache } from '@/features/export/deps/preview'
+ import {
+   resolveFrameRenderOptimization,
+@@ -825,6 +826,12 @@
+   let colorManagement = resolveProjectColor()
+   // An HDR project keeps extended range through every float node pipeline.
+   const gpu = new GpuPipelineManager(colorManagement.workingRange)
++  // FL-97: HDR projects read library clips' HDR intermediates, not the SDR stream.
++  const hdrVideoSources = new HdrVideoSources(() => gpu.effects?.getDevice())
++  const hdrVideo: NonNullable<ItemRenderContext['hdrVideo']> = {
++    frameTexture: (item, sourceTime) =>
++      hdrVideoSources.frameTexture(item, sourceTime, colorManagement.referenceWhiteNits),
++  }
+   // An HDR project renders every item on the float route; a delivery request
+   // captures the float composite for an explicit output conversion.
+   let floatCapture: {
+@@ -2415,6 +2422,7 @@
+         itemRenderContext.gpuTextPipeline = gpu.text
+         itemRenderContext.gpuMaskCombinePipeline = gpu.maskCombine
+       }
++      itemRenderContext.hdrVideo = hdrWorking && useGpuCompositor ? hdrVideo : null
+       const gpuCompositeOutput = useGpuCompositor
+         ? gpu.ensureCompositeOutput(canvasSettings.width, canvasSettings.height)
+         : null
+@@ -3037,6 +3045,7 @@
+       itemRenderContext.textRasterCache?.clear()
+       itemRenderContext.cornerPinWarpCache?.clear()
+ 
++      hdrVideoSources.dispose()
+       gpu.dispose()
+       frameSceneCache.invalidate()
+       canvasPool.dispose()
+--- /dev/null
++++ b/src/features/export/utils/hdr-video-sources.ts
+@@ -0,0 +1,120 @@
++/**
++ * FL-97: real HDR pixels for library clips.
++ *
++ * The host registers, per media id, a URL it already authorized for a 10-bit
++ * BT.2020 PQ/HLG intermediate of the original (Frameleaf's Studio HDR
++ * intermediate; never the original itself). An HDR project decodes that URL with
++ * WebCodecs and uploads the planes straight into working values, instead of
++ * reading the SDR playback stream. Anything that cannot (no URL yet, a decoder
++ * that hides its planes, a failed decode) keeps the SDR stream.
++ */
++import { HdrFrameUploader } from '@/infrastructure/gpu-color/hdr-frame-upload'
++import { createLogger } from '@/shared/logging/logger'
++import { VideoFrameExtractor } from './canvas-video-extractor'
++
++const log = createLogger('HdrVideoSources')
++const hdrSourceUrls = new Map<string, string>()
++
++export function registerHdrSourceUrl(mediaId: string, url: string | null | undefined): void {
++  if (url) hdrSourceUrls.set(mediaId, url)
++  else hdrSourceUrls.delete(mediaId)
++}
++
++export function getHdrSourceUrl(mediaId: string | undefined): string | undefined {
++  return mediaId ? hdrSourceUrls.get(mediaId) : undefined
++}
++
++interface ItemSource {
++  url: string
++  extractor: VideoFrameExtractor
++  ready: Promise<boolean>
++  texture: GPUTexture | null
++  textureTime: number | null
++}
++
++export interface HdrVideoFrameTexture {
++  texture: GPUTexture
++  width: number
++  height: number
++}
++
++export class HdrVideoSources {
++  private readonly items = new Map<string, ItemSource>()
++  private readonly failed = new Set<string>()
++  private uploader: HdrFrameUploader | null = null
++
++  constructor(private readonly getDevice: () => GPUDevice | null | undefined) {}
++
++  /** The item's frame at `sourceTime` in working values, or null to use the SDR route. */
++  async frameTexture(
++    item: { id: string; mediaId?: string },
++    sourceTime: number,
++    referenceWhiteNits: number,
++  ): Promise<HdrVideoFrameTexture | null> {
++    const url = getHdrSourceUrl(item.mediaId)
++    const device = this.getDevice()
++    if (!url || !device || this.failed.has(url)) return null
++    const source = this.sourceFor(item.id, url)
++    if (!(await source.ready)) return this.fail(url, 'init')
++    const frame = await source.extractor.captureHdrFrame(sourceTime)
++    if (!frame) return null
++    if (frame === 'unsupported') return this.fail(url, 'not a 10-bit BT.2020 PQ/HLG frame')
++    if (
++      !source.texture ||
++      source.texture.width !== frame.width ||
++      source.texture.height !== frame.height
++    ) {
++      source.texture?.destroy()
++      source.texture = device.createTexture({
++        size: [frame.width, frame.height],
++        format: 'rgba16float',
++        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
++      })
++      source.textureTime = null
++    }
++    if (source.textureTime !== frame.sourceTime) {
++      this.uploader ??= new HdrFrameUploader(device)
++      if (!this.uploader.upload(frame, source.texture, referenceWhiteNits)) {
++        return this.fail(url, 'upload')
++      }
++      source.textureTime = frame.sourceTime
++    }
++    return { texture: source.texture, width: frame.width, height: frame.height }
++  }
++
++  dispose(): void {
++    for (const source of this.items.values()) {
++      source.extractor.dispose()
++      source.texture?.destroy()
++    }
++    this.items.clear()
++    this.uploader?.destroy()
++    this.uploader = null
++  }
++
++  private sourceFor(itemId: string, url: string): ItemSource {
++    const existing = this.items.get(itemId)
++    if (existing?.url === url) return existing
++    if (existing) {
++      existing.extractor.dispose()
++      existing.texture?.destroy()
++    }
++    const extractor = new VideoFrameExtractor(url, itemId)
++    const source: ItemSource = {
++      url,
++      extractor,
++      ready: extractor.init(),
++      texture: null,
++      textureTime: null,
++    }
++    this.items.set(itemId, source)
++    return source
++  }
++
++  private fail(url: string, reason: string): null {
++    // ponytail: one failure retires the URL for this renderer; the SDR stream takes over.
++    this.failed.add(url)
++    log.warn('HDR intermediate unavailable; using the SDR stream', { reason })
++    return null
++  }
++}
+--- /dev/null
++++ b/src/infrastructure/gpu-color/hdr-frame-upload.ts
+@@ -0,0 +1,180 @@
++import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import {
++  DEFAULT_REFERENCE_WHITE_NITS,
++  type HdrTransfer,
++} from '@/shared/graphics/color/managed-color'
++import { MANAGED_COLOR_WGSL } from './managed-color-wgsl'
++
++/**
++ * A decoded HDR frame as WebCodecs lays it out (`VideoFrame.copyTo`): 10-bit planar
++ * 4:2:0 Y'CbCr, BT.2020 non-constant luminance, limited range, PQ or HLG (FL-97).
++ * This is what Frameleaf's Studio HDR intermediate always decodes to.
++ */
++export interface HdrPlanarFrame {
++  format: 'I420P10'
++  width: number
++  height: number
++  transfer: HdrTransfer
++  data: Uint8Array
++  layout: ReadonlyArray<{ offset: number; stride: number }>
++}
++
++const HDR_FRAME_UPLOAD_WGSL = /* wgsl */ `
++${FULLSCREEN_QUAD_WGSL}
++${MANAGED_COLOR_WGSL}
++
++struct Params {
++  size: vec2f,
++  chromaSize: vec2f,
++  transfer: f32,
++  referenceWhite: f32,
++  pad: vec2f,
++};
++
++@group(0) @binding(0) var yTex: texture_2d<u32>;
++@group(0) @binding(1) var cbTex: texture_2d<u32>;
++@group(0) @binding(2) var crTex: texture_2d<u32>;
++@group(0) @binding(3) var<uniform> p: Params;
++
++fn chromaAt(tex: texture_2d<u32>, pixel: vec2i) -> f32 {
++  let last = vec2i(p.chromaSize) - vec2i(1);
++  return f32(textureLoad(tex, clamp(pixel, vec2i(0), last), 0).x);
++}
++
++// Bilinear chroma with centred siting.
++fn chroma(tex: texture_2d<u32>, at: vec2f) -> f32 {
++  let origin = vec2i(floor(at));
++  let w = fract(at);
++  let top = mix(chromaAt(tex, origin), chromaAt(tex, origin + vec2i(1, 0)), w.x);
++  let bottom = mix(chromaAt(tex, origin + vec2i(0, 1)), chromaAt(tex, origin + vec2i(1, 1)), w.x);
++  return mix(top, bottom, w.y);
++}
++
++@fragment
++fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
++  let pixel = min(vec2i(floor(input.uv * p.size)), vec2i(p.size) - vec2i(1));
++  let at = (vec2f(pixel) + vec2f(0.5)) * (p.chromaSize / p.size) - vec2f(0.5);
++  let signal = fl_ycbcr2020_to_signal(
++    f32(textureLoad(yTex, pixel, 0).x), chroma(cbTex, at), chroma(crTex, at), 10.0,
++  );
++  return vec4f(fl_signal_to_working(signal, p.transfer, p.referenceWhite), 1.0);
++}
++`
++
++/**
++ * Uploads decoded HDR planes and converts them to working values (extended sRGB,
++ * BT.709, 1.0 = reference white) in an rgba16float texture, exactly as
++ * `signalToWorking(ycbcr2020ToSignal(...))` does on the CPU. The browser's own
++ * VideoFrame import converts to SDR, so HDR pixels never go through it.
++ */
++export class HdrFrameUploader {
++  private readonly pipeline: GPURenderPipeline
++  private readonly uniforms: GPUBuffer
++  private planes: GPUTexture[] = []
++
++  constructor(private readonly device: GPUDevice) {
++    const module = device.createShaderModule({
++      label: 'hdr-frame-upload',
++      code: HDR_FRAME_UPLOAD_WGSL,
++    })
++    this.pipeline = device.createRenderPipeline({
++      label: 'hdr-frame-upload',
++      layout: 'auto',
++      vertex: { module, entryPoint: 'vertexMain' },
++      fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: 'rgba16float' }] },
++      primitive: { topology: 'triangle-list' },
++    })
++    this.uniforms = device.createBuffer({
++      size: 32,
++      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
++    })
++  }
++
++  /** Writes `frame` into `output` (rgba16float, the frame's size). */
++  upload(
++    frame: HdrPlanarFrame,
++    output: GPUTexture,
++    referenceWhiteNits = DEFAULT_REFERENCE_WHITE_NITS,
++  ): boolean {
++    const { width, height } = frame
++    if (
++      frame.format !== 'I420P10' ||
++      frame.layout.length < 3 ||
++      output.width !== width ||
++      output.height !== height
++    ) {
++      return false
++    }
++    const chroma = [Math.ceil(width / 2), Math.ceil(height / 2)] as const
++    const sizes = [[width, height], chroma, chroma] as const
++    const planes = this.ensurePlanes(sizes)
++    planes.forEach((texture, i) => {
++      const plane = frame.layout[i]!
++      this.device.queue.writeTexture(
++        { texture },
++        frame.data,
++        { offset: plane.offset, bytesPerRow: plane.stride, rowsPerImage: texture.height },
++        [texture.width, texture.height],
++      )
++    })
++    this.device.queue.writeBuffer(
++      this.uniforms,
++      0,
++      new Float32Array([
++        width,
++        height,
++        chroma[0],
++        chroma[1],
++        frame.transfer === 'pq' ? 0 : 1,
++        referenceWhiteNits,
++        0,
++        0,
++      ]),
++    )
++    const bindGroup = this.device.createBindGroup({
++      layout: this.pipeline.getBindGroupLayout(0),
++      entries: [
++        ...this.planes.map((plane, binding) => ({ binding, resource: plane.createView() })),
++        { binding: 3, resource: { buffer: this.uniforms } },
++      ],
++    })
++    const encoder = this.device.createCommandEncoder()
++    const pass = encoder.beginRenderPass({
++      colorAttachments: [
++        { view: output.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] },
++      ],
++    })
++    pass.setPipeline(this.pipeline)
++    pass.setBindGroup(0, bindGroup)
++    pass.draw(6)
++    pass.end()
++    this.device.queue.submit([encoder.finish()])
++    return true
++  }
++
++  destroy(): void {
++    for (const plane of this.planes) plane.destroy()
++    this.planes = []
++    this.uniforms.destroy()
++  }
++
++  private ensurePlanes(sizes: ReadonlyArray<readonly [number, number]>): GPUTexture[] {
++    if (
++      this.planes.length === sizes.length &&
++      this.planes.every(
++        (plane, i) => plane.width === sizes[i]?.[0] && plane.height === sizes[i]?.[1],
++      )
++    ) {
++      return this.planes
++    }
++    for (const plane of this.planes) plane.destroy()
++    this.planes = sizes.map(([width, height]) =>
++      this.device.createTexture({
++        size: [width, height],
++        format: 'r16uint',
++        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
++      }),
++    )
++    return this.planes
++  }
++}
+--- a/src/infrastructure/gpu-color/index.ts
++++ b/src/infrastructure/gpu-color/index.ts
+@@ -1,2 +1,3 @@
+ export { ColorOutputPipeline, type ColorOutputTarget } from './color-output-pipeline'
+ export { MANAGED_COLOR_WGSL } from './managed-color-wgsl'
++export { HdrFrameUploader, type HdrPlanarFrame } from './hdr-frame-upload'
+--- a/src/infrastructure/gpu-color/managed-color-wgsl.ts
++++ b/src/infrastructure/gpu-color/managed-color-wgsl.ts
+@@ -63,6 +63,54 @@
+   return display / (FL_HLG_PEAK * pow(ys, gamma - 1.0));
+ }
+ 
++fn fl_bt2020_to_bt709(c: vec3f) -> vec3f {
++  return vec3f(
++    dot(vec3f(1.660491, -0.587641, -0.07285), c),
++    dot(vec3f(-0.124551, 1.1329, -0.008349), c),
++    dot(vec3f(-0.018151, -0.100579, 1.11873), c),
++  );
++}
++
++fn fl_pq_decode(signal: vec3f) -> vec3f {
++  let e = pow(clamp(signal, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / FL_PQ_M2));
++  return FL_PQ_PEAK * pow(max(e - vec3f(FL_PQ_C1), vec3f(0.0)) / (vec3f(FL_PQ_C2) - FL_PQ_C3 * e), vec3f(1.0 / FL_PQ_M1));
++}
++
++fn fl_hlg_inverse_oetf(signal: vec3f) -> vec3f {
++  let e = clamp(signal, vec3f(0.0), vec3f(1.0));
++  return select((exp((e - vec3f(FL_HLG_C)) / FL_HLG_A) + vec3f(FL_HLG_B)) / 12.0, e * e / 3.0, e <= vec3f(0.5));
++}
++
++fn fl_hlg_ootf(scene: vec3f) -> vec3f {
++  // BT.2100 at the 1000 cd/m² nominal peak: system gamma 1.2.
++  let ys = max(dot(vec3f(0.2627, 0.678, 0.0593), scene), 0.0);
++  if (ys <= 0.0) { return vec3f(0.0); }
++  return scene * FL_HLG_PEAK * pow(ys, 0.2);
++}
++
++// Limited-range BT.2020 NCL Y'CbCr code values -> R'G'B' signal in [0, 1] (ycbcr2020ToSignal).
++fn fl_ycbcr2020_to_signal(y: f32, cb: f32, cr: f32, bitDepth: f32) -> vec3f {
++  let scale = exp2(bitDepth - 8.0);
++  let yn = (y / scale - 16.0) / 219.0;
++  let cbn = (cb / scale - 128.0) / 224.0;
++  let crn = (cr / scale - 128.0) / 224.0;
++  let r = yn + 2.0 * (1.0 - 0.2627) * crn;
++  let b = yn + 2.0 * (1.0 - 0.0593) * cbn;
++  let g = (yn - 0.2627 * r - 0.0593 * b) / 0.678;
++  return clamp(vec3f(r, g, b), vec3f(0.0), vec3f(1.0));
++}
++
++// HDR source ingest (signalToWorking): transfer 0 = PQ, 1 = HLG.
++fn fl_signal_to_working(signal: vec3f, transfer: f32, referenceWhite: f32) -> vec3f {
++  var nits: vec3f;
++  if (transfer < 0.5) {
++    nits = fl_pq_decode(signal);
++  } else {
++    nits = fl_hlg_ootf(fl_hlg_inverse_oetf(signal));
++  }
++  return fl_srgb_encode(fl_bt2020_to_bt709(nits / referenceWhite));
++}
++
+ // Working (extended sRGB, BT.709, 1.0 = reference white) -> BT.2020 display cd/m².
+ fn fl_working_to_nits2020(working: vec3f, referenceWhite: f32) -> vec3f {
+   return max(fl_bt709_to_bt2020(fl_srgb_decode(working)), vec3f(0.0)) * referenceWhite;
+--- a/src/shared/graphics/color/managed-color.test.ts
++++ b/src/shared/graphics/color/managed-color.test.ts
+@@ -1,6 +1,7 @@
+ // @vitest-environment node
+ import { describe, expect, it } from 'vite-plus/test'
+ import {
++  ycbcr2020ToSignal,
+   BT2020_TO_BT709,
+   BT709_TO_BT2020,
+   bt2390Eetf,
+@@ -145,4 +146,21 @@
+       0.5, 0.25, 1,
+     ])
+   })
++
++  it("reads limited-range BT.2020 Y'CbCr as R'G'B' signal (HDR intermediate ingest)", () => {
++    expect(ycbcr2020ToSignal(64, 512, 512)).toEqual([0, 0, 0])
++    expect(ycbcr2020ToSignal(940, 512, 512)).toEqual([1, 1, 1])
++    const grey = ycbcr2020ToSignal(64 + 0.5 * 876, 512, 512)
++    grey.forEach((v) => expect(v).toBeCloseTo(0.5, 6))
++    // Pure BT.2020 red: Y = Kr, Cb = -Kr/(2(1-Kb)), Cr = 1/2.
++    const red = ycbcr2020ToSignal(64 + 0.2627 * 876, 512 - (0.2627 / (2 * 0.9407)) * 896, 960)
++    expect(red[0]).toBeCloseTo(1, 6)
++    expect(red[1]).toBeCloseTo(0, 6)
++    expect(red[2]).toBeCloseTo(0, 6)
++    // Out-of-range code values clip rather than extrapolate.
++    expect(ycbcr2020ToSignal(1019, 512, 512)).toEqual([1, 1, 1])
++    // 100 cd/m² PQ grey through the ingest is below reference white.
++    const pq100 = signalToWorking(ycbcr2020ToSignal(64 + 0.508078 * 876, 512, 512), 'pq')
++    expect(srgbDecodeExtended(pq100[0]) * 203).toBeCloseTo(100, 0)
++  })
+ })
+--- a/src/shared/graphics/color/managed-color.ts
++++ b/src/shared/graphics/color/managed-color.ts
+@@ -217,6 +217,25 @@
+   return [hlgOetf(scene[0]), hlgOetf(scene[1]), hlgOetf(scene[2])]
+ }
+ 
++/**
++ * Limited-range BT.2020 non-constant-luminance Y'CbCr code values (ITU-R BT.2020
++ * table 4/5) → R'G'B' signal in [0, 1]. Code values outside the nominal range are
++ * clipped, as a PQ/HLG signal cannot represent them.
++ */
++export function ycbcr2020ToSignal(y: number, cb: number, cr: number, bitDepth = 10): Rgb {
++  const scale = 2 ** (bitDepth - 8)
++  const yn = (y / scale - 16) / 219
++  const cbn = (cb / scale - 128) / 224
++  const crn = (cr / scale - 128) / 224
++  const kr = 0.2627
++  const kb = 0.0593
++  const kg = 1 - kr - kb
++  const r = yn + 2 * (1 - kr) * crn
++  const b = yn + 2 * (1 - kb) * cbn
++  const g = (yn - kr * r - kb * b) / kg
++  return [r, g, b].map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
++}
++
+ /** HDR source ingest: BT.2020 PQ/HLG signal → working (extended sRGB, BT.709). */
+ export function signalToWorking(
+   signal: Rgb,
+--- a/src/shared/logging/preview-scrub-performance.ts
++++ b/src/shared/logging/preview-scrub-performance.ts
+@@ -52,6 +52,7 @@
+   itemId: string
+   path:
+     | 'dom-video'
++    | 'hdr-intermediate'
+     | 'worker-bitmap'
+     | 'proxy-fallback'
+     | 'tier2-cache'

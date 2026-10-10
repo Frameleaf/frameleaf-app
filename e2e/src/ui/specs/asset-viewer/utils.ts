@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { AssetResponseDto } from '@immich/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import { BrowserContext, Page, test } from '@playwright/test';
 import {
   Changes,

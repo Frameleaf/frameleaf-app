@@ -2,6 +2,8 @@ import { BinaryField, ExifDateTime } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
+import type { LockableProperty } from 'src/database.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -16,6 +18,7 @@ import {
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -25,7 +28,7 @@ import { videoInfoStub } from 'test/fixtures/media.stub.js';
 import { tagStub } from 'test/fixtures/tag.stub.js';
 import { getForMetadataExtraction, getForSidecarWrite } from 'test/mappers.js';
 import { factory } from 'test/small.factory.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const forSidecarJob = (
   asset: {
@@ -36,7 +39,9 @@ const forSidecarJob = (
     files?: { id: string; type: AssetFileType; path: string; physicalFileId?: string | null; isEdited: boolean }[];
   } = {},
 ) => {
-  const files = asset.files?.map((file) => ({ ...file, physicalFileId: file.physicalFileId ?? null })) ?? [];
+  const files =
+    asset.files?.map((file) => ({ ...file, physicalFileId: file.physicalFileId ?? null, renditionIdentity: null })) ??
+    [];
 
   return {
     id: factory.uuid(),
@@ -94,6 +99,7 @@ describe(MetadataService.name, () => {
     ({ sut, mocks } = newTestService(MetadataService));
 
     mockReadTags();
+    mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
     mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
 
@@ -144,36 +150,301 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleQueueMetadataExtraction', () => {
+    it('includes uninspected older images only behind the HDR processing gate', async () => {
+      vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
+      try {
+        mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [] } as never);
+        await sut.handleQueueMetadataExtraction({ force: false });
+        expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(false, true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
     it('should queue metadata extraction for all assets without exif values', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForMetadataExtraction.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueMetadataExtraction({ force: false })).resolves.toBe(JobStatus.Success);
-      expect(mocks.assetJob.streamForMetadataExtraction).toHaveBeenCalledWith(false);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetExtractMetadata,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetExtractMetadata,
+        mocks.assetJob.selectionForMetadataExtraction.mock.results[0].value,
+      );
     });
 
     it('should queue metadata extraction for all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForMetadataExtraction.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueMetadataExtraction({ force: true })).resolves.toBe(JobStatus.Success);
-      expect(mocks.assetJob.streamForMetadataExtraction).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetExtractMetadata,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetExtractMetadata,
+        mocks.assetJob.selectionForMetadataExtraction.mock.results[0].value,
+      );
     });
   });
 
   describe('handleMetadataExtraction', () => {
+    it('persists image encoding through existing source-checked metadata publication', async () => {
+      const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      const encoding = {
+        dynamicRange: 'hdr' as const,
+        gainMap: 'apple-legacy' as const,
+        referenceWhite: 203,
+        reconstructionAvailable: false,
+        fallbackReason: 'apple-gain-map-interpretation-unqualified',
+      };
+      mocks.media.inspectImageEncoding.mockResolvedValue(encoding);
+      await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ imageEncoding: { ...encoding, inspectionStatus: 'identified' } }),
+        }),
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('records a sanitized unknown result when HDR inspection fails instead of assuming SDR', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.media.inspectImageEncoding.mockRejectedValue(new Error('/private/source.heic GPSLatitude secret'));
+      await sut.handleMetadataExtraction({ id: asset.id, source: 'upload' });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({
+            imageEncoding: {
+              dynamicRange: 'unknown',
+              gainMap: 'none',
+              reconstructionAvailable: false,
+              inspectionStatus: 'failed',
+              fallbackReason: 'inspection-unavailable',
+            },
+          }),
+        }),
+      );
+      expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('/private/');
+    });
+
+    it.each(['motion-photo', 'upload', 'copy'] as const)(
+      'publishes the requested motion encode only after accepting metadata (%s)',
+      async (source) => {
+        const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+        mocks.media.probePackets.mockResolvedValue(emptyPackets);
+        await sut.handleMetadataExtraction({ id: asset.id, source });
+        if (source === 'motion-photo') {
+          expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+            name: JobName.AssetEncodeVideo,
+            data: { id: asset.id },
+          });
+          expect(mocks.asset.upsertExif.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.job.queue.mock.invocationCallOrder[0],
+          );
+          expect(mocks.asset.upsertJobStatus.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.job.queue.mock.invocationCallOrder[0],
+          );
+        } else {
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('does not release a motion encode when metadata persistence fails', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+      mocks.media.probePackets.mockResolvedValue(emptyPackets);
+      mocks.asset.upsertExif.mockRejectedValue(new Error('metadata persistence failed'));
+      await expect(sut.handleMetadataExtraction({ id: asset.id, source: 'motion-photo' })).rejects.toThrow(
+        'metadata persistence failed',
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('prepares metadata without mutation and rejects a source replaced before adoption', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Make: 'Camera' });
+      const execution: QueueExecution = {
+        claim: {
+          id: 'claim',
+          token: 'token',
+          name: 'fixture',
+          queue: 'fixture',
+          workerId: 'worker',
+          attempt: 1,
+          runId: null,
+          itemKey: null,
+          deadlineMs: 600_000,
+          startedAt: new Date(),
+          data: {},
+        },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      await queueExecution.run(execution, () => sut.handleMetadataExtraction({ id: asset.id }));
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      expect(execution.adoptions).toHaveLength(1);
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(
+        getForMetadataExtraction({ ...asset, checksum: Buffer.from('replacement') }),
+      );
+      await expect(execution.adoptions[0]({} as never)).rejects.toThrow('Metadata source changed');
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    });
+
+    it.each(['original', 'sidecar'])('rejects a failed %s read before destructive effects', async (source) => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.metadata.readTags.mockReset();
+      const failure = new Error('file read failed');
+      if (source === 'sidecar') {
+        mocks.metadata.readTags.mockResolvedValueOnce({});
+      }
+      mocks.metadata.readTags.mockRejectedValueOnce(failure);
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toBe(failure);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      expect(mocks.tag.removeAssetTagValues).not.toHaveBeenCalled();
+      expect(mocks.metadata.readJpegSignature).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { type: AssetType.Image, tags: { FileType: 'JPEG' }, locks: [], eligible: true },
+      { type: AssetType.Image, tags: { FileType: 'PNG' }, locks: [], eligible: false },
+      { type: AssetType.Video, tags: { FileType: 'JPEG' }, locks: [], eligible: false },
+      { type: AssetType.Image, tags: { FileType: 'JPEG', Make: 'Recorded' }, locks: [], eligible: false },
+      { type: AssetType.Image, tags: { FileType: 'JPEG' }, locks: ['model'], eligible: false },
+      { type: AssetType.Image, tags: {}, locks: [], eligible: false },
+    ])('bounds JPEG clues to eligible originals: %j', async ({ type, tags, locks, eligible }) => {
+      const asset = AssetFactory.create({ type });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      // Simulate persisted varchar[] camera locks beyond the public editable-property union.
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(locks as unknown as LockableProperty[]);
+      mockReadTags(tags);
+      mocks.media.probe.mockResolvedValue(videoInfoStub.noVideoStreams);
+      mocks.metadata.readJpegSignature.mockResolvedValue({
+        method: 'jpeg-signature',
+        signature: 'digest',
+        matches: 'Camera A, Camera B or editor',
+      });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.metadata.readJpegSignature).toHaveBeenCalledTimes(eligible ? 1 : 0);
+      if (eligible) {
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({ make: null, model: null }),
+            cameraEvidence: expect.objectContaining({
+              recorded: null,
+              suggestion: expect.objectContaining({ matches: 'Camera A, Camera B or editor' }),
+            }),
+          }),
+        );
+      }
+    });
+
+    it('does not fingerprint sidecar identity or replace camera-locked evidence', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ FileType: 'JPEG' }, { Model: 'Recorded sidecar' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.metadata.readJpegSignature).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ model: 'Recorded sidecar' }) }),
+      );
+      // This mock represents a database row, not an owner-edit API request.
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+        'make',
+      ] as unknown as LockableProperty[]);
+      mockReadTags({ FileType: 'JPEG' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif.mock.calls.at(-1)?.[0].cameraEvidence).toBeUndefined();
+    });
+
+    it.each([null, { method: 'jpeg-signature' as const, signature: 'unknown', matches: null }])(
+      'keeps unknown or missing clues separate from identity',
+      async (suggestion) => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ FileType: 'JPEG' });
+        mocks.metadata.readJpegSignature.mockResolvedValue(suggestion);
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({ make: null, model: null }),
+            cameraEvidence: expect.objectContaining({ suggestion }),
+          }),
+        );
+      },
+    );
+
+    it('keeps valid extraction when optional fingerprinting fails', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ FileType: 'JPEG', ImageWidth: 10 });
+      mocks.metadata.readJpegSignature.mockRejectedValue(new Error('optional read failed'));
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ exifImageWidth: 10 }),
+          cameraEvidence: expect.objectContaining({ suggestion: null }),
+        }),
+      );
+    });
+
+    it.each(['', ' '.repeat(3), '----', 'Unknown (0)', 'n/a', ' N/A '])(
+      'uses LensModel after an unusable earlier lens: %s',
+      async (LensID) => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ LensID, LensModel: ' Recorded lens ' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ lensModel: 'Recorded lens' }) }),
+        );
+      },
+    );
+
+    it('stores no lens when every lens candidate is a placeholder', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ LensID: 'n/a', LensType: ' N/A ', LensSpec: '----', LensModel: 'Unknown (0)' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ lensModel: null }) }),
+      );
+    });
+
+    it.each([
+      [-1, -1],
+      [0, null],
+      [1, 1],
+      [5, 5],
+      [6, null],
+      [-2, null],
+      [1.5, null],
+      ['3', null],
+      [NaN, null],
+    ])('imports rating %s as %s', async (Rating, rating) => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Rating } as ImmichTags);
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ rating }) }),
+      );
+    });
+
     beforeEach(() => {
       const time = new Date('2022-01-01T00:00:00.000Z');
       const timeMs = time.valueOf();
@@ -404,6 +675,28 @@ describe(MetadataService.name, () => {
       });
     });
 
+    it('keeps a location the owner removed or set instead of reading the file coordinates (FL-51)', async () => {
+      const asset = AssetFactory.from().exif({ latitude: null, longitude: null }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: true } });
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: asset.fileModifiedAt,
+        mtimeMs: asset.fileModifiedAt.valueOf(),
+        birthtimeMs: asset.fileCreatedAt.valueOf(),
+      } as Stats);
+      mockReadTags({ GPSLatitude: 10, GPSLongitude: 20 });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.map.reverseGeocode).not.toHaveBeenCalled();
+      const [{ exif }] = mocks.asset.upsertExif.mock.calls.at(-1)!;
+      expect(exif).not.toHaveProperty('city');
+      expect(exif).not.toHaveProperty('state');
+      expect(exif).not.toHaveProperty('country');
+    });
+
     it('should discard latitude and longitude on null island', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -425,7 +718,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from TagsList', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ TagsList: ['Parent'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -437,7 +733,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchy from TagsList', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.childUpsert);
@@ -459,7 +758,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a string', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Parent' });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -471,7 +773,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a list', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: ['Parent'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -483,7 +788,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from Keywords as a list with a number', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent', '2024'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent', '2024'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: ['Parent', 2024] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -496,7 +804,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchal tags from Keywords', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Parent/Child' });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -516,7 +827,10 @@ describe(MetadataService.name, () => {
     it('should ignore Keywords when TagsList is present', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'Child'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'Child'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ Keywords: 'Child', TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -537,7 +851,10 @@ describe(MetadataService.name, () => {
     it('should extract hierarchy from HierarchicalSubject', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'TagA'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'TagA'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent|Child', 'TagA'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.childUpsert);
@@ -564,7 +881,10 @@ describe(MetadataService.name, () => {
     it('should extract tags from HierarchicalSubject as a list with a number', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent', '2024'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent', '2024'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent', 2024] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -577,7 +897,10 @@ describe(MetadataService.name, () => {
     it('should extract ignore / characters in a HierarchicalSubject tag', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Mom|Dad'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Mom|Dad'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Mom/Dad'] });
       mocks.tag.upsertValue.mockResolvedValueOnce(tagStub.parentUpsert);
 
@@ -593,7 +916,10 @@ describe(MetadataService.name, () => {
     it('should ignore HierarchicalSubject when TagsList is present', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: ['Parent/Child', 'Parent2/Child2'] });
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: ['Parent/Child', 'Parent2/Child2'],
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
       mockReadTags({ HierarchicalSubject: ['Parent2|Child2'], TagsList: ['Parent/Child'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -611,14 +937,34 @@ describe(MetadataService.name, () => {
       });
     });
 
-    it('should remove existing tags', async () => {
+    it('should remove the tags the file no longer lists', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags
+        .mockResolvedValueOnce({ tags: ['Parent/Child', 'Kept'], updateId: '00000000-0000-0000-0000-000000000001' })
+        .mockResolvedValueOnce({ tags: ['Kept'], updateId: '00000000-0000-0000-0000-000000000001' });
+      mockReadTags({ TagsList: ['Kept'] });
+      mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.tag.removeAssetTagValues).toHaveBeenCalledWith(asset.id, asset.ownerId, ['Parent/Child']);
+      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([{ tagId: tagStub.parentUpsert.id, assetId: asset.id }]);
+      expect(mocks.tag.replaceAssetTags).not.toHaveBeenCalled();
+    });
+
+    it('should keep a tag added while the file was read', async () => {
+      // A tag added through the API is on the asset but was never in the file's list, so the
+      // extraction that races it has nothing of its own to remove.
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mockReadTags({});
 
       await sut.handleMetadataExtraction({ id: asset.id });
 
-      expect(mocks.tag.replaceAssetTags).toHaveBeenCalledWith(asset.id, []);
+      expect(mocks.tag.removeAssetTagValues).toHaveBeenCalledWith(asset.id, asset.ownerId, []);
+      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([]);
+      expect(mocks.tag.replaceAssetTags).not.toHaveBeenCalled();
     });
 
     it('should not apply motion photos if asset is video', async () => {
@@ -857,16 +1203,18 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
       });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should extract the EmbeddedVideo tag from Samsung JPEG motion photos', async () => {
@@ -909,16 +1257,18 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
       });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should extract the motion photo video from the XMP directory entry ', async () => {
@@ -961,16 +1311,18 @@ describe(MetadataService.name, () => {
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
       expect(mocks.asset.update).toHaveBeenCalledTimes(3);
-      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
-        name: JobName.AssetEncodeVideo,
-        data: { id: motionAsset.id },
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetExtractMetadata,
+        data: { id: motionAsset.id, source: 'motion-photo' },
       });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should delete old motion photo video assets if they do not match what is extracted', async () => {
@@ -1007,6 +1359,7 @@ describe(MetadataService.name, () => {
       });
       mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
       mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       const video = randomBytes(512);
       mocks.storage.readFile.mockResolvedValue(video);
       mocks.storage.checkFileExists.mockResolvedValue(true);
@@ -1017,6 +1370,22 @@ describe(MetadataService.name, () => {
       // The still asset gets saved by handleMetadataExtraction, but not the video
       expect(mocks.asset.update).toHaveBeenCalledTimes(1);
       expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('fails explicitly when a matching motion video original is missing without creating or queueing it', async () => {
+      const motionAsset = AssetFactory.create({ type: AssetType.Video });
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Directory: 'foo/bar/', MotionPhoto: 1, MicroVideo: 1, MicroVideoOffset: 1 });
+      mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
+      mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.readFile.mockResolvedValue(randomBytes(512));
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toThrow('motion video original is missing');
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should link and hide motion video asset to still asset if the hash of the extracted video matches an existing asset', async () => {
@@ -1031,6 +1400,7 @@ describe(MetadataService.name, () => {
       });
       mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
       mocks.asset.getByChecksum.mockResolvedValue(motionAsset);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       const video = randomBytes(512);
       mocks.storage.readFile.mockResolvedValue(video);
 
@@ -1043,7 +1413,7 @@ describe(MetadataService.name, () => {
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
       });
-      expect(mocks.asset.update).toHaveBeenCalledTimes(4);
+      expect(mocks.asset.update).toHaveBeenCalledTimes(3);
     });
 
     it('should not update storage usage if motion photo is external', async () => {
@@ -1116,6 +1486,13 @@ describe(MetadataService.name, () => {
           exif: {
             assetId: asset.id,
             bitsPerSample: expect.any(Number),
+            imageEncoding: {
+              dynamicRange: 'unknown',
+              gainMap: 'none',
+              referenceWhite: 203,
+              reconstructionAvailable: false,
+              inspectionStatus: 'identified',
+            },
             autoStackId: null,
             colorspace: tags.ColorSpace,
             dateTimeOriginal: dateForTest,
@@ -1491,6 +1868,30 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('should not make a face tag on a Locked photo the thumbnail of a person it creates (FL-53)', async () => {
+      const asset = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      const person = PersonFactory.create();
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: true } } });
+      mockReadTags(makeFaceTags({ Name: person.name }));
+      mocks.person.getDistinctNames.mockResolvedValue([]);
+      mocks.person.createGroups.mockResolvedValue([PersonGroupFactory.create({ id: person.personGroupId })]);
+      mocks.person.createAll.mockResolvedValue([person]);
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      // the person and the face are still created; the face is simply not their thumbnail
+      expect(mocks.person.createAll).toHaveBeenCalledWith([expect.objectContaining({ name: person.name })]);
+      expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+        [expect.objectContaining({ assetId: asset.id, sourceType: SourceType.Exif })],
+        [],
+      );
+      expect(mocks.person.updateAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: JobName.PersonGenerateThumbnail })]),
+      );
+    });
+
     it('should assign metadata face tags to existing persons', async () => {
       const asset = AssetFactory.create();
       const person = PersonFactory.create();
@@ -1812,6 +2213,39 @@ describe(MetadataService.name, () => {
         exif: { Make: '1', Model: '2', DeviceManufacturer: '3', DeviceModelName: '4' },
         expected: { make: '1', model: '2' },
       },
+      {
+        exif: { Make: ' ', Model: '', Device: { Manufacturer: ' Apple ', ModelName: ' iPhone 16 Pro ' } },
+        expected: { make: 'Apple', model: 'iPhone 16 Pro' },
+      },
+      {
+        exif: {
+          Make: '',
+          Model: ' ',
+          Device: { Manufacturer: '', ModelName: ' ' },
+          AndroidMake: 'Google',
+          AndroidModel: 'Pixel 9',
+        },
+        expected: { make: 'Google', model: 'Pixel 9' },
+      },
+      {
+        exif: { Make: 'NIKON', UniqueCameraModel: 'NIKON Z 8' },
+        expected: { make: 'NIKON', model: 'NIKON Z 8' },
+      },
+      { exif: { CameraModel: 'Phase One IQ4 150MP' }, expected: { make: null, model: 'Phase One IQ4 150MP' } },
+      {
+        exif: { Model: 'FutureCam 9000', UniqueCameraModel: 'Alternate', CameraModel: 'Other' },
+        expected: { make: null, model: 'FutureCam 9000' },
+      },
+      {
+        exif: {
+          CanonModelID: 'EOS Rebel T3i / 600D / Kiss X5',
+          SonyModelID: 'DSLR-A380/A390',
+          ImageWidth: 6000,
+          ImageHeight: 4000,
+        },
+        expected: { make: null, model: null },
+      },
+      { exif: { Make: ' ', Model: '' }, expected: { make: null, model: null } },
     ])('should read camera make and model $exif -> $expected', async ({ exif, expected }) => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -1823,6 +2257,18 @@ describe(MetadataService.name, () => {
           exif: expect.objectContaining(expected),
           lockedPropertiesBehavior: 'skip',
         }),
+      );
+    });
+
+    it('reads a recorded camera model from a sidecar when the original has no camera metadata', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({}, { CameraModel: 'Hasselblad X2D 100C' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ make: null, model: 'Hasselblad X2D 100C' }) }),
       );
     });
 
@@ -1922,22 +2368,28 @@ describe(MetadataService.name, () => {
   describe('handleQueueSidecar', () => {
     it('should queue assets with sidecar files', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSidecar.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSidecar.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSidecar({ force: true });
 
-      expect(mocks.assetJob.streamForSidecar).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarCheck, data: { id: asset.id } }]);
+      expect(mocks.assetJob.selectionForSidecar).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SidecarCheck,
+        mocks.assetJob.selectionForSidecar.mock.results[0].value,
+      );
     });
 
     it('should queue assets without sidecar files', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSidecar.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSidecar.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSidecar({ force: false });
 
-      expect(mocks.assetJob.streamForSidecar).toHaveBeenCalledWith(false);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarCheck, data: { id: asset.id } }]);
+      expect(mocks.assetJob.selectionForSidecar).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SidecarCheck,
+        mocks.assetJob.selectionForSidecar.mock.results[0].value,
+      );
     });
   });
 
@@ -2043,11 +2495,33 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
-    it('should skip assets that no longer exist', async () => {
-      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
+    it('should skip assets that no longer exist on the sidecar lock connection', async () => {
+      const connection = { lockConnection: true } as never;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => fn(connection));
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(void 0);
-      await expect(sut.handleSidecarWrite({ id: 'asset-123' })).resolves.toBe(JobStatus.Failed);
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(void 0);
+      await expect(sut.handleSidecarWrite({ id: 'asset-123' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith('asset-123', connection);
+      expect(mocks.assetJob.getForSidecarCheckJob).toHaveBeenCalledWith('asset-123', connection);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).not.toHaveBeenCalled();
       expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('should fail an existing asset missing EXIF on the sidecar lock connection', async () => {
+      const asset = AssetFactory.from().build();
+      const connection = { lockConnection: true } as never;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => fn(connection));
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(void 0);
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(forSidecarJob(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith(asset.id, connection);
+      expect(mocks.assetJob.getForSidecarCheckJob).toHaveBeenCalledWith(asset.id, connection);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).not.toHaveBeenCalled();
+      expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
     });
 
     it('should skip jobs with no metadata', async () => {
@@ -2087,13 +2561,106 @@ describe(MetadataService.name, () => {
         GPSLatitude: gps,
         GPSLongitude: gps,
       });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, [
-        'description',
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(
+        asset.id,
+        ['description', 'latitude', 'longitude', 'dateTimeOriginal', 'timeZone'],
+        undefined,
+      );
+    });
+
+    it('writes one sidecar per asset at a time, on the lock connection (FL-195)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: 12, longitude: 12 })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      const trx = { lockConnection: true } as never;
+      let locked = false;
+      mocks.database.withAssetSidecarLock.mockImplementation(async (_id, fn) => {
+        locked = true;
+        const result = await fn(trx);
+        locked = false;
+        return result;
+      });
+      mocks.metadata.writeTags.mockImplementation(() => {
+        expect(locked).toBe(true);
+        return Promise.resolve();
+      });
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.database.withAssetSidecarLock).toHaveBeenCalledWith(asset.id, expect.any(Function));
+      expect(mocks.metadata.writeTags).toHaveBeenCalled();
+      // a second pooled connection per holder could deadlock the pool (see withAssetSidecarLock)
+      expect(mocks.assetJob.getForSidecarWriteJob).toHaveBeenCalledWith(asset.id, trx);
+      expect(mocks.assetJob.getLockedPropertiesForMetadataExtraction).toHaveBeenCalledWith(asset.id, trx);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['latitude', 'longitude'], trx);
+    });
+
+    it('keeps the properties locked when the sidecar could not be written (FL-195)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: 12, longitude: 12 })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      mocks.metadata.writeTags.mockRejectedValue(new Error('File already exists: IMG.xmp_exiftool'));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).rejects.toThrow('File already exists');
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+    });
+
+    it('writes the tags set in Frameleaf and keeps them locked', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ tags: ['Parent/Child', 'Trip'] })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['tags', 'rating']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ TagsList: ['Parent/Child', 'Trip'] }),
+      );
+      // a sidecar written behind later tag edits must not become the tags' source
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
+    });
+
+    it('writes a removed location as no coordinates and keeps it locked (FL-51)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude', 'rating']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ GPSLatitude: null, GPSLongitude: null }),
+      );
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
+    });
+
+    it('keeps a removed location and a typed place name locked together (FL-51, FL-36)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ latitude: null, longitude: null })
+        .build();
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
         'latitude',
         'longitude',
-        'dateTimeOriginal',
-        'timeZone',
+        'city',
+        'rating',
       ]);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write rating', async () => {
@@ -2104,7 +2671,18 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 4 });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
+    });
+
+    it('keeps a typed place name locked after writing the sidecar (FL-36, V-24)', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
+      asset.exifInfo.rating = 2;
+
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['rating', 'city', 'state', 'country']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 2 });
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write null rating as 0', async () => {
@@ -2115,7 +2693,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, { Rating: 0 });
-      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating']);
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['rating'], undefined);
     });
 
     it('should write non-canonical physical asset sidecars to an owner-scoped path', async () => {
@@ -2137,11 +2715,14 @@ describe(MetadataService.name, () => {
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecarPath, { Rating: 4 });
-      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
-        assetId: asset.id,
-        type: AssetFileType.Sidecar,
-        path: sidecarPath,
-      });
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
+        {
+          assetId: asset.id,
+          type: AssetFileType.Sidecar,
+          path: sidecarPath,
+        },
+        undefined,
+      );
     });
   });
 

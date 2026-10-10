@@ -8,10 +8,9 @@ describe('album sidebar preferences', () => {
     localStorage.clear();
   });
 
-  it('starts the nested Albums tree collapsed while preserving the recent albums shortcut preference', async () => {
-    const { albumTreeDropdown, recentAlbumsDropdown } = await import('$lib/stores/preferences.store');
+  it('starts the nested Albums tree collapsed', async () => {
+    const { albumTreeDropdown } = await import('$lib/stores/preferences.store');
 
     expect(get(albumTreeDropdown)).toBe(false);
-    expect(get(recentAlbumsDropdown)).toBe(true);
   });
 });

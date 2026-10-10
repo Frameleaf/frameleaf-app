@@ -1,0 +1,23 @@
+{
+  "schema": "frameleaf.descriptions/v1",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "language": "pt-BR",
+  "items": [
+    {
+      "inputId": "a2",
+      "description": "Um bolo de aniversário com velas acesas sobre uma mesa de madeira.",
+      "tags": [
+        "bolo",
+        "velas",
+        "aniversário"
+      ],
+      "moment": "Hora de apagar as velas",
+      "confidence": 0.74,
+      "warnings": [
+        "metadata-removed",
+        "content-removed"
+      ]
+    }
+  ]
+}

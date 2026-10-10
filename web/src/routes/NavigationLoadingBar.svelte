@@ -1,4 +1,12 @@
 <script lang="ts">
+  /**
+   * The route-change progress line: 2px of the accent on a transparent track at the very top of
+   * the window. It waits a moment before showing so fast navigations never flash it, and fades
+   * out when the page arrives rather than vanishing. Under Reduce Motion the line does not creep:
+   * it appears part-way and fades.
+   */
+  import { motionFade, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { DURATION } from '$lib/frameleaf/tokens';
   import { onMount } from 'svelte';
   import { cubicOut } from 'svelte/easing';
   import { tweened } from 'svelte/motion';
@@ -16,7 +24,7 @@
 
   function animate() {
     showing = true;
-    void progress.set(90);
+    void progress.set(90, prefersReducedMotion() ? { duration: 0 } : undefined);
   }
 
   onMount(() => {
@@ -26,7 +34,24 @@
 </script>
 
 {#if showing}
-  <div class="absolute inset-s-0 top-0 h-[3px] w-dvw bg-white">
-    <span class="absolute h-[3px] bg-immich-primary" style:width={`${$progress}%`}></span>
+  <div class="fl-nav-progress" aria-hidden="true" out:motionFade|global={{ duration: DURATION.fade }}>
+    <span style:width={`${$progress}%`}></span>
   </div>
 {/if}
+
+<style>
+  .fl-nav-progress {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: var(--fl-z-toast);
+    height: 2px;
+    pointer-events: none;
+  }
+  span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
+    border-start-end-radius: var(--fl-radius-pill);
+    border-end-end-radius: var(--fl-radius-pill);
+  }
+</style>

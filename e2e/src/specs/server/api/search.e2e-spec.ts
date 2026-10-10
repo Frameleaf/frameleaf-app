@@ -3,22 +3,28 @@ import {
   AssetResponseDto,
   AssetVisibility,
   deleteAssets,
+  getAssetInfo,
+  login,
   LoginResponseDto,
   SharedLinkType,
+  signUpAdmin,
+  updateAdminOnboarding,
   updateAsset,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { DateTime } from 'luxon';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Socket } from 'socket.io-client';
+import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
+import { loginDto, signupDto } from 'src/fixtures.js';
+import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, TEN_TIMES, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 const today = DateTime.now();
+const SEARCH_SETUP_TIMEOUT = process.env.CI ? 240_000 : 90_000;
 
 describe('/search', () => {
   let admin: LoginResponseDto;
-  let websocket: Socket;
 
   let assetFalcon: AssetMediaResponseDto;
   let assetDenali: AssetMediaResponseDto;
@@ -40,111 +46,127 @@ describe('/search', () => {
   let assetSprings: AssetMediaResponseDto;
   let assetLast: AssetMediaResponseDto;
 
-  beforeAll(async () => {
-    await utils.resetDatabase();
-    admin = await utils.adminSetup();
-    websocket = await utils.connectWebsocket(admin.accessToken);
-
-    const files = [
-      { filename: '/albums/nature/prairie_falcon.jpg' },
-      { filename: '/formats/webp/denali.webp' },
-      { filename: '/albums/nature/cyclamen_persicum.jpg', dto: { isFavorite: true } },
-      { filename: '/albums/nature/notocactus_minimus.jpg' },
-      { filename: '/albums/nature/silver_fir.jpg' },
-      { filename: '/formats/heic/IMG_2682.heic' },
-      { filename: '/formats/jpg/el_torcal_rocks.jpg' },
-      { filename: '/formats/motionphoto/samsung-one-ui-6.jpg' },
-      { filename: '/formats/motionphoto/samsung-one-ui-6.heic' },
-      { filename: '/formats/motionphoto/samsung-one-ui-5.jpg' },
-
-      { filename: '/metadata/gps-position/thompson-springs.jpg', dto: { visibility: AssetVisibility.Archive } },
-
-      // used for search suggestions
-      { filename: '/formats/png/density_plot.png' },
-      { filename: '/formats/raw/Nikon/D80/glarus.nef' },
-      { filename: '/formats/raw/Nikon/D700/philadelphia.nef' },
-      { filename: '/albums/nature/orychophragmus_violaceus.jpg' },
-      { filename: '/albums/nature/tanners_ridge.jpg' },
-      { filename: '/albums/nature/polemonium_reptans.jpg' },
-
-      // last asset
-      { filename: '/albums/nature/wood_anemones.jpg' },
-    ];
-    const assets: AssetMediaResponseDto[] = [];
-    for (const { filename, dto } of files) {
-      const bytes = await readFile(join(testAssetDir, filename));
-      assets.push(
-        await utils.createAsset(admin.accessToken, {
-          assetData: { bytes, filename },
-          ...dto,
-        }),
+  beforeAll(
+    withApiAssetReadiness(SEARCH_SETUP_TIMEOUT, async (signal) => {
+      await utils.resetDatabase(undefined, signal);
+      await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
+      admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
+      await updateAdminOnboarding(
+        { adminOnboardingUpdateDto: { isOnboarded: true } },
+        { headers: asBearerAuth(admin.accessToken), signal },
       );
-    }
 
-    for (const asset of assets) {
-      await utils.waitForWebsocketEvent({ event: 'assetUpload', id: asset.id });
-    }
+      const files = [
+        { filename: '/albums/nature/prairie_falcon.jpg' },
+        { filename: '/formats/webp/denali.webp' },
+        { filename: '/albums/nature/cyclamen_persicum.jpg', dto: { isFavorite: true } },
+        { filename: '/albums/nature/notocactus_minimus.jpg' },
+        { filename: '/albums/nature/silver_fir.jpg' },
+        { filename: '/formats/heic/IMG_2682.heic' },
+        { filename: '/formats/jpg/el_torcal_rocks.jpg' },
+        { filename: '/formats/motionphoto/samsung-one-ui-6.jpg' },
+        { filename: '/formats/motionphoto/samsung-one-ui-6.heic' },
+        { filename: '/formats/motionphoto/samsung-one-ui-5.jpg' },
 
-    // note: the coordinates here are not the actual coordinates of the images and are random for most of them
-    const coordinates = [
-      { latitude: 48.85341, longitude: 2.3488 }, // paris
-      { latitude: 35.6895, longitude: 139.69171 }, // tokyo
-      { latitude: 52.52437, longitude: 13.41053 }, // berlin
-      { latitude: 1.3146631, longitude: 103.8454093 }, // singapore
-      { latitude: 41.01384, longitude: 28.94966 }, // istanbul
-      { latitude: 5.55602, longitude: -0.1969 }, // accra
-      { latitude: 37.5442706, longitude: -4.7277528 }, // andalusia
-      { latitude: 23.13302, longitude: -82.38304 }, // havana
-      { latitude: 41.69411, longitude: 44.83368 }, // tbilisi
-      { latitude: 31.22222, longitude: 121.45806 }, // shanghai
-      { latitude: 38.9711, longitude: -109.7137 }, // thompson springs
-      { latitude: 40.71427, longitude: -74.00597 }, // new york
-      { latitude: 47.04057, longitude: 9.06804 }, // glarus
-      { latitude: 32.77152, longitude: -89.11673 }, // philadelphia
-      { latitude: 31.63416, longitude: -7.99994 }, // marrakesh
-      { latitude: 38.5237354, longitude: -78.4886194 }, // tanners ridge
-      { latitude: 59.93863, longitude: 30.31413 }, // st. petersburg
-      { latitude: 0, longitude: 0 }, // null island
-    ];
+        { filename: '/metadata/gps-position/thompson-springs.jpg', dto: { visibility: AssetVisibility.Archive } },
 
-    const updates = coordinates.map((dto, i) =>
-      updateAsset({ id: assets[i].id, updateAssetDto: dto }, { headers: asBearerAuth(admin.accessToken) }),
-    );
+        // used for search suggestions
+        { filename: '/formats/png/density_plot.png' },
+        { filename: '/formats/raw/Nikon/D80/glarus.nef' },
+        { filename: '/formats/raw/Nikon/D700/philadelphia.nef' },
+        { filename: '/albums/nature/orychophragmus_violaceus.jpg' },
+        { filename: '/albums/nature/tanners_ridge.jpg' },
+        { filename: '/albums/nature/polemonium_reptans.jpg' },
 
-    await Promise.all(updates);
-    for (const i of coordinates.keys()) {
-      await utils.waitForWebsocketEvent({ event: 'assetUpdate', id: assets[i].id });
-    }
+        // last asset
+        { filename: '/albums/nature/wood_anemones.jpg' },
+      ];
+      const assets: AssetMediaResponseDto[] = [];
+      for (const { filename, dto } of files) {
+        const bytes = await readFile(join(testAssetDir, filename), { signal });
+        assets.push(await utils.createAsset(admin.accessToken, { assetData: { bytes, filename }, ...dto }, { signal }));
+      }
 
-    [
-      assetFalcon,
-      assetDenali,
-      assetCyclamen,
-      assetNotocactus,
-      assetSilver,
-      assetHeic,
-      assetRocks,
-      assetOneJpg6,
-      assetOneHeic6,
-      assetOneJpg5,
-      assetSprings,
-      assetDensity,
-      // assetGlarus,
-      // assetPhiladelphia,
-      // assetOrychophragmus,
-      // assetRidge,
-      // assetPolemonium,
-      // assetWood,
-    ] = assets;
+      for (const asset of assets) {
+        await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+      }
 
-    assetLast = assets.at(-1) as AssetMediaResponseDto;
+      // Synthetic coordinates use six decimal places for exact EXIF round-trip assertions.
+      const coordinates = [
+        { latitude: 48.85341, longitude: 2.3488 }, // paris
+        { latitude: 35.6895, longitude: 139.69171 }, // tokyo
+        { latitude: 52.52437, longitude: 13.41053 }, // berlin
+        { latitude: 1.314663, longitude: 103.845409 }, // singapore
+        { latitude: 41.01384, longitude: 28.94966 }, // istanbul
+        { latitude: 5.55602, longitude: -0.1969 }, // accra
+        { latitude: 37.544271, longitude: -4.727753 }, // andalusia
+        { latitude: 23.13302, longitude: -82.38304 }, // havana
+        { latitude: 41.69411, longitude: 44.83368 }, // tbilisi
+        { latitude: 31.22222, longitude: 121.45806 }, // shanghai
+        { latitude: 38.9711, longitude: -109.7137 }, // thompson springs
+        { latitude: 40.71427, longitude: -74.00597 }, // new york
+        { latitude: 47.04057, longitude: 9.06804 }, // glarus
+        { latitude: 32.77152, longitude: -89.11673 }, // philadelphia
+        { latitude: 31.63416, longitude: -7.99994 }, // marrakesh
+        { latitude: 38.523735, longitude: -78.488619 }, // tanners ridge
+        { latitude: 59.93863, longitude: 30.31413 }, // st. petersburg
+        { latitude: 0, longitude: 0 }, // null island
+      ];
 
-    await deleteAssets({ assetBulkDeleteDto: { ids: [assetSilver.id] } }, { headers: asBearerAuth(admin.accessToken) });
-  }, 30_000);
+      const updates = coordinates.map((dto, i) =>
+        updateAsset({ id: assets[i].id, updateAssetDto: dto }, { headers: asBearerAuth(admin.accessToken), signal }),
+      );
 
-  afterAll(async () => {
-    utils.disconnectWebsocket(websocket);
-  });
+      // Drain every owned update, including the other requests if one rejects.
+      const results = await Promise.allSettled(updates);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
+      }
+      // Coordinate changes are written through a sidecar, then metadata reverse-geocodes their place names.
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar', undefined, signal);
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', undefined, signal);
+      for (const i of coordinates.keys()) {
+        const current = await getAssetInfo({ id: assets[i].id }, { headers: asBearerAuth(admin.accessToken), signal });
+        // Metadata intentionally discards Null Island coordinates.
+        const expected =
+          coordinates[i].latitude === 0 && coordinates[i].longitude === 0
+            ? { latitude: null, longitude: null }
+            : coordinates[i];
+        expect(current.exifInfo).toMatchObject(expected);
+      }
+
+      [
+        assetFalcon,
+        assetDenali,
+        assetCyclamen,
+        assetNotocactus,
+        assetSilver,
+        assetHeic,
+        assetRocks,
+        assetOneJpg6,
+        assetOneHeic6,
+        assetOneJpg5,
+        assetSprings,
+        assetDensity,
+        // assetGlarus,
+        // assetPhiladelphia,
+        // assetOrychophragmus,
+        // assetRidge,
+        // assetPolemonium,
+        // assetWood,
+      ] = assets;
+
+      assetLast = assets.at(-1) as AssetMediaResponseDto;
+
+      await deleteAssets(
+        { assetBulkDeleteDto: { ids: [assetSilver.id] } },
+        { headers: asBearerAuth(admin.accessToken), signal },
+      );
+    }),
+    SEARCH_SETUP_TIMEOUT + 5000,
+  );
 
   describe('POST /search/metadata', () => {
     const searchTests = [
@@ -375,7 +397,9 @@ describe('/search', () => {
       });
       const { status, body } = await request(app).post(`/search/metadata?key=${sharedLink.key}`).send({});
       expect(status).toBe(400);
-      expect(body).toEqual({ message: 'Shared link access is only allowed in combination with an albumIds filter' });
+      expect(body).toEqual(
+        errorDto.badRequest('Shared link access is only allowed in combination with an albumIds filter'),
+      );
     });
 
     it('should allow shared link access for albums', async () => {
@@ -391,6 +415,73 @@ describe('/search', () => {
         .send({ albumIds: [album.id] });
       expect(status).toBe(200);
       expect(body.assets.items).toEqual([expect.objectContaining({ id: asset.id })]);
+    });
+  });
+
+  describe('POST /search/facets (FL-49)', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).post('/search/facets').send({});
+      expect(status).toBe(401);
+    });
+
+    it('should count facets that reconcile to the statistics total', async () => {
+      const [facets, statistics] = await Promise.all([
+        request(app).post('/search/facets').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(facets.status).toBe(200);
+      expect(facets.body.total).toBe(statistics.body.total);
+      const sum = (field: string) =>
+        facets.body.facets
+          .find(({ fieldName }: any) => fieldName === field)
+          .counts.reduce((total: number, { count }: any) => total + count, 0);
+      expect(sum('type')).toBe(statistics.body.total);
+      expect(sum('rating')).toBe(statistics.body.total);
+      expect(sum('isFavorite')).toBe(statistics.body.total);
+    });
+
+    it('should narrow by a structured filter', async () => {
+      const { status, body } = await request(app)
+        .post('/search/facets')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ filter: { make: { eq: 'Canon' } }, facets: ['make'], facetLimit: 3 });
+      expect(status).toBe(200);
+      expect(body.facets).toEqual([
+        { fieldName: 'make', counts: body.total > 0 ? [{ value: 'Canon', count: body.total }] : [] },
+      ]);
+    });
+  });
+
+  describe('POST /search/histogram (FL-49)', () => {
+    it('should add up to the statistics total', async () => {
+      const [histogram, statistics] = await Promise.all([
+        request(app)
+          .post('/search/histogram')
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .send({ granularity: 'year' }),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(histogram.status).toBe(200);
+      expect(histogram.body.granularity).toBe('year');
+      expect(histogram.body.total).toBe(statistics.body.total);
+    });
+
+    it('should reject an unknown granularity', async () => {
+      const { status } = await request(app)
+        .post('/search/histogram')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ granularity: 'week' });
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /search/smart/statistics (FL-49)', () => {
+    it('should require a query', async () => {
+      const { status } = await request(app)
+        .post('/search/smart/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({});
+      expect(status).toBe(400);
     });
   });
 
@@ -489,6 +580,26 @@ describe('/search', () => {
         expect(assetsWithCity.length).toEqual(body.length);
         const cities = new Set(assetsWithCity.map((asset) => asset.exifInfo.city));
         expect(cities.size).toEqual(body.length);
+      }
+    });
+  });
+
+  describe('GET /search/cities/counts', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/search/cities/counts');
+      expect(status).toBe(401);
+    });
+
+    it('should count the media in every city listed by GET /search/cities', async () => {
+      const [cities, counts] = await Promise.all([
+        request(app).get('/search/cities').set('Authorization', `Bearer ${admin.accessToken}`),
+        request(app).get('/search/cities/counts').set('Authorization', `Bearer ${admin.accessToken}`),
+      ]);
+
+      expect(counts.status).toBe(200);
+      const countByCity = new Map(counts.body.map(({ city, count }: { city: string; count: number }) => [city, count]));
+      for (const asset of cities.body) {
+        expect(countByCity.get(asset.exifInfo.city)).toBeGreaterThanOrEqual(1);
       }
     });
   });

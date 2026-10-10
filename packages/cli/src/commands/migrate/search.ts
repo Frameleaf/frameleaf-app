@@ -1,4 +1,4 @@
-import { AssetVisibility, type AssetResponseDto, type MetadataSearchDto } from '@immich/sdk';
+import { AssetVisibility, type AssetResponseDto, type MetadataSearchDto } from '@frameleaf/sdk';
 import type { ServerClient } from 'src/commands/migrate/client';
 
 // searchAssetBuilder on the server defaults to visibility=timeline and filters to exactly

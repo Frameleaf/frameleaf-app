@@ -1,4 +1,4 @@
-# Immich Machine Learning
+# Frameleaf machine learning
 
 - CLIP embeddings
 - Facial recognition
@@ -38,7 +38,7 @@ Image enrichment has hardware profiles for OpenVINO/iGPU and CUDA/NVIDIA deploym
 
 ## CUDA Model Notes
 
-Existing Immich ONNX tasks keep their NVIDIA support. The provider order still prefers `CUDAExecutionProvider` before `OpenVINOExecutionProvider` when the CUDA runtime is installed.
+Existing ONNX tasks keep their NVIDIA support. The provider order still prefers `CUDAExecutionProvider` before `OpenVINOExecutionProvider` when the CUDA runtime is installed.
 
 For CUDA deployments:
 

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigSchema, type SystemConfig, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { MachineLearningHardwareAccelerationSchema } from 'src/enum.js';
 
@@ -37,6 +38,19 @@ const MachineLearningHardwareResponseSchema = z
 
 export class MachineLearningHardwareResponseDto extends createZodDto(MachineLearningHardwareResponseSchema) {}
 
+const MachineLearningHardwareQuerySchema = z
+  .object({
+    destinationId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly.',
+      ),
+  })
+  .meta({ id: 'MachineLearningHardwareQueryDto' });
+
+export class MachineLearningHardwareQueryDto extends createZodDto(MachineLearningHardwareQuerySchema) {}
+
 const ImageDescriptionRequeueEstimateSchema = z
   .object({
     totalAssets: z.int().min(0).describe('Total eligible image assets'),
@@ -68,7 +82,16 @@ export class ImageDescriptionRequeueEstimateDto extends createZodDto(ImageDescri
 
 const ImageDescriptionRequeueResponseSchema = z
   .object({
+    runId: z
+      .uuid()
+      .optional()
+      .describe('Canonical run accepted by this request; absent when no local work was accepted'),
     queued: z.boolean().describe('Whether the queue-all job was newly enqueued (false = already in-flight)'),
+    cloudBatches: z
+      .boolean()
+      .describe(
+        'Descriptions are routed to Frameleaf Cloud, which describes photos in batches from Frameleaf Cloud processing with an estimate first; nothing was queued here',
+      ),
   })
   .meta({ id: 'ImageDescriptionRequeueResponseDto' });
 
@@ -88,6 +111,10 @@ export class SmartAlbumReevaluateEstimateDto extends createZodDto(SmartAlbumReev
 
 const SmartAlbumReevaluateResponseSchema = z
   .object({
+    runId: z
+      .uuid()
+      .optional()
+      .describe('Canonical run accepted by this request; absent when no local work was accepted'),
     queued: z.boolean().describe('Whether the re-evaluate job was newly enqueued (false = already in-flight)'),
   })
   .meta({ id: 'SmartAlbumReevaluateResponseDto' });
@@ -109,9 +136,110 @@ const SmartAlbumReevaluateRequestSchema = z
   .object({
     kind: z
       .enum(SMART_ALBUM_BUILT_IN_KINDS)
+      .meta({ id: 'SmartAlbumBuiltInKind' })
       .optional()
       .describe('Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind.'),
   })
   .meta({ id: 'SmartAlbumReevaluateRequestDto' });
 
 export class SmartAlbumReevaluateRequestDto extends createZodDto(SmartAlbumReevaluateRequestSchema) {}
+
+// FL-66: the settings editor's baseline. The revision is a digest of the saved settings; a save
+// that sends it back as `expectedRevision` is refused (409) when the settings changed since.
+const AdminConfigRevisionResponseSchema = z
+  .object({
+    config: AdminConfigSchema,
+    revision: z
+      .string()
+      .describe(
+        'Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused',
+      ),
+  })
+  .meta({ id: 'AdminConfigRevisionResponseDto' });
+
+export class AdminConfigRevisionResponseDto extends createZodDto(AdminConfigRevisionResponseSchema) {}
+
+const AdminConfigRevisionUpdateSchema = z
+  .object({
+    config: AdminConfigSchema,
+    expectedRevision: z
+      .string()
+      .min(1)
+      .describe(
+        'The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed',
+      ),
+  })
+  .meta({ id: 'AdminConfigRevisionUpdateDto' });
+
+export class AdminConfigRevisionUpdateDto extends createZodDto(AdminConfigRevisionUpdateSchema) {}
+
+// FL-66: the settings change history, newest first. Values are what an administrator can read,
+// JSON encoded and shortened; credentials only say whether they were replaced or cleared.
+const SystemConfigHistoryChangeSchema = z
+  .object({
+    path: z.string().describe('The changed setting, as a dotted path such as trash.days'),
+    before: z.string().nullable().describe('The value before the change, JSON encoded; null for a credential'),
+    after: z.string().nullable().describe('The value after the change, JSON encoded; null for a credential'),
+    credential: z
+      .enum(['replaced', 'cleared'])
+      .optional()
+      .describe('Set for a write-only credential: whether it was replaced or cleared. Its value is never recorded')
+      .meta({ id: 'SystemConfigHistoryCredentialChange' }),
+  })
+  .meta({ id: 'SystemConfigHistoryChangeDto' });
+
+const SystemConfigHistoryEntrySchema = z
+  .object({
+    id: z.string().describe('Entry ID'),
+    createdAt: z.string().describe('When the change was saved (ISO 8601)'),
+    actorId: z.string().nullable().describe('The administrator who saved the change'),
+    actorName: z.string().nullable().describe("The administrator's name when the change was saved"),
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('The entry title, such as "Updated email server password"; absent for a settings save'),
+    kind: z
+      .enum(['settings', 'credential', 'review'])
+      .optional()
+      .describe('What the entry records; absent for entries saved before it was recorded')
+      .meta({ id: 'SystemConfigHistoryKind' }),
+    source: z
+      .enum(['server-cli', 'frameleaf-cloud'])
+      .optional()
+      .describe(
+        'Where a change came from when it was not an ordinary settings save: the server command line, or the Frameleaf Cloud settings and actions (with the administrator, when one made it)',
+      )
+      .meta({ id: 'SystemConfigHistorySource', ...new HistoryBuilder().added('v3.2.0').getExtensions() }),
+    changes: z.array(SystemConfigHistoryChangeSchema).describe('Every changed setting'),
+    omittedChanges: z.int().min(0).describe('Changed settings left out because the entry reached its limit'),
+  })
+  .meta({ id: 'SystemConfigHistoryEntryDto' });
+
+const SystemConfigHistoryResponseSchema = z
+  .object({
+    entries: z.array(SystemConfigHistoryEntrySchema).describe('The newest settings changes first'),
+  })
+  .meta({ id: 'SystemConfigHistoryResponseDto' });
+
+export class SystemConfigHistoryResponseDto extends createZodDto(SystemConfigHistoryResponseSchema) {}
+
+/** Reload only the configured server file; no path, configuration or credential is accepted. */
+export class ConfigFileReloadDto extends createZodDto(
+  z
+    .object({
+      expectedEpoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict()
+    .meta({ id: 'ConfigFileReloadDto' }),
+) {}
+
+export class ConfigFileActivationResponseDto extends createZodDto(
+  z
+    .object({
+      epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+      sourceKind: z.literal('file'),
+    })
+    .strict()
+    .meta({ id: 'ConfigFileActivationResponseDto' }),
+) {}

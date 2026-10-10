@@ -1,4 +1,345 @@
-FROM ghcr.io/immich-app/base-server-dev:202609151314@sha256:ba336c43615bf9fe10d27637c3baf84cfc1379482dc712c35e314946e378a076 AS builder
+ARG STUDIO_NODE_IMAGE=node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+# BEGIN frameleaf-server-base
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+# Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
+# markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
+# 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
+# are vendored in server/base-image. server/Dockerfile and server/Dockerfile.dev carry identical
+# copies of this block; docker/frameleaf-delivery.test.mjs fails if they drift apart.
+FROM ${NODE_IMAGE} AS base-server-build
+ARG DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /usr/src/base-image
+
+ENV LD_LIBRARY_PATH=/usr/local/lib \
+  LD_RUN_PATH=/usr/local/lib
+
+COPY server/base-image/configure-apt.sh ./
+# apt-update-strict fails the build when any package index cannot be fetched, instead of apt's warning.
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
+
+# Install ca-certificates first, then set up the PostgreSQL client repository over HTTPS
+RUN ./configure-apt.sh && \
+  apt-update-strict && \
+  apt-get install --no-install-recommends -yqq ca-certificates && \
+  mkdir -p /usr/share/postgresql-common/pgdg
+
+# PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
+ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+RUN . /etc/os-release && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main 19" > /etc/apt/sources.list.d/pgdg.list && \
+  apt-update-strict && \
+  apt-get install --no-install-recommends -yqq \
+  git \
+  autoconf \
+  automake \
+  libtool \
+  libltdl-dev \
+  build-essential \
+  cmake \
+  jq \
+  libbrotli-dev \
+  # libde265 v1.0.16 includes a fix for HDR images. Packages taken from Debian testing (this one and
+  # libmimalloc3 in the production stage) float with that suite, as they did upstream; every other
+  # compiled input is pinned by revision or checksum.
+  libde265-dev/testing \
+  libexif-dev \
+  libexpat1-dev \
+  libglib2.0-dev \
+  libgsf-1-dev \
+  libmimalloc3 \
+  # libjpeg62-turbo-dev is only for building libvips; the final image uses jpegli (/usr/local/lib/libjpeg.so.62)
+  libjpeg62-turbo-dev \
+  liblcms2-dev \
+  libpango1.0-dev \
+  librsvg2-dev \
+  libspng-dev \
+  meson \
+  ninja-build \
+  pkg-config \
+  wget \
+  unzip \
+  zlib1g \
+  postgresql-client-19 \
+  tini \
+  make \
+  ocl-icd-libopencl1 \
+  libopenmpt0 \
+  libbluray2 \
+  libvpx9 \
+  libzvbi0 \
+  libmp3lame0 \
+  libopus0 \
+  libtheora0 \
+  libvorbis0a \
+  libvorbisenc2 \
+  libx264-164 \
+  libdav1d-dev \
+  libhwy-dev \
+  libwebp-dev \
+  libio-compress-brotli-perl \
+  libaom-dev
+
+FROM base-server-build AS base-server-geodata
+
+# Reverse-geocoding data from a fixed snapshot, listed with its checksums, capture dates and CC BY 4.0
+# attribution in server/base-image/geodata/geodata.lock. fetch.sh takes each file from Frameleaf's host
+# (static.frameleaf.cloud/geodata/$GEODATA_SNAPSHOT/) and falls back to its pinned capture URL; both must
+# match the checksum. GEODATA_DATE is the newest capture in the set (countryInfo.txt, 2026-09-13; the
+# others are from 2026-09-11), not the build time, so amd64 and arm64 builds ship identical data and a new
+# image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
+# GEODATA_DATE together.
+ARG GEODATA_SNAPSHOT=2026-09-11
+ARG GEODATA_DATE=2026-09-13T00:06:31+00:00
+COPY server/base-image/geodata/ ./geodata/
+RUN GEODATA_SNAPSHOT="$GEODATA_SNAPSHOT" ./geodata/fetch.sh geodata/geodata.lock /build/geodata && \
+  chmod 444 /build/geodata/*.txt /build/geodata/*.geojson && \
+  umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
+  rm /build/geodata/cities500.zip && printf '%s' "$GEODATA_DATE" > /build/geodata/geodata-date.txt
+
+FROM base-server-build AS base-server-jpegli
+
+COPY server/base-image/sources/jpegli.json server/base-image/sources/jpegli.sh ./
+COPY server/base-image/sources/jpegli-patches/ ./jpegli-patches/
+RUN ./jpegli.sh
+
+FROM base-server-build AS base-server-x265
+COPY server/base-image/sources/x265.json server/base-image/sources/x265.sh ./
+RUN ./x265.sh
+
+FROM base-server-x265 AS base-server-libheif
+
+COPY server/base-image/sources/libheif.json server/base-image/sources/libheif.sh server/base-image/sources/libheif-hdr.patch ./
+RUN ./libheif.sh
+
+FROM base-server-libheif AS base-server-image-hdr
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq libnode-dev
+COPY server/base-image/sources/libultrahdr.json server/base-image/sources/libultrahdr.sh server/base-image/sources/libultrahdr-hdr.patch ./
+RUN ./libultrahdr.sh
+COPY server/native/ ./image-hdr/
+RUN cmake -S image-hdr -B image-hdr/build -DCMAKE_BUILD_TYPE=Release && \
+  cmake --build image-hdr/build --parallel "$(nproc)" && cmake --install image-hdr/build
+COPY server/test/native/image-hdr.test.mjs ./
+COPY server/test/native/fixtures/ ./fixtures/
+RUN FRAMELEAF_HDR_ISO_TEST=1 node --test image-hdr.test.mjs
+
+FROM base-server-build AS base-server-libjxl
+
+COPY server/base-image/sources/libjxl.json server/base-image/sources/libjxl.sh ./
+RUN ./libjxl.sh
+
+FROM base-server-build AS base-server-libraw
+
+COPY server/base-image/sources/libraw.json server/base-image/sources/libraw.sh ./
+RUN ./libraw.sh
+
+FROM base-server-libraw AS base-server-imagemagick
+
+COPY --from=base-server-libheif /usr/local/lib/ /usr/local/lib/libheif/
+COPY --from=base-server-libheif /usr/local/include/libheif/ /usr/local/include/libheif/
+
+COPY --from=base-server-libjxl /usr/local/lib/ /usr/local/lib/libjxl/
+COPY --from=base-server-libjxl /usr/local/include/jxl/ /usr/local/include/jxl/
+
+COPY --from=base-server-jpegli /usr/local/lib/ /usr/local/lib/jpegli/
+COPY --from=base-server-jpegli /usr/local/include/jconfig.h /usr/local/include/jmorecfg.h /usr/local/include/jpeglib.h /usr/local/include/
+
+# COPY resolves symlinks unless copying the enclosing folder, so this is a workaround to get the correct result.
+RUN cp -r /usr/local/lib/libheif/libheif* /usr/local/lib/libheif/libx265.so* /usr/local/lib/libjxl/libjxl* /usr/local/lib/jpegli/libjpeg.so* /usr/local/lib && \
+  mv /usr/local/lib/libheif/pkgconfig/* /usr/local/lib/libjxl/pkgconfig/* /usr/local/lib/pkgconfig && \
+  rm -r /usr/local/lib/libheif /usr/local/lib/libjxl /usr/local/lib/jpegli
+
+COPY server/base-image/sources/imagemagick.json server/base-image/sources/imagemagick.sh ./
+RUN ./imagemagick.sh
+
+FROM base-server-imagemagick AS base-server-libvips
+
+COPY server/base-image/sources/libvips.json server/base-image/sources/libvips.sh ./
+COPY server/base-image/sources/libvips-patches/ ./libvips-patches/
+RUN ./libvips.sh
+
+# Full native RAW development: reuse the already pinned media libraries and LibRaw.
+FROM base-server-imagemagick AS base-server-darktable
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq \
+  python3 gettext intltool xsltproc desktop-file-utils \
+  libgtk-3-dev libexiv2-dev libjson-glib-dev libpugixml-dev libpotrace-dev \
+  libpng-dev libtiff-dev libsqlite3-dev libxml2-dev libcurl4-openssl-dev libzstd-dev
+COPY server/base-image/sources/darktable.json server/base-image/sources/darktable.sh ./
+COPY server/base-image/verify-darktable.mjs ./
+COPY server/test/native/patch-darktable-lens.py server/test/native/patch-darktable-mask-geometry.py ./darktable-patches/
+RUN ./darktable.sh
+
+FROM base-server-build AS base-server-dev
+
+COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+RUN ./ffmpeg.sh
+
+COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-image-hdr /usr/local/lib/libuhdr* /usr/local/lib/
+COPY --from=base-server-image-hdr /usr/local/lib/frameleaf/ /usr/local/lib/frameleaf/
+COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
+COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
+COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
+COPY --from=base-server-geodata /build/geodata /build/geodata
+COPY --from=base-server-darktable /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-darktable /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/
+COPY --from=base-server-darktable /usr/local/share/ /usr/local/share/
+COPY server/base-image/verify-darktable.mjs server/base-image/verify-darktable-develop.mjs /build/
+COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
+RUN apt-update-strict && xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt
+
+ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
+
+RUN ldconfig /usr/local/lib && \
+  ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
+  grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
+  ! grep -q 'not found' /tmp/libraw-linkage && \
+  rm /tmp/libraw-linkage && \
+  node /build/verify-darktable.mjs verify /usr/local /build/darktable-runtime.json
+
+# Record the exact source revisions and package versions this base was built from.
+COPY server/base-image/packages/ ./packages/
+COPY server/base-image/sources/ ./sources/
+RUN jq -s '.' packages/*.json > /tmp/packages.json && \
+  jq -s '.' sources/*.json > /tmp/sources.json && \
+  jq -n \
+  --slurpfile sources /tmp/sources.json \
+  --slurpfile packages /tmp/packages.json \
+  '{sources: $sources[0], packages: $packages[0]}' \
+  > /build/build-lock.json && \
+  rm -f /tmp/packages.json /tmp/sources.json
+
+WORKDIR /usr/src/app
+# END frameleaf-server-base
+
+# The production base: runtime libraries only, with the media libraries built above. It reproduces
+# base-server-prod from the same base-images revision.
+FROM ${NODE_IMAGE} AS base-server-prod
+ARG DEBIAN_FRONTEND=noninteractive
+
+# renovate: datasource=custom.intel-igc depName=intel/intel-graphics-compiler
+ARG IGC_VERSION=2.38.2+22051
+# renovate: datasource=custom.intel-opencl-icd depName=intel/compute-runtime
+ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11-0
+# renovate: datasource=custom.intel-gmmlib depName=intel/compute-runtime
+ARG GMMLIB_VERSION=22.10.0
+
+WORKDIR /build
+
+COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
+COPY server/base-image/configure-apt.sh server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
+COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
+
+RUN ./configure-apt.sh && \
+  apt-update-strict && \
+  apt-get install curl ca-certificates --no-install-recommends -yqq && \
+  mkdir -p /usr/share/postgresql-common/pgdg
+
+# PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
+ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+
+RUN . /etc/os-release && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main 19" > /etc/apt/sources.list.d/pgdg.list && \
+  apt-update-strict && \
+  apt-get install --no-install-recommends -yqq \
+  jq \
+  libde265-0/testing \
+  libexif12 \
+  libexpat1 \
+  libgcc-s1 \
+  libglib2.0-0 \
+  libgomp1 \
+  libgsf-1-114 \
+  liblcms2-2 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
+  liblqr-1-0 \
+  libltdl7 \
+  libopenexr-3-1-30 \
+  libopenjp2-7 \
+  librsvg2-2 \
+  libspng0 \
+  tini \
+  wget \
+  zlib1g \
+  ocl-icd-libopencl1 \
+  postgresql-client-19 \
+  libio-compress-brotli-perl \
+  libwebp7 \
+  libwebpdemux2 \
+  libwebpmux3 \
+  libhwy1t64 \
+  libaom3 && \
+  xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt && \
+  ./ffmpeg.sh && \
+  if [ $(arch) = "x86_64" ]; then \
+  # Old driver
+  wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-core_1.0.17537.24_amd64.deb && \
+  wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.17537.24/intel-igc-opencl_1.0.17537.24_amd64.deb && \
+  wget https://github.com/intel/compute-runtime/releases/download/24.35.30872.36/intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb && \
+  # New driver
+  IGC_TAG="${IGC_VERSION%%+*}" && \
+  CR_TAG="${COMPUTE_RUNTIME_VERSION%-*}" && \
+  wget "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_TAG}/intel-igc-core-2_${IGC_VERSION}_amd64.deb" && \
+  wget "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_TAG}/intel-igc-opencl-2_${IGC_VERSION}_amd64.deb" && \
+  wget "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/intel-opencl-icd_${COMPUTE_RUNTIME_VERSION}_amd64.deb" &&  \
+  # Shared libigdgmm1
+  wget -nv "https://github.com/intel/compute-runtime/releases/download/${CR_TAG}/libigdgmm12_${GMMLIB_VERSION}_amd64.deb" && \
+  # SHA-256 digests GitHub records for these release assets; changing a driver version above needs its digest here.
+  printf '%s\n' \
+  'c1e1ecdfe2064c047c552651cfdcdafc504f2033afafba65654338b880048b67  intel-igc-core_1.0.17537.24_amd64.deb' \
+  'dd016400f87fa2b6a9fa9fbcca7eb4a2629174a29de679709f9bec5cede88b0e  intel-igc-opencl_1.0.17537.24_amd64.deb' \
+  'bbe71e4f414259e06a10cde72c29a2bd78d41b2bb2f6f8463b1806797fe66e85  intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb' \
+  '3dbcbe4e716d62e9bd43a4a476d724cf772b4581dbcdd096d70df382e7ccad7e  intel-igc-core-2_2.38.2+22051_amd64.deb' \
+  'e265d191590efd5491bfbbd148c144fdd40aea51e0b57f8651130d2da20b8186  intel-igc-opencl-2_2.38.2+22051_amd64.deb' \
+  '6e447a783c99fb5634df298c135a81165be07db98672df96cdf413d22f3e6ac4  intel-opencl-icd_26.27.39122.11-0_amd64.deb' \
+  '6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54  libigdgmm12_22.10.0_amd64.deb' \
+  > intel-drivers.sha256 && \
+  sha256sum --strict -c intel-drivers.sha256 && \
+  [ "$(ls *.deb | wc -l)" -eq 7 ] && \
+  dpkg -i *.deb && \
+  # intel-igc-opencl ships libopencl-clang.so and .so.14 as two identical files
+  ln -sf libopencl-clang.so.14 /usr/local/lib/libopencl-clang.so; \
+  fi && \
+  # use shared libraries
+  (cd /usr/lib/jellyfin-ffmpeg/lib && \
+  rm -f libdav1d.so* libfontconfig.so* libfreetype.so* libfribidi.so* libharfbuzz.so* libigdgmm.so* libz.so*) && \
+  apt-get install -t testing --no-install-recommends -yqq libmimalloc3 && \
+  # ca-certificates stays installed (upstream removed it): the PostgreSQL source above is HTTPS, and
+  # without CA certificates any later index update in this image cannot fetch it.
+  apt-get remove -yqq jq wget && \
+  apt-get autoremove -yqq && \
+  apt-get clean && \
+  rm -rf \
+  configure-apt.sh \
+  ffmpeg* \
+  intel-drivers.sha256 \
+  *.deb \
+  /var/lib/apt/lists \
+  /usr/lib/$(arch)-linux-gnu/libjpeg.so* \
+  /usr/share/doc/libjpeg62-turbo \
+  /usr/share/lintian/overrides/libjpeg62-turbo
+
+COPY --from=base-server-dev /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/
+COPY --from=base-server-dev /usr/local/share/ /usr/local/share/
+COPY --from=base-server-dev /build/ /build/
+
+WORKDIR /usr/src/app
+
+ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib \
+  # jellyfin-ffmpeg keeps its Vulkan ICD manifests outside the loader's default search path
+  XDG_DATA_DIRS=/usr/lib/jellyfin-ffmpeg/share:/usr/local/share:/usr/share
+
+RUN ldconfig /usr/local/lib && \
+  ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
+  grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
+  ! grep -q 'not found' /tmp/libraw-linkage && \
+  rm /tmp/libraw-linkage && \
+  node /build/verify-darktable.mjs verify /usr/local
+
+FROM base-server-dev AS builder
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   CI=1 \
   COREPACK_HOME=/tmp \
@@ -12,57 +353,111 @@ RUN npm install --global corepack@latest && \
 WORKDIR /usr/src/app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+COPY ./packages/patches ./packages/patches/
 
 FROM builder AS sdk
 
 COPY ./packages/sdk/package.json ./packages/sdk/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/sdk install --frozen-lockfile
 
 COPY ./packages/sdk ./packages/sdk/
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/sdk build
 
 FROM sdk AS plugin-sdk
 
 COPY ./packages/plugin-sdk/package.json ./packages/plugin-sdk/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/plugin-sdk install --frozen-lockfile
 
 COPY ./packages/plugin-sdk ./packages/plugin-sdk/
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/plugin-sdk build
 
 FROM plugin-sdk AS server
 
+COPY ./packages/sql-tools ./packages/sql-tools/
 COPY ./server/package.json ./server/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
 
 COPY ./server ./server/
+COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
+COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/
+COPY ./docker/scripts/verify-server-package.mjs /build/verify-server-package.mjs
+# The build channel is compiled into the server (server/src/utils/frameleaf-build-channel.ts). Only
+# .github/workflows/integration-image.yml passes FRAMELEAF_BUILD_CHANNEL=integration; every release
+# build leaves it at release, and the source line is then checked unchanged. An integration build may
+# trust extra licence keys from FRAMELEAF_LICENSE_EXTRA_JWKS_FILE; a release build never does.
+ARG FRAMELEAF_BUILD_CHANNEL=release
+RUN set -eu; \
+  file=server/src/utils/frameleaf-build-channel.ts; \
+  release="export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'release' as FrameleafBuildChannel;"; \
+  integration="export const FRAMELEAF_BUILD_CHANNEL: FrameleafBuildChannel = 'integration' as FrameleafBuildChannel;"; \
+  [ "$(grep -c "^export const FRAMELEAF_BUILD_CHANNEL" "$file")" = 1 ] && grep -qxF "$release" "$file" || { echo "unexpected $file" >&2; exit 1; }; \
+  case "$FRAMELEAF_BUILD_CHANNEL" in \
+    release) ;; \
+    integration) grep -vxF "$release" "$file" > "$file.tmp"; printf '%s\n' "$integration" >> "$file.tmp"; mv "$file.tmp" "$file"; \
+      grep -qxF "$integration" "$file" && ! grep -qF "'release' as" "$file" ;; \
+    *) echo "FRAMELEAF_BUILD_CHANNEL must be release or integration, not $FRAMELEAF_BUILD_CHANNEL" >&2; exit 1 ;; \
+  esac
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
-  pnpm --filter immich build && \
-  pnpm --filter immich --prod --no-optional deploy /output/server-pruned
+  pnpm --filter frameleaf build && \
+  pnpm --filter frameleaf --prod --no-optional deploy /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
+RUN node /build/verify-server-package.mjs /output/server-pruned /usr/src/app/studio/runtime
+
+# Explicit manual RAW qualification uses the actual production native base and compiled/pruned
+# server adapter. It builds no web, Studio, CLI or plugin WASM and starts no application service.
+FROM base-server-prod AS native-raw-validation
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
+COPY --from=server /output/server-pruned ./server
+RUN node /build/verify-darktable.mjs verify /usr/local && \
+  node --input-type=module -e "await import('./server/dist/utils/darktable-renderer.js')"
+ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
+
+# Studio's editor (FL-88): the pinned Freecut revision is recovered from its archive, verified file by
+# file against studio/freecut-provenance.json, patched outside the snapshot, installed from the engine
+# lockfile without lifecycle scripts, and built with Frameleaf's adapter into web/static/studio-engine,
+# together with every licence notice it needs (attribution/, notices/).
+FROM ${STUDIO_NODE_IMAGE} AS studio-engine
+
+WORKDIR /usr/src/app
+COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs
+COPY ./scripts/frameleaf-studio-rights.mjs ./scripts/frameleaf-studio-rights.mjs
+COPY ./studio ./studio/
+COPY ./web/src/lib/frameleaf/studio ./web/src/lib/frameleaf/studio/
+RUN node studio/tools/engine.mjs prepare && \
+  npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund && \
+  RAYON_NUM_THREADS=2 TOKIO_WORKER_THREADS=2 node studio/tools/adapter.mjs build
 
 FROM sdk AS web
 
+COPY ./packages/ui ./packages/ui/
+COPY ./packages/justified-layout-wasm ./packages/justified-layout-wasm/
+
 COPY ./web/package.json ./web/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf-web...' install --frozen-lockfile
 
 COPY ./i18n ./i18n/
+# Acknowledgements and licence texts the About screen reads (FL-86).
+COPY ./licenses ./licenses/
+COPY ./studio/notices ./studio/notices/
 COPY ./web ./web/
+COPY --from=studio-engine /usr/src/app/web/static/studio-engine ./web/static/studio-engine/
 
 ARG BUILD_ID
-ENV IMMICH_BUILD=${BUILD_ID}
+ENV FRAMELEAF_BUILD=${BUILD_ID}
 
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web build
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frameleaf-web build
 
 FROM sdk AS cli
 
 COPY ./packages/cli/package.json ./packages/cli/package.json
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/cli install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/cli install --frozen-lockfile
 
 COPY ./packages/cli ./packages/cli/
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
-  pnpm --filter @immich/cli build && \
-  pnpm --filter @immich/cli --prod --no-optional deploy /output/cli-pruned
+  pnpm --filter @frameleaf/cli build && \
+  pnpm --filter @frameleaf/cli --prod --no-optional deploy /output/cli-pruned
 
 FROM plugin-sdk AS plugins
 
@@ -75,7 +470,6 @@ COPY ./mise.lock ./mise.lock
 COPY ./packages/plugin-core/mise.toml ./packages/plugin-core/
 ENV MISE_TRUSTED_CONFIG_PATHS=/usr/src/app/mise.toml
 ENV MISE_DATA_DIR=/buildcache/mise
-ENV MISE_DISABLE_TOOLS=flutter
 # Harden `mise install` against transient GitHub API failures seen on the
 # self-hosted build runner. Two flavors observed: "HTTP timed out" while
 # fetching a version list, and "unexpected EOF" while downloading a release
@@ -101,29 +495,38 @@ COPY ./packages/plugin-core ./packages/plugin-core/
 # Build plugins
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   --mount=type=cache,id=mise-tools-${TARGETPLATFORM},target=/buildcache/mise \
-  pnpm --filter @immich/plugin-core install --frozen-lockfile && \
+  pnpm --filter @frameleaf/plugin-core install --frozen-lockfile && \
   PATH="$(mise where github:extism/js-pdk):$(mise where github:webassembly/binaryen)/bin:$PATH" \
-  pnpm --filter @immich/plugin-core build
+  pnpm --filter @frameleaf/plugin-core build
 
-FROM ghcr.io/immich-app/base-server-prod:202609151314@sha256:1d71b4254aeba9a547ed9c6a4a1acf490b5e8786d6dad2a943bd61bb0c8ab736 AS prod
+# Medium tests need the same native codec closure as the server, plus its unpruned test dependencies.
+FROM server AS medium-test
+COPY --from=plugins /usr/src/app/packages/plugin-core/dist ./packages/plugin-core/dist
+COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json ./packages/plugin-core/manifest.json
+WORKDIR /usr/src/app/server
+CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run"]
+
+FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
 ENV NODE_ENV=production \
+  FONTCONFIG_FILE=/usr/src/app/server/resources/fonts/fonts.conf \
   NVIDIA_DRIVER_CAPABILITIES=all \
   NVIDIA_VISIBLE_DEVICES=all
-
-RUN apt-get update --allow-releaseinfo-change && \
-  apt-get install -y --no-install-recommends libraw-bin && \
-  rm -rf /var/lib/apt/lists/*
 
 COPY --from=server /output/server-pruned ./server
 COPY --from=web /usr/src/app/web/build /build/www
 COPY --from=cli /output/cli-pruned ./cli
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist /build/plugins/immich-plugin-core/dist
 COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json /build/plugins/immich-plugin-core/manifest.json
-RUN ln -s ../../cli/bin/immich server/bin/immich
+# FL-294: `frameleaf` is the CLI; `immich` stays on PATH as its deprecated alias
+RUN ln -s ../../cli/bin/frameleaf server/bin/frameleaf && ln -s ../../cli/bin/immich server/bin/immich
 COPY LICENSE /licenses/LICENSE.txt
 COPY LICENSE /LICENSE
+# Third-party notices (FL-86): every acknowledgement with its licence text, and the Studio engine's
+# notices, Freecut's MIT licence among them.
+COPY ./licenses /licenses/third-party/
+COPY ./studio/notices /licenses/studio/
 
 ENV PATH="${PATH}:/usr/src/app/server/bin"
 
@@ -134,15 +537,15 @@ ARG BUILD_SOURCE_COMMIT
 ARG BUILD_SOURCE_REPOSITORY=Frameleaf/frameleaf-app
 ARG BUILD_IMAGE_NAME=frameleaf-server
 
-ENV IMMICH_BUILD=${BUILD_ID}
-ENV IMMICH_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
-ENV IMMICH_BUILD_IMAGE=${BUILD_IMAGE}
-ENV IMMICH_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
-ENV IMMICH_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_SOURCE_REF=${BUILD_SOURCE_REF}
-ENV IMMICH_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
-ENV IMMICH_SOURCE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_BUILD=${BUILD_ID}
+ENV FRAMELEAF_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
+ENV FRAMELEAF_BUILD_IMAGE=${BUILD_IMAGE}
+ENV FRAMELEAF_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
+ENV FRAMELEAF_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_SOURCE_REF=${BUILD_SOURCE_REF}
+ENV FRAMELEAF_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_SOURCE_COMMIT_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
 
 LABEL org.opencontainers.image.source="https://github.com/${BUILD_SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${BUILD_SOURCE_COMMIT}"
@@ -152,4 +555,4 @@ EXPOSE 2283
 ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
 CMD ["start.sh"]
 
-HEALTHCHECK CMD immich-healthcheck
+HEALTHCHECK CMD frameleaf-healthcheck

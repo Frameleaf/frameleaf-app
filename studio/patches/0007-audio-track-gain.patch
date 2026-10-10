@@ -1,0 +1,143 @@
+Subject: Preserve track faders with clip volume automation
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -87,7 +87,8 @@
+   durationFrames: number
+   sourceStartFrame: number // In source media (for trim) — in source-native FPS frames
+   sourceFps: number // Source media FPS (sourceStartFrame is in these frames)
+-  volume: number // -60 to +12 dB
++  volume: number // Combined clip and track gain in dB
++  trackVolumeDb: number // Track gain remains independent of clip automation
+   fadeInFrames: number
+   fadeOutFrames: number
+   fadeInCurve: number
+@@ -440,6 +441,7 @@
+       sourceStartFrame: baseTrimBefore - timelineToSourceFrames(before, speed, fps, sourceFps),
+       sourceFps,
+       volume: (item.volume ?? 0) + entry.trackVolume,
++      trackVolumeDb: entry.trackVolume,
+       fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+       fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+       fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -516,6 +518,7 @@
+     sourceStartFrame: segment.sourceStartFrame,
+     sourceFps: segment.sourceFps,
+     volume: segment.volume,
++    trackVolumeDb: segment.trackVolumeDb,
+     fadeInFrames: segment.fadeInFrames,
+     fadeOutFrames: segment.fadeOutFrames,
+     fadeInCurve: segment.fadeInCurve,
+@@ -843,6 +846,7 @@
+       sourceStartFrame: effectiveSourceStart,
+       sourceFps: subItem.sourceFps ?? fps,
+       volume: (subItem.volume ?? 0) + (track.volume ?? 0) + (subTrack?.volume ?? 0),
++      trackVolumeDb: (track.volume ?? 0) + (subTrack?.volume ?? 0),
+       fadeInFrames: adjustedFadeInFrames,
+       fadeOutFrames: adjustedFadeOutFrames,
+       fadeInCurve: subItem.audioFadeInCurve ?? 0,
+@@ -1011,6 +1015,7 @@
+           sourceStartFrame: audioItem.sourceStart ?? item.trimStart ?? 0,
+           sourceFps: audioItem.sourceFps ?? fps,
+           volume: (item.volume ?? 0) + (track.volume ?? 0),
++          trackVolumeDb: track.volume ?? 0,
+           fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+           fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+           fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -1648,7 +1653,8 @@
+  *
+  * @param samples - Audio samples for one channel
+  * @param volumeKeyframes - Volume keyframes (frame-relative to item start)
+- * @param staticVolumeDb - Static volume dB fallback
++ * @param staticVolumeDb - Combined static clip and track volume dB fallback
++ * @param trackVolumeDb - Track gain applied after clip automation
+  * @param segmentStartFrame - Timeline frame where this segment starts
+  * @param itemFrom - Timeline frame where the original item starts
+  * @param fps - Frames per second
+@@ -1658,6 +1664,7 @@
+   samples: Float32Array,
+   volumeKeyframes: VolumeKeyframe[],
+   staticVolumeDb: number,
++  trackVolumeDb: number,
+   segmentStartFrame: number,
+   itemFrom: number,
+   fps: number,
+@@ -1670,7 +1677,9 @@
+     const timelineFrame = segmentStartFrame + (i / sampleRate) * fps
+     // Convert to item-relative frame for keyframe interpolation
+     const relativeFrame = timelineFrame - itemFrom
+-    const db = interpolatePropertyValue(volumeKeyframes, relativeFrame, staticVolumeDb)
++    const db =
++      interpolatePropertyValue(volumeKeyframes, relativeFrame, staticVolumeDb - trackVolumeDb) +
++      trackVolumeDb
+     const gain = dbToGain(db)
+     output[i] = samples[i]! * gain
+   }
+@@ -2504,6 +2513,7 @@
+         samples,
+         segment.volumeKeyframes,
+         segment.volume,
++        segment.trackVolumeDb,
+         (intersection.intersectionStart / sampleRate) * fps,
+         segment.itemFrom,
+         fps,
+@@ -2810,6 +2820,7 @@
+             channelSamples,
+             segment.volumeKeyframes,
+             segment.volume,
++            segment.trackVolumeDb,
+             segment.startFrame,
+             segment.itemFrom,
+             fps,
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -890,6 +890,44 @@
+         expect(fetchMock).toHaveBeenCalledWith('blob:mediabunny-fails')
+       } finally {
+         vi.unstubAllGlobals()
++      }
++    },
++  )
++
++  it.each(['audio', 'video'] as const)(
++    'keeps track and master gain independent of %s clip automation in both mix paths',
++    async (kind) => {
++      const item = kind === 'audio' ? makeAudioItem({ volume: -3 }) : makeVideoItem({ volume: -3 })
++      const composition = dspComposition({})
++      composition.tracks = [
++        { ...makeTrack({ id: item.trackId, order: 0, kind, items: [item] }), volume: -12 },
++      ]
++      composition.masterBusDb = -6
++      composition.keyframes = [
++        {
++          itemId: item.id,
++          properties: [
++            {
++              property: 'volume',
++              keyframes: [
++                { id: 'gain-start', frame: 0, value: -6, easing: 'linear' },
++                { id: 'gain-end', frame: 30, value: 0, easing: 'linear' },
++              ],
++            },
++          ],
++        },
++      ]
++
++      const full = await processAudio(composition)
++      expect(full).not.toBeNull()
++      const windows = []
++      for await (const window of processAudioWindows(composition)) windows.push(window)
++      expect(windows).toHaveLength(1)
++      for (const mixed of [full!, windows[0]!]) {
++        for (const samples of mixed.samples) {
++          expect(samples[0]).toBeCloseTo(0.1 * 10 ** ((-6 - 12 - 6) / 20), 7)
++          expect(samples[48_000]).toBeCloseTo(0.1 * 10 ** ((0 - 12 - 6) / 20), 7)
++        }
+       }
+     },
+   )

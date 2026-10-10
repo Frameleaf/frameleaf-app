@@ -6,12 +6,20 @@ export const getAnimateMock = () =>
     let onfinish: (() => void) | null = null;
     void tick().then(() => onfinish?.());
 
-    return {
+    const animation = {
+      playState: 'running' as AnimationPlayState,
       set onfinish(fn: () => void) {
         onfinish = fn;
       },
       cancel() {
         onfinish = null;
       },
+      pause() {
+        animation.playState = 'paused';
+      },
+      play() {
+        animation.playState = 'running';
+      },
     };
+    return animation;
   });

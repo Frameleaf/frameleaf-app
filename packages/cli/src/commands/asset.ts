@@ -12,7 +12,7 @@ import {
   defaults,
   getAllAlbums,
   getSupportedMediaTypes,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import byteSize from 'byte-size';
 import { Matcher, watch as watchFs } from 'chokidar';
 import { MultiBar, Presets, SingleBar } from 'cli-progress';

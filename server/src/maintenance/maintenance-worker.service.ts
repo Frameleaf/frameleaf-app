@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { parse } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
 import { readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { IncomingHttpHeaders } from 'node:http';
+import { dirname } from 'node:path';
 import type { MaintenanceModeState } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -19,19 +21,23 @@ import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type ApiService as _ApiService } from 'src/services/api.service.js';
 import { type BaseService as _BaseService } from 'src/services/base.service.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
+import { DatabaseBackupService, type DatabaseRestoreFence } from 'src/services/database-backup.service.js';
 import { type ServerService as _ServerService } from 'src/services/server.service.js';
 import { type VersionService as _VersionService } from 'src/services/version.service.js';
+import { buddyMaintenancePath, buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
+import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { getConfig } from 'src/utils/config.js';
-import { createMaintenanceLoginUrl, detectPriorInstall } from 'src/utils/maintenance.js';
-import { getExternalDomain } from 'src/utils/misc.js';
+import { createMaintenanceLoginUrl, detectPriorInstall, maintenanceLoginHint } from 'src/utils/maintenance.js';
+import { discoverMediaLocation } from 'src/utils/media-location.js';
+import { resolvePublicUrl } from 'src/utils/public-url.js';
 
 /**
  * This service is available inside of maintenance mode to manage maintenance mode
@@ -39,6 +45,13 @@ import { getExternalDomain } from 'src/utils/misc.js';
 @Injectable()
 export class MaintenanceWorkerService {
   #secret: string | null = null;
+  /** FL-81: the administrator's public reason, carried on every status this worker reports */
+  #reason: string | undefined;
+  /**
+   * FL-81: set when a restore is accepted or resumed on start, and cleared when it fails (a successful
+   * restore ends maintenance, which restarts the worker), so no other action can start meanwhile.
+   */
+  #restoring = false;
   #status: MaintenanceStatusResponseDto = {
     active: true,
     action: MaintenanceAction.Start,
@@ -55,6 +68,7 @@ export class MaintenanceWorkerService {
     private processRepository: ProcessRepository,
     private databaseRepository: DatabaseRepository,
     private databaseBackupService: DatabaseBackupService,
+    private buddyRecovery: BuddyBackupRecoveryService,
   ) {
     this.logger.setContext(this.constructor.name);
   }
@@ -65,11 +79,13 @@ export class MaintenanceWorkerService {
   }
 
   async init() {
-    const state = (await this.systemMetadataRepository.get(
-      SystemMetadataKey.MaintenanceMode,
-    )) as MaintenanceModeState & { isMaintenanceMode: true };
+    const state = ((await buddyMaintenanceState(this.configRepository)) ??
+      (await this.systemMetadataRepository.get(SystemMetadataKey.MaintenanceMode))) as MaintenanceModeState & {
+      isMaintenanceMode: true;
+    };
 
     this.#secret = state.secret;
+    this.#reason = state.action?.reason ?? undefined;
     this.#status = {
       active: true,
       action: state.action?.action ?? MaintenanceAction.Start,
@@ -78,7 +94,11 @@ export class MaintenanceWorkerService {
     StorageCore.setMediaLocation(this.detectMediaLocation());
 
     this.maintenanceWebsocketRepository.setAuthFn(async (client) => this.authenticate(client.request.headers));
-    this.maintenanceWebsocketRepository.setStatusUpdateFn((status) => (this.#status = status));
+    this.maintenanceWebsocketRepository.setStatusUpdateFn((status) => {
+      this.#status = status;
+      // another server's status always carries its reason, so a missing one was cleared there
+      this.#reason = status.reason;
+    });
 
     await this.logSecret();
 
@@ -122,7 +142,18 @@ export class MaintenanceWorkerService {
   }
 
   ping(): ServerPingResponse {
-    return { res: 'pong' };
+    // FL-229: identity during maintenance mode is intentionally static, not a real cloud/local id -
+    // the database this worker's normal identity would come from may itself be mid-restore, so
+    // nothing here claims a persisted identity it cannot safely read.
+    // FL-292: a server in maintenance cannot be set up or linked from the app
+    return {
+      res: 'pong',
+      id: 'maintenance',
+      linked: false,
+      name: 'Frameleaf server (maintenance mode)',
+      setup: 'complete',
+      cloud: 'unavailable',
+    };
   }
 
   /**
@@ -150,7 +181,10 @@ export class MaintenanceWorkerService {
       const maintenancePath = '/maintenance';
       if (!request.url.startsWith(maintenancePath)) {
         const params = new URLSearchParams();
-        params.set('continue', request.path);
+        // The whole address, query included: Command Center sections live in the query
+        // (`/user-settings?area=maintenance&section=backups`); the web page checks it is same-origin.
+        // An auth page keeps only its path, so a callback's one-time `code`/`state` is not copied.
+        params.set('continue', request.path.startsWith('/auth/') ? request.path : request.originalUrl);
         return res.redirect(`${maintenancePath}?${params}`);
       }
 
@@ -162,26 +196,9 @@ export class MaintenanceWorkerService {
    * {@link _StorageService.detectMediaLocation}
    */
   detectMediaLocation(): string {
-    const envData = this.configRepository.getEnv();
-    if (envData.storage.mediaLocation) {
-      return envData.storage.mediaLocation;
-    }
-
-    const targets: string[] = [];
-    const candidates = ['/data', '/usr/src/app/upload'];
-
-    for (const candidate of candidates) {
-      const isExists = this.storageRepository.existsSync(candidate);
-      if (isExists) {
-        targets.push(candidate);
-      }
-    }
-
-    if (targets.length === 1) {
-      return targets[0];
-    }
-
-    return '/usr/src/app/upload';
+    return discoverMediaLocation(this.configRepository.getEnv().storage.mediaLocation, (path) =>
+      this.storageRepository.existsSync(path),
+    );
   }
 
   private get secret() {
@@ -204,11 +221,11 @@ export class MaintenanceWorkerService {
   }
 
   private getStatus(): MaintenanceStatusResponseDto {
-    return this.#status;
+    return this.withReason(this.#status);
   }
 
   private getPublicStatus(): MaintenanceStatusResponseDto {
-    const state = structuredClone(this.#status);
+    const state = structuredClone(this.withReason(this.#status));
 
     if (state.error) {
       state.error = 'Something went wrong, see logs!';
@@ -217,26 +234,33 @@ export class MaintenanceWorkerService {
     return state;
   }
 
+  private withReason(status: MaintenanceStatusResponseDto): MaintenanceStatusResponseDto {
+    return this.#reason === undefined ? status : { ...status, reason: this.#reason };
+  }
+
   setStatus(status: MaintenanceStatusResponseDto): void {
     this.#status = status;
-    this.maintenanceWebsocketRepository.serverSend('MaintenanceStatus', status);
-    this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'private', status);
+    this.maintenanceWebsocketRepository.serverSend('MaintenanceStatus', this.getStatus());
+    this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'private', this.getStatus());
     this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'public', this.getPublicStatus());
   }
 
   async logSecret(): Promise<void> {
     const { server } = await this.getConfig({ withCache: true });
 
-    const baseUrl = getExternalDomain(server);
+    const baseUrl = await resolvePublicUrl(server, {
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
     const url = await createMaintenanceLoginUrl(
       baseUrl,
       {
-        username: 'immich-admin',
+        username: 'frameleaf-admin',
       },
       this.secret,
     );
 
-    this.logger.log(`\n\n🚧 Immich is in maintenance mode, you can log in using the following URL:\n${url}\n`);
+    this.logger.log(`\n\n🚧 Frameleaf is in maintenance mode. ${maintenanceLoginHint(url)}:\n${url}\n`);
   }
 
   async authenticate(headers: IncomingHttpHeaders): Promise<MaintenanceAuthDto> {
@@ -270,7 +294,37 @@ export class MaintenanceWorkerService {
     }
   }
 
+  /**
+   * FL-81: refuses, before anything changes, an action that would conflict with a running restore:
+   * a second restore, a new Start or restore selection, or End (which would restart the worker in
+   * the middle of the restore). A restore that failed has cleared the flag, so End and another restore
+   * stay available as the safe exit. Called synchronously by the controller, which then runs the action
+   * without waiting for it.
+   */
+  claimAction(action: SetMaintenanceModeDto): void {
+    // this worker's own restore, or one another server reports running (its status has no error yet)
+    const reportedRestore = this.#status.action === MaintenanceAction.RestoreDatabase && this.#status.task !== 'error';
+    if (this.#restoring || reportedRestore) {
+      throw new ConflictException('A database restore is running. Wait until it finishes or fails.');
+    }
+    if (action.action === MaintenanceAction.RestoreDatabase) {
+      this.#restoring = true;
+    }
+  }
+
   async setAction(action: SetMaintenanceModeDto) {
+    // a new reason replaces the old one, null (or a blank one) clears it, and an action without one keeps it
+    if (action.reason !== undefined) {
+      this.#reason = action.reason ?? undefined;
+      // kept with the maintenance state so a restart shows the same reason (a restore rewrites it itself)
+      if (action.action === MaintenanceAction.Start || action.action === MaintenanceAction.SelectDatabaseRestore) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+          isMaintenanceMode: true,
+          secret: this.secret,
+          action: { action: action.action, reason: this.#reason },
+        });
+      }
+    }
     this.setStatus({
       active: true,
       action: action.action,
@@ -295,39 +349,84 @@ export class MaintenanceWorkerService {
   }
 
   async runRestoreDatabase(action: SetMaintenanceModeDto) {
-    const isLock = await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
-    if (!isLock) {
-      return;
-    }
-
-    this.logger.log(`Running maintenance action ${action.action}`);
-
-    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
-      isMaintenanceMode: true,
-      secret: this.secret,
-      action: {
-        action: MaintenanceAction.Start,
-      },
-    });
-
+    // also set here, before the first await, for a restore resumed from the stored state on start
+    this.#restoring = true;
+    let held: HeldLock | null = null;
+    let failure: string | undefined;
+    const assert = async () => {
+      if (!held || !(await held.verify()))
+        throw new Error('Recovery lost its maintenance lock; retry in maintenance mode');
+    };
     try {
+      held = await this.databaseRepository.holdLock(DatabaseLock.MaintenanceOperation);
+      if (!held) {
+        return;
+      }
+      this.logger.log(`Running maintenance action ${action.action}`);
+      await assert();
+      await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: this.secret,
+        action: {
+          action: MaintenanceAction.Start,
+          reason: this.#reason,
+        },
+      });
+
+      if (action.buddyRecoveryId) {
+        const maintenance = { isMaintenanceMode: true as const, secret: this.secret, action };
+        if (action.restoreBackupFilename) {
+          await this.buddyRecovery.restore(
+            action.buddyRecoveryId,
+            () =>
+              this.databaseBackupService.restoreDatabaseBackup(
+                action.restoreBackupFilename!,
+                (task, progress) => this.setStatus({ active: true, action: action.action, task, progress }),
+                { keepSafetyBackup: true, fence: { backendPid: held!.backendPid, assert } },
+              ),
+            maintenance,
+            assert,
+          );
+        } else {
+          await this.buddyRecovery.settings(action.buddyRecoveryId, assert);
+        }
+        await assert();
+        await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+          isMaintenanceMode: true,
+          secret: this.secret,
+          action: { action: MaintenanceAction.Start },
+        });
+        await assert();
+        await rm(buddyMaintenancePath(this.configRepository));
+        await flushBuddyDirectory(dirname(buddyMaintenancePath(this.configRepository)));
+        await this.setAction({ action: MaintenanceAction.End });
+        return;
+      }
       if (!action.restoreBackupFilename) {
         throw new Error("Expected restoreBackupFilename but it's missing!");
       }
 
-      await this.restoreBackup(action.restoreBackupFilename);
+      await this.restoreBackup(action.restoreBackupFilename, action.keepSafetyBackup !== false, {
+        backendPid: held.backendPid,
+        assert,
+      });
     } catch (error) {
       this.logger.error(`Encountered error running action: ${error}`);
-      this.setStatus({
-        active: true,
-        action: action.action,
-        task: 'error',
-        error: '' + error,
-      });
+      failure = '' + error;
+    } finally {
+      try {
+        await held?.release();
+      } finally {
+        this.#restoring = false;
+        // A terminal error permits End; publish it only after the restore reservation has settled.
+        if (failure !== undefined) {
+          this.setStatus({ active: true, action: action.action, task: 'error', error: failure });
+        }
+      }
     }
   }
 
-  private async restoreBackup(filename: string): Promise<void> {
+  private async restoreBackup(filename: string, keepSafetyBackup: boolean, fence: DatabaseRestoreFence): Promise<void> {
     this.setStatus({
       active: true,
       action: MaintenanceAction.RestoreDatabase,
@@ -335,21 +434,27 @@ export class MaintenanceWorkerService {
       progress: 0,
     });
 
-    await this.databaseBackupService.restoreDatabaseBackup(filename, (task, progress) =>
-      this.setStatus({
-        active: true,
-        action: MaintenanceAction.RestoreDatabase,
-        progress,
-        task,
-      }),
+    await this.databaseBackupService.restoreDatabaseBackup(
+      filename,
+      (task, progress) =>
+        this.setStatus({
+          active: true,
+          action: MaintenanceAction.RestoreDatabase,
+          progress,
+          task,
+        }),
+      { keepSafetyBackup, fence },
     );
 
+    await fence.assert();
     await this.setAction({
       action: MaintenanceAction.End,
     });
   }
 
   private async endMaintenance(): Promise<void> {
+    if (await buddyMaintenanceState(this.configRepository))
+      throw new ConflictException('Finish the staged Buddy recovery before reopening this server.');
     const state: MaintenanceModeState = { isMaintenanceMode: false as const };
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, state);
 

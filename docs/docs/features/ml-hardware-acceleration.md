@@ -38,9 +38,43 @@ Existing ONNX tasks keep NVIDIA acceleration when the CUDA machine-learning imag
 
 The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. The Intel iGPU profile maps it internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The NVIDIA CUDA profile runs the admin-facing model directly through Transformers/PyTorch via `AutoModelForVision2Seq`, which auto-dispatches the correct conditional-generation class based on the model's `config.json` — this is how the same code path handles Qwen2.5-VL (3B/7B/32B/72B) and Qwen3-VL (e.g. 30B-A3B MoE).
 
-The full curated dropdown of description models, with VRAM hints, lives in [Image Enrichment](/features/image-enrichment#hardware-and-model-notes). For RunPod cloud-GPU setups, [Remote Machine Learning → Choosing a description model](/guides/remote-machine-learning#choosing-a-description-model) covers cost estimates and pool recommendations per model.
+The full curated dropdown of description models, with VRAM hints, lives in [Image Enrichment](/features/image-enrichment#hardware-and-model-notes).
 
-The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is only attempted on local (non-RunPod) URLs — see [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for the rationale.
+The default fallback setting is `microsoft/Florence-2-base-ft`. See [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for when it is used.
+
+#### Model licences
+
+Some models have licences that limit commercial use. Check the licence before using a model outside your own installation.
+
+| Model                                                          | Licence                                         |
+| -------------------------------------------------------------- | ----------------------------------------------- |
+| `Qwen/Qwen2.5-VL-3B-Instruct` (and `llmware/qwen2.5-vl-3b-ov`) | Qwen Research License Agreement (Alibaba Cloud) |
+| `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    |
+| MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    |
+
+Choose models for each kind of work in **Where each job runs**. Each kind of work has one slider, from lighter to heavier models:
+
+- **White** stops run on this server's processor and **green** stops fit its GPU, as the last Hardware & GPU check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
+
+Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
+
+## Hardware & GPU check
+
+**Settings → Compute & jobs → Hardware & GPU** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
+
+- **GPU on the host**: the host's PCI list, read from inside the container, shows a GPU. Under WSL2 or Docker Desktop the host's GPUs are hidden, so this shows **Not reported** unless the container sees one.
+- **Visible to the container**: an NVIDIA device, a `/dev/dri` render node, `/dev/kfd` or `/dev/dxg` was passed in.
+- **Used by the runtime**: the test transcode ran on the GPU's video engine, or the analysis runtime (CUDA, ROCm or OpenVINO) is using the GPU.
+
+Enrolled Studio render workers and restoration workers are listed below the two containers, from the evidence they reported. A fact a worker does not report shows **Not reported**; it is never guessed.
+
+The check names the set-up problems it finds, each with the fix and, where docker compose can fix it, a copy-ready snippet with the values it found (such as the render group's number or the graphics card's PCI path). It detects, among others: the NVIDIA Container Toolkit missing, an old driver, the `video` capability missing for NVENC, `/dev/dri` not passed in, a render node owned by a group the container does not have, the integrated GPU used instead of the graphics card on a host with both, an RX 6000 or 7600 card that needs `HSA_OVERRIDE_GFX_VERSION` for ROCm, WSL2, Unraid, the processor image on a GPU host, and Docker Desktop on a Mac. A Turing card (compute capability 7.5, such as the GTX 16 series) is shown as a note: it has no bf16 or FlashAttention, so models that use them run slower.
+
+**Run a short benchmark** times search embeddings and a test transcode, then records the throughput of each kind of work the model sliders estimate:
+
+- **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container.
+- **Restoration**: the speed the restoration worker measured on its current GPU when it was qualified.
+- **Upscale** has no local runner, and a transcription worker and a Smooth motion (RIFE) restoration worker report no speed to this check; the benchmark says so rather than estimating.
 
 ## Prerequisites
 
@@ -117,7 +151,7 @@ The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is 
 
 You can confirm the device is being recognized and used by checking its utilization. There are many tools to display this, such as `nvtop` for NVIDIA or Intel, `intel_gpu_top` for Intel, and `radeontop` for AMD.
 
-You can also check the logs of the `immich-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Immich, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
+You can also check the logs of the `immich-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Frameleaf, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
 
 #### Single Compose File
 
@@ -142,7 +176,7 @@ You can add this to the `immich-machine-learning` service instead of extending f
 immich-machine-learning:
   container_name: frameleaf_machine_learning
   # Note the `-cuda` at the end
-  image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}-cuda
+  image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
   # Note the lack of an `extends` section
   deploy:
     resources:
@@ -178,7 +212,7 @@ This approach can be used to simply specify a particular device as well. For exa
 
 Note that you should increase job concurrencies to increase overall utilization and more effectively distribute work across multiple GPUs. Additionally, each GPU must be able to load all models. It is not possible to distribute a single model to multiple GPUs that individually have insufficient VRAM, or to delegate a specific model to one GPU.
 
-[hw-file]: https://github.com/immich-app/immich/releases/latest/download/hwaccel.ml.yml
+[hw-file]: https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.ml.yml
 [nvct]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 
 ## Tips

@@ -1,0 +1,193 @@
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -605,7 +605,7 @@
+       return [
+         {
+           ...item,
+-          muted: track.muted ?? false,
++          muted: (track.muted ?? false) || item.muted === true,
+           trackVisible: visibleTrackIds.has(track.id),
+         },
+       ]
+@@ -795,7 +795,7 @@
+             {
+               wrapper: {
+                 ...item,
+-                muted: track.muted ?? false,
++                muted: (track.muted ?? false) || item.muted === true,
+                 trackVisible: visibleTrackIds.has(track.id),
+               },
+               wrapperGain: 1,
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -754,11 +754,11 @@
+   const linkedSubCompVideoIds = getLinkedVideoIdsWithAudio(subComp.items)
+   const wrapper = resolveCompositionWrapper(compositionItem, fps)
+   const { wrapperSpeed, wrapperSourceFps } = wrapper
+-  const trackMuted = track.muted ?? false
++  const trackMuted = (track.muted ?? false) || compositionItem.muted === true
+
+   for (const subItem of subComp.items) {
+     const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
+-    const subTrackMuted = subTrack?.muted ?? false
++    const subTrackMuted = (subTrack?.muted ?? false) || subItem.muted === true
+     const window = mapNestedItemWindow(subItem, wrapper, fps)
+     if (!window) continue
+     const { overlapStart, overlapEnd, effectiveStart, effectiveDuration } = window
+@@ -950,7 +950,7 @@
+         videoById.set(item.id, {
+           item: videoItem,
+           trackId: track.id,
+-          muted: track.muted ?? false,
++          muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+@@ -987,7 +987,7 @@
+         const audioEntry: TransitionAudioEntry<AudioItem> = {
+           item: audioItem,
+           trackId: track.id,
+-          muted: track.muted ?? false,
++          muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+@@ -1047,7 +1047,7 @@
+           ],
+           speed: audioItem.speed ?? 1,
+           isReversed: audioItem.isReversed === true,
+-          muted: track.muted ?? false,
++          muted: (track.muted ?? false) || item.muted === true,
+           type: 'audio',
+           audioCodec: audioEntry.audioCodec,
+           volumeKeyframes: audioEntry.volumeKeyframes,
+@@ -1475,6 +1475,7 @@
+   /** Parent-timeline window, for items reached through a pre-composition. */
+   window?: { startFrame: number; endFrame: number },
+ ): DuckingSource | null {
++  if (item.muted === true) return null
+   const ducking = item.audioDucking
+   if (!ducking || !(ducking.duckOthersDb < 0)) return null
+   const carriesAudio = item.type === 'audio' || (item.type === 'video' && !item.embeddedAudioMuted)
+@@ -1506,7 +1507,7 @@
+   fps: number,
+   visited: ReadonlySet<string>,
+ ): DuckingSource[] {
+-  if (visited.has(compositionItem.compositionId)) return []
++  if (compositionItem.muted === true || visited.has(compositionItem.compositionId)) return []
+   const subComp = useCompositionsStore.getState().getComposition(compositionItem.compositionId)
+   if (!subComp) return []
+
+@@ -1527,6 +1528,10 @@
+     if (subItem.type === 'composition' || isCompositionAudioItem(subItem)) {
+       // A composition-backed AudioItem can carry `audioDucking` of its own, and it
+       // is audible in its own right — collect it as well as descending.
++      if (
++        subItem.type === 'composition' &&
++        getLinkedCompositionAudioCompanion(subComp.items, subItem)
++      ) continue
+       const wrapperSource = duckingSourceFromItem(
+         subItem as DuckSourceCandidate,
+         rootTrackId,
+@@ -1561,10 +1566,15 @@
+   composition: CompositionInputProps,
+   fps: number,
+ ): DuckingSource[] {
++  const timelineItems = composition.tracks.flatMap((track) => track.items ?? [])
+   return composition.tracks
+     .filter((track) => track.visible !== false && track.muted !== true)
+     .flatMap((track) =>
+       (track.items ?? []).flatMap((item) => {
++        if (
++          item.type === 'composition' &&
++          getLinkedCompositionAudioCompanion(timelineItems, item)
++        ) return []
+         // The item's own `audioDucking` counts even when it is a composition
+         // wrapper — it is audible in its own right — so collect it either way
+         // and additionally descend when it wraps a pre-comp.
+--- a/src/features/timeline/utils/composition-clip-summary.ts
++++ b/src/features/timeline/utils/composition-clip-summary.ts
+@@ -271,7 +271,7 @@
+
+   return orderedItems.flatMap((item) => {
+     const track = trackById.get(item.trackId)
+-    if (track?.muted) return []
++    if (track?.muted || item.muted === true) return []
+
+     if (item.type === 'audio' && item.compositionId) {
+       return getNestedCompositionAudioSources({
+--- a/src/features/timeline/utils/timeline-audio-skim.ts
++++ b/src/features/timeline/utils/timeline-audio-skim.ts
+@@ -1,6 +1,7 @@
+ import type { TimelineItem, TimelineTrack } from '@/types/timeline'
+ import { getMixerLiveGain } from '@/shared/state/mixer-live-gain'
+ import { getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
++import { hasLinkedAudioCompanion } from '@/shared/utils/linked-media'
+ import { timelineToSourceFrames } from './source-calculations'
+ import { resolveEffectiveTrackStates } from './group-utils'
+
+@@ -213,8 +214,9 @@
+     if (frame < item.from || frame >= item.from + item.durationInFrames) continue
+
+     const track = trackById.get(item.trackId)
+-    if (!track || track.muted) continue
++    if (!track || track.muted || item.muted === true) continue
+     if (soloActive && !track.solo) continue
++    if ((item.type === 'video' || item.type === 'composition') && hasLinkedAudioCompanion(items, item)) continue
+
+     const order = track.order ?? 0
+     const compositionId = (item as { compositionId?: string }).compositionId
+--- a/src/runtime/composition-runtime/components/composition-content.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.tsx
+@@ -379,7 +379,7 @@
+           .map((subItem) => ({
+             ...subItem,
+             zIndex: (maxTrackOrder - trackOrder) * 1000,
+-            muted: parentMuted || track.muted || !!subItem.embeddedAudioMuted || linkedVideoIdsWithOwnedAudio.has(subItem.id),
++            muted: parentMuted || track.muted || subItem.muted === true || !!subItem.embeddedAudioMuted || linkedVideoIdsWithOwnedAudio.has(subItem.id),
+             trackAudioEq: track.audioEq,
+             trackOrder,
+             trackVisible: parentVisible,
+--- a/src/runtime/composition-runtime/components/item-content.tsx
++++ b/src/runtime/composition-runtime/components/item-content.tsx
+@@ -171,8 +171,8 @@
+   }) => {
+     item = useLiveItemContentTransform(item)
+
+-    // Use muted prop directly - MainComposition already passes track.muted
+-    // Avoiding store subscription here prevents re-render issues with @legacy-video/media Audio
++    // Combine inherited track/parent state with the persisted clip control.
++    muted = muted || item.muted === true
+
+     // Debug overlay toggle (always false in production via store)
+     const showDebugOverlay = useDebugStore((s) => s.showVideoDebugOverlay)
+--- a/src/runtime/composition-runtime/utils/scene-assembly.ts
++++ b/src/runtime/composition-runtime/utils/scene-assembly.ts
+@@ -255,7 +255,7 @@
+       .map((item) => ({
+         ...item,
+         zIndex: (maxOrder - (track.order ?? 0)) * 1000,
+-        muted: track.muted ?? false,
++        muted: (track.muted ?? false) || item.muted === true,
+         trackVolumeDb: track.volume ?? 0,
+         trackAudioEq: track.audioEq,
+         trackOrder: track.order ?? 0,
+@@ -276,7 +276,7 @@
+       .filter((item): item is AudioItem => item.type === 'audio')
+       .map((item) => ({
+         ...item,
+-        muted: track.muted,
++        muted: track.muted || item.muted === true,
+         trackVolumeDb: track.volume ?? 0,
+         trackAudioEq: track.audioEq,
+         trackVisible: visibleTrackIds.has(track.id),
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -96,6 +96,7 @@
+   // Source-relative media crop (normalized edge ratios)
+   crop?: CropSettings
+   // Audio properties (for video/audio items)
++  muted?: boolean // Persisted clip mute, independent of track mute and embedded-audio ownership
+   volume?: number // Volume in dB, -60 to +12 (default: 0)
+   audioFadeIn?: number // Audio fade in duration in seconds (default: 0)
+   audioFadeOut?: number // Audio fade out duration in seconds (default: 0)

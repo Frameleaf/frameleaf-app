@@ -77,7 +77,17 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"
@@ -134,45 +144,15 @@ from
   inner join "asset" on "asset"."id" = "album_asset"."assetId"
 where
   not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
   and exists (
     select
@@ -228,7 +208,17 @@ from
   "asset"
   inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
 where
-  "asset"."visibility" in ('archive', 'timeline')
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "album_asset"."albumId" in ($1)
   and "asset"."deletedAt" is null
 group by
@@ -346,9 +336,20 @@ order by
   "album"."createdAt" desc
 
 -- AlbumRepository.removeAssetsFromAll
+begin
+select
+  "albumId"
+from
+  "album_asset"
+where
+  "assetId" in ($1)
 delete from "album_asset"
 where
-  "album_asset"."assetId" in ($1)
+  "assetId" in ($1)
+returning
+  "albumId",
+  "assetId"
+commit
 
 -- AlbumRepository.getAssetIds
 select
@@ -360,6 +361,16 @@ where
   and "album_asset"."assetId" in ($2)
 
 -- AlbumRepository.addAssetIds
+begin
+select
+  "id"
+from
+  "album"
+where
+  "id" in ($1)
+order by
+  "id"
+for no key update
 insert into
   "album_asset"
 select
@@ -371,6 +382,10 @@ from
       1
   ) as "dummy"
 on conflict do nothing
+returning
+  "assetId",
+  "updateId"
+rollback
 
 -- AlbumRepository.create
 begin
@@ -389,7 +404,7 @@ with
     select
       "album"."id" as "albumId",
       unnest($2::uuid[]) as "userId",
-      unnest($3::album_user_role_enum[]) as "role"
+      unnest(array[$3, $4]::album_user_role_enum[]) as "role"
     from
       "album"
     returning
@@ -402,7 +417,7 @@ with
       "album_asset"
     select
       "album"."id" as "albumId",
-      unnest($4::uuid[]) as "assetId"
+      unnest($5::uuid[]) as "assetId"
     from
       "album"
     on conflict do nothing
@@ -463,7 +478,17 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"
@@ -480,6 +505,18 @@ from
 where
   "id_ancestor" = $1
   and "id_descendant" != $2
+
+-- AlbumRepository.getChildIds
+select
+  "id"
+from
+  "album"
+where
+  "parentId" = $1
+  and "deletedAt" is null
+order by
+  "sortOrder" asc nulls last,
+  "createdAt" desc
 
 -- AlbumRepository.getAncestorIds
 select
@@ -499,6 +536,23 @@ where
   "id_ancestor" = $1
   and "id_descendant" != $2
 
+-- AlbumRepository.getPositions
+SELECT
+  "albumId"::text AS "albumId",
+  position
+FROM
+  public.album_position
+WHERE
+  "userId" = $1::uuid
+
+-- AlbumRepository.isCoverFollowingNewest
+SELECT
+  "albumId"
+FROM
+  public.album_cover_follows_newest
+WHERE
+  "albumId" = $1::uuid
+
 -- AlbumRepository.getContributorCounts
 select
   "asset"."ownerId" as "userId",
@@ -509,46 +563,24 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
-    case
-      when "asset"."id" is null then false
-      when coalesce(
-        (
-          select
-            phase
-          from
-            immich_fork.state
-          where
-            id = 1
-        ),
-        'inactive'
-      ) in ('legacy', 'dual-write', 'ready') then exists (
-        select
-          1
-        from
-          asset as nsfw_asset
-        where
-          nsfw_asset.id = "asset"."id"
-          and nsfw_asset.is_nsfw = true
-      )
-      when (
-        select
-          phase
-        from
-          immich_fork.state
-        where
-          id = 1
-      ) = 'active' then not exists (
-        select
-          1
-        from
-          immich_fork.asset_privacy as privacy_asset
-        where
-          privacy_asset."assetId" = "asset"."id"
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
   )
 group by
   "asset"."ownerId"

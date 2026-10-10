@@ -1,5 +1,10 @@
 <script lang="ts">
+  /**
+   * The Filters panel's single-choice picker, the prototype's `SearchableSelect`: a search that
+   * matches nothing says "No matching options" (SearchableSelect.jsx:218-222).
+   */
   import Combobox, { type ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
+  import { t } from 'svelte-i18n';
   let {
     label,
     options,
@@ -16,7 +21,14 @@
 </script>
 
 <fieldset class="picker" {disabled}>
-  <Combobox {label} {options} bind:selectedOption {disabled} {onSelect} />
+  <Combobox
+    {label}
+    {options}
+    bind:selectedOption
+    {disabled}
+    {onSelect}
+    emptyText={$t('frameleaf_search_no_matching_options')}
+  />
 </fieldset>
 
 <style>
@@ -36,7 +48,7 @@
   .picker :global([role='combobox']) {
     background: var(--fl-raised);
     border: 1px solid var(--fl-muted);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     caret-color: var(--fl-accent);
     box-shadow: none;
   }
@@ -47,7 +59,7 @@
   .picker :global([role='listbox']) {
     background: var(--fl-panel);
     border-color: var(--fl-muted);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .picker :global([role='option']) {
     background: var(--fl-panel);
@@ -70,8 +82,8 @@
     .picker :global([role='combobox']:focus-visible),
     .picker :global(button:focus-visible) {
       /* Same layer as app.css's important reset; scope wins on specificity. */
-      outline: 2px solid var(--fl-accent) !important;
-      outline-offset: 3px !important;
+      outline: var(--fl-focus-ring) !important;
+      outline-offset: var(--fl-focus-offset) !important;
     }
   }
   .picker :global([role='option'][aria-disabled='true']),

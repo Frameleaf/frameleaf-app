@@ -7,13 +7,14 @@ import {
   Index,
   PrimaryGeneratedColumn,
   Table,
+  Trigger,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { asset_checksum_algorithm_enum, asset_visibility_enum, assets_status_enum } from 'src/schema/enums.js';
-import { asset_delete_audit } from 'src/schema/functions.js';
+import { asset_backup_deletion_capture, asset_delete_audit } from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
@@ -21,6 +22,13 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 
 @Table('asset')
+@Trigger({
+  name: 'asset_backup_deletion_capture_trigger',
+  timing: 'before',
+  actions: ['delete'],
+  scope: 'row',
+  functionName: asset_backup_deletion_capture.name,
+})
 @UpdatedAtTrigger('asset_updatedAt')
 @AfterDeleteTrigger({
   scope: 'statement',
@@ -42,11 +50,15 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 })
 @Index({
   name: 'asset_localDateTime_idx',
-  expression: `("localDateTime" at time zone 'UTC')::date`,
+  expression: `(("localDateTime" at time zone 'UTC')::date)`,
 })
 @Index({
   name: 'asset_localDateTime_month_idx',
-  expression: `date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text`,
+  expression: `(date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)`,
+})
+@Index({
+  name: 'asset_owner_filename_order_idx',
+  expression: '"ownerId", "originalFileName" COLLATE "und-x-icu", "fileCreatedAt" DESC, id',
 })
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })

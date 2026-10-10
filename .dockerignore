@@ -10,6 +10,11 @@
 **/node_modules/
 **/.pnpm-store/
 **/dist/
+# SQL-tools is a frozen owned runtime/type payload, not a local build output.
+!packages/sql-tools/dist/
+!packages/sql-tools/dist/**
+!packages/ui/dist/
+!packages/ui/dist/**
 **/coverage/
 **/build/
 
@@ -25,10 +30,8 @@ e2e/
 !e2e/package.json
 !e2e/package-lock.json
 
-fastlane/
 machine-learning/
 misc/
-mobile/
 
 packages/sdk/build/
 
@@ -37,3 +40,9 @@ server/src/queries
 server/www/
 
 web/.svelte-kit
+
+# Generated Studio engine workspaces and output; the image recovers and builds its own.
+studio/vendor/
+studio/engine/
+studio/.prepare-*/
+web/static/studio-engine/

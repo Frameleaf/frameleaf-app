@@ -1,0 +1,11 @@
+# Canonical schema authority
+
+Frameleaf uses one evolving desired-schema catalog, independently of its frozen initial migration. Decorators provide application types and runtime metadata; they do not constitute a second complete schema authority. A catalog must include feature helpers, queue tables, import journals, shared-service tables, their constraints/indexes/triggers, functions, identity columns and owned sequences. PostgreSQL catalog warnings are a capture failure.
+
+The final desired catalog and frozen baseline must come from a successful hosted PostgreSQL 19 build at an identified source commit. Never substitute hand-invented database output. Preserve the full schema-only dump for the baseline and the exact PostgreSQL definitions in the catalog. Exclude migration ledger creation from the baseline body because Kysely owns that bookkeeping. Strip only pg_dump client control directives and database/schema setup already owned by the runner; retain the actual application DDL, including deferred constraints, sequence ownership and multi-event triggers.
+
+For a later schema change, edit the desired catalog, generate and inspect a new migration, and append its filename to `migrations/ORDER`. Do not edit the frozen baseline. Both application startup/restore and the CLI use the same ORDER-checked provider. A stale compiled migration not listed in ORDER is an error. Build assets must include ORDER and schema catalog/SQL files.
+
+Changes to feature, queue, import or shared-service helper source must reconcile the catalog and provenance hashes. The hosted source guard checks those exact source digests so a helper edit cannot silently leave the desired schema behind. The baseline SHA-256 and capture source commit belong in provenance. These hashes record the reviewed capture; updating them without reconciling schema is not a valid migration workflow.
+
+Hosted acceptance must prove: zero drift immediately after the frozen baseline; no generated migration for an unchanged catalog; deletion/mutation of helper tables, CHECK/FK definitions, triggers, indexes, identity columns and sequence configuration is detected; generated repair restores equivalent catalog definitions; a second migration is applied exactly once by both CLI and application providers; and a backup of the resulting chain can boot after restore.

@@ -1,0 +1,168 @@
+diff --git a/src/features/media-library/components/transcribe-dialog.test.tsx b/src/features/media-library/components/transcribe-dialog.test.tsx
+--- a/src/features/media-library/components/transcribe-dialog.test.tsx
++++ b/src/features/media-library/components/transcribe-dialog.test.tsx
+@@ -37,26 +37,6 @@
+   },
+ }))
+ 
+-vi.mock('../transcription/registry', () => ({
+-  getMediaTranscriptionModelOptions: () => [
+-    { value: 'parakeet-tdt-v3', label: 'Parakeet (fast)' },
+-    { value: 'whisper-base', label: 'Whisper Base' },
+-    { value: 'whisper-large', label: 'Whisper Large v3 Turbo' },
+-  ],
+-}))
+-
+-vi.mock('@/shared/utils/whisper-settings', () => ({
+-  getWhisperLanguageSelectValue: (value: string) => value || 'auto',
+-  getWhisperLanguageSettingValue: (value: string) => (value === 'auto' ? '' : value),
+-  normalizeSelectableWhisperModel: (value: string) => value,
+-  WHISPER_AUTO_LANGUAGE_VALUE: 'auto',
+-  WHISPER_LANGUAGE_OPTIONS: [
+-    { value: 'auto', label: 'Auto-detect' },
+-    { value: 'zh', label: 'Chinese' },
+-  ],
+-  WHISPER_QUANTIZATION_OPTIONS: [{ value: 'hybrid', label: 'Hybrid' }],
+-}))
+-
+ vi.mock('@/components/ui/button', () => ({
+   Button: ({
+     children,
+@@ -203,6 +183,57 @@
+     settingsStoreState.defaultWhisperLanguage = ''
+   })
+ 
++  it('submits the actual catalog Tiny choice with the selected language and hybrid tuple', () => {
++    settingsStoreState.defaultWhisperLanguage = 'en'
++    const onStart = vi.fn()
++    render(
++      <TranscribeDialog
++        open
++        onOpenChange={vi.fn()}
++        fileName="clip.wav"
++        hasTranscript={false}
++        isRunning={false}
++        progressPercent={null}
++        progressLabel="Idle"
++        onStart={onStart}
++        onCancel={vi.fn()}
++      />,
++    )
++    expect(screen.getByRole('option', { name: 'Whisper Tiny' })).toHaveValue('whisper-tiny')
++    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'whisper-tiny' } })
++    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
++    expect(onStart).toHaveBeenCalledExactlyOnceWith({
++      model: 'whisper-tiny',
++      quantization: 'hybrid',
++      language: 'en',
++    })
++  })
++
++  it('retains a persisted Tiny selection when the actual dialog reopens', () => {
++    const onStart = vi.fn()
++    const props = {
++      onOpenChange: vi.fn(),
++      fileName: 'clip.wav',
++      hasTranscript: false,
++      isRunning: false,
++      progressPercent: null,
++      progressLabel: 'Idle',
++      onStart,
++      onCancel: vi.fn(),
++    }
++    const view = render(<TranscribeDialog {...props} open={false} />)
++    settingsStoreState.defaultWhisperModel = 'whisper-tiny'
++    settingsStoreState.defaultWhisperLanguage = 'en'
++    view.rerender(<TranscribeDialog {...props} open />)
++    expect(screen.getAllByRole('combobox')[0]).toHaveValue('whisper-tiny')
++    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
++    expect(onStart).toHaveBeenCalledExactlyOnceWith({
++      model: 'whisper-tiny',
++      quantization: 'hybrid',
++      language: 'en',
++    })
++  })
++
+   it('clears background skim and scrub previews when opened', () => {
+     render(
+       <TranscribeDialog
+diff --git a/src/features/media-library/transcription/registry.test.ts b/src/features/media-library/transcription/registry.test.ts
+--- a/src/features/media-library/transcription/registry.test.ts
++++ b/src/features/media-library/transcription/registry.test.ts
+@@ -19,12 +19,19 @@
+       value: 'whisper-small',
+       label: 'Whisper Small',
+     })
+-    expect(getMediaTranscriptionModelOptions()).not.toContainEqual({
+-      value: 'whisper-tiny',
+-      label: 'Tiny',
+-    })
+   })
+ 
++  it('offers each original model and the approved Tiny identity exactly once', () => {
++    expect(getMediaTranscriptionModelOptions()).toEqual([
++      { value: 'parakeet-tdt-v3', label: 'Parakeet (fast)' },
++      { value: 'whisper-tiny', label: 'Whisper Tiny' },
++      { value: 'whisper-base', label: 'Whisper Base' },
++      { value: 'whisper-small', label: 'Whisper Small' },
++      { value: 'whisper-large', label: 'Whisper Large v3 Turbo' },
++    ])
++    expect(getMediaTranscriptionModelLabel('whisper-tiny')).toBe('Whisper Tiny')
++  })
++
+   it('formats model labels through the active adapter', () => {
+     expect(getMediaTranscriptionModelLabel('whisper-large')).toBe('Whisper Large v3 Turbo')
+   })
+diff --git a/src/shared/utils/browser-whisper-models.ts b/src/shared/utils/browser-whisper-models.ts
+--- a/src/shared/utils/browser-whisper-models.ts
++++ b/src/shared/utils/browser-whisper-models.ts
+@@ -17,6 +17,7 @@
+ 
+ export const BROWSER_WHISPER_MODEL_OPTIONS = [
+   { value: 'parakeet-tdt-v3', label: BROWSER_WHISPER_MODEL_LABELS['parakeet-tdt-v3'] },
++  { value: 'whisper-tiny', label: BROWSER_WHISPER_MODEL_LABELS['whisper-tiny'] },
+   { value: 'whisper-base', label: BROWSER_WHISPER_MODEL_LABELS['whisper-base'] },
+   { value: 'whisper-small', label: BROWSER_WHISPER_MODEL_LABELS['whisper-small'] },
+   { value: 'whisper-large', label: BROWSER_WHISPER_MODEL_LABELS['whisper-large'] },
+diff --git a/src/shared/utils/whisper-settings.test.ts b/src/shared/utils/whisper-settings.test.ts
+--- a/src/shared/utils/whisper-settings.test.ts
++++ b/src/shared/utils/whisper-settings.test.ts
+@@ -1,8 +1,11 @@
+ // @vitest-environment node
+ 
++import type { MediaTranscriptModel } from '@/types/storage'
+ import { describe, expect, it } from 'vite-plus/test'
+ import {
+   DEFAULT_WHISPER_LANGUAGE,
++  DEFAULT_WHISPER_MODEL,
++  normalizeSelectableWhisperModel,
+   getWhisperQuantizationOption,
+   getWhisperLanguageSelectValue,
+   getWhisperLanguageSettingValue,
+@@ -11,6 +14,26 @@
+ } from './whisper-settings'
+ 
+ describe('whisper-settings', () => {
++  it('retains a stored Tiny selection without substituting the default model', () => {
++    expect(normalizeSelectableWhisperModel('whisper-tiny')).toBe('whisper-tiny')
++  })
++
++  it('preserves every existing model and the missing or unknown model default', () => {
++    expect(DEFAULT_WHISPER_MODEL).toBe('parakeet-tdt-v3')
++    for (const model of [
++      'parakeet-tdt-v3',
++      'whisper-base',
++      'whisper-small',
++      'whisper-large',
++    ] as const) {
++      expect(normalizeSelectableWhisperModel(model)).toBe(model)
++    }
++    expect(normalizeSelectableWhisperModel(undefined)).toBe(DEFAULT_WHISPER_MODEL)
++    expect(normalizeSelectableWhisperModel('unsupported' as MediaTranscriptModel)).toBe(
++      DEFAULT_WHISPER_MODEL,
++    )
++  })
++
+   it('uses auto-detect for blank language settings', () => {
+     expect(getWhisperLanguageSelectValue(DEFAULT_WHISPER_LANGUAGE)).toBe(
+       WHISPER_AUTO_LANGUAGE_VALUE,

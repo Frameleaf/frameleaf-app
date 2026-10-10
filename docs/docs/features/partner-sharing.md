@@ -1,6 +1,6 @@
 # Partner Sharing
 
-Immich allows you to share your library with other users. They can then view your library and download the assets. You can manage Partner Sharing from the [User Settings](docs/features/user-settings.md) page on the web.
+Frameleaf allows you to share your library with other users. They can then view your library and download the assets. You can manage Partner Sharing from the [User Settings](docs/features/user-settings.md) page on the web.
 
 Partner sharing includes:
 
@@ -23,17 +23,14 @@ Partner sharing does _not_ include:
 
 ## Sharing with a Partner
 
-<img src={require('./img/partner-sharing-1.webp').default} width="70%" title='Add Partner 1' />
-
-<img src={require('./img/partner-sharing-2.webp').default} width="70%" title='Add Partner 2' />
-
-<img src={require('./img/partner-sharing-4.webp').default} width="70%" title='Add Partner 4' />
+1. Open **Settings** from the sidebar and go to **People & sharing**.
+2. In **Partners & recipient groups**, select **Add partner**.
+3. Choose the partner's account and review what they will be able to see.
+4. Select **Confirm**. The partner is listed with **Can see your library**.
 
 ## Viewing Partner Assets
 
-Access partner assets via the Sharing page.
-
-<img src={require('./img/partner-sharing-3.webp').default} width="70%" title='Access to the Shared Library' />
+Each partner who shares with you gets their own library link in the sidebar, named after them (for example, "Jamie's library"). Open it to browse their photos and videos.
 
 ## Timeline Integration
 
@@ -41,20 +38,16 @@ Partner shared photos can be displayed in the main timeline. This feature can be
 
 ### Web
 
-The option can be found at [`Account Settings > Partner Sharing > Show in timeline`](https://my.immich.app/user-settings?isOpen=partner-sharing)
-
-<img src={require('./img/partner-sharing-5.webp').default} width="70%" title='Partner Sharing for the web interface' />
+In **Settings > People & sharing > Partners & recipient groups**, turn on **Show shared photos in my timeline** for the partner. The **Partner photos in my timeline** setting in the same section controls whether partners' photos appear in your timeline at all.
 
 ### Mobile App
 
-From the partner’s view, toggle the button
-
-<img src={require('./img/partner-sharing-6.webp').default} width="30%" title='Partner Sharing for the mobile app' />
-
-<img src={require('./img/partner-sharing-8.webp').default} width="30%" title='Partner Sharing for the mobile app' />
+Open the partner's library and turn on the option to show their photos and videos in your timeline.
 
 ## Removing Access
 
-In order to remove a partner, you can go to `User > Account Settings > Sharing` and click on the X button.
+To stop sharing your library with a partner:
 
-<img src={require('./img/partner-sharing-7.webp').default} width="70%" title='Remove Partner' />
+1. Go to **Settings > People & sharing > Partners & recipient groups**.
+2. Select **Stop sharing** next to the partner.
+3. Select **Confirm**. Any access the partner granted you is kept.

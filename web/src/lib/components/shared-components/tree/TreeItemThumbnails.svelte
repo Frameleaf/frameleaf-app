@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TreeNode } from '$lib/utils/tree-utils';
-  import { Icon } from '@immich/ui';
+  import { Icon } from '@frameleaf/ui';
 
   interface Props {
     items: TreeNode[];

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { SCROLL_PROPERTIES } from '$lib/components/shared-components/album-selection/album-selection-utils';
+  import { scrollProperties } from '$lib/components/shared-components/album-selection/album-selection-utils';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { normalizeSearchString } from '$lib/utils/string-utils.js';
-  import { type AlbumResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { type AlbumResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircle } from '@mdi/js';
   import type { Action } from 'svelte/action';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -30,7 +30,7 @@
   const scrollIntoViewIfSelected: Action = (node) => {
     $effect(() => {
       if (selected) {
-        node.scrollIntoView(SCROLL_PROPERTIES);
+        node.scrollIntoView(scrollProperties());
       }
     });
   };
@@ -157,7 +157,7 @@
     <button
       type="button"
       onclick={handleMultiSelectClicked}
-      class="absolute top-4 right-0 p-3 hover:cursor-pointer focus:outline-none"
+      class="absolute inset-e-0 top-4 p-3 hover:cursor-pointer focus:outline-none"
       role="checkbox"
       tabindex={-1}
       aria-checked={selected}

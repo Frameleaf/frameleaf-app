@@ -1,0 +1,6430 @@
+{
+  "format": "frameleaf-studio-graph-parameters",
+  "version": 1,
+  "protocol": "docs/docs/developer/studio-graph-protocol-v1.md",
+  "engine": {
+    "name": "freecut",
+    "revision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+  },
+  "generatedBy": "studio/adapters/web/test/graph-parameters.test.ts (the engine registries; never edit by hand)",
+  "regenerate": "GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test",
+  "counts": {
+    "effects": 54,
+    "transitions": 44,
+    "blendModes": 25
+  },
+  "effects": [
+    {
+      "id": "gpu-brightness",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-contrast",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-exposure",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "exposure",
+          "type": "number",
+          "default": 0,
+          "min": -3,
+          "max": 3,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "offset",
+          "type": "number",
+          "default": 0,
+          "min": -0.5,
+          "max": 0.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gamma",
+          "type": "number",
+          "default": 1,
+          "min": 0.2,
+          "max": 3,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-hue-shift",
+      "category": "color",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "shift",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "span",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "flow",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-invert",
+      "category": "color",
+      "parameters": []
+    },
+    {
+      "id": "gpu-levels",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "inputBlack",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "inputWhite",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gamma",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 3,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "outputBlack",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "outputWhite",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-saturation",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-temperature",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "temperature",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "tint",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-grayscale",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-sepia",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-curves",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "masterShadowX",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "masterShadowY",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "masterHighlightX",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "masterHighlightY",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "redShadowX",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "redShadowY",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "redHighlightX",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "redHighlightY",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "greenShadowX",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "greenShadowY",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "greenHighlightX",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "greenHighlightY",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "blueShadowX",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "blueShadowY",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "blueHighlightX",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "blueHighlightY",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "masterPoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "redPoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "greenPoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "bluePoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-color-wheels",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "shadowsHue",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "shadowsAmount",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "midtonesHue",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "midtonesAmount",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "highlightsHue",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "highlightsAmount",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "offsetHue",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "offsetAmount",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "temperature",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "tint",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "saturation",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "exposure",
+          "type": "number",
+          "default": 0,
+          "min": -3,
+          "max": 3,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "contrast",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "pivot",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "lift",
+          "type": "number",
+          "default": 0,
+          "min": -2,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gamma",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gain",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 16,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "offset",
+          "type": "number",
+          "default": 0,
+          "min": -2,
+          "max": 2,
+          "step": 0.0025,
+          "animatable": true
+        },
+        {
+          "name": "blackPoint",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 0.5,
+          "step": 0.005,
+          "animatable": true
+        },
+        {
+          "name": "whitePoint",
+          "type": "number",
+          "default": 1,
+          "min": 0.5,
+          "max": 1.5,
+          "step": 0.005,
+          "animatable": true
+        },
+        {
+          "name": "midDetail",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "colorBoost",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "shadows",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "highlights",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "hue",
+          "type": "number",
+          "default": 50,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "lumMix",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-secondary-qualifier",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "hueCenter",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "hueWidth",
+          "type": "number",
+          "default": 35,
+          "min": 0,
+          "max": 180,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "hueSoftness",
+          "type": "number",
+          "default": 20,
+          "min": 0,
+          "max": 120,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "satLow",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "satHigh",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "satSoftness",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "lumaLow",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "lumaHigh",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "lumaSoftness",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "invertMask",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "showMask",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "exposure",
+          "type": "number",
+          "default": 0,
+          "min": -3,
+          "max": 3,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "saturation",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "temperature",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "tint",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-power-window",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "shape",
+          "type": "select",
+          "default": "ellipse",
+          "options": [
+            "ellipse",
+            "rectangle"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "sizeX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.02,
+          "max": 1.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "sizeY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.02,
+          "max": 1.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "rotation",
+          "type": "number",
+          "default": 0,
+          "min": -180,
+          "max": 180,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "feather",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "invertMask",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "showMask",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "exposure",
+          "type": "number",
+          "default": 0.3,
+          "min": -3,
+          "max": 3,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "saturation",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "temperature",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "tint",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-vibrance",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-gradient-map",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "preset",
+          "type": "select",
+          "default": "inferno",
+          "options": [
+            "inferno",
+            "magma",
+            "plasma",
+            "viridis",
+            "turbo",
+            "fire",
+            "ice",
+            "sunset",
+            "grayscale",
+            "custom"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "customStops",
+          "type": "text",
+          "default": "#000004, #420a68, #932667, #dd513a, #fca50a, #f0f921",
+          "animatable": false
+        },
+        {
+          "name": "mix",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-lut",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "lutName",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "lutSize",
+          "type": "json",
+          "default": "0",
+          "animatable": false
+        },
+        {
+          "name": "lutData",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-gaussian-blur",
+      "category": "blur",
+      "parameters": [
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 10,
+          "min": 0,
+          "max": 50,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "samples",
+          "type": "number",
+          "default": 5,
+          "min": 1,
+          "max": 64,
+          "step": 1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-box-blur",
+      "category": "blur",
+      "parameters": [
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 5,
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-motion-blur",
+      "category": "blur",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.05,
+          "min": 0,
+          "max": 0.3,
+          "step": 0.005,
+          "animatable": true
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 6.28318,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "samples",
+          "type": "number",
+          "default": 16,
+          "min": 4,
+          "max": 32,
+          "step": 1,
+          "animatable": false
+        },
+        {
+          "name": "shutterAngle",
+          "type": "number",
+          "default": 180,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-radial-blur",
+      "category": "blur",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "samples",
+          "type": "number",
+          "default": 32,
+          "min": 4,
+          "max": 256,
+          "step": 1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-zoom-blur",
+      "category": "blur",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "samples",
+          "type": "number",
+          "default": 16,
+          "min": 4,
+          "max": 256,
+          "step": 1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-pixelate",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "size",
+          "type": "number",
+          "default": 8,
+          "min": 1,
+          "max": 64,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-rgb-split",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.01,
+          "min": 0,
+          "max": 0.1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 6.28318,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-twirl",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": -10,
+          "max": 10,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-wave",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "amplitudeX",
+          "type": "number",
+          "default": 0.02,
+          "min": 0,
+          "max": 0.1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "amplitudeY",
+          "type": "number",
+          "default": 0.02,
+          "min": 0,
+          "max": 0.1,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "frequencyX",
+          "type": "number",
+          "default": 5,
+          "min": 1,
+          "max": 20,
+          "step": 0.5,
+          "animatable": true
+        },
+        {
+          "name": "frequencyY",
+          "type": "number",
+          "default": 5,
+          "min": 1,
+          "max": 20,
+          "step": 0.5,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-trigger-wave",
+      "category": "distort",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 0.035,
+          "min": -0.15,
+          "max": 0.15,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 0.85,
+          "min": 0.1,
+          "max": 1.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "frequency",
+          "type": "number",
+          "default": 18,
+          "min": 2,
+          "max": 64,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "decay",
+          "type": "number",
+          "default": 0.08,
+          "min": 0.01,
+          "max": 0.3,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "phase",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.1,
+          "animatable": false
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "chroma",
+          "type": "number",
+          "default": 0.006,
+          "min": 0,
+          "max": 0.05,
+          "step": 0.001,
+          "animatable": true
+        },
+        {
+          "name": "scanlineMix",
+          "type": "number",
+          "default": 0.18,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "glowColor",
+          "type": "color",
+          "default": "#2e6b8c",
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-bulge",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.1,
+          "max": 3,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-kaleidoscope",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "segments",
+          "type": "number",
+          "default": 6,
+          "min": 2,
+          "max": 16,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "rotation",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 6.28318,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-mirror",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "horizontal",
+          "type": "boolean",
+          "default": true,
+          "animatable": false
+        },
+        {
+          "name": "vertical",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-fluted-glass",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "colorBack",
+          "type": "color",
+          "default": "#00000000",
+          "animatable": true
+        },
+        {
+          "name": "colorShadow",
+          "type": "color",
+          "default": "#000000",
+          "animatable": true
+        },
+        {
+          "name": "colorHighlight",
+          "type": "color",
+          "default": "#ffffff",
+          "animatable": true
+        },
+        {
+          "name": "shadows",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "highlights",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "shape",
+          "type": "select",
+          "default": "lines",
+          "options": [
+            "lines",
+            "linesIrregular",
+            "wave",
+            "zigzag",
+            "pattern"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 180,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "distortionShape",
+          "type": "select",
+          "default": "prism",
+          "options": [
+            "prism",
+            "lens",
+            "contour",
+            "cascade",
+            "flat"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "distortion",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "shift",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "stretch",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "blur",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "edges",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "margin",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "marginLeft",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "marginRight",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "marginTop",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "marginBottom",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "grainMixer",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "grainOverlay",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-ripple-glass",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "colorShadow",
+          "type": "color",
+          "default": "#000000",
+          "animatable": true
+        },
+        {
+          "name": "colorHighlight",
+          "type": "color",
+          "default": "#ffffff",
+          "animatable": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "rings",
+          "type": "number",
+          "default": 14,
+          "min": 1,
+          "max": 64,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "shadows",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "highlights",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "originX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "originY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "phase",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "falloff",
+          "type": "number",
+          "default": 0.35,
+          "min": 0.05,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "aberration",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-glass-mosaic",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "colorShadow",
+          "type": "color",
+          "default": "#000000",
+          "animatable": true
+        },
+        {
+          "name": "colorHighlight",
+          "type": "color",
+          "default": "#ffffff",
+          "animatable": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.55,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "cells",
+          "type": "number",
+          "default": 18,
+          "min": 2,
+          "max": 80,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "shadows",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "highlights",
+          "type": "number",
+          "default": 0.12,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "aberration",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-blocks",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "size",
+          "type": "number",
+          "default": 24,
+          "min": 4,
+          "max": 120,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "studSize",
+          "type": "number",
+          "default": 0.55,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.4,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-droste",
+      "category": "distort",
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": 2,
+          "min": 1.1,
+          "max": 6,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "centerX",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "centerY",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "spin",
+          "type": "number",
+          "default": 0,
+          "min": -6.28318,
+          "max": 6.28318,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-vignette",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "softness",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "roundness",
+          "type": "number",
+          "default": 1,
+          "min": 0.5,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-grain",
+      "category": "stylize",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": 1,
+          "min": 0.5,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-sharpen",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 1,
+          "min": 0.5,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-posterize",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "levels",
+          "type": "number",
+          "default": 6,
+          "min": 2,
+          "max": 32,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-glow",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "threshold",
+          "type": "number",
+          "default": 0.6,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 20,
+          "min": 1,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "softness",
+          "type": "number",
+          "default": 0.5,
+          "min": 0.1,
+          "max": 1,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "rings",
+          "type": "number",
+          "default": 4,
+          "min": 1,
+          "max": 32,
+          "step": 1,
+          "animatable": false
+        },
+        {
+          "name": "samplesPerRing",
+          "type": "number",
+          "default": 16,
+          "min": 4,
+          "max": 64,
+          "step": 1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-edge-detect",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "invert",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-scanlines",
+      "category": "stylize",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "density",
+          "type": "number",
+          "default": 5,
+          "min": 1,
+          "max": 20,
+          "step": 0.5,
+          "animatable": true
+        },
+        {
+          "name": "opacity",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-color-glitch",
+      "category": "stylize",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 5,
+          "step": 0.1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-block-glitch",
+      "category": "stylize",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "coverage",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 0.6,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "blockSize",
+          "type": "number",
+          "default": 40,
+          "min": 8,
+          "max": 200,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 5,
+          "step": 0.1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-crt",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "curvature",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "scanlines",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "vignette",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "chroma",
+          "type": "number",
+          "default": 0.4,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-halftone",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "colorFront",
+          "type": "color",
+          "default": "#2b2b2b",
+          "animatable": true
+        },
+        {
+          "name": "colorBack",
+          "type": "color",
+          "default": "#f2f1e8",
+          "animatable": true
+        },
+        {
+          "name": "originalColors",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "inverted",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "grid",
+          "type": "select",
+          "default": "hex",
+          "options": [
+            "hex",
+            "square"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "type",
+          "type": "select",
+          "default": "gooey",
+          "options": [
+            "classic",
+            "gooey",
+            "holes",
+            "soft"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": 1.25,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "contrast",
+          "type": "number",
+          "default": 0.4,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "grainMixer",
+          "type": "number",
+          "default": 0.2,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "grainOverlay",
+          "type": "number",
+          "default": 0.2,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "grainSize",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-dither",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "pattern",
+          "type": "select",
+          "default": "bayer4",
+          "options": [
+            "bayer2",
+            "bayer4",
+            "bayer8",
+            "halftone",
+            "lines",
+            "crosses",
+            "dots",
+            "grid",
+            "scales"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "mode",
+          "type": "select",
+          "default": "image",
+          "options": [
+            "image",
+            "linear",
+            "radial"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "style",
+          "type": "select",
+          "default": "threshold",
+          "options": [
+            "threshold",
+            "scaled"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "shape",
+          "type": "select",
+          "default": "square",
+          "options": [
+            "circle",
+            "square",
+            "diamond"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "palette",
+          "type": "select",
+          "default": "gameboy",
+          "options": [
+            "bw",
+            "gameboy",
+            "cga",
+            "sepia"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "cellSize",
+          "type": "number",
+          "default": 8,
+          "min": 2,
+          "max": 32,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "default": 45,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": 100,
+          "min": 25,
+          "max": 200,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "offsetX",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "offsetY",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-ascii",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "charSet",
+          "type": "select",
+          "default": "ascii",
+          "options": [
+            "ascii",
+            "dense",
+            "binary",
+            "symbols",
+            "custom",
+            "standard",
+            "simple",
+            "blocks",
+            "dots",
+            "minimal"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "customChars",
+          "type": "text",
+          "default": "FREECUT 01",
+          "animatable": false
+        },
+        {
+          "name": "font",
+          "type": "select",
+          "default": "monospace",
+          "options": [
+            "monospace",
+            "courier",
+            "consolas",
+            "lucida"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "fontSize",
+          "type": "number",
+          "default": 8,
+          "min": 4,
+          "max": 24,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "letterSpacing",
+          "type": "number",
+          "default": 0,
+          "min": -2,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "lineHeight",
+          "type": "number",
+          "default": 1,
+          "min": 0.5,
+          "max": 2,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "matchSourceColor",
+          "type": "boolean",
+          "default": true,
+          "animatable": false
+        },
+        {
+          "name": "textColor",
+          "type": "color",
+          "default": "#ffffff",
+          "animatable": true
+        },
+        {
+          "name": "bgColor",
+          "type": "color",
+          "default": "#0a0a0f",
+          "animatable": true
+        },
+        {
+          "name": "transparentBg",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "edgeDetect",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        },
+        {
+          "name": "colorSaturation",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 200,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "asciiOpacity",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "originalOpacity",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "contrast",
+          "type": "number",
+          "default": 100,
+          "min": 50,
+          "max": 200,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "brightness",
+          "type": "number",
+          "default": 0,
+          "min": -100,
+          "max": 100,
+          "step": 1,
+          "animatable": true
+        },
+        {
+          "name": "invert",
+          "type": "boolean",
+          "default": false,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-threshold",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "level",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-vhs",
+      "category": "stylize",
+      "temporal": true,
+      "parameters": [
+        {
+          "name": "bleed",
+          "type": "number",
+          "default": 0.4,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "waviness",
+          "type": "number",
+          "default": 0.3,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "noise",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "scanline",
+          "type": "number",
+          "default": 0.35,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-ink",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "spacing",
+          "type": "number",
+          "default": 6,
+          "min": 2,
+          "max": 24,
+          "step": 0.5,
+          "animatable": true
+        },
+        {
+          "name": "thickness",
+          "type": "number",
+          "default": 1.2,
+          "min": 0.5,
+          "max": 4,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "edgeStrength",
+          "type": "number",
+          "default": 1.5,
+          "min": 0,
+          "max": 5,
+          "step": 0.1,
+          "animatable": true
+        },
+        {
+          "name": "tone",
+          "type": "number",
+          "default": 1,
+          "min": 0.2,
+          "max": 2.5,
+          "step": 0.05,
+          "animatable": true
+        },
+        {
+          "name": "inkColor",
+          "type": "color",
+          "default": "#141414",
+          "animatable": true
+        },
+        {
+          "name": "paperColor",
+          "type": "color",
+          "default": "#f4f1e8",
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-pixel-sort",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "direction",
+          "type": "select",
+          "default": "right",
+          "options": [
+            "right",
+            "left",
+            "down",
+            "up"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "order",
+          "type": "select",
+          "default": "bright",
+          "options": [
+            "bright",
+            "dark"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "low",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "high",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "length",
+          "type": "number",
+          "default": 60,
+          "min": 2,
+          "max": 400,
+          "step": 1,
+          "animatable": false
+        }
+      ]
+    },
+    {
+      "id": "gpu-pixel-sort-hq",
+      "category": "stylize",
+      "parameters": [
+        {
+          "name": "orientation",
+          "type": "select",
+          "default": "horizontal",
+          "options": [
+            "horizontal",
+            "vertical"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "order",
+          "type": "select",
+          "default": "ascending",
+          "options": [
+            "ascending",
+            "descending"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "low",
+          "type": "number",
+          "default": 0.25,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "high",
+          "type": "number",
+          "default": 0.9,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-chroma-key",
+      "category": "keying",
+      "parameters": [
+        {
+          "name": "keyColor",
+          "type": "select",
+          "default": "green",
+          "options": [
+            "green",
+            "blue"
+          ],
+          "animatable": false
+        },
+        {
+          "name": "tolerance",
+          "type": "number",
+          "default": 0.2,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "softness",
+          "type": "number",
+          "default": 0.1,
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "spillSuppression",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "id": "fade",
+      "category": "basic",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "barnDoor",
+      "category": "motion",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "split",
+      "category": "motion",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "wipe",
+      "category": "motion",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "bandWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "centerWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "clockWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "edgeSoftness",
+          "type": "number",
+          "default": 8,
+          "min": 0,
+          "max": 32,
+          "step": 0.5,
+          "unit": "px"
+        }
+      ]
+    },
+    {
+      "id": "edgeWipe",
+      "category": "wipe",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "radialWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "spiralWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "venetianBlindWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "xWipe",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "slide",
+      "category": "motion",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 5,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "flip",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 60
+      },
+      "parameters": []
+    },
+    {
+      "id": "iris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "edgeSoftness",
+          "type": "number",
+          "default": 6,
+          "min": 0,
+          "max": 32,
+          "step": 0.5,
+          "unit": "px"
+        }
+      ]
+    },
+    {
+      "id": "arrowIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "crossIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "diamondIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "eyeIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "hexagonIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "ovalIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "pentagonIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "squareIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "triangleIris",
+      "category": "iris",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "outgoingDim",
+          "type": "number",
+          "default": 0.06,
+          "min": 0,
+          "max": 0.12,
+          "step": 0.005
+        }
+      ]
+    },
+    {
+      "id": "boxShape",
+      "category": "shape",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "heartShape",
+      "category": "shape",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "starShape",
+      "category": "shape",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "triangleLeftShape",
+      "category": "shape",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "triangleRightShape",
+      "category": "shape",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "dissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "additiveDissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "blurDissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 9,
+          "min": 0,
+          "max": 24,
+          "step": 0.5,
+          "unit": "px"
+        }
+      ]
+    },
+    {
+      "id": "dipToColorDissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "color",
+          "type": "color",
+          "default": [
+            0,
+            0,
+            0
+          ],
+          "valueFormat": "rgb-array"
+        }
+      ]
+    },
+    {
+      "id": "nonAdditiveDissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "smoothCut",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 18,
+        "min": 6,
+        "max": 45
+      },
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 0.9,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "sparkles",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 24,
+        "min": 8,
+        "max": 72
+      },
+      "parameters": [
+        {
+          "name": "sparkleScale",
+          "type": "number",
+          "default": 1,
+          "min": 0.25,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2.5,
+          "step": 0.05
+        },
+        {
+          "name": "density",
+          "type": "number",
+          "default": 1,
+          "min": 0.2,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "glow",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "glitch",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 20,
+        "min": 5,
+        "max": 60
+      },
+      "parameters": [
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "blockSize",
+          "type": "number",
+          "default": 30,
+          "min": 6,
+          "max": 96,
+          "step": 1,
+          "unit": "px"
+        },
+        {
+          "name": "rgbSplit",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "pixelate",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 20,
+        "min": 8,
+        "max": 60
+      },
+      "parameters": [
+        {
+          "name": "maxBlockSize",
+          "type": "number",
+          "default": 48,
+          "min": 4,
+          "max": 160,
+          "step": 1,
+          "unit": "px"
+        }
+      ]
+    },
+    {
+      "id": "chromatic",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 25,
+        "min": 10,
+        "max": 60
+      },
+      "parameters": [
+        {
+          "name": "spread",
+          "type": "number",
+          "default": 1.5,
+          "min": 0,
+          "max": 5,
+          "step": 0.05
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "radialBlur",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 25,
+        "min": 10,
+        "max": 60
+      },
+      "parameters": [
+        {
+          "name": "blurStrength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "spin",
+          "type": "number",
+          "default": 0.3,
+          "min": -1.5,
+          "max": 1.5,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "liquidDistort",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 28,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2.5,
+          "step": 0.05
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": 4.5,
+          "min": 1,
+          "max": 12,
+          "step": 0.1
+        },
+        {
+          "name": "turbulence",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "chroma",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "swirl",
+          "type": "number",
+          "default": 0.8,
+          "min": 0,
+          "max": 2.5,
+          "step": 0.05
+        },
+        {
+          "name": "shine",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "lensWarpZoom",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 24,
+        "min": 8,
+        "max": 72
+      },
+      "parameters": [
+        {
+          "name": "zoomStrength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 2.5,
+          "step": 0.05
+        },
+        {
+          "name": "warpStrength",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 2.5,
+          "step": 0.05
+        },
+        {
+          "name": "blurStrength",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "chroma",
+          "type": "number",
+          "default": 0.65,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "vignette",
+          "type": "number",
+          "default": 0.7,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "glow",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "lightLeakBurn",
+      "category": "custom",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 26,
+        "min": 8,
+        "max": 90
+      },
+      "parameters": [
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": 1.25,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "spread",
+          "type": "number",
+          "default": 1,
+          "min": 0.2,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "warmth",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "burn",
+          "type": "number",
+          "default": 1.1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": 0.5,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "filmGateSlip",
+      "category": "custom",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 22,
+        "min": 8,
+        "max": 72
+      },
+      "parameters": [
+        {
+          "name": "slip",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "shake",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 3,
+          "step": 0.05
+        },
+        {
+          "name": "exposure",
+          "type": "number",
+          "default": 0.85,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "gateWidth",
+          "type": "number",
+          "default": 0.075,
+          "min": 0,
+          "max": 0.2,
+          "step": 0.005
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": 0.6,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "chroma",
+          "type": "number",
+          "default": 0.55,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        },
+        {
+          "name": "roll",
+          "type": "number",
+          "default": 0.75,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        }
+      ]
+    }
+  ],
+  "transitionAliases": {
+    "Cross dissolve": "dissolve",
+    "Dip to black": "dipToColorDissolve",
+    "Wipe": "wipe",
+    "Slide": "slide",
+    "Zoom": "lensWarpZoom"
+  },
+  "blendModes": [
+    {
+      "id": "normal",
+      "index": 0,
+      "group": "normal"
+    },
+    {
+      "id": "dissolve",
+      "index": 1,
+      "group": "normal"
+    },
+    {
+      "id": "darken",
+      "index": 2,
+      "group": "darken"
+    },
+    {
+      "id": "multiply",
+      "index": 3,
+      "group": "darken"
+    },
+    {
+      "id": "color-burn",
+      "index": 4,
+      "group": "darken"
+    },
+    {
+      "id": "linear-burn",
+      "index": 5,
+      "group": "darken"
+    },
+    {
+      "id": "lighten",
+      "index": 6,
+      "group": "lighten"
+    },
+    {
+      "id": "screen",
+      "index": 7,
+      "group": "lighten"
+    },
+    {
+      "id": "color-dodge",
+      "index": 8,
+      "group": "lighten"
+    },
+    {
+      "id": "linear-dodge",
+      "index": 9,
+      "group": "lighten"
+    },
+    {
+      "id": "overlay",
+      "index": 10,
+      "group": "contrast"
+    },
+    {
+      "id": "soft-light",
+      "index": 11,
+      "group": "contrast"
+    },
+    {
+      "id": "hard-light",
+      "index": 12,
+      "group": "contrast"
+    },
+    {
+      "id": "vivid-light",
+      "index": 13,
+      "group": "contrast"
+    },
+    {
+      "id": "linear-light",
+      "index": 14,
+      "group": "contrast"
+    },
+    {
+      "id": "pin-light",
+      "index": 15,
+      "group": "contrast"
+    },
+    {
+      "id": "hard-mix",
+      "index": 16,
+      "group": "contrast"
+    },
+    {
+      "id": "difference",
+      "index": 17,
+      "group": "inversion"
+    },
+    {
+      "id": "exclusion",
+      "index": 18,
+      "group": "inversion"
+    },
+    {
+      "id": "subtract",
+      "index": 19,
+      "group": "inversion"
+    },
+    {
+      "id": "divide",
+      "index": 20,
+      "group": "inversion"
+    },
+    {
+      "id": "hue",
+      "index": 21,
+      "group": "component"
+    },
+    {
+      "id": "saturation",
+      "index": 22,
+      "group": "component"
+    },
+    {
+      "id": "color",
+      "index": 23,
+      "group": "component"
+    },
+    {
+      "id": "luminosity",
+      "index": 24,
+      "group": "component"
+    }
+  ],
+  "easing": {
+    "types": [
+      "linear",
+      "ease-in",
+      "ease-out",
+      "ease-in-out",
+      "hold",
+      "cubic-bezier",
+      "spring"
+    ],
+    "bezierDefault": {
+      "x1": 0.42,
+      "y1": 0,
+      "x2": 0.58,
+      "y2": 1
+    },
+    "springDefault": {
+      "tension": 170,
+      "friction": 26,
+      "mass": 1
+    }
+  },
+  "properties": {
+    "scalar": [
+      "x",
+      "y",
+      "width",
+      "height",
+      "anchorX",
+      "anchorY",
+      "rotation",
+      "opacity",
+      "cornerRadius",
+      "cropLeft",
+      "cropRight",
+      "cropTop",
+      "cropBottom",
+      "cropSoftness",
+      "volume",
+      "textStyleScale",
+      "fontSize",
+      "lineHeight",
+      "textPadding",
+      "backgroundRadius",
+      "textShadowOffsetX",
+      "textShadowOffsetY",
+      "textShadowBlur",
+      "strokeWidth",
+      "trimPathStart",
+      "trimPathEnd",
+      "trimPathOffset",
+      "taperStartWidth",
+      "taperEndWidth",
+      "taperStartLength",
+      "taperEndLength"
+    ],
+    "vector": [
+      "position",
+      "scale",
+      "anchor"
+    ],
+    "expression": [
+      "x",
+      "y",
+      "width",
+      "height",
+      "anchorX",
+      "anchorY",
+      "rotation",
+      "opacity",
+      "cornerRadius",
+      "trimPathStart",
+      "trimPathEnd",
+      "trimPathOffset",
+      "taperStartWidth",
+      "taperEndWidth",
+      "taperStartLength",
+      "taperEndLength",
+      "position",
+      "scale",
+      "anchor"
+    ]
+  },
+  "motionModifiers": [
+    {
+      "id": "float-drift",
+      "channels": [
+        "x",
+        "y",
+        "rotation"
+      ]
+    },
+    {
+      "id": "breath-pulse",
+      "channels": [
+        "width",
+        "height",
+        "opacity"
+      ]
+    },
+    {
+      "id": "micro-shake",
+      "channels": [
+        "x",
+        "y",
+        "rotation"
+      ]
+    },
+    {
+      "id": "sway",
+      "channels": [
+        "rotation"
+      ]
+    },
+    {
+      "id": "spin",
+      "channels": [
+        "rotation"
+      ]
+    }
+  ],
+  "textMotion": {
+    "in": [
+      "typewriter",
+      "fade-up",
+      "rise",
+      "cascade",
+      "pop",
+      "blur-in",
+      "slide-mask",
+      "wave-in"
+    ],
+    "out": [
+      "fade-down",
+      "sink",
+      "pop-out",
+      "blur-out",
+      "typewriter-erase"
+    ],
+    "loop": [
+      "pulse",
+      "wave",
+      "shimmer",
+      "swing"
+    ],
+    "defaults": {
+      "typewriter": {
+        "durationFrames": 1,
+        "staggerFrames": 2,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "linear"
+      },
+      "fade-up": {
+        "durationFrames": 12,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "rise": {
+        "durationFrames": 14,
+        "staggerFrames": 4,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "cascade": {
+        "durationFrames": 10,
+        "staggerFrames": 1,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "pop": {
+        "durationFrames": 10,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "overshoot"
+      },
+      "blur-in": {
+        "durationFrames": 14,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "slide-mask": {
+        "durationFrames": 12,
+        "staggerFrames": 5,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "wave-in": {
+        "durationFrames": 12,
+        "staggerFrames": 1,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-out"
+      },
+      "fade-down": {
+        "durationFrames": 12,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-in"
+      },
+      "sink": {
+        "durationFrames": 14,
+        "staggerFrames": 4,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-in"
+      },
+      "pop-out": {
+        "durationFrames": 10,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-in"
+      },
+      "blur-out": {
+        "durationFrames": 14,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "ease-in"
+      },
+      "typewriter-erase": {
+        "durationFrames": 1,
+        "staggerFrames": 2,
+        "intensity": 1,
+        "order": "backward",
+        "easing": "linear"
+      },
+      "pulse": {
+        "durationFrames": 36,
+        "staggerFrames": 0,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "linear"
+      },
+      "wave": {
+        "durationFrames": 30,
+        "staggerFrames": 3,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "linear"
+      },
+      "shimmer": {
+        "durationFrames": 24,
+        "staggerFrames": 0,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "linear"
+      },
+      "swing": {
+        "durationFrames": 32,
+        "staggerFrames": 2,
+        "intensity": 1,
+        "order": "forward",
+        "easing": "linear"
+      }
+    }
+  },
+  "titleStyles": {
+    "aliases": {
+      "Minimal": "plain",
+      "Bold": "bold",
+      "Serif": "quote",
+      "Outline": "outline-pill",
+      "Lower third": "lower-third",
+      "Caption bar": "badge"
+    },
+    "sizes": {
+      "title": {
+        "heightFactor": 0.085,
+        "min": 56,
+        "max": 132
+      },
+      "display": {
+        "heightFactor": 0.11,
+        "min": 72,
+        "max": 164
+      },
+      "badge": {
+        "heightFactor": 0.048,
+        "min": 32,
+        "max": 68
+      }
+    },
+    "presets": [
+      {
+        "id": "clean-title",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 1
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.95,
+          "letterSpacing": -1,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 6,
+            "blur": 18,
+            "color": "#111827"
+          },
+          "textStylePresetId": "clean-title",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "poster",
+        "fontSize": {
+          "size": "display",
+          "multiplier": 0.98
+        },
+        "fields": {
+          "fontFamily": "Anton",
+          "fontWeight": "normal",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#fef3c7",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.88,
+          "letterSpacing": -1,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 10,
+            "blur": 24,
+            "color": "#7f1d1d"
+          },
+          "stroke": {
+            "width": 2,
+            "color": "#991b1b"
+          },
+          "textStylePresetId": "poster",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "outline-pill",
+        "fontSize": {
+          "size": "badge",
+          "multiplier": 0.96
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#e2e8f0",
+          "backgroundColor": "#0f172a",
+          "backgroundRadius": 999,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1,
+          "letterSpacing": 2,
+          "textPadding": 18,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 4,
+            "blur": 14,
+            "color": "#020617"
+          },
+          "stroke": {
+            "width": 1,
+            "color": "#38bdf8"
+          },
+          "textStylePresetId": "outline-pill",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "lower-third",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.587
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "semibold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f9fafb",
+          "backgroundColor": "#111827",
+          "backgroundRadius": 20,
+          "textAlign": "left",
+          "verticalAlign": "middle",
+          "lineHeight": 1.05,
+          "letterSpacing": 0,
+          "textPadding": 24,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 4,
+            "blur": 14,
+            "color": "#030712"
+          },
+          "textStylePresetId": "lower-third",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "speaker-card",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.61
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#1e293b",
+          "backgroundRadius": 28,
+          "textAlign": "left",
+          "verticalAlign": "middle",
+          "lineHeight": 1,
+          "letterSpacing": -1,
+          "textPadding": 28,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 6,
+            "blur": 18,
+            "color": "#020617"
+          },
+          "textStylePresetId": "speaker-card",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "cinematic",
+        "fontSize": {
+          "size": "display",
+          "multiplier": 1
+        },
+        "fields": {
+          "fontFamily": "Bebas Neue",
+          "fontWeight": "normal",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8e6b8",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.92,
+          "letterSpacing": 4,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 8,
+            "blur": 24,
+            "color": "#111827"
+          },
+          "stroke": {
+            "width": 1,
+            "color": "#2b2112"
+          },
+          "textStylePresetId": "cinematic",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "quote",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.83
+        },
+        "fields": {
+          "fontFamily": "Playfair Display",
+          "fontWeight": "semibold",
+          "fontStyle": "italic",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#1f2937",
+          "backgroundRadius": 28,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1.08,
+          "letterSpacing": 0,
+          "textPadding": 30,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 8,
+            "blur": 24,
+            "color": "#020617"
+          },
+          "textStylePresetId": "quote",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "neon",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.935
+        },
+        "fields": {
+          "fontFamily": "Orbitron",
+          "fontWeight": "semibold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#67e8f9",
+          "backgroundColor": "#082f49",
+          "backgroundRadius": 18,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1,
+          "letterSpacing": 1,
+          "textPadding": 20,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 0,
+            "blur": 22,
+            "color": "#22d3ee"
+          },
+          "stroke": {
+            "width": 1,
+            "color": "#22d3ee"
+          },
+          "textStylePresetId": "neon",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "headline-stack",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.913
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.96,
+          "letterSpacing": -1,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 8,
+            "blur": 24,
+            "color": "#020617"
+          },
+          "textStylePresetId": "headline-stack",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "breaking-update",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.92
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#111827",
+          "backgroundRadius": 20,
+          "textAlign": "left",
+          "verticalAlign": "middle",
+          "lineHeight": 0.94,
+          "letterSpacing": -1,
+          "textPadding": 24,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 8,
+            "blur": 24,
+            "color": "#020617"
+          },
+          "textStylePresetId": "breaking-update",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "event-card",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.848
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#0f172a",
+          "backgroundRadius": 28,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.98,
+          "letterSpacing": -0.5,
+          "textPadding": 28,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 10,
+            "blur": 24,
+            "color": "#020617"
+          },
+          "textStylePresetId": "event-card",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "launch-stack",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.88
+        },
+        "fields": {
+          "fontFamily": "Space Grotesk",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#0f172a",
+          "backgroundRadius": 28,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.96,
+          "letterSpacing": -1,
+          "textPadding": 28,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 0,
+            "blur": 22,
+            "color": "#60a5fa"
+          },
+          "stroke": {
+            "width": 1,
+            "color": "#1d4ed8"
+          },
+          "textStylePresetId": "launch-stack",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "badge",
+        "fontSize": {
+          "size": "badge",
+          "multiplier": 1
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#f8fafc",
+          "backgroundColor": "#111827",
+          "backgroundRadius": 999,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1,
+          "letterSpacing": 2,
+          "textPadding": 18,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 4,
+            "blur": 14,
+            "color": "#020617"
+          },
+          "stroke": {
+            "width": 1,
+            "color": "#334155"
+          },
+          "textStylePresetId": "badge",
+          "textStyleScale": 1
+        }
+      }
+    ]
+  },
+  "fonts": {
+    "default": "Inter",
+    "families": [
+      {
+        "family": "Roboto",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Open Sans",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Google Sans",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Noto Sans JP",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Inter",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Montserrat",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Poppins",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Lato",
+        "weights": [
+          100,
+          300,
+          400,
+          700,
+          900
+        ]
+      },
+      {
+        "family": "Roboto Condensed",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Roboto Mono",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Arimo",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Oswald",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Noto Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Raleway",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Nunito",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Nunito Sans",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Playfair Display",
+        "weights": [
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Rubik",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Ubuntu",
+        "weights": [
+          300,
+          400,
+          500,
+          700
+        ]
+      },
+      {
+        "family": "Roboto Slab",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "DM Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Merriweather",
+        "weights": [
+          300,
+          400,
+          700,
+          900
+        ]
+      },
+      {
+        "family": "Noto Sans KR",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Work Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "PT Sans",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "Kanit",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Lora",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Mulish",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Fjalla One",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Manrope",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Archivo",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Quicksand",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Outfit",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Figtree",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Fira Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Inconsolata",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Barlow",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Bebas Neue",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Noto Sans TC",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Archivo Black",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Source Sans 3",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Hind Siliguri",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "IBM Plex Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Prompt",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Bungee",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Titillium Web",
+        "weights": [
+          200,
+          300,
+          400,
+          600,
+          700,
+          900
+        ]
+      },
+      {
+        "family": "Karla",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Heebo",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Saira",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Noto Serif",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "PT Serif",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "Jost",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Plus Jakarta Sans",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Bricolage Grotesque",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Noto Color Emoji",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Share Tech",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Smooch Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Source Code Pro",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Libre Baskerville",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "Dancing Script",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Lobster Two",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "EB Garamond",
+        "weights": [
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Josefin Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Cairo",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Libre Franklin",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Gravitas One",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Noto Serif JP",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Public Sans",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Anton",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Mukta",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Schibsted Grotesk",
+        "weights": [
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Dosis",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Barlow Condensed",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Bitter",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Roboto Flex",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900,
+          1000
+        ]
+      },
+      {
+        "family": "Cabin",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Noto Sans SC",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Ramabhadra",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Noto Sans Telugu",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Nanum Gothic",
+        "weights": [
+          400,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Space Grotesk",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Changa One",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Anek Telugu",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Assistant",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Oxygen",
+        "weights": [
+          300,
+          400,
+          700
+        ]
+      },
+      {
+        "family": "Pacifico",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Alfa Slab One",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Lexend",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Hind",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "M PLUS Rounded 1c",
+        "weights": [
+          100,
+          300,
+          400,
+          500,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Red Hat Display",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Exo 2",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Slabo 27px",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Lobster",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Cormorant Garamond",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Sora",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Crimson Text",
+        "weights": [
+          400,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Inter Tight",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Overpass",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Caveat",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Urbanist",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Comfortaa",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Tajawal",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Arvo",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "PT Sans Narrow",
+        "weights": [
+          400,
+          700
+        ]
+      },
+      {
+        "family": "Rajdhani",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "DM Serif Display",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Abel",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Teko",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Source Serif 4",
+        "weights": [
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Noto Sans Arabic",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Almarai",
+        "weights": [
+          300,
+          400,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Merriweather Sans",
+        "weights": [
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ]
+      },
+      {
+        "family": "Lexend Deca",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Satisfy",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "Orbitron",
+        "weights": [
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Barlow Semi Condensed",
+        "weights": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800,
+          900
+        ]
+      },
+      {
+        "family": "Domine",
+        "weights": [
+          400,
+          500,
+          600,
+          700
+        ]
+      },
+      {
+        "family": "Shadows Into Light",
+        "weights": [
+          400
+        ]
+      },
+      {
+        "family": "M PLUS 1p",
+        "weights": [
+          100,
+          300,
+          400,
+          500,
+          700,
+          800,
+          900
+        ]
+      }
+    ]
+  },
+  "titleAnimations": {
+    "aliases": {
+      "Fade": {
+        "in": "fade-up",
+        "out": "fade-down"
+      },
+      "Rise": {
+        "in": "rise",
+        "out": "sink"
+      },
+      "Typewriter": {
+        "in": "typewriter",
+        "out": "typewriter-erase"
+      },
+      "Slide": {
+        "in": "slide-mask"
+      }
+    }
+  },
+  "project": {
+    "templates": [
+      {
+        "id": "youtube-1080p",
+        "width": 1920,
+        "height": 1080,
+        "fps": 30
+      },
+      {
+        "id": "vertical-9-16",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30
+      },
+      {
+        "id": "instagram-square",
+        "width": 1080,
+        "height": 1080,
+        "fps": 30
+      },
+      {
+        "id": "instagram-portrait",
+        "width": 1080,
+        "height": 1350,
+        "fps": 30
+      },
+      {
+        "id": "twitter-x",
+        "width": 1200,
+        "height": 675,
+        "fps": 30
+      },
+      {
+        "id": "linkedin",
+        "width": 1200,
+        "height": 627,
+        "fps": 30
+      }
+    ],
+    "rates": [
+      24,
+      25,
+      30,
+      50,
+      60,
+      120,
+      240
+    ],
+    "ntscRates": [
+      {
+        "num": 24000,
+        "den": 1001
+      },
+      {
+        "num": 30000,
+        "den": 1001
+      },
+      {
+        "num": 60000,
+        "den": 1001
+      },
+      {
+        "num": 120000,
+        "den": 1001
+      }
+    ]
+  },
+  "directEdits": [
+    {
+      "id": "effect-parameters",
+      "command": "effect.update",
+      "fields": [
+        "timeline.items[].effects[].effect.params"
+      ],
+      "section": "13.8.1"
+    },
+    {
+      "id": "effect-order",
+      "command": "effect.reorder",
+      "fields": [
+        "timeline.items[].effects"
+      ],
+      "section": "13.8.2"
+    },
+    {
+      "id": "effect-enabled",
+      "command": null,
+      "fields": [
+        "timeline.items[].effects[].enabled"
+      ],
+      "section": "13.8.3"
+    },
+    {
+      "id": "blend-mode",
+      "command": "clip.setBlendMode",
+      "fields": [
+        "timeline.items[].blendMode"
+      ],
+      "section": "13.8.4"
+    },
+    {
+      "id": "transition-settings",
+      "command": null,
+      "fields": [
+        "timeline.transitions[].direction",
+        "timeline.transitions[].timing",
+        "timeline.transitions[].bezierPoints",
+        "timeline.transitions[].properties"
+      ],
+      "section": "13.8.5"
+    }
+  ],
+  "contentSha256": "45b2a4445c21bc1a9a2b65eaf7c633f8d0e56702b3c8a7555a49d9b40f288b20"
+}

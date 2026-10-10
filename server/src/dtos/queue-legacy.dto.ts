@@ -12,6 +12,7 @@ const QueueStatusLegacySchema = z
 
 const QueueResponseLegacySchema = z
   .object({
+    runId: z.uuid().optional().describe('Durable run created by a batch start'),
     queueStatus: QueueStatusLegacySchema,
     jobCounts: QueueStatisticsSchema,
   })
@@ -43,6 +44,7 @@ const QueuesResponseLegacySchema = z
     [QueueName.Workflow]: QueueResponseLegacySchema,
     [QueueName.Editor]: QueueResponseLegacySchema,
     [QueueName.IntegrityCheck]: QueueResponseLegacySchema,
+    [QueueName.PetRecognition]: QueueResponseLegacySchema,
   })
   .meta({ id: 'QueuesResponseLegacyDto' });
 

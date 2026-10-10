@@ -58,10 +58,32 @@ for (const [file, workflow] of Object.entries(workflows)) {
         `${label}: missing local workflow`,
       );
     } else if (job["runs-on"] === "${{ matrix.runner }}") {
-      if (file === "local-multi-runner-build.yml" && id === "build")
+      if (
+        file === "local-multi-runner-build.yml" &&
+        (id === "build" || id === "publish")
+      )
         assert.equal(
           job.strategy.matrix.include,
           "${{ fromJSON(needs.matrix.outputs.matrix) }}",
+        );
+      else if (file === "cli.yml" && id === "build")
+        assert.deepEqual(
+          job.strategy?.matrix,
+          {
+            include: [
+              {
+                runner: "ubuntu-24.04",
+                architecture: "amd64",
+                "node-architecture": "x64",
+              },
+              {
+                runner: "ubuntu-24.04-arm",
+                architecture: "arm64",
+                "node-architecture": "arm64",
+              },
+            ],
+          },
+          `${label}: uncontrolled native CLI runner matrix`,
         );
       else {
         const runners = job.strategy?.matrix?.runner;
@@ -86,51 +108,64 @@ assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
 );
-for (const name of ["server", "machine-learning"])
+// FL-142: the built images are archived (not pushed), deployment-tested, and only then pushed.
+for (const name of ["server", "machine-learning"]) {
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["integration", "certification"],
-    "Both quality gates must precede publishing",
+    ["changes", "integration"],
+    "Both quality gates must precede building",
   );
+  assert.equal(
+    docker.jobs[name].with.mode,
+    "archive",
+    `${name}: builds must not push before the deployment test`,
+  );
+}
+assert(
+  ["integration", "server", "machine-learning"].every((gate) =>
+    docker.jobs["deploy-test"].needs.includes(gate),
+  ),
+  "The deployment test runs on the quality-gated builds",
+);
+for (const name of [
+  "server-publish",
+  "machine-learning-publish",
+  "machine-learning-hardware",
+  "retag-server",
+  "retag-machine-learning",
+]) {
+  assert(
+    docker.jobs[name].needs.includes("deploy-test"),
+    `${name}: the deployment test must precede publishing`,
+  );
+  assert.match(
+    docker.jobs[name].if,
+    /needs\['deploy-test'\]\.result == 'success'/,
+    `${name}: publishing requires a passed deployment test`,
+  );
+}
+assert.equal(docker.jobs["server-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-publish"].with.mode, "publish");
+assert.equal(docker.jobs["machine-learning-hardware"].with.mode, "push");
 assert.equal(
   docker.jobs.integration.uses,
   "./.github/workflows/fork-integration.yml",
 );
-assert.equal(
-  docker.jobs.certification.uses,
-  "./.github/workflows/fork-roundtrip.yml",
-);
-const roundtripConcurrency = workflows["fork-roundtrip.yml"].concurrency;
-assert.equal(
-  roundtripConcurrency?.group,
-  "${{ github.workflow }}-${{ github.ref }}-roundtrip",
-  "Roundtrip concurrency must isolate each workflow/ref from its caller",
-);
-assert.equal(
-  roundtripConcurrency["cancel-in-progress"],
-  "${{ github.event_name == 'pull_request' }}",
-);
-for (const event_name of [
-  "pull_request",
-  "push",
-  "schedule",
-  "workflow_dispatch",
-  "workflow_call",
-]) {
-  assert.equal(
-    runInNewContext(roundtripConcurrency["cancel-in-progress"].slice(3, -2), {
-      github: { event_name },
-    }),
-    event_name === "pull_request",
-    "Only stale PR certification may be cancelled; publication gates must finish",
-  );
-}
 assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
 assert(
   !workflows["fork-integration.yml"].on.push,
   "Mainline integration is invoked by Docker only",
 );
-const ml = docker.jobs["machine-learning"].strategy.matrix.include;
+const cpu = docker.jobs["machine-learning"].with;
+const ml = [
+  {
+    device: cpu.device,
+    suffix: cpu.suffix,
+    platforms: cpu.platforms,
+    target: cpu.target,
+  },
+  ...docker.jobs["machine-learning-hardware"].strategy.matrix.include,
+];
 assert.deepEqual(
   ml.map(({ device, suffix, platforms, target }) => ({
     device,

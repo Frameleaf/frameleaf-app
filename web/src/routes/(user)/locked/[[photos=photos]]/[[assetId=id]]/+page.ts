@@ -1,4 +1,4 @@
-import { getAuthStatus } from '@immich/sdk';
+import { getAuthStatus } from '@frameleaf/sdk';
 import { redirect } from '@sveltejs/kit';
 import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
@@ -17,7 +17,7 @@ export const load = (async ({ url }) => {
 
   return {
     meta: {
-      title: $t('locked_folder'),
+      title: $t('frameleaf_locked'),
     },
   };
 }) satisfies PageLoad;

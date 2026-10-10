@@ -3,14 +3,23 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-
-import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { deferJobAdoption } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
+import { ClassificationService } from 'src/services/classification.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
-import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
+  private _classificationService: ClassificationService | undefined;
+
+  private get classificationService(): ClassificationService {
+    this._classificationService ??= BaseService.create(ClassificationService, this);
+    return this._classificationService;
+  }
+
   private get zeroShotTaggingService(): ZeroShotTaggingService {
     // Constructed lazily via BaseService.create so we reuse the same repo
     // singletons without threading a new dep through BaseService's ctor.
@@ -81,18 +90,19 @@ export class SmartInfoService extends BaseService {
   async handleQueueEncodeClip({ force }: JobOf<JobName.SmartSearchQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
-    if (force) {
-      const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
-      // in addition to deleting embeddings, update the dimension size in case it failed earlier
-      await this.databaseRepository.setDimensionSize(dimSize);
+    // Configuration initialization owns dimensional DDL. A rerun must retain working vectors
+    // until each accepted replacement is ready, rather than clearing the entire index.
+    const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
+    if ((await this.databaseRepository.getDimensionSize('smart_search')) !== dimSize) {
+      deferJobUntilDependency('destination-configuration');
+      return JobStatus.Failed;
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForEncodeClip(force))) {
-      await this.jobRepository.queueAll(assets.map((asset) => ({ name: JobName.SmartSearch, data: { id: asset.id } })));
-    }
+    await this.jobRepository.queueSelection(JobName.SmartSearch, this.assetJobRepository.selectionForEncodeClip(force));
 
     return JobStatus.Success;
   }
@@ -101,10 +111,13 @@ export class SmartInfoService extends BaseService {
   async handleEncodeClip({ id }: JobOf<JobName.SmartSearch>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
+    if (asset && asset.files.length !== 1) deferJobUntilDependency('source-unavailable');
     if (!asset || asset.files.length !== 1) {
       return JobStatus.Failed;
     }
@@ -113,7 +126,16 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.machineLearningRepository.encodeImage(asset.files[0].path, machineLearning.clip);
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Clip,
+      jobId: id,
+      jobName: JobName.SmartSearch,
+    });
+    const embedding = await this.machineLearningRepository.encodeImage(
+      selection,
+      asset.files[0].path,
+      machineLearning.clip,
+    );
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -127,8 +149,30 @@ export class SmartInfoService extends BaseService {
     }
 
     await this.searchRepository.upsert(asset.id, embedding);
-    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, embedding);
+    await this.jobRepository.collectFollowups(() =>
+      this.jobRepository.queue({
+        name: JobName.SmartSearchPostprocess,
+        data: { id: asset.id },
+      }),
+    );
+    return JobStatus.Success;
+  }
 
+  @OnJob({ name: JobName.SmartSearchPostprocess, queue: QueueName.SmartSearch })
+  async handlePostprocessClip({ id }: JobOf<JobName.SmartSearchPostprocess>): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
+    const asset = await this.assetJobRepository.getForClipEncoding(id);
+    const persisted = await this.searchRepository.getEmbedding(id);
+    if (!asset || !persisted || asset.visibility === AssetVisibility.Hidden) {
+      return JobStatus.Skipped;
+    }
+    deferJobAdoption(async () => {
+      if ((await this.searchRepository.getEmbedding(id))?.embedding !== persisted.embedding) {
+        throw new Error('CLIP embedding changed before postprocessing publication');
+      }
+    });
+    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding);
+    await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     return JobStatus.Success;
   }
 }

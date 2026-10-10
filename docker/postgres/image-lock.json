@@ -1,0 +1,8 @@
+{
+  "image": "ghcr.io/frameleaf/frameleaf-postgres",
+  "version": "19beta4-pgvector0.8.7",
+  "digest": "sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d",
+  "sourceCommit": "a3c5e41f3f5e7a87f57f1accb9631b7d6be6c27c",
+  "workflowRun": "https://github.com/Frameleaf/frameleaf-app/actions/runs/37190641459",
+  "platforms": ["linux/amd64", "linux/arm64"]
+}

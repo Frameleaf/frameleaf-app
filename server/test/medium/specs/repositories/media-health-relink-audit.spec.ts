@@ -1,4 +1,3 @@
-/* eslint-disable unicorn/no-await-expression-member -- Readback stays beside each transactional assertion. */
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ChecksumAlgorithm } from 'src/enum.js';
@@ -18,27 +17,18 @@ describe('Media health transactional relink audit', () => {
   });
   beforeEach(async () => {
     await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
     for (const statement of [
       'CREATE SCHEMA public',
-      'CREATE SCHEMA immich_fork',
       'CREATE TABLE public.user (id uuid PRIMARY KEY)',
       `CREATE TABLE public.asset (id uuid PRIMARY KEY, "ownerId" uuid REFERENCES public.user, "updateId" uuid DEFAULT gen_random_uuid(),
         "originalPath" text, "originalFileName" text, checksum bytea, "checksumAlgorithm" text, "isExternal" boolean,
         "libraryId" uuid, "deletedAt" timestamptz, status text DEFAULT 'active', "isOffline" boolean DEFAULT true,
         "physicalOriginalFileId" uuid, "fileModifiedAt" timestamptz)`,
       'CREATE TABLE public.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
-      "CREATE TABLE immich_fork.state (id integer PRIMARY KEY, phase text); INSERT INTO immich_fork.state VALUES (1, 'dual-write')",
-      'CREATE TABLE immich_fork.migration_audit (name text, status text)',
-      'CREATE TABLE immich_fork.asset_storage_reservation ("assetId" uuid, status text)',
-      'CREATE TABLE immich_fork.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
-      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE, "createdAt" timestamptz NOT NULL, "updatedAt" timestamptz NOT NULL)',
-      'CREATE TABLE immich_fork.asset_physical_file ("assetId" uuid PRIMARY KEY, "physicalFileId" uuid, "upstreamPath" text, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
+      'CREATE TABLE public.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
       `CREATE TABLE public.asset_health (id uuid PRIMARY KEY, "assetId" uuid, "runId" uuid, category text, status text, severity text,
         "originalPath" text, "originalFileName" text, evidence jsonb DEFAULT '{}', resolution jsonb DEFAULT '{}', "checkedAt" timestamptz, "resolvedAt" timestamptz, "dismissedAt" timestamptz)`,
-      'CREATE TABLE immich_fork.asset_health (LIKE public.asset_health INCLUDING ALL)',
       `CREATE TABLE public.asset_health_candidate (id uuid PRIMARY KEY, "healthId" uuid, "candidatePath" text, status text, resolution jsonb DEFAULT '{}')`,
-      'CREATE TABLE immich_fork.asset_health_candidate (LIKE public.asset_health_candidate INCLUDING ALL)',
     ]) {
       await sql.raw(statement).execute(db);
     }
@@ -69,7 +59,7 @@ describe('Media health transactional relink audit', () => {
       VALUES (${input.assetId}::uuid,${input.ownerId}::uuid,${input.expectedUpdateId}::uuid,${input.expectedOriginalPath},'original.jpg',${input.sha1},'sha1',${external},${external ? input.expectedLibraryId : null}::uuid)`.execute(
       db,
     );
-    for (const schema of ['public', 'immich_fork']) {
+    for (const schema of ['public']) {
       await sql`INSERT INTO ${sql.id(schema, 'asset_health')} (id,"assetId",category,status,"originalPath",resolution)
         VALUES (${input.healthId}::uuid,${input.assetId}::uuid,'missing','found',${input.expectedOriginalPath},'{"autoRelinkable":true}')`.execute(
         db,
@@ -91,7 +81,7 @@ describe('Media health transactional relink audit', () => {
         .where('id', '=', input.assetId)
         .executeTakeFirst(),
     ).toEqual({ originalPath: input.originalPath, status: 'active', deletedAt: null });
-    for (const schema of ['public', 'immich_fork']) {
+    for (const schema of ['public']) {
       expect(
         (
           await sql<{
@@ -104,7 +94,7 @@ describe('Media health transactional relink audit', () => {
       (
         await sql<{
           sha256: Buffer;
-        }>`SELECT sha256 FROM immich_fork.asset_checksum WHERE "assetId"=${input.assetId}::uuid`.execute(db)
+        }>`SELECT sha256 FROM public.asset_checksum WHERE "assetId"=${input.assetId}::uuid`.execute(db)
       ).rows[0].sha256,
     ).toEqual(input.sha256);
   });
@@ -173,7 +163,7 @@ describe('Media health transactional relink audit', () => {
     const input = await arrange();
     input.expectedChecksumAlgorithm = ChecksumAlgorithm.sha1Path;
     await sql`UPDATE public.asset SET "checksumAlgorithm" = 'sha1-path'`.execute(db);
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes")
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes")
       VALUES (${input.assetId}::uuid, ${Buffer.alloc(20, 9)}, ${input.sha256}, 100)`.execute(db);
     expect(await sut.relinkExternalAsset(input)).toBe(false);
     expect(input.verifyCandidate).not.toHaveBeenCalled();
@@ -204,77 +194,26 @@ describe('Media health transactional relink audit', () => {
     input.verifyCandidate = vi.fn().mockResolvedValue(undefined);
     expect(await sut.relinkExternalAsset(input)).toBe(false);
     expect(input.verifyCandidate).toHaveBeenCalledOnce();
-    expect((await sql`SELECT 1 FROM immich_fork.asset_checksum`.execute(db)).rows).toHaveLength(0);
+    expect((await sql`SELECT 1 FROM public.asset_checksum`.execute(db)).rows).toHaveLength(0);
   });
-  it.each(['reserved', 'handoff'])('blocks managed relink during %s', async (kind) => {
+  it('reuses a matching canonical SHA-1 physical row without changing its metadata', async () => {
     const { expectedLibraryId: _, ...input } = await arrange(false);
-    if (kind === 'reserved') {
-      await sql`INSERT INTO immich_fork.asset_storage_reservation VALUES (${input.assetId}::uuid,'reserved')`.execute(
-        db,
-      );
-    } else {
-      await sql`INSERT INTO immich_fork.migration_audit VALUES ('official-handoff-preparation','running')`.execute(db);
-    }
-    expect(await sut.relinkManagedAsset(input)).toBe(false);
-  });
-  it('relinks in active phase after public physical storage has been removed', async () => {
-    const { expectedLibraryId: _, ...input } = await arrange(false);
-    await sql`UPDATE immich_fork.state SET phase='active'`.execute(db);
-    await sql`ALTER TABLE public.asset DROP COLUMN "physicalOriginalFileId"`.execute(db);
-    await sql`DROP TABLE public.physical_file`.execute(db);
-    expect(await sut.relinkManagedAsset(input)).toBe(true);
-    expect(
-      (
-        await sql<{
-          canonicalPath: string;
-          createdAt: Date;
-          updatedAt: Date;
-        }>`SELECT p."canonicalPath", p."createdAt", p."updatedAt" FROM immich_fork.asset_physical_file m JOIN immich_fork.physical_file p ON p.id=m."physicalFileId" WHERE m."assetId"=${input.assetId}::uuid`.execute(
-          db,
-        )
-      ).rows[0],
-    ).toEqual({ canonicalPath: input.originalPath, createdAt: expect.any(Date), updatedAt: expect.any(Date) });
-    expect((await sql<{ status: string }>`SELECT status FROM public.asset_health`.execute(db)).rows[0].status).toBe(
-      'found',
+    const physicalId = randomUUID();
+    const sharedId = randomUUID();
+    await sql`INSERT INTO public.asset (id,"ownerId","originalPath",checksum,"checksumAlgorithm","isExternal","libraryId","physicalOriginalFileId")
+      VALUES (${sharedId}::uuid,${input.ownerId}::uuid,${input.originalPath},${input.sha1},'sha1',false,NULL,${physicalId}::uuid)`.execute(
+      db,
     );
+    await sql`INSERT INTO public.physical_file VALUES (${physicalId}::uuid,${sharedId}::uuid,${input.sha1},${input.originalPath},100,'original')`.execute(
+      db,
+    );
+    expect(await sut.relinkManagedAsset(input)).toBe(true);
+    const { rows } = await sql<{ physicalFileId: string; canonicalAssetId: string; checksum: Buffer }>`
+      SELECT a."physicalOriginalFileId" AS "physicalFileId",p."canonicalAssetId",p.checksum
+      FROM public.asset a JOIN public.physical_file p ON p.id=a."physicalOriginalFileId"
+      WHERE a.id=${input.assetId}::uuid`.execute(db);
+    expect(rows[0]).toEqual({ physicalFileId: physicalId, canonicalAssetId: sharedId, checksum: input.sha1 });
   });
-  it.each(['dual-write', 'active'])(
-    'reuses a SHA-1 physical row without replacing its metadata in %s',
-    async (phase) => {
-      const { expectedLibraryId: _, ...input } = await arrange(false);
-      const physicalId = randomUUID();
-      const sharedId = randomUUID();
-      await sql`INSERT INTO public.asset (id, "ownerId", "originalPath", checksum, "checksumAlgorithm", "isExternal", "libraryId", "physicalOriginalFileId")
-      VALUES (${sharedId}::uuid, ${input.ownerId}::uuid, ${input.originalPath}, ${input.sha1}, 'sha1', false, NULL, ${physicalId}::uuid)`.execute(
-        db,
-      );
-      await sql`INSERT INTO public.physical_file VALUES (${physicalId}::uuid, ${sharedId}::uuid, ${input.sha1}, ${input.originalPath}, 100, 'original')`.execute(
-        db,
-      );
-      await sql`INSERT INTO immich_fork.physical_file VALUES (${physicalId}::uuid, ${sharedId}::uuid, 'original', ${input.sha1}, 100, ${input.originalPath}, now(), now())`.execute(
-        db,
-      );
-      await sql`INSERT INTO immich_fork.asset_physical_file VALUES (${sharedId}::uuid, ${physicalId}::uuid, ${input.originalPath}, now(), now())`.execute(
-        db,
-      );
-      await sql`UPDATE immich_fork.state SET phase = ${phase}`.execute(db);
-      if (phase === 'active') {
-        await sql`ALTER TABLE public.asset DROP COLUMN "physicalOriginalFileId"`.execute(db);
-        await sql`DROP TABLE public.physical_file`.execute(db);
-      }
-      expect(await sut.relinkManagedAsset(input)).toBe(true);
-      const rows = await sql<{ physicalFileId: string; canonicalAssetId: string; checksum: Buffer }>`
-      SELECT m."physicalFileId", p."canonicalAssetId", p.checksum FROM immich_fork.asset_physical_file m
-      JOIN immich_fork.physical_file p ON p.id=m."physicalFileId" WHERE m."assetId"=${input.assetId}::uuid`.execute(db);
-      expect(rows.rows[0]).toEqual({ physicalFileId: physicalId, canonicalAssetId: sharedId, checksum: input.sha1 });
-      if (phase === 'dual-write') {
-        expect(
-          (await db.selectFrom('physical_file').select('checksum').where('id', '=', physicalId).executeTakeFirst())
-            ?.checksum,
-        ).toEqual(input.sha1);
-      }
-    },
-  );
   it('preserves shared physical bytes and transfers old canonical ownership', async () => {
     const { expectedLibraryId: _, ...input } = await arrange(false);
     const shared = randomUUID();
@@ -288,16 +227,8 @@ describe('Media health transactional relink audit', () => {
     await sql`INSERT INTO public.physical_file VALUES (${physical}::uuid,${input.assetId}::uuid,${input.sha256},${input.expectedOriginalPath},100,'original')`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.physical_file VALUES (${physical}::uuid,${input.assetId}::uuid,'original',${input.sha256},100,${input.expectedOriginalPath},now(),now())`.execute(
-      db,
-    );
-    for (const id of [input.assetId, shared]) {
-      await sql`INSERT INTO immich_fork.asset_physical_file VALUES (${id}::uuid,${physical}::uuid,${input.expectedOriginalPath},now(),now())`.execute(
-        db,
-      );
-    }
     expect(await sut.relinkManagedAsset(input)).toBe(true);
-    for (const schema of ['public', 'immich_fork']) {
+    for (const schema of ['public']) {
       expect(
         (
           await sql<{

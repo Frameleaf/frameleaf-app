@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { fileURLToPath } from 'node:url';
 import { GenericContainer, Wait } from 'testcontainers';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -6,9 +7,18 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 
+// Frameleaf's own Postgres image source; medium tests build it rather than pull a prebuilt database image.
+const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', import.meta.url));
+
 const globalSetup = async () => {
-  const templateName = 'mich';
-  const postgresContainer = await new GenericContainer('ghcr.io/immich-app/postgres:14-vectorchord0.4.3')
+  const templateName = 'frameleaf';
+  // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
+  const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext)
+    .withBuildArgs(
+      process.env.FRAMELEAF_CI_POSTGRES_IMAGE ? { POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE } : {},
+    )
+    .build('frameleaf-postgres:medium', { deleteOnExit: false });
+  const postgresContainer = await postgresImage
     .withExposedPorts(5432)
     .withEnvironment({
       POSTGRES_PASSWORD: 'postgres',
@@ -17,8 +27,6 @@ const globalSetup = async () => {
     })
     .withCommand([
       'postgres',
-      '-c',
-      'shared_preload_libraries=vchord.so',
       '-c',
       'max_wal_size=2GB',
       '-c',
@@ -29,8 +37,6 @@ const globalSetup = async () => {
       'full_page_writes=off',
       '-c',
       'synchronous_commit=off',
-      '-c',
-      'config_file=/var/lib/postgresql/data/postgresql.conf',
     ])
     .withWaitStrategy(Wait.forAll([Wait.forLogMessage('database system is ready to accept connections', 2)]))
     .start();
@@ -46,7 +52,6 @@ const globalSetup = async () => {
   const logger = LoggingRepository.create();
   const databaseRepository = new DatabaseRepository(db, logger, configRepository);
   await databaseRepository.runMigrations();
-  await databaseRepository.runForkMigrations();
 
   await db.destroy();
 };

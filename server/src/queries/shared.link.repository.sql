@@ -31,6 +31,7 @@ select
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -54,51 +55,43 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "user"."name"
+        from
+          "user"
+        where
+          "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
+      ) as obj
+  ) as "owner",
   to_json("album") as "album"
 from
   "shared_link"
@@ -143,6 +136,7 @@ from
               "asset_exif"."fNumber",
               "asset_exif"."focalLength",
               "asset_exif"."fps",
+              "asset_exif"."imageEncoding",
               "asset_exif"."iso",
               "asset_exif"."latitude",
               "asset_exif"."lensModel",
@@ -166,46 +160,24 @@ from
         where
           "album_asset"."assetId" = "asset"."id"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
-            case
-              when "asset"."id" is null then false
-              when coalesce(
-                (
-                  select
-                    phase
-                  from
-                    immich_fork.state
-                  where
-                    id = 1
-                ),
-                'inactive'
-              ) in ('legacy', 'dual-write', 'ready') then exists (
-                select
-                  1
-                from
-                  asset as nsfw_asset
-                where
-                  nsfw_asset.id = "asset"."id"
-                  and nsfw_asset.is_nsfw = true
-              )
-              when (
-                select
-                  phase
-                from
-                  immich_fork.state
-                where
-                  id = 1
-              ) = 'active' then not exists (
-                select
-                  1
-                from
-                  immich_fork.asset_privacy as privacy_asset
-                where
-                  privacy_asset."assetId" = "asset"."id"
-                  and privacy_asset."isNsfw" = false
-              )
-              else false
-            end
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -265,6 +237,14 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         order by
           "asset"."fileCreatedAt" asc
         limit
@@ -429,6 +409,7 @@ from
           "asset_exif"."fNumber",
           "asset_exif"."focalLength",
           "asset_exif"."fps",
+          "asset_exif"."imageEncoding",
           "asset_exif"."iso",
           "asset_exif"."latitude",
           "asset_exif"."lensModel",
@@ -451,6 +432,14 @@ from
       ) as "exifInfo" on true
     where
       "asset"."id" = "shared_link_asset"."assetId"
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
   ) as "assets" on true
 where
   "shared_link"."id" = $1

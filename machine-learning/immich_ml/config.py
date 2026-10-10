@@ -4,16 +4,23 @@ import os
 import sys
 from pathlib import Path
 from socket import socket
+from typing import Literal
+from urllib.parse import urlsplit
 
 from gunicorn.arbiter import Arbiter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.logging import RichHandler
 from uvicorn import Server
 from uvicorn.workers import UvicornWorker
 
+from .env_aliases import apply_env_aliases
 from .schemas import ModelPrecision
+
+# FL-294: deprecated IMMICH_* names are copied to their FRAMELEAF_* names before any setting is read;
+# a pair set to two different values stops the service here. __main__ logs the names in use once.
+DEPRECATED_ENV = apply_env_aliases(os.environ)
 
 
 class ClipSettings(BaseModel):
@@ -34,7 +41,7 @@ class OcrSettings(BaseModel):
 class ImageDescriptionSettings(BaseModel):
     # Single visual VLM model for the image-description-tagging task.
     # When set, the model is downloaded and warmed into VRAM at container
-    # boot — important for RunPod serverless cold starts, where the model
+    # boot — important for remote GPU workers with cold starts, where the model
     # download + load takes longer than the edge proxy's 30 s timeout.
     visual: str | None = None
 
@@ -59,6 +66,10 @@ class MaxBatchSize(BaseModel):
     ocr: int | None = None
 
 
+DEFAULT_MODEL_SOURCE_URL = "https://models.frameleaf.cloud"
+HUGGING_FACE_HOST = "huggingface.co"
+
+
 def default_worker_timeout() -> int:
     return 900 if os.environ.get("DEVICE") == "rocm" else 300
 
@@ -72,6 +83,11 @@ class Settings(BaseSettings):
     )
 
     cache_folder: Path = (Path.home() / ".cache" / "immich_ml").resolve()
+    # Hub-compatible host serving the frameleaf/<model> repositories. Unset means
+    # HF_ENDPOINT if that is set, otherwise the Frameleaf mirror (see model_source()).
+    model_source_url: str | None = None
+    # Token for a custom model source that needs authentication. Never logged.
+    model_source_token: SecretStr | None = None
     model_ttl: int = 300
     model_ttl_poll_s: int = 10
     workers: int = 1
@@ -90,6 +106,11 @@ class Settings(BaseSettings):
     preload: PreloadModelData | None = None
     max_batch_size: MaxBatchSize | None = None
     image_description: ImageDescriptionRuntimeSettings = ImageDescriptionRuntimeSettings()
+    # Opt in after qualifying the local CUDA runtime; auto retains a CPU-only host fallback.
+    semantic_mask_device: Literal["cpu", "cuda", "auto"] = "cpu"
+    # Studio captions: the Whisper model `frameleaf-transcribe` stands for. Unset picks
+    # whisper-large-v3-turbo on a CUDA GPU and whisper-small otherwise (models/constants.py).
+    transcription_model: str | None = None
     openvino_precision: ModelPrecision = ModelPrecision.FP32
     rocm_precision: ModelPrecision = ModelPrecision.FP32
 
@@ -101,10 +122,40 @@ class Settings(BaseSettings):
 class NonPrefixedSettings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
 
-    immich_host: str = "[::]"
-    immich_port: int = 3003
-    immich_log_level: str = "info"
+    frameleaf_host: str = "[::]"
+    frameleaf_port: int = 3003
+    frameleaf_log_level: str = "info"
     no_color: bool = False
+
+
+def model_source() -> tuple[str, str]:
+    """The model source URL and the setting it came from.
+
+    Precedence: MACHINE_LEARNING_MODEL_SOURCE_URL, then HF_ENDPOINT (an admin who
+    already chose a Hub mirror keeps it), then the Frameleaf model mirror.
+    """
+    if settings.model_source_url and settings.model_source_url.strip():
+        return settings.model_source_url.strip().rstrip("/"), "MACHINE_LEARNING_MODEL_SOURCE_URL"
+    hf_endpoint = os.environ.get("HF_ENDPOINT", "").strip()
+    if hf_endpoint:
+        return hf_endpoint.rstrip("/"), "HF_ENDPOINT"
+    return DEFAULT_MODEL_SOURCE_URL, "default"
+
+
+def model_source_url() -> str:
+    return model_source()[0]
+
+
+def model_source_token() -> str | bool | None:
+    """The token argument for downloads from the model source.
+
+    An explicit MACHINE_LEARNING_MODEL_SOURCE_TOKEN is sent to the source it is
+    configured for. Otherwise a Hugging Face token (HF_TOKEN or a saved login) is
+    only sent to huggingface.co itself; every other source gets no token at all.
+    """
+    if settings.model_source_token is not None and settings.model_source_token.get_secret_value():
+        return settings.model_source_token.get_secret_value()
+    return None if urlsplit(model_source_url()).hostname == HUGGING_FACE_HOST else False
 
 
 _clean_name = str.maketrans(":\\/", "___", ".")
@@ -128,7 +179,7 @@ LOG_LEVELS: dict[str, int] = {
 settings = Settings()
 non_prefixed_settings = NonPrefixedSettings()
 
-LOG_LEVEL = LOG_LEVELS.get(non_prefixed_settings.immich_log_level.lower(), logging.INFO)
+LOG_LEVEL = LOG_LEVELS.get(non_prefixed_settings.frameleaf_log_level.lower(), logging.INFO)
 
 
 class CustomRichHandler(RichHandler):

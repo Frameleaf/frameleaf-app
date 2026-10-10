@@ -1,0 +1,96 @@
+--- a/src/features/keyframes/utils/animated-transform-resolver.ts
++++ b/src/features/keyframes/utils/animated-transform-resolver.ts
+@@ -318,13 +318,15 @@
+   if (isVectorAnimatableProperty(property)) {
+     const preLinkValue = getPreLinkVectorValue(item, property, context)
+     const postLinkValue = resolveLinkedVectorValue(item.id, property, preLinkValue, context, state)
+-    return resolvePropertyExpressionValue(
++    const result = resolvePropertyExpressionValue(
+       item.id,
+       property,
+       postLinkValue,
+       context,
+       state,
+-    ).value
++    )
++    if (result.error) throw new Error(result.error)
++    return result.value
+   }
+   const preLinkValue = getPreExpressionValue(item, property, context)
+   if (preLinkValue === null) return null
+@@ -335,13 +337,15 @@
+     context,
+     state,
+   )
+-  return resolvePropertyExpressionValue(
++  const result = resolvePropertyExpressionValue(
+     item.id,
+     property,
+     postLinkValue,
+     context,
+     state,
+-  ).value
++  )
++  if (result.error) throw new Error(result.error)
++  return result.value
+ }
+
+ export function resolveExpressionReferenceValue(
+--- /dev/null
++++ b/src/features/keyframes/utils/property-expression-dependencies.test.ts
+@@ -0,0 +1,55 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { ShapeItem } from '@/types/timeline'
++import {
++  resolveExpressionReferenceValue,
++  resolvePropertyExpressionValue,
++} from './animated-transform-resolver'
++import { evaluatePropertyExpression } from './property-expression'
++
++describe.each(['x', 'position'] as const)('expression dependency errors for %s', (property) => {
++  const source: ShapeItem = {
++    id: 'source', type: 'shape', shapeType: 'rectangle', trackId: 'track',
++    from: 0, durationInFrames: 60, label: 'Source',
++    transform: { x: 20, y: 30, width: 100, height: 100 },
++    fillColor: '#fff', strokeColor: '#fff', strokeWidth: 1,
++  }
++  const target: ShapeItem = { ...source, id: 'target', transform: { ...source.transform, x: 10, y: 15 } }
++  const preValue = property === 'x' ? 10 : { x: 10, y: 15 }
++
++  it.each([
++    ['direct cycle', `prop("source", "${property}") + 1`, 'Expression dependency cycle'],
++    ['transitive cycle', `prop("target", "${property}") + 1`, 'Expression dependency cycle'],
++    ['invalid dependency', 'value / 0', 'Division by zero'],
++    ['wrong dependency type', property === 'x' ? '[1, 2]' : '1', 'Expression result has the wrong value type'],
++    ['valid dependency', 'value * 2', undefined],
++  ])('propagates %s through render and inspector evaluation', (_label, expression, error) => {
++    const targetExpression = `prop("source", "${property}") + 1`
++    const keyframes = new Map<string, ItemKeyframes>([
++      [source.id, { itemId: source.id, properties: [], expressions: [
++        { type: 'expression', targetProperty: property, source: expression!, enabled: true },
++      ] }],
++      [target.id, { itemId: target.id, properties: [], expressions: [
++        { type: 'expression', targetProperty: property, source: targetExpression, enabled: true },
++      ] }],
++    ])
++    const items = new Map([[source.id, source], [target.id, target]])
++    const context = {
++      globalFrame: 0,
++      canvas: { width: 1920, height: 1080, fps: 30 },
++      getItem: (id: string) => items.get(id),
++      getKeyframes: (id: string) => keyframes.get(id),
++    }
++    const expected = error
++      ? { value: preValue, error }
++      : { value: property === 'x' ? 41 : { x: 41, y: 61 } }
++
++    expect(resolvePropertyExpressionValue(target.id, property, preValue, context)).toEqual(expected)
++    expect(evaluatePropertyExpression(targetExpression, {
++      preValue, globalFrame: 0, fps: 30,
++      resolveProperty: (id, referencedProperty) => resolveExpressionReferenceValue(id, referencedProperty, context),
++    })).toEqual(expected)
++  })
++})

@@ -1,0 +1,4190 @@
+{
+  "tables": {
+    "activity": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "comment": {
+        "type": "text",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isLiked": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumName": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "'Untitled Album'::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumThumbnailAssetId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "text",
+        "not_null": true,
+        "default": "''::text",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isActivityEnabled": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "order": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "'desc'::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album_asset": {
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album_asset_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album_user": {
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "role": {
+        "type": "album_user_role_enum",
+        "not_null": true,
+        "default": "'editor'::public.album_user_role_enum",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "createId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "album_user_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "albumId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "api_key": {
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "permissions": {
+        "type": "character varying[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "originalPath": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "fileCreatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "fileModifiedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isFavorite": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "duration": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "checksum": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "livePhotoVideoId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "originalFileName": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "thumbhash": {
+        "type": "bytea",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isOffline": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "libraryId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isExternal": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "localDateTime": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "stackId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "duplicateId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "status": {
+        "type": "assets_status_enum",
+        "not_null": true,
+        "default": "'active'::public.assets_status_enum",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "visibility": {
+        "type": "asset_visibility_enum",
+        "not_null": true,
+        "default": "'timeline'::public.asset_visibility_enum",
+        "identity": "",
+        "generated": ""
+      },
+      "width": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "height": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isEdited": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "checksumAlgorithm": {
+        "type": "asset_checksum_algorithm_enum",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_audio": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "bitrate": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "index": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "profile": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "codecName": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_edit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "action": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "parameters": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "sequence": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_edit_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "editId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_exif": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "make": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "model": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "exifImageWidth": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "exifImageHeight": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "fileSizeInByte": {
+        "type": "bigint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "orientation": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "dateTimeOriginal": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "modifyDate": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "lensModel": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "fNumber": {
+        "type": "double precision",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "focalLength": {
+        "type": "double precision",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "iso": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "latitude": {
+        "type": "double precision",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "longitude": {
+        "type": "double precision",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "city": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "state": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "country": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "text",
+        "not_null": true,
+        "default": "''::text",
+        "identity": "",
+        "generated": ""
+      },
+      "fps": {
+        "type": "double precision",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "exposureTime": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "livePhotoCID": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "timeZone": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "projectionType": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "profileDescription": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "colorspace": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "bitsPerSample": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "autoStackId": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "rating": {
+        "type": "integer",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "lockedProperties": {
+        "type": "character varying[]",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "tags": {
+        "type": "character varying[]",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_face": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "personId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "imageWidth": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "imageHeight": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "boundingBoxX1": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "boundingBoxY1": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "boundingBoxX2": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "boundingBoxY2": {
+        "type": "integer",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "sourceType": {
+        "type": "sourcetype",
+        "not_null": true,
+        "default": "'machine-learning'::public.sourcetype",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "isVisible": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_face_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetFaceId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_file": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "path": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "isEdited": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "isProgressive": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "isTransparent": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_job_status": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "facesRecognizedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "metadataExtractedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "duplicatesDetectedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ocrAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_keyframe": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "pts": {
+        "type": "integer[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "accDuration": {
+        "type": "integer[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownDuration": {
+        "type": "integer[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "totalDuration": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "packetCount": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "outputFrames": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_metadata": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "value": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_metadata_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_ocr": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "x1": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "y1": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "x2": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "y2": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "x3": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "y3": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "x4": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "y4": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "boxScore": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "textScore": {
+        "type": "real",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "text": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isVisible": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_ocr_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "asset_video": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "bitrate": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "frameCount": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "timeBase": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "index": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "profile": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "level": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "colorPrimaries": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "colorTransfer": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "colorMatrix": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "dvProfile": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "dvLevel": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "dvBlSignalCompatibilityId": {
+        "type": "smallint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "codecName": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "formatName": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "formatLongName": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "pixelFormat": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "face_search": {
+      "faceId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "embedding": {
+        "type": "vector(512)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "geodata_places": {
+      "id": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying(200)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "longitude": {
+        "type": "double precision",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "latitude": {
+        "type": "double precision",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "countryCode": {
+        "type": "character(2)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "admin1Code": {
+        "type": "character varying(20)",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "admin2Code": {
+        "type": "character varying(80)",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "modificationDate": {
+        "type": "date",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "admin1Name": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "admin2Name": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "alternateNames": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "integrity_report": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "path": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "fileAssetId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "library": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "importPaths": {
+        "type": "text[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "exclusionPatterns": {
+        "type": "text[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "refreshedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "memory": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "data": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isSaved": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "memoryAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "seenAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "showAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "hideAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "memory_asset": {
+      "memoriesId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "memory_asset_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "memoryId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "memory_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "memoryId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "migration_overrides": {
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "value": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "move_history": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "entityId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "pathType": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "oldPath": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "newPath": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "naturalearth_countries": {
+      "id": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "a",
+        "generated": ""
+      },
+      "admin": {
+        "type": "character varying(50)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "admin_a3": {
+        "type": "character varying(3)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying(50)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "coordinates": {
+        "type": "polygon",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "notification": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "level": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "'info'::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "'info'::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "data": {
+        "type": "jsonb",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "title": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "text",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "readAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "ocr_search": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "text": {
+        "type": "text",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "partner": {
+      "sharedById": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "sharedWithId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "inTimeline": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "createId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "partner_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "sharedById": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "sharedWithId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "person": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "thumbnailPath": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "isHidden": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "birthDate": {
+        "type": "date",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "faceAssetId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isFavorite": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "color": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "person_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "personId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "plugin": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "enabled": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "version": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "title": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "author": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "wasmBytes": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "templates": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "sha256hash": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "plugin_method": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "pluginId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "title": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "types": {
+        "type": "character varying[]",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "hostFunctions": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "uiHints": {
+        "type": "character varying[]",
+        "not_null": true,
+        "default": "'{}'::character varying[]",
+        "identity": "",
+        "generated": ""
+      },
+      "schema": {
+        "type": "jsonb",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "allowedHosts": {
+        "type": "character varying[]",
+        "not_null": true,
+        "default": "'{}'::character varying[]",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "session": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "token": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deviceType": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "deviceOS": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "pinExpiresAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "expiresAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "parentId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "isPendingSyncReset": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "appVersion": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "oauthSid": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "session_sync_checkpoint": {
+      "sessionId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "ack": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "shared_link": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "bytea",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "type": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "expiresAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "allowUpload": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "albumId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "allowDownload": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "showExif": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "password": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "slug": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "shared_link_asset": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "sharedLinkId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "smart_search": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "embedding": {
+        "type": "vector(512)",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "stack": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "primaryAssetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "stack_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "stackId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "system_metadata": {
+      "key": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "value": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "tag": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "value": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "color": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "parentId": {
+        "type": "uuid",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "tag_asset": {
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "tagId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "tag_closure": {
+      "id_ancestor": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "id_descendant": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "user": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "email": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "password": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "profileImagePath": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "isAdmin": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "false",
+        "identity": "",
+        "generated": ""
+      },
+      "shouldChangePassword": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "oauthId": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "storageLabel": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "''::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "quotaSizeInBytes": {
+        "type": "bigint",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "quotaUsageInBytes": {
+        "type": "bigint",
+        "not_null": true,
+        "default": "0",
+        "identity": "",
+        "generated": ""
+      },
+      "status": {
+        "type": "character varying",
+        "not_null": true,
+        "default": "'active'::character varying",
+        "identity": "",
+        "generated": ""
+      },
+      "profileChangedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "avatarColor": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "pinCode": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "user_audit": {
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      },
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "user_metadata": {
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "value": {
+        "type": "jsonb",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "user_metadata_audit": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "userId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "key": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "deletedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "clock_timestamp()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "version_history": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "version": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "video_stream_segment": {
+      "variantId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "index": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "durationUs": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "video_stream_session": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "assetId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "expiresAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "video_stream_variant": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "sessionId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "bitrate": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "codec": {
+        "type": "video_stream_variant_codec_enum",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "resolution": {
+        "type": "smallint",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "workflow": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "ownerId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "trigger": {
+        "type": "character varying",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "name": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "description": {
+        "type": "character varying",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "createdAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updatedAt": {
+        "type": "timestamp with time zone",
+        "not_null": true,
+        "default": "now()",
+        "identity": "",
+        "generated": ""
+      },
+      "updateId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.immich_uuid_v7()",
+        "identity": "",
+        "generated": ""
+      },
+      "enabled": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      }
+    },
+    "workflow_step": {
+      "id": {
+        "type": "uuid",
+        "not_null": true,
+        "default": "public.uuid_generate_v4()",
+        "identity": "",
+        "generated": ""
+      },
+      "enabled": {
+        "type": "boolean",
+        "not_null": true,
+        "default": "true",
+        "identity": "",
+        "generated": ""
+      },
+      "workflowId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "pluginMethodId": {
+        "type": "uuid",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "config": {
+        "type": "jsonb",
+        "not_null": false,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      },
+      "order": {
+        "type": "integer",
+        "not_null": true,
+        "default": null,
+        "identity": "",
+        "generated": ""
+      }
+    }
+  },
+  "constraints": [
+    {
+      "table_name": "activity",
+      "name": "activity_like_check",
+      "definition": "CHECK ((((comment IS NULL) AND (\"isLiked\" = true)) OR ((comment IS NOT NULL) AND (\"isLiked\" = false))))"
+    },
+    {
+      "table_name": "person",
+      "name": "person_birthDate_chk",
+      "definition": "CHECK ((\"birthDate\" <= CURRENT_DATE))"
+    },
+    {
+      "table_name": "move_history",
+      "name": "UQ_entityId_pathType",
+      "definition": "UNIQUE (\"entityId\", \"pathType\")"
+    },
+    {
+      "table_name": "move_history",
+      "name": "UQ_newPath",
+      "definition": "UNIQUE (\"newPath\")"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "album_asset_audit",
+      "name": "album_asset_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "album_asset",
+      "name": "album_asset_pkey",
+      "definition": "PRIMARY KEY (\"albumId\", \"assetId\")"
+    },
+    {
+      "table_name": "album_audit",
+      "name": "album_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "album",
+      "name": "album_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "album_user_audit",
+      "name": "album_user_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "album_user",
+      "name": "album_user_pkey",
+      "definition": "PRIMARY KEY (\"albumId\", \"userId\")"
+    },
+    {
+      "table_name": "api_key",
+      "name": "api_key_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_audio",
+      "name": "asset_audio_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "asset_audit",
+      "name": "asset_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_edit",
+      "name": "asset_edit_assetId_sequence_uq",
+      "definition": "UNIQUE (\"assetId\", sequence)"
+    },
+    {
+      "table_name": "asset_edit_audit",
+      "name": "asset_edit_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_edit",
+      "name": "asset_edit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_exif",
+      "name": "asset_exif_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "asset_face_audit",
+      "name": "asset_face_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_face",
+      "name": "asset_face_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_file",
+      "name": "asset_file_assetId_type_isEdited_uq",
+      "definition": "UNIQUE (\"assetId\", type, \"isEdited\")"
+    },
+    {
+      "table_name": "asset_file",
+      "name": "asset_file_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_job_status",
+      "name": "asset_job_status_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "asset_keyframe",
+      "name": "asset_keyframe_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "asset_metadata_audit",
+      "name": "asset_metadata_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_metadata",
+      "name": "asset_metadata_pkey",
+      "definition": "PRIMARY KEY (\"assetId\", key)"
+    },
+    {
+      "table_name": "asset_ocr_audit",
+      "name": "asset_ocr_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_ocr",
+      "name": "asset_ocr_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "asset_video",
+      "name": "asset_video_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "face_search",
+      "name": "face_search_pkey",
+      "definition": "PRIMARY KEY (\"faceId\")"
+    },
+    {
+      "table_name": "geodata_places",
+      "name": "geodata_places_pkey",
+      "definition": "PRIMARY KEY (id) WITH (fillfactor='100')"
+    },
+    {
+      "table_name": "integrity_report",
+      "name": "integrity_report_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "integrity_report",
+      "name": "integrity_report_type_path_uq",
+      "definition": "UNIQUE (type, path)"
+    },
+    {
+      "table_name": "library",
+      "name": "library_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "memory_asset_audit",
+      "name": "memory_asset_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "memory_asset",
+      "name": "memory_asset_pkey",
+      "definition": "PRIMARY KEY (\"memoriesId\", \"assetId\")"
+    },
+    {
+      "table_name": "memory_audit",
+      "name": "memory_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "memory",
+      "name": "memory_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "migration_overrides",
+      "name": "migration_overrides_pkey",
+      "definition": "PRIMARY KEY (name)"
+    },
+    {
+      "table_name": "move_history",
+      "name": "move_history_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "naturalearth_countries",
+      "name": "naturalearth_countries_pkey",
+      "definition": "PRIMARY KEY (id) WITH (fillfactor='100')"
+    },
+    {
+      "table_name": "notification",
+      "name": "notification_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "ocr_search",
+      "name": "ocr_search_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "partner_audit",
+      "name": "partner_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "partner",
+      "name": "partner_pkey",
+      "definition": "PRIMARY KEY (\"sharedById\", \"sharedWithId\")"
+    },
+    {
+      "table_name": "person_audit",
+      "name": "person_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "person",
+      "name": "person_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "plugin_method",
+      "name": "plugin_method_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "plugin_method",
+      "name": "plugin_method_pluginId_name_uq",
+      "definition": "UNIQUE (\"pluginId\", name)"
+    },
+    {
+      "table_name": "plugin",
+      "name": "plugin_name_uq",
+      "definition": "UNIQUE (name)"
+    },
+    {
+      "table_name": "plugin",
+      "name": "plugin_name_version_uq",
+      "definition": "UNIQUE (name, version)"
+    },
+    {
+      "table_name": "plugin",
+      "name": "plugin_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "session",
+      "name": "session_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "session_sync_checkpoint",
+      "name": "session_sync_checkpoint_pkey",
+      "definition": "PRIMARY KEY (\"sessionId\", type)"
+    },
+    {
+      "table_name": "shared_link_asset",
+      "name": "shared_link_asset_pkey",
+      "definition": "PRIMARY KEY (\"assetId\", \"sharedLinkId\")"
+    },
+    {
+      "table_name": "shared_link",
+      "name": "shared_link_key_uq",
+      "definition": "UNIQUE (key)"
+    },
+    {
+      "table_name": "shared_link",
+      "name": "shared_link_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "shared_link",
+      "name": "shared_link_slug_uq",
+      "definition": "UNIQUE (slug)"
+    },
+    {
+      "table_name": "smart_search",
+      "name": "smart_search_pkey",
+      "definition": "PRIMARY KEY (\"assetId\")"
+    },
+    {
+      "table_name": "stack_audit",
+      "name": "stack_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "stack",
+      "name": "stack_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "stack",
+      "name": "stack_primaryAssetId_uq",
+      "definition": "UNIQUE (\"primaryAssetId\")"
+    },
+    {
+      "table_name": "system_metadata",
+      "name": "system_metadata_pkey",
+      "definition": "PRIMARY KEY (key)"
+    },
+    {
+      "table_name": "tag_asset",
+      "name": "tag_asset_pkey",
+      "definition": "PRIMARY KEY (\"assetId\", \"tagId\")"
+    },
+    {
+      "table_name": "tag_closure",
+      "name": "tag_closure_pkey",
+      "definition": "PRIMARY KEY (id_ancestor, id_descendant)"
+    },
+    {
+      "table_name": "tag",
+      "name": "tag_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "tag",
+      "name": "tag_userId_value_uq",
+      "definition": "UNIQUE (\"userId\", value)"
+    },
+    {
+      "table_name": "user_audit",
+      "name": "user_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "user",
+      "name": "user_email_uq",
+      "definition": "UNIQUE (email)"
+    },
+    {
+      "table_name": "user_metadata_audit",
+      "name": "user_metadata_audit_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "user_metadata",
+      "name": "user_metadata_pkey",
+      "definition": "PRIMARY KEY (\"userId\", key)"
+    },
+    {
+      "table_name": "user",
+      "name": "user_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "user",
+      "name": "user_storageLabel_uq",
+      "definition": "UNIQUE (\"storageLabel\")"
+    },
+    {
+      "table_name": "version_history",
+      "name": "version_history_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "video_stream_segment",
+      "name": "video_stream_segment_pkey",
+      "definition": "PRIMARY KEY (\"variantId\", index)"
+    },
+    {
+      "table_name": "video_stream_session",
+      "name": "video_stream_session_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "video_stream_variant",
+      "name": "video_stream_variant_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "workflow",
+      "name": "workflow_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "workflow_step",
+      "name": "workflow_step_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_albumId_assetId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\", \"assetId\") REFERENCES public.album_asset(\"albumId\", \"assetId\") ON DELETE CASCADE"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_albumId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "album",
+      "name": "album_albumThumbnailAssetId_fkey",
+      "definition": "FOREIGN KEY (\"albumThumbnailAssetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL"
+    },
+    {
+      "table_name": "album_asset",
+      "name": "album_asset_albumId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "album_asset",
+      "name": "album_asset_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "album_asset_audit",
+      "name": "album_asset_audit_albumId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "album_user",
+      "name": "album_user_albumId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "album_user",
+      "name": "album_user_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "api_key",
+      "name": "api_key_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_audio",
+      "name": "asset_audio_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_edit",
+      "name": "asset_edit_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_exif",
+      "name": "asset_exif_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_face",
+      "name": "asset_face_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_face",
+      "name": "asset_face_personId_fkey",
+      "definition": "FOREIGN KEY (\"personId\") REFERENCES public.person(id) ON UPDATE CASCADE ON DELETE SET NULL"
+    },
+    {
+      "table_name": "asset_file",
+      "name": "asset_file_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_job_status",
+      "name": "asset_job_status_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_keyframe",
+      "name": "asset_keyframe_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_libraryId_fkey",
+      "definition": "FOREIGN KEY (\"libraryId\") REFERENCES public.library(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_livePhotoVideoId_fkey",
+      "definition": "FOREIGN KEY (\"livePhotoVideoId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL"
+    },
+    {
+      "table_name": "asset_metadata",
+      "name": "asset_metadata_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset_ocr",
+      "name": "asset_ocr_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_stackId_fkey",
+      "definition": "FOREIGN KEY (\"stackId\") REFERENCES public.stack(id) ON UPDATE CASCADE ON DELETE SET NULL"
+    },
+    {
+      "table_name": "asset_video",
+      "name": "asset_video_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "face_search",
+      "name": "face_search_faceId_fkey",
+      "definition": "FOREIGN KEY (\"faceId\") REFERENCES public.asset_face(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "integrity_report",
+      "name": "integrity_report_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "integrity_report",
+      "name": "integrity_report_fileAssetId_fkey",
+      "definition": "FOREIGN KEY (\"fileAssetId\") REFERENCES public.asset_file(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "library",
+      "name": "library_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "memory_asset",
+      "name": "memory_asset_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "memory_asset_audit",
+      "name": "memory_asset_audit_memoryId_fkey",
+      "definition": "FOREIGN KEY (\"memoryId\") REFERENCES public.memory(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "memory_asset",
+      "name": "memory_asset_memoriesId_fkey",
+      "definition": "FOREIGN KEY (\"memoriesId\") REFERENCES public.memory(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "memory",
+      "name": "memory_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "notification",
+      "name": "notification_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "ocr_search",
+      "name": "ocr_search_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "partner",
+      "name": "partner_sharedById_fkey",
+      "definition": "FOREIGN KEY (\"sharedById\") REFERENCES public.\"user\"(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "partner",
+      "name": "partner_sharedWithId_fkey",
+      "definition": "FOREIGN KEY (\"sharedWithId\") REFERENCES public.\"user\"(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "person",
+      "name": "person_faceAssetId_fkey",
+      "definition": "FOREIGN KEY (\"faceAssetId\") REFERENCES public.asset_face(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "person",
+      "name": "person_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "plugin_method",
+      "name": "plugin_method_pluginId_fkey",
+      "definition": "FOREIGN KEY (\"pluginId\") REFERENCES public.plugin(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "session",
+      "name": "session_parentId_fkey",
+      "definition": "FOREIGN KEY (\"parentId\") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "session_sync_checkpoint",
+      "name": "session_sync_checkpoint_sessionId_fkey",
+      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "session",
+      "name": "session_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "shared_link",
+      "name": "shared_link_albumId_fkey",
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "shared_link_asset",
+      "name": "shared_link_asset_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "shared_link_asset",
+      "name": "shared_link_asset_sharedLinkId_fkey",
+      "definition": "FOREIGN KEY (\"sharedLinkId\") REFERENCES public.shared_link(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "shared_link",
+      "name": "shared_link_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "smart_search",
+      "name": "smart_search_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "stack",
+      "name": "stack_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "stack",
+      "name": "stack_primaryAssetId_fkey",
+      "definition": "FOREIGN KEY (\"primaryAssetId\") REFERENCES public.asset(id)"
+    },
+    {
+      "table_name": "tag_asset",
+      "name": "tag_asset_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "tag_asset",
+      "name": "tag_asset_tagId_fkey",
+      "definition": "FOREIGN KEY (\"tagId\") REFERENCES public.tag(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "tag_closure",
+      "name": "tag_closure_id_ancestor_fkey",
+      "definition": "FOREIGN KEY (id_ancestor) REFERENCES public.tag(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "tag_closure",
+      "name": "tag_closure_id_descendant_fkey",
+      "definition": "FOREIGN KEY (id_descendant) REFERENCES public.tag(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "tag",
+      "name": "tag_parentId_fkey",
+      "definition": "FOREIGN KEY (\"parentId\") REFERENCES public.tag(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "tag",
+      "name": "tag_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "user_metadata",
+      "name": "user_metadata_userId_fkey",
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "video_stream_segment",
+      "name": "video_stream_segment_variantId_fkey",
+      "definition": "FOREIGN KEY (\"variantId\") REFERENCES public.video_stream_variant(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "video_stream_session",
+      "name": "video_stream_session_assetId_fkey",
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES public.asset(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "video_stream_variant",
+      "name": "video_stream_variant_sessionId_fkey",
+      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES public.video_stream_session(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "workflow",
+      "name": "workflow_ownerId_fkey",
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES public.\"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "workflow_step",
+      "name": "workflow_step_pluginMethodId_fkey",
+      "definition": "FOREIGN KEY (\"pluginMethodId\") REFERENCES public.plugin_method(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    },
+    {
+      "table_name": "workflow_step",
+      "name": "workflow_step_workflowId_fkey",
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES public.workflow(id) ON UPDATE CASCADE ON DELETE CASCADE"
+    }
+  ],
+  "uniqueIndexes": [
+    {
+      "table_name": "asset",
+      "name": "UQ_assets_owner_checksum",
+      "definition": "USING btree (\"ownerId\", checksum) WHERE (\"libraryId\" IS NULL)"
+    },
+    {
+      "table_name": "activity",
+      "name": "activity_like_idx",
+      "definition": "USING btree (\"assetId\", \"userId\", \"albumId\") WHERE (\"isLiked\" = true)"
+    },
+    {
+      "table_name": "album_user",
+      "name": "album_user_unique_owner",
+      "definition": "USING btree (\"albumId\") WHERE (role = 'owner'::public.album_user_role_enum)"
+    },
+    {
+      "table_name": "asset",
+      "name": "asset_ownerId_libraryId_checksum_idx",
+      "definition": "USING btree (\"ownerId\", \"libraryId\", checksum) WHERE (\"libraryId\" IS NOT NULL)"
+    },
+    {
+      "table_name": "video_stream_variant",
+      "name": "video_stream_variant_sessionId_bitrate_resolution_codec_idx",
+      "definition": "USING btree (\"sessionId\", bitrate, resolution, codec)"
+    }
+  ],
+  "enums": [
+    {
+      "name": "album_user_role_enum",
+      "labels": ["owner", "editor", "viewer"]
+    },
+    {
+      "name": "asset_checksum_algorithm_enum",
+      "labels": ["sha1", "sha1-path"]
+    },
+    {
+      "name": "asset_visibility_enum",
+      "labels": ["archive", "timeline", "hidden", "locked"]
+    },
+    {
+      "name": "assets_status_enum",
+      "labels": ["active", "trashed", "deleted"]
+    },
+    {
+      "name": "sourcetype",
+      "labels": ["machine-learning", "exif", "manual"]
+    },
+    {
+      "name": "video_stream_variant_codec_enum",
+      "labels": ["av1", "hevc", "h264"]
+    }
+  ]
+}

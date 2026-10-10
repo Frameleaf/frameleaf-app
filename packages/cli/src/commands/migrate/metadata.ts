@@ -1,4 +1,4 @@
-import type { UpdateAssetDto } from '@immich/sdk';
+import type { UpdateAssetDto } from '@frameleaf/sdk';
 import type { ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';

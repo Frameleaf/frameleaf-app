@@ -7,7 +7,7 @@ import {
   getMyUser,
   LoginResponseDto,
   SharedLinkType,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { exiftool } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
@@ -143,6 +143,16 @@ describe('/asset', () => {
     utils.disconnectWebsocket(websocket);
   });
 
+  describe('GET /assets/:id/image-enrichment (FL-36)', () => {
+    it('should report no description confidence before a description exists', async () => {
+      const { status, body } = await request(app)
+        .get(`/assets/${user1Assets[0].id}/image-enrichment`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(status).toBe(200);
+      expect(body.description).toMatchObject({ status: 'missing', confidence: null });
+    });
+  });
+
   describe('GET /assets/:id/original', () => {
     it('should download the file', async () => {
       const response = await request(app)
@@ -221,13 +231,32 @@ describe('/asset', () => {
     });
 
     describe('partner assets', () => {
-      it('should get the asset info', async () => {
-        const { status, body } = await request(app)
+      // FL-326: a partner reads their own copy, never the source
+      it("gets the partner's own copy and refuses the source", async () => {
+        const copyId = await utils.waitForPartnerCopy(user2.userId, user1Assets[0].id);
+        const db = await utils.connectDatabase();
+        const { rows } = await db.query(
+          `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin."rootOwnerId"
+           FROM public.asset_origin origin JOIN public.asset copy ON copy.id = origin."assetId"
+           WHERE origin."sourceAssetId" = $1 AND origin."ownerId" = $2`,
+          [user1Assets[0].id, user2.userId],
+        );
+        expect(copyId).not.toBe(user1Assets[0].id);
+        expect(rows).toEqual([
+          { id: copyId, ownerId: user2.userId, sourceAssetId: user1Assets[0].id, rootOwnerId: user1.userId },
+        ]);
+
+        const source = await request(app)
           .get(`/assets/${user1Assets[0].id}`)
           .set('Authorization', `Bearer ${user2.accessToken}`);
+        expect(source.status).toBe(400);
+
+        const { status, body } = await request(app)
+          .get(`/assets/${copyId}`)
+          .set('Authorization', `Bearer ${user2.accessToken}`);
         expect(status).toBe(200);
-        expect(body).toMatchObject({ id: user1Assets[0].id });
-      });
+        expect(body).toMatchObject({ id: copyId, ownerId: user2.userId, origin: { rootOwnerId: user1.userId } });
+      }, 90_000);
 
       it('disallows viewing archived assets', async () => {
         const asset = await utils.createAsset(user1.accessToken, { visibility: AssetVisibility.Archive });
@@ -435,6 +464,54 @@ describe('/asset', () => {
       expect(status).toEqual(200);
     });
 
+    // FL-36 (V-24): a place name typed in the information panel is kept over reverse geocoding.
+    it(
+      'should keep a typed place name through metadata extraction',
+      { timeout: process.env.CI ? 135_000 : 35_000 },
+      async () => {
+        const { status, body } = await request(app)
+          .put(`/assets/${user1Assets[0].id}`)
+          .set('Authorization', `Bearer ${user1.accessToken}`)
+          .send({ latitude: 51.1784, longitude: -115.5708, city: ' Banff ', state: '', country: 'Canada' });
+        expect(status).toEqual(200);
+        expect(body).toMatchObject({
+          exifInfo: expect.objectContaining({ city: 'Banff', state: null, country: 'Canada' }),
+        });
+
+        await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+        await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+        const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+        expect(asset.exifInfo).toMatchObject({ city: 'Banff', state: null, country: 'Canada' });
+      },
+    );
+
+    it('should let a moved item be named again when no place is typed', async () => {
+      await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ city: 'Typed City' });
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ latitude: 0, longitude: 0 });
+      expect(status).toEqual(200);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const asset = await getAssetInfo({ id: user1Assets[0].id }, { headers: asBearerAuth(user1.accessToken) });
+      expect(asset.exifInfo?.city).not.toBe('Typed City');
+    });
+
+    it('should refuse a place name for an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ city: 'Elsewhere' });
+      expect(status).toEqual(400);
+    });
+
     it.skip('should geocode country from gps data in the middle of nowhere', async () => {
       const { status } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
@@ -479,7 +556,7 @@ describe('/asset', () => {
       expect(status).toEqual(200);
     });
 
-    it('should set the negative rating', async () => {
+    it('should persist rejection through the compatible response and clear it', async () => {
       const { status, body } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
         .set('Authorization', `Bearer ${user1.accessToken}`)
@@ -487,10 +564,28 @@ describe('/asset', () => {
       expect(body).toMatchObject({
         id: user1Assets[0].id,
         exifInfo: expect.objectContaining({
-          rating: -1,
+          rating: null,
+          isRejected: true,
         }),
       });
       expect(status).toEqual(200);
+      const rejected = await request(app)
+        .get(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(rejected.status).toEqual(200);
+      expect(rejected.body.exifInfo).toMatchObject({ rating: null, isRejected: true });
+
+      const cleared = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ rating: null });
+      expect(cleared.status).toEqual(200);
+      expect(cleared.body.exifInfo).toMatchObject({ rating: null, isRejected: false });
+      const restored = await request(app)
+        .get(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(restored.status).toEqual(200);
+      expect(restored.body.exifInfo).toMatchObject({ rating: null, isRejected: false });
     });
 
     it('should return tagged people', async () => {
@@ -542,7 +637,7 @@ describe('/asset', () => {
       expect(after.isTrashed).toBe(true);
     });
 
-    it('should permanently delete an asset from trash', async () => {
+    it('should permanently delete an asset from trash', { timeout: process.env.CI ? 85_000 : 35_000 }, async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
 
       {
@@ -555,6 +650,7 @@ describe('/asset', () => {
 
       const trashed = await utils.getAssetInfo(admin.accessToken, assetId);
       expect(trashed.isTrashed).toBe(true);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       {
         const { status } = await request(app)
@@ -585,6 +681,7 @@ describe('/asset', () => {
 
       const asset = await utils.getAssetInfo(admin.accessToken, photoId);
       expect(asset.livePhotoVideoId).toBe(motionId);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       const { status } = await request(app)
         .delete('/assets')
@@ -609,6 +706,7 @@ describe('/asset', () => {
 
       const asset = await utils.getAssetInfo(admin.accessToken, asset1);
       expect(asset.livePhotoVideoId).toBe(motionId);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       const { status } = await request(app)
         .delete('/assets')
@@ -686,6 +784,26 @@ describe('/asset', () => {
   });
 
   describe('PUT /assets', () => {
+    // FL-36: a bulk metadata change is all or nothing: an item the user cannot change, or one that is
+    // gone, refuses the whole request, so a frozen selection never half-applies.
+    it('refuses a bulk change that includes an item the user cannot change', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, user2Assets[0].id], isFavorite: true });
+      expect(status).toBe(400);
+      const untouched = await utils.getAssetInfo(user2.accessToken, user2Assets[0].id);
+      expect(untouched.isFavorite).toBe(false);
+    });
+
+    it('refuses a stale bulk selection', async () => {
+      const { status } = await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ ids: [user1Assets[0].id, '00000000-0000-4000-8000-000000000000'], rating: 3 });
+      expect(status).toBe(400);
+    });
+
     it('should update date time original relatively', async () => {
       const { status, body } = await request(app)
         .put(`/assets/`)
@@ -973,22 +1091,27 @@ describe('/asset', () => {
       },
     ];
 
-    it.each(tests)(`should upload and generate a thumbnail for different file types`, async ({ input, expected }) => {
-      const filepath = join(testAssetDir, input);
-      const response = await utils.createAsset(admin.accessToken, {
-        assetData: { bytes: await readFile(filepath), filename: basename(filepath) },
-      });
+    it.each(tests)(
+      `should upload and generate a thumbnail for different file types`,
+      async ({ input, expected }) => {
+        const filepath = join(testAssetDir, input);
+        const response = await utils.createAsset(admin.accessToken, {
+          assetData: { bytes: await readFile(filepath), filename: basename(filepath) },
+        });
 
-      expect(response.status).toBe(AssetMediaStatus.Created);
-      const id = response.id;
-      // longer timeout as the thumbnail generation from full-size raw files can take a while
-      await utils.waitForWebsocketEvent({ event: 'assetUpload', id });
+        expect(response.status).toBe(AssetMediaStatus.Created);
+        const id = response.id;
+        // FL-281 renders RAW thumbnails from the sensor (single-threaded LibRaw, capped at 120s); a 26MP
+        // compressed X-Trans file takes ~15s locally.
+        await utils.waitForWebsocketEvent({ event: 'assetUpload', id, timeout: 60_000 });
 
-      const asset = await utils.getAssetInfo(admin.accessToken, id);
-      expect(asset.exifInfo).toBeDefined();
-      expect(asset.exifInfo).toMatchObject(expected.exifInfo);
-      expect(asset).toMatchObject(expected);
-    });
+        const asset = await utils.getAssetInfo(admin.accessToken, id);
+        expect(asset.exifInfo).toBeDefined();
+        expect(asset.exifInfo).toMatchObject(expected.exifInfo);
+        expect(asset).toMatchObject(expected);
+      },
+      90_000,
+    );
 
     it('should handle a duplicate', async () => {
       const filepath = 'formats/jpeg/el_torcal_rocks.jpeg';

@@ -1,0 +1,14 @@
+{
+  "commands": [],
+  "entitlementsChanged": false,
+  "servicesChanged": false,
+  "nextHeartbeatSec": 300,
+  "cloneSuspected": false,
+  "notices": [],
+  "observedIp": "203.0.113.7",
+  "pricing": { "pricesVersion": "2026-09-25.1", "licensedDiscountPercent": 20, "effectiveFrom": "2026-09-25T00:00:00Z" },
+  "backupPlan": {
+    "tierOverflow": null,
+    "planFull": { "reason": "plan-full", "action": "ask-organiser", "suggestedTier": null, "message": "Your family's plan is full. Ask your family organiser to upgrade." }
+  }
+}

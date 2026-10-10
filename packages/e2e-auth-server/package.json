@@ -1,5 +1,5 @@
 {
-  "name": "@immich/e2e-auth-server",
+  "name": "@frameleaf/e2e-auth-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",

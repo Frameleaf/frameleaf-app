@@ -2,18 +2,20 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { createStack, type AssetResponseDto, type StackResponseDto } from '@immich/sdk';
+  import { createStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiUploadMultiple } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';
 
   interface Props {
+    /** The menu's wording; the viewer's More menu passes the template's label (FL-35, V-11). */
+    text?: string;
     asset: AssetResponseDto;
     stack: StackResponseDto | null;
     onAction: OnAction;
   }
 
-  let { asset, stack, onAction }: Props = $props();
+  let { asset, stack, onAction, text }: Props = $props();
 
   const handleAddUploadToStack = async () => {
     const newAssetIds = await openFileUploadDialog({ multiple: true });
@@ -34,4 +36,4 @@
   };
 </script>
 
-<MenuOption icon={mdiUploadMultiple} onClick={handleAddUploadToStack} text={$t('add_upload_to_stack')} />
+<MenuOption icon={mdiUploadMultiple} onClick={handleAddUploadToStack} text={text ?? $t('add_upload_to_stack')} />

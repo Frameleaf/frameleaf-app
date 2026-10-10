@@ -1,4 +1,4 @@
-import { Column, ForeignKeyColumn, Index, Table } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table({ name: 'smart_search' })

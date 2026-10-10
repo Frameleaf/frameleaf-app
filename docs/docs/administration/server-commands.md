@@ -1,6 +1,6 @@
 # Server Commands
 
-The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with an administrative CLI (`immich-admin`) that supports the following commands:
+The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with an administrative CLI (`frameleaf-admin`) that supports the following commands:
 
 | Command                    | Description                                                   |
 | -------------------------- | ------------------------------------------------------------- |
@@ -12,29 +12,29 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 | `enable-maintenance-mode`  | Enable maintenance mode                                       |
 | `enable-oauth-login`       | Enable OAuth login                                            |
 | `disable-oauth-login`      | Disable OAuth login                                           |
-| `list-users`               | List Immich users                                             |
+| `list-users`               | List Frameleaf users                                          |
 | `grant-admin`              | Grant admin privileges to a user (by email)                   |
 | `revoke-admin`             | Revoke admin privileges from a user (by email)                |
-| `version`                  | Print Immich version                                          |
+| `version`                  | Print Frameleaf version                                       |
 | `change-media-location`    | Change database file paths to align with a new media location |
 | `schema-check`             | Verify database migrations and check for schema drift         |
 
 ## How to run a command
 
-From your Compose directory, run `docker compose exec immich-server immich-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `immich-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename.
+From your Compose directory, run `docker compose exec frameleaf-server frameleaf-admin <command>`. For an interactive shell, use `docker compose exec frameleaf-server bash`, then run `frameleaf-admin <command>`. The Compose service is `frameleaf-server`; the displayed container name is `frameleaf_server`. The old command names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases of `frameleaf-admin`, `frameleaf` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release.
 
 ## Examples
 
 Reset Admin Password
 
 ```
-immich-admin reset-admin-password
+frameleaf-admin reset-admin-password
 Found Admin:
 - ID=e65e6f88-2a30-4dbe-8dd9-1885f4889b53
 - OAuth ID=
 - Email=admin@example.com
-- Name=Immich Admin
-? Please choose a new password (optional) immich-is-cool
+- Name=Frameleaf Admin
+? Please choose a new password (optional) frameleaf-is-cool
 ? Invalidate existing sessions? Yes
 The admin password has been updated.
 ```
@@ -42,57 +42,57 @@ The admin password has been updated.
 Disable Password Login
 
 ```
-immich-admin disable-password-login
+frameleaf-admin disable-password-login
 Password login has been disabled.
 ```
 
 Enable Password Login
 
 ```
-immich-admin enable-password-login
+frameleaf-admin enable-password-login
 Password login has been enabled.
 ```
 
 Disable Maintenance Mode
 
 ```
-immich-admin disable-maintenance-mode
+frameleaf-admin disable-maintenance-mode
 Maintenance mode has been disabled.
 ```
 
 Enable Maintenance Mode
 
 ```
-immich-admin enable-maintenance-mode
+frameleaf-admin enable-maintenance-mode
 Maintenance mode has been enabled.
 
 Log in using the following URL:
-https://my.immich.app/maintenance?token=<token>
+https://photos.example.com/maintenance?token=<token>
 ```
 
 Enable OAuth login
 
 ```
-immich-admin enable-oauth-login
+frameleaf-admin enable-oauth-login
 OAuth login has been enabled.
 ```
 
 Disable OAuth login
 
 ```
-immich-admin disable-oauth-login
+frameleaf-admin disable-oauth-login
 OAuth login has been disabled.
 ```
 
 List Users
 
 ```
-immich-admin list-users
+frameleaf-admin list-users
 [
   {
     id: 'e65e6f88-2a30-4dbe-8dd9-1885f4889b53',
-    email: 'immich@example.com',
-    name: 'Immich Admin',
+    email: 'admin@example.com',
+    name: 'Frameleaf Admin',
     storageLabel: 'admin',
     externalPath: null,
     profileImagePath: 'upload/profile/e65e6f88-2a30-4dbe-8dd9-1885f4889b53/e65e6f88-2a30-4dbe-8dd9-1885f4889b53.jpg',
@@ -109,7 +109,7 @@ immich-admin list-users
 Grant Admin
 
 ```
-immich-admin grant-admin
+frameleaf-admin grant-admin
 ? Please enter the user email:  user@example.com
 Admin access has been granted to user@example.com
 ```
@@ -117,24 +117,24 @@ Admin access has been granted to user@example.com
 Revoke Admin
 
 ```
-immich-admin revoke-admin
+frameleaf-admin revoke-admin
 ? Please enter the user email:  user@example.com
 Admin access has been revoked from user@example.com
 ```
 
-Print Immich Version
+Print Frameleaf Version
 
 ```
-immich-admin version
+frameleaf-admin version
 v1.129.0
 ```
 
 Change media location
 
 ```
-immich-admin change-media-location
-? Enter the previous value of IMMICH_MEDIA_LOCATION: /data
-? Enter the new value of IMMICH_MEDIA_LOCATION: /my-data
+frameleaf-admin change-media-location
+? Enter the previous value of FRAMELEAF_MEDIA_LOCATION: /data
+? Enter the new value of FRAMELEAF_MEDIA_LOCATION: /my-data
 ...
   Previous value: /data
   Current value:  /my-data
@@ -150,12 +150,12 @@ Database file paths updated successfully! 🎉
 Schema Check
 
 ```
-immich-admin schema-check
+frameleaf-admin schema-check
 Migrations are up to date
 
 No schema drift detected
 ```
 
-Downgrading to upstream Immich
+## Offline Immich import
 
-There is no `immich-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several fork migrations had empty `down()` stubs that silently reported success while leaving fork-only tables intact). See [Reverting Back to Upstream Immich](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.
+`frameleaf-admin import-immich` (also available through the current `immich-admin` alias) supports `preflight`, `run`, `status`, `resume` and `verify` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-immich.md) before starting; ordinary API-based server migration is a separate feature.

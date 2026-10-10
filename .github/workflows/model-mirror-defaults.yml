@@ -1,0 +1,49 @@
+name: Model Mirror Defaults
+# FL-330: every default machine-learning model must resolve on the Frameleaf model mirror
+# (https://models.frameleaf.cloud), or fresh servers fail that ML task out of the box.
+'on':
+  pull_request:
+    branches:
+      - fork/main
+      - master/frameleaf-implementation
+    paths:
+      - server/src/dtos/config.dto.ts
+      - machine-learning/immich_ml/config.py
+      - machine-learning/immich_ml/models/base.py
+      - server/test/model-mirror/**
+      - server/test/vitest.config.model-mirror.mjs
+      - .github/workflows/model-mirror-defaults.yml
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  default-models:
+    name: Default ML models resolve on the mirror
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Install server and build the plugin SDK
+        run: |-
+          mise run //server:install
+          mise run //:plugins
+      - name: Check the default models on the mirror
+        working-directory: server
+        run: pnpm test:model-mirror

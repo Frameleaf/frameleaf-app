@@ -1,0 +1,103 @@
+name: Frameleaf Cloud integration tests
+'on':
+  workflow_call:
+permissions: {}
+concurrency:
+  group: cloud-consumers-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  registry-archive:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.21.0'
+      - name: Retrieve and verify immutable registry archive
+        id: fetch
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/cloud-package.npmrc"
+          trap 'rm -f "$config"' EXIT
+          # npm expands the token at request time; keep its value out of the file.
+          # shellcheck disable=SC2016
+          printf '%s\n' '@frameleaf:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$config"
+          mkdir -p "$RUNNER_TEMP/cloud-contracts"
+          NPM_CONFIG_USERCONFIG="$config" npm pack @frameleaf/cloud-contracts@0.0.5 --ignore-scripts --pack-destination "$RUNNER_TEMP/cloud-contracts" --json > "$RUNNER_TEMP/cloud-contracts/pack.json"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const bytes = readFileSync(`${process.env.RUNNER_TEMP}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz`);
+          const sha256 = createHash('sha256').update(bytes).digest('hex');
+          const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
+          if (bytes.length !== 461829 || sha256 !== '05d3c934afd32d726650f7eb0abbbff1b185ad3749443063c803dd602a1ca4cc' || integrity !== 'sha512-4WdS6XX1lENdtJTmhdw6Y21dJ4i+P8qE+EiutTsB4K/QYcnE0sFBjG3jAZfVQMFS4galajLlzSCjqVmgYN12hQ==') {
+            console.error('Registry archive does not match the pinned contracts 0.0.5 integrity');
+            process.exit(1);
+          }
+          console.log(JSON.stringify({ package: '@frameleaf/cloud-contracts', version: '0.0.5', bytes: bytes.length, sha256, integrity }));
+          NODE
+      - name: Transfer verified archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cloud-contracts-0.0.5
+          path: ${{ runner.temp }}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz
+          if-no-files-found: error
+          retention-days: 1
+      - name: Clean retrieval files
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/cloud-contracts" "$RUNNER_TEMP/cloud-package.npmrc"
+  consumers:
+    needs: registry-archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          install_args: --locked
+          version: 2026.7.12
+      - name: Install locked App test dependencies
+        run: pnpm --filter 'frameleaf...' --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk install --frozen-lockfile --ignore-scripts
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+      - name: Install isolated locked Cloud test dependency
+        run: |
+          mkdir -p "$RUNNER_TEMP/cloud-test-dependencies"
+          cp server/test/lifecycle/dependencies/package.json server/test/lifecycle/dependencies/package-lock.json "$RUNNER_TEMP/cloud-test-dependencies/"
+          npm ci --prefix "$RUNNER_TEMP/cloud-test-dependencies" --ignore-scripts --no-audit --no-fund
+      - name: Receive verified archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: cloud-contracts-0.0.5
+          path: ${{ runner.temp }}/cloud-contracts
+      - name: Validate credential isolation and package pins
+        run: node --test scripts/frameleaf-cloud-consumer-workflow.test.mjs
+      - name: Test actual Library consumers against installed registry bytes
+        working-directory: server
+        env:
+          FRAMELEAF_CLOUD_LIFECYCLE_TGZ: ${{ runner.temp }}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz
+          FRAMELEAF_CLOUD_LIFECYCLE_NODE_MODULES: ${{ runner.temp }}/cloud-test-dependencies/node_modules
+        run: node test/lifecycle/run-installed-package.mjs
+      - name: Run existing discovery, push and scheduling regressions
+        working-directory: server
+        run: |
+          pnpm test frameleaf-push.spec.ts frameleaf-cloud-push.repository.spec.ts frameleaf-cloud-contracts.spec.ts
+          pnpm test cloud-ml-job.service.spec.ts -t 'long-polls a started job|waits out a read'
+      - name: Clean test artifacts and dependencies
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/cloud-contracts" "$RUNNER_TEMP/cloud-test-dependencies"

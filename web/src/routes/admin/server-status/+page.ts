@@ -1,19 +1,16 @@
-import { getServerStatistics, searchUsersAdmin } from '@immich/sdk';
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { redirect } from '@sveltejs/kit';
+import { analyticsAreaUrl } from '$lib/frameleaf/settings-areas';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ url }) => {
-  await authenticate(url, { admin: true });
-  const statsPromise = getServerStatistics();
-  const users = await searchUsersAdmin({ withDeleted: false });
-  const $t = await getFormatter();
-
-  return {
-    statsPromise,
-    users,
-    meta: {
-      title: $t('server_stats'),
-    },
-  };
-}) satisfies PageLoad;
+/**
+ * Library analytics lives in the command center (FL-79), where the design template mounts it. The
+ * old server statistics address keeps working and carries its scope and range across.
+ */
+export const load = (({ url }) =>
+  redirect(
+    307,
+    analyticsAreaUrl({
+      scope: url.searchParams.get('scope') ?? undefined,
+      range: url.searchParams.get('range') ?? undefined,
+    }),
+  )) satisfies PageLoad;

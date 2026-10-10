@@ -1,8 +1,8 @@
 <script lang="ts">
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { createProfileImage, type AssetResponseDto } from '@immich/sdk';
-  import { FormModal, toastManager } from '@immich/ui';
+  import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
+  import { FormModal, toastManager } from '@frameleaf/ui';
   import domtoimage from 'dom-to-image';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -68,7 +68,8 @@
         return;
       }
       const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
-      await createProfileImage({ createProfileImageDto: { file } });
+      // the photo is recorded so the picture is replaced if the photo is later Locked
+      await createProfileImage({ createProfileImageDto: { file, assetId: asset.id } });
       toastManager.primary($t('profile_picture_set'));
 
       await authManager.refresh();

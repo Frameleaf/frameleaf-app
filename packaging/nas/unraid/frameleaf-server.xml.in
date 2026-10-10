@@ -1,0 +1,24 @@
+<Container version="2">
+  <Name>frameleaf-server</Name>
+  <Repository>@SERVER_REF@</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>frameleaf</Network>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
+  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
+  <Overview>Self-hosted Frameleaf photo and video library. Requires the Frameleaf PostgreSQL 19 container on the frameleaf network.</Overview>
+  <Category>MediaApp:Photos</Category>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <WebUI>http://[IP]:[PORT:2283]</WebUI>
+  <ExtraParams>--stop-timeout=10</ExtraParams>
+  <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-server.xml</TemplateURL>
+  <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
+  <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>
+  <Config Name="Library" Target="/data" Default="/mnt/user/appdata/frameleaf/library" Mode="rw" Description="Persistent original media and generated files; back up with the database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/library</Config>
+  <Config Name="Database host" Target="DB_HOSTNAME" Default="frameleaf-postgres" Description="PostgreSQL 19 container name on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">frameleaf-postgres</Config>
+  <Config Name="Database name" Target="DB_DATABASE_NAME" Default="frameleaf" Description="Database name" Type="Variable" Display="advanced" Required="true" Mask="false">frameleaf</Config>
+  <Config Name="Database user" Target="DB_USERNAME" Default="frameleaf" Description="PostgreSQL user" Type="Variable" Display="always" Required="true" Mask="false">frameleaf</Config>
+  <Config Name="Database password" Target="DB_PASSWORD" Default="" Description="Use the same generated secret configured in PostgreSQL" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default="" Description="Set false when no ML service is installed; leave blank for local, custom or remote ML" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Machine learning URL" Target="FRAMELEAF_MACHINE_LEARNING_URL" Default="http://frameleaf-ml:3003" Description="Optional ML container on the frameleaf network" Type="Variable" Display="advanced" Required="false" Mask="false">http://frameleaf-ml:3003</Config>
+</Container>

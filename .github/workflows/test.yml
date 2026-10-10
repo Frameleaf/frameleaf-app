@@ -1,9 +1,16 @@
 name: Test
 'on':
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      development_validation:
+        description: Generate Linux lockfile, server reports and API/schema artifacts instead of the full test suite
+        required: false
+        default: false
+        type: boolean
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
@@ -13,9 +20,20 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  development-validation:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.development_validation && github.repository == 'Frameleaf/frameleaf-app' }}
+    uses: ./.github/workflows/development-validation.yml
+    permissions:
+      contents: read
+  cloud-consumer-tests:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/frameleaf-cloud-consumers.yml
   script-unit-tests:
     name: Scripts unit tests
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -31,22 +49,52 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install script test dependencies
-        run: pnpm --filter @immich/scripts --filter immich install --frozen-lockfile
+        run: pnpm --filter @frameleaf/scripts --filter 'frameleaf...' --filter 'frameleaf-e2e...' install --frozen-lockfile
       - name: Run unit tests
-        run: pnpm --filter @immich/scripts test
+        run: pnpm --filter @frameleaf/scripts test
       - name: Validate Frameleaf workflow contracts
-        run: node --test scripts/frameleaf-workflows.test.mjs
-      - name: Validate Frameleaf documentation and Jira coverage
+        run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
+      - name: Validate public Docker Hub mirror configuration
+        run: node --test scripts/dockerhub-mirror.test.mjs scripts/ci-registry-images.test.mjs
+      - name: Validate medium native runner contract
+        run: node --test docker/medium-runner.test.mjs
+      - name: Validate canonical restore fixture mutations
+        run: node --test e2e/src/backup-fixture.test.mjs
+      - name: Validate E2E request and reset ownership
+        run: node --test --test-concurrency=1 e2e/src/harness-wait.test.mjs e2e/src/harness-reset.test.mjs e2e/src/harness-http.test.mjs
+      - name: Validate E2E test lifecycle ownership
+        run: pnpm --filter frameleaf-e2e exec vitest run --config vitest.harness.config.ts
+      - name: Validate Frameleaf branding
+        run: node --test scripts/frameleaf-branding.test.mjs
+      - name: Verify Frameleaf workspace packages
+        run: node --test scripts/frameleaf-packages.test.mjs
+      - name: Validate Frameleaf variable and command names
+        run: node --test scripts/frameleaf-legacy-names.test.mjs
+      - name: Validate public storage URLs (FL-325)
         run: |
-          node scripts/frameleaf-documentation-coverage.mjs
-          node --test scripts/frameleaf-documentation-coverage.test.mjs
+          node --test scripts/frameleaf-public-storage-urls.test.mjs
+          node scripts/frameleaf-public-storage-urls.mjs
+      - name: Validate the web bundle budget
+        run: node --test scripts/frameleaf-web-bundle-budget.test.mjs
+      - name: Validate the Studio authorization report
+        run: node --test scripts/frameleaf-studio-authz-report.test.mjs
+      - name: Validate independent Studio conformance evidence
+        run: |
+          node studio/tools/conformance.mjs
+          node --test studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+      - name: Validate the Studio graph protocol fixtures (FL-306)
+        run: node --test studio/tools/graph-protocol.test.mjs
+      - name: Validate the Studio render spec and goldens
+        run: node --test studio/tools/render-goldens.test.mjs
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -59,11 +107,32 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Run ci-unit
-        run: mise run //server:ci-unit
+        run: |
+          export FL285_VOLUME_FOLDER="$RUNNER_TEMP/fl285-volume"
+          mkdir "$FL285_VOLUME_FOLDER"
+          sudo mount -t tmpfs -o "size=32m,uid=$(id -u),gid=$(id -g),mode=0700" tmpfs "$FL285_VOLUME_FOLDER"
+          trap 'sudo umount "$FL285_VOLUME_FOLDER"; rmdir "$FL285_VOLUME_FOLDER"' EXIT
+          mise run //server:ci-unit
+      - name: Run Buddy Backup and recovery runtime tests
+        working-directory: ./server
+        run: node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
+      - name: Capture automatic server lint fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm --filter frameleaf format:fix || true
+          timeout 15m pnpm --filter frameleaf lint:fix || true
+          git diff --binary > "$RUNNER_TEMP/server-lint.patch"
+      - name: Archive automatic server lint fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: server-lint-autofix
+          path: ${{ runner.temp }}/server-lint.patch
+          retention-days: 7
     timeout-minutes: 60
   cli-unit-tests:
     name: Unit Test CLI
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -86,7 +155,7 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -104,7 +173,7 @@ jobs:
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.7.12
-      - name: Run setup @immich/sdk
+      - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
@@ -117,7 +186,7 @@ jobs:
     timeout-minutes: 60
   web-lint:
     name: Lint Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -135,17 +204,29 @@ jobs:
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.7.12
-      - name: Run setup @immich/sdk
+      - name: Run setup @frameleaf/sdk
         run: mise run //:sdk:install && mise run //:sdk:build
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run linter
-        run: pnpm lint
+        run: pnpm exec eslint . --max-warnings 0 --concurrency 2
         if: ${{ !cancelled() }}
+      - name: Capture automatic lint fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm exec eslint . --max-warnings 0 --concurrency 2 --fix || true
+          git diff --binary > "$RUNNER_TEMP/web-lint.patch"
+      - name: Archive automatic lint fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: web-lint-autofix
+          path: ${{ runner.temp }}/web-lint.patch
+          retention-days: 7
     timeout-minutes: 60
   web-unit-tests:
     name: Test Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -165,10 +246,30 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run ci-unit
+      - name: Capture automatic web formatting fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/web-format.patch"
+          if [ -f .svelte-kit/output/client/.vite/manifest.json ]; then
+            cp bundle-budget.json "$RUNNER_TEMP/web-bundle-baseline.json"
+            node ../scripts/frameleaf-web-bundle-budget.mjs --update
+            mv bundle-budget.json "$RUNNER_TEMP/web-bundle-measured.json"
+            cp "$RUNNER_TEMP/web-bundle-baseline.json" bundle-budget.json
+          fi
+      - name: Archive automatic web formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: web-format-autofix
+          path: |
+            ${{ runner.temp }}/web-format.patch
+            ${{ runner.temp }}/web-bundle-measured.json
+          retention-days: 7
     timeout-minutes: 60
   i18n-tests:
     name: Test i18n
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -204,7 +305,7 @@ jobs:
     timeout-minutes: 60
   e2e-tests-lint:
     name: End-to-End Lint
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -225,10 +326,28 @@ jobs:
       - name: Run ci-unit
         run: mise run ci-unit
         if: ${{ !cancelled() }}
+      - name: Capture automatic E2E formatting fixes
+        if: failure()
+        run: |
+          timeout 5m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/e2e-format.patch"
+      - name: Archive automatic E2E formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-format-autofix
+          path: ${{ runner.temp }}/e2e-format.patch
+          retention-days: 7
     timeout-minutes: 60
   server-medium-tests:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    # The suite is split by server/test/vitest.medium-suites.mjs: this protected check runs every medium
+    # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
     name: Medium Tests (Server)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -240,27 +359,151 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
-      - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Setup native runner builder
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
-          github_token: ${{ github.token }}
-          install_args: --locked
-          version: 2026.7.12
-      - name: Run ci-medium
-        run: mise run ci-medium
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build medium native runner
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: medium-test
+          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
+          load: true
+          tags: frameleaf-medium:${{ github.sha }}
+          cache-from: type=gha,scope=server-medium
+          cache-to: type=gha,scope=server-medium,mode=max
+          secrets: mise_github_token=${{ github.token }}
+      - name: Run all medium tests in the native runner
         if: ${{ !cancelled() }}
-    timeout-minutes: 60
-  e2e-tests-server-cli:
-    name: End-to-End Tests (Server & CLI)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ${{ matrix.runner }}
+        working-directory: .
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
+          FRAMELEAF_MEDIUM_SUITE: core
+        run: |
+          set -euo pipefail
+          docker_cli=$(readlink -f "$(command -v docker)")
+          test -S /var/run/docker.sock
+          docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
+            --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+            --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/src",dst=/usr/src/app/e2e/src,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/test-assets",dst=/usr/src/app/e2e/test-assets,readonly \
+            --env DOCKER_HOST=unix:///var/run/docker.sock \
+            --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            --env FRAMELEAF_CI_POSTGRES_IMAGE \
+            --env RYUK_CONTAINER_IMAGE \
+            --env FRAMELEAF_MEDIUM_SUITE \
+            "$MEDIUM_IMAGE"
+      - name: Remove medium runner after failure or cancellation
+        if: always()
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
+    timeout-minutes: 90
+  server-medium-scale-tests:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    # The queue pipeline run and the scale specs (25,000 items each by default, FRAMELEAF_SCALE_ITEMS for
+    # more), with a database of their own.
+    name: Medium Scale Tests (Server)
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
       run:
+        working-directory: ./server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Setup native runner builder
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build medium native runner
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: server/Dockerfile
+          target: medium-test
+          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
+          load: true
+          tags: frameleaf-medium:${{ github.sha }}
+          cache-from: type=gha,scope=server-medium
+          secrets: mise_github_token=${{ github.token }}
+      - name: Run the medium scale suite in the native runner
+        if: ${{ !cancelled() }}
+        working-directory: .
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
+          FRAMELEAF_MEDIUM_SUITE: scale
+        run: |
+          set -euo pipefail
+          docker_cli=$(readlink -f "$(command -v docker)")
+          test -S /var/run/docker.sock
+          docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
+            --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+            --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/src",dst=/usr/src/app/e2e/src,readonly \
+            --mount type=bind,src="$GITHUB_WORKSPACE/e2e/test-assets",dst=/usr/src/app/e2e/test-assets,readonly \
+            --env DOCKER_HOST=unix:///var/run/docker.sock \
+            --env TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            --env TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+            --env FRAMELEAF_CI_POSTGRES_IMAGE \
+            --env RYUK_CONTAINER_IMAGE \
+            --env FRAMELEAF_MEDIUM_SUITE \
+            "$MEDIUM_IMAGE"
+      - name: Remove medium runner after failure or cancellation
+        if: always()
+        env:
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
+    timeout-minutes: 90
+  e2e-tests-server-cli:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+    name: End-to-End Tests (Server & CLI)
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
         working-directory: ./e2e
     strategy:
+      fail-fast: false
       matrix:
         runner:
           - ubuntu-24.04
@@ -270,7 +513,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
@@ -281,8 +526,8 @@ jobs:
           cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Setup packages
         run:
-          pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile && pnpm --filter @immich/sdk --filter
-          @immich/cli build
+          pnpm --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk install --frozen-lockfile && pnpm
+          --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk build
       - name: Run setup web
         run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
         working-directory: ./web
@@ -290,6 +535,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         if: ${{ !cancelled() }}
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Start Docker Compose
         id: docker
         run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
@@ -306,9 +563,48 @@ jobs:
 
           echo "::error::Immich server did not become ready within 120 seconds"
           docker compose ps
-          docker compose logs --no-color --tail 200 immich-server
+          docker compose logs --no-color --tail 200 frameleaf-server
           exit 1
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+      - name: Prepare bounded fatal-signal evidence
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        run: |
+          trace_instance="/sys/kernel/tracing/instances/frameleaf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          {
+            date --utc --iso-8601=seconds
+            cat /proc/uptime
+            if container_id="$(docker compose ps --quiet frameleaf-server)" && [ -n "$container_id" ]; then
+              docker top "$container_id" -eo pid,comm || echo 'Server process names unavailable.'
+            else
+              echo 'Server container lookup unavailable.'
+            fi
+          } > "$RUNNER_TEMP/frameleaf-server-signals.txt" 2>&1
+          if sudo bash -euo pipefail -s -- "$trace_instance" >> "$RUNNER_TEMP/frameleaf-server-signals.txt" 2>&1 <<'TRACE'
+          instance="$1"
+          mkdir "$instance"
+          echo 0 > "$instance/tracing_on"
+          echo 64 > "$instance/buffer_size_kb"
+          for event in signal_generate signal_deliver; do
+            echo 'sig == 7 || sig == 11 || sig == 6' > "$instance/events/signal/$event/filter"
+            cat "$instance/events/signal/$event/format" "$instance/events/signal/$event/filter"
+          done
+          # Both filters must succeed before either event is enabled.
+          for event in signal_generate signal_deliver; do
+            echo 1 > "$instance/events/signal/$event/enable"
+          done
+          cat "$instance/trace_clock"
+          echo 1 > "$instance/tracing_on"
+          TRACE
+          then
+            echo 'Signal observation armed; records do not establish the fatal library.' >> "$RUNNER_TEMP/frameleaf-server-signals.txt"
+          else
+            echo '::warning::Fatal-signal observation unavailable; retain explicit diagnostic status.'
+            echo 'Signal observation unavailable.' >> "$RUNNER_TEMP/frameleaf-server-signals.txt"
+            if sudo test -d "$trace_instance"; then
+              printf '0\n' | sudo tee "$trace_instance/tracing_on" > /dev/null || true
+              sudo rmdir "$trace_instance" || true
+            fi
+          fi
       - name: Run e2e tests (api & cli)
         env:
           VITEST_DISABLE_DOCKER_SETUP: true
@@ -318,8 +614,19 @@ jobs:
         if: always()
         working-directory: ./e2e
         run: |
+          trace_instance="/sys/kernel/tracing/instances/frameleaf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
             date --utc --iso-8601=seconds
+            if [ -f "$RUNNER_TEMP/frameleaf-server-signals.txt" ]; then
+              cat "$RUNNER_TEMP/frameleaf-server-signals.txt"
+            else
+              echo 'Signal observation was not prepared.'
+            fi
+            if sudo test -d "$trace_instance"; then
+              printf '0\n' | sudo tee "$trace_instance/tracing_on" > /dev/null || true
+              sudo cat "$trace_instance/trace" || true
+              sudo rmdir "$trace_instance" || true
+            fi
             while IFS= read -r container_id; do
               [ -n "$container_id" ] || continue
               docker inspect --format '{{json .Name}} {{json .State}} {{json .RestartCount}}' "$container_id" || true
@@ -331,10 +638,135 @@ jobs:
           VITEST_DISABLE_DOCKER_SETUP: true
         run: pnpm test:maintenance
         if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      # The next fixture recreates these containers, so retain maintenance restart failures first.
+      - name: Capture server diagnostics after maintenance tests
+        if: always()
+        run: |
+          {
+            date --utc --iso-8601=seconds
+            while IFS= read -r container_id; do
+              [ -n "$container_id" ] || continue
+              docker inspect --format '{{json .Name}} {{json .State}} {{json .RestartCount}}' "$container_id" || true
+            done < <(docker compose ps --all --quiet)
+            docker compose logs --no-color --timestamps || true
+          } > docker-diagnostics-after-maintenance-tests.txt 2>&1
+      - name: Start the upload transport fixture
+        id: upload-fixture
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+          timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Run upload relay and proxy transport tests
+        working-directory: ./server
+        env:
+          FL225_API_URL: http://127.0.0.1:2285
+          FL225_PG_URL: postgres://postgres:postgres@127.0.0.1:5435/frameleaf
+          FL225_CLOUD_URL: http://host.docker.internal:30185
+          FL225_EDGE_SECRET: fl225-local-transport-only-secret
+          FL285_RESTART_OWNED_FIXTURE: 'true'
+        run: pnpm exec vitest run --config test/vitest.config.transport.mjs
+        if: ${{ !cancelled() && steps.upload-fixture.outcome == 'success' }}
+      - name: Capture upload transport Docker logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml logs --no-color > docker-upload-transport-logs.txt
+      # FL-310: two real app/PG stacks, with only the coordinator and edge enrollment substituted.
+      # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
+      - name: Prepare disposable Buddy TLS and storage
+        id: buddy-prepare
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        run: bash buddy-fixture-tls.sh
+      - name: Start the two-server Buddy fixture
+        id: buddy-fixture
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        env:
+          BUDDY_PREPARE_OUTCOME: ${{ steps.buddy-prepare.outcome }}
+        run: |
+          if [ "$BUDDY_PREPARE_OUTCOME" != success ]; then
+            echo '::error::Two-server Buddy preparation failed; fixture startup refused.'
+            exit 1
+          fi
+          # Stop the previous owned fixture after its diagnostics to bound runner resource use.
+          docker compose stop
+          docker compose -f docker-compose.buddy.yml up -d --no-build --wait --wait-timeout 300
+          for port in 3285 3286; do
+            timeout 120s bash -c 'until curl --fail --silent --max-time 2 "http://127.0.0.1:$1/api/server/ping" > /dev/null; do sleep 2; done' -- "$port"
+          done
+      - name: Run two-server direct Buddy acceptance
+        id: buddy-test
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        working-directory: ./server
+        env:
+          BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
+          FRAMELEAF_BUDDY_BACKUP: 'true'
+        run: |
+          # Setup failure is a failed required lane, never a skipped or green acceptance test.
+          if [ "$BUDDY_FIXTURE_OUTCOME" != success ]; then
+            echo '::error::Two-server Buddy fixture did not start; acceptance was not executed.'
+            exit 1
+          fi
+          pnpm exec vitest run --config test/vitest.config.buddy.mjs
+      - name: Capture redacted Buddy diagnostics
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          # Intentionally exclude raw app/fixture logs, environment, auth headers, kits and media.
+          {
+            date --utc --iso-8601=seconds
+            git rev-parse HEAD
+            docker image inspect frameleaf-server:latest frameleaf-postgres:e2e --format '{{.Id}}' || true
+            if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
+              while IFS= read -r container_id; do
+                [ -n "$container_id" ] || continue
+                docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} image={{.Image}}' "$container_id" || true
+              done < <(docker compose -f docker-compose.buddy.yml ps --all --quiet)
+              # Retain only the worker's fixed, allowlisted diagnostic, never raw app log lines.
+              docker compose -f docker-compose.buddy.yml logs --no-color buddy-a buddy-b 2>/dev/null |
+                grep -oE 'BUDDY_RESTORE_DIAGNOSTIC \{"category":"(key_binding|album_selection|manifest_changed|item_missing|authorization_changed|administrator_changed|live_photo_changed|destination_changed|external_library_changed|version_destination_changed|file_verification|checkpoint_changed|checkpoint_unavailable|original_changed|original_missing|item_recreation|version_verification|relationship_ownership|stack_ownership|storage_mounts|execution|deadline|upstream|coded_error|unexpected)","code":"(UNKNOWN|ENOENT|EACCES|EPERM|ENOSPC|EIO|23503|23505|23514|40001|40P01|57014|55P03|42P01|42703)","status":(null|400|401|403|404|409|429|500|502|503|504|507)\}' || true
+            fi
+          } > docker-buddy-diagnostics.txt 2>&1
+          if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/evidence/buddy.json" ]; then
+            cp "$BUDDY_ROOT/evidence/buddy.json" buddy-evidence.json
+          fi
+      - name: Remove the owned Buddy fixture
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          if [ -n "${BUDDY_ROOT:-}" ]; then
+            case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
+            test -f "$BUDDY_ROOT/.fl310-buddy-fixture"
+            docker compose -f docker-compose.buddy.yml down --volumes --remove-orphans
+            rm -rf -- "$BUDDY_ROOT"
+          fi
+      # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the
+      # processing-consent specs. Runs after the main suite, whose specs expect the default cloud address.
+      # The whole stack starts fresh (new database and volumes): the server must record its media location
+      # against a new database, never against one an earlier container initialised.
+      - name: Start the fake Frameleaf Cloud
+        id: cloud-fixture
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+          timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Run e2e tests (Frameleaf Cloud consent)
+        run: pnpm test:cloud
+        if: ${{ !cancelled() && steps.cloud-fixture.outcome == 'success' }}
       - name: Capture Docker logs
         if: always()
-        run: docker compose logs --no-color > docker-compose-logs.txt
+        run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-compose-logs.txt
         working-directory: ./e2e
+      # Preserve the consent logs above before resetting the whole stack for the accounting journey.
+      - name: Start the description accounting fixture
+        id: cloud-accounting-fixture
+        env:
+          FRAMELEAF_CLOUD_FIXTURE_MODE: description-accounting
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+          timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Run e2e tests (Frameleaf Cloud description accounting)
+        run: pnpm exec vitest run --config vitest.cloud-accounting.config.ts --reporter=default --silent=false
+        if: ${{ !cancelled() && steps.cloud-accounting-fixture.outcome == 'success' }}
+      - name: Capture description accounting Docker logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-cloud-accounting-logs.txt
       - name: Archive Docker logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
@@ -343,17 +775,29 @@ jobs:
           path: |
             e2e/docker-compose-logs.txt
             e2e/docker-diagnostics-after-api-tests.txt
-    timeout-minutes: 60
+            e2e/docker-diagnostics-after-maintenance-tests.txt
+            e2e/docker-upload-transport-logs.txt
+            e2e/docker-buddy-diagnostics.txt
+            e2e/buddy-evidence.json
+            e2e/docker-cloud-accounting-logs.txt
+    # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
+    timeout-minutes: 120
   e2e-tests-web:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Web)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         working-directory: ./e2e
     strategy:
+      fail-fast: false
       matrix:
         runner:
           - ubuntu-24.04
@@ -363,7 +807,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          submodules: recursive
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
       - name: Setup Node
@@ -372,8 +818,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: '**/pnpm-lock.yaml'
-      - name: Run setup @immich/sdk
-        run: pnpm --filter @immich/sdk install --frozen-lockfile && pnpm --filter @immich/sdk build
+      - name: Run setup @frameleaf/sdk
+        run: pnpm --filter @frameleaf/sdk install --frozen-lockfile && pnpm --filter @frameleaf/sdk build
         if: ${{ !cancelled() }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -381,13 +827,26 @@ jobs:
       - name: Install Playwright Browsers
         run: pnpm exec playwright install chromium --only-shell
         if: ${{ !cancelled() }}
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
+      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Docker build
         id: docker
-        run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
+          FL144_ML_FIXTURE: 'true'
         run: pnpm test:web
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
@@ -428,7 +887,34 @@ jobs:
         with:
           name: e2e-web-docker-logs-${{ matrix.runner }}
           path: e2e/docker-compose-logs.txt
-    timeout-minutes: 60
+      # FL-144: FL-68 iCloud Photos sync against the test-only fake bridge. The whole stack restarts fresh
+      # with the bridge override (after the main logs above are kept); the main web run never sees it.
+      - name: Start the fake iCloud bridge
+        id: icloud-fixture
+        run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+      - name: Run e2e tests (iCloud sync)
+        env:
+          PLAYWRIGHT_DISABLE_WEBSERVER: true
+        run: pnpm test:web:icloud
+        if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
+      - name: Archive e2e test (iCloud sync) results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
+        with:
+          name: e2e-icloud-test-results-${{ matrix.runner }}
+          path: e2e/playwright-report/
+      - name: Capture iCloud sync Docker logs
+        if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
+        run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml logs --no-color > docker-icloud-logs.txt
+      - name: Archive iCloud sync Docker logs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
+        with:
+          name: e2e-icloud-docker-logs-${{ matrix.runner }}
+          path: e2e/docker-icloud-logs.txt
+    # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
+    timeout-minutes: 120
   success-check-e2e:
     name: End-to-End Tests Success
     needs:
@@ -437,15 +923,21 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && always() }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
     steps:
-      - uses: immich-app/devtools/actions/success-check@81113db03f6d743efee81e0058c0b43f6cd6f36d
-        with:
-          needs: ${{ toJSON(needs) }}
+      - name: Verify required E2E jobs succeeded
+        env:
+          REQUIRED_JOBS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          const jobs = JSON.parse(process.env.REQUIRED_JOBS);
+          const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success');
+          if (failed.length) throw new Error('Required E2E jobs failed: ' + failed.map(([name, job]) => name + '=' + job.result).join(', '));
+          JS
     timeout-minutes: 60
   ml-unit-tests:
     name: Unit Test ML
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -467,7 +959,7 @@ jobs:
     timeout-minutes: 60
   github-files-formatting:
     name: .github Files Formatting
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -488,11 +980,25 @@ jobs:
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run formatter
+        id: github-format
         run: pnpm format
         if: ${{ !cancelled() }}
+      - name: Capture diagnosed formatter correction
+        if: ${{ failure() && steps.github-format.outcome == 'failure' }}
+        run: |
+          pnpm exec prettier --write frameleaf-release.test.cjs
+          git diff --binary -- frameleaf-release.test.cjs > "$RUNNER_TEMP/github-format.patch"
+      - name: Upload formatter correction
+        if: ${{ failure() && steps.github-format.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: github-format-correction
+          path: ${{ runner.temp }}/github-format.patch
+          if-no-files-found: error
+          retention-days: 7
     timeout-minutes: 60
   shellcheck:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: ShellCheck
     runs-on: ubuntu-24.04
     permissions:
@@ -507,7 +1013,7 @@ jobs:
           ignore_paths: '**/open-api/** **/openapi** **/node_modules/**'
     timeout-minutes: 60
   generated-api-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: OpenAPI Clients
     runs-on: ubuntu-24.04
     permissions:
@@ -524,7 +1030,9 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install server dependencies
-        run: pnpm --filter immich install --frozen-lockfile
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Verify generated API artifacts are tracked
+        run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Run API generation
         run: |
           mise run //:plugins
@@ -546,28 +1054,52 @@ jobs:
           echo "ERROR: Generated files not up to date!"
           echo "Changed files: ${CHANGED_FILES}"
           exit 1
+      - name: Archive generated API files
+        if: failure() && steps.verify-changed-files.outputs.files_changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-generated-api
+          path: |
+            packages/sdk/src/fetch-client.ts
+            open-api/immich-openapi-specs.json
+          retention-days: 7
     timeout-minutes: 60
   sql-schema-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: SQL Schema Checks
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    services:
-      postgres:
-        image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3@sha256:dbf18b3ffea4a81434c65b71e20d27203baf903a0275f4341e4c16dfd901fd67
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: immich
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-        ports:
-          - 5432:5432
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      # Frameleaf's own Postgres image (docker/postgres), built here rather than pulled. pgvector is the
+      # only vector extension and the search path is the default, matching the schema baseline.
+      - name: Start Frameleaf Postgres
+        run: |-
+          set -euo pipefail
+          docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" -t frameleaf-postgres:ci docker/postgres
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=frameleaf \
+            frameleaf-postgres:ci \
+            postgres
+          for _ in $(seq 1 60); do
+            logs=$(docker logs postgres 2>&1 || true)
+            if [[ "$logs" == *'PostgreSQL init process complete'* ]] &&
+              docker exec postgres pg_isready -U postgres -d frameleaf > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs postgres
+          echo "::error::Postgres did not become ready."
+          exit 1
       - name: Setup Mise
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
         with:
@@ -576,16 +1108,38 @@ jobs:
           version: 2026.7.12
       - name: Install server dependencies
         run: pnpm install --frozen-lockfile
+      - name: Verify canonical schema authority and immutable baseline history
+        env:
+          SCHEMA_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          schema_base="$SCHEMA_BASE_SHA"
+          if [[ -z "$schema_base" || "$schema_base" =~ ^0+$ ]]; then
+            schema_base=$(git rev-parse HEAD^)
+          fi
+          [[ "$schema_base" =~ ^[a-f0-9]{40}$ ]] || { echo '::error::Invalid schema history base'; exit 1; }
+          git cat-file -e "$schema_base^{commit}"
+          pnpm --filter frameleaf exec tsx scripts/verify-frameleaf-schema.ts "$schema_base"
       - name: Build plugins
         run: mise run //:plugins
       - name: Build the app
         run: mise run //server:build
       - name: Run existing migrations
-        run: pnpm --filter immich migrations:run
+        run: pnpm --filter frameleaf migrations:run
+      - name: Capture exact canonical catalog for reconciliation
+        run: pnpm --filter frameleaf exec tsx scripts/snapshot-frameleaf-schema-catalog.ts /tmp/frameleaf-catalog.json
+        env:
+          DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
+      - name: Archive exact canonical catalog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-catalog-diagnostic
+          path: /tmp/frameleaf-catalog.json
+          retention-days: 7
       - name: Test npm run schema:reset command works
-        run: pnpm --filter immich schema:reset
+        run: pnpm --filter frameleaf schema:reset
       - name: Generate new migrations
-        run: pnpm --filter immich migrations:generate src/schema/migrations/TestMigration
+        run: pnpm --filter frameleaf migrations:generate src/schema/migrations/TestMigration
       - name: Find file changes
         uses: tj-actions/verify-changed-files@a1c6acee9df209257a246f2cc6ae8cb6581c1edf
         id: verify-changed-files
@@ -613,7 +1167,7 @@ jobs:
       - name: Run SQL generation
         run: mise run //:sql
         env:
-          DB_URL: postgres://postgres:postgres@localhost:5432/immich
+          DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
       - name: Find file changes
         uses: tj-actions/verify-changed-files@a1c6acee9df209257a246f2cc6ae8cb6581c1edf
         id: verify-changed-sql-files
@@ -629,6 +1183,14 @@ jobs:
           echo "Changed files: ${CHANGED_FILES}"
           git diff
           exit 1
+      - name: Archive generated SQL files
+        if: failure() && steps.verify-changed-sql-files.outputs.files_changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-generated-sql
+          path: server/src/queries
+          retention-days: 7
     timeout-minutes: 60
     env:
-      DB_URL: postgres://postgres:postgres@localhost:5432/immich
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+      DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf

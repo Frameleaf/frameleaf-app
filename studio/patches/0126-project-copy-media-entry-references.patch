@@ -1,0 +1,271 @@
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -50,7 +50,6 @@
+   getThumbnailsByMediaIds,
+   deleteThumbnailsByMediaId,
+   // v3: Content-addressable storage
+-  incrementContentRef,
+   decrementContentRef,
+   deleteContent,
+   // v3: Project-media associations
+@@ -1673,10 +1672,8 @@
+   }
+ 
+   /**
+-   * Copy media to another project (no file duplication)
+-   *
+-   * For handle-based media, the file handle is shared.
+-   * For OPFS-based media, the content reference is incremented.
++   * Associate the existing media entry with another project (no file duplication).
++   * Project links do not create media entries or change content reference counts.
+    */
+   async copyMediaToProject(mediaId: string, targetProjectId: string): Promise<void> {
+     const media = await getMediaDB(mediaId)
+@@ -1686,12 +1683,6 @@
+ 
+     // Create project association
+     await associateMediaWithProject(targetProjectId, mediaId)
+-
+-    // For OPFS storage, increment content reference
+-    if (media.storageType === 'opfs' && media.contentHash) {
+-      await incrementContentRef(media.contentHash)
+-    }
+-    // For handle storage, no additional action needed - handle is shared
+   }
+ 
+   /**
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -106,6 +106,7 @@
+ vi.mock('@/infrastructure/storage', () => indexedDbMocks)
+ 
+ const handlesDbMocks = vi.hoisted(() => ({
++  getHandle: vi.fn(async () => undefined),
+   deleteHandle: vi.fn(async () => undefined),
+ }))
+ vi.mock('@/infrastructure/storage/handles-db', async (importOriginal) => ({
+@@ -200,8 +201,21 @@
+ import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
+ import { mediaLibraryService, FileAccessError } from './media-library-service'
+ import { getSharedProxyKey } from '../utils/proxy-key'
+-import type { MediaMetadata } from '@/types/storage'
++import type { ContentRecord, MediaMetadata } from '@/types/storage'
+ import { useMediaPreparationStore } from '../stores/media-preparation-store'
++
++import * as workspaceMedia from '@/infrastructure/storage/workspace-fs/media'
++import * as workspaceProjects from '@/infrastructure/storage/workspace-fs/project-media'
++import * as workspaceContent from '@/infrastructure/storage/workspace-fs/content'
++import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
++import {
++  readArrayBuffer,
++  readJson,
++  removeEntry,
++  writeBlob,
++  writeJsonAtomic,
++} from '@/infrastructure/storage/workspace-fs/fs-primitives'
++import { contentRefsPath, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
+ 
+ const fetchMock = vi.fn()
+ 
+@@ -1222,8 +1236,191 @@
+     })
+   })
+ 
++  describe('FL-105 project links preserve media-entry content references', () => {
++    let root: ReturnType<typeof createRoot>
++    let opfsRoot: ReturnType<typeof createRoot>
++    const hash = 'a'.repeat(64)
++    const sourcePath = `content/aa/aa/${hash}/data`
++
++    beforeEach(() => {
++      root = createRoot()
++      opfsRoot = createRoot()
++      setWorkspaceRoot(asHandle(root))
++      indexedDbMocks.getMedia.mockImplementation(workspaceMedia.getMedia)
++      indexedDbMocks.getAllMedia.mockImplementation(workspaceMedia.getAllMedia)
++      indexedDbMocks.deleteMedia.mockImplementation(workspaceMedia.deleteMedia)
++      indexedDbMocks.associateMediaWithProject.mockImplementation(
++        workspaceProjects.associateMediaWithProject,
++      )
++      indexedDbMocks.removeMediaFromProject.mockImplementation(
++        workspaceProjects.removeMediaFromProject,
++      )
++      indexedDbMocks.getProjectsUsingMedia.mockImplementation(workspaceProjects.getProjectsUsingMedia)
++      indexedDbMocks.incrementContentRef.mockImplementation(workspaceContent.incrementContentRef)
++      indexedDbMocks.decrementContentRef.mockImplementation(workspaceContent.decrementContentRef)
++      indexedDbMocks.deleteContent.mockImplementation(workspaceContent.deleteContent)
++      opfsMocks.deleteFile.mockImplementation((path: string) =>
++        removeEntry(asHandle(opfsRoot), path.split('/')),
++      )
++    })
++
++    afterEach(() => {
++      setWorkspaceRoot(null)
++      for (const mock of [
++        indexedDbMocks.getMedia,
++        indexedDbMocks.getAllMedia,
++        indexedDbMocks.deleteMedia,
++        indexedDbMocks.associateMediaWithProject,
++        indexedDbMocks.removeMediaFromProject,
++        indexedDbMocks.getProjectsUsingMedia,
++        indexedDbMocks.incrementContentRef,
++        indexedDbMocks.decrementContentRef,
++        indexedDbMocks.deleteContent,
++        opfsMocks.deleteFile,
++      ])
++        mock.mockReset()
++    })
++
++    async function seedLegacyEntries(ids: string[]) {
++      // Explicit existing-record fixture; no current import or migration writer is assumed.
++      const record: ContentRecord = {
++        hash,
++        fileSize: 6,
++        mimeType: 'video/mp4',
++        referenceCount: ids.length,
++        createdAt: 0,
++      }
++      await writeJsonAtomic(asHandle(root), contentRefsPath(hash), record)
++      await writeBlob(asHandle(opfsRoot), sourcePath.split('/'), 'source')
++      for (const id of ids) {
++        await workspaceMedia.createMedia(
++          makeMediaMetadata({ id, storageType: 'opfs', contentHash: hash, opfsPath: sourcePath }),
++        )
++        await workspaceProjects.associateMediaWithProject(`project-${id}`, id)
++      }
++      return record
++    }
++
++    async function storedReferences() {
++      return readJson<ContentRecord>(asHandle(root), contentRefsPath(hash))
++    }
++
++    async function storedSource() {
++      return readArrayBuffer(asHandle(opfsRoot), sourcePath.split('/'))
++    }
++
++    it('keeps repeated and idempotent copies at one entry with real persisted project links', async () => {
++      const record = await seedLegacyEntries(['m1'])
++      const metadata = await workspaceMedia.getAllMediaMetadata()
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      const firstLinks = await readJson(asHandle(root), projectMediaLinksPath('p2'))
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      await mediaLibraryService.copyMediaToProject('m1', 'p3')
++      expect(await storedReferences()).toEqual(record)
++      expect(await workspaceMedia.getAllMediaMetadata()).toEqual(metadata)
++      expect(await workspaceProjects.getProjectsUsingMedia('m1')).toEqual(['project-m1', 'p2', 'p3'])
++      expect(await readJson(asHandle(root), projectMediaLinksPath('p2'))).toEqual(firstLinks)
++      expect(await storedSource()).toEqual(new TextEncoder().encode('source').buffer)
++    })
++
++    it('preserves content after one project unlink and releases it after the final metadata deletion', async () => {
++      const record = await seedLegacyEntries(['m1'])
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      await mediaLibraryService.deleteMediaFromProject('project-m1', 'm1')
++      expect(await workspaceProjects.getProjectMediaIds('project-m1')).toEqual([])
++      expect(await workspaceProjects.getProjectMediaIds('p2')).toEqual(['m1'])
++      expect(await workspaceMedia.getMedia('m1')).toBeDefined()
++      expect(await storedReferences()).toEqual(record)
++      expect(await storedSource()).not.toBeNull()
++      expect(indexedDbMocks.decrementContentRef).not.toHaveBeenCalled()
++      await mediaLibraryService.deleteMediaFromProject('p2', 'm1')
++      expect(await workspaceMedia.getMedia('m1')).toBeUndefined()
++      expect(await storedReferences()).toBeNull()
++      expect(await storedSource()).toBeNull()
++      expect(indexedDbMocks.decrementContentRef).toHaveBeenCalledExactlyOnceWith(hash)
++    })
++
++    it('counts distinct metadata aliases, preserving source until the last alias is deleted', async () => {
++      await seedLegacyEntries(['m1', 'm2'])
++      const survivor = await workspaceMedia.getMedia('m2')
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      expect((await storedReferences())?.referenceCount).toBe(2)
++      await mediaLibraryService.deleteMedia('m1')
++      expect(await workspaceMedia.getMedia('m1')).toBeUndefined()
++      expect(await workspaceMedia.getMedia('m2')).toEqual(survivor)
++      expect(await workspaceProjects.getProjectsUsingMedia('m1')).toEqual([])
++      expect(await workspaceProjects.getProjectsUsingMedia('m2')).toEqual(['project-m2'])
++      expect((await storedReferences())?.referenceCount).toBe(1)
++      expect(await storedSource()).not.toBeNull()
++      expect(opfsMocks.deleteFile).not.toHaveBeenCalled()
++      await mediaLibraryService.deleteMedia('m2')
++      expect(await storedReferences()).toBeNull()
++      expect(await storedSource()).toBeNull()
++      expect(indexedDbMocks.decrementContentRef).toHaveBeenCalledTimes(2)
++    })
++
++    it('globally deletes one copied entry without leaving inflated content references', async () => {
++      await seedLegacyEntries(['m1'])
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      await mediaLibraryService.copyMediaToProject('m1', 'p2')
++      await mediaLibraryService.deleteMedia('m1')
++      expect(await workspaceMedia.getAllMediaMetadata()).toEqual([])
++      expect(await workspaceProjects.getProjectsUsingMedia('m1')).toEqual([])
++      expect(await storedReferences()).toBeNull()
++      expect(await storedSource()).toBeNull()
++      expect(indexedDbMocks.decrementContentRef).toHaveBeenCalledExactlyOnceWith(hash)
++    })
++
++    it.each(['workspace', 'handle'] as const)(
++      'copies %s metadata without creating content records',
++      async (storageType) => {
++        await workspaceMedia.createMedia(makeMediaMetadata({ id: 'm1', storageType }))
++        await mediaLibraryService.copyMediaToProject('m1', 'p2')
++        await mediaLibraryService.copyMediaToProject('m1', 'p2')
++        expect(await workspaceProjects.getProjectMediaIds('p2')).toEqual(['m1'])
++        expect(await workspaceMedia.getAllMediaMetadata()).toHaveLength(1)
++        expect(await storedReferences()).toBeNull()
++        expect(indexedDbMocks.incrementContentRef).not.toHaveBeenCalled()
++      },
++    )
++
++    it('preserves missing-media failure and leaves real storage untouched', async () => {
++      const record = await seedLegacyEntries(['m1'])
++      await expect(mediaLibraryService.copyMediaToProject('missing', 'p2')).rejects.toThrow(
++        'Media not found: missing',
++      )
++      expect(await workspaceProjects.getProjectMediaIds('p2')).toEqual([])
++      expect(await storedReferences()).toEqual(record)
++      expect(await workspaceMedia.getAllMediaMetadata()).toHaveLength(1)
++      expect(indexedDbMocks.associateMediaWithProject).not.toHaveBeenCalled()
++    })
++
++    it('propagates a genuine association storage failure without changing metadata or references', async () => {
++      const record = await seedLegacyEntries(['m1'])
++      const metadata = await workspaceMedia.getAllMediaMetadata()
++      const original = root.getDirectoryHandle.bind(root)
++      const failure = vi
++        .spyOn(root, 'getDirectoryHandle')
++        .mockImplementation(async (name, options) => {
++          if (name === 'projects') throw new DOMException('permission denied', 'NotAllowedError')
++          return original(name, options)
++        })
++      try {
++        await expect(mediaLibraryService.copyMediaToProject('m1', 'p2')).rejects.toThrow(
++          'permission denied',
++        )
++      } finally {
++        failure.mockRestore()
++      }
++      expect(await workspaceProjects.getProjectMediaIds('p2')).toEqual([])
++      expect(await workspaceMedia.getAllMediaMetadata()).toEqual(metadata)
++      expect(await storedReferences()).toEqual(record)
++      expect(indexedDbMocks.incrementContentRef).not.toHaveBeenCalled()
++    })
++  })
++
+   describe('copyMediaToProject', () => {
+-    it('creates association and increments OPFS ref count', async () => {
++    it('creates association without changing OPFS media-entry ref count', async () => {
+       const media = makeMediaMetadata({
+         id: 'm1',
+         storageType: 'opfs',
+@@ -1234,7 +1431,7 @@
+       await mediaLibraryService.copyMediaToProject('m1', 'project-2')
+ 
+       expect(indexedDbMocks.associateMediaWithProject).toHaveBeenCalledWith('project-2', 'm1')
+-      expect(indexedDbMocks.incrementContentRef).toHaveBeenCalledWith('abc123')
++      expect(indexedDbMocks.incrementContentRef).not.toHaveBeenCalled()
+     })
+ 
+     it('creates association without incrementing ref for handle storage', async () => {

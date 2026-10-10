@@ -1,0 +1,384 @@
+diff --git a/src/features/timeline/services/mic-recording-authority.test.ts b/src/features/timeline/services/mic-recording-authority.test.ts
+--- a/src/features/timeline/services/mic-recording-authority.test.ts
++++ b/src/features/timeline/services/mic-recording-authority.test.ts
+@@ -18,25 +18,6 @@
+ vi.mock('../deps/media-library-store', async () => {
+   const { create } = await import('zustand')
+   return { useMediaLibraryStore: create(() => ({ currentProjectId: 'A', prependMediaItem: vi.fn() })) }
+-})
+-vi.mock('@/shared/state/playback', async () => {
+-  const { create } = await import('zustand')
+-  const usePlaybackStore = create<{
+-    currentFrame: number; muted: boolean; isPlaying: boolean
+-    busAudioEq: unknown; masterBusDb: number; masterBusMuted: boolean
+-    setBusAudioEq: (value: unknown) => void; setMasterBusDb: (value: number) => void
+-    setMasterBusMuted: (value: boolean) => void
+-    play: () => void; pause: () => void; setMuted: (value: boolean) => void
+-    setCurrentFrame: (value: number) => void
+-  }>((set) => ({ currentFrame: 10, muted: false, isPlaying: false,
+-    play: () => set({ isPlaying: true }), pause: () => set({ isPlaying: false }),
+-    setMuted: (muted) => set({ muted }), setCurrentFrame: (currentFrame) => set({ currentFrame }),
+-    busAudioEq: undefined, masterBusDb: 0, masterBusMuted: false,
+-    setBusAudioEq: (busAudioEq) => set({ busAudioEq }),
+-    setMasterBusDb: (masterBusDb) => set({ masterBusDb }),
+-    setMasterBusMuted: (masterBusMuted) => set({ masterBusMuted }),
+-  }))
+-  return { usePlaybackStore }
+ })
+ vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }))
+ vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }))
+diff --git a/src/features/timeline/stores/timeline-store-facade.test.ts b/src/features/timeline/stores/timeline-store-facade.test.ts
+--- a/src/features/timeline/stores/timeline-store-facade.test.ts
++++ b/src/features/timeline/stores/timeline-store-facade.test.ts
+@@ -14,6 +14,16 @@
+   busAudioEq: undefined,
+   masterBusDb: 0,
+   masterBusMuted: false,
++  masterGainEnvelope: [] as import('@/shared/utils/master-audio').MasterGainPoint[],
++  setMasterAudio: vi.fn(
++    (
++      value: Parameters<
++        import('@/shared/state/playback/types').PlaybackActions['setMasterAudio']
++      >[0],
++    ) => {
++      Object.assign(playbackMocks, structuredClone(value))
++    },
++  ),
+   setCurrentFrame: vi.fn(),
+   setBusAudioEq: vi.fn((value) => {
+     playbackMocks.busAudioEq = value
+@@ -125,6 +135,7 @@
+     playbackMocks.busAudioEq = undefined
+     playbackMocks.masterBusDb = 0
+     playbackMocks.masterBusMuted = false
++    playbackMocks.masterGainEnvelope = []
+     playbackMocks.setCurrentFrame.mockImplementation((frame: number) => {
+       playbackMocks.currentFrame = frame
+     })
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio-handoff.test.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio-handoff.test.tsx
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio-handoff.test.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio-handoff.test.tsx
+@@ -1,4 +1,10 @@
+-import { act, render, waitFor } from '@testing-library/react'
++import { act, render as renderReact, waitFor } from '@testing-library/react'
++
++import { Clock, ClockProvider } from '../deps/player'
++import { MasterGainProcessor, type MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++import { bindPreviewMasterBus } from '../utils/preview-master-bus'
++import { getSharedPreviewAudioContext } from '../utils/preview-audio-graph'
++import type { ReactNode } from 'react'
+
+ const audioDecodeMocks = vi.hoisted(() => ({
+   getOrDecodeAudio: vi.fn(),
+@@ -94,6 +100,10 @@
+       currentTime = 0
+       state: AudioContextState = 'running'
+       destination = {}
++      sampleRate = 22050
++      audioWorklet = { addModule: async () => {} }
++      addEventListener() {}
++      removeEventListener() {}
+       createGain() {
+         return new GainNodeMock()
+       }
+@@ -110,6 +120,37 @@
+       }
+     }
+
++    class RootWorkletNode {
++      core: MasterGainProcessor
++      port = {
++        onmessage: null as ((event: { data: unknown }) => void) | null,
++        close() {},
++        postMessage: (epoch: MasterAudioEpoch) => {
++          const accepted = this.core.replaceMasterEpoch(epoch)
++          this.port.onmessage?.({
++            data: {
++              rootId: epoch.rootId,
++              contextId: epoch.contextId,
++              generation: epoch.generation,
++              accepted,
++            },
++          })
++        },
++      }
++      connect() {}
++      disconnect() {}
++      constructor(
++        _context: unknown,
++        _name: string,
++        options: { processorOptions: { rootId: string; contextId: string } },
++      ) {
++        this.core = new MasterGainProcessor(
++          options.processorOptions.rootId,
++          options.processorOptions.contextId,
++        )
++      }
++    }
++    vi.stubGlobal('AudioWorkletNode', RootWorkletNode)
+     vi.stubGlobal('AudioContext', AudioContextMock)
+     vi.stubGlobal('webkitAudioContext', AudioContextMock)
+   })
+@@ -142,6 +183,16 @@
+       })
+       .mockImplementationOnce(() => pendingExtension.promise)
+
++    const clock = new Clock({ fps: 30, durationInFrames: 300 })
++    const releaseMaster = bindPreviewMasterBus(clock, getSharedPreviewAudioContext()!)
++    const render = (ui: ReactNode) =>
++      renderReact(ui, {
++        wrapper: ({ children }) => (
++          <ClockProvider clock={clock} fps={30} durationInFrames={300}>
++            {children}
++          </ClockProvider>
++        ),
++      })
+     const { rerender } = render(
+       <CustomDecoderBufferedAudio
+         src="blob:audio"
+@@ -158,6 +209,8 @@
+       await Promise.resolve()
+     })
+
++    clock.seekToFrame(90)
++    clock.play()
+     playbackStateMocks.current = {
+       frame: 90,
+       fps: 30,
+@@ -199,5 +252,7 @@
+     expect(audioContextStateMocks.createdSources[0]?.startCalls[0]?.offset).toBeCloseTo(3, 5)
+     expect(audioContextStateMocks.createdSources[1]?.startCalls[0]?.when).toBeCloseTo(1, 5)
+     expect(audioContextStateMocks.createdSources[1]?.startCalls[0]?.offset).toBeCloseTo(1.25, 5)
++    releaseMaster()
++    clock.dispose()
+   })
+ })
+diff --git a/src/runtime/composition-runtime/components/master-mute.test.tsx b/src/runtime/composition-runtime/components/master-mute.test.tsx
+--- a/src/runtime/composition-runtime/components/master-mute.test.tsx
++++ b/src/runtime/composition-runtime/components/master-mute.test.tsx
+@@ -1,11 +1,15 @@
+-import { act, cleanup, renderHook } from '@testing-library/react'
++import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { usePlaybackStore } from '@/shared/state/playback'
++import { Clock } from '../deps/player'
++import { MasterGainProcessor, type MasterAudioEpoch } from '@/shared/utils/master-audio-epoch'
++import { bindPreviewMasterBus } from '../utils/preview-master-bus'
+ import type { VideoItem } from '@/types/timeline'
+ import { useAudioPlaybackState } from './hooks/use-audio-playback-state'
+ import { useVideoAudioState } from './video-audio-context'
+
+-vi.mock('@/runtime/composition-runtime/deps/player', () => ({
++vi.mock('@/runtime/composition-runtime/deps/player', async () => ({
++  ...(await vi.importActual('@/runtime/composition-runtime/deps/player')),
+   useSequenceContext: () => ({ localFrame: 30 }),
+   useClockPlaybackRate: () => 1,
+   interpolate: () => 1,
+@@ -18,35 +22,143 @@
+   usePlaybackStore: (await import('@/shared/state/playback')).usePlaybackStore,
+   useGizmoStore: (select: (state: object) => unknown) => select({ activeGizmo: null, preview: {} }),
+   useCompositionsStore: (select: (state: object) => unknown) => select({ compositions: [] }),
+-  useTimelineStore: (select: (state: object) => unknown) => select({ keyframes: [], items: [{ id: 'clip', trackId: 'audio' }], tracks: [{ id: 'audio', pan: 0.5 }] }),
++  useTimelineStore: (select: (state: object) => unknown) =>
++    select({
++      keyframes: [],
++      items: [{ id: 'clip', trackId: 'audio' }],
++      tracks: [{ id: 'audio', pan: 0.5 }],
++    }),
+ }))
+ vi.mock('../contexts/keyframes-context', () => ({ useItemKeyframesFromContext: () => undefined }))
+ vi.mock('./hooks/use-runtime-item-keyframes', () => ({ useRuntimeItemKeyframes: () => undefined }))
+
+ afterEach(() => {
+   cleanup()
+-  usePlaybackStore.setState({ volume: 1, muted: false, masterBusDb: 0, masterBusMuted: false })
++  vi.unstubAllGlobals()
++  usePlaybackStore.setState({
++    volume: 1,
++    muted: false,
++    masterBusDb: 0,
++    masterBusMuted: false,
++    masterGainEnvelope: [],
++  })
+ })
+
+ describe('project master mute and device monitoring', () => {
+-  it('mutes both preview paths and preserves the saved gain when unmuted', () => {
+-    usePlaybackStore.setState({ volume: 0.5, muted: false, masterBusDb: -6, masterBusMuted: false })
++  it('mutes both preview paths and preserves the saved gain when unmuted', async () => {
++    usePlaybackStore.setState({
++      volume: 0.5,
++      muted: false,
++      masterBusDb: -6,
++      masterBusMuted: false,
++      masterGainEnvelope: [],
++    })
++    // Hook levels are pre-master now. Exercise the real root bridge's epochs and production
++    // per-sample processor rather than restoring gain to each source or changing audible gain.
++    const gates: Array<{ gain: { value: number; setValueAtTime: (value: number) => void } }> = []
++    let worklet: Node | undefined
++    class Node {
++      core: MasterGainProcessor
++      port = {
++        onmessage: null as ((event: { data: unknown }) => void) | null,
++        close() {},
++        postMessage: (epoch: MasterAudioEpoch) => {
++          const accepted = this.core.replaceMasterEpoch(epoch)
++          this.port.onmessage?.({
++            data: {
++              rootId: epoch.rootId,
++              contextId: epoch.contextId,
++              generation: epoch.generation,
++              accepted,
++            },
++          })
++        },
++      }
++      connect() {}
++      disconnect() {}
++      constructor(
++        _context: unknown,
++        _name: string,
++        options: { processorOptions: { rootId: string; contextId: string } },
++      ) {
++        this.core = new MasterGainProcessor(
++          options.processorOptions.rootId,
++          options.processorOptions.contextId,
++        )
++        worklet = this
++      }
++    }
++    vi.stubGlobal('AudioWorkletNode', Node)
++    const context = {
++      currentTime: 0,
++      state: 'running',
++      destination: {},
++      audioWorklet: { addModule: async () => {} },
++      addEventListener() {},
++      removeEventListener() {},
++      createGain() {
++        const node = {
++          gain: {
++            value: 1,
++            setValueAtTime(value: number) {
++              this.value = value
++            },
++          },
++          connect() {},
++          disconnect() {},
++        }
++        gates.push(node)
++        return node
++      },
++    } as unknown as AudioContext
++    const clock = new Clock({ fps: 30, durationInFrames: 90 })
++    const release = bindPreviewMasterBus(clock, context)
++    clock.play()
++    await waitFor(() => expect(worklet).toBeDefined())
++    const throughRoot = (level: number) => {
++      const output = [new Float32Array(1)]
++      worklet!.core.process([new Float32Array([level])], output, 0, 48000)
++      return output[0]![0]! * gates[1]!.gain.value
++    }
+     const clip = { id: 'clip', type: 'video', durationInFrames: 90, volume: 0 } as VideoItem
+-    const { result } = renderHook(() => ({
+-      audio: useAudioPlaybackState({ itemId: 'clip', durationInFrames: 90 }).resolvedVolume,
+-      video: useVideoAudioState(clip, false, []).audioVolume,
+-    }))
++    const { result } = renderHook(() => {
++      const audio = useAudioPlaybackState({ itemId: 'clip', durationInFrames: 90 }).resolvedVolume
++      const video = useVideoAudioState(clip, false, []).audioVolume
++      return {
++        get audio() {
++          return throughRoot(audio)
++        },
++        get video() {
++          return throughRoot(video)
++        },
++      }
++    })
+     const audible = 0.5 * Math.pow(10, -6 / 20)
+     expect(result.current.audio).toBeCloseTo(audible)
+     expect(result.current.video).toBeCloseTo(audible)
+     act(() => usePlaybackStore.getState().setMasterBusMuted(true))
+     expect(result.current).toEqual({ audio: 0, video: 0 })
+-    expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.5, muted: false, masterBusDb: -6 })
++    expect(usePlaybackStore.getState()).toMatchObject({
++      volume: 0.5,
++      muted: false,
++      masterBusDb: -6,
++    })
+     act(() => usePlaybackStore.getState().setMasterBusMuted(false))
+     expect(result.current.audio).toBeCloseTo(audible)
+     expect(result.current.video).toBeCloseTo(audible)
+     act(() => usePlaybackStore.getState().setMuted(true))
+     expect(result.current).toEqual({ audio: 0, video: 0 })
+     expect(usePlaybackStore.getState().masterBusMuted).toBe(false)
++    act(() => usePlaybackStore.getState().setMuted(false))
++    act(() =>
++      usePlaybackStore
++        .getState()
++        .setMasterAudio({ masterGainEnvelope: [{ id: 'curve', frame: 0, gainDb: -20 }] }),
++    )
++    // The active curve overrides static master gain and is applied once after monitor gain.
++    expect(result.current.audio).toBeCloseTo(0.05, 6)
++    expect(result.current.video).toBeCloseTo(0.05, 6)
++    release()
++    clock.dispose()
+   })
+ })
+diff --git a/src/runtime/composition-runtime/components/video-content.test.tsx b/src/runtime/composition-runtime/components/video-content.test.tsx
+--- a/src/runtime/composition-runtime/components/video-content.test.tsx
++++ b/src/runtime/composition-runtime/components/video-content.test.tsx
+@@ -1,7 +1,22 @@
+-import { act, render, waitFor } from '@testing-library/react'
+-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { act, render as renderReact, waitFor } from '@testing-library/react'
++import { afterAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { Clock, ClockProvider } from '../deps/player'
++import type { ReactNode } from 'react'
+ import { shouldIssueCoalescedReverseVideoSeek } from '../utils/video-sync-plan'
+ import { VideoContent } from './video-content'
++
++// Real provider owns one stable Clock across item-only pool handoffs.
++const clock = new Clock({ fps: 30, durationInFrames: 120 })
++afterAll(() => clock.dispose())
++function render(ui: ReactNode) {
++  return renderReact(ui, {
++    wrapper: ({ children }) => (
++      <ClockProvider clock={clock} fps={30} durationInFrames={120}>
++        {children}
++      </ClockProvider>
++    ),
++  })
++}
+
+ const testState = vi.hoisted(() => ({
+   preloadSourceMock: vi.fn(() => Promise.resolve()),
+@@ -95,13 +110,10 @@
+   return element
+ }
+
+-vi.mock('@/runtime/composition-runtime/deps/player', () => ({
++vi.mock('@/runtime/composition-runtime/deps/player', async () => ({
++  ...(await vi.importActual('@/runtime/composition-runtime/deps/player')),
+   useSequenceContext: () => ({ localFrame: 0, from: 0, durationInFrames: 120, parentFrom: 0 }),
+   useVideoSourcePool: () => testState.pool!,
+-  useClock: () => ({
+-    currentFrame: 0,
+-    onFrameChange: () => () => {},
+-  }),
+   useClockPlaybackRate: () => 1,
+   interpolate: () => 0,
+   isVideoPoolAbortError: () => false,
+@@ -280,9 +292,7 @@
+     vi.useFakeTimers()
+     playbackState.isPlaying = false
+     const pooledElement = createMockVideoElement()
+-    pooledElement.getClientRects = vi.fn(
+-      () => ({ length: 1 }) as unknown as DOMRectList,
+-    )
++    pooledElement.getClientRects = vi.fn(() => ({ length: 1 }) as unknown as DOMRectList)
+     acquireForClipMock.mockReturnValue(pooledElement)
+
+     const rendered = render(

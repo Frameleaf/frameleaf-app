@@ -1,0 +1,199 @@
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -605,6 +605,7 @@
+       // monitor own those transient frames, then scopes catch up on release.
+       if (usePlaybackStore.getState().previewFrame !== null) return
+       const generation = ++renderGeneration
++      const capturePlayback = usePlaybackStore.getState()
+       gpuRenderInFlightRef.current = true
+       // Stamp the in-flight start only once the flag is actually set, so the
+       // watchdog measures from when this render truly began (not from a tick
+@@ -613,7 +614,12 @@
+       // A render is stale once cancelled or superseded by a newer one (e.g. the
+       // watchdog force-cleared this slow render and started another). Stale
+       // renders must not touch the GPU — that's the overlapping-upload hazard.
+-      const isStale = () => cancelled || renderGeneration !== generation
++      // ponytail: frame epochs guard paused seeks; live seeks need a separate seek epoch.
++      const isStale = () =>
++        cancelled || renderGeneration !== generation ||
++        usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
++        (!capturePlayback.isPlaying &&
++          usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch)
+       const { kr, kb } = getMatrixCoefficients(SCOPE_COLOR_MATRIX)
+       renderer.setMatrix(kr, kb)
+       renderer.setRange(0, 1)
+@@ -663,7 +669,7 @@
+ 
+         setStatus('live')
+       } catch {
+-        setStatus('error')
++        if (!isStale()) setStatus('error')
+       } finally {
+         // Only release the flag if we still own it. If the watchdog superseded
+         // this render with a newer one, that render owns the flag now.
+@@ -712,6 +718,7 @@
+         })
+       }
+       const requestedFrame = getRequestedFrame()
++      const capturePlayback = usePlaybackStore.getState()
+ 
+       // Hidden scopes have no mounted canvas — draw whichever are present.
+       const wfCanvas = waveformCanvasRef.current
+@@ -790,7 +797,12 @@
+           setStatus('idle')
+           return
+         }
+-        if (getRequestedFrame() !== requestedFrame) {
++        if (
++          usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
++          (!capturePlayback.isPlaying &&
++            usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch) ||
++          getRequestedFrame() !== requestedFrame
++        ) {
+           if (retryCount < 1) await cpuDraw(retryCount + 1)
+           return
+         }
+@@ -825,7 +837,11 @@
+         }
+         setStatus('live')
+       } catch {
+-        setStatus('error')
++        const playback = usePlaybackStore.getState()
++        if (playback.isPlaying === capturePlayback.isPlaying &&
++          (capturePlayback.isPlaying || playback.frameUpdateEpoch === capturePlayback.frameUpdateEpoch)) {
++          setStatus('error')
++        }
+       }
+     },
+     [captureFrameImageData, captureFrame, open, gpuReady, isPlaying],
+@@ -981,7 +997,7 @@
+     >
+       <div className="flex items-center justify-between mb-2">
+         <div className="flex items-center gap-2">
+-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Scopes</div>
++          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Scopes · sRGB / Rec.709 full-range preview</div>
+           {isEmbeddedStackLayout && (
+             <Select
+               value={stackView}
+--- /dev/null
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -0,0 +1,119 @@
++import { act, cleanup, render, screen } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { ColorScopesView } from './color-scopes-view'
++
++const { createRenderer } = vi.hoisted(() => ({ createRenderer: vi.fn() }))
++vi.mock('@/infrastructure/gpu-scopes', () => ({ ScopeRenderer: { create: createRenderer } }))
++
++function deferred<T>() {
++  let resolve!: (value: T) => void
++  const promise = new Promise<T>((done) => { resolve = done })
++  return { promise, resolve }
++}
++
++describe('scope capture seek correspondence', () => {
++  let callbacks: Map<number, FrameRequestCallback>
++  let callbackId: number
++
++  beforeEach(() => {
++    callbacks = new Map()
++    callbackId = 0
++    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
++      callbacks.set(++callbackId, callback)
++      return callbackId
++    })
++    vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
++    usePlaybackStore.setState({
++      currentFrame: 12, currentFrameEpoch: 0, previewFrame: null,
++      previewFrameEpoch: 0, frameUpdateEpoch: 0, isPlaying: false,
++    })
++    usePreviewBridgeStore.setState({
++      displayedFrame: null, captureFrame: null,
++      captureFrameImageData: null, captureCanvasSource: null,
++    })
++  })
++
++  afterEach(() => {
++    cleanup()
++    vi.restoreAllMocks()
++    vi.unstubAllGlobals()
++  })
++
++  async function tick(time: number) {
++    await act(async () => {
++      const pending = [...callbacks.values()]
++      callbacks.clear()
++      for (const callback of pending) callback(time)
++    })
++  }
++
++  it.each([
++    ['gpu-canvas', false], ['gpu-image', false], ['cpu', false],
++    ['gpu-canvas', true], ['gpu-image', true],
++  ] as const)(
++    'keeps %s captures current when playing=%s without starving playback',
++    async (path, playing) => {
++      usePlaybackStore.setState({ isPlaying: playing })
++      const oldCapture = deferred<HTMLCanvasElement | ImageData>()
++      const newCapture = deferred<HTMLCanvasElement | ImageData>()
++      const oldFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
++      const newFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
++      const capture = vi.fn().mockReturnValueOnce(oldCapture.promise).mockReturnValue(newCapture.promise)
++      const renderer = {
++        setMatrix: vi.fn(), setRange: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
++        uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(),
++        renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn(),
++      }
++      const context = {
++        createImageData: (width: number, height: number) => new ImageData(width, height),
++        putImageData: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
++        beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
++        fillText: vi.fn(), arc: vi.fn(),
++      }
++      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as unknown as CanvasRenderingContext2D)
++      createRenderer.mockResolvedValue(path === 'cpu' ? null : renderer)
++      usePreviewBridgeStore.setState(path === 'gpu-canvas'
++        ? { captureCanvasSource: capture }
++        : { captureFrameImageData: capture })
++
++      await act(async () => { render(<ColorScopesView open />) })
++      expect(screen.getByText('Scopes · sRGB / Rec.709 full-range preview')).toBeInTheDocument()
++      await tick(100)
++      expect(capture).toHaveBeenCalledTimes(1)
++      expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({ preferRenderedFrame: true }))
++
++      if (playing) {
++        await act(async () => {
++          usePlaybackStore.getState().setCurrentFrame(13)
++          oldCapture.resolve(oldFrame)
++        })
++        expect(path === 'gpu-canvas' ? renderer.uploadFromCanvas : renderer.uploadFrame)
++          .toHaveBeenCalledExactlyOnceWith(oldFrame)
++        expect(renderer.renderWaveforms).toHaveBeenCalledOnce()
++        return
++      }
++
++      await act(async () => {
++        usePlaybackStore.getState().setCurrentFrame(24)
++        usePlaybackStore.getState().setCurrentFrame(12)
++        oldCapture.resolve(oldFrame)
++      })
++      expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++      expect(renderer.uploadFrame).not.toHaveBeenCalled()
++      expect(renderer.renderWaveforms).not.toHaveBeenCalled()
++      expect(context.putImageData).not.toHaveBeenCalled()
++
++      await tick(200)
++      expect(capture).toHaveBeenCalledTimes(2)
++      await act(async () => { newCapture.resolve(newFrame) })
++      if (path === 'cpu') {
++        expect(context.putImageData).toHaveBeenCalled()
++      } else {
++        expect(path === 'gpu-canvas' ? renderer.uploadFromCanvas : renderer.uploadFrame).toHaveBeenCalledExactlyOnceWith(newFrame)
++        expect(renderer.renderWaveforms).toHaveBeenCalledOnce()
++      }
++    },
++  )
++})

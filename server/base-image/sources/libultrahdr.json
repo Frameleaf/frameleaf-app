@@ -1,0 +1,10 @@
+{
+  "name": "libultrahdr",
+  "repository": "google/libultrahdr",
+  "version": "2.0.2",
+  "revision": "e5f5a022fe96fc4dc2ee35c19f733a50df807abe",
+  "qualified": false,
+  "isoAdaptiveHeif": true,
+  "frameleafPatchRevision": 5,
+  "patchChecksum": "0cba6a9ac5e6871de833e9d42848f9aa67c04b84bb44cd6454f892fb1c0e4368"
+}

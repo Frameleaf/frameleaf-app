@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
+import type { QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
-import { JobStatus } from 'src/enum.js';
+import { JobName, JobStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -8,10 +10,10 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 // Build an albumIdByKind map for the given kinds.
 const albumMap = (entries: Record<string, string>) => new Map(Object.entries(entries));
 
-// pgvector-style unit vector: 512 dims, 1.0 at `index`, 0 elsewhere. Two such
+// pgvector-style unit vector: 768 dims, 1.0 at `index`, 0 elsewhere. Two such
 // vectors have cosine similarity 1 (same index) or 0 (different index), which
 // makes threshold assertions exact.
-const unitVector = (index: number) => `[${Array.from({ length: 512 }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
+const unitVector = (index: number) => `[${Array.from({ length: 768 }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
 
 // Enable smart albums with a per-test CLIP model name — the model name is part
 // of the module-level query embedding cache key, so a unique name per test
@@ -158,7 +160,19 @@ describe(SmartAlbumService.name, () => {
       expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(foodAlbumId, assetId, 'tag');
     });
 
-    it('should batch repo lookups: one getAllSmartAlbumIdsForOwner + one getExcludedSmartAlbumIds per evaluate', async () => {
+    it('keeps an exclusion added after matching but before publication', async () => {
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ travel: travelAlbumId }));
+      mocks.smartAlbum.getExcludedSmartAlbumIds
+        .mockResolvedValueOnce(new Set())
+        .mockResolvedValueOnce(new Set([travelAlbumId]));
+
+      await sut.evaluate({ assetId, ownerId, tags: ['beach'] });
+
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(2);
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+    });
+
+    it('batches candidate lookups and rechecks each matching album before publication', async () => {
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(
         albumMap({ travel: travelAlbumId, food: foodAlbumId, nature: natureAlbumId }),
       );
@@ -166,7 +180,13 @@ describe(SmartAlbumService.name, () => {
       await sut.evaluate({ assetId, ownerId, tags: ['beach'] });
 
       expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).toHaveBeenCalledTimes(1);
-      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(1);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenCalledTimes(2);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenNthCalledWith(1, assetId, [
+        travelAlbumId,
+        foodAlbumId,
+        natureAlbumId,
+      ]);
+      expect(mocks.smartAlbum.getExcludedSmartAlbumIds).toHaveBeenNthCalledWith(2, assetId, [travelAlbumId]);
       // Per-kind isExcluded MUST NOT be called; we batched it.
       expect(mocks.smartAlbum.isExcluded).not.toHaveBeenCalled();
       // Per-kind getSmartAlbumIdForOwnerAndKind MUST NOT be called either.
@@ -184,9 +204,13 @@ describe(SmartAlbumService.name, () => {
       await sut.evaluate({ assetId, ownerId, tags: [] });
 
       expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(travelAlbumId, assetId, 'clip');
-      expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith('vacation travel landscape', {
-        modelName: 'clip-model-match',
-      });
+      expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
+        'vacation travel landscape',
+        {
+          modelName: 'clip-model-match',
+        },
+      );
     });
 
     it('should not add asset when similarity is below the threshold', async () => {
@@ -315,106 +339,129 @@ describe(SmartAlbumService.name, () => {
       const result = await sut.handleReevaluateAll({});
 
       expect(result).toBe(JobStatus.Skipped);
-      expect(mocks.assetJob.streamForSmartAlbumReevaluation).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForSmartAlbumReevaluation).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
-    it('should call evaluate for each streamed asset', async () => {
-      const asset1Id = newUuid();
-      const asset2Id = newUuid();
-      const ownerId = newUuid();
-      mocks.assetJob.streamForSmartAlbumReevaluation.mockReturnValue(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        (async function* () {
-          yield { id: asset1Id, ownerId, tags: ['beach'] };
-          yield { id: asset2Id, ownerId, tags: ['food'] };
-        })(),
-      );
-      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(new Map());
+    it.each([undefined, 'food'] as const)(
+      'should freeze per-asset work for kind %s without evaluating inline',
+      async (kind) => {
+        const selection = {} as never;
+        mocks.assetJob.selectionForSmartAlbumReevaluation.mockReturnValue(selection);
+        const result = await sut.handleReevaluateAll({});
+        expect(result).toBe(JobStatus.Success);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.SmartAlbumReevaluate, selection, {});
+        expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).not.toHaveBeenCalled();
+        if (kind) {
+          await sut.handleReevaluateAll({ kind });
+          expect(mocks.job.queueSelection).toHaveBeenLastCalledWith(JobName.SmartAlbumReevaluate, selection, { kind });
+        }
+      },
+    );
 
-      const result = await sut.handleReevaluateAll({});
+    it('should propagate a failed snapshot instead of recording producer success', async () => {
+      const selection = {} as never;
+      mocks.assetJob.selectionForSmartAlbumReevaluation.mockReturnValue(selection);
+      mocks.job.queueSelection.mockRejectedValue(new Error('snapshot unavailable'));
+      await expect(sut.handleReevaluateAll({})).rejects.toThrow('snapshot unavailable');
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.SmartAlbumReevaluate, selection, {});
+    });
 
-      expect(result).toBe(JobStatus.Success);
-      expect(mocks.assetJob.streamForSmartAlbumReevaluation).toHaveBeenCalledTimes(1);
-      // evaluate() is called for each asset (we call getAllSmartAlbumIdsForOwner per evaluate call)
-      expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).toHaveBeenCalledTimes(2);
+    it('should skip with unknown kind', async () => {
+      const result = await sut.handleReevaluateAll({ kind: 'not-a-real-kind' as never });
+      expect(result).toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.selectionForSmartAlbumReevaluation).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleReevaluate', () => {
+    beforeEach(() => {
+      mocks.assetJob.getForSmartAlbumReevaluation.mockResolvedValue({ id: assetId, ownerId, tags: ['food', 'beach'] });
     });
 
     it('should pass onlyKind to evaluate when data.kind is set', async () => {
-      const asset1Id = newUuid();
-      const evalOwnerId = newUuid();
-      mocks.assetJob.streamForSmartAlbumReevaluation.mockReturnValue(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        (async function* () {
-          yield { id: asset1Id, ownerId: evalOwnerId, tags: ['food', 'beach'] };
-        })(),
-      );
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(
         albumMap({ food: foodAlbumId, travel: travelAlbumId }),
       );
 
-      const result = await sut.handleReevaluateAll({ kind: 'food' });
+      const result = await sut.handleReevaluate({ id: assetId, kind: 'food' });
 
       expect(result).toBe(JobStatus.Success);
       // Only the food album should have the asset added — travel must NOT,
       // even though "beach" would normally match travel.
-      expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(foodAlbumId, asset1Id, 'tag');
-      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalledWith(travelAlbumId, asset1Id, 'tag');
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(foodAlbumId, assetId, 'tag');
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalledWith(travelAlbumId, assetId, 'tag');
     });
 
     it('should not strip non-scoped memberships when scoped to a single kind', async () => {
-      const asset1Id = newUuid();
-      const evalOwnerId = newUuid();
-      mocks.assetJob.streamForSmartAlbumReevaluation.mockReturnValue(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        (async function* () {
-          yield { id: asset1Id, ownerId: evalOwnerId, tags: ['screenshot'] };
-        })(),
-      );
+      mocks.assetJob.getForSmartAlbumReevaluation.mockResolvedValue({ id: assetId, ownerId, tags: ['screenshot'] });
       // Asset is in travel and food. Re-evaluate kind=food only.
       mocks.smartAlbum.getMatchingKinds.mockResolvedValue(['travel', 'food']);
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(
         albumMap({ travel: travelAlbumId, food: foodAlbumId }),
       );
 
-      await sut.handleReevaluateAll({ kind: 'food' });
+      await sut.handleReevaluate({ id: assetId, kind: 'food' });
 
       // food no longer matches and should be removed.
-      expect(mocks.smartAlbum.removeAssetFromSmartAlbum).toHaveBeenCalledWith(foodAlbumId, asset1Id);
+      expect(mocks.smartAlbum.removeAssetFromSmartAlbum).toHaveBeenCalledWith(foodAlbumId, assetId);
       // travel was NOT scoped — it must NOT be touched.
-      expect(mocks.smartAlbum.removeAssetFromSmartAlbum).not.toHaveBeenCalledWith(travelAlbumId, asset1Id);
+      expect(mocks.smartAlbum.removeAssetFromSmartAlbum).not.toHaveBeenCalledWith(travelAlbumId, assetId);
     });
 
     it('should skip with unknown kind', async () => {
-      // Cast to bypass compile-time narrowing — this is intentionally an invalid
-      // value to verify the runtime guard inside handleReevaluateAll.
-      const result = await sut.handleReevaluateAll({ kind: 'not-a-real-kind' as never });
+      const result = await sut.handleReevaluate({ id: assetId, kind: 'not-a-real-kind' as never });
 
       expect(result).toBe(JobStatus.Skipped);
-      expect(mocks.assetJob.streamForSmartAlbumReevaluation).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForSmartAlbumReevaluation).not.toHaveBeenCalled();
     });
 
-    it('should continue to next asset if one evaluate throws', async () => {
-      const asset1Id = newUuid();
-      const asset2Id = newUuid();
-      const ownerId = newUuid();
-      mocks.assetJob.streamForSmartAlbumReevaluation.mockReturnValue(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        (async function* () {
-          yield { id: asset1Id, ownerId, tags: ['beach'] };
-          yield { id: asset2Id, ownerId, tags: ['food'] };
-        })(),
-      );
+    it('should propagate an item error and allow an unrelated item to execute', async () => {
       // First call throws, second succeeds
       mocks.smartAlbum.getAllSmartAlbumIdsForOwner
         .mockRejectedValueOnce(new Error('db error'))
         .mockResolvedValueOnce(new Map());
 
-      const result = await sut.handleReevaluateAll({});
-
-      expect(result).toBe(JobStatus.Success);
-      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
-      // Both assets attempted — second one got the successful mock call
+      await expect(sut.handleReevaluate({ id: assetId })).rejects.toThrow('db error');
+      await expect(sut.handleReevaluate({ id: newUuid() })).resolves.toBe(JobStatus.Success);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
       expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).toHaveBeenCalledTimes(2);
+    });
+
+    it('should skip a deleted or ineligible frozen ID', async () => {
+      mocks.assetJob.getForSmartAlbumReevaluation.mockResolvedValue(undefined);
+      await expect(sut.handleReevaluate({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.smartAlbum.getAllSmartAlbumIdsForOwner).not.toHaveBeenCalled();
+    });
+
+    it('should fail corrupt tags rather than silently hiding them', async () => {
+      mocks.assetJob.getForSmartAlbumReevaluation.mockResolvedValue({ id: assetId, ownerId, tags: [123] } as never);
+      await expect(sut.handleReevaluate({ id: assetId })).rejects.toThrow('Invalid smart-album description tags');
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+    });
+
+    it('should defer membership writes and reject changed tags during accepted publication', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        smartAlbums: { enabled: true },
+        machineLearning: { clip: { enabled: false } },
+      });
+      mocks.smartAlbum.getAllSmartAlbumIdsForOwner.mockResolvedValue(albumMap({ food: foodAlbumId }));
+      const execution: QueueExecution = {
+        claim: { id: newUuid(), token: newUuid(), data: {}, safeToRetry: true } as QueueClaim,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+      await queueExecution.run(execution, () => sut.handleReevaluate({ id: assetId, kind: 'food' }));
+      expect(mocks.job.guardAssetSource).toHaveBeenCalledWith(assetId);
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
+      mocks.assetJob.getForSmartAlbumReevaluation.mockResolvedValue({ id: assetId, ownerId, tags: ['changed'] });
+      await expect(execution.adoptions[0]({} as never)).rejects.toThrow('inputs changed before publication');
+      expect(mocks.smartAlbum.addAssetToSmartAlbum).not.toHaveBeenCalled();
     });
   });
 

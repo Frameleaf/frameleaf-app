@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { createHash, randomUUID } from 'node:crypto';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import { AlbumUserRole } from 'src/enum.js';
-import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 
 @Injectable()
 export class SmartAlbumRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
   /**
    * Idempotent: for each (ownerId, kind) pair that doesn't already have a
    * smart_album row, create the backing album + album_user (owner) + smart_album
@@ -24,30 +26,29 @@ export class SmartAlbumRepository {
    * other becomes orphaned. The advisory lock serializes per (ownerId, kind),
    * so the SELECT-then-INSERT path is race-safe.
    */
-  async ensureForUser(ownerId: string, kinds: { kind: string; name: string }[]): Promise<void> {
+  async ensureForUser(
+    ownerId: string,
+    kinds: {
+      kind: string;
+      name: string;
+    }[],
+  ): Promise<void> {
     if (kinds.length === 0) {
       return;
     }
-
     for (const { kind, name } of kinds) {
       await this.db.transaction().execute(async (trx) => {
         // Serialize this (ownerId, kind) pair across concurrent callers. Released
         // automatically at end-of-transaction.
         await sql`SELECT pg_advisory_xact_lock(hashtext(${`${ownerId}:${kind}`}))`.execute(trx);
-
         const existing = await this.getSmartAlbumIdForOwnerAndKind(ownerId, kind, trx);
-
         if (existing) {
           return;
         }
-
         // Create backing album + album_user (owner) + smart_album in one CTE
         // chain. The final INSERT references both `new_album` and `new_album_owner`
         // so PostgreSQL is forced to execute every data-modifying CTE.
-        const phase = await this.getPhase(trx);
-        if (!isLegacyAuthoritative(phase) && !isForkWriteEnabled(phase)) {
-          return;
-        }
+
         const album = await trx
           .with('new_album', (qb) => qb.insertInto('album').values({ albumName: name }).returning('id'))
           .with('new_album_owner', (qb) =>
@@ -67,35 +68,21 @@ export class SmartAlbumRepository {
           .selectFrom('new_album_owner')
           .select('albumId')
           .executeTakeFirstOrThrow();
-        if (isLegacyAuthoritative(phase)) {
-          const rule = await trx
+        {
+          await trx
             .insertInto('smart_album')
             .values({ albumId: album.albumId, ownerId, kind })
             .returning('id')
             .executeTakeFirstOrThrow();
-          if (isForkWriteEnabled(phase)) {
-            await this.upsertRule(rule.id, album.albumId, ownerId, kind, trx);
-          }
-        } else if (isForkWriteEnabled(phase)) {
-          await this.upsertRule(randomUUID(), album.albumId, ownerId, kind, trx);
         }
       });
     }
   }
-
   async getSmartAlbumIdForOwnerAndKind(
     ownerId: string,
     kind: string,
     kysely: Kysely<DB> = this.db,
   ): Promise<string | null> {
-    if (await this.shouldReadSidecar(kysely)) {
-      const result = await sql<{
-        id: string;
-      }>`SELECT id::text AS id FROM immich_fork.smart_album_rule WHERE "ownerId" = ${ownerId}::uuid AND kind = ${kind}`.execute(
-        kysely,
-      );
-      return result.rows[0]?.id ?? null;
-    }
     const row = await kysely
       .selectFrom('smart_album')
       .select('id')
@@ -104,22 +91,12 @@ export class SmartAlbumRepository {
       .executeTakeFirst();
     return row?.id ?? null;
   }
-
   /**
    * Return a map of kind -> smart_album.id for all built-in kinds belonging to
    * `ownerId`. Replaces N round-trips to `getSmartAlbumIdForOwnerAndKind` with
    * a single query.
    */
   async getAllSmartAlbumIdsForOwner(ownerId: string): Promise<Map<string, string>> {
-    if (await this.shouldReadSidecar()) {
-      const result = await sql<{
-        id: string;
-        kind: string;
-      }>`SELECT id::text AS id, kind FROM immich_fork.smart_album_rule WHERE "ownerId" = ${ownerId}::uuid`.execute(
-        this.db,
-      );
-      return new Map(result.rows.map((row) => [row.kind, row.id]));
-    }
     const rows = await this.db
       .selectFrom('smart_album')
       .select(['id', 'kind'])
@@ -127,15 +104,22 @@ export class SmartAlbumRepository {
       .execute();
     return new Map(rows.map((r) => [r.kind, r.id]));
   }
-
-  async isExcluded(smartAlbumId: string, assetId: string): Promise<boolean> {
-    if (await this.shouldReadSidecar()) {
-      const result =
-        await sql`SELECT 1 FROM immich_fork.smart_album_exclusion WHERE "smartAlbumId" = ${smartAlbumId}::uuid AND "assetId" = ${assetId}::uuid`.execute(
-          this.db,
-        );
-      return result.rows.length > 0;
+  /**
+   * Which of `albumIds` are backed by a built-in smart album rule (and therefore filled
+   * automatically), mapped to the rule's kind. Read from the authoritative side for the current phase.
+   */
+  async getSmartBackedAlbumKinds(albumIds: string[]): Promise<Map<string, string>> {
+    if (albumIds.length === 0) {
+      return new Map();
     }
+    const rows = await this.db
+      .selectFrom('smart_album')
+      .select(['albumId', 'kind'])
+      .where('albumId', 'in', albumIds)
+      .execute();
+    return new Map(rows.map((row) => [row.albumId, row.kind]));
+  }
+  async isExcluded(smartAlbumId: string, assetId: string): Promise<boolean> {
     const row = await this.db
       .selectFrom('smart_album_exclusion')
       .select('smartAlbumId')
@@ -144,7 +128,6 @@ export class SmartAlbumRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /**
    * Return the subset of `smartAlbumIds` that have the given asset excluded.
    * Single query equivalent of calling `isExcluded` per smart album.
@@ -152,14 +135,6 @@ export class SmartAlbumRepository {
   async getExcludedSmartAlbumIds(assetId: string, smartAlbumIds: string[]): Promise<Set<string>> {
     if (smartAlbumIds.length === 0) {
       return new Set();
-    }
-    if (await this.shouldReadSidecar()) {
-      const result = await sql<{
-        smartAlbumId: string;
-      }>`SELECT "smartAlbumId"::text AS "smartAlbumId" FROM immich_fork.smart_album_exclusion WHERE "assetId" = ${assetId}::uuid AND "smartAlbumId" = ANY(${smartAlbumIds}::uuid[])`.execute(
-        this.db,
-      );
-      return new Set(result.rows.map((row) => row.smartAlbumId));
     }
     const rows = await this.db
       .selectFrom('smart_album_exclusion')
@@ -169,7 +144,6 @@ export class SmartAlbumRepository {
       .execute();
     return new Set(rows.map((r) => r.smartAlbumId));
   }
-
   /**
    * Add asset to smart_album_asset AND mirror into album_asset so it shows
    * up in normal album browsing. Both inserts run in a single transaction so
@@ -181,34 +155,17 @@ export class SmartAlbumRepository {
     matchReason: 'tag' | 'clip' | 'both',
   ): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const phase = await this.getPhase(trx);
-      if (!isLegacyAuthoritative(phase) && !isForkWriteEnabled(phase)) {
-        return;
-      }
-      const smartAlbum = await this.getRule(smartAlbumId, trx, isForkAuthoritative(phase));
-
+      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
       if (!smartAlbum) {
         return;
       }
-
-      // ON CONFLICT (smartAlbumId, assetId) DO UPDATE so matchReason refreshes
-      // when an asset that originally matched via tag is later evaluated and
-      // matches via tag+clip ("both") or clip alone. The DISTINCT guard makes
-      // the write a no-op when the reason hasn't changed — keeps the upsert
-      // cheap and avoids bumping updatedAt-style triggers.
-      if (isLegacyAuthoritative(phase)) {
+      {
         await trx
           .insertInto('smart_album_asset')
           .values({ smartAlbumId, assetId, matchReason })
           .onConflict((oc) => oc.columns(['smartAlbumId', 'assetId']).doUpdateSet({ matchReason }))
           .execute();
       }
-      if (isForkWriteEnabled(phase)) {
-        await sql`INSERT INTO immich_fork.smart_album_match ("smartAlbumId", "assetId", "matchReason") VALUES (${smartAlbumId}::uuid, ${assetId}::uuid, ${matchReason}) ON CONFLICT ("smartAlbumId", "assetId") DO UPDATE SET "matchReason" = EXCLUDED."matchReason"`.execute(
-          trx,
-        );
-      }
-
       await trx
         .insertInto('album_asset')
         .values({ albumId: smartAlbum.albumId, assetId })
@@ -216,7 +173,6 @@ export class SmartAlbumRepository {
         .execute();
     });
   }
-
   /**
    * Remove asset from smart_album_asset AND from the backing album_asset.
    *
@@ -229,12 +185,7 @@ export class SmartAlbumRepository {
    */
   async removeAssetFromSmartAlbum(smartAlbumId: string, assetId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const phase = await this.getPhase(trx);
-      if (!isLegacyAuthoritative(phase) && !isForkWriteEnabled(phase)) {
-        return;
-      }
-      const smartAlbum = await this.getRule(smartAlbumId, trx, isForkAuthoritative(phase));
-
+      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
       if (smartAlbum) {
         await trx
           .deleteFrom('album_asset')
@@ -242,34 +193,19 @@ export class SmartAlbumRepository {
           .where('assetId', '=', assetId)
           .execute();
       }
-
-      if (isLegacyAuthoritative(phase)) {
+      {
         await trx
           .deleteFrom('smart_album_asset')
           .where('smartAlbumId', '=', smartAlbumId)
           .where('assetId', '=', assetId)
           .execute();
       }
-      if (isForkWriteEnabled(phase)) {
-        await sql`DELETE FROM immich_fork.smart_album_match WHERE "smartAlbumId" = ${smartAlbumId}::uuid AND "assetId" = ${assetId}::uuid`.execute(
-          trx,
-        );
-      }
     });
   }
-
   /**
    * Return the smart-album kinds the asset is currently in for this owner.
    */
   async getMatchingKinds(assetId: string, ownerId: string): Promise<string[]> {
-    if (await this.shouldReadSidecar()) {
-      const result = await sql<{
-        kind: string;
-      }>`SELECT rule.kind FROM immich_fork.smart_album_match match INNER JOIN immich_fork.smart_album_rule rule ON rule.id = match."smartAlbumId" WHERE match."assetId" = ${assetId}::uuid AND rule."ownerId" = ${ownerId}::uuid`.execute(
-        this.db,
-      );
-      return result.rows.map((row) => row.kind);
-    }
     const rows = await this.db
       .selectFrom('smart_album_asset')
       .innerJoin('smart_album', 'smart_album.id', 'smart_album_asset.smartAlbumId')
@@ -279,174 +215,70 @@ export class SmartAlbumRepository {
       .execute();
     return rows.map((r) => r.kind);
   }
-
   /**
    * Add to smart_album_exclusion and remove from smart_album_asset + album_asset
    * atomically. Stub for PR 7 (admin UI opt-out endpoint).
    */
   async excludeAsset(smartAlbumId: string, assetId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const phase = await this.getPhase(trx);
-      if (!isLegacyAuthoritative(phase) && !isForkWriteEnabled(phase)) {
-        return;
-      }
-      const smartAlbum = await this.getRule(smartAlbumId, trx, isForkAuthoritative(phase));
+      const smartAlbum = await this.getRule(smartAlbumId, trx, false);
       if (!smartAlbum) {
         return;
       }
-      if (isLegacyAuthoritative(phase)) {
+      {
         await trx
           .insertInto('smart_album_exclusion')
           .values({ smartAlbumId, assetId })
           .onConflict((oc) => oc.doNothing())
           .execute();
       }
-      if (isForkWriteEnabled(phase)) {
-        await sql`INSERT INTO immich_fork.smart_album_exclusion ("smartAlbumId", "assetId") VALUES (${smartAlbumId}::uuid, ${assetId}::uuid) ON CONFLICT DO NOTHING`.execute(
-          trx,
-        );
-      }
-
       await trx
         .deleteFrom('album_asset')
         .where('albumId', '=', smartAlbum.albumId)
         .where('assetId', '=', assetId)
         .execute();
-
-      if (isLegacyAuthoritative(phase)) {
+      {
         await trx
           .deleteFrom('smart_album_asset')
           .where('smartAlbumId', '=', smartAlbumId)
           .where('assetId', '=', assetId)
           .execute();
       }
-      if (isForkWriteEnabled(phase)) {
-        await sql`DELETE FROM immich_fork.smart_album_match WHERE "smartAlbumId" = ${smartAlbumId}::uuid AND "assetId" = ${assetId}::uuid`.execute(
-          trx,
-        );
-      }
     });
   }
-
-  async backfillAutomation(albumIds: string[]): Promise<{ count: number; digest: string }> {
-    return this.db.transaction().execute(async (trx) => {
-      const rules = await sql<{
-        id: string;
-        albumId: string;
-        ownerId: string;
-        kind: string;
-      }>`SELECT id::text AS id, "albumId"::text AS "albumId", "ownerId"::text AS "ownerId", kind FROM smart_album WHERE "albumId" = ANY(${albumIds}::uuid[]) ORDER BY id::text`.execute(
-        trx,
-      );
-      const ids = rules.rows.map((row) => row.id);
-      const existing = await sql<{ id: string }>`
-        SELECT id::text AS id FROM immich_fork.smart_album_rule
-        WHERE "albumId" = ANY(${albumIds}::uuid[])
-      `.execute(trx);
-      const affectedIds = [...new Set([...ids, ...existing.rows.map((row) => row.id)])];
-      await sql`DELETE FROM immich_fork.smart_album_match WHERE "smartAlbumId" = ANY(${affectedIds}::uuid[])`.execute(
-        trx,
-      );
-      await sql`DELETE FROM immich_fork.smart_album_exclusion WHERE "smartAlbumId" = ANY(${affectedIds}::uuid[])`.execute(
-        trx,
-      );
-      await sql`DELETE FROM immich_fork.smart_album_rule WHERE "albumId" = ANY(${albumIds}::uuid[])`.execute(trx);
-      for (const row of rules.rows) {
-        await this.upsertRule(row.id, row.albumId, row.ownerId, row.kind, trx);
-      }
-      if (ids.length > 0) {
-        await sql`INSERT INTO immich_fork.smart_album_match ("smartAlbumId", "assetId", "matchReason") SELECT "smartAlbumId", "assetId", "matchReason" FROM smart_album_asset WHERE "smartAlbumId" = ANY(${ids}::uuid[]) ON CONFLICT DO NOTHING`.execute(
-          trx,
-        );
-        await sql`INSERT INTO immich_fork.smart_album_exclusion ("smartAlbumId", "assetId") SELECT "smartAlbumId", "assetId" FROM smart_album_exclusion WHERE "smartAlbumId" = ANY(${ids}::uuid[]) ON CONFLICT DO NOTHING`.execute(
-          trx,
-        );
-      }
-      const snapshot =
-        await sql`SELECT id::text AS id, "albumId"::text AS "albumId", "ownerId"::text AS "ownerId", kind FROM immich_fork.smart_album_rule WHERE "albumId" = ANY(${albumIds}::uuid[]) ORDER BY id::text`.execute(
-          trx,
-        );
-      const matches =
-        await sql`SELECT "smartAlbumId"::text AS "smartAlbumId", "assetId"::text AS "assetId", "matchReason" FROM immich_fork.smart_album_match WHERE "smartAlbumId" = ANY(${ids}::uuid[]) ORDER BY "smartAlbumId"::text, "assetId"::text`.execute(
-          trx,
-        );
-      const exclusions =
-        await sql`SELECT * FROM immich_fork.smart_album_exclusion WHERE "smartAlbumId" = ANY(${ids}::uuid[]) ORDER BY "smartAlbumId"::text, "assetId"::text`.execute(
-          trx,
-        );
-      const digest = createHash('sha256')
-        .update(JSON.stringify({ exclusions: exclusions.rows, matches: matches.rows, rules: snapshot.rows }))
-        .digest('hex');
-      return { count: albumIds.length, digest };
-    });
+  /**
+   * The owner took items out of a built-in smart album by hand (FL-60): exclude them, so no later
+   * evaluation puts them back. Does nothing for an album that is not a built-in smart album.
+   */
+  async excludeFromAlbum(albumId: string, assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+    const ruleId = await this.getRuleIdForAlbum(albumId);
+    if (!ruleId) {
+      return;
+    }
+    for (const assetId of assetIds) {
+      await this.excludeAsset(ruleId, assetId);
+    }
   }
-
+  private async getRuleIdForAlbum(albumId: string): Promise<string | undefined> {
+    const row = await this.db.selectFrom('smart_album').select('id').where('albumId', '=', albumId).executeTakeFirst();
+    return row?.id;
+  }
   async deleteAssets(assetIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
-    if (assetIds.length === 0 || !isForkWriteEnabled(await this.getPhase(kysely))) {
-      return;
-    }
-    await sql`DELETE FROM immich_fork.smart_album_match WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(kysely);
-    await sql`DELETE FROM immich_fork.smart_album_exclusion WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(kysely);
+    if (assetIds.length === 0) return;
+    await kysely.deleteFrom('smart_album_asset').where('assetId', 'in', assetIds).execute();
+    await kysely.deleteFrom('smart_album_exclusion').where('assetId', 'in', assetIds).execute();
   }
-
   async deleteAlbums(albumIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
-    if (albumIds.length === 0 || !isForkWriteEnabled(await this.getPhase(kysely))) {
-      return;
-    }
-    const rules = await sql<{ id: string }>`
-      SELECT id::text AS id FROM immich_fork.smart_album_rule WHERE "albumId" = ANY(${albumIds}::uuid[])
-    `.execute(kysely);
-    const ids = rules.rows.map(({ id }) => id);
-    if (ids.length > 0) {
-      await sql`DELETE FROM immich_fork.smart_album_match WHERE "smartAlbumId" = ANY(${ids}::uuid[])`.execute(kysely);
-      await sql`DELETE FROM immich_fork.smart_album_exclusion WHERE "smartAlbumId" = ANY(${ids}::uuid[])`.execute(
-        kysely,
-      );
-    }
-    await sql`DELETE FROM immich_fork.smart_album_rule WHERE "albumId" = ANY(${albumIds}::uuid[])`.execute(kysely);
+    if (albumIds.length > 0) await kysely.deleteFrom('smart_album').where('albumId', 'in', albumIds).execute();
   }
-
   async deleteOwner(ownerId: string, kysely: Kysely<DB> = this.db): Promise<void> {
-    if (!isForkWriteEnabled(await this.getPhase(kysely))) {
-      return;
-    }
-    const rules = await sql<{ albumId: string }>`
-      SELECT "albumId"::text AS "albumId" FROM immich_fork.smart_album_rule WHERE "ownerId" = ${ownerId}::uuid
-    `.execute(kysely);
-    await this.deleteAlbums(
-      rules.rows.map(({ albumId }) => albumId),
-      kysely,
-    );
+    await kysely.deleteFrom('smart_album').where('ownerId', '=', ownerId).execute();
   }
 
-  private async shouldReadSidecar(kysely: Kysely<DB> = this.db) {
-    const phase = await this.getPhase(kysely);
-    return isForkAuthoritative(phase);
-  }
-  private async getPhase(kysely: Kysely<DB>): Promise<ForkSchemaPhase> {
-    const exists = await sql<{ table: string | null }>`SELECT to_regclass('immich_fork.state')::text AS table`.execute(
-      kysely,
-    );
-    if (!exists.rows[0]?.table) {
-      return 'legacy';
-    }
-    const result = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id = 1`.execute(
-      kysely,
-    );
-    return result.rows[0]?.phase ?? 'inactive';
-  }
-  private async upsertRule(id: string, albumId: string, ownerId: string, kind: string, kysely: Kysely<DB>) {
-    await sql`INSERT INTO immich_fork.smart_album_rule (id, "albumId", "ownerId", kind) VALUES (${id}::uuid, ${albumId}::uuid, ${ownerId}::uuid, ${kind}) ON CONFLICT (id) DO UPDATE SET "albumId" = EXCLUDED."albumId", "ownerId" = EXCLUDED."ownerId", kind = EXCLUDED.kind`.execute(
-      kysely,
-    );
-  }
-  private async getRule(id: string, kysely: Kysely<DB>, sidecar: boolean): Promise<{ albumId: string } | undefined> {
-    if (sidecar) {
-      const result = await sql<{
-        albumId: string;
-      }>`SELECT "albumId"::text AS "albumId" FROM immich_fork.smart_album_rule WHERE id = ${id}::uuid`.execute(kysely);
-      return result.rows[0];
-    }
+  private async getRule(id: string, kysely: Kysely<DB>, _sidecar?: boolean): Promise<{ albumId: string } | undefined> {
     return kysely.selectFrom('smart_album').select('albumId').where('id', '=', id).executeTakeFirst();
   }
 }

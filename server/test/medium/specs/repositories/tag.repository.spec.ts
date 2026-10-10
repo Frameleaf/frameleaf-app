@@ -140,7 +140,7 @@ describe(TagRepository.name, () => {
         color: '#000000',
       });
 
-      await sut.update(tag.id, { value: 'updatedTagA' });
+      await sut.update(tag.id, { name: 'updatedTagA' });
 
       await expect(
         ctx.database
@@ -149,6 +149,49 @@ describe(TagRepository.name, () => {
           .where('id', '=', tag.id)
           .executeTakeFirstOrThrow(),
       ).resolves.toEqual({ userId: user.id, value: 'updatedTagA', color: '#000000', parentId: null });
+    });
+  });
+
+  describe('addAssetIds', () => {
+    it('keeps a row that is already there instead of failing', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'trip' });
+      // metadata extraction added it first
+      await sut.upsertAssetIds([{ tagId: tag.id, assetId: asset.id }]);
+
+      await expect(sut.addAssetIds(tag.id, [asset.id])).resolves.toBeUndefined();
+      await expect(
+        ctx.database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
+      ).resolves.toEqual([{ tagId: tag.id }]);
+    });
+  });
+
+  describe('removeAssetTagValues', () => {
+    it('removes only the named values of the owner from the asset', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag: fromFile } = await ctx.newTag({ userId: user.id, value: 'fromFile' });
+      const { tag: addedLater } = await ctx.newTag({ userId: user.id, value: 'addedLater' });
+      const { tag: othersTag } = await ctx.newTag({ userId: other.id, value: 'fromFile' });
+      await sut.upsertAssetIds([
+        { tagId: fromFile.id, assetId: asset.id },
+        { tagId: addedLater.id, assetId: asset.id },
+        { tagId: othersTag.id, assetId: asset.id },
+      ]);
+
+      await sut.removeAssetTagValues(asset.id, user.id, ['fromFile']);
+      await sut.removeAssetTagValues(asset.id, user.id, []);
+
+      const remaining = await ctx.database
+        .selectFrom('tag_asset')
+        .select('tagId')
+        .where('assetId', '=', asset.id)
+        .execute();
+      expect(remaining.map(({ tagId }) => tagId).toSorted()).toEqual([addedLater.id, othersTag.id].toSorted());
     });
   });
 

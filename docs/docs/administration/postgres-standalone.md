@@ -1,162 +1,27 @@
-# Pre-existing Postgres
+# Standalone PostgreSQL
 
-import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d`. Use the digest in the Frameleaf release manifest for deployment. PostgreSQL 19 beta 4 is the current development baseline; an image build or source review does not establish production readiness.
 
-While not officially recommended, it is possible to run Immich using a pre-existing Postgres server. To use this setup, you should have a baseline level of familiarity with Postgres and the Linux command line. If you do not have these, we recommend using the default setup with a dedicated Postgres container.
+The PostgreSQL image is public and supports AMD64 and ARM64. Pulling this image does not require a GitHub account or registry credentials.
 
-By default, Immich expects superuser permission on the Postgres database and requires certain extensions to be installed. This guide outlines the steps required to prepare a pre-existing Postgres server to be used by Immich.
+All Frameleaf content, configuration, jobs, import journals and shared coordination tables live in the canonical `public` schema. Every API and job worker must connect to this same database. There is no separate cache or queue service to configure. Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-immich.md) to copy supported source content into a fresh destination.
 
-:::tip
-Running with a pre-existing Postgres server can unlock powerful administrative features, including logical replication and streaming write-ahead log backups using programs like pgBackRest or Barman.
-:::
+## Requirements
 
-## Prerequisites
+- PostgreSQL 19 and the pgvector 0.8.7 extension installed on the database server.
+- A dedicated database, normally named `frameleaf`, with permissions for the Frameleaf role to create and update the canonical schema.
+- The `vector` extension enabled in that database. Have the database administrator install it if the application role cannot create extensions.
+- Reliable access from every API and worker process, including PostgreSQL LISTEN/NOTIFY connections for Socket.IO broadcasts. Transaction-pooling proxies cannot substitute for the persistent listener connection.
+- A tested database and media backup, with PostgreSQL 19 `pg_dump` and `psql` clients.
 
-You must install pgvector as it is a prerequisite for VectorChord.
-The easiest way to do this on Debian/Ubuntu is by adding the [PostgreSQL Apt repository][pg-apt] and then
-running `apt install postgresql-NN-pgvector`, where `NN` is your Postgres version (e.g., `16`).
+For an external database, set `DB_URL` to its connection URL or configure the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE_NAME` variables. Protect credentials in deployment secrets and do not place them in support logs. TLS options are part of the PostgreSQL connection URL; use the trust policy required by your database administrator.
 
-You must install VectorChord into your instance of Postgres using their [instructions][vchord-install]. After installation, add `shared_preload_libraries = 'vchord.so'` to your `postgresql.conf`. If you already have some `shared_preload_libraries` set, you can separate each extension with a comma. For example, `shared_preload_libraries = 'pg_stat_statements, vchord.so'`.
+The release Compose file mounts the database parent directory at `/var/lib/postgresql`. The owned image writes its versioned cluster beneath that directory. A PostgreSQL 14/15/16/17/18 cluster is not a PostgreSQL 19 volume; changing an image tag is not a major-version migration.
 
-:::note Supported versions
-Immich is known to work with Postgres versions `>= 14, < 20`.
+## Schema ownership
 
-VectorChord is known to work with pgvector versions `>= 0.7, < 0.9`.
+Frameleaf creates its own baseline and records subsequent changes in `public.frameleaf_migrations`, with `public.frameleaf_migrations_lock` coordinating migration execution. Do not copy source migration rows, extension indexes or operational queues into this database. See [Database migrations](../developer/database-migrations.md).
 
-The Immich server will check the VectorChord version on startup to ensure compatibility, and refuse to start if a compatible version is not found.
-The current accepted range for VectorChord is `>= 0.3, < 2.0`.
-:::
+## Backup and recovery
 
-## Specifying the connection URL
-
-<ComposeBuilder query="database.external=true" />
-
-You can connect to your pre-existing Postgres server by setting the `DB_URL` environment variable in the `.env` file.
-
-```
-DB_URL='postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename'
-
-# require a SSL connection to Postgres
-# DB_URL='postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename?sslmode=require'
-
-# require a SSL connection, but don't enforce checking the certificate name
-# DB_URL='postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename?sslmode=require&sslmode=no-verify'
-```
-
-## With superuser permission
-
-Typically Immich expects superuser permission in the database, which you can grant by running `ALTER USER <immichdbusername> WITH SUPERUSER;` at the `psql` console. If you prefer not to grant superuser permissions, follow the instructions in the next section.
-
-## Without superuser permission
-
-:::caution
-This method is recommended for **advanced users only** and often requires manual intervention when updating Immich.
-:::
-
-:::danger
-Currently, automated backups require superuser permission due to the usage of `pg_dumpall`.
-:::
-
-Immich can run without superuser permissions by following the below instructions at the `psql` prompt to prepare the database.
-
-```sql title="Set up Postgres for Immich"
-CREATE DATABASE <immichdatabasename>;
-\c <immichdatabasename>
-BEGIN;
-ALTER DATABASE <immichdatabasename> OWNER TO <immichdbusername>;
-CREATE EXTENSION vchord CASCADE;
-CREATE EXTENSION earthdistance CASCADE;
-COMMIT;
-```
-
-### Updating VectorChord
-
-When installing a new version of VectorChord, you will need to manually update the extension and reindex by connecting to the Immich database and running:
-
-```
-ALTER EXTENSION vchord UPDATE;
-REINDEX INDEX face_index;
-REINDEX INDEX clip_index;
-```
-
-## Migrating to VectorChord
-
-VectorChord is the successor extension to pgvecto.rs, allowing for higher performance, lower memory usage and higher quality results for smart search and facial recognition.
-
-### Migrating from pgvecto.rs
-
-Support for pgvecto.rs has been dropped as of 3.0, hence all users currently using pgvecto.rs should migrate to VectorChord. There are two primary approaches to do so.
-
-The easiest option is to have both extensions installed during the migration:
-
-<details>
-<summary>Migration steps (automatic)</summary>
-1. Ensure you still have pgvecto.rs installed
-2. Install `pgvector` (`>= 0.7, < 0.9`). The easiest way to do this is on Debian/Ubuntu by adding the [PostgreSQL Apt repository][pg-apt] and then running `apt install postgresql-NN-pgvector`, where `NN` is your Postgres version (e.g., `16`)
-3. [Install VectorChord][vchord-install]
-4. Add `shared_preload_libraries= 'vchord.so, vectors.so'` to your `postgresql.conf`, making sure to include _both_ `vchord.so` and `vectors.so`. You may include other libraries here as well if needed
-5. Restart the Postgres database
-6. If Immich does not have superuser permissions, run the SQL command `CREATE EXTENSION vchord CASCADE;` using psql or your choice of database client
-7. Start Immich and wait for the logs `Reindexed face_index` and `Reindexed clip_index` to be output
-8. If Immich does not have superuser permissions, run the SQL command `DROP EXTENSION vectors;`
-9. Drop the old schema by running `DROP SCHEMA vectors;`
-10. Remove the `vectors.so` entry from the `shared_preload_libraries` setting
-11. Restart the Postgres database
-12. Uninstall pgvecto.rs (e.g. `apt-get purge vectors-pg14` on Debian-based environments, replacing `pg14` as appropriate). `pgvector` must remain installed as it provides the data types used by `vchord`
-
-</details>
-
-If it is not possible to have both VectorChord and pgvecto.rs installed at the same time, you can perform the migration with more manual steps:
-
-<details>
-<summary>Migration steps (manual)</summary>
-1. While pgvecto.rs is still installed, run the following SQL command using psql or your choice of database client. Take note of the number outputted by this command as you will need it later
-
-```sql
-SELECT atttypmod as dimsize
-    FROM pg_attribute f
-    JOIN pg_class c ON c.oid = f.attrelid
-    WHERE c.relkind = 'r'::char
-    AND f.attnum > 0
-    AND c.relname = 'smart_search'::text
-    AND f.attname = 'embedding'::text;
-```
-
-2. Remove references to pgvecto.rs using the below SQL commands
-
-```sql
-DROP INDEX IF EXISTS clip_index;
-DROP INDEX IF EXISTS face_index;
-ALTER TABLE smart_search ALTER COLUMN embedding SET DATA TYPE real[];
-ALTER TABLE face_search ALTER COLUMN embedding SET DATA TYPE real[];
-```
-
-3. [Install VectorChord][vchord-install]
-4. Change the columns back to the appropriate vector types, replacing `<number>` with the number from step 1
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
-ALTER TABLE smart_search ALTER COLUMN embedding SET DATA TYPE vector(<number>);
-ALTER TABLE face_search ALTER COLUMN embedding SET DATA TYPE vector(512);
-```
-
-5. Start Immich and let it create new indices using VectorChord
-
-</details>
-
-### Migrating from pgvector
-
-<details>
-<summary>Migration steps</summary>
-1. Ensure you have at least `0.7.0` of pgvector installed. If it is below that, please upgrade it and run the SQL command `ALTER EXTENSION vector UPDATE;` using psql or your choice of database client
-2. Follow the Prerequisites to install VectorChord
-3. If Immich does not have superuser permissions, run the SQL command `CREATE EXTENSION vchord CASCADE;`
-4. Remove the `DB_VECTOR_EXTENSION=pgvector` environmental variable as it will make Immich still use pgvector if set
-5. Start Immich and let it create new indices using VectorChord
-
-</details>
-
-Note that VectorChord itself uses pgvector types, so you should not uninstall pgvector after following these steps.
-
-[vchord-install]: https://docs.vectorchord.ai/vectorchord/getting-started/installation.html
-[pg-apt]: https://www.postgresql.org/download/linux/#generic
+Backups are plain SQL produced by `pg_dump` and compressed with gzip. Recovery uses `psql` against a stopped Frameleaf installation after the backup's canonical ledger has been checked. Keep media, settings and connector encryption keys together with the matching database recovery point. See [Backup and restore](./backup-and-restore.md).

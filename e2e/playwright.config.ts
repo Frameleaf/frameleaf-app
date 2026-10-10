@@ -51,6 +51,34 @@ const config: PlaywrightTestConfig = {
       testDir: './src/specs/maintenance/web',
       workers: 1,
     },
+    // FL-112 (STU-405): additional Studio-only browser evidence lanes. A bare `playwright test`
+    // (e.g. `mise run //e2e:test-web`) runs every project with no `--project` filter, so naming a
+    // project here is NOT by itself opt-in - it would run alongside `ui` on every unscoped
+    // invocation. These two are gated behind PLAYWRIGHT_STUDIO_FIREFOX so they only exist in the
+    // project list when explicitly requested (the two new package.json scripts set it); an unscoped
+    // local or CI run is unaffected either way. Playwright WebKit is explicitly not accepted as
+    // Safari/iPad evidence for this story - real hardware is required for that axis - so no WebKit
+    // project is added here. Firefox is not installed by any CI/devcontainer `playwright install`
+    // today (both call sites pin `chromium` only) - install it first (`playwright install firefox`)
+    // before running either new script.
+    ...(process.env.PLAYWRIGHT_STUDIO_FIREFOX
+      ? [
+          {
+            name: 'studio-firefox',
+            use: { ...devices['Desktop Firefox'] },
+            testDir: './src/ui/specs/studio',
+            fullyParallel: true,
+            workers: process.env.CI ? 2 : Math.max(1, Math.round(cpus().length * 0.5)),
+          },
+          {
+            name: 'studio-firefox-tablet',
+            use: { ...devices['Desktop Firefox'], viewport: { width: 1024, height: 768 } },
+            testDir: './src/ui/specs/studio',
+            fullyParallel: true,
+            workers: process.env.CI ? 2 : Math.max(1, Math.round(cpus().length * 0.5)),
+          },
+        ]
+      : []),
   ],
 
   /* Run your local dev server before starting the tests */

@@ -4,19 +4,16 @@ import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
 
-process.env.PUBLIC_IMMICH_BUY_HOST = process.env.PUBLIC_IMMICH_BUY_HOST || 'https://buy.immich.app';
-process.env.PUBLIC_IMMICH_PAY_HOST = process.env.PUBLIC_IMMICH_PAY_HOST || 'https://pay.futo.org';
-
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   compilerOptions: {
-    // TODO pending `@immich/ui` to enable it
+    // TODO pending `@frameleaf/ui` to enable it
     // runes: true,
   },
   preprocess: vitePreprocess(),
   kit: {
     version: {
-      name: process.env.IMMICH_BUILD || process.env.npm_package_version || 'local',
+      name: process.env.FRAMELEAF_BUILD || process.env.IMMICH_BUILD || process.env.npm_package_version || 'local',
     },
     paths: {
       relative: false,
@@ -32,6 +29,9 @@ const config = {
       '$tests/*': 'src/../tests/*',
       '@test-data': 'src/test-data',
       $i18n: '../i18n',
+      // Third-party acknowledgements and the licence texts that ship with the product (FL-86).
+      $licenses: '../licenses',
+      $studioNotices: '../studio/notices',
       'chromecast-caf-sender': './node_modules/@types/chromecast-caf-sender/index.d.ts',
     },
   },

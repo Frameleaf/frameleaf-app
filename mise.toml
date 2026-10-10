@@ -6,7 +6,6 @@ config_roots = [
   "server",
   "packages/cli",
   "deployment",
-  "mobile",
   "e2e",
   "web",
   "docs",
@@ -19,12 +18,10 @@ node = "24.21.0"
 pnpm = "11.24.0"
 terragrunt = "1.1.1"
 opentofu = "1.12.6"
-"npm:@openapitools/openapi-generator-cli" = "2.41.0"
 "npm:oazapfts" = "7.5.0"
 "github:extism/cli" = "1.6.3"
 "github:webassembly/binaryen" = "version_124"
 "github:extism/js-pdk" = "v1.7.0"
-java = "21.0.2"
 
 [tools."github:jellyfin/jellyfin-ffmpeg"]
 version = "7.1.3-6"
@@ -39,38 +36,19 @@ macos-arm64 = { asset_pattern = "jellyfin-ffmpeg_*_portable_macarm64-gpl.tar.xz"
 pin = true
 lockfile = true
 
-[tasks.release]
-run = [
-  "pnpm --filter @immich/scripts install --frozen-lockfile",
-  "pnpm --filter @immich/scripts build",
-  "pnpm --filter @immich/scripts cli release {{arg(name='args', var=true)}}",
-  { task = "//:open-api" },
-]
-
 [tasks.plugins]
 run = [
-  "pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core install --frozen-lockfile",
-  "pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core build",
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core install --frozen-lockfile",
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core build",
 ]
 
 [tasks.open-api-typescript]
 run = [
-  "oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts",
+  "node scripts/generate-typescript-sdk.mjs",
   { task = "//:sdk:install" },
   { task = "//:sdk:build" },
+  { task = "//:sdk:test" },
 ]
-
-[tasks.open-api-dart]
-dir = "open-api"
-sources = [
-  "immich-openapi-specs.json",
-  "openapitools.json",
-  "templates/**/*",
-  "patch/*",
-  "bin/generate-dart-sdk.sh",
-]
-outputs = ["../mobile/generated/openapi/"]
-run = "bash ./bin/generate-dart-sdk.sh"
 
 [tasks.open-api]
 run = [
@@ -79,7 +57,6 @@ run = [
   { task = "//server:build" },
   { task = "//server:sync-open-api" },
   { task = ":open-api-typescript" },
-  { task = ":open-api-dart" },
 ]
 
 [tasks.sql]
@@ -99,7 +76,7 @@ depends_post = "//:dev-down"
 run = { task = "//:dev", args = ["--build", "-V"] }
 
 [tasks.dev-scale]
-run = { task = "//:dev", args = ["--build", "-V", "--scale immich-server=3"] }
+run = { task = "//:dev", args = ["--build", "-V", "--scale frameleaf-server=3"] }
 
 [tasks.dev-down]
 dir = "docker"
@@ -117,7 +94,7 @@ depends_post = "//:prod-down"
 run = { task = "//:prod", args = [
   "--build",
   "-V",
-  "--scale immich-server=3",
+  "--scale frameleaf-server=3",
   "--scale immich-microservices",
 ] }
 
@@ -155,11 +132,15 @@ run = "docker compose -f ./docker-compose.dev.yml down --remove-orphans"
 # SDK tasks
 [tasks."sdk:install"]
 dir = "packages/sdk"
-run = "pnpm --filter @immich/sdk install --frozen-lockfile"
+run = "pnpm --filter @frameleaf/sdk install --frozen-lockfile"
 
 [tasks."sdk:build"]
 dir = "packages/sdk"
 run = "pnpm build"
+
+[tasks."sdk:test"]
+dir = "packages/sdk"
+run = "pnpm test"
 
 # i18n tasks
 [tasks."i18n:format"]

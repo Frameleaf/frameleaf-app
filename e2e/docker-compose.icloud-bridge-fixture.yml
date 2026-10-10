@@ -1,0 +1,60 @@
+# FL-144 / FL-68: a TEST-ONLY fake iCloud Photos bridge (src/fixtures/icloud-bridge-fixture.mjs) speaking
+# protocol v1 (icloud-bridge/api.md) over HTTPS with a test-only CA. Used only by `pnpm test:web:icloud`;
+# the default stack never sees it and stays "iCloud Photos is unavailable".
+#
+# The server gets exactly the configuration deployment/icloud-sync.compose.yml gives it: the bridge URL,
+# the bearer token, the session encryption key and the CA, all mounted read-only, and a private staging
+# directory outside every media root. FRAMELEAF_TRUSTED_PROXIES stands in for the HTTPS reverse proxy the
+# feature requires in front of the web app: the spec's browser sends `X-Forwarded-Proto: https`, which the
+# server only believes from these (private) addresses.
+#
+# Start the WHOLE stack fresh with both files (see docker-compose.frameleaf-cloud-fixture.yml for why):
+#   docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml \
+#     up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait
+services:
+  icloud-bridge-fixture:
+    image: ${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
+    command: node /fixture/icloud-bridge-fixture.mjs
+    environment:
+      ICLOUD_BRIDGE_FIXTURE_PORT: '9443'
+      ICLOUD_BRIDGE_FIXTURE_CONTROL_PORT: '9444'
+      ICLOUD_BRIDGE_TOKEN_FILE: /fixture/icloud-bridge/test-only-bridge-token
+      ICLOUD_BRIDGE_TLS_CERT_FILE: /fixture/icloud-bridge/test-only-bridge.crt
+      ICLOUD_BRIDGE_TLS_KEY_FILE: /fixture/icloud-bridge/test-only-bridge.key
+    volumes:
+      - ./src/fixtures/icloud-bridge-fixture.mjs:/fixture/icloud-bridge-fixture.mjs:ro
+      - ./src/fixtures/icloud-bridge:/fixture/icloud-bridge:ro
+    # The protocol port stays on the Compose network, as in production; only the test control port is
+    # published, for the spec to hold and release downloads.
+    ports:
+      - 9444:9444
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:9444/__fixture/ping').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  frameleaf-server:
+    environment:
+      FRAMELEAF_ICLOUD_BRIDGE_URL: https://icloud-bridge-fixture:9443/
+      FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE: /run/icloud-test-only/test-only-bridge-token
+      FRAMELEAF_ICLOUD_KEY_FILE: /run/icloud-test-only/test-only-encryption-key
+      FRAMELEAF_ICLOUD_CA_FILE: /run/icloud-test-only/test-only-ca.crt
+      FRAMELEAF_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
+      # Docker Desktop's VM disk is small; the default 1 GiB headroom is for real libraries.
+      FRAMELEAF_ICLOUD_FREE_SPACE_BYTES: '16777216'
+      FRAMELEAF_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+    # Only what the server holds in production: never the bridge's TLS private key.
+    volumes:
+      - ./src/fixtures/icloud-bridge/test-only-bridge-token:/run/icloud-test-only/test-only-bridge-token:ro
+      - ./src/fixtures/icloud-bridge/test-only-encryption-key:/run/icloud-test-only/test-only-encryption-key:ro
+      - ./src/fixtures/icloud-bridge/test-only-ca.crt:/run/icloud-test-only/test-only-ca.crt:ro
+    depends_on:
+      icloud-bridge-fixture:
+        condition: service_healthy

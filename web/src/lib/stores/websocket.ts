@@ -1,4 +1,5 @@
 import {
+  type AlbumUserRole,
   MaintenanceAction,
   type AssetResponseDto,
   type MaintenanceStatusResponseDto,
@@ -7,7 +8,7 @@ import {
   type ServerVersionResponseDto,
   type SyncAssetEditV1,
   type SyncAssetV2,
-} from '@immich/sdk';
+} from '@frameleaf/sdk';
 import { io, type Socket } from 'socket.io-client';
 import { get, writable } from 'svelte/store';
 import { page } from '$app/state';
@@ -18,11 +19,23 @@ import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { notificationManager } from '$lib/stores/notification-manager.svelte';
 import { createEventEmitter } from '$lib/utils/eventemitter';
 
+/** One complete local effect notification; visibility is read from the authenticated current asset route. */
+export type AssetLocalEffectsV1 = {
+  streamEpoch: string;
+  sequence: string;
+  effectId: string;
+  assetIds: string[];
+  revokedOperationIds: string[];
+};
+
 interface AppRestartEvent {
   isMaintenanceMode: boolean;
 }
 
 export interface Events {
+  AssetLocalEffectsV1: (data: AssetLocalEffectsV1) => void;
+  /** FL-111: owner project shelf/audience changed; null invalidates all owner projects. */
+  StudioProjectInvalidatedV1: (data: { projectId: string | null }) => void;
   on_upload_success: (asset: AssetResponseDto) => void;
   on_user_delete: (id: string) => void;
   on_asset_delete: (assetId: string) => void;
@@ -32,16 +45,32 @@ export interface Events {
   on_asset_restore: (assetIds: string[]) => void;
   on_asset_stack_update: (assetIds: string[]) => void;
   on_person_thumbnail: (personId: string) => void;
+  /** An album this account can see changed (assets, order, name, cover); only the id arrives. */
+  on_album_update: (albumId: string) => void;
   on_server_version: (serverVersion: ServerVersionResponseDto) => void;
   on_config_update: () => void;
   on_new_release: (event: ReleaseEventV1) => void;
   on_session_delete: (sessionId: string) => void;
+  // FL-34: this session's elevated (PIN-unlocked) access was revoked, here or in another tab
+  on_session_lock: () => void;
   on_notification: (notification: NotificationDto) => void;
+  /** FL-43: one of this account's jobs changed. Only the id arrives; Activity asks for the list again. */
+  on_media_operation_update: (id: string) => void;
+  /** FL-155: the Frameleaf Cloud link, licence or a Frameleaf account changed; only the topic arrives. */
+  on_frameleaf_cloud: (event: { topic: 'link' | 'license' | 'account' }) => void;
+  /** FL-146 (FL-77): an administrator changed this account's preferences; read them again. */
+  on_user_preferences_update: () => void;
 
-  AppRestartV1: (event: AppRestartEvent) => void;
+  AppRestartV1: (event: AppRestartEvent, acknowledge?: (ok: 'ok') => void) => void;
 
   MaintenanceStatusV1: (event: MaintenanceStatusResponseDto) => void;
   AssetEditReadyV2: (data: { asset: SyncAssetV2; edit: SyncAssetEditV1[] }) => void;
+  /** Fork-only (FL-39): a video edit render settled without publishing anything. */
+  VideoEditVersionFailedV1: (data: { assetId: string; versionId: string | null }) => void;
+  /** Fork-only (FL-53): somebody's album role changed, or they left or were removed (`role: null`). */
+  AlbumUserUpdateV1: (data: { albumId: string; userId: string; role: AlbumUserRole | null }) => void;
+  /** Fork-only (FL-54): a partner stopped sharing their library. */
+  PartnerRevokeV1: (data: { sharedById: string; sharedWithId: string }) => void;
 }
 
 const websocket: Socket<Events> = io({
@@ -68,7 +97,10 @@ websocket
   })
   .on('disconnect', () => websocketStore.connected.set(false))
   .on('on_server_version', (serverVersion) => websocketStore.serverVersion.set(serverVersion))
-  .on('AppRestartV1', (mode) => websocketStore.serverRestarting.set(mode))
+  .on('AppRestartV1', (mode, acknowledge) => {
+    websocketStore.serverRestarting.set(mode);
+    acknowledge?.('ok');
+  })
   .on('MaintenanceStatusV1', (status) => {
     maintenanceStore.status.set(status);
 
@@ -80,12 +112,24 @@ websocket
   })
   .on('on_new_release', (event) => eventManager.emit('ReleaseEvent', event))
   .on('on_session_delete', () => eventManager.emit('SessionDelete'))
+  .on('on_session_lock', () => eventManager.emit('SessionLockedRemote'))
   .on('on_user_delete', (id) => eventManager.emit('UserAdminDeleted', { id }))
   .on('on_asset_delete', (asset) => eventManager.emit('AssetsDelete', [asset]))
   .on('on_asset_trash', (assets) => eventManager.emit('AssetsDelete', assets))
   .on('on_asset_update', (asset) => eventManager.emit('AssetUpdate', asset))
   .on('on_person_thumbnail', (id) => eventManager.emit('PersonThumbnailReady', { id }))
+  .on('on_album_update', (id) => eventManager.emit('AlbumRemoteUpdate', { id }))
   .on('on_notification', () => notificationManager.refresh())
+  .on('on_media_operation_update', (id) => eventManager.emit('MediaOperationUpdate', { id }))
+  .on('on_frameleaf_cloud', (event) => eventManager.emit('FrameleafCloudUpdate', event))
+  .on('on_user_preferences_update', () => void authManager.refreshPreferences())
+  // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.
+  .on('PartnerRevokeV1', (data) => eventManager.emit('PartnerRevoke', data))
+  .on('AlbumUserUpdateV1', ({ albumId, userId, role }) =>
+    role
+      ? eventManager.emit('AlbumUserUpdate', { albumId, userId, role })
+      : eventManager.emit('AlbumUserDelete', { albumId, userId }),
+  )
   .on('connect_error', (e) => console.log('Websocket Connect Error', e));
 
 export const openWebsocketConnection = () => {

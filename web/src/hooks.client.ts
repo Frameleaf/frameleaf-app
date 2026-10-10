@@ -1,7 +1,12 @@
-import { isHttpError, type ApiHttpError } from '@immich/sdk';
+import { isHttpError, type ApiHttpError } from '@frameleaf/sdk';
 import type { HandleClientError } from '@sveltejs/kit';
 
 const DEFAULT_MESSAGE = 'Hmm, not sure about that. Check the logs or open a ticket?';
+
+const reasonOf = (data: unknown) => {
+  const reason = (data as { reason?: unknown } | undefined)?.reason;
+  return typeof reason === 'string' ? reason : undefined;
+};
 
 const parseHTTPError = (httpError: ApiHttpError) => {
   const statusCode = httpError?.status || httpError?.data?.statusCode || 500;
@@ -15,6 +20,8 @@ const parseHTTPError = (httpError: ApiHttpError) => {
   return {
     message: message || DEFAULT_MESSAGE,
     code: statusCode,
+    // A machine-readable cause, such as a shared link's `expired`.
+    reason: reasonOf(httpError?.data),
     stack: httpError?.stack,
   };
 };

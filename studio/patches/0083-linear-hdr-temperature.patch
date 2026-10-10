@@ -1,0 +1,12 @@
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -62,7 +62,7 @@
+ 
+ /** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
+ export function isLinearHdrEffectType(type: string): boolean {
+-  return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' ||
++  return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' || type === 'gpu-temperature' ||
+     type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur'
+ }
+ 

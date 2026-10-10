@@ -1,0 +1,6 @@
+<CommunityApplications>
+  <Profile>Official Frameleaf Manager for installing and managing a self-hosted photo and video library on Unraid. Manager coordinates sibling services through the Docker socket. Its encrypted recovery checkpoints cover the database and configuration, not photo or video originals. Manual Server and optional Machine Learning templates are published only after a compatible signed application release is available. Read the setup guide before installing.</Profile>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <WebPage>https://github.com/Frameleaf/unraid-apps</WebPage>
+  <Forum>https://github.com/Frameleaf/frameleaf-app/issues</Forum>
+</CommunityApplications>

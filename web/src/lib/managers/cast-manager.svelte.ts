@@ -1,4 +1,4 @@
-import { createSession, type SessionCreateResponseDto } from '@immich/sdk';
+import { createSession, type SessionCreateResponseDto } from '@frameleaf/sdk';
 import { DateTime, Duration } from 'luxon';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GCastDestination } from '$lib/utils/cast/gcast-destination.svelte';

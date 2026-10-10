@@ -1,14 +1,22 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
+import { afterJobCommit } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
-
-import { isFacialRecognitionEnabled, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
+import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
+import {
+  isFacialRecognitionEnabled,
+  isImageDescriptionEnabled,
+  isNsfwDetectionEnabled,
+  isOcrEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -36,6 +44,10 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.DatabaseBackup };
     }
 
+    case ManualJobName.AnalyticsCollect: {
+      return { name: JobName.AnalyticsCollect };
+    }
+
     case ManualJobName.BestPhotosBackfill: {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
@@ -45,7 +57,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
     }
 
     case ManualJobName.PhysicalDeduplicationApply: {
-      return { name: JobName.PhysicalDeduplicationMigrationApply };
+      // FL-73: applying needs one specific reviewed plan, never a whole-server queue button.
+      throw new BadRequestException('Apply a reviewed plan from the Physical deduplication page');
     }
 
     case ManualJobName.IntegrityMissingFiles: {
@@ -92,6 +105,55 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
 
 @Injectable()
 export class JobService extends BaseService {
+  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunPageDto> {
+    const rows = await this.jobRepository.listRuns(take + 1, skip);
+    return {
+      items: rows.slice(0, take).map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        createdAt: row.createdAt.toISOString(),
+        finishedAt: row.finishedAt?.toISOString() ?? null,
+        enumerationDone: row.enumerationDone,
+        total: row.total,
+        completed: row.completed,
+        failed: row.failed,
+        needsAttention: row.needsAttention,
+        cancelled: row.cancelled,
+        active: row.active,
+        retrying: row.retrying,
+        delayed: row.delayed,
+        paused: row.paused,
+        waiting: row.waiting,
+        blocked: row.blocked,
+        stageTotals: row.stageTotals,
+        state: row.state,
+        lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+        lastStage: row.lastStage,
+        reasons: row.reasons,
+        noDispatchBacklog: row.noDispatchBacklog,
+      })),
+      hasNextPage: rows.length > take,
+    };
+  }
+
+  async getRunItems(id: string, { take, skip }: JobRunSearchDto): Promise<JobRunItemPageDto> {
+    const rows = await this.jobRepository.listRunItems(id, take + 1, skip);
+    if (!rows) {
+      throw new NotFoundException('Job run not found');
+    }
+    return {
+      items: rows.slice(0, take).map((row) => ({
+        id: row.id,
+        outcome: row.outcome,
+        stageTotals: row.stageTotals,
+        lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+        lastStage: row.lastStage,
+        reasons: row.reasons,
+      })),
+      hasNextPage: rows.length > take,
+    };
+  }
+
   async create(dto: JobCreateDto): Promise<void> {
     await this.jobRepository.queue(asJobItem(dto));
   }
@@ -101,20 +163,100 @@ export class JobService extends BaseService {
     try {
       await this.eventRepository.emit('JobStart', queueName, job);
       const response = await this.jobRepository.run(job);
-      await this.eventRepository.emit('JobSuccess', { job, response });
-      const shouldRunFollowUp =
-        response &&
-        typeof response === 'string' &&
-        [JobStatus.Success, JobStatus.Skipped].includes(response) &&
-        !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
-      if (shouldRunFollowUp) {
-        await this.onDone(job);
+      // Explicit Failed is a durable failed outcome, never a successful worker callback.
+      if (response === JobStatus.Failed) {
+        if (job.name === JobName.AssetVideoEditGeneration) {
+          const asset = await this.assetRepository.getById(job.data.id);
+          if (asset) {
+            this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+              assetId: asset.id,
+              versionId: job.data.versionId ?? null,
+            });
+          }
+        }
+        throw new Error('Handler returned Failed');
       }
-    } catch (error: any) {
-      await this.eventRepository.emit('JobError', { job, error });
+      await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
+    } catch (error: unknown) {
+      await this.reportJobError(job, error);
+      throw error;
     } finally {
-      await this.eventRepository.emit('JobComplete', queueName, job);
+      try {
+        await afterJobCommit(() => this.eventRepository.emit('JobComplete', queueName, job));
+      } catch {
+        this.logger.warn(`Unable to notify completion of ${job.name}`);
+      }
     }
+  }
+
+  /** Reports a handler error; a failing listener is logged and never replaces the handler's error. */
+  private async reportJobError(job: JobItem, error: any) {
+    try {
+      await this.eventRepository.emit('JobError', { job, error });
+    } catch (listenerError: any) {
+      this.logger.error(`Unable to report the error of job ${job.name}: ${listenerError}`, listenerError?.stack);
+    }
+  }
+
+  private async onSuccess(job: JobItem, response: JobStatus | undefined) {
+    try {
+      await afterJobCommit(() => this.eventRepository.emit('JobSuccess', { job, response }));
+    } catch {
+      this.logger.error(`Unable to notify success of ${job.name}`);
+    }
+    const shouldRunFollowUp =
+      response &&
+      typeof response === 'string' &&
+      [JobStatus.Success, JobStatus.Skipped].includes(response) &&
+      !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
+    if (shouldRunFollowUp) {
+      await this.onDone(job);
+    } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
+      // FL-39: a failed version render still settles. Only the fork's history view listens for
+      // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
+      const asset = await this.assetRepository.getById(job.data.id);
+      if (asset) {
+        this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+          assetId: asset.id,
+          versionId: job.data.versionId ?? null,
+        });
+      }
+    }
+  }
+
+  /** Tells the owner's clients that a video edit job settled, whatever its outcome. */
+  private async sendAssetEditReady(id: string) {
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) {
+      return;
+    }
+    const edits = await this.assetEditRepository.getWithSyncInfo(id);
+    this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
+      asset: {
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalFileName: asset.originalFileName,
+        thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+        checksum: hexOrBufferToBase64(asset.checksum),
+        fileCreatedAt: asset.fileCreatedAt,
+        fileModifiedAt: asset.fileModifiedAt,
+        createdAt: asset.createdAt,
+        localDateTime: asset.localDateTime,
+        duration: asset.duration,
+        type: asset.type,
+        deletedAt: asset.deletedAt,
+        isFavorite: asset.isFavorite,
+        visibility: effectiveVisibilityOf(asset),
+        livePhotoVideoId: asset.livePhotoVideoId,
+        stackId: asset.stackId,
+        libraryId: asset.libraryId,
+        width: asset.width,
+        height: asset.height,
+        isEdited: asset.isEdited,
+      },
+      edit: edits,
+    });
+    return asset;
   }
 
   /**
@@ -144,7 +286,10 @@ export class JobService extends BaseService {
 
       case JobName.PersonGenerateThumbnail: {
         const { ownerId, personGroupId } = item.data;
-        this.websocketRepository.clientSend('on_person_thumbnail', ownerId, personGroupId);
+        await afterJobCommit(() => {
+          this.websocketRepository.clientSend('on_person_thumbnail', ownerId, personGroupId);
+          return Promise.resolve();
+        });
         break;
       }
 
@@ -168,7 +313,7 @@ export class JobService extends BaseService {
               type: asset.type,
               deletedAt: asset.deletedAt,
               isFavorite: asset.isFavorite,
-              visibility: asset.visibility,
+              visibility: effectiveVisibilityOf(asset),
               livePhotoVideoId: asset.livePhotoVideoId,
               stackId: asset.stackId,
               libraryId: asset.libraryId,
@@ -186,35 +331,19 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetVideoEditGeneration: {
-        const asset = await this.assetRepository.getById(item.data.id);
-        const edits = await this.assetEditRepository.getWithSyncInfo(item.data.id);
-
+        const asset = await this.sendAssetEditReady(item.data.id);
         if (asset) {
-          this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
-            asset: {
-              id: asset.id,
-              ownerId: asset.ownerId,
-              originalFileName: asset.originalFileName,
-              thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-              checksum: hexOrBufferToBase64(asset.checksum),
-              fileCreatedAt: asset.fileCreatedAt,
-              fileModifiedAt: asset.fileModifiedAt,
-              createdAt: asset.createdAt,
-              localDateTime: asset.localDateTime,
-              duration: asset.duration,
-              type: asset.type,
-              deletedAt: asset.deletedAt,
-              isFavorite: asset.isFavorite,
-              visibility: asset.visibility,
-              livePhotoVideoId: asset.livePhotoVideoId,
-              stackId: asset.stackId,
-              libraryId: asset.libraryId,
-              width: asset.width,
-              height: asset.height,
-              isEdited: asset.isEdited,
-            },
-            edit: edits,
-          });
+          // Export completion updates history only. A ready save/revert also refreshes
+          // viewers and caches through the application-wide asset update subscription.
+          const version = item.data.versionId
+            ? await this.assetEditRepository.getVideoVersion(item.data.id, item.data.versionId)
+            : undefined;
+          if (!item.data.versionId || (version?.status === 'ready' && version.purpose !== 'export')) {
+            const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
+            if (updatedAsset) {
+              this.websocketRepository.clientSend('on_asset_update', updatedAsset.ownerId, mapAsset(updatedAsset));
+            }
+          }
         }
 
         break;
@@ -231,11 +360,17 @@ export class JobService extends BaseService {
           break;
         }
 
-        const jobs: JobItem[] = [
-          { name: JobName.SmartSearch, data: item.data },
-          { name: JobName.AssetDetectFaces, data: item.data },
-          { name: JobName.Ocr, data: item.data },
-        ];
+        const { machineLearning } = await this.getConfig({ withCache: true });
+        const jobs: JobItem[] = [];
+        if (isSmartSearchEnabled(machineLearning)) {
+          jobs.push({ name: JobName.SmartSearch, data: item.data });
+        }
+        if (isFacialRecognitionEnabled(machineLearning)) {
+          jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
+        }
+        if (isOcrEnabled(machineLearning)) {
+          jobs.push({ name: JobName.Ocr, data: item.data });
+        }
 
         if (asset.type === AssetType.Video) {
           // Videos are scored for Best Photos too (via sampled frames).
@@ -248,7 +383,6 @@ export class JobService extends BaseService {
         if (asset.type === AssetType.Image) {
           jobs.push({ name: JobName.BestPhotosScore, data: item.data });
 
-          const { machineLearning } = await this.getConfig({ withCache: true });
           if (isImageDescriptionEnabled(machineLearning)) {
             jobs.push({ name: JobName.ImageDescription, data: item.data });
           } else if (isNsfwDetectionEnabled(machineLearning)) {
@@ -257,69 +391,88 @@ export class JobService extends BaseService {
         }
 
         await this.jobRepository.queueAll(jobs);
-        if (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) {
-          this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
-          if (asset.exifInfo) {
-            const exif = asset.exifInfo;
-            this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
-              // TODO remove `on_upload_success` and then modify the query to select only the required fields)
-              asset: {
-                id: asset.id,
-                ownerId: asset.ownerId,
-                originalFileName: asset.originalFileName,
-                thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-                checksum: hexOrBufferToBase64(asset.checksum),
-                fileCreatedAt: asset.fileCreatedAt,
-                fileModifiedAt: asset.fileModifiedAt,
-                createdAt: asset.createdAt,
-                localDateTime: asset.localDateTime,
-                duration: asset.duration,
-                type: asset.type,
-                deletedAt: asset.deletedAt,
-                isFavorite: asset.isFavorite,
-                visibility: asset.visibility,
-                livePhotoVideoId: asset.livePhotoVideoId,
-                stackId: asset.stackId,
-                libraryId: asset.libraryId,
-                width: asset.width,
-                height: asset.height,
-                isEdited: asset.isEdited,
-              },
-              exif: {
-                assetId: exif.assetId,
-                description: exif.description,
-                exifImageWidth: exif.exifImageWidth,
-                exifImageHeight: exif.exifImageHeight,
-                fileSizeInByte: exif.fileSizeInByte,
-                orientation: exif.orientation,
-                dateTimeOriginal: exif.dateTimeOriginal ? new Date(exif.dateTimeOriginal) : null,
-                modifyDate: exif.modifyDate ? new Date(exif.modifyDate) : null,
-                timeZone: exif.timeZone,
-                latitude: exif.latitude,
-                longitude: exif.longitude,
-                projectionType: exif.projectionType,
-                city: exif.city,
-                state: exif.state,
-                country: exif.country,
-                make: exif.make,
-                model: exif.model,
-                lensModel: exif.lensModel,
-                fNumber: exif.fNumber,
-                focalLength: exif.focalLength,
-                iso: exif.iso,
-                exposureTime: exif.exposureTime,
-                profileDescription: exif.profileDescription,
-                rating: exif.rating,
-                fps: exif.fps,
-              },
-            });
+        await afterJobCommit(async () => {
+          const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([item.data.id]);
+          if (!asset) {
+            return;
           }
-        }
+          // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
+          if (
+            (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
+            !isLockedRow(asset)
+          ) {
+            // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
+            // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
+            // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
+            // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
+            if (!asset.deletedAt) {
+              this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+            }
+            if (asset.exifInfo) {
+              const exif = asset.exifInfo;
+              this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
+                // TODO remove `on_upload_success` and then modify the query to select only the required fields)
+                asset: {
+                  id: asset.id,
+                  ownerId: asset.ownerId,
+                  originalFileName: asset.originalFileName,
+                  thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+                  checksum: hexOrBufferToBase64(asset.checksum),
+                  fileCreatedAt: asset.fileCreatedAt,
+                  fileModifiedAt: asset.fileModifiedAt,
+                  createdAt: asset.createdAt,
+                  localDateTime: asset.localDateTime,
+                  duration: asset.duration,
+                  type: asset.type,
+                  deletedAt: asset.deletedAt,
+                  isFavorite: asset.isFavorite,
+                  visibility: effectiveVisibilityOf(asset),
+                  livePhotoVideoId: asset.livePhotoVideoId,
+                  stackId: asset.stackId,
+                  libraryId: asset.libraryId,
+                  width: asset.width,
+                  height: asset.height,
+                  isEdited: asset.isEdited,
+                },
+                exif: {
+                  assetId: exif.assetId,
+                  description: exif.description,
+                  exifImageWidth: exif.exifImageWidth,
+                  exifImageHeight: exif.exifImageHeight,
+                  fileSizeInByte: exif.fileSizeInByte,
+                  orientation: exif.orientation,
+                  dateTimeOriginal: exif.dateTimeOriginal ? new Date(exif.dateTimeOriginal) : null,
+                  modifyDate: exif.modifyDate ? new Date(exif.modifyDate) : null,
+                  timeZone: exif.timeZone,
+                  latitude: exif.latitude,
+                  longitude: exif.longitude,
+                  projectionType: exif.projectionType,
+                  city: exif.city,
+                  state: exif.state,
+                  country: exif.country,
+                  make: exif.make,
+                  model: exif.model,
+                  lensModel: exif.lensModel,
+                  fNumber: exif.fNumber,
+                  focalLength: exif.focalLength,
+                  iso: exif.iso,
+                  exposureTime: exif.exposureTime,
+                  profileDescription: exif.profileDescription,
+                  rating: exif.rating,
+                  fps: exif.fps,
+                },
+              });
+            }
+          }
+        });
 
         break;
       }
 
       case JobName.SmartSearch: {
+        // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
+        // for an owner who has not confirmed a pet yet, before any destination is contacted.
+        await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
           const asset = await this.assetRepository.getById(item.data.id);
           await this.jobRepository.queue({

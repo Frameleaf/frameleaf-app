@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { ProjectionType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -8,8 +9,8 @@
   import { moveFocus } from '$lib/utils/focus-util';
   import { currentUrlReplaceAssetId } from '$lib/utils/navigation';
   import { getAltText } from '$lib/utils/thumbnail-util';
-  import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiArchiveArrowDownOutline,
     mdiCameraBurst,
@@ -23,7 +24,7 @@
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import type { ClassValue } from 'svelte/elements';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import ImageThumbnail from './ImageThumbnail.svelte';
   import VideoThumbnail from './VideoThumbnail.svelte';
@@ -376,7 +377,7 @@
           href={currentUrlReplaceAssetId(asset.id)}
           onclick={(evt) => evt.preventDefault()}
           tabindex={-1}
-          aria-label="Thumbnail URL"
+          aria-label={$t('frameleaf_thumbnail_open', { values: { name: asset.originalFileName } })}
         >
         </a>
       {/if}
@@ -385,8 +386,8 @@
     {#if selectionCandidate}
       <div
         class={['absolute top-0 z-2 size-full bg-immich-primary opacity-40', { 'rounded-xl': selected }]}
-        in:fade={{ duration: 100 }}
-        out:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
+        out:motionFade={{ duration: 100 }}
       ></div>
     {/if}
 
@@ -423,9 +424,9 @@
           onPreview?.($state.snapshot(asset));
         }}
         class="absolute inset-e-1 bottom-1 z-2 rounded-full bg-black/25 p-1.5 transition-colors hover:bg-black/50 focus:outline-none"
-        in:fade={{ duration: 100 }}
+        in:motionFade={{ duration: 100 }}
         tabindex={-1}
-        aria-label="Preview asset"
+        aria-label={$t('frameleaf_thumbnail_preview', { values: { name: asset.originalFileName } })}
       >
         <Icon icon={mdiMagnifyPlusOutline} size="20" class="text-white" />
       </button>

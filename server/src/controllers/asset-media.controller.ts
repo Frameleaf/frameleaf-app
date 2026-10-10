@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Next,
+  NotFoundException,
   Param,
   ParseFilePipe,
   Post,
@@ -17,6 +18,7 @@ import {
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { type NextFunction, type Request, type Response } from 'express';
 import type { UploadFiles } from 'src/types.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetBulkUploadCheckResponseDto,
@@ -28,15 +30,20 @@ import {
   AssetMediaCreateDto,
   AssetMediaOptionsDto,
   AssetMediaSize,
+  AssetPlaybackOptionsDto,
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
-import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
+import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
+import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
-import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { ImmichFileResponse, sendFile } from 'src/utils/file.js';
 import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation.js';
 
@@ -46,7 +53,34 @@ export class AssetMediaController {
   constructor(
     private logger: LoggingRepository,
     private service: AssetMediaService,
+    private restorationService: AssetRestorationService,
   ) {}
+
+  /**
+   * FL-115: the owner's chosen restored version replaces what their own sessions play or view;
+   * otherwise the ordinary file, revalidated while a switch is possible.
+   */
+  private async withPlaybackChoice(
+    auth: AuthDto,
+    id: string,
+    view: 'video' | 'preview' | 'fullsize',
+    ordinary: () => Promise<ImmichFileResponse | AssetMediaRedirectResponse>,
+    via: FrameleafVia | null = null,
+    dynamicRange?: AssetMediaOptionsDto['dynamicRange'],
+  ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
+    // FL-161: through the relay a full-size restored result is refused like an original
+    const fullSizeAllowed = view === 'fullsize' ? await this.service.fullSizeAllowed(via) : true;
+    const choice = await this.restorationService.getPlaybackChoice(auth, id, view, fullSizeAllowed);
+    if (choice.file) {
+      // Restoration stills currently have SDR output only; never substitute one for an explicit HDR request.
+      if (dynamicRange === 'hdr') throw new NotFoundException('The selected restored photo has no HDR rendition');
+      return choice.file;
+    }
+    const response = await ordinary();
+    return choice.revalidate && response instanceof ImmichFileResponse
+      ? new ImmichFileResponse({ ...response, cacheControl: CacheControl.PrivateWithoutCache })
+      : response;
+  }
 
   @Post()
   @Authenticated({ permission: Permission.AssetUpload, sharedLink: true })
@@ -90,12 +124,31 @@ export class AssetMediaController {
     return responseDto;
   }
 
+  @Get(':id/edit-versions/:versionId/download')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetDownload })
+  // FL-161: a full-resolution master, as large as an original
+  @OriginalTransfer()
+  @Endpoint({
+    summary: 'Download a video version master',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  async downloadVideoEditVersion(
+    @Auth() auth: AuthDto,
+    @Param() { id, versionId }: VideoEditVersionParamsDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.downloadVideoEditVersion(auth, id, versionId), this.logger);
+  }
+
   @Get(':id/original')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @OriginalTransfer()
   @Endpoint({
     summary: 'Download original asset',
-    description: 'Downloads the original file of the specified asset.',
+    description: 'Downloads the original file, selected edit, or an explicitly requested still-image export.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   async downloadAsset(
@@ -105,12 +158,22 @@ export class AssetMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto), this.logger);
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto, controller.signal), this.logger);
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
+  // FL-161: a timeline asks for these by the hundred; they count against the higher media ceiling
+  @RemoteMediaCeiling()
   @Endpoint({
     summary: 'View asset thumbnail',
     description:
@@ -135,7 +198,27 @@ export class AssetMediaController {
       return res.redirect('original?' + redirSearchParams.toString());
     }
 
-    const viewThumbnailRes = await this.service.viewThumbnail(auth, id, dto);
+    const view =
+      dto.size === AssetMediaSize.FULLSIZE ? 'fullsize' : dto.size === AssetMediaSize.PREVIEW ? 'preview' : null;
+    // FL-161: through the relay a full-size view falls back to the preview rather than the original
+    const via = requestVia(req);
+    // Face boxes and their source revision are defined against the ordinary edited preview.
+    // A selected restoration can have different pixels and dimensions, so never substitute it.
+    const faceSource = view === 'preview' && dto.faceSource === true;
+    if (faceSource) {
+      dto.edited = true;
+    }
+    const viewThumbnailRes =
+      view && !faceSource
+        ? await this.withPlaybackChoice(
+            auth,
+            id,
+            view,
+            () => this.service.viewThumbnail(auth, id, dto, via),
+            via,
+            dto.dynamicRange,
+          )
+        : await this.service.viewThumbnail(auth, id, dto, via);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
       await sendFile(res, next, () => Promise.resolve(viewThumbnailRes), this.logger);
@@ -172,10 +255,41 @@ export class AssetMediaController {
   async playAssetVideo(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
+    @Query() { edited }: AssetPlaybackOptionsDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.playbackVideo(auth, id), this.logger);
+    // `edited=false` is the quick editor's unedited source for the owner (FL-113), so a chosen
+    // restoration does not stand in for it; every other request honours the playback choice.
+    await sendFile(
+      res,
+      next,
+      async () =>
+        edited === false
+          ? this.service.playbackVideo(auth, id, false)
+          : ((await this.withPlaybackChoice(auth, id, 'video', () =>
+              this.service.playbackVideo(auth, id, edited ?? true),
+            )) as ImmichFileResponse),
+      this.logger,
+    );
+  }
+
+  @Get(':id/video/studio-hdr')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetView })
+  @Endpoint({
+    summary: 'Play the Studio HDR intermediate',
+    description:
+      'FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async playStudioHdrVideo(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.playbackStudioHdrVideo(auth, id), this.logger);
   }
 
   @Post('bulk-upload-check')

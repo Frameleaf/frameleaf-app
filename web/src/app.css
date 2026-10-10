@@ -1,7 +1,16 @@
-@import 'tailwindcss';
-@import '@immich/ui/theme/default.css';
+/*
+ * Cascade layer order. Tailwind declares properties, theme, base, components and utilities;
+ * the Frameleaf prototype baseline (src/lib/frameleaf/base.css) is layered after preflight
+ * and before components and utilities, so a utility class still beats it and unlayered
+ * component styles beat everything. A layer statement may precede @import, and the first
+ * declaration fixes the order.
+ */
+@layer properties, theme, base, frameleaf-base, components, utilities;
 
-@source "../node_modules/@immich/ui";
+@import 'tailwindcss';
+@import '@frameleaf/ui/theme/default.css';
+
+@source "../node_modules/@frameleaf/ui";
 /* @import '../../../ui/packages/ui/dist/theme/default.css'; */
 
 @custom-variant dark (&:where(.dark, .dark *):not(.light));
@@ -19,8 +28,50 @@
 }
 
 @theme {
-  --font-sans: 'GoogleSans', sans-serif;
-  --font-mono: 'GoogleSansCode', monospace;
+  /*
+   * The brand reaches every Tailwind and legacy-kit surface from here (BRAND.md "Legacy kit").
+   * Type: the Frameleaf stack, SF Pro on Apple devices and the bundled Inter elsewhere
+   * (src/lib/frameleaf/tokens.css --fl-family-ui).
+   */
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
+  --font-mono: var(--fl-family-mono);
+
+  /*
+   * Neutrals: Tailwind's gray and neutral ramps become the Frameleaf neutrals
+   * (src/lib/frameleaf/brand-tokens.json `neutral`; tokens.spec.ts keeps the two in step), so a
+   * remaining `bg-gray-100 dark:bg-gray-800` reads as the Frameleaf raised surface in each theme.
+   */
+  --color-gray-50: #f4f6f7;
+  --color-gray-100: #eef1f3;
+  --color-gray-200: #d6dce0;
+  --color-gray-300: #b4bfc9;
+  --color-gray-400: #a1adb8;
+  --color-gray-500: #64727d;
+  --color-gray-600: #53636d;
+  --color-gray-700: #303940;
+  --color-gray-800: #222a30;
+  --color-gray-900: #171d21;
+  --color-gray-950: #101416;
+  --color-neutral-50: #f4f6f7;
+  --color-neutral-100: #eef1f3;
+  --color-neutral-200: #d6dce0;
+  --color-neutral-300: #b4bfc9;
+  --color-neutral-400: #a1adb8;
+  --color-neutral-500: #64727d;
+  --color-neutral-600: #53636d;
+  --color-neutral-700: #303940;
+  --color-neutral-800: #222a30;
+  --color-neutral-900: #171d21;
+  --color-neutral-950: #101416;
+
+  /*
+   * Radii (brand-tokens.json `radius`): `rounded-lg` is the 9px control corner, `rounded-xl` the
+   * 12px card, `rounded-2xl` the 16px capsule and `rounded-3xl` the 22px sheet.
+   */
+  --radius-lg: 9px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 22px;
 
   --spacing-18: 4.5rem;
 
@@ -66,16 +117,22 @@
 
 @layer base {
   :root {
+    /*
+     * The legacy colour utilities (bg-immich-primary, dark:bg-immich-dark-bg, ...) as RGB
+     * triplets of the Frameleaf tokens: light accent, panel and text; dark accent, canvas, text
+     * and raised. tokens.spec.ts checks each triplet against brand-tokens.json.
+     */
     /* light */
-    --immich-primary: 66 80 175;
+    --immich-primary: 21 123 64;
     --immich-bg: 255 255 255;
-    --immich-fg: 0 0 0;
+    --immich-fg: 24 37 43;
+    --immich-gray: 244 246 247;
 
     /* dark */
-    --immich-dark-primary: 172 203 250;
-    --immich-dark-bg: 10 10 10;
+    --immich-dark-primary: 34 197 94;
+    --immich-dark-bg: 16 20 22;
     --immich-dark-fg: 229 231 235;
-    --immich-dark-gray: 33 33 33;
+    --immich-dark-gray: 34 42 48;
   }
 
   button:not(:disabled),
@@ -103,11 +160,17 @@
 
   :root {
     font-family: var(--font-sans);
-    letter-spacing: 0.1px;
 
     /* Used by layouts to ensure proper spacing between navbar and content */
     --navbar-height: calc(4.5rem + 4px);
     --navbar-height-md: calc(4.5rem + 4px - 14px);
+
+    /* The Frameleaf top bar (FL-30): the prototype's 56px bar, and its two-row phone grid. Both
+       include the top safe-area inset (apple-style.css "#9 edge-to-edge", viewport-fit=cover). */
+    --fl-topbar-height: calc(3.5rem + env(safe-area-inset-top, 0px));
+    --fl-topbar-height-phone: calc(6rem + env(safe-area-inset-top, 0px));
+    /* Room the phone tab bar needs under scrolling content; TabBar.svelte sets it at phone width. */
+    --fl-tabbar-space: 0px;
   }
 
   :root.dark {
@@ -147,6 +210,9 @@
   body {
     margin: 0;
     color: var(--immich-ui-dark);
+    /* One text rendering for the kit pages and the Frameleaf scope (tokens.css). */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body.asset-viewer-open {
@@ -176,5 +242,285 @@
 
   .maplibregl-popup-content {
     @apply bg-subtle rounded-lg;
+  }
+}
+
+/*
+ * The legacy UI kit takes the brand (review finding 116). @frameleaf/ui draws its buttons,
+ * spinners, switches, inputs, modals and toasts from the --immich-ui-* variables its theme sets in
+ * the `base` layer; these unlayered rules replace them with the Frameleaf tokens, which
+ * tokens.css puts on the document root for exactly this. Nothing in the kit package is edited.
+ *
+ * Primary is a ramp around the accent: the lighter half mixes toward the panel in the light
+ * theme and the darker half toward the text; the dark theme runs the other way, as the kit's own
+ * dark ramp does. `text-light` on a filled button is therefore --fl-accent-text's partner:
+ * white on the light accent, the canvas on the dark one, both above 4.5:1 (tokens.spec.ts).
+ */
+:root,
+.light {
+  --immich-ui-primary-50: color-mix(in srgb, var(--fl-accent) 8%, var(--fl-panel));
+  --immich-ui-primary-100: color-mix(in srgb, var(--fl-accent) 15%, var(--fl-panel));
+  --immich-ui-primary-200: color-mix(in srgb, var(--fl-accent) 30%, var(--fl-panel));
+  --immich-ui-primary-300: color-mix(in srgb, var(--fl-accent) 50%, var(--fl-panel));
+  --immich-ui-primary-400: color-mix(in srgb, var(--fl-accent) 75%, var(--fl-panel));
+  --immich-ui-primary-500: var(--fl-accent);
+  --immich-ui-primary-600: color-mix(in srgb, var(--fl-accent) 85%, var(--fl-text));
+  --immich-ui-primary-700: color-mix(in srgb, var(--fl-accent) 70%, var(--fl-text));
+  --immich-ui-primary-800: color-mix(in srgb, var(--fl-accent) 55%, var(--fl-text));
+  --immich-ui-primary-900: color-mix(in srgb, var(--fl-accent) 40%, var(--fl-text));
+  --immich-ui-primary-950: color-mix(in srgb, var(--fl-accent) 25%, var(--fl-text));
+  --immich-ui-success-500: var(--fl-success);
+  --immich-ui-danger-500: var(--fl-danger);
+  --immich-ui-warning-500: var(--fl-warning);
+  --immich-ui-info-500: var(--fl-blue);
+  --immich-ui-light: var(--fl-panel);
+  --immich-ui-dark: var(--fl-text);
+  --immich-ui-muted: var(--fl-muted);
+  --immich-ui-gray: var(--fl-canvas);
+  --immich-ui-default-border: var(--fl-border);
+}
+
+.dark {
+  --immich-ui-primary-50: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-canvas));
+  --immich-ui-primary-100: color-mix(in srgb, var(--fl-accent) 18%, var(--fl-canvas));
+  --immich-ui-primary-200: color-mix(in srgb, var(--fl-accent) 30%, var(--fl-canvas));
+  --immich-ui-primary-300: color-mix(in srgb, var(--fl-accent) 45%, var(--fl-canvas));
+  --immich-ui-primary-400: color-mix(in srgb, var(--fl-accent) 70%, var(--fl-canvas));
+  --immich-ui-primary-500: var(--fl-accent);
+  --immich-ui-primary-600: color-mix(in srgb, var(--fl-accent) 85%, var(--fl-text));
+  --immich-ui-primary-700: color-mix(in srgb, var(--fl-accent) 70%, var(--fl-text));
+  --immich-ui-primary-800: color-mix(in srgb, var(--fl-accent) 50%, var(--fl-text));
+  --immich-ui-primary-900: color-mix(in srgb, var(--fl-accent) 30%, var(--fl-text));
+  --immich-ui-primary-950: color-mix(in srgb, var(--fl-accent) 15%, var(--fl-text));
+  --immich-ui-success-500: var(--fl-success);
+  --immich-ui-danger-500: var(--fl-danger);
+  --immich-ui-warning-500: var(--fl-warning);
+  --immich-ui-info-500: var(--fl-blue);
+  --immich-ui-light: var(--fl-canvas);
+  --immich-ui-dark: var(--fl-text);
+  --immich-ui-muted: var(--fl-muted);
+  --immich-ui-gray: var(--fl-panel);
+  --immich-ui-default-border: var(--fl-border);
+}
+
+/*
+ * Kit buttons take the prototype's `.button` (styles.css:83-112): the control corner instead of
+ * the kit's pill or 12px, and in the dark theme a filled `secondary` is the raised neutral fill
+ * with a hairline, not a white block. Text buttons only; a round icon button stays a circle. The
+ * kit's `outline-offset-2 transition-colors` pair with a text padding marks them; `:where` keeps
+ * the rules at element weight, so a component's own corner still wins.
+ */
+:where(button, a):where([class~='outline-offset-2'][class~='transition-colors']):where(
+    .px-3,
+    .px-4,
+    .px-5,
+    .px-8,
+    .px-10
+  ) {
+  border-radius: var(--fl-radius-control);
+}
+
+.dark
+  :where(button, a):where(
+    [class~='outline-offset-2'][class~='transition-colors'][class~='bg-dark'][class~='text-light']
+  ) {
+  border: 1px solid var(--fl-border);
+  background: var(--fl-raised);
+  color: var(--fl-text);
+}
+
+.dark
+  :where(button, a):where(
+    [class~='outline-offset-2'][class~='transition-colors'][class~='bg-dark'][class~='text-light']
+  ):hover:not(:disabled, [aria-disabled='true']) {
+  background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+}
+
+/*
+ * The page is the canvas in both themes, as in the prototype. `<body class="bg-light">` paints
+ * the kit's `light`, which in the light theme is the panel white that filled buttons need for
+ * their text, so signed-in pages were white with grey canvas blocks wherever a Frameleaf screen
+ * painted its own background. Unlayered, so it outranks the utility; the viewer keeps its black.
+ */
+body:not(.asset-viewer-open) {
+  background-color: var(--fl-canvas);
+}
+
+/*
+ * Kit modals (Modal, FormModal, ConfirmModal: bits-ui Dialog) take the Frameleaf sheet: the one
+ * scrim, the panel surface, the sheet corner and elevation, and the Sheet entrance (base.css
+ * keyframes). The kit keeps a full-screen sheet on phones, so the corner applies from 640px.
+ * Confirmations opened with modalManager.showDialog are replaced by the Frameleaf ConfirmDialog
+ * altogether ($lib/frameleaf/kit-bridge.ts).
+ */
+[data-dialog-overlay] {
+  background: var(--fl-scrim);
+  -webkit-backdrop-filter: var(--fl-scrim-blur);
+  backdrop-filter: var(--fl-scrim-blur);
+  animation: fl-fade-in var(--fl-duration-fade) var(--fl-ease) both;
+}
+
+[data-dialog-content] [class~='shadow-primary/20'] {
+  color: var(--fl-text);
+  background: var(--fl-panel);
+  border-color: var(--fl-border);
+  box-shadow: var(--fl-shadow-4);
+  animation:
+    fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+    fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
+}
+
+@media (min-width: 640px) {
+  [data-dialog-content] [class~='shadow-primary/20'] {
+    border-radius: var(--fl-radius-sheet);
+  }
+}
+
+/*
+ * Toasts dock at the bottom centre, above the selection and status capsule and the phone tab bar
+ * (review finding 115). The kit's panel is only the positioning box; each toast is the Frameleaf
+ * Toast component ($lib/frameleaf/toast.ts). `fl-toast-panel` is set once in routes/+layout.svelte.
+ */
+.fl-toast-panel:not(.hidden) {
+  position: fixed;
+  inset: auto 0 calc(var(--fl-tabbar-space, 0px) + env(safe-area-inset-bottom, 0px) + var(--fl-space-16)) 0;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: var(--fl-space-2);
+  padding: 0 var(--fl-space-4);
+  pointer-events: none;
+}
+
+/*
+ * FL-37 / FL-29: every people photo is a squircle (apple-style.css:49 and 137-148). A mask rather
+ * than `corner-shape`, so the shape is identical in every engine. It is global, not scoped to
+ * .frameleaf, because people photos also render in the asset viewer's information panel and in
+ * shared upstream components (UserAvatar). Anything inside the masked box that carried its own
+ * circle drops it, so the squircle is the only outline.
+ */
+:root {
+  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E");
+}
+
+.fl-squircle,
+.fl-squircle :where(img, figure) {
+  border-radius: 0 !important;
+}
+
+.fl-squircle {
+  -webkit-mask: var(--fl-squircle) center / 100% 100% no-repeat;
+  mask: var(--fl-squircle) center / 100% 100% no-repeat;
+}
+
+/*
+ * Continuous corners (apple-style.css:109-135) for component surfaces that set their own radius:
+ * dialogs, palettes, panels, settings groups and search chips carry `fl-continuous-corners` and
+ * keep only their grown radius in their own `@supports (corner-shape: squircle)` block. The shape
+ * is set here rather than in each component because svelte-check's CSS language service does not
+ * know `corner-shape`. Global rather than in the .frameleaf-scoped base.css, because some of those
+ * surfaces render outside a .frameleaf root (the search results chips, Tags and Folders panes).
+ */
+@supports (corner-shape: squircle) {
+  :where(.fl-continuous-corners) {
+    corner-shape: squircle;
+  }
+}
+
+/*
+ * FL-35: the thumbnail-to-viewer zoom (apple-style.css:333-352, 471-473). `$lib/frameleaf/viewer-zoom`
+ * names the tile and the viewer's fitted photo `fl-hero` for one navigation and copies the spring
+ * token onto the root as `--fl-hero-easing`, since the transition's pseudo-elements hang off <html>,
+ * outside every .frameleaf root. Under Reduce Motion the script never starts a transition; the rule
+ * below is the CSS half of the same check.
+ */
+::view-transition-group(fl-hero) {
+  animation-duration: var(--fl-duration-hero);
+  animation-timing-function: var(--fl-hero-easing, ease-out);
+}
+::view-transition-old(fl-hero),
+::view-transition-new(fl-hero) {
+  animation: none;
+  mix-blend-mode: normal;
+  height: 100%;
+  object-fit: cover;
+  overflow: clip;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: calc(var(--fl-duration-fade) * 1.5);
+}
+/*
+ * A card that opens a page ($lib/frameleaf/motion heroNavigation, `data-fl-shared`): the two
+ * boxes rarely share an aspect ratio (a square cover, a wide header), so the old and new images
+ * crossfade while the group moves, instead of one being stretched over the other.
+ */
+:root[data-fl-transition='shared']::view-transition-old(fl-hero),
+:root[data-fl-transition='shared']::view-transition-new(fl-hero) {
+  animation: revert;
+  animation-duration: var(--fl-duration-fade);
+  height: 100%;
+  object-fit: cover;
+}
+/*
+ * Moving between sections of the app ($lib/frameleaf/motion sectionCrossfade): a short crossfade
+ * of the page, nothing moves. The overlay never takes a click meant for the page under it.
+ */
+:root[data-fl-transition='section']::view-transition-old(root),
+:root[data-fl-transition='section']::view-transition-new(root) {
+  animation-duration: var(--fl-motion);
+  animation-timing-function: var(--fl-ease);
+}
+::view-transition {
+  pointer-events: none;
+}
+/*
+ * FL-139: arrows and chevrons that point along the reading direction (marked by the @frameleaf/ui Icon
+ * patch) point the other way in a right-to-left page.
+ */
+[dir='rtl'] svg[data-rtl-mirror] {
+  scale: -1 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(fl-hero) {
+    animation: none;
+  }
+  /*
+   * Kit modals crossfade rather than cut: these outrank the clamp below (an attribute selector
+   * against `*`), so the scrim and the sheet fade in over the shared reduced duration and nothing
+   * moves.
+   */
+  [data-dialog-overlay],
+  [data-dialog-content] [class~='shadow-primary/20'] {
+    animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+  }
+  /*
+   * FL-139: the tokens.css kill switch only reaches .frameleaf roots; pages and portalled
+   * dialogs outside one kept animating. `*` has no specificity, so scoped exceptions (the
+   * sheet and menu fades) still win. Svelte transitions are gated in $lib/frameleaf/motion.
+   */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * The shared Memories pan and zoom (apple-style.css:414-421): the Memories engine
+ * (memory-engine.ts) sets --kb-from, --kb-to and --kb-duration per item for the player and
+ * the Memories card previews. Under Reduce Motion the engine sets none, so nothing moves.
+ * Global here because tokens.css only holds .frameleaf-scoped rules.
+ */
+@keyframes fl-ken-burns {
+  from {
+    transform: var(--kb-from);
+  }
+  to {
+    transform: var(--kb-to);
   }
 }

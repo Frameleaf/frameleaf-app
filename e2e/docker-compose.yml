@@ -6,20 +6,25 @@ services:
     build:
       context: ../
       dockerfile: packages/e2e-auth-server/Dockerfile
+      args:
+        NODE_IMAGE: ${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
     ports:
       - 2286:2286
 
-  immich-server:
+  frameleaf-server:
     container_name: immich-e2e-server
-    image: immich-server:latest
+    image: frameleaf-server:latest
     build:
       context: ../
       dockerfile: server/Dockerfile
       cache_from:
-        # hash is the sha256 of the build-args in docker.yml
-        - type=registry,ref=ghcr.io/immich-app/immich-server-build-cache:linux-amd64-cc099f297acd18c924b35ece3245215b53d106eb2518e3af6415931d055746cd-main
-        - type=registry,ref=ghcr.io/immich-app/immich-server-build-cache:linux-arm64-cc099f297acd18c924b35ece3245215b53d106eb2518e3af6415931d055746cd-main
+        # Frameleaf's own build cache, written by the Deploy workflow for fork/main builds
+        # (.github/workflows/local-multi-runner-build.yml). A missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
+        - NODE_IMAGE=${FRAMELEAF_CI_NODE_IMAGE:-node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590}
+        - STUDIO_NODE_IMAGE=${FRAMELEAF_CI_STUDIO_NODE_IMAGE:-node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4}
         - BUILD_ID=1234567890
         - BUILD_IMAGE=e2e
         - BUILD_SOURCE_REF=e2e
@@ -30,47 +35,48 @@ services:
       DB_HOSTNAME: database
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
-      DB_DATABASE_NAME: immich
-      IMMICH_MACHINE_LEARNING_ENABLED: 'false'
-      IMMICH_ENV: testing
-      IMMICH_PORT: '2285'
-      IMMICH_IGNORE_MOUNT_CHECK_ERRORS: 'true'
+      DB_DATABASE_NAME: frameleaf
+      FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
+      FRAMELEAF_ENV: testing
+      FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
+      FRAMELEAF_PORT: '2285'
+      FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
+      # FL-292: a pinned setup code so tests can create the first administrator
+      FRAMELEAF_SETUP_CODE: E2ESETUP
     volumes:
       - ./test-assets:/test-assets
     depends_on:
-      redis:
-        condition: service_started
       database:
         condition: service_healthy
     ports:
       - 2285:2285
 
-  redis:
-    container_name: immich-e2e-redis
-    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-    healthcheck:
-      test: redis-cli ping || exit 1
-
   database:
     container_name: immich-e2e-postgres
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
-    command: -c fsync=off -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
+    image: frameleaf-postgres:e2e
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ../docker/postgres
+      dockerfile: Dockerfile
+      args:
+        POSTGRES_IMAGE: ${FRAMELEAF_CI_POSTGRES_IMAGE:-docker.io/library/postgres:19beta4-bookworm@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9}
+    command: -c fsync=off -c shared_preload_libraries=
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
-      POSTGRES_DB: immich
+      POSTGRES_DB: frameleaf
     ports:
       - 5435:5432
     shm_size: 128mb
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d immich']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d frameleaf']
       interval: 1s
       timeout: 5s
       retries: 30
       start_period: 10s
 
 secrets:
-  # GITHUB_TOKEN is used by the immich-server build (mise install) to authenticate
+  # GITHUB_TOKEN is used by the frameleaf-server build (mise install) to authenticate
   # against the GitHub releases API for cached binary downloads.
   #
   # Inside CI: test.yml sets `env: { GITHUB_TOKEN: ${{ github.token }} }` on the

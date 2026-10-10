@@ -1,17 +1,22 @@
 <script lang="ts">
-  import FaceEditor from '$lib/components/asset-viewer/face-editor/FaceEditor.svelte';
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { describeVideoFailure, type VideoFailure } from '$lib/frameleaf/video-failure';
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
+  import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
   import { getAssetActions } from '$lib/services/asset.service';
-  import { autoPlayVideo, lang, loopVideo as loopVideoPreference } from '$lib/stores/preferences.store';
+  import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
+  import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
-  import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
-  import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
+  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import { Icon, LoadingSpinner, shortcuts } from '@frameleaf/ui';
   import {
     mdiCheck,
     mdiChevronLeft,
@@ -28,7 +33,14 @@
   } from '@mdi/js';
   import 'hls-video-element';
   import type HlsVideoElement from 'hls-video-element';
-  import Hls, { AbrController, Events, type FragLoadedData, type FragLoadingData, type HlsConfig } from 'hls.js';
+  import Hls, {
+    AbrController,
+    Events,
+    type ErrorData,
+    type FragLoadedData,
+    type FragLoadingData,
+    type HlsConfig,
+  } from 'hls.js';
   import 'media-chrome/media-control-bar';
   import 'media-chrome/media-controller';
   import 'media-chrome/media-fullscreen-button';
@@ -42,10 +54,10 @@
   import 'media-chrome/menu/media-settings-menu';
   import 'media-chrome/menu/media-settings-menu-button';
   import 'media-chrome/menu/media-settings-menu-item';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { motionFade } from '$lib/frameleaf/motion';
   import './immich-time-range';
 
   interface Props {
@@ -60,6 +72,8 @@
     onVideoEnded?: () => void;
     onVideoStarted?: () => void;
     onClose?: () => void;
+    /** Switches an original that cannot play to the encoded rendition (FL-35). */
+    onPlayEncoded?: () => void;
   }
 
   let {
@@ -74,13 +88,19 @@
     onVideoEnded = () => {},
     onVideoStarted = () => {},
     onClose = () => {},
+    onPlayEncoded,
   }: Props = $props();
 
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
+  let playbackFailed = $state(false);
+  let playbackFailure = $state<VideoFailure>('load');
+  let retryCount = $state(0);
+  let playbackController: AbortController | undefined;
+  const useHls = $derived(featureFlagsManager.value.realtimeTranscoding && !playOriginalVideo);
   let assetFileUrl = $derived.by(() => {
-    if (featureFlagsManager.value.realtimeTranscoding) {
+    if (useHls) {
       return getAssetHlsUrl(assetId);
     }
 
@@ -168,6 +188,34 @@
     },
   };
 
+  // hls-video-element exposes media-tracks' rendition list, but its types don't declare it.
+  type RenditionList = {
+    selectedIndex: number;
+    getRenditionById(id: string): { width: number; height: number } | null;
+  };
+  const getRenditions = (el: HlsVideoElement) => (el as unknown as { videoRenditions: RenditionList }).videoRenditions;
+
+  const shortSide = (level: { width: number; height: number }) => Math.min(level.width, level.height);
+
+  // The highest level at or under the pinned short side, else the lowest; undefined when on auto.
+  const pickPinnedLevel = (levels: { width: number; height: number }[], quality: 'auto' | number) => {
+    // A corrupt stored value would otherwise pin everything to the lowest level.
+    if (typeof quality !== 'number' || !Number.isFinite(quality) || quality <= 0 || levels.length === 0) {
+      return;
+    }
+    const index = levels.findLastIndex((level) => shortSide(level) <= quality);
+    return Math.max(index, 0);
+  };
+
+  // Remember only the viewer's own pick from the quality menu, not hls-video-element's
+  // error downgrades, which also move the selected rendition. The menu sends "auto" for Auto.
+  const onRenditionRequest = (event: Event) => {
+    const rendition = isHlsElement(videoPlayer)
+      ? getRenditions(videoPlayer).getRenditionById((event as CustomEvent<string>).detail)
+      : null;
+    videoQuality.set(rendition ? shortSide(rendition) : 'auto');
+  };
+
   const releaseSession = () => {
     const session = activeSession;
     if (!session) {
@@ -182,9 +230,9 @@
     return el?.tagName === 'HLS-VIDEO';
   };
 
-  const wireHlsListeners = (el: HlsVideoElement, assetId: string, resumeTime?: number) => {
+  const wireHlsListeners = (el: HlsVideoElement, assetId: string, signal: AbortSignal, resumeTime?: number) => {
     const api = el.api;
-    if (!api) {
+    if (!api || signal.aborted) {
       return;
     }
 
@@ -199,8 +247,11 @@
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    api.on(Hls.Events.MANIFEST_PARSED, async () => {
+    let disposed = false;
+    const onManifestParsed = async () => {
+      if (disposed) {
+        return;
+      }
       // Defer hls.js's first fragment load until we filter out suboptimal variants
       api.stopLoad();
       const id = api.levels[0]?.url[0]?.match(SESSION_ID_REGEX)?.[1];
@@ -209,18 +260,35 @@
       }
 
       const keep = await mediaCapabilitiesManager.efficientLevels(api.levels);
+      if (disposed) {
+        return;
+      }
       for (let i = api.levels.length - 1; i >= 0; i--) {
         if (!keep.has(i)) {
           api.removeLevel(i);
         }
       }
 
+      const pinned = pickPinnedLevel(api.levels, $videoQuality);
+      if (pinned !== undefined) {
+        // Selecting the rendition keeps the quality menu in sync; its change event pins hls.js to
+        // the level. Let that event land while loading is still stopped so nothing gets flushed.
+        getRenditions(el).selectedIndex = pinned;
+        await Promise.resolve();
+        if (disposed) {
+          return;
+        }
+        api.startLevel = pinned;
+      }
+
       api.startLoad(resumeTime);
-    });
+    };
 
-    api.on(Hls.Events.FRAG_LOADED, () => (rebuildCount = 0));
-
-    api.on(Hls.Events.ERROR, (_, data) => {
+    const onFragmentLoaded = () => (rebuildCount = 0);
+    const onError = (_: Events.ERROR, data: ErrorData) => {
+      if (disposed) {
+        return;
+      }
       // 404 on a fragment can mean the server-side session has expired. Refetch
       // master for a new session, but give up if it still 404s.
       if (
@@ -230,39 +298,132 @@
         rebuildCount++ >= MAX_REBUILDS
       ) {
         console.error('HLS error', JSON.stringify(data));
+        if (data.fatal) {
+          handlePlaybackError();
+        }
         return;
       }
       console.warn('Error loading segment, starting new session');
-      activeSession = undefined;
+      dispose();
+      releaseSession();
       resumeTime = el.currentTime;
       el.load();
       // wireHlsListeners must run after el.api is repopulated.
-      queueMicrotask(() => wireHlsListeners(el, assetId, resumeTime));
-    });
+      queueMicrotask(() => wireHlsListeners(el, assetId, signal, resumeTime));
+    };
+    const dispose = () => {
+      disposed = true;
+      // off only compares callback identity; it never invokes the async listener.
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      api.off(Hls.Events.MANIFEST_PARSED, onManifestParsed);
+      api.off(Hls.Events.FRAG_LOADED, onFragmentLoaded);
+      api.off(Hls.Events.ERROR, onError);
+      api.stopLoad();
+      signal.removeEventListener('abort', dispose);
+    };
+    signal.addEventListener('abort', dispose, { once: true });
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    api.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
+    api.on(Hls.Events.FRAG_LOADED, onFragmentLoaded);
+    api.on(Hls.Events.ERROR, onError);
   };
 
   onMount(() => {
     showVideo = true;
   });
 
+  // FL-31: the library session's open video resumes where it was left, in any layout and after a
+  // reload (prototype `MediaViewer` `initialTime`). It runs before the moment request below, so a
+  // moment chosen in the moments panel or in moment search still wins.
   $effect(() => {
-    // reactive on `assetFileUrl` changes
+    if (!hasLoadedMetadata || !videoPlayer) {
+      return;
+    }
+    const player = videoPlayer;
+    const id = assetId;
+    untrack(() => {
+      if (videoSeek.pending?.assetId === id) {
+        return;
+      }
+      const seconds = librarySession.playheadFor(id, player.duration);
+      if (seconds) {
+        player.currentTime = seconds;
+      }
+    });
+  });
+
+  // FL-59: a moment chosen in the moments panel or in moment search starts the video there.
+  $effect(() => {
+    if (!hasLoadedMetadata || !videoPlayer || videoSeek.pending?.assetId !== assetId) {
+      return;
+    }
+    const seconds = videoSeek.take(assetId);
+    if (seconds !== null) {
+      videoPlayer.currentTime = Number.isFinite(videoPlayer.duration)
+        ? Math.min(seconds, videoPlayer.duration)
+        : seconds;
+    }
+  });
+
+  $effect(() => {
+    // Retry reloads the selected source without changing its mode or URL.
+    void retryCount;
+    const el = videoPlayer;
+    const url = assetFileUrl;
+    const id = assetId;
+    const controller = new AbortController();
+    playbackController = controller;
     hasLoadedMetadata = false;
-    if (videoPlayer && assetFileUrl) {
+    playbackFailed = false;
+    isLoading = true;
+    if (el && url) {
       hasFocused = false;
       rebuildCount = 0;
-      releaseSession();
-      if (isHlsElement(videoPlayer)) {
-        videoPlayer.config = hlsConfig;
-        videoPlayer.src = assetFileUrl;
-        const el = videoPlayer;
-        queueMicrotask(() => wireHlsListeners(el, assetId));
+      if (isHlsElement(el)) {
+        el.config = hlsConfig;
+        if (el.getAttribute('src') === url) {
+          el.load();
+        } else {
+          el.src = url;
+        }
+        queueMicrotask(() => wireHlsListeners(el, id, controller.signal));
       } else {
-        videoPlayer.load();
+        el.load();
       }
     }
-    return releaseSession;
+    return () => {
+      controller.abort();
+      // FL-31: leave the playhead with the library session. A video that never loaded says nothing,
+      // and one that finished starts again from the beginning next time.
+      if (el && el.readyState >= 1 /* HAVE_METADATA */) {
+        librarySession.recordPlayhead(id, el.ended ? 0 : el.currentTime);
+      }
+      el?.pause();
+      if (isHlsElement(el)) {
+        el.src = '';
+      }
+      releaseSession();
+    };
   });
+
+  const handlePlaybackError = (event?: Event) => {
+    if (event && event.currentTarget !== videoPlayer) {
+      return;
+    }
+    // The original's type is only known for the asset's own file, not a Live Photo's clip.
+    const player = event?.currentTarget as HTMLVideoElement | undefined;
+    const originalType = playOriginalVideo && assetId === asset.id ? asset.originalMimeType : undefined;
+    playbackFailure = describeVideoFailure(
+      player?.error,
+      originalType && player ? player.canPlayType(originalType) : 'maybe',
+    );
+    playbackFailed = true;
+    isLoading = false;
+    videoPlayer?.pause();
+    if (isHlsElement(videoPlayer)) {
+      videoPlayer.api?.stopLoad();
+    }
+  };
 
   const onPagehide = (event: PageTransitionEvent) => {
     if (!event.persisted) {
@@ -275,6 +436,55 @@
     return () => window.removeEventListener('pagehide', onPagehide);
   });
 
+  // FL-36 (MediaViewer.jsx:886-923): media keys and the lock screen control the open video. A
+  // running slideshow owns the session itself (SlideshowBar), so this steps aside then.
+  const { slideshowState } = slideshowStore;
+  $effect(() => {
+    const player = videoPlayer;
+    if (!player || !extendedControls || $slideshowState !== SlideshowState.None) {
+      return;
+    }
+    return bindMediaSession({
+      // a Locked video never reaches the lock screen or the OS media controls
+      locked: asset.visibility === AssetVisibility.Locked,
+      title: asset.originalFileName,
+      artist: MEDIA_SESSION_ARTIST,
+      album: asset.exifInfo?.city ?? undefined,
+      artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey }),
+      controls: {
+        play: () => void player.play().catch(() => {}),
+        pause: () => player.pause(),
+        previous: onPreviousAsset,
+        next: onNextAsset,
+      },
+    });
+  });
+
+  // FL-36 (MediaViewer.jsx:422-460, 898-903): pausing or resuming a slideshow (its button, Space
+  // or the media keys) pauses or resumes the video on screen, and so does opening and closing the
+  // slideshow settings, which hold the slideshow without pausing it.
+  const { settingsOpen: slideshowSettingsOpen } = slideshowStore;
+  const slideshowHeld = (state: SlideshowState, settingsOpen: boolean) =>
+    state === SlideshowState.PauseSlideshow || (state === SlideshowState.PlaySlideshow && settingsOpen);
+  let previousHeld = untrack(() => slideshowHeld($slideshowState, $slideshowSettingsOpen));
+  $effect(() => {
+    const held = slideshowHeld($slideshowState, $slideshowSettingsOpen);
+    const resumable = $slideshowState === SlideshowState.PlaySlideshow;
+    const player = videoPlayer;
+    untrack(() => {
+      const wasHeld = previousHeld;
+      previousHeld = held;
+      if (!player || held === wasHeld) {
+        return;
+      }
+      if (held) {
+        player.pause();
+      } else if (resumable) {
+        player.play().catch(() => {});
+      }
+    });
+  });
+
   onDestroy(() => {
     if (videoPlayer) {
       videoPlayer.src = '';
@@ -282,20 +492,28 @@
   });
 
   const handleCanPlay = async (video: HTMLVideoElement) => {
+    if (playbackFailed || video !== videoPlayer) {
+      return;
+    }
+    const signal = playbackController?.signal;
     try {
       if (!video.paused) {
         await video.play();
-        onVideoStarted();
+        if (!signal?.aborted && video === videoPlayer && !playbackFailed) {
+          onVideoStarted();
+        }
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      if (!signal?.aborted && error instanceof DOMException && error.name === 'NotAllowedError') {
         await tryForceMutedPlay(video);
         return;
       }
 
       // auto-play failed
     } finally {
-      isLoading = false;
+      if (!signal?.aborted && video === videoPlayer) {
+        isLoading = false;
+      }
     }
   };
 
@@ -324,9 +542,6 @@
     videoPlayer?.pause();
     Actions.Edit.onAction(Actions.Edit);
   };
-
-  let containerWidth = $state(0);
-  let containerHeight = $state(0);
 
   $effect(() => {
     if (assetViewerManager.isFaceEditMode) {
@@ -362,10 +577,8 @@
 
 {#if showVideo}
   <div
-    transition:fade={{ duration: assetViewerFadeDuration }}
+    transition:motionFade={{ duration: assetViewerFadeDuration }}
     class="flex h-full place-content-center place-items-center select-none"
-    bind:clientWidth={containerWidth}
-    bind:clientHeight={containerHeight}
   >
     {#if castManager.isCasting}
       <div class="h-full place-content-center place-items-center">
@@ -385,8 +598,9 @@
         class="dark h-full max-w-full"
         style:aspect-ratio={aspectRatio}
         defaultduration={asset.duration! / 1000}
+        onmediarenditionrequest={onRenditionRequest}
       >
-        {#if featureFlagsManager.value.realtimeTranscoding}
+        {#if useHls}
           <hls-video
             bind:this={videoPlayer}
             slot="media"
@@ -397,6 +611,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e: Event) => handleCanPlay(e.currentTarget as HTMLVideoElement)}
+            onerror={handlePlaybackError}
             onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
@@ -423,6 +638,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
+            onerror={handlePlaybackError}
             onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
@@ -450,7 +666,7 @@
                 <span slot="title">{$t('media_chrome.playback_rate')}</span>
               </media-playback-rate-menu>
             </media-settings-menu-item>
-            {#if featureFlagsManager.value.realtimeTranscoding}
+            {#if useHls}
               <media-settings-menu-item class="mx-1 rounded-lg p-1 ps-2">
                 {$t('video_quality')}
                 <Icon slot="suffix" icon={mdiChevronRight} class="m-2" />
@@ -508,20 +724,77 @@
         </div>
       </media-controller>
 
-      {#if isLoading}
-        <div class="absolute flex place-content-center place-items-center">
+      {#if playbackFailed}
+        <div class="frameleaf playback-error" data-theme="dark" role="alert">
+          {#if playbackFailure === 'format'}
+            <span>{$t('frameleaf_viewer_video_format_unsupported')}</span>
+          {:else if playbackFailure === 'decode'}
+            <span>{$t('frameleaf_viewer_video_decode_failed')}</span>
+          {:else}
+            <span>{$t('errors.failed_to_load_asset')}</span>
+          {/if}
+          {#if playOriginalVideo && onPlayEncoded && playbackFailure !== 'load'}
+            <button type="button" class="playback-retry" onclick={onPlayEncoded}>
+              {$t('frameleaf_viewer_play_encoded')}
+            </button>
+          {:else}
+            <button type="button" class="playback-retry" onclick={() => retryCount++}>
+              {$t('retry')}
+            </button>
+          {/if}
+        </div>
+      {:else if isLoading}
+        <div role="status" aria-label={$t('loading')} class="absolute flex place-content-center place-items-center">
           <LoadingSpinner />
         </div>
-      {/if}
-
-      {#if assetViewerManager.isFaceEditMode && videoPlayer && hasLoadedMetadata}
-        <FaceEditor htmlElement={videoPlayer} {containerWidth} {containerHeight} {assetId} />
       {/if}
     {/if}
   </div>
 {/if}
 
 <style>
+  /* MediaViewer.jsx / media-viewer.css: the prototype's viewer message bar. */
+  .playback-error {
+    position: absolute;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: min(650px, calc(100% - 36px));
+    padding: 5px 8px 5px 14px;
+    background: color-mix(in srgb, var(--fl-warning) 18%, var(--fl-viewer-panel));
+    color: var(--fl-viewer-text);
+    border: 1px solid color-mix(in srgb, var(--fl-warning) 45%, transparent);
+    border-radius: var(--fl-radius-card);
+    font-size: var(--fl-font-small);
+    box-shadow: var(--fl-shadow-2);
+  }
+
+  .playback-retry {
+    flex-shrink: 0;
+    min-width: 38px;
+    height: 38px;
+    padding: 7px;
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-viewer-text);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .playback-retry:hover {
+    background: color-mix(in srgb, var(--fl-viewer-text) 7%, transparent);
+  }
+
+  .playback-retry:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: var(--fl-focus-offset);
+  }
+
   media-controller {
     --media-control-background: none;
     --media-control-hover-background: var(--immich-ui-light-100);
@@ -554,7 +827,27 @@
   }
 
   media-time-display {
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: var(--fl-numeric);
+  }
+
+  /* Touch: the playback buttons and the scrubber are 44px targets (apple-style.css control height). */
+  @media (pointer: coarse) {
+    media-control-bar {
+      height: var(--fl-control-height);
+    }
+
+    media-play-button,
+    media-mute-button,
+    media-fullscreen-button,
+    media-settings-menu-button,
+    .video-editor-button {
+      min-width: var(--fl-control-height);
+      min-height: var(--fl-control-height);
+    }
+
+    immich-time-range {
+      height: var(--fl-control-height);
+    }
   }
 
   immich-time-range,
@@ -612,7 +905,7 @@
   media-volume-range:focus,
   media-volume-range:focus-within {
     padding: 0 calc(var(--spacing) * 2);
-    margin-left: calc(var(--spacing) * 2);
+    margin-inline-start: calc(var(--spacing) * 2);
     width: 70px;
   }
 </style>

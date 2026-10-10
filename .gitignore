@@ -1,27 +1,22 @@
 **/node_modules/**
 
-.DS_Store
 .vscode/*
 !.vscode/launch.json
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
-.claude/
-.worktrees/
+
+# Local planning and agent work products
+/.superpowers/
+/docs/superpowers/
+/docs/docs/developer/frameleaf-plan/
 
 docker/upload
 docker/library
 uploads
 coverage
 
-mobile/generated
-mobile/gradle.properties
-mobile/*.jks
-mobile/libisar.dylib
-mobile/ios/build
-
 packages/**/build
-mobile/android/fastlane/report.xml
-mobile/ios/fastlane/report.xml
 
 vite.config.js.timestamp-*
 .pnpm-store
@@ -29,3 +24,48 @@ vite.config.js.timestamp-*
 .devcontainer/.env*
 *.tsbuildinfo
 *.tsbuildInfo
+
+# Private agent tooling and work products: never force-add these paths.
+.DS_Store
+.worktrees/
+.claude/
+.agents/
+.agent/
+.codex/
+.superpowers/
+.ruflo/
+.swarm/
+.gitnexus/
+.agentdb/
+.claude-flow/
+.hive-mind/
+superpowers/
+skills/
+plans/
+reports/
+.artifacts/
+artifacts/
+AGENTS.md
+!/AGENTS.md
+!/design/AGENTS.md
+CLAUDE.md
+SKILL.md
+CODEX-HANDOFF.md
+FORK_FOLLOWUPS.md
+*-handoff.md
+*-plan.md
+*-report.md
+*-audit.md
+/docs/docs/developer/evidence/
+/docs/docs/developer/frameleaf-plan/
+/docs/docs/developer/*-evidence*.md
+/docs/docs/developer/frameleaf-baseline-inventory.md
+/studio/*-test-packet.md
+/studio/*-source-contract.md
+/studio/*-qualification.md
+
+# Reviewed public product guide, not an agent handoff.
+!/docs/docs/administration/upstream-handoff.md
+
+# Exact owned Studio pure runtime emitted by normal server preparation.
+/server/resources/studio/

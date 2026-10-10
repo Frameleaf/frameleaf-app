@@ -16,17 +16,18 @@ export default defineConfig([
     ignores: ['eslint.config.mjs'],
   },
   {
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
 
       parser: typescriptEslint.parser,
-      ecmaVersion: 5,
+      ecmaVersion: 'latest',
       sourceType: 'module',
 
       parserOptions: {
-        project: 'tsconfig.json',
+        project: 'tsconfig.eslint.json',
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -50,6 +51,8 @@ export default defineConfig([
       'unicorn/no-unreadable-for-of-expression': 'off',
       'unicorn/no-break-in-nested-loop': 'off',
       'unicorn/no-top-level-assignment-in-function': 'off',
+      'unicorn/consistent-function-scoping': 'off',
+      'unicorn/no-await-expression-member': 'off',
       'unicorn/prefer-uint8array-base64': 'off',
       'unicorn/max-nested-calls': 'off',
       'unicorn/no-declarations-before-early-exit': 'off',
@@ -107,6 +110,15 @@ export default defineConfig([
         },
       ],
     },
+  },
+  {
+    files: ['**/*.mjs'],
+    languageOptions: { globals: globals.node, ecmaVersion: 'latest', sourceType: 'module' },
+  },
+  {
+    // These Node runtime tests exercise the built entry point; dist is intentionally absent before build.
+    files: ['test/runtime/emails.test.mjs'],
+    rules: { 'import-x/no-unresolved': 'off' },
   },
   eslintPluginPrettierRecommended,
 ]);
