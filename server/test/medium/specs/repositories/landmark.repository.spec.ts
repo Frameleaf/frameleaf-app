@@ -58,9 +58,9 @@ const writePack = (places: object[]) => {
   return landmarks;
 };
 
-const setup = (landmarks: string) => {
+const setup = (landmarks: string, landmarkIcons = '/nonexistent/landmark-icons') => {
   const logger = { setContext: () => {}, log: () => {}, warn: () => {} };
-  const config = { getEnv: () => ({ resourcePaths: { geodata: { landmarks } } }) };
+  const config = { getEnv: () => ({ resourcePaths: { geodata: { landmarks, landmarkIcons } } }) };
   const sut = new MapRepository(config as never, undefined as never, logger as never, db as never);
   return {
     sut,
@@ -157,6 +157,20 @@ describe('landmark matching', () => {
     await sut.matchAllLandmarks();
     await sut.matchAllLandmarks();
     await expect(landmarksOf(towerAssetId)).resolves.toEqual(['Q243']);
+  });
+
+  it('knows which landmarks have a brand icon, and none without the icon pack', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'landmark-icons-'));
+    writeFileSync(join(directory, 'icons.json'), JSON.stringify({ Q243: { background: '#102030', tile: true } }));
+
+    const { sut } = setup('/nonexistent/landmarks.ndjson.gz', directory);
+    expect(sut.getLandmarkIcons().get('Q243')).toEqual({ background: '#102030', tile: true });
+    expect(sut.getLandmarkIconPath('Q243')).toBe(join(directory, 'Q243.png'));
+    expect(sut.getLandmarkIconPath('Q181185')).toBeUndefined();
+
+    const { sut: bare } = setup('/nonexistent/landmarks.ndjson.gz');
+    expect(bare.getLandmarkIcons().size).toBe(0);
+    expect(bare.getLandmarkIconPath('Q243')).toBeUndefined();
   });
 
   it('skips a missing pack without failing', async () => {

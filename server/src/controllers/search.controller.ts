@@ -1,8 +1,10 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
+import { LandmarkIconParamDto } from 'src/dtos/landmark.dto.js';
 import { PersonResponseDto } from 'src/dtos/person.dto.js';
 import {
   AskSearchDto,
@@ -28,13 +30,18 @@ import {
   StatisticsSearchDto,
 } from 'src/dtos/search.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SearchService } from 'src/services/search.service.js';
+import { sendFile } from 'src/utils/file.js';
 
 @ApiTags(ApiTag.Search)
 @Controller('search')
 export class SearchController {
-  constructor(private service: SearchService) {}
+  constructor(
+    private service: SearchService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Post('metadata')
   @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
@@ -214,6 +221,19 @@ export class SearchController {
   })
   getVisitedLandmarks(@Auth() auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
     return this.service.getVisitedLandmarks(auth);
+  }
+
+  @Get('landmarks/:id/icon')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get landmark icon',
+    description:
+      "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  async getLandmarkIcon(@Res() res: Response, @Next() next: NextFunction, @Param() { id }: LandmarkIconParamDto) {
+    await sendFile(res, next, () => Promise.resolve(this.service.getLandmarkIcon(id)), this.logger);
   }
 
   @Get('suggestions')

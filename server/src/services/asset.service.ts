@@ -198,7 +198,8 @@ export class AssetService extends BaseService {
     if (reverseGeocoding.enabled && typeof data.exifInfo?.latitude === 'number') {
       const landmarks = await this.searchRepository.getAssetLandmarks(asset.id);
       if (landmarks.length > 0) {
-        data.landmarks = landmarks;
+        const icons = this.mapRepository.getLandmarkIcons();
+        data.landmarks = landmarks.map((landmark) => ({ ...landmark, icon: icons.get(landmark.id) }));
       }
     }
 

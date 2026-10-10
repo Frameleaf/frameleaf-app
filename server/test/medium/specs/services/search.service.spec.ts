@@ -16,6 +16,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
@@ -38,6 +39,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       ConfigRepository,
       DatabaseRepository,
+      MapRepository,
       SearchRepository,
       PartnerRepository,
       PersonRepository,

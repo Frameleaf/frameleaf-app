@@ -49,6 +49,7 @@ export const envData: EnvData = {
       cities500: '/build/geodata/cities500.txt',
       naturalEarthCountriesPath: 'build/ne_10m_admin_0_countries.geojson',
       landmarks: 'build/landmarks.ndjson.gz',
+      landmarkIcons: 'build/landmark-icons',
     },
     web: {
       root: '/build/www',
