@@ -623,6 +623,7 @@ export type JobItem =
   // Memories
   | { name: JobName.MemoryCleanup; data?: IBaseJob }
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
+  | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem

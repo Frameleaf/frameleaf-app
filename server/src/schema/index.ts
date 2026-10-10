@@ -11,6 +11,7 @@ import {
   album_user_delete,
   album_user_delete_audit,
   asset_delete_audit,
+  asset_exif_landmark_match,
   asset_face_audit,
   asset_metadata_audit,
   asset_ocr_delete_audit,
@@ -90,6 +91,7 @@ import {
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
+import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
@@ -273,6 +275,9 @@ export class ImmichDatabase {
     DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
+    LandmarkTable,
+    LandmarkAreaTable,
+    AssetLandmarkTable,
     IntegrityReportTable,
     LibraryTable,
     MediaOperationTable,
@@ -381,6 +386,7 @@ export class ImmichDatabase {
     f_concat_ws,
     f_unaccent,
     ll_to_earth_public,
+    asset_exif_landmark_match,
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
@@ -465,6 +471,9 @@ export interface DB extends QueueDatabase {
   face_search: FaceSearchTable;
 
   geodata_places: GeodataPlacesTable;
+  landmark: LandmarkTable;
+  landmark_area: LandmarkAreaTable;
+  asset_landmark: AssetLandmarkTable;
 
   integrity_report: IntegrityReportTable;
   asset_integrity_verification: AssetIntegrityVerificationTable;

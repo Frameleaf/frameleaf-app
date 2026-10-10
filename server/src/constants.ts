@@ -139,6 +139,8 @@ export const FRAMELEAF_LICENSE_KEYS: ReadonlyArray<{ kid: string; x: string; sta
 
 export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
+/** Widest place in the place pack; matches MAX_RADIUS_M in base-image/geodata/landmarks/build.mjs. */
+export const LANDMARK_MAX_RADIUS_M = 200_000;
 
 export const MOBILE_REDIRECT = 'app.immich:///oauth-callback';
 /**

@@ -86,6 +86,7 @@ export interface EnvData {
       admin2: string;
       cities500: string;
       naturalEarthCountriesPath: string;
+      landmarks: string;
     };
     web: {
       root: string;
@@ -291,6 +292,7 @@ const getEnv = (): EnvData => {
         admin2: join(folders.geodata, 'admin2Codes.txt'),
         cities500: join(folders.geodata, citiesFile),
         naturalEarthCountriesPath: join(folders.geodata, 'ne_10m_admin_0_countries.geojson'),
+        landmarks: join(folders.geodata, 'landmarks.ndjson.gz'),
       },
       web: {
         root: folders.web,

@@ -2244,6 +2244,7 @@ export enum JobName {
 
   MemoryCleanup = 'MemoryCleanup',
   MemoryGenerate = 'MemoryGenerate',
+  LandmarkMatchAll = 'LandmarkMatchAll',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',

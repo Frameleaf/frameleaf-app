@@ -93,6 +93,43 @@ export const ll_to_earth_public = registerFunction({
   body: `SELECT public.cube(public.cube(public.cube(public.earth()*cos(radians(latitude))*cos(radians(longitude))),public.earth()*cos(radians(latitude))*sin(radians(longitude))),public.earth()*sin(radians(latitude)))::public.earth`,
 });
 
+/**
+ * Keeps `asset_landmark` in step with an asset's coordinates, whichever code path wrote them (FL-352).
+ * 200000 is LANDMARK_MAX_RADIUS_M. A failure here must never fail the exif write itself. The change test
+ * lives in the body because the schema reader cannot print a WHEN clause that names both OLD and NEW.
+ */
+export const asset_exif_landmark_match = registerFunction({
+  name: 'asset_exif_landmark_match',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude
+        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN
+        RETURN NULL;
+      END IF;
+      DELETE FROM public.asset_landmark WHERE "assetId" = NEW."assetId";
+      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+        INSERT INTO public.asset_landmark ("assetId", "landmarkId")
+        SELECT NEW."assetId", l.id
+        FROM public.landmark l
+        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)
+            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)
+          AND public.earth_distance(
+            public.ll_to_earth_public(NEW.latitude, NEW.longitude),
+            public.ll_to_earth_public(l.latitude, l.longitude)) <= l."radiusM"
+          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a."landmarkId" = l.id)
+            OR EXISTS (SELECT FROM public.landmark_area a
+              WHERE a."landmarkId" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))
+        ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;
+      RETURN NULL;
+    END`,
+});
+
 export const user_delete_audit = registerFunction({
   name: 'user_delete_audit',
   returnType: 'TRIGGER',
