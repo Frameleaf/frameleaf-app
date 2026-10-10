@@ -27,6 +27,7 @@ import {
   type ExploreBestPhotosPreview,
   type ExploreShortcutCounts,
 } from '$lib/frameleaf/explore';
+import { suggestLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
 import { buildLandmarkCards, EXPLORE_LANDMARK_LIMIT } from '$lib/frameleaf/landmarks';
 import { memoryManager } from '$lib/managers/memory-manager.svelte';
 import { authenticate } from '$lib/utils/auth';
@@ -111,6 +112,7 @@ export const load = (async ({ url }) => {
     getVisitedLandmarks().catch(() => null),
   ]);
   const $t = await getFormatter();
+  const landmarkCards = buildLandmarkCards(landmarks ?? [], EXPLORE_LANDMARK_LIMIT);
 
   const shortcutCounts: ExploreShortcutCounts = {
     favorites: favoriteCount,
@@ -137,7 +139,9 @@ export const load = (async ({ url }) => {
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
-    landmarks: buildLandmarkCards(landmarks ?? [], EXPLORE_LANDMARK_LIMIT),
+    landmarks: landmarkCards,
+    // FL-357: one visit worth an album, when there is one. The section is no worse off without it.
+    landmarkAlbumSuggestion: await suggestLandmarkAlbum(landmarkCards).catch(() => null),
     libraryTotal: facets ? facets.total : null,
     recentCaptures: recentCaptures ?? [],
     albums: albums ? previewAlbums(albums) : [],
