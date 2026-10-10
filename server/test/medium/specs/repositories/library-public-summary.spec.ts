@@ -18,7 +18,13 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { DB } from 'src/schema/index.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { explainLibraryRunRead, getLibraryQueueDB, profileLibraryRunRead } from 'test/medium/library-queue-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
+
+const ROOTS = SCALE_ITEMS;
+// One statement of the summary: a quarter of a second, then ten microseconds a root, and never more
+// than the coordinator's five-second statement limit.
+const SUMMARY_BUDGET_MS = Math.min(5000, 250 + ROOTS / 100);
 
 // Generate each full-width root once, then retain the canonical intent and its copied alias.
 const seedSummaryRoots = (db: Kysely<DB>, id: string, origin: string, after: number, take = 1000) =>
@@ -47,7 +53,7 @@ it('preserves full canonical and copied seed values across adjacent root pages',
       db,
     );
     await sql`insert into job_selection_run("runId","selectionId","copyComplete","libraryVersion")
-      values (${origin}::uuid,${id}::uuid,true,500000)`.execute(db);
+      values (${origin}::uuid,${id}::uuid,true,${ROOTS})`.execute(db);
     const bookkeeping = () =>
       sql`select to_jsonb(s) source,to_jsonb(m) membership
       from job_selection s join job_selection_run m on m."selectionId"=s.id`.execute(db);
@@ -105,7 +111,7 @@ it('preserves full canonical and copied seed values across adjacent root pages',
 /** Synthetic ledger construction is excluded from public read timing. The separate service
  * harness proves actual asset/source acceptance; this calibrates its million-row read shape.
  */
-it('reports 500000 cold selected roots and one producer through the actual public summary within existing SQL limits', async () => {
+scaleIt('reports %i cold selected roots and one producer through the public summary in budget', 0.24, async () => {
   const db = await getLibraryQueueDB();
   const store = new SqlQueueStore(db),
     worker = randomUUID();
@@ -163,7 +169,7 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     await sql`insert into job_library_source_producer("selectionId","producerId") values (${id}::uuid,${producer.id}::uuid)`.execute(
       db,
     );
-    await sql`insert into job_selection_run("runId","selectionId","copyComplete","libraryVersion") values (${origin}::uuid,${id}::uuid,true,500000)`.execute(
+    await sql`insert into job_selection_run("runId","selectionId","copyComplete","libraryVersion") values (${origin}::uuid,${id}::uuid,true,${ROOTS})`.execute(
       db,
     );
     expect(await store.complete(producer, [])).toBe(true);
@@ -171,15 +177,15 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     // copied-origin rows (no canonical intent). Not an append/checkpoint/media acceptance.
     // Each 1000-root statement retains both run identities without a second generation/round trip.
     const seedStarted = performance.now();
-    for (let after = 0; after < 500_000; after += 1000) await seedSummaryRoots(db, id, origin, after);
+    for (let after = 0; after < ROOTS; after += 1000) await seedSummaryRoots(db, id, origin, after);
     console.info(
       'library-public-seed-complete',
-      JSON.stringify({ rootsPerRun: 500_000, ledgerRows: 1_000_001, elapsedMs: performance.now() - seedStarted }),
+      JSON.stringify({ rootsPerRun: ROOTS, ledgerRows: 2 * ROOTS + 1, elapsedMs: performance.now() - seedStarted }),
     );
-    await sql`update job_selection set state='ready',"sourceClosedAt"=now(),"capturedAt"=now(),"appendSequence"=500000 where id=${id}::uuid`.execute(
+    await sql`update job_selection set state='ready',"sourceClosedAt"=now(),"capturedAt"=now(),"appendSequence"=${ROOTS} where id=${id}::uuid`.execute(
       db,
     );
-    await sql`update job_selection_run set "copyComplete"=false,"copyAfter"=${itemKey(500_000)},"libraryVersion"=500000 where "selectionId"=${id}::uuid and "runId"=${origin}::uuid`.execute(
+    await sql`update job_selection_run set "copyComplete"=false,"copyAfter"=${itemKey(ROOTS)},"libraryVersion"=${ROOTS} where "selectionId"=${id}::uuid and "runId"=${origin}::uuid`.execute(
       db,
     );
     // The synthetic initial rows have no descendant proof obligations, as the real append
@@ -199,24 +205,33 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     })();
     const elapsedMs = performance.now() - started;
     expect(summary).toMatchObject({
-      total: 500_000,
-      stageTotals: { total: 500_001, completed: 1, paused: 500_000 },
+      total: ROOTS,
+      stageTotals: { total: ROOTS + 1, completed: 1, paused: ROOTS },
       enumerationDone: true,
     });
-    expect(elapsedMs).toBeLessThan(5000);
+    expect(elapsedMs).toBeLessThan(SUMMARY_BUDGET_MS);
     console.info(
       'library-public-summary-calibration',
-      JSON.stringify({ roots: 500_000, ledgerRows: 1_000_001, elapsedMs, pool: 2, statementMs: 5000, lockMs: 3000 }),
+      JSON.stringify({
+        roots: ROOTS,
+        ledgerRows: 2 * ROOTS + 1,
+        elapsedMs,
+        budgetMs: SUMMARY_BUDGET_MS,
+        pool: 2,
+        statementMs: 5000,
+        lockMs: 3000,
+      }),
     );
     try {
       const actualPlan = await explainLibraryRunRead(db, true);
       console.info('library-public-summary-actual-plan', JSON.stringify(actualPlan));
       const measured = (actualPlan as Record<string, any>)['QUERY PLAN'][0];
       expect(measured['Execution Time']).toBeGreaterThan(0);
-      expect(measured['Execution Time']).toBeLessThan(5000);
+      expect(measured['Execution Time']).toBeLessThan(SUMMARY_BUDGET_MS);
       expect(measured.Plan['Shared Hit Blocks'] + measured.Plan['Shared Read Blocks']).toBeGreaterThan(0);
       const pending: any[] = [measured.Plan];
       let scopes = 0;
+      let effectiveRows = 0;
       while (pending.length > 0) {
         const node = pending.pop()!;
         if (node.Alias === 'initial_scope') {
@@ -224,9 +239,16 @@ it('reports 500000 cold selected roots and one producer through the actual publi
           expect(node['Actual Loops']).toBe(1);
           expect(node['Actual Rows']).toBeLessThanOrEqual(2);
         }
+        if (node['Node Type'] === 'CTE Scan' && node['CTE Name'] === 'run_stages') {
+          effectiveRows = Math.max(effectiveRows, node['Actual Rows'] * node['Actual Loops']);
+        }
         pending.push(...(node.Plans ?? []));
       }
       expect(scopes).toBe(1);
+      // Cold roots are summarised as a handful of weighted rows, never one effective row for each:
+      // the producer request, and one row per run for the paused roots.
+      expect(effectiveRows).toBeGreaterThan(0);
+      expect(effectiveRows).toBeLessThanOrEqual(8);
     } catch (error) {
       await profileLibraryRunRead(db);
       throw error;
@@ -247,7 +269,7 @@ it('reports 500000 cold selected roots and one producer through the actual publi
       }
     };
     // A sparse retained outcome must override a cold origin without changing the other
-    // 499,999 rows; explicit origin cancellation still wins over its physical owner.
+    // rows; explicit origin cancellation still wins over its physical owner.
     await sql`update job_run_item set state='completed' where "runId"=${id}::uuid and "itemKey"=${itemKey(1)}`.execute(
       db,
     );
@@ -255,11 +277,11 @@ it('reports 500000 cold selected roots and one producer through the actual publi
       db,
     );
     expect((await readPhase('sparse-outcome')).find((run) => run.id === origin)).toMatchObject({
-      total: 500_000,
+      total: ROOTS,
       completed: 1,
       cancelled: 1,
-      paused: 499_998,
-      stageTotals: { total: 500_001, completed: 2, cancelled: 1, paused: 499_998 },
+      paused: ROOTS - 2,
+      stageTotals: { total: ROOTS + 1, completed: 2, cancelled: 1, paused: ROOTS - 2 },
       enumerationDone: true,
     });
     // The direct canonical branch must keep a retained completed outcome while a
@@ -268,22 +290,22 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     await sql`update job_selection set state='needs_attention' where id=${id}::uuid`.execute(db);
     const stopped = await readPhase('attention-header');
     expect(stopped.find((run) => run.id === id)).toMatchObject({
-      total: 500_000,
+      total: ROOTS,
       completed: 1,
-      needsAttention: 499_999,
-      stageTotals: { total: 500_000, completed: 1, needsAttention: 499_999 },
+      needsAttention: ROOTS - 1,
+      stageTotals: { total: ROOTS, completed: 1, needsAttention: ROOTS - 1 },
     });
     expect(stopped.find((run) => run.id === origin)).toMatchObject({
-      total: 500_000,
+      total: ROOTS,
       completed: 1,
-      needsAttention: 499_998,
+      needsAttention: ROOTS - 2,
       cancelled: 1,
     });
     await sql`update job_selection set state='cancelled' where id=${id}::uuid`.execute(db);
     expect((await readPhase('cancelled-header')).find((run) => run.id === id)).toMatchObject({
-      total: 500_000,
+      total: ROOTS,
       completed: 1,
-      cancelled: 499_999,
+      cancelled: ROOTS - 1,
     });
     // Cancellation of the retained producer request removes the alias entitlement,
     // even when its initial source remains ready and canonical roots remain pending.
@@ -293,19 +315,19 @@ it('reports 500000 cold selected roots and one producer through the actual publi
     );
     const detached = await readPhase('cancelled-producer');
     expect(detached.find((run) => run.id === origin)).toMatchObject({
-      total: 500_000,
-      cancelled: 500_000,
-      stageTotals: { total: 500_001, cancelled: 500_001 },
+      total: ROOTS,
+      cancelled: ROOTS,
+      stageTotals: { total: ROOTS + 1, cancelled: ROOTS + 1 },
     });
     expect(detached.find((run) => run.id === id)).toMatchObject({
-      total: 500_000,
+      total: ROOTS,
       completed: 1,
-      paused: 499_999,
+      paused: ROOTS - 1,
     });
   } finally {
     await db.destroy();
   }
-}, 120_000);
+});
 
 it('preserves exact selected-root priority for every pair of actual stage outcomes', async () => {
   const db = await getLibraryQueueDB();

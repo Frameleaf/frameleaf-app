@@ -104,13 +104,67 @@ const simpleInitialState = sql<boolean>`(${initialCanonicalWithoutExecution}) or
 const materializedInitialEntitlementContext = sql`left join initial_entitlements initial_entitlement
   on initial_entitlement."runId"=i."runId" and initial_entitlement."selectionId"=snapshot.id`;
 
+// The cold initial rows of a scope, each flagged `simpleInitial`: no job, time or dependency.
+const initialCandidates = (filter: RawBuilder<boolean>, scope: RawBuilder<unknown> = sql``) => sql`
+  select i."runId",i."rootItemKey",i.stage,
+    case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
+      when i.state='pending' and snapshot.state in ('needs_attention','cancelled') then snapshot.state else i.state end state,
+    null::timestamptz "availableAt",null::int attempt,null::int "retryBaseAttempt",null::text "dependencyReason",q.paused,
+    null::timestamptz "meaningfulAt",null::text "parentState",(${simpleInitialState}) "simpleInitial"
+  from job_run_item i ${scope} join job_selection snapshot on snapshot.id=i."selectionId"
+  ${initialCanonicalOutcomeContext}
+  ${materializedInitialEntitlementContext}
+  left join job_queue q on q.name=i.queue
+  where ${filter} offset 0`;
+
+// A whole-run summary does not need one row for each cold initial row. They carry no job, time or
+// dependency, so rows of one run with the same state and pause are interchangeable to every
+// aggregate except the per-root one, and a root with a single ledger row has that row's outcome.
+// `collapse` therefore emits them as one row per (run, state, pause) that stands for `weight` rows,
+// `fast` when they have a root. Roots with more than one ledger row in their run (`shared_roots`,
+// read from the root index) are the exception: their cold rows are emitted again one by one for
+// the per-root aggregate, each with a `fast` row of weight -1 that takes it back out of the
+// collapsed count. Only a run that holds rows of a library source can have a cold initial row, so
+// the roots of every other run are left unread. A page of items never collapses.
+const collapsedInitialRows = (filter: RawBuilder<boolean>) => sql`
+  select "runId",null::text "rootItemKey",null::text stage,state,null::timestamptz "availableAt",null::int attempt,
+    null::int "retryBaseAttempt",null::text "dependencyReason",paused,null::timestamptz "meaningfulAt",null::text "parentState",
+    count(*) weight,("rootItemKey" is not null) fast
+  from (${initialCandidates(filter)}) initial_candidates where "simpleInitial"
+  group by "runId",state,paused,("rootItemKey" is not null) offset 0
+  ) union all (
+  select "runId",case when taken_back then null else "rootItemKey" end,case when taken_back then null else stage end,state,
+    "availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",
+    case when taken_back then -1 else 1 end::bigint weight,taken_back fast
+  from (${initialCandidates(
+    filter,
+    sql`join shared_roots on shared_roots."runId"=i."runId" and shared_roots."rootItemKey"=i."rootItemKey"`,
+  )}) shared_candidates cross join (values (false),(true)) copies(taken_back)
+  where "simpleInitial" offset 0`;
+
 // Classify simple initial rows after the scoped joins. Pushing that correlated predicate
 // below them estimates one cold row and repeats queue/entitlement lookups for every root.
 const stagesFor = (
   filter: RawBuilder<boolean>,
   runScope: RawBuilder<string>,
-) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})
-  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",
+  collapse = false,
+) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})${
+  collapse
+    ? sql`, shared_roots as materialized (
+    select "runId","rootItemKey" from (
+      select shared_item."runId",shared_item."rootItemKey" from job_run_item shared_item
+      where shared_item."runId" in (
+        select library_run.id from job_run library_run
+        where library_run.id in (${runScope}) and exists (
+          select 1 from job_selection library_source where library_source."sourceKind"='library-initial'
+            and exists (select 1 from job_run_item library_item
+              where library_item."selectionId"=library_source.id and library_item."runId"=library_run.id)))
+        and shared_item."rootItemKey" is not null
+      order by shared_item."runId",shared_item."rootItemKey" offset 0) rooted
+    group by "runId","rootItemKey" having count(*) > 1)`
+    : sql``
+}
+  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",${collapse ? sql`weight,fast,` : sql``}
   case
     when state = 'needs_attention' then 'needsAttention'
     when state not in ('pending','waiting') then state
@@ -123,30 +177,29 @@ const stagesFor = (
   from ((
   select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
-  p.state "parentState"
+  p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``}
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
   left join job_queue q on q.name = coalesce(j.queue, i.queue)
   left join lateral (select parent.state from job parent where j."parentId" is not null
     and parent.id = j."parentId" limit 1) p on true
   where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
   ) union all (
-  select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState"
-  from (
-  select i."runId",i."rootItemKey",i.stage,
-    case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
-      when i.state='pending' and snapshot.state in ('needs_attention','cancelled') then snapshot.state else i.state end state,
-    null::timestamptz "availableAt",null::int attempt,null::int "retryBaseAttempt",null::text "dependencyReason",q.paused,
-    null::timestamptz "meaningfulAt",null::text "parentState",(${simpleInitialState}) "simpleInitial"
-  from job_run_item i join job_selection snapshot on snapshot.id=i."selectionId"
-  ${initialCanonicalOutcomeContext}
-  ${materializedInitialEntitlementContext}
-  left join job_queue q on q.name=i.queue
-  where ${filter} offset 0
-  ) initial_candidates where "simpleInitial" offset 0
+  ${
+    collapse
+      ? collapsedInitialRows(filter)
+      : sql`select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState"
+  from (${initialCandidates(filter)}) initial_candidates where "simpleInitial" offset 0`
+  }
   )) effective`;
 
 const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,
   ${sql.join(RUN_OUTCOMES.map((key) => sql`${key}::text, count(*) filter (where ${sql.ref(`${alias}.outcome`)} = ${key})::int`))})`;
+
+/** `counts` over rows that each stand for `weight` identical ones. */
+const weightedCounts = (
+  alias: string,
+) => sql`jsonb_build_object('total', coalesce(sum(${sql.ref(`${alias}.weight`)}), 0)::int,
+  ${sql.join(RUN_OUTCOMES.map((key) => sql`${key}::text, coalesce(sum(${sql.ref(`${alias}.weight`)}) filter (where ${sql.ref(`${alias}.outcome`)} = ${key}), 0)::int`))})`;
 
 // Nonterminal stages take precedence: a failed thumbnail plus a live face stage is still active.
 // A stored blocked stage is terminal prerequisite failure; a derived blocked pending stage is not.
@@ -162,11 +215,14 @@ const selectedPriority = sql<number>`case
   when outcome in ('failed','blocked') then 3
   when outcome='cancelled' then 2 else 1 end`;
 
-const selectedOutcome = (priority: RawBuilder<number> = selectedPriority) => sql`case max(${priority})
+const priorityOutcome = (priority: RawBuilder<number>) => sql`case ${priority}
   when 10 then 'active' when 9 then 'retrying' when 8 then 'waiting'
   when 7 then 'delayed' when 6 then 'paused' when 5 then 'blocked'
   when 4 then 'needsAttention' when 3 then 'failed' when 2 then 'cancelled'
   else 'completed' end`;
+
+const selectedOutcome = (priority: RawBuilder<number> = selectedPriority) =>
+  priorityOutcome(sql<number>`max(${priority})`);
 
 const workerAvailable = sql<boolean>`exists (
   select 1 from job_worker where state = 'running' and "heartbeatAt" > now() - interval '60 seconds'
@@ -303,27 +359,29 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
       order by (r."finishedAt" is not null), r."createdAt" desc, r.id desc limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
+    ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`, true)}), run_stages as (
       select s.* from stages s
     ), selected as (
-      select "runId", "rootItemKey", ${selectedOutcome(sql<number>`priority`)} outcome
+      (select "runId", "rootItemKey", ${selectedOutcome(sql<number>`priority`)} outcome, 1::bigint weight
       -- Sort bytewise root identities and one priority integer to bound spill work.
       from (select * from (
         select "runId", "rootItemKey" collate "C" "rootItemKey", ${selectedPriority} priority from run_stages
         where "rootItemKey" is not null offset 0) ranked_roots
         order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
-      group by "runId", "rootItemKey"
+      group by "runId", "rootItemKey")
+      -- A collapsed row stands for that many roots of one stage each: a root's outcome is that stage's.
+      union all (select "runId", null, ${priorityOutcome(selectedPriority)} outcome, weight from run_stages where fast)
     ), item_counts as (
-      select s."runId", ${counts('s')} totals from selected s group by s."runId"
+      select s."runId", ${weightedCounts('s')} totals from selected s group by s."runId"
     ), stage_counts as (
-      select s."runId", ${counts('s')} totals,
-        count(*) filter (where s.state in ('pending','waiting','active')) unfinished,
+      select s."runId", ${weightedCounts('s')} totals,
+        coalesce(sum(s.weight) filter (where s.state in ('pending','waiting','active')), 0) unfinished,
         bool_or(s.state = 'blocked') "dependencyFailed",
         array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()) ready,
-        count(*) filter (where s.outcome = 'active') active
+        coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()), 0) ready,
+        coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
