@@ -30,6 +30,7 @@ const landmarks = buildLandmarkCards([
     kind: 'tower',
     latitude: 38.6916,
     longitude: -9.216,
+    radiusM: 100,
     assetCount: 7,
     firstTakenAt: '2026-05-01T10:00:00.000Z',
     lastTakenAt: '2026-05-01T12:00:00.000Z',

@@ -8,6 +8,7 @@ const landmark = (overrides: Partial<SearchLandmarkResponseDto> = {}): SearchLan
   kind: 'theme_park',
   latitude: 33.8121,
   longitude: -117.919,
+  radiusM: 600,
   assetCount: 14,
   firstTakenAt: '2026-06-03T10:00:00.000Z',
   lastTakenAt: '2026-06-05T21:30:00.000Z',
@@ -43,6 +44,14 @@ describe('landmarks', () => {
       city: 'Anaheim',
     });
     expect(cards[1].icon).toBeUndefined();
+  });
+
+  it('lets a resort stand for the places inside it', () => {
+    const resort = landmark({ id: 'Q1229066', name: 'Disneyland Resort', kind: 'resort', radiusM: 1500 });
+    const elsewhere = landmark({ id: 'Q243', latitude: 48.8584, longitude: 2.2945 });
+
+    expect(buildLandmarkCards([landmark(), resort, elsewhere]).map(({ id }) => id)).toEqual(['Q1229066', 'Q243']);
+    expect(buildLandmarkCards([landmark(), elsewhere])).toHaveLength(2);
   });
 
   it('keeps only as many cards as asked for', () => {

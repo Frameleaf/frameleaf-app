@@ -123,6 +123,10 @@ const PlacesResponseSchema = z
 const SearchLandmarkResponseSchema = LandmarkSummarySchema.extend({
   latitude: z.number().meta({ format: 'double' }).describe('Latitude of the landmark'),
   longitude: z.number().meta({ format: 'double' }).describe('Longitude of the landmark'),
+  radiusM: z
+    .int()
+    .min(0)
+    .describe('How far the landmark reaches from its centre, in metres: a resort contains the parks within this'),
   assetCount: z.int().min(1).describe('Number of timeline photos and videos taken at this landmark'),
   firstTakenAt: z.iso.datetime().describe('Local capture time of the earliest photo or video here'),
   lastTakenAt: z.iso.datetime().describe('Local capture time of the latest photo or video here'),

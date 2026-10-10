@@ -2,6 +2,28 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## SearchResponseDto
+
+Related models: [SearchAlbumResponseDto](models-30.md#searchalbumresponsedto), [SearchAssetResponseDto](models-30.md#searchassetresponsedto).
+
+```json
+{
+  "properties": {
+    "albums": {
+      "$ref": "#/components/schemas/SearchAlbumResponseDto"
+    },
+    "assets": {
+      "$ref": "#/components/schemas/SearchAssetResponseDto"
+    }
+  },
+  "required": [
+    "albums",
+    "assets"
+  ],
+  "type": "object"
+}
+```
+
 ## SearchStatisticsResponseDto
 
 

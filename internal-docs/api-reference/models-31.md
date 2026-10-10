@@ -1793,6 +1793,12 @@ Related models: [LandmarkIconDto](models-15.md#landmarkicondto).
       "description": "Landmark name",
       "type": "string"
     },
+    "radiusM": {
+      "description": "How far the landmark reaches from its centre, in metres: a resort contains the parks within this",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
     "state": {
       "description": "State or region most of these photos and videos were taken in",
       "nullable": true,
@@ -1811,6 +1817,7 @@ Related models: [LandmarkIconDto](models-15.md#landmarkicondto).
     "latitude",
     "longitude",
     "name",
+    "radiusM",
     "state"
   ],
   "type": "object"
@@ -1849,27 +1856,5 @@ Related models: [AssetOrder](models-06.md#assetorder), [SearchOrderField](models
     "rating"
   ],
   "type": "string"
-}
-```
-
-## SearchResponseDto
-
-Related models: [SearchAlbumResponseDto](models-30.md#searchalbumresponsedto), [SearchAssetResponseDto](models-30.md#searchassetresponsedto).
-
-```json
-{
-  "properties": {
-    "albums": {
-      "$ref": "#/components/schemas/SearchAlbumResponseDto"
-    },
-    "assets": {
-      "$ref": "#/components/schemas/SearchAssetResponseDto"
-    }
-  },
-  "required": [
-    "albums",
-    "assets"
-  ],
-  "type": "object"
 }
 ```

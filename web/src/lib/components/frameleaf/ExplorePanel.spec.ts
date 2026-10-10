@@ -63,6 +63,7 @@ describe('ExplorePanel', () => {
         kind: 'theme_park',
         latitude: 33.8121,
         longitude: -117.919,
+        radiusM: 600,
         assetCount: 14,
         firstTakenAt: '2026-06-03T10:00:00.000Z',
         lastTakenAt: '2026-06-03T21:30:00.000Z',

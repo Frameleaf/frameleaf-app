@@ -12089,6 +12089,8 @@ export type SearchLandmarkResponseDto = {
     longitude: number;
     /** Landmark name */
     name: string;
+    /** How far the landmark reaches from its centre, in metres: a resort contains the parks within this */
+    radiusM: number;
     /** State or region most of these photos and videos were taken in */
     state: string | null;
 };

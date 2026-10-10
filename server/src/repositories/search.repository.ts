@@ -717,7 +717,14 @@ export class SearchRepository {
       .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
       .innerJoin('asset', 'asset.id', 'matched.assetId')
       .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.latitude', 'landmark.longitude'])
+      .select([
+        'landmark.id',
+        'landmark.name',
+        'landmark.kind',
+        'landmark.latitude',
+        'landmark.longitude',
+        'landmark.radiusM',
+      ])
       .select((eb) => [
         eb.fn.countAll<number>().as('assetCount'),
         eb.fn.min('asset.localDateTime').as('firstTakenAt'),

@@ -933,7 +933,7 @@ Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06
 
 ## AskSearchResponseDto
 
-Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-31.md#searchresponsedto).
+Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-32.md#searchresponsedto).
 
 ```json
 {

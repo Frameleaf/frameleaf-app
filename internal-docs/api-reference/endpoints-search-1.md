@@ -1579,7 +1579,7 @@ Search assets by metadata
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [MetadataSearchDto](models-18.md#metadatasearchdto), [SearchResponseDto](models-31.md#searchresponsedto).
+Models: [MetadataSearchDto](models-18.md#metadatasearchdto), [SearchResponseDto](models-32.md#searchresponsedto).
 
 Controller access declarations:
 
@@ -1972,7 +1972,7 @@ Smart asset search
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchResponseDto](models-31.md#searchresponsedto), [SmartSearchDto](models-33.md#smartsearchdto).
+Models: [SearchResponseDto](models-32.md#searchresponsedto), [SmartSearchDto](models-33.md#smartsearchdto).
 
 Controller access declarations:
 
