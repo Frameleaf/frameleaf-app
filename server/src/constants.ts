@@ -141,6 +141,8 @@ export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
 /** Widest place in the place pack; matches MAX_RADIUS_M in base-image/geodata/landmarks/build.mjs. */
 export const LANDMARK_MAX_RADIUS_M = 200_000;
+/** A landmark wider than this is an area around things (a resort, a national park), not a spot. */
+export const LANDMARK_WIDE_RADIUS_M = 1000;
 
 export const MOBILE_REDIRECT = 'app.immich:///oauth-callback';
 /**
