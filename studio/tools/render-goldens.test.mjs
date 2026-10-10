@@ -167,3 +167,7 @@ test('ASCII coverage keeps 23 platform-atlas cases, five shape goldens and the H
   assert.equal(custom.length, 2);
   assert.notEqual(asciiAtlasSpec(custom[0].params).key, asciiAtlasSpec(custom[1].params).key);
 });
+
+// The layer and text pages (studio/spec/layers.md, text.md) are checked with this file.
+await import('./layer-goldens.test.mjs');
+await import('./text-goldens.test.mjs');

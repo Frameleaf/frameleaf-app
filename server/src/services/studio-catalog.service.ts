@@ -1,16 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { VideoInfo } from 'src/types.js';
-import { StudioMediaFactsDto, StudioResourceInventoryDto } from 'src/dtos/studio-inventory.dto.js';
-import { AssetType, Permission } from 'src/enum.js';
+import {
+  StudioFontCatalogDto,
+  StudioMediaFactsDto,
+  StudioResourceInventoryDto,
+} from 'src/dtos/studio-inventory.dto.js';
+import { AssetType, CacheControl, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import { requireAccess } from 'src/utils/access.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { type Rational, rational } from 'src/utils/rational-time.js';
+import {
+  STUDIO_FONT_MEDIA_TYPES,
+  findStudioBundledFont,
+  studioBundledFontFamilies,
+  studioBundledFontPath,
+} from 'src/utils/studio-fonts.js';
 import { buildStudioAuthorizedInventory } from 'src/utils/studio-inventory.js';
 
 /** An integer frame rate, or an NTSC n/1001 one, read back from a stored float (graph protocol 3.2). */
@@ -42,12 +54,61 @@ export class StudioCatalogService {
     private accessRepository: AccessRepository,
     private assetRepository: AssetRepository,
     private mediaRepository: MediaRepository,
+    private storageRepository: StorageRepository,
   ) {
     this.logger.setContext(StudioCatalogService.name);
   }
 
   getResourceInventory(): StudioResourceInventoryDto {
     return buildStudioAuthorizedInventory();
+  }
+
+  /** The bundled title fonts (graph protocol 14.3.5): every family and file, with licence and hash. */
+  getFontCatalog(): StudioFontCatalogDto {
+    return {
+      families: studioBundledFontFamilies().map((family) => ({
+        family: family.family,
+        package: family.package,
+        version: family.version,
+        license: family.license,
+        copyright: family.copyright,
+        reservedFontName: family.reservedFontName,
+        files: family.files.map((file) => ({
+          sha256: file.sha256,
+          file: file.file,
+          weight: file.weight,
+          style: file.style,
+          subset: file.subset,
+          format: file.format,
+          size: file.size,
+          decodedFrom: file.decodedFrom,
+          path: `/studio/fonts/${file.sha256}`,
+        })),
+      })),
+    };
+  }
+
+  /**
+   * One bundled font file by its content hash. Only a hash the catalogue lists resolves, and the
+   * path is built from the catalogue entry, so a request cannot name a file.
+   */
+  async getFontFile(sha256: string): Promise<ImmichFileResponse> {
+    const found = findStudioBundledFont(sha256);
+    if (!found) {
+      throw new NotFoundException('Font not found');
+    }
+    const path = studioBundledFontPath(found.family, found.file);
+    if (!(await this.storageRepository.checkFileExists(path))) {
+      this.logger.error(`Bundled Studio font ${found.file.file} of ${found.family.package} is missing`);
+      throw new NotFoundException('Font not found');
+    }
+    return new ImmichFileResponse({
+      path,
+      contentType: STUDIO_FONT_MEDIA_TYPES[found.file.format],
+      // The URL is the content hash, so the answer for it never changes.
+      cacheControl: CacheControl.PrivateImmutable,
+      fileName: found.file.file,
+    });
   }
 
   async getMediaFacts(auth: AuthDto, id: string): Promise<StudioMediaFactsDto> {

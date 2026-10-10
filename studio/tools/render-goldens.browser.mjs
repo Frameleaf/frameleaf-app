@@ -16,6 +16,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
+import { runLayerGoldens } from './layer-goldens.browser.mjs';
+import { runTextGoldens } from './text-goldens.browser.mjs';
 import {
   GOLDENS_FORMAT, GOLDENS_VERSION, EFFECT_SIZE, TRANSITION_SIZE, GPU_TRANSITIONS, PROGRESS_CURVE_CASES,
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
@@ -277,6 +279,8 @@ if (!write) {
   console.log(JSON.stringify({ check: 'ASCII platform atlas input and independent CPU oracle', environment: canonical.environment, cases: atlasEvidence }));
   assert.equal(failures, 0, `${failures} golden cases drifted`);
   console.log('render goldens hold');
+  await runLayerGoldens({ write: false });
+  await runTextGoldens({ write: false });
   process.exit(0);
 }
 
@@ -350,3 +354,5 @@ await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 const readmePath = path.join(studio, 'spec/README.md');
 await writeFile(readmePath, replaceIndexMarkdown(await readFile(readmePath, 'utf8'), renderIndexMarkdown(index, transitionDoc.progressCurve.length)));
 console.log('wrote studio/spec/goldens/effects.json, transitions.json, index.json and the README index');
+await runLayerGoldens({ write: true });
+await runTextGoldens({ write: true });

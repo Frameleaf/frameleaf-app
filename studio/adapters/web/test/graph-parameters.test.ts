@@ -23,6 +23,7 @@ import {
 import { createTextMotionEffect } from '@/shared/typography/text-motion/text-motion-presets'
 import { TEXT_STYLE_PRESET_IDS } from '@/shared/typography/text-style-preset-ids'
 import { buildTextScale, buildTextStylePresetUpdates } from '@/shared/typography/text-style-presets'
+import { DEFAULT_TEXT_FONT_FAMILY, FONT_CATALOG } from '@/shared/typography/font-catalog'
 import { PROJECT_TEMPLATES } from '@/features/projects/utils/validation'
 import { isAllowedProjectFps } from '@/features/projects/utils/project-fps'
 import {
@@ -251,6 +252,12 @@ function build() {
     },
     // FL-309: title styles and animations (14.3.1), and project templates and rates (14.6).
     titleStyles: titleStyles(),
+    // The font families a title may name (14.3.4, 14.3.5): the engine's font catalogue, with the
+    // weights each family has. A family not listed here never resolves.
+    fonts: {
+      default: DEFAULT_TEXT_FONT_FAMILY,
+      families: FONT_CATALOG.map((font) => ({ family: font.value, weights: [...font.weights] })),
+    },
     titleAnimations: { aliases: Object.fromEntries(Object.entries(prototypeTitleAnimations).map(([alias, slots]) => [alias, { ...slots }])) },
     project: {
       templates: PROJECT_TEMPLATES.map((template) => ({
