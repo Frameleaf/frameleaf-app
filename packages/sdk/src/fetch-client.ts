@@ -31229,6 +31229,7 @@ export enum JobName {
     HlsSessionCleanup = "HlsSessionCleanup",
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
+    LandmarkMatchAll = "LandmarkMatchAll",
     MemoryExport = "MemoryExport",
     NotificationsCleanup = "NotificationsCleanup",
     NotifyUserSignup = "NotifyUserSignup",
