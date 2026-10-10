@@ -23,6 +23,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from immich_ml.models.inpaint import InpaintModel
 
         return InpaintModel
+    if model_task == ModelTask.TRANSCRIBE and model_type == ModelType.AUDIO:
+        from immich_ml.models.transcribe import TranscribeModel
+
+        return TranscribeModel
     source = get_model_source(model_name)
     match source, model_type, model_task:
         case ModelSource.OPENCLIP | ModelSource.MCLIP, ModelType.VISUAL, ModelTask.SEARCH:

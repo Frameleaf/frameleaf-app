@@ -121,6 +121,22 @@ Payload details are in the [push envelope](./push-envelope-v1.md).
 
 Prefix `path` with the server address the Cast receiver can reach (normally the home-network address). The URL works for 15 minutes, for that one item and rendition only. It is signed with the server's own key (`server-hmac.key`) and holds the item, account, rendition, expiry and the issuing session or API key id, never a session token. Every read checks again that the session or API key still exists, the account still has access, the item is not Locked (even from a PIN-unlocked session) and none of the account's hidden people, pets or tags is in it, and that an administrator has not turned casting off for the account (`cast.adminDisabled`). Refusals: 403 when issuing (shared links, Locked or hidden items, casting turned off), 401 for an invalid, tampered or expired URL, 403 when a read is no longer allowed.
 
+## Studio captions on the server (October 9)
+
+Studio captions can now be made by the server with Whisper (owner decision
+2026-10-09; protocol section 15.1). A native editor submits
+`POST /studio/projects/{id}/transcriptions` with
+`{ "clipId": "...", "language": "auto" | "<BCP 47>", "destinationId": "<ML destination id>" }`
+and gets `201 { id, status }`. Pick the destination from
+`GET /ml-destinations` (a local or LAN destination allowed `studio-ai`;
+`transcriptionWorker` in `GET /ml-destinations/capabilities` says one is
+available). Follow progress and cancel through `GET /media-operations/{id}` and
+`POST /media-operations/{id}/cancel` (kind `studio_transcription`). When it has
+completed, `GET /studio/projects/{id}/transcriptions/{transcriptionId}` returns
+`result.cues` (exact rational seconds on the sequence) and `result.words`; send
+`cues` unchanged as the `captions.set` payload. The server never edits the
+graph.
+
 ## Server issues found by the live tests
 
 ### FL-330: default smart-search model missing from the model mirror

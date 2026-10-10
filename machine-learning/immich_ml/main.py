@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import importlib.util
 import os
 import secrets
 import signal
@@ -13,8 +14,8 @@ from zipfile import BadZipFile
 
 import onnxruntime as ort
 import orjson
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from onnxruntime.capi.onnxruntime_pybind11_state import InvalidProtobuf, NoSuchFile
 from PIL.Image import Image
 from pydantic import ValidationError
@@ -25,6 +26,7 @@ from starlette.types import ASGIApp
 
 from immich_ml.models import get_model_deps
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
+from immich_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav
 from immich_ml.models.transforms import decode_pil
 
 from .config import PreloadModelData, log, model_source, settings
@@ -300,14 +302,22 @@ def ping() -> PlainTextResponse:
 # The workloads this container serves (FL-110). The server's destination model asks every
 # endpoint what it can run before admitting a request, instead of inferring capability from
 # a successful /ping. This container is the ordinary /predict service: it serves the library
-# workloads and nothing else. Restoration and Studio AI need dedicated workers that publish
-# their own capabilities; listing them here would be a false claim.
+# workloads, plus Studio AI speech to text (`/transcribe`, Whisper, owner decision 2026-10-09) when
+# its runtime is installed. Restoration needs a dedicated worker that publishes its own capabilities;
+# listing it here would be a false claim.
 #
 # Public contract — KEEP IN SYNC WITH ``server/src/enum.ts`` (``MlWorkload``,
 # ``LIBRARY_ML_WORKLOADS``) and ``MachineLearningRepository.probe``.
 # "pet-recognition" (FL-58) is CLIP text encoding against the configured CLIP model, which this
 # container serves whenever it serves "clip"; it is listed separately so it can be routed alone.
-SERVED_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment", "pet-recognition")
+LIBRARY_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment", "pet-recognition")
+
+
+def _has_transcription_runtime() -> bool:
+    return importlib.util.find_spec("faster_whisper") is not None
+
+
+SERVED_WORKLOADS: tuple[str, ...] = LIBRARY_WORKLOADS + (("studio-ai",) if _has_transcription_runtime() else ())
 PREDICT_PROTOCOL = "predict-v1"
 
 
@@ -406,6 +416,66 @@ async def predict(
             raise HTTPException(400, "The mask must be the same size as the image")
     response = await run_inference(inputs, entries, decoded_mask)
     return ORJSONResponse(response)
+
+
+@app.post("/transcribe")
+async def transcribe(
+    entries: InferenceEntries = Depends(get_entries),
+    audio: UploadFile = File(),
+) -> StreamingResponse:
+    """Studio captions: Whisper over one clip's audio (16 kHz mono 16-bit PCM WAV).
+
+    The request names one entry, `{"transcribe": {"audio": {"modelName": "frameleaf-transcribe", "options":
+    {"language"?, "wordTimestamps"?}}}}`. Problems found before any work starts are HTTP errors (400 bad
+    audio or language, 503 no model or runtime). Otherwise the answer is newline-delimited JSON: one
+    `info` line, a `segment` line per segment as it is decoded, then `done` (or `error`). Closing the
+    connection stops the decoding at the next segment.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.TRANSCRIBE:
+        raise HTTPException(400, "A transcription request names exactly one transcribe entry")
+    entry = without_deps[0]
+    try:
+        samples = await run(read_wav, audio.file)
+    except AudioFormatError as error:
+        raise HTTPException(400, str(error)) from error
+    model = await model_cache.get(
+        entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
+    )
+    model = await load(model)
+    assert isinstance(model, TranscribeModel)
+    language = entry["options"].get("language")
+    if language is not None and language not in model.languages:
+        raise HTTPException(400, f"Whisper does not know the language '{language}'")
+    items = model.stream(samples, **entry["options"])
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, not by a dependency: the stream outlives the handler, and an idle shutdown
+        # must not stop a transcription that is still running.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except Exception as error:
+                    log.error(f"Transcription failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Transcription failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                yield orjson.dumps(item) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still decoding in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
 async def run_inference(

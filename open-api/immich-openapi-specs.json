@@ -43550,6 +43550,138 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/transcriptions": {
+      "post": {
+        "description": "Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.",
+        "operationId": "createStudioTranscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioTranscriptionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioTranscriptionQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Transcribe a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/transcriptions/{transcriptionId}": {
+      "get": {
+        "description": "Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.",
+        "operationId": "getStudioTranscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "transcriptionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioTranscriptionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio clip transcription",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/trash/restore": {
       "post": {
         "description": "Brings a trashed project back to the shelf it was on. Owner only.",
@@ -80666,6 +80798,7 @@
           "studio_export",
           "studio_preview",
           "studio_reverse_conform",
+          "studio_transcription",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -114933,6 +115066,225 @@
         "required": [
           "den",
           "num"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video or audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "The machine-learning destination to run on, named explicitly",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "language": {
+            "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
+            "maxLength": 35,
+            "minLength": 2,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId",
+          "destinationId",
+          "language"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionCue": {
+        "properties": {
+          "end": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "start": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "end",
+          "start",
+          "text"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "language": {
+            "description": "The language asked for (`auto` or a BCP 47 tag)",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioTranscriptionResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "revision": {
+            "description": "The revision whose clip was transcribed",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "clipId",
+          "destinationId",
+          "error",
+          "id",
+          "language",
+          "progress",
+          "projectId",
+          "result",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionResultDto": {
+        "properties": {
+          "cues": {
+            "description": "Ready for `captions.set`: `{ start, end, text }` only",
+            "items": {
+              "$ref": "#/components/schemas/StudioTranscriptionCue"
+            },
+            "type": "array"
+          },
+          "language": {
+            "description": "The Whisper language code the speech was transcribed in",
+            "type": "string"
+          },
+          "languageProbability": {
+            "description": "How sure detection was; 1 when the language was given",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "model": {
+            "description": "The Whisper model the worker used",
+            "type": "string"
+          },
+          "words": {
+            "description": "Word timings, for word-by-word caption styles",
+            "items": {
+              "$ref": "#/components/schemas/StudioTranscriptionWord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cues",
+          "language",
+          "languageProbability",
+          "model",
+          "words"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionTime": {
+        "description": "Exact seconds on the main sequence, reduced",
+        "properties": {
+          "den": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionWord": {
+        "properties": {
+          "cue": {
+            "description": "Index of the cue the word belongs to",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "end": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "start": {
+            "$ref": "#/components/schemas/StudioTranscriptionTime"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cue",
+          "end",
+          "start",
+          "text"
         ],
         "type": "object"
       },
