@@ -464,20 +464,9 @@ async function prepareTestDatabase(
       ]).trim(),
     };
   } else {
-    execute(
-      "docker",
-      [
-        "build",
-        "--quiet",
-        "--tag",
-        DATABASE_TEST_IMAGE,
-        path.join(root, "docker/postgres"),
-      ],
-      {
-        stdio: ["ignore", "pipe", "inherit"],
-      },
-    );
-    image = { source: "built from docker/postgres" };
+    execute("docker", ["pull", "--quiet", releaseReference]);
+    execute("docker", ["tag", releaseReference, DATABASE_TEST_IMAGE]);
+    image = { source: releaseReference };
   }
   return {
     compose: compose.replace(
@@ -557,7 +546,7 @@ async function main(env = process.env) {
     { mode: 0o600 },
   );
 
-  // Integration uses the runner's actual archive. Other source validation builds the candidate locally.
+  // Integration uses the runner's archive; release validation pulls the Compose digest pin.
   const database = await prepareTestDatabase(compose, {
     root,
     workDir,

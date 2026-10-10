@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, PayloadTooLargeException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { isAbsolute } from 'node:path';
@@ -6,6 +6,11 @@ import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
 import { AlbumKind } from 'src/enum.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import {
+  STUDIO_REVISION_MAX_BYTES,
+  STUDIO_REVISION_MAX_COUNT,
+  assertStudioStorageAdmission,
+} from 'src/repositories/studio-storage-admission.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,
@@ -35,7 +40,7 @@ export type StudioProjectImport = {
   externalReferences: number | null;
   createdAt: Date;
 };
-export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'>;
+export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'> & { reservationId?: string };
 const studioImportColumns =
   sql.raw(`item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
    item.path, item."fileName", item."externalReferences", item."createdAt"`);
@@ -227,6 +232,7 @@ export class StudioProjectRepository {
     }
     try {
       const project = await this.db.transaction().execute(async (trx) => {
+        await assertStudioStorageAdmission(trx, seed.ownerId, seed.revision?.graphBytes ?? 0);
         const row = await trx
           .insertInto('studio_project')
           .values({
@@ -678,6 +684,23 @@ export class StudioProjectRepository {
       throw new BadRequestException('Invalid project import declaration');
     }
     return this.db.transaction().execute(async (tx) => {
+      await assertStudioStorageAdmission(tx, item.ownerId, 0);
+      if (item.reservationId) {
+        const reserved = await tx
+          .deleteFrom('studio_bundle_upload')
+          .where('id', '=', item.reservationId)
+          .where('ownerId', '=', item.ownerId)
+          .where('digest', '=', '')
+          .where('sizeBytes', '>=', item.sizeBytes)
+          .returning('id')
+          .executeTakeFirst();
+        if (!reserved) throw new ConflictException('Studio import reservation unavailable');
+      }
+      await assertStudioStorageAdmission(
+        tx,
+        item.ownerId,
+        (await this.readImport(tx, item.projectId, item.id)) ? 0 : item.sizeBytes,
+      );
       const project = await tx
         .selectFrom('studio_project')
         .select('id')
@@ -986,6 +1009,23 @@ export class StudioProjectRepository {
   async appendRevision(append: StudioRevisionAppend): Promise<StudioRevisionAppendResult> {
     try {
       return await this.db.transaction().execute(async (trx) => {
+        const owner = await trx
+          .selectFrom('studio_project')
+          .select('ownerId')
+          .where('id', '=', append.projectId)
+          .executeTakeFirst();
+        if (!owner) return { status: 'rejected' as const };
+        await assertStudioStorageAdmission(trx, owner.ownerId, append.graphBytes);
+        const {
+          rows: [history],
+        } = await sql<{ count: number; bytes: number }>`SELECT count(*)::int AS count,
+          coalesce(sum("graphBytes"),0)::float8 AS bytes FROM studio_project_revision WHERE "projectId"=${append.projectId}::uuid`.execute(
+          trx,
+        );
+        if (history.count >= STUDIO_REVISION_MAX_COUNT || history.bytes + append.graphBytes > STUDIO_REVISION_MAX_BYTES)
+          throw new PayloadTooLargeException(
+            'Studio revision history limit reached; duplicate the project to continue editing',
+          );
         const head = await trx
           .updateTable('studio_project')
           .set({
@@ -1116,8 +1156,9 @@ export class StudioProjectRepository {
   /* Bundle uploads (FL-91)                                              */
   /* ------------------------------------------------------------------ */
   async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
-    return this.write((db) =>
-      db
+    return this.write(async (db) => {
+      await assertStudioStorageAdmission(db, upload.ownerId, upload.sizeBytes, 'upload');
+      return db
         .insertInto('studio_bundle_upload')
         .values({
           ownerId: upload.ownerId,
@@ -1128,6 +1169,26 @@ export class StudioProjectRepository {
           manifest: upload.manifest,
           expiresAt: upload.expiresAt,
         })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    }) as unknown as Promise<StudioBundleUpload>;
+  }
+
+  async finalizeUpload(id: string, upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
+    return this.write((db) =>
+      db
+        .updateTable('studio_bundle_upload')
+        .set({
+          sizeBytes: String(upload.sizeBytes),
+          digest: upload.digest,
+          manifest: upload.manifest,
+          originalFileName: upload.originalFileName,
+        })
+        .where('id', '=', id)
+        .where('ownerId', '=', upload.ownerId)
+        .where('path', '=', upload.path)
+        .where('digest', '=', '')
+        .where('sizeBytes', '>=', upload.sizeBytes)
         .returningAll()
         .executeTakeFirstOrThrow(),
     ) as unknown as Promise<StudioBundleUpload>;
@@ -1162,29 +1223,23 @@ export class StudioProjectRepository {
     ) as unknown as Promise<StudioBundleUpload | undefined>;
   }
   /** The sweep: uploads past their expiry, oldest first. Their files go with them. */
-  async deleteExpiredUploads(
+  async listExpiredUploads(
     now: Date,
     limit = 200,
   ): Promise<
     Array<{
       id: string;
       path: string;
+      ownerId: string;
     }>
   > {
-    return this.write((db) =>
-      db
-        .deleteFrom('studio_bundle_upload')
-        .where('id', 'in', (eb) =>
-          eb
-            .selectFrom('studio_bundle_upload')
-            .select('id')
-            .where('expiresAt', '<', now)
-            .orderBy('expiresAt', 'asc')
-            .limit(limit),
-        )
-        .returning(['id', 'path'])
-        .execute(),
-    );
+    return this.db
+      .selectFrom('studio_bundle_upload')
+      .select(['id', 'path', 'ownerId'])
+      .where('expiresAt', '<', now)
+      .orderBy('expiresAt', 'asc')
+      .limit(limit)
+      .execute();
   }
   /* ------------------------------------------------------------------ */
   /* Review comments                                                     */

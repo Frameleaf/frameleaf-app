@@ -16,6 +16,7 @@ import {
   mapNotification,
 } from 'src/dtos/notification.dto.js';
 import {
+  AlbumKind,
   AssetFileType,
   JobName,
   JobStatus,
@@ -575,6 +576,13 @@ export class NotificationService extends BaseService {
     if (!recipient) {
       return;
     }
+    const pendingInvite =
+      context.kind === 'invite' &&
+      album.kind === AlbumKind.Space &&
+      !!(await this.albumUserRepository.getInvite({ albumId: album.id, userId: recipient.id }));
+    if (pendingInvite) {
+      return { album, recipient, pendingInvite: true };
+    }
     const allowed = await this.checkAccess({
       auth: { user: recipient },
       permission: Permission.AlbumRead,
@@ -583,7 +591,7 @@ export class NotificationService extends BaseService {
     if (!allowed.has(album.id)) {
       return;
     }
-    return { album, recipient };
+    return { album, recipient, pendingInvite: false };
   }
 
   private async prepareAlbumNotificationEmail(
@@ -599,11 +607,9 @@ export class NotificationService extends BaseService {
     if (!emailNotifications.enabled || !(invite ? emailNotifications.albumInvite : emailNotifications.albumUpdate)) {
       return;
     }
-    const attachment = await this.getAlbumThumbnailAttachment(
-      album,
-      await this.getEmailHiddenContentFilter(recipient),
-      recipient,
-    );
+    const attachment = current.pendingInvite
+      ? undefined
+      : await this.getAlbumThumbnailAttachment(album, await this.getEmailHiddenContentFilter(recipient), recipient);
     const { server, templates } = await this.getConfig({ withCache: false });
     const data = {
       baseUrl: await this.getPublicUrl(server),
@@ -646,21 +652,18 @@ export class NotificationService extends BaseService {
     ) {
       return false;
     }
-    const attachment = await this.getAlbumThumbnailAttachment(
-      current.album,
-      await this.getEmailHiddenContentFilter(current.recipient),
-      current.recipient,
-    );
+    const attachment = current.pendingInvite
+      ? undefined
+      : await this.getAlbumThumbnailAttachment(
+          current.album,
+          await this.getEmailHiddenContentFilter(current.recipient),
+          current.recipient,
+        );
     if (!isEqualObject(mail.imageAttachments ?? [], attachment ? [attachment] : [])) {
       return false;
     }
-    // Attachment/configuration reads may yield; close the membership boundary after those awaits.
-    const allowed = await this.checkAccess({
-      auth: { user: current.recipient },
-      permission: Permission.AlbumRead,
-      ids: [current.album.id],
-    });
-    if (!allowed.has(current.album.id)) {
+    // Recheck the invitation or membership after the attachment/configuration reads.
+    if (!(await this.getCurrentAlbumNotification(context))) {
       return false;
     }
     if (attachment && current.album.albumThumbnailAssetId) {

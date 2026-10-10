@@ -174,3 +174,74 @@ describe('actions started from the library keys and tiles (FL-33, T-5)', () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 });
+
+it('opens the quick actions, not the whole More menu, at the pointer for a tile’s right-click', async () => {
+  addMessages('dev', en);
+  const onAction = vi.fn();
+  const { component } = render(SelectionBar, {
+    props: {
+      count: 1,
+      assets: [{ id: 'mine', ownerId: 'me' }],
+      context: { currentUserId: 'me', canSendCopy: true },
+      leading: [
+        { id: 'compare', label: 'Compare', icon: '', disabled: true, onClick: vi.fn() },
+        { id: 'studio', label: 'Open in Studio', icon: '', onClick: vi.fn() },
+      ],
+      onAction,
+      onClear: vi.fn(),
+    },
+  });
+
+  component.openContextMenu(40, 40);
+  const menu = await screen.findByTestId('selection-context-menu');
+  expect(
+    within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent?.trim()),
+  ).toEqual([
+    'Open in Studio',
+    en.frameleaf_bulk_favorite,
+    en.frameleaf_bulk_add_to_album,
+    en.frameleaf_bulk_create_shared_link,
+    en.frameleaf_bulk_download,
+    en.frameleaf_bulk_delete,
+  ]);
+  await fireEvent.click(within(menu).getByRole('menuitem', { name: en.frameleaf_bulk_download }));
+  expect(onAction).toHaveBeenCalledWith('download');
+});
+
+it('leaves the editors out of the right-click menu for a multiple selection', async () => {
+  addMessages('dev', en);
+  const { component } = render(SelectionBar, {
+    props: {
+      count: 2,
+      assets: [
+        { id: 'one', ownerId: 'me' },
+        { id: 'two', ownerId: 'me' },
+      ],
+      context: { currentUserId: 'me' },
+      leading: [
+        { id: 'compare', label: 'Compare', icon: '', onClick: vi.fn() },
+        { id: 'quick-edit', label: 'Quick edit', icon: '', onClick: vi.fn() },
+        { id: 'studio', label: 'Open in Studio', icon: '', onClick: vi.fn() },
+      ],
+      onAction: vi.fn(),
+      onClear: vi.fn(),
+    },
+  });
+
+  component.openContextMenu(40, 40);
+  const menu = await screen.findByTestId('selection-context-menu');
+  expect(
+    within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent?.trim()),
+  ).toEqual([
+    'Compare',
+    en.frameleaf_bulk_favorite,
+    en.frameleaf_bulk_add_to_album,
+    en.frameleaf_bulk_create_shared_link,
+    en.frameleaf_bulk_download,
+    en.frameleaf_bulk_delete,
+  ]);
+});

@@ -1903,6 +1903,10 @@ export type BackupRestoreVerificationRecordDto = {
     /** Original files restored and their checksums were verified */
     originals: boolean;
 };
+export type FrameleafSetupCodeDto = {
+    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
+    code: string;
+};
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
@@ -2636,6 +2640,33 @@ export type RenderWorkerUpdateDto = {
     maxOutputBytes?: string | null;
     maxWallClockMs?: string | null;
     name?: string;
+};
+export type QueueStatisticsDto = {
+    /** Number of active jobs */
+    active: number;
+    /** Number of completed jobs */
+    completed: number;
+    /** Number of delayed jobs */
+    delayed: number;
+    /** Number of failed jobs */
+    failed: number;
+    /** Number of paused jobs */
+    paused: number;
+    /** Number of waiting jobs */
+    waiting: number;
+};
+export type StorageMigrationStatusResponseDto = {
+    /** Whether the storage template is turned on; a run moves nothing while it is off */
+    enabled: boolean;
+    /** Whether durable work remains, including delayed, paused and unadmitted work */
+    hasUnfinishedWork: boolean;
+    /** Whether a migration is running now */
+    isActive: boolean;
+    /** Whether the storage template migration queue is paused */
+    isPaused: boolean;
+    statistics: QueueStatisticsDto;
+    /** The storage template originals are moved to */
+    template: string;
 };
 export type UserLicense = {
     /** Activation date */
@@ -4676,6 +4707,40 @@ export type AssetEditKeyframesResponseDto = {
     /** Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point. */
     keyframesMs: number[];
 };
+export type AssetFilmstripFrameDto = {
+    /** Frame position, 0-based */
+    index: number;
+    /** Timestamp of the frame in the video, in milliseconds */
+    timeMs: number;
+    /** Left edge of the frame in the sprite, in pixels */
+    x: number;
+    /** Top edge of the frame in the sprite, in pixels */
+    y: number;
+};
+export type AssetFilmstripResponseDto = {
+    assetId: string;
+    /** Tiles per sprite row */
+    columns: number;
+    /** Duration of the video, in milliseconds */
+    durationMs: number;
+    format: AssetFilmstripFormat;
+    /** Height of every frame tile, in pixels */
+    frameHeight: number;
+    /** Width of every frame tile, in pixels */
+    frameWidth: number;
+    /** Frames in time order, left to right, top to bottom */
+    frames: AssetFilmstripFrameDto[];
+    /** Content type of the sprite */
+    mimeType: string;
+    /** Sprite rows */
+    rows: number;
+    /** Sprite height, in pixels */
+    spriteHeight: number;
+    /** Sprite width, in pixels */
+    spriteWidth: number;
+    /** Changes whenever the video changes; pass it to the sprite request */
+    version: string;
+};
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
     appliedTags: boolean;
@@ -4918,6 +4983,27 @@ export type AssetRestorationOptionsDto = {
     sourceWidth: number;
     upscale: number;
     workload: MlWorkload;
+};
+export type AssetWaveformChannelDto = {
+    /** Highest sample in each bucket, -1 to 1 */
+    max: number[];
+    /** Lowest sample in each bucket, -1 to 1 */
+    min: number[];
+};
+export type AssetWaveformResponseDto = {
+    assetId: string;
+    /** Peak pairs per channel */
+    bucketCount: number;
+    /** Audio time each bucket covers, in milliseconds */
+    bucketDurationMs: number;
+    /** One entry for mono, otherwise one per channel */
+    channels: AssetWaveformChannelDto[];
+    /** Duration of the decoded audio, in milliseconds */
+    durationMs: number;
+    /** false for a video without an audio track; channels is then empty */
+    hasAudio: boolean;
+    /** Changes whenever the video changes */
+    version: string;
 };
 export type SignUpDto = {
     /** User email */
@@ -5331,7 +5417,7 @@ export type CloudMlJobEstimateRequestDto = {
     purpose: CloudMlJobPurpose;
     /** Preview: the part of the frame to preview */
     region?: AssetRestorationRegionDto;
-    /** For the full stage: the reviewed preview it renders in full, with the same model and settings */
+    /** For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed */
     restorationId?: string;
     stage: CloudMlJobStage;
     /** Restoration preview: 2× or 4×, capped at 4K */
@@ -5429,6 +5515,8 @@ export type CloudMlJobEstimateResponseDto = {
     permission: CloudMlJobPermissionDto;
     /** Serverless workers the job is planned on, at most 5; each adds a start fee */
     plannedWorkers: number;
+    /** A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full */
+    quoteOnly: boolean;
     /** Why the job cannot be sent now, or null when it can */
     refusal: (CloudMlJobRefusalDto) | null;
     /** Expected GPU time once running (p50) */
@@ -6830,20 +6918,6 @@ export type ItemShareReceivedResponseDto = {
     items: ItemShareReceivedDto[];
     /** The address of this list, as sent in share notifications */
     link: string | null;
-};
-export type QueueStatisticsDto = {
-    /** Number of active jobs */
-    active: number;
-    /** Number of completed jobs */
-    completed: number;
-    /** Number of delayed jobs */
-    delayed: number;
-    /** Number of failed jobs */
-    failed: number;
-    /** Number of paused jobs */
-    paused: number;
-    /** Number of waiting jobs */
-    waiting: number;
 };
 export type QueueStatusLegacyDto = {
     /** Whether the queue is currently active (has running jobs) */
@@ -10996,6 +11070,8 @@ export type SearchFilterBranch = {
     isFavorite?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -11032,6 +11108,8 @@ export type SearchFilter = {
     isFavorite?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -12560,10 +12638,6 @@ export type FrameleafSetupErrorDto = {
     message: string;
     statusCode: number;
 };
-export type FrameleafSetupCodeDto = {
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
-    code: string;
-};
 export type FrameleafSetupTicketResponseDto = {
     /** When the ticket stops working */
     expiresAt: string;
@@ -12812,6 +12886,8 @@ export type SharedSpacePreviewResponseDto = {
     memberCount: number;
     /** Who owns the shared space */
     owner: UserResponseDto;
+    /** Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation. */
+    previewAssetIds: string[];
     /** The role the recipient gets on accept */
     role: AlbumUserRole;
     /** Earliest item date, sensitive and Locked media excluded */
@@ -12998,6 +13074,36 @@ export type StackCreateDto = {
 export type StackUpdateDto = {
     /** Primary asset ID */
     primaryAssetId?: string;
+};
+export type StudioRationalDto = {
+    /** Denominator, positive; the pair is reduced */
+    den: number;
+    /** Numerator */
+    num: number;
+};
+export type StudioMediaFactsDto = {
+    assetId: string;
+    /** The first audio track codec; its presence places a linked audio clip */
+    audioCodec: string | null;
+    /** Length in seconds; 0 for a still; null when unknown */
+    durationSeconds: number | null;
+    /** frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still */
+    fps: number;
+    /** Frames in the video stream when the container says; null otherwise */
+    frameCount: number | null;
+    /** The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown */
+    frameRate: (StudioRationalDto) | null;
+    /** Whether the original has an audio track; null when it could not be read */
+    hasAudio: boolean | null;
+    /** Display height in pixels, after rotation; null when unknown */
+    height: number | null;
+    /** The original file type */
+    mimeType: string;
+    source: StudioMediaFactsSource;
+    "type": AssetTypeEnum;
+    videoCodec: string | null;
+    /** Display width in pixels, after rotation; null when unknown */
+    width: number | null;
 };
 export type StudioBundleImportCreateDto = {
     /** Source key to an asset of yours to use in its place; every choice is checked for access */
@@ -13518,6 +13624,31 @@ export type StudioProjectImportCreateDto = {
     /** The media id the editor gave this file; retrying the same file with it is idempotent */
     id: string;
 };
+export type StudioProjectResourceUseDto = {
+    /** Whether it may run on this server */
+    allowed: boolean;
+    /** Why not, when it may not */
+    detail: string | null;
+    kind: StudioProjectResourceKind;
+    license: string | null;
+    /** As written in the graph */
+    name: string;
+    /** The rights row it resolves to */
+    rightsId: string;
+};
+export type StudioProjectInventoryDto = {
+    /** Font families the head graph names */
+    fonts: StudioProjectResourceUseDto[];
+    /** Files kept with the project (FL-103, FL-105) */
+    keptFiles: StudioProjectImportDto[];
+    /** Bundled LUTs the head graph names */
+    luts: StudioProjectResourceUseDto[];
+    /** Models the head graph names */
+    models: StudioProjectResourceUseDto[];
+    projectId: string;
+    /** The head revision the graph references were read from; 0 for an empty project */
+    revision: number;
+};
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
@@ -13650,6 +13781,101 @@ export type StudioProjectDiffDto = {
     to: number;
     /** More paths changed than are listed */
     truncated: boolean;
+};
+export type StudioTranscriptionCreateDto = {
+    /** A video or audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The machine-learning destination to run on, named explicitly */
+    destinationId: string;
+    /** A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language */
+    language: string;
+};
+export type StudioTranscriptionQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioTranscriptionTime = {
+    den: number;
+    num: number;
+};
+export type StudioTranscriptionCue = {
+    end: StudioTranscriptionTime;
+    start: StudioTranscriptionTime;
+    text: string;
+};
+export type StudioTranscriptionWord = {
+    /** Index of the cue the word belongs to */
+    cue: number;
+    end: StudioTranscriptionTime;
+    start: StudioTranscriptionTime;
+    text: string;
+};
+export type StudioTranscriptionResultDto = {
+    /** Ready for `captions.set`: `{ start, end, text }` only */
+    cues: StudioTranscriptionCue[];
+    /** The Whisper language code the speech was transcribed in */
+    language: string;
+    /** How sure detection was; 1 when the language was given */
+    languageProbability: number;
+    /** The Whisper model the worker used */
+    model: string;
+    /** Word timings, for word-by-word caption styles */
+    words: StudioTranscriptionWord[];
+};
+export type StudioTranscriptionDto = {
+    clipId: string;
+    destinationId: string;
+    error: string | null;
+    id: string;
+    /** The language asked for (`auto` or a BCP 47 tag) */
+    language: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed */
+    result: (StudioTranscriptionResultDto) | null;
+    /** The revision whose clip was transcribed */
+    revision: number;
+    status: MediaOperationStatus;
+};
+export type StudioResourceApprovalDto = {
+    approvedBy: string;
+    approvedOn: string;
+} | null;
+export type StudioResourceUsesDto = {
+    /** May run on Frameleaf Cloud */
+    hostedUse: boolean;
+    /** May run on this server or a LAN worker */
+    localRuntime: boolean;
+    /** May be copied to someone else (a bundle, a download) */
+    redistribution: boolean;
+};
+export type StudioResourceItemDto = {
+    /** The date the owner approved this exact row, or null */
+    approvedOn: string | null;
+    /** The worker capability that runs it (GET /ml-destinations/capabilities says whether one is available), or null when the editor alone uses it */
+    capability: (StudioWorkerCapability) | null;
+    /** The rights row id, e.g. font:Roboto or model:onnx-community/whisper-base_timestamped */
+    id: string;
+    kind: StudioResourceItemKind;
+    /** The licence, as reviewed; null when the review records none */
+    license: string | null;
+    /** The name a graph or a job uses: a font family, a model id */
+    name: string;
+    /** For a model: the generated-file producers it serves (transcript, tts, musicgen) */
+    producers: string[];
+    /** Why the owner withheld a use, by use name (redistribution, localRuntime, hostedUse) */
+    restrictions: {
+        [key: string]: string;
+    };
+    uses: StudioResourceUsesDto;
+};
+export type StudioResourceInventoryDto = {
+    approval: StudioResourceApprovalDto;
+    /** Whether the engine as a whole may be redistributed; false blocks every redistribution use */
+    distributionApproved: boolean;
+    /** Every reviewed resource, sorted by id */
+    items: StudioResourceItemDto[];
 };
 export type StudioRestoredVersionDto = {
     /** The library original it was made from; never replaced by it */
@@ -16977,11 +17203,14 @@ export function recordBackupRestoreVerification({ backupRestoreVerificationRecor
 /**
  * Start database backup restore flow
  */
-export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", {
+export function startDatabaseRestoreFlow({ frameleafSetupCodeDto }: {
+    frameleafSetupCodeDto: FrameleafSetupCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: frameleafSetupCodeDto
+    })));
 }
 /**
  * Upload database backup
@@ -17548,6 +17777,29 @@ export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
         method: "PUT",
         body: renderWorkerUpdateDto
     })));
+}
+/**
+ * Get storage migration status
+ */
+export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/admin/storage-migration", {
+        ...opts
+    }));
+}
+/**
+ * Run storage migration in the background
+ */
+export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 202;
+        data: StorageMigrationStatusResponseDto;
+    }>("/admin/storage-migration", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Search users
@@ -19097,6 +19349,56 @@ export function getAssetEditKeyframes({ id }: {
     }));
 }
 /**
+ * Get video filmstrip
+ */
+export function getAssetFilmstrip({ count, format, height, id, key, slug }: {
+    count?: number;
+    format?: AssetFilmstripFormat;
+    height?: number;
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFilmstripResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/filmstrip${QS.query(QS.explode({
+        count,
+        format,
+        height,
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View video filmstrip sprite
+ */
+export function viewAssetFilmstripSprite({ count, format, height, id, key, slug, version }: {
+    count?: number;
+    format?: AssetFilmstripFormat;
+    height?: number;
+    id: string;
+    key?: string;
+    slug?: string;
+    version?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/filmstrip/sprite${QS.query(QS.explode({
+        count,
+        format,
+        height,
+        key,
+        slug,
+        version
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Get image enrichment metadata
  */
 export function getAssetImageEnrichment({ id }: {
@@ -19477,6 +19779,28 @@ export function playStudioHdrVideo({ id }: {
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/video/studio-hdr`, {
+        ...opts
+    }));
+}
+/**
+ * Get video audio waveform
+ */
+export function getAssetWaveform({ buckets, channels, id, key, slug }: {
+    buckets?: number;
+    channels?: AssetWaveformChannelMode;
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetWaveformResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/waveform${QS.query(QS.explode({
+        buckets,
+        channels,
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }
@@ -25493,6 +25817,20 @@ export function getSharedSpacePreview({ id }: {
     }));
 }
 /**
+ * View a shared space preview thumbnail
+ */
+export function viewSharedSpacePreviewThumbnail({ assetId, id }: {
+    assetId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/preview/assets/${encodeURIComponent(assetId)}/thumbnail`, {
+        ...opts
+    }));
+}
+/**
  * Mark a shared space seen
  */
 export function markSharedSpaceVisited({ id }: {
@@ -25598,6 +25936,19 @@ export function removeAssetFromStack({ assetId, id }: {
     return oazapfts.ok(oazapfts.fetchText(`/stacks/${encodeURIComponent(id)}/assets/${encodeURIComponent(assetId)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Get the Studio media facts of an asset
+ */
+export function getStudioMediaFacts({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMediaFactsDto;
+    }>(`/studio/assets/${encodeURIComponent(id)}/media-facts`, {
+        ...opts
     }));
 }
 /**
@@ -26123,6 +26474,19 @@ export function getStudioProjectImportFile({ id, importId }: {
     }));
 }
 /**
+ * List what a Studio project keeps and uses
+ */
+export function getStudioProjectInventory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectInventoryDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/inventory`, {
+        ...opts
+    }));
+}
+/**
  * Acquire or renew the write lease
  */
 export function acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
@@ -26265,6 +26629,36 @@ export function diffStudioProjectRevision({ against, id, revision }: {
     }));
 }
 /**
+ * Transcribe a Studio clip
+ */
+export function createStudioTranscription({ id, studioTranscriptionCreateDto }: {
+    id: string;
+    studioTranscriptionCreateDto: StudioTranscriptionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioTranscriptionQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioTranscriptionCreateDto
+    })));
+}
+/**
+ * Get a Studio clip transcription
+ */
+export function getStudioTranscription({ id, transcriptionId }: {
+    id: string;
+    transcriptionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioTranscriptionDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions/${encodeURIComponent(transcriptionId)}`, {
+        ...opts
+    }));
+}
+/**
  * Restore a Studio project from the trash
  */
 export function restoreStudioProjectFromTrash({ id }: {
@@ -26276,6 +26670,17 @@ export function restoreStudioProjectFromTrash({ id }: {
     }>(`/studio/projects/${encodeURIComponent(id)}/trash/restore`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List the Studio resources this server may use
+ */
+export function getStudioResources(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioResourceInventoryDto;
+    }>("/studio/resources", {
+        ...opts
     }));
 }
 /**
@@ -28683,6 +29088,7 @@ export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
     StudioReverseConform = "studio_reverse_conform",
+    StudioTranscription = "studio_transcription",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
@@ -29403,6 +29809,10 @@ export enum DecodeRefusal {
     UnsupportedBitDepth = "unsupportedBitDepth",
     UnusableGeometry = "unusableGeometry"
 }
+export enum AssetFilmstripFormat {
+    Jpeg = "jpeg",
+    Webp = "webp"
+}
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
     IdentityChanged = "identity-changed",
@@ -29473,6 +29883,10 @@ export enum AssetMediaSize {
     Fullsize = "fullsize",
     Preview = "preview",
     Thumbnail = "thumbnail"
+}
+export enum AssetWaveformChannelMode {
+    Mono = "mono",
+    All = "all"
 }
 export enum ClassificationMatchDecision {
     Matched = "matched",
@@ -30952,6 +31366,10 @@ export enum SharedSpaceEventType {
     Reply = "Reply",
     Like = "Like"
 }
+export enum StudioMediaFactsSource {
+    Probe = "probe",
+    Stored = "stored"
+}
 export enum StudioBundleSourceMode {
     Embedded = "embedded",
     Reference = "reference"
@@ -31047,11 +31465,35 @@ export enum StudioProjectImportKind {
     Captions = "captions",
     Lut = "lut"
 }
+export enum StudioProjectResourceKind {
+    Font = "font",
+    Lut = "lut",
+    Model = "model"
+}
 export enum Id {
     JobEnqueueReverseConform = "job.enqueueReverseConform"
 }
 export enum DestinationId {
     Local = "local"
+}
+export enum StudioWorkerCapability {
+    AnalysisWorker = "analysisWorker",
+    GenerationWorker = "generationWorker",
+    GpuWorker = "gpuWorker",
+    RenderWorker = "renderWorker",
+    RestorationWorker = "restorationWorker",
+    TranscriptionWorker = "transcriptionWorker"
+}
+export enum StudioResourceItemKind {
+    Font = "font",
+    Lut = "lut",
+    Audio = "audio",
+    Model = "model",
+    Voice = "voice",
+    Weights = "weights",
+    Tool = "tool",
+    Runtime = "runtime",
+    Asset = "asset"
 }
 export enum StudioRestoredVersionUnavailable {
     Discarded = "discarded",

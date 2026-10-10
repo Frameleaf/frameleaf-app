@@ -25,10 +25,14 @@ import {
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
-import { AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, CacheControl, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireEntityAccess } from 'src/utils/access.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { ImmichFileResponse, getFilenameExtension } from 'src/utils/file.js';
+import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   type CommentThreadInfo,
   type SpaceLike,
@@ -37,6 +41,7 @@ import {
   canUnlink,
   isCommentEventType,
   isNewSpaceEvent,
+  isSharedSpace,
   isSpaceMember,
   narrowSpaceEvent,
   parseMentions,
@@ -71,6 +76,9 @@ const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true };
 
 /** How many "new since your last visit" ids the client is given to filter a timeline with. */
 const NEW_ASSET_LIMIT = 500;
+
+/** FL-349: how many pictures the invitation preview shows. */
+const PREVIEW_ASSET_LIMIT = 12;
 
 /** How many feed events a page carries by default, and the most the unread count will inspect. */
 const ACTIVITY_PAGE = 50;
@@ -117,9 +125,10 @@ type CommentRow = {
  * The invitation is not a membership. Until it is accepted the recipient has no
  * `album_user` row, so no access check, listing, sync feed or activity rule can
  * reach the space through it, and the preview below is the only thing they can
- * read. The preview carries no asset of any kind and its counts exclude media
- * marked sensitive and Locked media, so nothing is disclosed by the numbers
- * either.
+ * read. Its counts exclude media marked sensitive and Locked media, and the only
+ * items it names (FL-349) are a dozen of the newest ones under that same rule,
+ * whose small thumbnails alone open to the invitation; no file name, place,
+ * person, original or other size does.
  */
 @Injectable()
 export class SharedSpaceService extends BaseService {
@@ -240,6 +249,35 @@ export class SharedSpaceService extends BaseService {
   }
 
   /**
+   * FL-349: the small thumbnail of one preview item, for someone holding an invitation to the space
+   * (or already in it). Only the ids the preview lists right now are served, so this never opens the
+   * rest of the space, the item's other sizes, its original or its file name; anything else is 404.
+   */
+  async getPreviewThumbnail(auth: AuthDto, id: string, assetId: string): Promise<ImmichFileResponse> {
+    const invite = await this.albumUserRepository.getInvite({ albumId: id, userId: auth.user.id });
+    const album = await this.albumRepository.getById(id, { withAssets: false }, auth.user.id);
+    if (!album || !isSharedSpace(album) || (!invite && !isSpaceMember(album, auth.user.id))) {
+      throw new NotFoundException('Shared space not found');
+    }
+
+    const previewIds = await this.albumRepository.getSpacePreviewAssetIds(id, PREVIEW_ASSET_LIMIT);
+    if (!previewIds.includes(assetId)) {
+      throw new NotFoundException('Preview item not found');
+    }
+
+    const { path } = await this.assetRepository.getForThumbnail(assetId, AssetFileType.Thumbnail, true);
+    if (!path) {
+      throw new NotFoundException('Preview item not found');
+    }
+    return new ImmichFileResponse({
+      fileName: `${assetId}_${AssetFileType.Thumbnail}${getFilenameExtension(path)}`,
+      path,
+      contentType: mimeTypes.lookup(path),
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
+  /**
    * Join the space with the role the owner offered. The invitation is the only
    * way in, so there is nothing to check beyond holding one: the role comes from
    * the stored invitation, never from the request.
@@ -256,16 +294,10 @@ export class SharedSpaceService extends BaseService {
     }
     requireSharedSpace(album);
 
-    if (!isSpaceMember(album, auth.user.id)) {
-      await this.albumUserRepository.create({ albumId: id, userId: auth.user.id, role: invite.role });
-      await this.albumUserRepository.createSpaceEvent({
-        albumId: id,
-        actorId: auth.user.id,
-        type: SharedSpaceEventType.MemberJoined,
-        targetUserId: auth.user.id,
-      });
+    const accepted = await this.albumUserRepository.acceptInvite({ albumId: id, userId: auth.user.id });
+    if (!accepted) {
+      throw new NotFoundException('No invitation to this shared space');
     }
-    await this.albumUserRepository.deleteInvite({ albumId: id, userId: auth.user.id });
 
     const joined = await this.albumRepository.getById(id, { withAssets: false }, auth.user.id);
     if (!joined) {
@@ -475,7 +507,10 @@ export class SharedSpaceService extends BaseService {
     return {
       linked,
       candidates: candidates
-        .filter(({ personGroupId }) => !alreadyLinked.has(personGroupId))
+        .filter(
+          ({ personGroupId }) =>
+            !alreadyLinked.has(personGroupId) && !isSuppressedWhileLocked(auth, 'person', personGroupId),
+        )
         .map((candidate) => ({
           id: candidate.personGroupId,
           name: candidate.name,
@@ -503,6 +538,11 @@ export class SharedSpaceService extends BaseService {
     const space = await this.requireSpaceMembership(auth, id);
     requireSpaceContributor(space, auth.user.id);
 
+    await requireEntityAccess(
+      this.accessRepository,
+      { auth, permission: Permission.PersonRead, ids: [dto.personId] },
+      'Person',
+    );
     const person = await this.personRepository.getByGroupId({
       ownerId: auth.user.id,
       personGroupId: dto.personId,
@@ -1064,6 +1104,7 @@ export class SharedSpaceService extends BaseService {
       assetCount: metadata?.assetCount ?? 0,
       startDate: asDateTimeString(metadata?.startDate ?? undefined),
       endDate: asDateTimeString(metadata?.endDate ?? undefined),
+      previewAssetIds: await this.albumRepository.getSpacePreviewAssetIds(id, PREVIEW_ASSET_LIMIT),
     };
   }
 }

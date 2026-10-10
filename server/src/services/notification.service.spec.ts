@@ -2,6 +2,8 @@ import type { AdminNotice } from 'src/repositories/event.repository.js';
 import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
+  AlbumKind,
+  AlbumUserRole,
   AssetFileType,
   JobName,
   JobStatus,
@@ -641,6 +643,39 @@ describe(NotificationService.name, () => {
       await sut.onItemShare(event);
       expect(mocks.notification.create).not.toHaveBeenCalled();
     });
+  });
+
+  it('notifies a pending shared-space invitee without attaching private media and drops withdrawn invites', async () => {
+    const album = AlbumFactory.create({ kind: AlbumKind.Space, albumThumbnailAssetId: newUuid() });
+    const recipient = {
+      ...userStub.user1,
+      metadata: [
+        { key: UserMetadataKey.Preferences, value: { emailNotifications: { enabled: true, albumInvite: true } } },
+      ],
+    };
+    mocks.album.getById.mockResolvedValue(getForAlbum(album));
+    mocks.user.get.mockResolvedValue(recipient as never);
+    mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+    mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+    mocks.albumUser.getInvite.mockResolvedValue({
+      albumId: album.id,
+      userId: recipient.id,
+      role: AlbumUserRole.Editor,
+      invitedById: null,
+      createdAt: new Date(),
+    });
+    mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+    mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+    mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: true } } });
+    await expect(sut.handleAlbumInvite({ id: album.id, recipientId: recipient.id, senderName: 'Owner' })).resolves.toBe(
+      JobStatus.Success,
+    );
+    expect(mocks.assetJob.getAlbumThumbnailFiles).not.toHaveBeenCalled();
+    const queued = mocks.job.queue.mock.calls.find(([job]) => job.name === JobName.SendMail)![0];
+    expect(queued.data).toMatchObject({ imageAttachments: undefined });
+    mocks.albumUser.getInvite.mockResolvedValue(undefined);
+    await expect(sut.handleSendEmail(queued.data as never)).resolves.toBe(JobStatus.Skipped);
+    expect(mocks.email.sendEmail).not.toHaveBeenCalled();
   });
 
   describe('handleAlbumInvite', () => {

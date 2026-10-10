@@ -5,7 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafLicenseStore } from 'src/types.js';
-import { AdminAuditAction, JobStatus, NotificationLevel, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  DatabaseLock,
+  JobStatus,
+  NotificationLevel,
+  SystemMetadataKey,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -419,6 +426,32 @@ describe(FrameleafLicenseService.name, () => {
         entitlements: { supporter: true, remoteAccess: false },
       });
     });
+  });
+
+  it('preserves an administrator removing a plan while its refresh is in flight', async () => {
+    link();
+    serveToken();
+    await sut.installCertificate(authStub.admin, { certificate: certificate() });
+    const { promise: entered, resolve: started } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let tail = Promise.resolve();
+    mocks.database.withLock.mockImplementation((_lock, callback) => {
+      if (_lock !== DatabaseLock.FrameleafLicenseRefresh) return callback() as never;
+      const result = tail.then(callback);
+      tail = result.then(() => {}).catch(() => {});
+      return result as never;
+    });
+    cloud.on('POST /api/v1/licenses/refresh', async () => {
+      started();
+      await held;
+      return { status: 200, body: { certificates: [certificate({ jti: 'refreshed' })] } };
+    });
+    const refresh = sut.refreshNow();
+    await entered;
+    const remove = sut.removePlan(authStub.admin);
+    release();
+    await Promise.all([refresh, remove]);
+    expect(store()?.plan).toBeNull();
   });
 
   describe('refresh', () => {

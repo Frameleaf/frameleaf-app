@@ -58,6 +58,7 @@ import { findCompatibleCaptionTrack, getCaptionStyleTemplateFromPreset, isCaptio
 import {
   filterUnlockedItemIds,
   getLinkedItemIds,
+  getSynchronizedLinkedItems,
   getUniqueLinkedItemAnchorIds,
 } from '@/features/timeline/utils/linked-items'
 import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
@@ -240,6 +241,9 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'keyframe.remove': ['command.removeKeyframes'],
   'music.add': ['command.addItem'],
   'lottie.update': ['readme.media-import.2'],
+  // FL-348: masks and relinking for the native Studio.
+  'clip.setMask': ['readme.effects-masks-compositing.7'],
+  'clip.relink': ['readme.media-import.4'],
   'title.add': ['command.addText'],
   'track.add': ['command.addTrack'],
   // FL-94: the linked edit tools, source edits, tracks and markers of readme.timeline-editing.
@@ -473,6 +477,47 @@ export const MODIFIER_TYPES: readonly MotionModifierType[] = ['float-drift', 'br
 
 const finiteIn = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+
+const MASK_TANGENT_MODES = ['corner', 'smooth', 'continuous', 'broken'] as const
+const MAX_MASK_VERTICES = 1000
+
+/**
+ * `clip.setMask`'s pen path (FL-348): the vertices of a closed path shape, normalised 0..1 to the
+ * shape's box, each written with its tangent mode as loading would infer it.
+ */
+const maskPathOf = (value: unknown, shape: { shapeType?: string }) => {
+  if (shape.shapeType !== 'path') invalid('clip.setMask: path needs a path shape')
+  if (!Array.isArray(value) || value.length < 3 || value.length > MAX_MASK_VERTICES)
+    invalid(`clip.setMask: path must have 3 to ${MAX_MASK_VERTICES} vertices`)
+  const pair = (entry: unknown): [number, number] => {
+    if (!Array.isArray(entry) || entry.length !== 2 || !entry.every((n) => typeof n === 'number' && Number.isFinite(n)))
+      invalid('clip.setMask: a vertex position or handle must be [x, y]')
+    return [entry[0], entry[1]] as [number, number]
+  }
+  return (value as unknown[]).map((vertex) => {
+    if (!isPlainRecord(vertex)) invalid('clip.setMask: a vertex must be an object')
+    const fields = vertex as Record<string, unknown>
+    for (const key of Object.keys(fields)) {
+      if (!['position', 'inHandle', 'outHandle', 'tangentMode'].includes(key)) invalid('clip.setMask: unknown vertex field')
+    }
+    const position = pair(fields.position)
+    const inHandle = pair(fields.inHandle)
+    const outHandle = pair(fields.outHandle)
+    if (fields.tangentMode !== undefined && !MASK_TANGENT_MODES.includes(fields.tangentMode as never))
+      invalid('clip.setMask: unknown tangent mode')
+    const tangentMode =
+      (fields.tangentMode as (typeof MASK_TANGENT_MODES)[number] | undefined) ??
+      ([...inHandle, ...outHandle].every((n) => n === 0) ? 'corner' : 'smooth')
+    return { position, inHandle, outHandle, tangentMode }
+  })
+}
+
+/** A JSON object: not null, not an array, and not a class instance. */
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
 
 /** A procedural modifier from a payload, with every field inside the range the evaluator reads. */
 const modifierField = (value: unknown): MotionModifier => {
@@ -1668,6 +1713,134 @@ const handlers: Record<string, Handler> = {
     }
     if (Object.keys(updates).length === 0) invalid('lottie.update needs colors, text or slots')
     updateItem(item.id, updates)
+  },
+
+  // FL-348: the shape-mask fields the editor's mask controls write, as one canonical command.
+  'clip.setMask'(payload) {
+    for (const key of Object.keys(payload)) {
+      if (key !== 'clipId' && key !== 'mask') invalid('clip.setMask: unknown field')
+    }
+    const item = requireItem(stringField(payload, 'clipId'))
+    if (item.type !== 'shape') invalid('clip.setMask requires a shape clip')
+    if (!Object.hasOwn(payload, 'mask')) invalid('mask is required (null removes the mask)')
+    const mask = payload.mask
+    if (mask !== null && !isPlainRecord(mask)) invalid('clip.setMask: mask must be an object or null')
+    assertUnlocked([item.id], 'clip.setMask')
+    const shape = item as Extract<TimelineItem, { type: 'shape' }>
+    const wasMask = shape.isMask === true
+    if (mask === null) {
+      // The editor's mask switch turned off: the shape draws again, with its own blend mode reset.
+      if (!wasMask) return
+      updateItem(item.id, {
+        isMask: false,
+        blendMode: undefined,
+        maskType: undefined,
+        maskFeather: undefined,
+        maskOpacity: undefined,
+        maskInvert: undefined,
+        pathClosed: undefined,
+      } as Partial<TimelineItem>)
+      return
+    }
+    const fields = mask as Record<string, unknown>
+    for (const key of Object.keys(fields)) {
+      if (!['type', 'feather', 'opacity', 'invert', 'path'].includes(key)) invalid('clip.setMask: unknown mask field')
+    }
+    const path = fields.path === undefined ? undefined : maskPathOf(fields.path, shape)
+    if (fields.type !== undefined && fields.type !== 'clip' && fields.type !== 'alpha')
+      invalid('clip.setMask: type must be "clip" or "alpha"')
+    for (const name of ['feather', 'opacity'] as const) {
+      if (fields[name] !== undefined && !finiteIn(fields[name], 0, 100))
+        invalid(`clip.setMask: ${name} must be a number from 0 to 100`)
+    }
+    if (fields.invert !== undefined && typeof fields.invert !== 'boolean')
+      invalid('clip.setMask: invert must be a boolean')
+    // Turning a shape into a mask starts from the editor's defaults: a hard clip mask, no feather.
+    const current = wasMask
+      ? {
+          type: shape.maskType ?? 'clip',
+          feather: shape.maskFeather ?? 10,
+          opacity: shape.maskOpacity ?? 100,
+          invert: shape.maskInvert ?? false,
+        }
+      : { type: 'clip' as const, feather: 0, opacity: 100, invert: false }
+    const type = (fields.type as 'clip' | 'alpha' | undefined) ?? current.type
+    // A type change without a feather follows the editor: alpha keeps a soft edge (10 when none).
+    const feather =
+      (fields.feather as number | undefined) ??
+      (type === current.type ? current.feather : type === 'alpha' ? (current.feather > 0 ? current.feather : 10) : 0)
+    updateItem(item.id, {
+      isMask: true,
+      blendMode: 'normal',
+      maskType: type,
+      maskFeather: feather,
+      maskOpacity: (fields.opacity as number | undefined) ?? current.opacity,
+      maskInvert: (fields.invert as boolean | undefined) ?? current.invert,
+      ...(wasMask ? {} : { pathClosed: true }),
+      ...(path ? { pathVertices: path } : {}),
+    } as Partial<TimelineItem>)
+  },
+
+  // FL-348: point a placed clip (and its synchronised linked clips of the same media) at another
+  // library asset, as Freecut's orphaned-clip relink does, with explicit refusals.
+  'clip.relink'(payload, { fps, media }) {
+    for (const key of Object.keys(payload)) {
+      if (key !== 'clipId' && key !== 'assetId') invalid('clip.relink: unknown field')
+    }
+    const item = requireItem(stringField(payload, 'clipId'))
+    const assetId = stringField(payload, 'assetId')
+    if (!['video', 'audio', 'image'].includes(item.type) || !(item as { mediaId?: string }).mediaId)
+      invalid('clip.relink requires a library media clip')
+    const record = media.get(assetId)
+    if (!record) invalid(`assetId: "${assetId}" is not media this session may use`)
+    const kind = record!.mimeType.startsWith('image/')
+      ? 'image'
+      : record!.mimeType.startsWith('video/')
+        ? 'video'
+        : invalid(`assetId: unsupported media type ${record!.mimeType}`)
+    const mediaId = (item as { mediaId: string }).mediaId
+    const targets = getSynchronizedLinkedItems(items(), item.id).filter(
+      (member) => (member as { mediaId?: string }).mediaId === mediaId,
+    )
+    for (const target of targets) {
+      if (target.type === 'image' && kind !== 'image') invalid('assetId: an image clip needs an image')
+      if (target.type === 'video' && kind !== 'video') invalid('assetId: a video clip needs a video')
+      if (target.type === 'audio' && (kind !== 'video' || !record!.audioCodec))
+        invalid('assetId: an audio clip needs a video with sound')
+    }
+    assertUnlocked(
+      targets.map((target) => target.id),
+      'clip.relink',
+    )
+    if (mediaId === assetId) return
+    const round3 = (value: number) => Math.round(value * 1000) / 1000
+    for (const target of targets) {
+      const updates: Record<string, unknown> = {
+        mediaId: assetId,
+        label: record!.fileName,
+        thumbnailUrl: undefined,
+        waveformData: undefined,
+      }
+      if (target.type !== 'audio' && record!.width > 0 && record!.height > 0) {
+        updates.sourceWidth = record!.width
+        updates.sourceHeight = record!.height
+      }
+      if (target.type !== 'image') {
+        const clip = target as { sourceStart?: number; sourceEnd?: number; sourceFps?: number }
+        const rate = round3(record!.fps || fps)
+        const previous = clip.sourceFps ?? fps
+        const sourceDuration = Math.max(1, Math.round(record!.duration * rate))
+        const start = clip.sourceStart ?? 0
+        const end = clip.sourceEnd ?? start
+        // The same source window, carried to the new asset's rate when it differs.
+        const sourceStart = rate === previous ? start : Math.round((start * rate) / previous)
+        const sourceEnd = rate === previous ? end : Math.round((end * rate) / previous)
+        if (sourceEnd > sourceDuration || sourceEnd <= sourceStart)
+          failed("clip.relink: the asset does not cover the clip's source window")
+        Object.assign(updates, { sourceFps: rate, sourceDuration, sourceStart, sourceEnd })
+      }
+      updateItem(target.id, updates as Partial<TimelineItem>)
+    }
   },
 
   'composition.add'(payload) {

@@ -8,9 +8,9 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
+import { Transform, type Writable } from 'node:stream';
 import { finished as streamFinished, pipeline } from 'node:stream/promises';
 import { isDeepStrictEqual } from 'node:util';
-import type { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -30,6 +30,10 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioBundleUpload, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import {
+  STUDIO_BUNDLE_DOCUMENT_RESERVATION,
+  STUDIO_BUNDLE_EXPORT_RESERVATION,
+} from 'src/repositories/studio-storage-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
@@ -320,9 +324,28 @@ export class StudioBundleService {
     const placed = sequenceIds
       ? new Set(extractStudioResourceReferences(exportGraph).references.map((reference) => reference.id))
       : null;
-    const imports = (await this.projects.listImportDeclarations(authorized.project.id))
-      .map((item) => item.id)
-      .filter((id) => !placed || placed.has(id));
+    const importFiles = (await this.projects.listImportDeclarations(authorized.project.id)).filter(
+      (item) => !placed || placed.has(item.id),
+    );
+    const imports = importFiles.map((item) => item.id);
+    let mediaBytes = dto.includeMedia ? importFiles.reduce((total, item) => total + item.sizeBytes, 0) : 0;
+    for (const item of embed.values()) {
+      const path = authorized.manifest.entries.find((entry) => entry.key === item.key)?.path;
+      let bytes = STUDIO_BUNDLE_MAX_BYTES;
+      try {
+        if (path) bytes = (await this.storage.stat(path)).size;
+      } catch {
+        // Unmeasurable sources reserve the maximum; the worker revalidates them before reading.
+      }
+      mediaBytes += bytes;
+    }
+    // JSON staging plus the ZIP's media, documents, directory and compression overhead.
+    const storageReservationBytes =
+      STUDIO_BUNDLE_DOCUMENT_RESERVATION +
+      Math.min(
+        STUDIO_BUNDLE_MAX_BYTES,
+        Math.ceil(mediaBytes * 1.001) + STUDIO_BUNDLE_DOCUMENT_RESERVATION + 9 * 1024 ** 2,
+      );
 
     const snapshot: StudioBundleExportSnapshot = {
       kind: 'studio-bundle-export',
@@ -349,7 +372,7 @@ export class StudioBundleService {
       projectId: authorized.project.id,
       revisionId: authorized.revision.id,
       snapshot: snapshot as unknown as Record<string, unknown>,
-      settings: { includeMedia: snapshot.includeMedia, sequenceIds },
+      settings: { includeMedia: snapshot.includeMedia, sequenceIds, storageReservationBytes },
       estimate: null,
       totalUnits: null,
       maxAttempts: STUDIO_BUNDLE_MAX_ATTEMPTS,
@@ -427,16 +450,35 @@ export class StudioBundleService {
   /* Import: upload, review and submit                                    */
   /* ------------------------------------------------------------------ */
 
-  /**
-   * Register a bundle the account uploaded, after reading enough of it to trust its shape.
-   *
-   * The file is measured and digested, its directory is checked against every archive limit, and
-   * the manifest and project document are read and verified, all before a row exists. A file that
-   * fails any of that is deleted and refused with the reason. Media entries are only checked
-   * against their declared sizes here; their digests are verified by the import job, which can
-   * take its time over gigabytes where a request cannot.
-   */
-  async registerUpload(auth: AuthDto, file: Express.Multer.File | undefined): Promise<StudioBundleUploadDto> {
+  /** Reserve before the HTTP body is written; an interrupted upload stays charged until cleanup. */
+  async reserveUpload(auth: AuthDto, bytes: number): Promise<StudioBundleUpload> {
+    this.requireInteractive(auth);
+    if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > STUDIO_BUNDLE_MAX_BYTES)
+      throw new PayloadTooLargeException('Invalid Studio bundle upload size');
+    return this.projects.createUpload({
+      ownerId: auth.user.id,
+      path: join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
+      sizeBytes: bytes,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
+    });
+  }
+
+  async abortUpload(auth: AuthDto, id: string): Promise<void> {
+    const upload = await this.projects.getUpload(id, auth.user.id);
+    if (!upload) return;
+    await this.storage.unlink(upload.path);
+    await this.projects.deleteUpload(id, auth.user.id);
+  }
+
+  /** Validate the archive before converting its temporary reservation into a retained upload. */
+  async registerUpload(
+    auth: AuthDto,
+    file: Express.Multer.File | undefined,
+    reservationId?: string,
+  ): Promise<StudioBundleUploadDto> {
     this.requireInteractive(auth);
     if (!file?.path) {
       throw new BadRequestException('Choose a Studio bundle to upload');
@@ -460,7 +502,8 @@ export class StudioBundleService {
 
     let upload: StudioBundleUpload;
     try {
-      upload = await this.projects.createUpload({
+      if (!reservationId) throw new BadRequestException('Studio upload reservation required');
+      upload = await this.projects.finalizeUpload(reservationId, {
         ownerId: auth.user.id,
         path: file.path,
         sizeBytes: file.size,
@@ -487,11 +530,12 @@ export class StudioBundleService {
   /** Discard an upload now rather than at its expiry. */
   async deleteUpload(auth: AuthDto, id: string): Promise<void> {
     this.requireInteractive(auth);
-    const removed = await this.projects.deleteUpload(id, auth.user.id);
+    const removed = await this.projects.getUpload(id, auth.user.id);
     if (!removed) {
       throw new NotFoundException('Studio bundle upload not found');
     }
     await this.storage.unlink(removed.path);
+    await this.projects.deleteUpload(id, auth.user.id);
   }
 
   /**
@@ -687,8 +731,13 @@ export class StudioBundleService {
       this.logger.log(`Deleted ${purged.length} Studio projects whose time in the trash ran out`);
     }
 
-    for (const upload of await this.projects.deleteExpiredUploads(now)) {
+    for (const upload of await this.projects.listExpiredUploads(now)) {
       await this.storage.unlink(upload.path);
+      await this.projects.deleteUpload(upload.id, upload.ownerId);
+    }
+    for (const operation of await this.operations.listUnreleasedBundleExports()) {
+      await this.discardPartial(operation);
+      await this.operations.setFinishedResult(operation.id, { ...operation.result, storageReleased: true });
     }
 
     // FL-103 / FL-105: the files of projects deleted for good go with them.
@@ -902,7 +951,21 @@ export class StudioBundleService {
 
       const zip = this.storage.createZipStream();
       const output = this.storage.createWriteStream(partial);
-      const finished = pipeline(zip.stream, output);
+      let written = 0;
+      const bounded = new Transform({
+        transform(chunk, _encoding, callback) {
+          written += chunk.length;
+          callback(
+            written >
+              Number(operation.settings?.storageReservationBytes ?? STUDIO_BUNDLE_EXPORT_RESERVATION) -
+                STUDIO_BUNDLE_DOCUMENT_RESERVATION
+              ? new PayloadTooLargeException('Studio bundle exceeds its storage reservation')
+              : null,
+            chunk,
+          );
+        },
+      });
+      const finished = pipeline(zip.stream, bounded, output);
       // A throw below skips `await finished`; observe it now so it cannot go unhandled.
       void finished.catch(() => {});
 
@@ -958,6 +1021,7 @@ export class StudioBundleService {
     const folder = studioBundleFolder(operation.ownerId);
     await this.storage.unlink(join(folder, `${operation.id}.zip.partial`));
     await this.storage.unlink(join(folder, `${operation.id}.zip`));
+    await this.storage.unlinkDir(join(folder, `${operation.id}.staging`), { recursive: true, force: true });
   }
 
   /* ------------------------------------------------------------------ */
@@ -1288,38 +1352,58 @@ export class StudioBundleService {
           throw new BundleJobError('bundle_entry_missing', `${name.slice(0, 80)} is listed but not in the file`);
         }
         const staged = join(folder, `${randomUUID()}.upload`);
-        const output: Writable = this.storage.createWriteStream(staged);
+        const reservation = await this.projects.createUpload({
+          ownerId: owner.user.id,
+          path: staged,
+          sizeBytes: expected.bytes,
+          digest: '',
+          originalFileName: '',
+          manifest: {},
+          expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
+        });
         try {
-          const actual = await digestZipEntry(source, entry, {
-            onData: (chunk) =>
-              new Promise<void>((resolve, reject) =>
-                output.write(chunk, (error) => (error ? reject(error) : resolve())),
-              ),
-          });
-          output.end();
-          await streamFinished(output);
-          if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
-            throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
-          }
-        } catch (error) {
-          output.destroy();
-          await this.storage.unlink(staged);
-          throw error;
-        }
-        try {
-          // The upload path removes the staged file itself when it refuses it.
-          await this.imports.upload(owner, projectId, item.id, {
-            path: staged,
-            size: expected.bytes,
-            mimetype: item.contentType ?? '',
-            originalname: item.fileName ?? '',
-          } as Express.Multer.File);
-        } catch (error) {
-          if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
+          const output: Writable = this.storage.createWriteStream(staged);
+          try {
+            const actual = await digestZipEntry(source, entry, {
+              onData: (chunk) =>
+                new Promise<void>((resolve, reject) =>
+                  output.write(chunk, (error) => (error ? reject(error) : resolve())),
+                ),
+            });
+            output.end();
+            await streamFinished(output);
+            if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
+              throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
+            }
+          } catch (error) {
+            output.destroy();
+            await this.storage.unlink(staged);
             throw error;
           }
-          this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
-          refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
+          try {
+            // The upload path removes the staged file itself when it refuses it.
+            await this.imports.upload(
+              owner,
+              projectId,
+              item.id,
+              {
+                path: staged,
+                size: expected.bytes,
+                mimetype: item.contentType ?? '',
+                originalname: item.fileName ?? '',
+              } as Express.Multer.File,
+              reservation.id,
+            );
+          } catch (error) {
+            if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
+              throw error;
+            }
+            this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
+            refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
+          }
+        } finally {
+          await this.storage.unlink(staged);
+          await this.projects.deleteUpload(reservation.id, owner.user.id);
         }
       }
     });

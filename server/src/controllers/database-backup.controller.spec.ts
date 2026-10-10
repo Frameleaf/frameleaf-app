@@ -30,16 +30,24 @@ describe(DatabaseBackupController.name, () => {
     it('should not be an authenticated route', async () => {
       maintenanceService.startRestoreFlow.mockResolvedValue({ jwt: 'jwt' });
 
-      await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send();
+      await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send({ code: 'ABCD2345' });
 
       expect(ctx.authenticate).not.toHaveBeenCalled();
       expect(ctx.requireSetupAvailable).toHaveBeenCalled();
     });
 
+    it('requires a setup code before asking maintenance to restore', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send({});
+      expect(status).toBe(400);
+      expect(maintenanceService.startRestoreFlow).not.toHaveBeenCalled();
+    });
+
     it('should not start a restore when setup is unavailable', async () => {
       ctx.requireSetupAvailable.mockRejectedValue(new BadRequestException('Admin setup is not available'));
 
-      const { status, body } = await request(ctx.getHttpServer()).post('/admin/database-backups/start-restore').send();
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/admin/database-backups/start-restore')
+        .send({ code: 'ABCD2345' });
 
       expect(status).toEqual(400);
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));

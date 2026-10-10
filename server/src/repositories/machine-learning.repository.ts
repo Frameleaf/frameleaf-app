@@ -387,6 +387,48 @@ export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
  * `unreachable` when the request never got an answer, or `protocol-error` when the answer
  * could not be trusted (missing or mismatched result, or a file that failed its hash).
  */
+/**
+ * The model Studio captions ask for (owner decision 2026-10-09: Whisper). The worker maps it to its own
+ * choice: whisper-large-v3-turbo on a CUDA GPU, whisper-small otherwise, or what its administrator set.
+ */
+export const TRANSCRIBE_MODEL_NAME = 'frameleaf-transcribe';
+
+/** The worker cannot transcribe: no `/transcribe` route, no Whisper runtime or the model is unavailable. */
+export class TranscriptionUnavailableError extends Error {}
+
+const transcriptWordSchema = z.object({
+  start: z.number().min(0).max(1e6),
+  end: z.number().min(0).max(1e6),
+  text: z.string().max(512),
+});
+
+/** One line of a worker's `/transcribe` stream (machine-learning/immich_ml/main.py). */
+export const transcriptStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('info'),
+    model: z.string().max(128),
+    language: z.string().max(16),
+    languageProbability: z.number().min(0).max(1),
+    duration: z.number().min(0).max(1e6),
+  }),
+  z.object({
+    type: z.literal('segment'),
+    start: z.number().min(0).max(1e6),
+    end: z.number().min(0).max(1e6),
+    text: z.string().max(4096),
+    words: z.array(transcriptWordSchema).max(2048),
+  }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+export type TranscriptStreamItem = z.infer<typeof transcriptStreamItemSchema>;
+export type TranscriptSegment = Extract<TranscriptStreamItem, { type: 'segment' }>;
+export type TranscriptInfo = Extract<TranscriptStreamItem, { type: 'info' }>;
+
+/** A stream line above this is not a transcript; the whole answer is bounded too. */
+const TRANSCRIPT_LINE_BYTES = 256 * 1024;
+const TRANSCRIPT_TOTAL_BYTES = 64 * 1024 * 1024;
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -585,6 +627,117 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
     await this.authorize({ url });
     return Buffer.from(result.inpaint.png, 'base64');
+  }
+
+  /**
+   * Studio captions (protocol 15.1): send one clip's audio, a 16 kHz mono 16-bit PCM WAV at `wavPath`, to
+   * exactly the admitted local or LAN destination and read its `/transcribe` stream. `onSegment` is
+   * called as each segment arrives, so the caller can report progress; aborting `signal` closes the
+   * connection, which stops the worker at its next segment. Answers the stream's `info` and segments.
+   */
+  async transcribe(
+    selection: MlSelection,
+    wavPath: string,
+    options: { language: string | null },
+    signal: AbortSignal,
+    onSegment: (segment: TranscriptSegment) => void,
+  ): Promise<{ info: TranscriptInfo; segments: TranscriptSegment[] }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    const { size: bytesSent } = await stat(wavPath);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    const entryOptions = { wordTimestamps: true, ...(options.language && { language: options.language }) };
+    form.append(
+      'entries',
+      JSON.stringify({ transcribe: { audio: { modelName: TRANSCRIBE_MODEL_NAME, options: entryOptions } } }),
+    );
+    form.append('audio', await openAsBlob(wavPath, { type: 'audio/wav' }), 'audio.wav');
+
+    let info: TranscriptInfo | undefined;
+    const segments: TranscriptSegment[] = [];
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('transcribe', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new TranscriptionUnavailableError(`The worker cannot transcribe (${response.status})`);
+        }
+        throw new Error(`The transcription worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The transcription worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      let finished = false;
+      const handle = (line: Buffer) => {
+        if (line.length === 0) {
+          return;
+        }
+        const item = transcriptStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'info': {
+            info ??= item;
+
+            break;
+          }
+          case 'segment': {
+            if (!info) throw new Error('The transcription worker sent a segment before its info');
+            segments.push(item);
+            onSegment(item);
+
+            break;
+          }
+          case 'error': {
+            throw new Error(`The transcription worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > TRANSCRIPT_TOTAL_BYTES) throw new Error('The transcript is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > TRANSCRIPT_LINE_BYTES) throw new Error('A transcript line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || !info) {
+        throw new Error('The transcription worker stopped before it finished');
+      }
+      await this.authorize(selection.endpoint);
+    } catch (error) {
+      this.probeCache.delete(selection.endpoint.url);
+      record('failure');
+      throw error;
+    }
+    record('success');
+    return { info, segments };
   }
 
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */

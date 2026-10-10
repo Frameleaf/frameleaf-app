@@ -1313,6 +1313,12 @@ export enum MediaOperationKind {
   /** Internal local source-level reversal; not a timeline clip command. */
   StudioReverseConform = 'studio_reverse_conform',
   /**
+   * Speech to text for one Studio clip (protocol 15.1, owner decision 2026-10-09: Whisper). The clip's
+   * audio is read on this server and sent only to the ML destination named at submit; the cues are
+   * the job's result, and nothing else is kept once it settles.
+   */
+  StudioTranscription = 'studio_transcription',
+  /**
    * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
    * claim streams to the browser that opened it, signalled and authorised through the server. It
    * lives as long as its lease, its keepalive and its bound allow, and never produces a file.

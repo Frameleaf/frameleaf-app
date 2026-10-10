@@ -245,6 +245,22 @@ describe(PetService.name, () => {
     });
   });
 
+  it('passes suppressed-person visibility to detail counts and observations', async () => {
+    const hiddenContent = {
+      userId: ownerId,
+      personIds: ['hidden-person'],
+      petIds: [],
+      tagIds: [],
+      includeNsfw: false,
+      scope: 'owned' as const,
+    };
+    const auth = { ...authStub.user1, hiddenContent };
+    await sut.get(auth, petId);
+    await sut.getObservations(auth, petId);
+    expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, { hiddenContent });
+    expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, { hiddenContent });
+  });
+
   describe('Locked media (FL-34)', () => {
     it('counts, lists and proposes the caller’s Locked media only in an elevated session', async () => {
       const elevated = { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } as AuthSession };
@@ -259,8 +275,11 @@ describe(PetService.name, () => {
         ...locked,
         revealLockedOwnerId: ownerId,
       });
-      expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, locked);
-      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, locked);
+      expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, { ...locked, revealLockedOwnerId: ownerId });
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, {
+        ...locked,
+        revealLockedOwnerId: ownerId,
+      });
       expect(petRepository.getCandidates).toHaveBeenCalledWith(ownerId, 10, locked);
     });
 

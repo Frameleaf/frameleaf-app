@@ -25,7 +25,14 @@ import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
 import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
-import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import {
+  anyUuid,
+  asUuid,
+  dummy,
+  withAlbumVisibility,
+  withDefaultVisibility,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface AlbumAssetCount {
@@ -230,6 +237,26 @@ export class AlbumRepository {
         .groupBy('album_asset.albumId')
         .execute()
     );
+  }
+  /**
+   * FL-349: the few items a shared space shows someone invited to it, newest first. Only Timeline and
+   * Archive media that is not Locked (so never hidden motion parts), never trashed, and never media
+   * marked sensitive, whoever owns it: the same reading as the preview counts.
+   */
+  async getSpacePreviewAssetIds(albumId: string, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .$call((qb) => withDefaultVisibility(qb))
+      .$call((qb) => withHiddenContentFilter(qb, { excludeNsfw: true }))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .select('asset.id')
+      .where('album_asset.albumId', '=', albumId)
+      .where('asset.deletedAt', 'is', null)
+      .orderBy('asset.fileCreatedAt', 'desc')
+      .orderBy('asset.id', 'asc')
+      .limit(limit)
+      .execute();
+    return rows.map(({ id }) => id);
   }
   private buildAlbumBaseQuery(
     ownerId: string,

@@ -1168,7 +1168,11 @@ function signImages(images, manifestFile, run = execFileSync) {
 function releaseFlagsBody(body, { rolloutPercent, withdrawnReason } = {}) {
   let text = (body || "")
     .split("\n")
-    .filter((line) => !/^[ \t]*(?:rollout|withdrawn):/i.test(line))
+    .filter(
+      (line) =>
+        !/^[ \t]*rollout:/i.test(line) &&
+        !(withdrawnReason !== undefined && /^[ \t]*withdrawn:/i.test(line)),
+    )
     .join("\n")
     .replace(/^\n+|\n+$/g, "");
   const flags = [];

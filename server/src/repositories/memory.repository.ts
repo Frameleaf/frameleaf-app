@@ -270,6 +270,18 @@ export class MemoryRepository implements IBulkAsset {
           ]),
         ),
       )
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('memory_asset')
+            .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
+            .select('memory_asset.memoriesId')
+            .whereRef('memory_asset.memoriesId', '=', 'memory.id')
+            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+            .where('asset.deletedAt', 'is', null)
+            .$call((qb) => withMemoryAssetFilters(qb, options)),
+        ),
+      )
       .where((eb) => withoutPrivateOnlyMemories(eb, options))
       .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options));
   }

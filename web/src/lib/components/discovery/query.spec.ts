@@ -47,6 +47,18 @@ describe('discovery query', () => {
     expect(readDiscoveryQuery(url)).toEqual(source);
   });
 
+  it('round-trips the panorama and screenshot destinations (FL-349)', () => {
+    const source = query({ isPanorama: { eq: true }, or: [{ isScreenshot: { eq: true } }] });
+    const url = new URL(`http://localhost${discoveryUrl(source)}`);
+    expect(readDiscoveryQuery(url)).toEqual(source);
+    const malformed = new URL('http://localhost/discover');
+    malformed.searchParams.set(
+      'dq',
+      JSON.stringify({ ...source, version: 1, filter: { isScreenshot: { eq: 'yes' } } }),
+    );
+    expect(readDiscoveryQuery(malformed)).toEqual(emptyDiscoveryQuery());
+  });
+
   it('falls back to the empty query for a missing, unversioned or unparsable value', () => {
     expect(readDiscoveryQuery(new URL('http://localhost/discover'))).toEqual(emptyDiscoveryQuery());
     expect(readDiscoveryQuery(new URL('http://localhost/discover?dq=not-json'))).toEqual(emptyDiscoveryQuery());

@@ -100,19 +100,13 @@ test("the pinned release database is replaced only in disposable compose for arc
       assert.equal(result.image.id, "sha256:local-image-id");
     } else {
       assert.deepEqual(loaded, []);
-      assert.deepEqual(calls, [
-        {
-          command: "docker",
-          args: [
-            "build",
-            "--quiet",
-            "--tag",
-            "frameleaf-postgres:deploy-test",
-            "/source/docker/postgres",
-          ],
-          options: { stdio: ["ignore", "pipe", "inherit"] },
-        },
-      ]);
+      assert.deepEqual(
+        calls.map(({ command, args }) => [command, ...args]),
+        [
+          ["docker", "pull", "--quiet", reference],
+          ["docker", "tag", reference, "frameleaf-postgres:deploy-test"],
+        ],
+      );
     }
     assert.equal(
       fs.readFileSync(filename, "utf8"),
@@ -359,6 +353,12 @@ test("release bodies carry the rollout and withdrawal lines servers read", () =>
       withdrawnReason: " Upgrade\nfails ",
     }),
     "withdrawn: Upgrade fails\n\nNotes\n",
+  );
+  assert.equal(
+    releaseFlagsBody("withdrawn: broken upgrade\nrollout: 25%\n\nNotes", {
+      rolloutPercent: 60,
+    }),
+    "rollout: 60%\n\nwithdrawn: broken upgrade\n\nNotes\n",
   );
   assert.throws(() => releaseFlagsBody("Notes", { withdrawnReason: "" }));
   assert.throws(() => releaseFlagsBody("Notes", { rolloutPercent: 101 }));

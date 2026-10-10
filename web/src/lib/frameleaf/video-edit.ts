@@ -324,7 +324,7 @@ export function fastTrimBounds(
 
 /** `00:12.4`, the prototype's `precise` time. */
 export const preciseTime = (seconds: number) => {
-  const safe = Math.max(0, seconds || 0);
+  const safe = Math.round(Math.max(0, seconds || 0) * 10) / 10;
   const minutes = Math.floor(safe / 60);
   const rest = safe - minutes * 60;
   return `${String(minutes).padStart(2, '0')}:${rest.toFixed(1).padStart(4, '0')}`;

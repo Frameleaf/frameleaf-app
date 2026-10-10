@@ -16,6 +16,8 @@ export const pinCodeRegex = /^\d{6}$/;
 
 export type AuthDto = {
   user: AuthUser;
+  /** Internal durable worker authority; never populated from a request. */
+  system?: true;
   apiKey?: AuthApiKey;
   sharedLink?: AuthSharedLink;
   session?: AuthSession;

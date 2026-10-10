@@ -117,7 +117,9 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioMediaService } from 'src/services/studio-media.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
@@ -126,6 +128,7 @@ import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -270,13 +273,16 @@ export const services = [
   StudioPreviewStreamService,
   StorageService,
   StorageTemplateService,
+  StudioMediaService,
   StudioBundleService,
   StudioProjectImportService,
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
+  StudioTranscriptionService,
   StudioResourceService,
   StudioRevocationService,
+  StudioCatalogService,
   StudioWorkspaceService,
   SyncService,
   SystemConfigService,

@@ -60,6 +60,7 @@ describe('logging interceptor redaction (FL-81)', () => {
     const body = {
       token: 'maintenance-jwt',
       password: 'hunter2',
+      appleId: 'private@example.com',
       newPassword: 'hunter3',
       pinCode: '123456',
       credential: { apiKey: 'api-key', clientSecret: 'oauth' },
@@ -68,6 +69,7 @@ describe('logging interceptor redaction (FL-81)', () => {
     expect(JSON.parse(JSON.stringify(body, replacer))).toEqual({
       token: '********',
       password: '********',
+      appleId: '********',
       newPassword: '********',
       pinCode: '********',
       credential: { apiKey: '********', clientSecret: '********' },

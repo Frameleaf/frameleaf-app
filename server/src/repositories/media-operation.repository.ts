@@ -17,6 +17,11 @@ import { publicationTransaction } from 'src/queue/transaction.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
+import {
+  STUDIO_BUNDLE_DOCUMENT_RESERVATION,
+  STUDIO_BUNDLE_EXPORT_RESERVATION,
+  assertStudioStorageAdmission,
+} from 'src/repositories/studio-storage-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -251,6 +256,42 @@ export class MediaOperationRepository {
   }
   async create(operation: MediaOperationCreate): Promise<MediaOperation> {
     const row = await this.write(async (db) => {
+      if (operation.kind === MediaOperationKind.StudioBundleExport) {
+        await assertStudioStorageAdmission(db, operation.ownerId, 0);
+        const existing = await db
+          .selectFrom('media_operation')
+          .selectAll()
+          .where('ownerId', '=', operation.ownerId)
+          .where('kind', '=', operation.kind)
+          .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+          .$if(!!operation.retryOfId, (qb) => qb.where('retryOfId', '=', operation.retryOfId!))
+          .where(sql<boolean>`snapshot = ${JSON.stringify(operation.snapshot)}::jsonb`)
+          .executeTakeFirst();
+        if (existing) return existing;
+        const key = operation.snapshot?.requestKey;
+        if (key && !operation.retryOfId) {
+          const keyed = await db
+            .selectFrom('media_operation')
+            .selectAll()
+            .where('ownerId', '=', operation.ownerId)
+            .where('kind', '=', operation.kind)
+            .where(sql<string>`snapshot->>'requestKey'`, '=', String(key))
+            .executeTakeFirst();
+          if (keyed) {
+            if (canonicalJson(keyed.snapshot) !== canonicalJson(operation.snapshot))
+              throw new ConflictException('This request key was already used for another export');
+            return keyed;
+          }
+        }
+        const reservation = Number(operation.settings?.storageReservationBytes ?? STUDIO_BUNDLE_EXPORT_RESERVATION);
+        if (
+          !Number.isSafeInteger(reservation) ||
+          reservation <= STUDIO_BUNDLE_DOCUMENT_RESERVATION ||
+          reservation > STUDIO_BUNDLE_EXPORT_RESERVATION
+        )
+          throw new ConflictException('Invalid Studio export reservation');
+        await assertStudioStorageAdmission(db, operation.ownerId, reservation, 'export');
+      }
       await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
       const created = await db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
@@ -649,6 +690,17 @@ export class MediaOperationRepository {
       .orderBy('finishedAt', 'asc')
       .limit(limit)
       .execute()) as unknown as Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>;
+  }
+  async listUnreleasedBundleExports(limit = 200): Promise<MediaOperation[]> {
+    return this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('kind', '=', MediaOperationKind.StudioBundleExport)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .where('status', '!=', MediaOperationStatus.Completed)
+      .where(sql<boolean>`result->>'storageReleased' IS DISTINCT FROM 'true'`)
+      .limit(limit)
+      .execute() as unknown as Promise<MediaOperation[]>;
   }
   /** Replace the result of a job no worker holds. Used by sweeps on finished jobs only. */
   async setFinishedResult(id: string, result: Record<string, unknown>): Promise<boolean> {

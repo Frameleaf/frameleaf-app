@@ -1,7 +1,8 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, AssetPathType, AssetType, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetPathType, AssetType, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -42,6 +43,53 @@ describe(StorageTemplateService.name, () => {
     mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: true } });
 
     sut.onConfigInit({ newConfig: defaults });
+  });
+
+  describe('storage migration (FL-349)', () => {
+    const counts = { active: 0, completed: 3, failed: 0, delayed: 0, waiting: 0, paused: 0 };
+
+    it('reports the template and where the migration queue stands', async () => {
+      mocks.job.isActive.mockResolvedValue(true);
+      mocks.job.isPaused.mockResolvedValue(false);
+      mocks.job.hasUnfinishedWork.mockResolvedValue(true);
+      mocks.job.getJobCounts.mockResolvedValue({ ...counts, active: 1 });
+
+      await expect(sut.getMigrationStatus()).resolves.toEqual({
+        enabled: true,
+        template: defaults.storageTemplate.template,
+        isActive: true,
+        isPaused: false,
+        hasUnfinishedWork: true,
+        statistics: { ...counts, active: 1 },
+      });
+      expect(mocks.job.getJobCounts).toHaveBeenCalledWith(QueueName.StorageTemplateMigration);
+    });
+
+    it('starts the migration job in the background', async () => {
+      mocks.job.isActive.mockResolvedValue(false);
+      mocks.job.isPaused.mockResolvedValue(false);
+      mocks.job.hasUnfinishedWork.mockResolvedValue(true);
+      mocks.job.getJobCounts.mockResolvedValue({ ...counts, waiting: 1 });
+
+      const status = await sut.runMigration();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageTemplateMigration });
+      expect(status).toEqual(expect.objectContaining({ enabled: true, hasUnfinishedWork: true }));
+    });
+
+    it('refuses to start while the storage template is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
+
+      await expect(sut.runMigration()).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start a second run while one is running', async () => {
+      mocks.job.isActive.mockResolvedValue(true);
+
+      await expect(sut.runMigration()).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
   });
 
   describe('onConfigValidate', () => {
@@ -170,7 +218,7 @@ describe(StorageTemplateService.name, () => {
           .filter((move) => move.pathType === AssetFileType.Sidecar)
           .map((move) => move.newPath);
 
-      it('moves its sidecar to its own template path and leaves the shared original', async () => {
+      it('keeps its per-asset sidecar path when its shared original cannot reserve a template path', async () => {
         const asset = AssetFactory.from({
           physicalOriginalFileId: 'physical-file-id',
           originalPath: '/data/library/primary-owner/2022/2022-06-19/shared.jpg',
@@ -179,7 +227,6 @@ describe(StorageTemplateService.name, () => {
           .file({ type: AssetFileType.Sidecar, path: '/data/upload/own/sidecar.xmp' })
           .exif()
           .build();
-        const ownPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
         mocks.user.get.mockResolvedValue(userStub.user1);
         mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
         mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
@@ -187,7 +234,7 @@ describe(StorageTemplateService.name, () => {
         await sut.handleMigrationSingle({ id: asset.id });
 
         expect(await movedOriginals()).toEqual([]);
-        expect(sidecarMoves()).toEqual([`${ownPath}.xmp`]);
+        expect(sidecarMoves()).toEqual([]);
       });
 
       it("never moves its sidecar onto the primary owner's sidecar beside the shared original", async () => {
