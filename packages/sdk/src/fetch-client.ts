@@ -1903,6 +1903,10 @@ export type BackupRestoreVerificationRecordDto = {
     /** Original files restored and their checksums were verified */
     originals: boolean;
 };
+export type FrameleafSetupCodeDto = {
+    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
+    code: string;
+};
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
@@ -12633,10 +12637,6 @@ export type FrameleafSetupErrorDto = {
     /** What went wrong, in words a person can act on */
     message: string;
     statusCode: number;
-};
-export type FrameleafSetupCodeDto = {
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
-    code: string;
 };
 export type FrameleafSetupTicketResponseDto = {
     /** When the ticket stops working */
