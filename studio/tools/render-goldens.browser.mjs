@@ -15,7 +15,7 @@ import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference } from './ascii-reference.mjs';
+import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
 import {
   GOLDENS_FORMAT, GOLDENS_VERSION, EFFECT_SIZE, TRANSITION_SIZE, GPU_TRANSITIONS, PROGRESS_CURVE_CASES,
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
@@ -252,9 +252,14 @@ if (!write) {
       let expected = decodeBuffer(g.output.data, g.output.encoding);
       if (kind === 'effects' && g.id === 'gpu-ascii' && asciiAtlasSpec(g.params)) {
         validateAsciiAtlas(results[i].atlas, results[i].referenceAtlas, g.params);
-        expected = renderAsciiReference(effectSdrInput(), EFFECT_SIZE.width, EFFECT_SIZE.height, g.params, results[i].atlas);
+        const guarded = [];
+        const reference = renderAsciiReference(effectSdrInput(), EFFECT_SIZE.width, EFFECT_SIZE.height, g.params, results[i].atlas, guarded);
+        // Coverage under the transparent-mode division guard: RGB must lie on the equations' own segment.
+        const settled = settleAsciiGuard(reference, results[i].pixels, guarded);
+        expected = settled.expected;
         atlasEvidence.push({ caseIndex: i, key: asciiAtlasSpec(g.params).key, width: results[i].atlas.width, height: results[i].atlas.height,
-          sha256: sha256(Buffer.from(results[i].atlas.data)), referenceSha256: sha256(Buffer.from(results[i].referenceAtlas.data)) });
+          sha256: sha256(Buffer.from(results[i].atlas.data)), referenceSha256: sha256(Buffer.from(results[i].referenceAtlas.data)),
+          guardPixels: settled.pixels });
       }
       const result = compareCase({ ...g, expected }, results[i].pixels);
       if (!result.pass) {

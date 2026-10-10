@@ -48,7 +48,16 @@ function color(value, fallback) {
     : [0, 2, 4].map((i) => parseInt(digits.slice(i, i + 2), 16))).map((x) => f(x / 255));
 }
 
-export function renderAsciiReference(input, width, height, params, atlas) {
+// Step 11 divides by max(alpha, 0.0001). With no underlay, RGB below that guard is Gc·ink/0.0001:
+// a coverage change of 1e-6, far under one atlas byte and inside what a bilinear sampler's weight
+// precision leaves open at an exact texel centre, moves RGB by 0.01 while alpha stays near 0.
+export const ASCII_ALPHA_GUARD = 0.0001;
+
+/**
+ * `guarded` receives every pixel whose reference coverage is under the guard with no underlay,
+ * with the glyph colour the equations reach at the guard (settleAsciiGuard).
+ */
+export function renderAsciiReference(input, width, height, params, atlas, guarded = []) {
   const spec = asciiAtlasSpec(params);
   checkAtlas(atlas, spec);
   assert(Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0, 'ASCII input size');
@@ -106,10 +115,35 @@ export function renderAsciiReference(input, width, height, params, atlas) {
     const glyphColor = params.matchSourceColor ? sample.map((v) => clamp(add(lum, mul(add(v, -lum), saturation)))) : text;
     if (params.transparentBg) {
       const under = mul(underOpacity, add(1, -ink)), alpha = add(ink, under);
-      const rgb = glyphColor.map((v, c) => f(add(mul(v, ink), mul(a[c], under)) / Math.max(alpha, 0.0001)));
+      const rgb = glyphColor.map((v, c) => f(add(mul(v, ink), mul(a[c], under)) / Math.max(alpha, ASCII_ALPHA_GUARD)));
+      if (underOpacity === 0 && alpha < ASCII_ALPHA_GUARD) guarded.push({ pixel: y * width + x, limit: [...glyphColor] });
       out.push(...rgb, mul(base[3], alpha));
     } else out.push(...mix(back, glyphColor, ink), base[3]);
   }
   assert(out.every(Number.isFinite), 'ASCII reference output must be finite');
   return out.map(roundHalf);
+}
+
+/**
+ * Under the guard the equations give RGB = t·Gc with t = ink / 0.0001 in [0, 1], and the sampler
+ * decides t. For each guarded pixel the expectation becomes the point of that segment nearest the
+ * rendered colour, so a colour off the segment still fails. A rendered t below 1 must come with a
+ * rendered alpha under the guard; otherwise the pixel keeps its reference colour. Alpha is never
+ * changed here: the comparison rule checks it as before.
+ */
+export function settleAsciiGuard(expected, actual, guarded) {
+  assert.equal(actual?.length, expected.length, 'ASCII guard needs a complete frame');
+  const settled = [...expected];
+  const pixels = [];
+  for (const { pixel, limit } of guarded) {
+    const at = pixel * 4;
+    const got = actual.slice(at, at + 4);
+    assert(got.every(Number.isFinite), 'ASCII guard needs finite pixels');
+    const span = limit.reduce((sum, v) => sum + v * v, 0);
+    const t = span > 0 ? clamp(limit.reduce((sum, v, c) => sum + v * got[c], 0) / span) : 0;
+    if (t === 0 || (t < 1 && got[3] > ASCII_ALPHA_GUARD)) continue;
+    limit.forEach((v, c) => { settled[at + c] = roundHalf(v * t); });
+    pixels.push({ pixel, t, alpha: got[3] });
+  }
+  return { expected: settled, pixels };
 }
