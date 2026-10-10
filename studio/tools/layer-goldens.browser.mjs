@@ -206,6 +206,11 @@ export async function runLayerGoldens({ write = false, probe = false } = {}) {
         tolerance.class = tolerance.outliers <= 0.1 * stored.length && tolerance.meanAbs <= 0.02 ? 'edge' : 'statistical';
         tolerance.projective = exact.measured;
       }
+      // Frames are 8-bit: a tolerance is a whole number of code values, compared half a code above it, so
+      // that a channel exactly n codes away never depends on how k/255 differences round in binary64, and a
+      // value on an 8-bit rounding boundary may land on either side on another CPU (layers.md, Goldens).
+      tolerance.codes = Math.ceil(tolerance.abs * 255 - 1e-9);
+      tolerance.abs = Math.min(0.25, (tolerance.codes + 0.5) / 255);
       return { name: c.name, class: c.class, frame: c.frame, reference: c.reference, ...(c.route ? { route: c.route } : {}), size: { width: c.graph.metadata.width, height: c.graph.metadata.height },
         graph: c.graph, outcome: 'rendered', tolerance, floatRoute, output: { encoding: ENCODING, data: encodeBuffer(r.pixels, ENCODING) } };
     }),
