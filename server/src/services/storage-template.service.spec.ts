@@ -218,7 +218,7 @@ describe(StorageTemplateService.name, () => {
           .filter((move) => move.pathType === AssetFileType.Sidecar)
           .map((move) => move.newPath);
 
-      it('moves its sidecar to its own template path and leaves the shared original', async () => {
+      it('keeps its per-asset sidecar path when its shared original cannot reserve a template path', async () => {
         const asset = AssetFactory.from({
           physicalOriginalFileId: 'physical-file-id',
           originalPath: '/data/library/primary-owner/2022/2022-06-19/shared.jpg',
@@ -227,7 +227,6 @@ describe(StorageTemplateService.name, () => {
           .file({ type: AssetFileType.Sidecar, path: '/data/upload/own/sidecar.xmp' })
           .exif()
           .build();
-        const ownPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
         mocks.user.get.mockResolvedValue(userStub.user1);
         mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
         mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
@@ -235,7 +234,7 @@ describe(StorageTemplateService.name, () => {
         await sut.handleMigrationSingle({ id: asset.id });
 
         expect(await movedOriginals()).toEqual([]);
-        expect(sidecarMoves()).toEqual([`${ownPath}.xmp`]);
+        expect(sidecarMoves()).toEqual([]);
       });
 
       it("never moves its sidecar onto the primary owner's sidecar beside the shared original", async () => {

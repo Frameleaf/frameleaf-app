@@ -446,6 +446,11 @@ export class ICloudSyncRepository {
     return this.active(async (db) => {
       // Admission and disk reservation share one lock across accounts and workers.
       await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(db);
+      // Repair reservations leaked by earlier workers only when no staged file remains.
+      await sql`UPDATE public.icloud_resource SET "reservedBytes"=0 WHERE "reservedBytes">0
+        AND "leaseToken" IS NULL AND "stagingPath" IS NULL AND "auditRequestId" IS NULL
+        AND status IN ('needs-review','preserve-trashed','unsupported','failed')`.execute(db);
+
       const connection =
         await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE id=${connectionId}::uuid FOR UPDATE`
           .execute(db)
@@ -581,7 +586,12 @@ export class ICloudSyncRepository {
           .then((result) => result.rows.length)) > 0,
     );
   }
-  async finish(resource: ICloudResource, status: string, error: string | null = null): Promise<void> {
+  async finish(
+    resource: ICloudResource,
+    status: string,
+    error: string | null = null,
+    cleanup?: (current: ICloudResource) => Promise<void>,
+  ): Promise<void> {
     const committedFailure = status === 'committed' && error !== null;
     await this.active(async (db) => {
       if (committedFailure) {
@@ -589,13 +599,24 @@ export class ICloudSyncRepository {
           db,
         );
       }
+      const current = await sql<ICloudResource>`SELECT * FROM public.icloud_resource WHERE id=${resource.id}::uuid
+        AND "leaseToken"=${resource.leaseToken}::uuid FOR UPDATE`
+        .execute(db)
+        .then(({ rows }) => rows[0]);
+      if (!current) return;
+      const terminal =
+        ['finalized', 'needs-review', 'preserve-trashed', 'unsupported', 'failed'].includes(status) ||
+        (status === 'retry' && current.attempts >= 7);
+      const release = terminal && (!current.stagingPath || !!cleanup);
+      if (terminal && current.stagingPath && cleanup) await cleanup(current);
       const { rows } = await sql<{
         attempts: number;
       }>`UPDATE public.icloud_resource SET status = CASE WHEN ${status}='retry' AND attempts >= 7 THEN 'failed' ELSE ${status} END, "lastError" = ${error}, "leaseToken" = NULL,
         "leaseExpiresAt" = NULL, "attempts" = "attempts" + CASE WHEN ${status} = 'retry' OR ${committedFailure} THEN 1 ELSE 0 END,
         "nextAttemptAt" = CASE WHEN ${status} = 'retry' OR (${status}='committed' AND ${error}::text IS NOT NULL)
           THEN now() + interval '1 minute' * least(1440, power(2, "attempts" + 1)) * (0.75 + random()*0.5) ELSE NULL END,
-        "reservedBytes" = CASE WHEN ${status} = 'finalized' THEN 0 ELSE "reservedBytes" END, "updatedAt" = now()
+        "reservedBytes" = CASE WHEN ${release} THEN 0 ELSE "reservedBytes" END,
+        "stagingPath" = CASE WHEN ${release} THEN NULL ELSE "stagingPath" END, "updatedAt" = now()
         WHERE id = ${resource.id}::uuid AND "leaseToken" = ${resource.leaseToken}::uuid RETURNING attempts`.execute(db);
       if (committedFailure && (rows[0]?.attempts ?? 0) >= 8) {
         await sql`UPDATE public.icloud_connection SET state='error',"lastError"='icloud_finalization_failed',"nextRunAt"=NULL

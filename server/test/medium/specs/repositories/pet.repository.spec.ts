@@ -25,6 +25,42 @@ beforeAll(async () => {
 });
 
 describe(PetRepository.name, () => {
+  it('filters suppressed people from detail counts and returned observations', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+    const pet = await sut.create({ ownerId: user.id, name: 'Biscuit' });
+    await sut.upsertObservation({ petId: pet.id, assetId: asset.id, state: PetObservationState.Confirmed });
+    const options = {
+      hiddenContent: {
+        userId: user.id,
+        personIds: [person.personGroupId],
+        petIds: [],
+        tagIds: [],
+        includeNsfw: false,
+        scope: 'owned' as const,
+      },
+    };
+    expect((await sut.getById(user.id, pet.id, options))!.assetCount).toBe(0);
+    expect(await sut.getObservations(user.id, pet.id, options)).toEqual([]);
+    expect((await sut.getById(user.id, pet.id))!.assetCount).toBe(1);
+    expect(await sut.getObservations(user.id, pet.id)).toHaveLength(1);
+  });
+
+  it('leaves trashed photos out of detail counts and observations while preserving merge inputs', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+    const pet = await sut.create({ ownerId: user.id, name: 'Biscuit' });
+    await sut.upsertObservation({ petId: pet.id, assetId: asset.id, state: PetObservationState.Confirmed });
+    expect((await sut.getById(user.id, pet.id))!.assetCount).toBe(0);
+    expect((await sut.getAll(user.id, { withHidden: false }))[0].assetCount).toBe(0);
+    expect(await sut.getObservations(user.id, pet.id)).toEqual([]);
+    expect(await sut.getObservations(user.id, pet.id, { withLocked: true })).toHaveLength(1);
+  });
+
   it('stores recognition runs and source revisions in the canonical schema', async () => {
     const { rows } = await sql<{
       name: string | null;
