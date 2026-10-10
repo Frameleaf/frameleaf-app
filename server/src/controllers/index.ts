@@ -79,6 +79,7 @@ import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
+import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioPreviewStreamController } from 'src/controllers/studio-preview-stream.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
@@ -184,6 +185,7 @@ export const controllers = [
   SharedSpaceController,
   StackController,
   StorageMigrationAdminController,
+  StudioMediaController,
   StudioBundleController,
   StudioExportController,
   StudioPreviewController,
