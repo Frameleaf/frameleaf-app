@@ -15,7 +15,8 @@ import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard } from './ascii-reference.mjs';
+import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard, ASCII_ATLASES_FORMAT, encodeAsciiAtlas } from './ascii-reference.mjs';
+import { runKeyframeGoldens } from './keyframe-goldens.browser.mjs';
 import { runLayerGoldens } from './layer-goldens.browser.mjs';
 import { runTextGoldens } from './text-goldens.browser.mjs';
 import {
@@ -23,6 +24,7 @@ import {
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
   encodeBuffer, decodeBuffer, roundHalf, sha256, deriveTolerance, compareCase, validateGoldens,
 } from './render-goldens.mjs';
+import { runHdrGoldens } from './hdr-goldens.browser.mjs';
 
 const studio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(studio, 'engine/package.json'));
@@ -73,7 +75,7 @@ async function renderAll(args) {
     await page.route(`${origin}/render-goldens`, (route) => route.fulfill({ contentType: 'text/html', body: PAGE }));
     await page.goto(`${origin}/render-goldens`);
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
-    return await page.evaluate(async ({ E, T, effects, atlasSpecs, transitions, sdrInput, hdrInput, tA, tB, curveCases, gpuIds }) => {
+    return await page.evaluate(async ({ E, T, effects, atlasSpecs, transitions, sdrInput, hdrInput, tA, tB, curveCases, gpuIds, temporalIds }) => {
       const { EffectsPipeline, EFFECT_CLOCK_PARAM } = await import('/src/infrastructure/gpu-effects/index.ts');
       const { ascii } = await import('/src/infrastructure/gpu-effects/effects/stylize.ts');
       const { getGpuEffect } = await import('/src/infrastructure/gpu-effects/registry.ts');
@@ -145,7 +147,9 @@ async function renderAll(args) {
           }
           effectsPipeline.setWorkingRange(c.domain);
           const output = device.createTexture({ size: [E.width, E.height], format: 'rgba16float', usage });
-          const instance = { id: 'fx', type: c.id, name: c.id, enabled: true, params: { ...c.params, [EFFECT_CLOCK_PARAM]: c.clock } };
+          // As in production, only a temporal effect receives the effect clock (C8); the stored object is otherwise passed as it is.
+          const instance = { id: 'fx', type: c.id, name: c.id, enabled: true,
+            params: temporalIds.includes(c.id) ? { ...c.params, [EFFECT_CLOCK_PARAM]: c.clock } : { ...c.params } };
           try {
             device.pushErrorScope('validation');
             let accepted;
@@ -222,6 +226,7 @@ async function renderAll(args) {
       sdrInput: effectSdrInput(), hdrInput: effectHdrInput(),
       tA: transitionInputs().a, tB: transitionInputs().b,
       curveCases: PROGRESS_CURVE_CASES, gpuIds: GPU_TRANSITIONS,
+      temporalIds: catalogue.effects.filter((e) => e.temporal).map((e) => e.id),
     });
   } finally {
     await browser.close();
@@ -279,6 +284,8 @@ if (!write) {
   console.log(JSON.stringify({ check: 'ASCII platform atlas input and independent CPU oracle', environment: canonical.environment, cases: atlasEvidence }));
   assert.equal(failures, 0, `${failures} golden cases drifted`);
   console.log('render goldens hold');
+  await runKeyframeGoldens({ write: false, origin });
+  await runHdrGoldens({ write: false }); // studio/spec/hdr.md
   await runLayerGoldens({ write: false });
   await runTextGoldens({ write: false });
   process.exit(0);
@@ -353,6 +360,28 @@ const index = buildIndex(catalogue, effectDoc, transitionDoc, previousIndex);
 await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 const readmePath = path.join(studio, 'spec/README.md');
 await writeFile(readmePath, replaceIndexMarkdown(await readFile(readmePath, 'utf8'), renderIndexMarkdown(index, transitionDoc.progressCurve.length)));
-console.log('wrote studio/spec/goldens/effects.json, transitions.json, index.json and the README index');
+// The glyph atlas strips the font-atlas ASCII goldens were rendered with (gpu-ascii, Glyph atlas):
+// the platform input of those cases, published so that a native client can meet them.
+const atlases = new Map();
+eCases.forEach((c, i) => {
+  const spec = c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null;
+  if (!spec) return;
+  const captured = canonical.effectResults[i].atlas;
+  validateAsciiAtlas(captured, canonical.effectResults[i].referenceAtlas, c.params);
+  const entry = atlases.get(spec.key) ?? { ...encodeAsciiAtlas(spec, c.params.font, captured), cases: [] };
+  assert.equal(entry.sha256, encodeAsciiAtlas(spec, c.params.font, captured).sha256, `${c.name}: atlas ${spec.key} changed within one run`);
+  entry.cases.push(c.name);
+  atlases.set(spec.key, entry);
+});
+await writeFile(path.join(studio, 'spec/goldens/ascii-atlases.json'), `${JSON.stringify({
+  format: ASCII_ATLASES_FORMAT, version: 1, contract: 'studio/spec/effects/gpu-ascii.md',
+  generatedBy: 'studio/tools/render-goldens.browser.mjs --write',
+  renderer: canonical.environment,
+  layout: 'One 24 x 24 cell per glyph of the ramp, left to right. `data` is the coverage byte of every texel, row-major from the top-left, raw DEFLATE, base64.',
+  atlases: [...atlases.values()],
+}, null, 2)}\n`);
+await runKeyframeGoldens({ write: true, origin });
+console.log('wrote studio/spec/goldens/effects.json, transitions.json, ascii-atlases.json, keyframes.json, index.json and the README index');
+await runHdrGoldens({ write: true });
 await runLayerGoldens({ write: true });
 await runTextGoldens({ write: true });

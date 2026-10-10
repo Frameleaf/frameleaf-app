@@ -36,14 +36,14 @@ Each channel resolves to a point list P in this order of precedence:
    4. Keep the first 16.
    5. Walk the list in order and drop a point when its x minus the x of the last *kept* point is < 0.02.
    6. If fewer than 2 points remain, P = [(0,0), (1,1)].
-2. **Two-point.** Use this if at least one of the channel's four numeric keys is present as a finite number.
-   1. Read shadow = (ShadowX, ShadowY) and highlight = (HighlightX, HighlightY). A missing x or y means 0.25 for shadow, 0.75 for highlight.
+2. **Two-point.** Use this if at least one of the channel's four numeric keys is **present** in the stored parameter object. Sanitising [C9] has already run: a key that is present but is not a finite number (a string, `null`, a boolean) has become its default (0.25 for a shadow key, 0.75 for a highlight key), and it counts as present. So four keys that are present but not finite draw the default two-point curve, which is the identity (`gpu-curves/sdr/master-keys-not-finite`), and one finite key among three that are not draws that key with the other three at their defaults (`…/master-one-finite-key`).
+   1. Read shadow = (ShadowX, ShadowY) and highlight = (HighlightX, HighlightY). A key that is absent while another of the four is present means 0.25 for shadow, 0.75 for highlight.
    2. Clamp both x values to [0.02, 0.98].
    3. If shadow.x > highlight.x, swap **only the two x values**. The y values stay with their original names. This is implementation-defined but observed.
    4. If highlight.x − shadow.x < 0.04, let m = clamp((shadow.x + highlight.x)/2, 0.04, 0.96). Set shadow.x = m − 0.02 and highlight.x = m + 0.02.
    5. Clamp both y values to [0, 1].
    6. P = [(0,0), shadow, highlight, (1,1)].
-3. **Legacy.** Use this only when all four keys are absent. It applies to old projects.
+3. **Legacy.** Use this only when all four keys are **absent** from the stored object. It applies to old projects (`gpu-curves/sdr/master-keys-absent-legacy`, `…/red-keys-absent-legacy`). "Present but not finite" never reaches it.
    - Master: the shadow point is (0.25, L(0.25)) and the highlight point is (0.75, L(0.75)). The undeclared parameters `shadows`, `midtones`, `highlights` and `contrast` are each divided by 100 (a missing or non-finite value counts as 0), giving sh, mi, hi and ct. L(v) applies these steps in order:
      1. v += (1−v)²·sh·0.5
      2. v += 4v(1−v)·mi·0.25
