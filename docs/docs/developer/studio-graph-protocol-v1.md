@@ -58,13 +58,13 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 
 ### 2.2 `metadata`
 
-| Field             | Type           | Notes                                                                                                                             |
-| ----------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `width`, `height` | integer        | Canvas size in pixels.                                                                                                            |
-| `fps`             | number         | The engine's frame rate as a float: exactly `frameRate.num / frameRate.den`. At most 120 (14.6.1).                                |
-| `frameRate`       | `{ num, den }` | The exact frame rate (section 3). Always present in normal form.                                                                  |
-| `backgroundColor` | `#rrggbb`      | Optional.                                                                                                                         |
-| `colorManagement` | object         | Optional record of four fields (`studio/spec/hdr.md`, H1). Absent is not SDR: placed HDR media make a project HDR (H3).           |
+| Field             | Type           | Notes                                                                                                                   |
+| ----------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `width`, `height` | integer        | Canvas size in pixels.                                                                                                  |
+| `fps`             | number         | The engine's frame rate as a float: exactly `frameRate.num / frameRate.den`. At most 120 (14.6.1).                      |
+| `frameRate`       | `{ num, den }` | The exact frame rate (section 3). Always present in normal form.                                                        |
+| `backgroundColor` | `#rrggbb`      | Optional.                                                                                                               |
+| `colorManagement` | object         | Optional record of four fields (`studio/spec/hdr.md`, H1). Absent is not SDR: placed HDR media make a project HDR (H3). |
 
 ### 2.3 `timeline`
 
