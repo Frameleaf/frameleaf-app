@@ -27,7 +27,7 @@ describe('LibraryStatusBar', () => {
   it('says so plainly when this device could not keep the view', () => {
     render(LibraryStatusBar, { count: 1, saved: false });
 
-    expect(screen.getByRole('status')).toHaveTextContent('Not saved · keep this tab open');
+    expect(screen.getByRole('status')).toHaveTextContent('Your view isn’t saved · keep this tab open');
   });
 
   it('leaves the count out until it is known', () => {
@@ -50,14 +50,14 @@ describe('LibraryStatusBar', () => {
     const bar = screen.getByTestId('library-status-bar');
 
     expect(bar).toHaveTextContent('12 of 1,284 items');
-    expect(bar).toHaveTextContent('2 selected items are outside these results');
+    expect(bar).toHaveTextContent('2 selected items aren’t shown here');
   });
 
   it('says only what is selected elsewhere when nothing is filtered out', () => {
     render(LibraryStatusBar, { count: 40, total: 40, outside: 1, saved: true });
     const bar = screen.getByTestId('library-status-bar');
 
-    expect(bar).toHaveTextContent('1 selected item is outside these results');
+    expect(bar).toHaveTextContent('1 selected item isn’t shown here');
     expect(bar).not.toHaveTextContent('40');
   });
 });

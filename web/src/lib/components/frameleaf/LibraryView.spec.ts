@@ -764,6 +764,18 @@ describe('LibraryView', () => {
       expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).not.toBeInTheDocument();
     });
 
+    // Favorites, Archive and Recently added (prototype `.collection-header`): one row, not a bar above.
+    it('draws a named destination’s title as the page heading, on the layout switch’s row', async () => {
+      await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' }, title: 'Favorites' });
+      const heading = screen.getByRole('heading', { level: 1, name: 'Favorites' });
+      expect(heading.closest('.fl-library-header')).toContainElement(screen.getByTestId('frameleaf-layout-switch'));
+    });
+
+    it('draws no heading of its own where the page gives no title', async () => {
+      await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' } });
+      expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    });
+
     it('shows the information panel toggle in every layout and opens More library actions', async () => {
       sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
       await setupLibrary();

@@ -28,14 +28,14 @@ test.describe('Slideshow', () => {
   test('open slideshow', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
-    await expect(page.getByRole('button', { name: 'Exit Slideshow' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
   });
 
   test('exit slideshow with button', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    const exitButton = page.getByRole('button', { name: 'Exit Slideshow' });
+    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
     await exitButton.click();
     await expect(exitButton).not.toBeVisible();
   });
@@ -44,7 +44,7 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    const exitButton = page.getByRole('button', { name: 'Exit Slideshow' });
+    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
     await expect(exitButton).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(exitButton).not.toBeVisible();
@@ -54,7 +54,7 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await expect(page.getByRole('button', { name: 'Exit Slideshow' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
     await page.keyboard.press('f');
     await expect(page.getByText('Added to favorites')).not.toBeVisible();
   });
@@ -83,7 +83,7 @@ test.describe('Slideshow', () => {
     await panel.getByRole('button', { name: 'Close slideshow settings' }).click();
     await expect(panel).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Slideshow settings' })).toBeFocused();
-    await expect(page.getByRole('button', { name: 'Exit Slideshow' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
   });
 
   // FL-36: the old on/off switch reads back as the transition it meant.
@@ -119,7 +119,7 @@ test.describe('Slideshow', () => {
 
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
-    const exitButton = page.getByRole('button', { name: 'Exit Slideshow' });
+    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
     await expect(exitButton).toBeVisible();
 
     await page.keyboard.press('Escape');

@@ -107,7 +107,7 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: 5px;
-    padding: 0 11px;
+    padding: 0 var(--fl-space-3);
     color: var(--fl-muted);
   }
   .jm-search input {

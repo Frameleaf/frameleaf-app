@@ -147,8 +147,12 @@ describe('SharedLinkForm', () => {
       expect(images[1].getAttribute('src')).toContain('/assets/a2/thumbnail');
       expect(within(preview).getByText(en.frameleaf_sharing.preview_individual, { exact: false })).toBeInTheDocument();
       expect(within(preview).getByText(en.frameleaf_sharing.preview_address_pending)).toBeInTheDocument();
+      // A selection is known outright: nothing is read for its cover.
+      expect(sdkMock.searchAssets).not.toHaveBeenCalled();
       expect(within(preview).queryByText(en.frameleaf_sharing.badge_uploads)).toBeNull();
-      expect(within(preview).getByText(/Viewers see 2 items without camera or location details\./)).toBeInTheDocument();
+      expect(
+        within(preview).getByText(/People with the link see 2 items\. Camera details and location are hidden\./),
+      ).toBeInTheDocument();
       expect(within(preview).getByText(/No password is needed\./)).toBeInTheDocument();
       expect(within(preview).getByText(/The link never expires\./)).toBeInTheDocument();
 
@@ -164,24 +168,128 @@ describe('SharedLinkForm', () => {
       expect(within(preview).getByText(/A password is required\./)).toBeInTheDocument();
     });
 
-    it('shows an album by its cover and item count', () => {
-      render(SharedLinkForm, {
-        props: {
-          open: true,
-          target: {
-            type: SharedLinkType.Album,
-            albumId: 'album-1',
-            name: 'Summer trip',
-            previewAssetIds: ['cover-1'],
-            count: 12,
-          },
-        },
-      });
+    const sources = (preview: HTMLElement) =>
+      [...preview.querySelectorAll('img')].map((image) => image.getAttribute('src'));
+
+    const albumTarget = {
+      type: SharedLinkType.Album,
+      albumId: 'album-1',
+      name: 'Summer trip',
+      previewAssetIds: ['cover-1'],
+      count: 12,
+    };
+
+    it("shows a new album link by the album's cover while its cover items are read, and keeps it if they cannot be", async () => {
+      sdkMock.searchAssets.mockRejectedValue(new Error('offline'));
+      render(SharedLinkForm, { props: { open: true, target: albumTarget } });
 
       const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
-      expect(preview.querySelector('img')?.getAttribute('src')).toContain('/assets/cover-1/thumbnail');
+      const single = () => {
+        expect(sources(preview)).toHaveLength(1);
+        expect(sources(preview)[0]).toContain('/assets/cover-1/thumbnail');
+        expect(within(preview).getByText('+11')).toBeInTheDocument();
+        expect(within(preview).getByText(/Album · Summer trip · 12 items/)).toBeInTheDocument();
+      };
+      single();
+      await vi.waitFor(() => expect(sdkMock.searchAssets).toHaveBeenCalledTimes(1));
+      await tick();
+      single();
+    });
+
+    it('reads the cover items of a new album link once, and shows the four the card will have', async () => {
+      sdkMock.searchAssets.mockResolvedValue({
+        assets: { items: ['n1', 'n2', 'n3', 'n4', 'n5'].map((id) => ({ id })) },
+      } as never);
+      render(SharedLinkForm, { props: { open: true, target: albumTarget } });
+
+      const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
+      await vi.waitFor(() => expect(sources(preview)).toHaveLength(4));
+      expect(sources(preview).map((source) => source?.match(/assets\/([^/]+)\//)?.[1])).toEqual([
+        'cover-1',
+        'n1',
+        'n2',
+        'n3',
+      ]);
+      expect(within(preview).getByText('+8')).toBeInTheDocument();
+      expect(sdkMock.searchAssets).toHaveBeenCalledTimes(1);
+      expect(sdkMock.searchAssets).toHaveBeenCalledWith({
+        metadataSearchDto: expect.objectContaining({ albumIds: ['album-1'] }),
+      });
+      expect(sdkMock.getSharedLinkById).not.toHaveBeenCalled();
+    });
+
+    it('shows an existing link by the cover and count the link itself carries, and reads nothing for them', () => {
+      const link = sharedLinkFactory.build({
+        type: SharedLinkType.Album,
+        album: { id: 'album-1', albumName: 'Rockies', albumThumbnailAssetId: 'cover-1', assetCount: 15 } as never,
+        assets: [],
+        assetCount: 15,
+        coverAssetIds: ['cover-1', 'n1', 'n2', 'n3'],
+        password: null,
+        expiresAt: null,
+        showMetadata: false,
+        allowDownload: false,
+        allowUpload: false,
+      });
+      render(SharedLinkForm, { open: true, link });
+
+      const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
+      expect(sources(preview)).toHaveLength(4);
+      expect(sources(preview)[0]).toContain('/assets/cover-1/thumbnail');
+      expect(sources(preview)[1]).toContain('/assets/n1/thumbnail');
       expect(within(preview).getByText('+11')).toBeInTheDocument();
-      expect(within(preview).getByText(/Album · Summer trip · 12 items/)).toBeInTheDocument();
+      expect(within(preview).getByText(/Album · Rockies · 15 items/)).toBeInTheDocument();
+      expect(within(preview).getByText(/People with the link see 15 items\./)).toBeInTheDocument();
+      expect(sdkMock.getSharedLinkById).not.toHaveBeenCalled();
+      expect(sdkMock.searchAssets).not.toHaveBeenCalled();
+    });
+
+    it("counts a selection by the link's own count, not by the few items a response carries", () => {
+      // As the list of links returns a selection of six: its first four items, and the real count.
+      const link = sharedLinkFactory.build({
+        type: SharedLinkType.Individual,
+        assets: ['a1', 'a2', 'a3', 'a4'].map((id) => ({ id })) as never,
+        assetCount: 6,
+        coverAssetIds: ['a1', 'a2', 'a3', 'a4'],
+        password: null,
+      });
+      render(SharedLinkForm, { open: true, link });
+
+      const preview = screen.getByRole('complementary', { name: en.frameleaf_sharing.link_preview });
+      expect(sources(preview)).toHaveLength(4);
+      expect(within(preview).getByText('+2')).toBeInTheDocument();
+      expect(
+        within(preview).getByText(new RegExp(`${en.frameleaf_sharing.preview_individual} · 6 items`)),
+      ).toBeInTheDocument();
+      expect(sdkMock.getSharedLinkById).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('layout (PR 140 polish)', () => {
+    it('is the wide dialog with the three options as switches and the standard footer buttons', async () => {
+      render(SharedLinkForm, {
+        props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
+      });
+
+      const dialog = screen.getByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title });
+      expect(dialog).toHaveClass('wide');
+      expect(screen.getAllByRole('switch').map((option) => option.getAttribute('aria-label'))).toEqual([
+        en.show_metadata,
+        en.frameleaf_sharing.allow_download,
+        en.frameleaf_sharing.allow_upload,
+      ]);
+      const cancel = screen.getByRole('button', { name: en.cancel });
+      const create = screen.getByRole('button', { name: en.create_link });
+      expect(cancel).toHaveClass('button');
+      expect(cancel).not.toHaveClass('primary');
+      expect(create).toHaveClass('button', 'primary');
+      expect(create.closest('footer')).not.toBeNull();
+
+      // "Link ready" is the ordinary dialog width, with the one primary button.
+      await fireEvent.click(create);
+      await screen.findByRole('heading', { name: en.frameleaf_sharing.link_ready_title });
+      expect(dialog).not.toHaveClass('wide');
+      expect(screen.getByRole('button', { name: en.done })).toHaveClass('button', 'primary');
     });
   });
 

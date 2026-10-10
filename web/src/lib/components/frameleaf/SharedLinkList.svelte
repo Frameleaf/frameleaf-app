@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ShareCover from '../../../routes/(user)/shared-links/(list)/ShareCover.svelte';
+  import AssetCollage from './AssetCollage.svelte';
   import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -18,6 +18,7 @@
     sharedLinkBadges,
     type SharedLinkBadgeId,
   } from '$lib/frameleaf/shared-link-badges';
+  import { sharedLinkCover } from '$lib/frameleaf/shared-link-cover';
   import { Route } from '$lib/route';
   import { asUrl } from '$lib/services/shared-link.service';
   import { handleError } from '$lib/utils/handle-error';
@@ -91,6 +92,7 @@
   let albums: AlbumResponseDto[] = $state([]);
   let pickAlbumId = $state('');
 
+  // AL-21: the one read of the page. Every link in it says what its card's cover shows and how many items it shares.
   const refresh = async () => {
     loading = true;
     try {
@@ -157,10 +159,12 @@
     if (link.album) {
       return link.album.albumName;
     }
-    if (link.assets.length === 1) {
-      return link.assets[0].originalFileName;
-    }
-    return $t('frameleaf_sharing.individual_items', { values: { count: link.assets.length } });
+    // A share of one photo is named after it; the list carries only a selection's first items, so the
+    // link's own count says how many there are.
+    const only = link.assetCount === 1 ? link.assets.find(({ id }) => id === link.coverAssetIds[0]) : undefined;
+    return only
+      ? only.originalFileName
+      : $t('frameleaf_sharing.individual_items', { values: { count: link.assetCount } });
   };
 
   const needle = $derived(query.trim().toLowerCase());
@@ -172,7 +176,8 @@
       if (!needle) {
         return true;
       }
-      return [titleOf(link), link.description ?? '', link.slug ?? '', link.id].join(' ').toLowerCase().includes(needle);
+      // Only what a card shows is searched: a link's own id is never on screen, so it must not match either.
+      return [titleOf(link), link.description ?? '', link.slug ?? ''].join(' ').toLowerCase().includes(needle);
     }),
   );
   const counts = $derived(
@@ -239,6 +244,9 @@
     $t('frameleaf_sharing.created_when', {
       values: { when: relativeTime(link.createdAt, Date.now(), $locale ?? undefined) },
     });
+  /** When the link was made, and its custom address if it has one. A link's own id means nothing to a person. */
+  const metaOf = (link: SharedLinkResponseDto) =>
+    link.slug ? `${createdLabel(link)} · /s/${link.slug}` : createdLabel(link);
 
   /** An album link opens the album here; a selection opens the public page, as a visitor sees it. */
   const openPublic = (link: SharedLinkResponseDto) => window.open(asUrl(link), '_blank', 'noopener,noreferrer');
@@ -380,6 +388,7 @@
           {@const title = titleOf(link)}
           {@const expired = isExpired(link)}
           {@const isAlbum = link.type === SharedLinkType.Album}
+          {@const cover = sharedLinkCover(link)}
           <li
             class="sl-card fl-reveal"
             style:--i={index}
@@ -394,7 +403,7 @@
                 href={Route.viewAlbum({ id: link.album.id })}
                 aria-label={$t('frameleaf_sharing.open_album_named', { values: { name: title } })}
               >
-                <ShareCover sharedLink={link} />
+                <AssetCollage ids={cover.ids} count={cover.count} large />
                 {#if expired}<span class="sl-cover-flag">{$t('expired')}</span>{/if}
               </a>
             {:else}
@@ -405,7 +414,7 @@
                 rel="noopener noreferrer"
                 aria-label={$t('frameleaf_sharing.open_shared_page_for', { values: { name: title } })}
               >
-                <ShareCover sharedLink={link} />
+                <AssetCollage ids={cover.ids} count={cover.count} large />
                 {#if expired}<span class="sl-cover-flag">{$t('expired')}</span>{/if}
               </a>
             {/if}
@@ -423,7 +432,7 @@
                   </li>
                 {/each}
               </ul>
-              <p class="sl-meta">{createdLabel(link)} · {link.slug ? `/s/${link.slug}` : link.id}</p>
+              <p class="sl-meta">{metaOf(link)}</p>
             </div>
             <div class="sl-actions">
               <SharedLinkCopyButton
@@ -448,10 +457,11 @@
                 <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />
                 {$t('edit')}
               </Button>
-              <button type="button" class="sl-danger" onclick={() => openDelete(link)}>
-                <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />
-                {$t('delete')}
-              </button>
+              <span class="sl-danger">
+                <IconButton label={$t('delete')} onclick={() => openDelete(link)}>
+                  <Icon icon={mdiDeleteOutline} size="18" />
+                </IconButton>
+              </span>
             </div>
           </li>
         {/each}
@@ -509,7 +519,7 @@
       copyLabel={$t('copy_link')}
       downloadLabel={$t('download')}
       errorLabel={$t('frameleaf_sharing.qr_error')}
-      fileName={dialog.link.slug || dialog.link.id}
+      fileName={dialog.link.slug || undefined}
     />
   </Dialog>
 {/if}
@@ -659,7 +669,8 @@
   .sl-card:hover {
     box-shadow: var(--fl-shadow-1);
   }
-  .sl-card[data-expired] .sl-cover {
+  /* The pictures fade, not the "Expired" flag over them (sharing.css:128-131). */
+  .sl-card[data-expired] .sl-cover :global(.fl-collage) {
     filter: saturate(0.4);
     opacity: 0.75;
   }
@@ -668,6 +679,9 @@
     display: block;
     width: 100%;
     background: var(--fl-raised);
+    /* The cover band is the collage itself (.sl-collage, sharing.css:154-164). */
+    --fl-collage-aspect: 16 / 9;
+    --fl-collage-gap: var(--fl-raised);
   }
   .sl-cover-flag {
     position: absolute;
@@ -734,7 +748,7 @@
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--fl-space-2);
   }
   .sl-badge {
     display: inline-flex;
@@ -757,8 +771,10 @@
   }
   .sl-actions {
     display: flex;
+    /* Fits one row on the narrowest card (300px); a longer translation of "Edit" wraps instead of clipping. */
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--fl-space-2) 2px;
     padding: 10px 12px;
     border-top: 1px solid var(--fl-border);
   }
@@ -767,16 +783,13 @@
   }
   .sl-danger {
     display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4375rem 0.6875rem;
-    color: var(--fl-danger);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
+    /* Stays at the trailing edge when it wraps to a row of its own. */
+    margin-inline-start: auto;
+    /* 8px clear of Edit; the three quiet icons before them stay a cluster so the row fits a 300px card. */
+    padding-inline-start: calc(var(--fl-space-2) - 2px);
   }
-  .sl-danger:hover {
-    border-color: color-mix(in srgb, var(--fl-danger), transparent 50%);
+  .sl-danger :global(button) {
+    color: var(--fl-danger);
   }
   .sl-card-loading:hover {
     box-shadow: none;
@@ -823,9 +836,6 @@
       flex: 1;
       justify-content: center;
       min-height: 40px;
-    }
-    .sl-actions {
-      flex-wrap: wrap;
     }
   }
 </style>

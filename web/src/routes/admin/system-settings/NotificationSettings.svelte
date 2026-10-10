@@ -68,7 +68,7 @@
 
 <div>
   <div in:reveal>
-    <form autocomplete="off" class="mt-4" onsubmit={(event) => event.preventDefault()}>
+    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingGroup key="email" title={$t('email')} subtitle={$t('admin.notification_email_setting_description')}>
           <div class="flex flex-col gap-4">

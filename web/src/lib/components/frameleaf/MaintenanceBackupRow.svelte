@@ -195,7 +195,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 9px;
+    padding: 5px var(--fl-space-3);
     font-size: var(--fl-font-small);
   }
   .mt-actions .button.danger {

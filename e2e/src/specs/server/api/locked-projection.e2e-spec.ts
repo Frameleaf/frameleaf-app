@@ -515,7 +515,10 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     const { body: tags } = await request(app).get('/tags').set(headers).expect(200);
     expect(tags.map(({ value }: { value: string }) => value)).toEqual([mixedTag]);
     const { body: statistics } = await request(app).get('/tags/statistics').set(headers).expect(200);
-    expect(statistics).toEqual([{ id: tagIds[mixedTag], count: 1, total: 1 }]);
+    // the one visible item is also the whole cover: the hidden item beside it never shows there
+    expect(statistics).toEqual([
+      expect.objectContaining({ id: tagIds[mixedTag], count: 1, total: 1, coverAssetIds: [plain.id] }),
+    ]);
     const { body: facets } = await request(app)
       .post('/search/facets')
       .set(headers)

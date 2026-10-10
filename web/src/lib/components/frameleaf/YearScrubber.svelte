@@ -39,6 +39,11 @@
     overlay?: boolean;
     /** The library is being scrolled; only read in `overlay`. */
     active?: boolean;
+    /**
+     * Pixels at the top the track keeps out of, in `overlay`: what is still on screen of the page
+     * header, whose controls reach the edge the scrubber floats over.
+     */
+    clear?: number;
   };
 
   let {
@@ -53,7 +58,21 @@
     dragging = $bindable(false),
     overlay = false,
     active = true,
+    clear = 0,
   }: Props = $props();
+
+  /**
+   * The column the host leaves for the scrubber. A hidden scrubber (the viewer is open over the
+   * library) measures 0, and reporting that handed its column to the photos for a frame on the way
+   * back: every month was laid out twice and the grid came back a row or two from where it was.
+   * Only a visible measurement is passed on.
+   */
+  let measuredWidth = $state(0);
+  $effect(() => {
+    if (measuredWidth > 0 && measuredWidth !== scrubberWidth) {
+      scrubberWidth = measuredWidth;
+    }
+  });
 
   const MIN_YEAR_LABEL_GAP = 18;
 
@@ -216,8 +235,9 @@
   class="fl-scrubber"
   class:is-overlay={overlay}
   class:is-idle={overlay && !active && !dragging}
-  bind:clientWidth={scrubberWidth}
+  bind:clientWidth={measuredWidth}
   style:height={height ? `${height}px` : undefined}
+  style:--fl-scrub-clear={overlay ? `${clear}px` : undefined}
   data-testid="frameleaf-year-scrubber"
 >
   <div
@@ -290,9 +310,14 @@
     inset-block: 0;
     inset-inline-end: 0;
     z-index: 4;
+    /* The track starts below the stuck toolbar, or below the page header while that is on screen. */
+    padding-top: calc(max(var(--fl-sticky-offset, 0px), var(--fl-scrub-clear, 0px)) + 8px);
+    /* Only the track is touched: the strip itself floats over the toolbar's last control. */
+    pointer-events: none;
     transition: opacity var(--fl-duration-fade) var(--fl-ease);
   }
   .fl-scrubber.is-overlay .fl-scrub-track {
+    pointer-events: auto;
     border: 1px solid var(--fl-material-edge);
     border-radius: var(--fl-radius-pill);
     background: var(--fl-material);
@@ -305,6 +330,8 @@
   }
   .fl-scrubber.is-overlay.is-idle:not(:focus-within) {
     opacity: 0;
+  }
+  .fl-scrubber.is-overlay.is-idle:not(:focus-within) .fl-scrub-track {
     pointer-events: none;
   }
   .fl-scrub-yeartick {

@@ -262,11 +262,17 @@
 </dialog>
 
 <style>
-  /* The glass treatment the search palette uses (apple-style.css:649-710). */
+  /*
+   * The glass treatment the search palette uses (apple-style.css:649-710), anchored where that
+   * palette is (SearchPalette.svelte `.search-palette`), so typing ">" swaps one for the other in
+   * place. The inline margins are set here: the page reset zeroes the dialog's own `margin: auto`,
+   * which is what centres it.
+   */
   .command-palette {
     width: min(40rem, calc(100vw - 2rem));
-    max-height: min(36rem, calc(100dvh - 6rem));
-    margin-block-start: 12vh;
+    max-width: none;
+    max-height: min(36rem, calc(100dvh - 12vh - 24px));
+    margin: 10vh auto auto;
     padding: 0;
     display: flex;
     flex-direction: column;
@@ -437,5 +443,13 @@
   }
   .foot span:last-child {
     margin-inline-start: auto;
+  }
+  /* Phones: edge to edge under the status bar, as the search palette is. */
+  @media (max-width: 760px) {
+    .command-palette {
+      width: calc(100vw - 16px);
+      margin-top: max(8px, env(safe-area-inset-top));
+      max-height: calc(100dvh - 16px);
+    }
   }
 </style>

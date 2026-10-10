@@ -302,7 +302,7 @@
     <MenuOption
       icon={mdiDeleteForeverOutline}
       text={label('delete-permanently')}
-      textColor="text-[var(--fl-danger)]"
+      danger
       onClick={() => confirmAndDeletePermanently({ asset, preAction, onAction })}
     />
   {/if}

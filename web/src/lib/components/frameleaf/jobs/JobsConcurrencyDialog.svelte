@@ -175,7 +175,7 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: 5px;
-    padding: 0 11px;
+    padding: 0 var(--fl-space-3);
     color: var(--fl-muted);
   }
   .jm-search input {
@@ -232,7 +232,7 @@
     border: 1px solid var(--fl-border);
     border-radius: 5px;
     min-height: 35px;
-    padding: 6px 9px;
+    padding: 6px var(--fl-space-3);
     font: inherit;
   }
   .jm-concurrency-row input[aria-invalid='true'] {

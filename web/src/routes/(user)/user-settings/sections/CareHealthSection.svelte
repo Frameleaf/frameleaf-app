@@ -25,6 +25,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 16px;
+    margin-block: var(--fl-space-3);
   }
 </style>

@@ -116,7 +116,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4375rem 0.6875rem;
+  padding: 0.4375rem var(--fl-space-3);
   color: var(--fl-text);
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
@@ -229,7 +229,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
+  padding: 5px var(--fl-space-3);
   border-radius: var(--fl-radius-pill);
   border: 1px solid var(--fl-border);
   color: var(--fl-muted);
@@ -347,7 +347,7 @@
 }
 .frameleaf-cloud .fc-input {
   width: min(100%, 280px);
-  padding: 0.4375rem 0.6875rem;
+  padding: 0.4375rem var(--fl-space-3);
   color: var(--fl-text);
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
@@ -448,11 +448,11 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--fl-space-2);
   min-width: 0;
 }
 .frameleaf-cloud .fc-copy code {
-  padding: 6px 9px;
+  padding: 6px var(--fl-space-3);
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
 }
@@ -474,7 +474,7 @@
 
   .frameleaf-cloud .fc-facts {
     grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
+    gap: var(--fl-space-1);
   }
   .frameleaf-cloud .fc-facts dd {
     margin-bottom: 8px;

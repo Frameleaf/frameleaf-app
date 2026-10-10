@@ -156,7 +156,7 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--fl-space-1);
     min-width: 12rem;
   }
   .pv-title h1 {
@@ -189,7 +189,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-3) var(--fl-space-2);
   }
   .pv-selectbar {
     display: flex;

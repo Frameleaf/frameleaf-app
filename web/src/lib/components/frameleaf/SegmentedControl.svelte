@@ -58,6 +58,11 @@
   }
   button {
     flex: 1;
+    /*
+     * A segment is never narrower than its label. The touch-size floor (tokens.css) would replace
+     * that automatic minimum, and equal shares of the row then run long labels into each other.
+     */
+    min-width: min-content;
     padding: 0.3125rem 0.625rem;
     white-space: nowrap;
     font-size: var(--fl-font-small);

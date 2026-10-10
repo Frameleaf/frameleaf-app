@@ -138,7 +138,9 @@ describe('AlbumHeader', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /Options/ })).toBeNull());
     expect(screen.queryByRole('button', { name: 'Add photos' })).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Your role changed: you can now only view this album.');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your access changed. You can view this album but not add to it.',
+    );
   });
 
   it('says so when the role is raised live, and offers the controls again', async () => {
@@ -147,7 +149,7 @@ describe('AlbumHeader', () => {
     await rerender({ album: albumAs(AlbumUserRole.Editor) });
 
     expect(await screen.findByRole('button', { name: 'Add photos' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('you can now add to and edit this album');
+    expect(screen.getByRole('status')).toHaveTextContent('You can now add photos and edit this album');
   });
 
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {

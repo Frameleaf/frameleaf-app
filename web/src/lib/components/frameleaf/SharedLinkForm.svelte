@@ -9,7 +9,8 @@
    * (`SharedLinkForm.jsx:88-509`). The fields, the rules between them and the "Link ready" step
    * live in `SharedLinkFormBody`, which the share sheet also shows in place.
    *
-   * Creating ends on the "Link ready" step (address, Copy, QR code, Open) in the same dialog;
+   * The form is the design's wide dialog, fields beside the preview card. Creating ends on the
+   * "Link ready" step (address, Copy, QR code, Open) in the same dialog, at the ordinary width;
    * editing saves and closes.
    */
   let {
@@ -37,14 +38,17 @@
   const ids = $props.id();
   const formId = `${ids}-form`;
   const editing = $derived(!!link);
-  /** The link just created: the dialog shows the "Link ready" step while it is set. */
+  /**
+   * The link just created: the dialog shows the "Link ready" step while it is set. It stays set
+   * while the dialog leaves, so the step does not turn back into the form on its way out; the form
+   * body clears it the next time it opens.
+   */
   let created = $state<SharedLinkResponseDto | undefined>();
   let saving = $state(false);
 
   let wasOpen = false;
   $effect(() => {
     if (!open && wasOpen) {
-      created = undefined;
       onClosed?.();
     }
     wasOpen = open;
@@ -59,15 +63,16 @@
       ? $t('frameleaf_sharing.edit_shared_link_title')
       : $t('frameleaf_sharing.create_shared_link_title')}
   closeLabel={$t('close')}
+  wide={!created}
   bind:open
 >
   <SharedLinkFormBody active={open} {target} {link} {formId} bind:created bind:saving onSaved={() => (open = false)} />
   {#snippet actions()}
     {#if created}
-      <button type="button" class="primary" onclick={() => (open = false)}>{$t('done')}</button>
+      <button type="button" class="button primary" onclick={() => (open = false)}>{$t('done')}</button>
     {:else}
-      <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="submit" form={formId} class="primary" disabled={saving}>
+      <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
+      <button type="submit" form={formId} class="button primary" disabled={saving}>
         {editing ? $t('save') : $t('create_link')}
       </button>
     {/if}

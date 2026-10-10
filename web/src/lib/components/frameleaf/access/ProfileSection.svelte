@@ -203,7 +203,7 @@
   }
   .colors {
     display: grid;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     margin: 0;
     padding: 0;
     border: 0;

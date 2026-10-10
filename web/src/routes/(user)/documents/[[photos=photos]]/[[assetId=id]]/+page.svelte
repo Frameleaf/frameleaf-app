@@ -262,7 +262,7 @@
   }
   .sub,
   .note {
-    margin: 0.25rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }

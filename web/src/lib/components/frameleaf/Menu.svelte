@@ -235,7 +235,7 @@
   }
   [role='menu'] {
     position: absolute;
-    top: calc(100% + 0.375rem);
+    top: calc(100% + var(--fl-space-2));
     inset-inline-start: 0;
     z-index: var(--fl-z-popover);
     min-width: 11.25rem;

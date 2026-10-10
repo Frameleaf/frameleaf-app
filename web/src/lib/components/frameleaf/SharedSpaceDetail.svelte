@@ -729,18 +729,24 @@
     flex-direction: column;
     gap: 0.75rem;
   }
+  /* The album header's values (AlbumHeader.svelte), kept in step with it. */
   .crumbs {
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    /* A link's hover box hangs outside, so its text starts on the content edge. */
+    margin-inline-start: calc(-1 * var(--fl-space-2));
     font-size: 0.75rem;
     color: var(--fl-muted);
     flex-wrap: wrap;
   }
+  .crumbs a,
+  .crumbs span[aria-current='page'] {
+    padding: var(--fl-space-1) var(--fl-space-2);
+  }
   .crumbs a {
     color: var(--fl-muted);
     text-decoration: none;
-    padding: 0.125rem 0.25rem;
     border-radius: var(--fl-radius);
   }
   .crumbs a:hover {
@@ -752,7 +758,8 @@
   }
   .main {
     display: flex;
-    gap: 0.875rem;
+    /* The title's edit button hangs 8px outside the text column and stays 12px clear of the icon. */
+    gap: var(--fl-space-5);
     align-items: flex-start;
   }
   .icon-wrap {
@@ -847,7 +854,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.125rem 0.375rem;
+    padding: 0.125rem var(--fl-space-2);
     font: inherit;
     color: var(--fl-muted);
     background: transparent;
@@ -862,7 +869,8 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    /* 8px between buttons, 12px between the rows they wrap into. */
+    gap: var(--fl-space-3) var(--fl-space-2);
     flex-wrap: wrap;
   }
   .action,
@@ -873,7 +881,7 @@
     white-space: nowrap;
   }
   .action {
-    padding: 0 0.6875rem;
+    padding: 0 var(--fl-space-3);
     min-height: 44px;
     font: inherit;
     color: var(--fl-text);

@@ -272,7 +272,7 @@
 
 <svelte:window onresize={onPositionChange} />
 {#if !hideLabel}
-  <Label class="mb-1 block text-xs text-(--fl-muted)" for={inputId}>{label}</Label>
+  <Label class="mb-2 block text-xs text-(--fl-muted)" for={inputId}>{label}</Label>
 {/if}
 <div
   class="relative w-full text-base text-(--fl-text)"

@@ -63,6 +63,24 @@ export const PALETTE_MODES: readonly {
   { value: 'originalPath', labelKey: 'frameleaf_search_mode_full_path', icon: 'path' },
 ];
 
+/**
+ * What this server can answer, from its feature flags. Smart search needs its model; the text in
+ * photos is only read while text recognition (OCR) is on. The palette offers a mode, an example or
+ * an operator only when a search with it can find something.
+ */
+export type PaletteCapabilities = { smartSearch: boolean; ocr: boolean };
+
+export const isPaletteModeAvailable = (mode: PaletteMode, { smartSearch, ocr }: PaletteCapabilities) => {
+  if (mode === 'smart') {
+    return smartSearch;
+  }
+  return mode !== 'ocr' || ocr;
+};
+
+/** The modes the mode picker offers on this server. */
+export const availablePaletteModes = (capabilities: PaletteCapabilities) =>
+  PALETTE_MODES.filter((entry) => isPaletteModeAvailable(entry.value, capabilities));
+
 /** The text fields "All text" searches at once: each is one branch of an `or`. */
 const ALL_TEXT_FIELDS: readonly DiscoveryTextField[] = ['originalFileName', 'description', 'ocr', 'originalPath'];
 
@@ -165,6 +183,14 @@ export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelK
 ];
 
 const OPERATOR_KEYS: ReadonlySet<string> = new Set(SEARCH_OPERATORS.map((operator) => operator.key));
+
+/**
+ * The operators the syntax help and the typeahead offer on this server: `text:` searches the text
+ * read from photos, so it is left out while text recognition is off. A `text:` that is typed anyway
+ * is still understood.
+ */
+export const availableSearchOperators = (capabilities: PaletteCapabilities) =>
+  SEARCH_OPERATORS.filter((operator) => operator.key !== 'text' || isPaletteModeAvailable('ocr', capabilities));
 
 /** The search a palette catalog entry counts: a vocabulary value and, when facets supplied it, how many match. */
 export type CatalogValue = { value: string; count?: number };
@@ -591,9 +617,15 @@ export type PaletteSuggestion = {
 /**
  * Typeahead for the word being typed. Completions replace that word with an operator token, most
  * relevant first: a prefix match, then more matches, then alphabetical. Unnamed people are skipped:
- * they have no name to type, so they cannot be a `person:` token.
+ * they have no name to type, so they cannot be a `person:` token. `operators` are the operator names
+ * offered for a typed key (see `availableSearchOperators`).
  */
-export const suggestSearchTokens = (input: string, catalog: PaletteCatalog, limit = 8): PaletteSuggestion[] => {
+export const suggestSearchTokens = (
+  input: string,
+  catalog: PaletteCatalog,
+  limit = 8,
+  operators: typeof SEARCH_OPERATORS = SEARCH_OPERATORS,
+): PaletteSuggestion[] => {
   const source = input ?? '';
   const match = source.match(/(^|\s)(-?)([^\s:]*)(?::("?)([^"]*))?$/);
   if (!match) {
@@ -662,7 +694,7 @@ export const suggestSearchTokens = (input: string, catalog: PaletteCatalog, limi
   push('type', 'type', 'video', 'video', catalog.typeCounts?.[AssetTypeEnum.Video], { labelKey: 'videos' });
   push('is', 'is', 'favorite', 'favorite', catalog.favoriteCount, { labelKey: 'favorites' });
   if (!hasOperator && typedKey.length >= 2) {
-    for (const operator of SEARCH_OPERATORS) {
+    for (const operator of operators) {
       if (operator.key.startsWith(typedKey)) {
         out.push({
           kind: 'operator',

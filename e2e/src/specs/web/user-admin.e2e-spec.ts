@@ -166,11 +166,11 @@ test.describe('User Administration', () => {
       await page.goto(`${usersManager}&user=${user.userId}`);
       await page.getByRole('button', { name: 'Edit account', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Edit account' });
-      await dialog.getByLabel('Storage quota (GiB)').fill('10');
+      await dialog.getByLabel('Storage limit (GiB)').fill('10');
       await dialog.getByLabel('Storage label', { exact: true }).fill('quota-user');
       await expect(
         dialog.getByText(
-          'Changing the label does not move existing files. Run the storage template migration separately when you are ready.',
+          'Changing the label doesn’t move files that are already stored. To move them, run “Storage template migration” in Jobs when you’re ready.',
         ),
       ).toBeVisible();
       await dialog.getByRole('button', { name: 'Save account' }).click();
@@ -225,9 +225,9 @@ test.describe('User Administration', () => {
 
       // the default list shows active accounts; the Deleted filter finds this one
       await page.goto(usersManager);
-      const table = page.getByRole('region', { name: 'Account table' });
+      const table = page.getByRole('region', { name: 'Accounts' });
       await expect(table.getByRole('link', { name: /leaving-user@example\.com/ })).toHaveCount(0);
-      await page.getByRole('combobox', { name: 'Filter records' }).selectOption('deleted');
+      await page.getByRole('combobox', { name: 'Filter accounts' }).selectOption('deleted');
       await table.getByRole('link', { name: /leaving-user@example\.com/ }).click();
 
       await page.getByRole('button', { name: 'Restore account', exact: true }).click();

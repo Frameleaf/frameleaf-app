@@ -362,9 +362,9 @@
     font-size: 15px;
     font-weight: 600;
   }
+  /* As tall as its tabs, so the current tab's underline lies on the bar's hairline. */
   .tabbar {
     display: flex;
-    height: 41px;
     margin-bottom: 10px;
     border-bottom: 1px solid var(--fl-border);
   }
@@ -420,7 +420,7 @@
   .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: var(--fl-space-2);
     margin: 0;
     padding: 0;
     list-style: none;

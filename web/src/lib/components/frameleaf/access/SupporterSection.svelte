@@ -131,7 +131,45 @@
 </div>
 
 <style>
+  /* Not a settings row: it brings the inset a row would have, so the card clears the section edge. */
   .supporter-section {
     gap: 14px;
+    padding-block: var(--fl-space-3);
+  }
+  /*
+   * auth.css lays these out only inside a sign-in screen. Without the same stacking here the key's
+   * label, field and hint ran together on one line, and the notes and links lost their quiet text.
+   */
+  .supporter-section :global(h3) {
+    margin: 0;
+    font-size: var(--fl-font-size);
+    font-weight: 600;
+  }
+  .supporter-section :global(.auth-field) {
+    display: grid;
+    gap: var(--fl-space-2);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+  }
+  .supporter-section :global(.auth-field input) {
+    width: 100%;
+  }
+  .supporter-section :global(.auth-field-hint) {
+    font-size: var(--fl-font-micro);
+    font-weight: 400;
+    color: var(--fl-muted);
+  }
+  .supporter-section :global(.auth-note) {
+    margin: 0;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .supporter-section :global(.auth-link) {
+    color: var(--fl-muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .supporter-section :global(.auth-link:hover) {
+    color: var(--fl-text);
   }
 </style>

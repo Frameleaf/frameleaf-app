@@ -102,8 +102,3 @@
     {/each}
   </div>
 </fieldset>
-{#if ratingSelection !== null && !readOnly}
-  <button type="button" onclick={() => handleSelect(null)} class="cursor-pointer text-xs text-primary">
-    {$t('rating_clear')}
-  </button>
-{/if}

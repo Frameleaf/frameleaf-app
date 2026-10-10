@@ -265,7 +265,7 @@ describe('Sign in with Frameleaf (FL-158)', () => {
   it('offers only Sign in with Frameleaf through remote access', async () => {
     render(Page, { data: relay() } as never);
     expect(await screen.findByRole('button', { name: 'Sign in with Frameleaf' })).toBeInTheDocument();
-    expect(screen.getByText(/through Frameleaf remote access/)).toBeInTheDocument();
+    expect(screen.getByText(/connecting from outside your home network/)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Keep me signed in' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Continue with provider' })).toBeNull();

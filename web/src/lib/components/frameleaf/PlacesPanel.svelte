@@ -310,14 +310,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--fl-space-3) var(--fl-space-2);
   }
   .dv-search {
     display: flex;
     align-items: center;
     gap: 8px;
     min-height: 34px;
-    padding: 0 10px;
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
@@ -358,7 +358,9 @@
     align-items: center;
     gap: 8px;
     min-height: 34px;
-    padding: 4px 6px 4px 0;
+    /* The hover box hangs outside, so the chevron stays on the content edge. */
+    margin-inline-start: calc(-1 * var(--fl-space-2));
+    padding: 4px var(--fl-space-2);
     border: 0;
     border-radius: var(--fl-radius-control);
     background: none;

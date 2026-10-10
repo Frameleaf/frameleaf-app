@@ -9,7 +9,17 @@ import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 /** The folder an original sits in: its path up to (not including) the last slash. */
 const DIRECTORY_PATTERN = '^(.*/)[^/]*$';
 
-export type FolderSummaryRow = { path: string; count: number; size: number };
+/** How many items a folder's cover shows. */
+const COVER_ASSETS = 4;
+
+export type FolderSummaryRow = {
+  path: string;
+  count: number;
+  size: number;
+  coverAssetIds: string[];
+  startDate: Date;
+  endDate: Date;
+};
 
 export class ViewRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -82,26 +92,51 @@ export class ViewRepository {
    * FL-46: per folder, how many of the owner's listable originals sit directly in it and their bytes
    * (from the extracted file size), in the same scope as the two queries above. The Folders browser
    * adds these up the tree for a folder's total and size, so no folder needs its files fetched.
+   *
+   * Each folder also gets what its card shows of those originals: the newest few by capture time for a
+   * cover, and the first and last capture day, read as an album's start and end dates are.
    */
   async getFolderSummary(userId: string, options?: HiddenContentQueryOptions): Promise<FolderSummaryRow[]> {
-    // the pattern is a literal, not a bound parameter: the grouped expression must be the selected one
-    // exactly, and two parameters with the same value are two different expressions to Postgres
+    // the pattern is a literal, not a bound parameter: Postgres works the folder out once per file only
+    // when the partitioned expression is the selected one exactly, and two parameters with the same
+    // value are two different expressions to it
     const directoryPath = sql<string>`substring("asset"."originalPath", ${sql.lit(DIRECTORY_PATTERN)})`;
-    const rows = await this.folderAssets(userId, options)
+    const files = this.folderAssets(userId, options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select((eb) => [
+      .select([
+        'asset.id',
+        'asset.localDateTime',
+        'asset_exif.fileSizeInByte',
         directoryPath.as('directoryPath'),
+        sql<number>`row_number() over (partition by ${directoryPath} order by "asset"."localDateTime" desc, "asset"."id" asc)`.as(
+          'rank',
+        ),
+      ]);
+    const rows = await this.db
+      .selectFrom(files.as('file'))
+      .select((eb) => [
+        'file.directoryPath',
         eb.fn.countAll<string>().as('count'),
-        sql<string>`coalesce(sum("asset_exif"."fileSizeInByte"), 0)`.as('size'),
+        sql<string>`coalesce(sum("file"."fileSizeInByte"), 0)`.as('size'),
+        sql<
+          string[] | null
+        >`array_agg("file"."id"::text order by "file"."rank") filter (where "file"."rank" <= ${sql.lit(COVER_ASSETS)})`.as(
+          'coverAssetIds',
+        ),
+        eb.fn.min(sql<Date>`("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'),
+        eb.fn.max(sql<Date>`("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'),
       ])
-      .groupBy(directoryPath)
-      .orderBy('directoryPath', 'asc')
+      .groupBy('file.directoryPath')
+      .orderBy('file.directoryPath', 'asc')
       .execute();
 
     return rows.map((row) => ({
       path: row.directoryPath.replaceAll(/\/$/g, ''),
       count: Number(row.count),
       size: Number(row.size),
+      coverAssetIds: row.coverAssetIds ?? [],
+      startDate: row.startDate,
+      endDate: row.endDate,
     }));
   }
 }

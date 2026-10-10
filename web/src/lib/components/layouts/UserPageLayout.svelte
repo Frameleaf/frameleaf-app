@@ -168,7 +168,7 @@
         title with its note beside it, the page's controls at the end. A page that draws its own
         heading passes no `title`, so the name is on screen once.
       -->
-      <div class="fl-page-header absolute flex h-16 w-full items-center justify-between gap-3 px-6">
+      <div class="fl-page-header absolute flex h-16 w-full items-center justify-between gap-3 px-4 md:px-6">
         <div class="fl-page-heading">
           {#if title}
             <div class="fl-page-title outline-none" tabindex="-1" id={headerId}>{title}</div>
@@ -212,23 +212,28 @@
   }
   .fl-page-heading {
     display: flex;
+    /* A note that does not fit beside the title goes under it; the 64px bar holds both lines. */
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--fl-space-4);
+    gap: 0 var(--fl-space-4);
     min-width: 0;
   }
   .fl-page-title,
   .fl-page-note {
+    max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
   .fl-page-title {
+    flex: none;
     font-size: var(--fl-font-title);
     font-weight: 600;
     letter-spacing: -0.5px;
     line-height: 1.3;
   }
   .fl-page-note {
+    min-width: 0;
     margin: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);

@@ -44,6 +44,22 @@ const previewAlbums = (albums: AlbumTreeResponseDto): AlbumResponseDto[] => {
 };
 
 /**
+ * The Best Photos card: how many items reach the quality threshold, and a picture for the card.
+ * When nothing reaches it yet the picture is the first item the Best Photos page lists (the same
+ * ranking, `GET /best-photos` without the threshold), so the card is not a blank while that page
+ * has photos to show. The count stays the threshold's own and is never made up from this.
+ */
+const loadBestPhotosPreview = async (): Promise<ExploreBestPhotosPreview> => {
+  // Never a star-rating fallback: only assets with a computed quality score count here.
+  const scored = await getBestPhotos({ minScore: BEST_PHOTOS_QUALITY_MIN_SCORE, limit: BEST_PHOTOS_PREVIEW_LIMIT });
+  if (scored.items[0]) {
+    return { total: scored.total, cover: scored.items[0] };
+  }
+  const ranked = await getBestPhotos({ limit: BEST_PHOTOS_PREVIEW_LIMIT }).catch(() => null);
+  return { total: scored.total, cover: ranked?.items[0] ?? null };
+};
+
+/**
  * "Days to revisit". The memory manager reads the account's memory preferences first; either step
  * failing only costs this one section.
  */
@@ -92,8 +108,7 @@ export const load = (async ({ url }) => {
       statisticsSearchDto: { type: AssetTypeEnum.Video, visibility: AssetVisibility.Timeline },
     }).catch(() => null),
     searchAssetStatistics({ statisticsSearchDto: { filter: { hasPeople: { eq: false } } } }).catch(() => null),
-    // Never a star-rating fallback: only assets with a computed quality score count here.
-    getBestPhotos({ minScore: BEST_PHOTOS_QUALITY_MIN_SCORE, limit: BEST_PHOTOS_PREVIEW_LIMIT }).catch(() => null),
+    loadBestPhotosPreview().catch(() => null),
     // T-12: People, Places and Things counts and covers, in the scope of the flat search each card
     // opens (Timeline visibility, as the search session sends it), in one request.
     searchFacets({ searchFacetsDto: exploreFacetsBody }).catch(() => null),
@@ -114,10 +129,7 @@ export const load = (async ({ url }) => {
     withoutPeople: withoutPeopleStatistics ? withoutPeopleStatistics.total : null,
   };
 
-  const bestPhotosPreview: ExploreBestPhotosPreview = {
-    total: bestPhotos ? bestPhotos.total : null,
-    cover: bestPhotos?.items[0] ?? null,
-  };
+  const bestPhotosPreview: ExploreBestPhotosPreview = bestPhotos ?? { total: null, cover: null };
 
   return {
     failed: {

@@ -33,40 +33,56 @@ test.describe('Tags and Folders', () => {
     await utils.tagAssets(admin.accessToken, lakes.id, [visible.id, hidden.id]);
   });
 
-  test('walks the tag tree with the keyboard, counts only visible items, and Back returns', async ({
+  test('shows tags as cards, walks the list with the keyboard, counts only visible items, and Back returns', async ({
     context,
     page,
   }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/tags');
 
-    const tree = page.getByRole('tree', { name: 'Tags' });
-    // A parent's name starts with its toggle's label (Tags.jsx:47-53: "Expand trips" / "Collapse trips").
-    const trips = tree.getByRole('treeitem', { name: /^(Expand|Collapse) trips trips\b/ });
-    // the hidden (archived) descendant item is not counted anywhere up the tree
-    await expect(trips.locator(':scope > .dv-tree-row small')).toHaveText('1');
+    // One card per top-level tag. The hidden (archived) item under trips is neither counted nor a cover.
+    const trips = page.getByRole('article', { name: 'trips' });
+    await expect(trips.getByRole('link', { name: 'Open trips, 1 item' })).toBeVisible();
+    await expect(trips.locator('img')).toHaveCount(1);
+    await expect(page.getByRole('article', { name: 'family' }).getByText('No items yet')).toBeVisible();
 
-    await trips.focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(trips).toHaveAttribute('aria-expanded', 'true');
+    // The list is the tree. It opens one level deep; the keyboard opens the rest and chooses a tag.
+    await page.getByRole('button', { name: 'List', exact: true }).click();
+    const list = page.getByRole('treegrid', { name: 'Tags' });
+    const row = (name: string) => list.getByRole('row').filter({ has: page.getByRole('link', { name, exact: true }) });
+    await expect(row('trips')).toHaveAttribute('aria-expanded', 'true');
+    await expect(row('trips').getByRole('gridcell').nth(1)).toHaveText('1');
+    await row('trips').focus();
     await page.keyboard.press('ArrowDown');
+    await expect(row('rockies')).toBeFocused();
     await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('ArrowDown');
+    await expect(row('rockies')).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('ArrowRight');
+    await expect(row('lakes')).toBeFocused();
     await page.keyboard.press('Enter');
     await page.waitForURL(/\/tags\?path=trips%2Frockies%2Flakes/);
 
+    // The tag's page: its count, and the library grid with only the visible item.
     const detail = page.getByRole('region', { name: 'Tag lakes' });
-    await expect(detail.getByRole('button', { name: 'Show all 1 item' })).toBeEnabled();
-    await expect(detail.locator('.dv-strip img')).toHaveCount(1);
+    await expect(detail.getByText('1 item', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid="frameleaf-asset-tile"]')).toHaveCount(1);
 
-    await tree.getByRole('treeitem', { name: /^family/ }).click();
-    await page.waitForURL(/\/tags\?path=family/);
-    await expect(page.getByRole('region', { name: 'Tag family' })).toBeVisible();
+    await detail.getByRole('navigation', { name: 'Tag path' }).getByRole('link', { name: 'rockies' }).click();
+    await page.waitForURL(/\/tags\?path=trips%2Frockies(&|$)/);
+    const rockies = page.getByRole('region', { name: 'Tag rockies' });
+    await expect(
+      rockies.getByRole('region', { name: 'Tags inside' }).getByRole('article', { name: 'lakes' }),
+    ).toBeVisible();
 
     await page.goBack();
     await page.waitForURL(/\/tags\?path=trips%2Frockies%2Flakes/);
     await expect(page.getByRole('region', { name: 'Tag lakes' })).toBeVisible();
-    await expect(tree.getByRole('treeitem', { name: /^lakes/ })).toHaveAttribute('aria-selected', 'true');
+
+    // Back again is the index, still as the list it was left as.
+    await page.goBack();
+    await page.waitForURL(/\/tags$/);
+    await expect(page.getByRole('treegrid', { name: 'Tags' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cards', exact: true }).click();
   });
 
   test('renames, moves to the top level and deletes a tag, and a gone tag is not found', async ({ context, page }) => {
@@ -74,23 +90,28 @@ test.describe('Tags and Folders', () => {
     const [scratch] = await utils.upsertTags(admin.accessToken, ['trips/scratch']);
     await page.goto(`/tags?path=${encodeURIComponent('trips/scratch')}`);
 
-    await page.getByRole('button', { name: 'Rename' }).click();
-    const rename = page.getByRole('dialog', { name: 'Rename tag' });
-    await rename.getByRole('textbox', { name: 'Name' }).fill('renamed');
-    await rename.getByRole('button', { name: 'Save' }).click();
+    // The name is edited in place; the tag's address follows it.
+    await page.getByTitle('Edit tag name').click();
+    const name = page.getByRole('textbox', { name: 'Edit tag name' });
+    await name.fill('renamed');
+    await name.press('Enter');
     await page.waitForURL(/\/tags\?path=trips%2Frenamed/);
 
-    await page.getByRole('button', { name: 'More tag actions' }).click();
-    await page.getByRole('menuitem', { name: 'Move to top level' }).click();
-    await page.waitForURL(/\/tags\?path=renamed$/);
+    await page.getByRole('button', { name: 'Move', exact: true }).click();
+    const move = page.getByRole('dialog', { name: 'Move “renamed”' });
+    await move.getByRole('combobox', { name: 'Inside' }).selectOption({ label: 'None (top level)' });
+    await move.getByRole('button', { name: 'Move' }).click();
+    await page.waitForURL(/\/tags\?path=renamed(&|$)/);
 
     await page.getByRole('button', { name: 'More tag actions' }).click();
     await page.getByRole('menuitem', { name: 'Delete tag' }).click();
     const remove = page.getByRole('dialog', { name: 'Delete tag' });
     await expect(remove).toContainText('No items use this tag.');
     await remove.getByRole('button', { name: 'Delete' }).click();
+    // a deleted top-level tag gives way to the index
     await page.waitForURL(/\/tags$/);
-    await expect(page.getByRole('heading', { name: 'Choose a tag' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Tags' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'renamed' })).toHaveCount(0);
 
     // the old address of a renamed and then deleted tag is simply not found
     await page.goto(`/tags?path=${encodeURIComponent('trips/scratch')}`);
@@ -117,26 +138,56 @@ test.describe('Tags and Folders', () => {
     }
   });
 
-  test('browses a storage folder, lists only visible files, opens one and Back returns', async ({ context, page }) => {
+  test('browses storage folders as cards, lists only visible files, opens one and Back returns', async ({
+    context,
+    page,
+  }) => {
     await utils.setAuthCookies(context, admin.accessToken);
+    // A second visible original, so the library branches and there are folders to walk (FoldersV2.jsx).
+    const peak = await utils.createAsset(admin.accessToken, {
+      assetData: { filename: 'peak.png' },
+      fileCreatedAt: '2026-08-04T10:00:00.000Z',
+    });
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    const { originalPath } = await utils.getAssetInfo(admin.accessToken, peak.id);
+    const peakFolder = originalPath.slice(0, originalPath.lastIndexOf('/'));
+    const openFolder = () => new URL(page.url()).searchParams.get('path');
+
+    // lake.png and one peak.png for every attempt at this test; the archived original is never counted.
+    const visibleOriginals = 2 + test.info().retry;
+
     await page.goto('/folders');
+    // The browser starts where the tree first branches, never at "/": a card for each folder on the
+    // way to a visible original. Each card's link says how many items are under it.
+    await expect(page.getByRole('heading', { level: 1, name: 'Folders' })).toBeVisible();
+    const cards = page.locator('section.folders article a.cover');
+    await expect(cards.first()).toBeVisible();
+    const topCards = await cards.count();
+    expect(topCards).toBeGreaterThan(1);
+    const counted = await cards.evaluateAll((links) =>
+      links.map((link) => Number(/, (\d+) items?$/.exec(link.getAttribute('aria-label') ?? '')?.[1])),
+    );
+    expect(counted.reduce((sum, count) => sum + count, 0)).toBe(visibleOriginals);
 
-    const folderTree = page.getByRole('tree', { name: 'Folders' });
-    await expect(folderTree.getByRole('treeitem').first()).toContainText('All folders');
-    // walk down to the deepest folder with the keyboard: the one holding the files
-    const chosen = folderTree.locator('[role="treeitem"][aria-selected="true"]');
-    await chosen.focus();
-    for (let step = 0; step < 12; step++) {
-      await page.keyboard.press('ArrowRight');
+    // walk down the cards to the folder that holds peak.png
+    for (let step = 0; step < 4 && openFolder() !== peakFolder; step++) {
+      const paths = await cards.evaluateAll((links) =>
+        links.map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get('path') ?? ''),
+      );
+      const index = paths.findIndex((path) => peakFolder === path || peakFolder.startsWith(`${path}/`));
+      expect(index).toBeGreaterThanOrEqual(0);
+      await cards.nth(index).click();
+      await page.waitForURL((url) => url.searchParams.get('path') === paths[index]);
     }
-    await page.keyboard.press('Enter');
+    expect(openFolder()).toBe(peakFolder);
 
-    const files = page.locator('.dv-file-grid-host [data-testid="frameleaf-asset-tile"]');
+    const files = page.locator('section.folders [data-testid="frameleaf-asset-tile"]');
     await expect(files).toHaveCount(1);
-    await expect(page.locator('.dv-file-grid-host .fl-grid-caption')).toContainText('lake.png');
-    // The details bar is a <footer> inside the folder's region (Folders.jsx:289), so it has no
-    // contentinfo role; read it by its class.
-    await expect(page.locator('footer.dv-details-bar')).toContainText('1 file');
+    await expect(page.getByRole('heading', { level: 2, name: /^In this folder\s+1 item$/ })).toBeVisible();
+    // file names stay off until they are asked for
+    await expect(page.locator('section.folders .fl-grid-caption')).toHaveCount(0);
+    await page.getByRole('button', { name: 'File names' }).click();
+    await expect(page.locator('section.folders .fl-grid-caption')).toContainText('peak.png');
     const folderUrl = page.url();
 
     await files.first().locator('.fl-tile-open').click();
@@ -148,20 +199,25 @@ test.describe('Tags and Folders', () => {
     await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await expect(files).toHaveCount(1);
 
-    await page.getByRole('navigation', { name: 'Folder path' }).getByRole('button', { name: 'All folders' }).click();
-    await page.waitForURL(/\/folders\?path=%2F$/);
+    // the path pills lead back up; browser Back returns to the folder
+    await page.getByRole('navigation', { name: 'Folder path' }).getByRole('link', { name: 'All folders' }).click();
+    await expect(cards).toHaveCount(topCards);
+    await expect(page.getByRole('heading', { level: 1, name: 'Folders' })).toBeVisible();
     await page.goBack();
     await page.waitForURL(folderUrl);
+    await expect(files).toHaveCount(1);
   });
 
-  test('changes a tag colour from the colour menu by name', async ({ context, page }) => {
+  test('changes a tag colour from the colour tile by name', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     const [tag] = await utils.upsertTags(admin.accessToken, ['colours']);
     await updateTag({ id: tag.id, tagUpdateDto: { color: '#5794f7' } }, { headers: asBearerAuth(admin.accessToken) });
     await page.goto('/tags?path=colours');
     await page.getByRole('button', { name: 'Change colour' }).click();
-    await expect(page.getByRole('menuitemcheckbox', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('menuitemcheckbox', { name: 'Pink' }).click();
+    const colours = page.getByRole('dialog', { name: 'Tag colour' });
+    await expect(colours.getByRole('radio', { name: 'Blue' })).toHaveAttribute('aria-checked', 'true');
+    await colours.getByRole('radio', { name: 'Pink' }).click();
     await expect(page.getByText('Colour changed to Pink.')).toBeAttached();
+    await expect(colours).toHaveCount(0);
   });
 });

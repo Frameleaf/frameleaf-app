@@ -153,7 +153,7 @@
     min-height: 2.75rem;
     display: grid;
     place-items: center;
-    padding: 0.5rem;
+    padding: 0.5rem var(--fl-space-3);
     border-radius: var(--fl-radius-control);
     text-align: center;
     font-size: 0.8125rem;

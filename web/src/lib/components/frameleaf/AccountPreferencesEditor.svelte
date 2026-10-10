@@ -674,7 +674,7 @@
   }
   .ap-field {
     display: grid;
-    gap: 7px;
+    gap: var(--fl-space-2);
     min-width: 0;
   }
   .ap-field > span {
@@ -691,7 +691,7 @@
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
     border-radius: 5px;
-    padding: 7px 10px;
+    padding: 7px var(--fl-space-3);
   }
   .ap-toggle {
     display: flex;

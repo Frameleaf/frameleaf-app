@@ -329,19 +329,19 @@
   }
   .grid {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--fl-space-4) var(--fl-space-3);
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   }
   label {
     display: grid;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     min-width: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   input,
   select {
-    padding: 0.4375rem 0.6875rem;
+    padding: 0.4375rem var(--fl-space-3);
     font: inherit;
     font-size: var(--fl-font-size);
     color: var(--fl-text);
@@ -361,7 +361,10 @@
   .check input {
     min-width: 0;
   }
+  /* `min-width: 0`: a fieldset is as wide as its content by default, and on a phone the six PIN cells
+     pushed it past the dialog's edge. */
   fieldset {
+    min-width: 0;
     margin: 1rem 0 0;
     padding: 0.75rem;
     border: 1px solid var(--fl-border);

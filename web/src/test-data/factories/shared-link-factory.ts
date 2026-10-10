@@ -12,6 +12,9 @@ export const sharedLinkFactory = Sync.makeFactory<SharedLinkResponseDto>({
   createdAt: Sync.each(() => faker.date.past().toISOString()),
   expiresAt: Sync.each(() => faker.date.past().toISOString()),
   assets: [],
+  // What the server says the link shares, for its cover and count; a test that shows either sets both.
+  assetCount: 0,
+  coverAssetIds: [],
   allowUpload: Sync.each(() => faker.datatype.boolean()),
   allowDownload: Sync.each(() => faker.datatype.boolean()),
   showMetadata: Sync.each(() => faker.datatype.boolean()),

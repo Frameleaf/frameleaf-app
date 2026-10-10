@@ -487,10 +487,8 @@
       <div class="summary">
         <span>{$t('frameleaf_albums_items', { values: { count: assetCount } })}</span>
         {#if span}
-          <span class="dot" aria-hidden="true"></span>
           <span>{span}</span>
         {/if}
-        <span class="dot" aria-hidden="true"></span>
         {#if others.length > 0}
           <button type="button" class="members" onclick={() => openShare()}>
             <AlbumAvatarStack users={others} />
@@ -505,7 +503,6 @@
           <span>{$t('frameleaf_album_private')}</span>
         {/if}
         {#if likeCount + commentCount > 0}
-          <span class="dot" aria-hidden="true"></span>
           <span>
             {$t('frameleaf_album_activity_summary', { values: { likes: likeCount, comments: commentCount } })}
           </span>
@@ -814,21 +811,27 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    padding-block: 1rem;
+    /* The layout switch follows the actions closely (`.collection-header.compact`), with no band between. */
+    padding-block: 1rem 0.25rem;
     color: var(--fl-text);
   }
   .crumbs {
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    /* A link's hover box hangs outside, so its text starts on the content edge. */
+    margin-inline-start: calc(-1 * var(--fl-space-2));
     font-size: 0.75rem;
     color: var(--fl-muted);
     flex-wrap: wrap;
   }
+  .crumbs a,
+  .crumbs span[aria-current='page'] {
+    padding: var(--fl-space-1) var(--fl-space-2);
+  }
   .crumbs a {
     color: var(--fl-muted);
     text-decoration: none;
-    padding: 0.125rem 0.25rem;
     border-radius: var(--fl-radius);
   }
   .crumbs a:hover {
@@ -840,7 +843,8 @@
   }
   .main {
     display: flex;
-    gap: 0.875rem;
+    /* The title's edit button hangs 8px outside the text column and stays 12px clear of the icon. */
+    gap: var(--fl-space-5);
     align-items: flex-start;
   }
   .icon-wrap {
@@ -922,24 +926,39 @@
     height: 18px;
   }
   .summary {
+    --summary-gap: calc(2 * var(--fl-space-2) + 3px);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-1) var(--summary-gap);
     flex-wrap: wrap;
+    /*
+     * Room for a focus ring at either end, and the edge that hides a separator: the dot before the
+     * first thing on a wrapped line falls outside this box, so no line starts or ends with one.
+     */
+    margin-inline: calc(-1 * var(--fl-space-1));
+    padding-inline: var(--fl-space-1);
+    overflow-x: clip;
     font-size: 0.75rem;
     color: var(--fl-muted);
   }
-  .dot {
+  .summary > * {
+    position: relative;
+  }
+  .summary > * + *::before {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(50% - 1.5px);
+    inset-inline-start: calc(-0.5 * var(--summary-gap) - 1.5px);
     inline-size: 3px;
     block-size: 3px;
     border-radius: 50%;
-    background: currentColor;
+    background: var(--fl-muted);
   }
   .members {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.125rem 0.375rem;
+    padding: 0.125rem var(--fl-space-2);
     font: inherit;
     color: var(--fl-muted);
     background: transparent;
@@ -954,7 +973,8 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    /* 8px between buttons, 12px between the rows they wrap into. */
+    gap: var(--fl-space-3) var(--fl-space-2);
     flex-wrap: wrap;
   }
   .action,
@@ -965,7 +985,7 @@
     white-space: nowrap;
   }
   .action {
-    padding: 0 0.6875rem;
+    padding: 0 var(--fl-space-3);
     min-height: 44px;
     font: inherit;
     color: var(--fl-text);
@@ -1007,11 +1027,17 @@
     font-size: 0.75rem;
     color: var(--fl-muted);
   }
+  /* With nothing to say the line keeps no row (or gap) of its own; it stays in the page to be announced. */
+  .status:empty {
+    min-block-size: 0;
+    margin-block-start: -0.75rem;
+  }
   .strip {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding-block-start: 0.5rem;
+    gap: var(--fl-space-3);
+    margin-block-start: var(--fl-space-2);
+    padding-block-start: var(--fl-space-4);
     border-block-start: 1px solid var(--fl-border);
   }
   .strip-head {
@@ -1030,7 +1056,7 @@
   .strip-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-    gap: 18px 12px;
+    gap: var(--fl-space-5) var(--fl-space-3);
     align-items: start;
   }
   @media (max-width: 700px) {

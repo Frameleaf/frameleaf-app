@@ -645,7 +645,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -1038,6 +1038,61 @@ describe(MediaService.name, () => {
       );
     });
 
+    it('should decode every frame of a clip short enough to hold a single keyframe', async () => {
+      // Regression: a 6s clip from x264 (a keyframe every 250 frames) has one
+      // keyframe, its first frame. Decoding only keyframes via -skip_frame
+      // nointra left every later start time without a frame, so ffmpeg wrote
+      // nothing ("Conversion failed!") for all three candidates.
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 144, frameRate: 24 },
+        format: { ...probeStub.videoStream2160p.format, duration: 6 },
+      });
+      mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(5);
+      for (const [call, startTime] of [1.2, 3, 4.8, 3, 3].entries()) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          call + 1,
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({
+            inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+            outputOptions: expect.arrayContaining([expect.stringContaining(`start_time=${startTime}:`)]),
+          }),
+        );
+      }
+    });
+
+    it('should decode only the keyframes of a clip longer than one default GOP', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 251, frameRate: 24 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10.458 },
+      });
+      mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(5);
+      for (const call of [1, 2, 3, 4, 5]) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          call,
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({
+            inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          }),
+        );
+      }
+    });
+
     it('should tonemap thumbnail for hdr video', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
@@ -1052,7 +1107,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -1104,7 +1159,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',

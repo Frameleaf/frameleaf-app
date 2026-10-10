@@ -816,7 +816,7 @@
   .text {
     color: var(--fl-accent);
     font-weight: 600;
-    padding-inline: 0.25rem;
+    padding-inline: var(--fl-space-2);
   }
   .clear {
     color: var(--fl-muted);
@@ -829,7 +829,8 @@
   }
   .menu {
     position: absolute;
-    inset-block-end: calc(100% + 0.4rem);
+    /* Clear of the capsule it hangs over (prototype `.sb-menu`, 10px). */
+    inset-block-end: calc(100% + var(--fl-space-3));
     inset-inline-end: 0;
     min-inline-size: 15rem;
     max-block-size: 60dvh;
@@ -853,7 +854,8 @@
     justify-content: flex-start;
   }
   .menu-title {
-    margin: 0.35rem 0 0.15rem;
+    /* Nearer the group it names than the group before it. */
+    margin: var(--fl-space-3) 0 var(--fl-space-1);
     padding-inline: 0.6rem;
     color: var(--fl-muted);
     font-size: 0.75rem;

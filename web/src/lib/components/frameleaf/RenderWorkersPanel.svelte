@@ -228,7 +228,7 @@
   }
   .field {
     display: grid;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     min-width: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
@@ -238,7 +238,7 @@
   }
   .field input,
   .field select {
-    padding: 0.4375rem 0.6875rem;
+    padding: 0.4375rem var(--fl-space-3);
     font: inherit;
     font-size: var(--fl-font-size);
     color: var(--fl-text);
@@ -304,7 +304,7 @@
     list-style: none;
   }
   .kinds li {
-    padding: 0.0625rem 0.4375rem;
+    padding: 0.0625rem var(--fl-space-2);
     font-size: var(--fl-font-small);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

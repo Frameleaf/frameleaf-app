@@ -362,14 +362,16 @@
     {#each rows as row (row.face.id)}
       {@const done = resolved.get(row.face.id)}
       <li class="pd-fix-row" class:is-done={!!done} class:is-selected={selected.has(row.face.id)}>
-        <input
-          type="checkbox"
-          class="pd-fix-check"
-          aria-label={$t('frameleaf_people_fix_select_face', { values: { name: row.asset.originalFileName } })}
-          checked={selected.has(row.face.id)}
-          disabled={!!done || busy}
-          onchange={() => toggle(row)}
-        />
+        <label class="fl-check-target">
+          <input
+            type="checkbox"
+            class="pd-fix-check"
+            aria-label={$t('frameleaf_people_fix_select_face', { values: { name: row.asset.originalFileName } })}
+            checked={selected.has(row.face.id)}
+            disabled={!!done || busy}
+            onchange={() => toggle(row)}
+          />
+        </label>
         <button
           type="button"
           class="pd-fix-thumb"

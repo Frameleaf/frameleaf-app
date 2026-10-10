@@ -33,9 +33,11 @@
 <MigrationChecklistDialog bind:open onDone={() => (notice = $t('admin.frameleaf_migration_checklist_final'))} />
 
 <style>
+  /* Not a settings row: it brings the inset a row would have, so the button clears the card edge. */
   .migration-section {
     display: grid;
     gap: 0.5rem;
+    padding-block: var(--fl-space-3);
   }
   .action {
     display: flex;

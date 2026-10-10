@@ -571,7 +571,7 @@ test.describe('Shared Links', () => {
     // AL-21: the card's badges and its open-public action.
     const card = page.getByRole('listitem').filter({ hasText: 'Badge check' });
     const badges = card.getByRole('list', { name: 'Link details' });
-    for (const badge of ['Password', 'Downloads', 'Uploads', 'Metadata', 'Expires in 3 days']) {
+    for (const badge of ['Password', 'Downloads', 'Uploads', 'Photo details', 'Expires in 3 days']) {
       await expect(badges.getByText(badge)).toBeVisible();
     }
     await expect(card.getByText('secret')).toHaveCount(0);

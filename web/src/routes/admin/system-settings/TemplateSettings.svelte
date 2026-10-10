@@ -59,7 +59,7 @@
 </script>
 
 <div in:reveal>
-  <form autocomplete="off" {onsubmit} class="mt-4">
+  <form autocomplete="off" {onsubmit}>
     <div class="flex flex-col gap-4">
       <SettingGroup
         key="templates"

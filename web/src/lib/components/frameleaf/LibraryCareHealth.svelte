@@ -751,13 +751,15 @@
       <thead>
         <tr>
           <th scope="col">
-            <input
-              type="checkbox"
-              aria-label={$t('library_care_select_all')}
-              checked={allSelected}
-              disabled={editable.length === 0}
-              onchange={toggleAll}
-            />
+            <label class="fl-check-target">
+              <input
+                type="checkbox"
+                aria-label={$t('library_care_select_all')}
+                checked={allSelected}
+                disabled={editable.length === 0}
+                onchange={toggleAll}
+              />
+            </label>
           </th>
           <th scope="col">{$t('library_care_column_original')}</th>
           <th scope="col">{$t('library_care_column_account')}</th>
@@ -771,13 +773,15 @@
           {@const src = thumb(row)}
           <tr>
             <td>
-              <input
-                type="checkbox"
-                aria-label={$t('library_care_select_item', { values: { name: row.name } })}
-                disabled={job?.state === 'pending'}
-                checked={selected.includes(row.id)}
-                onchange={() => toggle(row.id)}
-              />
+              <label class="fl-check-target">
+                <input
+                  type="checkbox"
+                  aria-label={$t('library_care_select_item', { values: { name: row.name } })}
+                  disabled={job?.state === 'pending'}
+                  checked={selected.includes(row.id)}
+                  onchange={() => toggle(row.id)}
+                />
+              </label>
             </td>
             <td>
               <div class="file">
@@ -1113,7 +1117,7 @@
   }
   .toolbar label {
     display: grid;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     color: var(--fl-muted);
     font-size: var(--fl-font-small, 0.75rem);
   }
@@ -1121,7 +1125,7 @@
   .toolbar input,
   .confirm input {
     min-height: 2.25rem;
-    padding: 0.375rem 0.625rem;
+    padding: 0.375rem var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -1324,7 +1328,7 @@
   }
   .confirm {
     display: grid;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: 0.8125rem;
   }
   .confirm small {

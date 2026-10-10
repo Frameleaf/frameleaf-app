@@ -540,7 +540,8 @@
         {#if isCollection}
           <Theme theme={appTheme}>
             <div class="h-full overflow-y-auto">
-              <section class="pt-2">{@render header()}</section>
+              <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->
+              <section class="pt-2 max-md:px-2">{@render header()}</section>
               <ResultsView
                 assets={collectionTimelineAssets}
                 {bulkContext}
@@ -593,19 +594,25 @@
 
     {#if activityOpen && authManager.authenticated && !assetViewerManager.isViewing}
       <Theme theme={appTheme}>
-        {#if isSpace}
-          <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
-          <div class="h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
-            <SpaceMediaComments
-              spaceId={album.id}
-              canComment={album.isActivityEnabled}
-              likes={{ count: activityManager.likeCount, liked: !!activityManager.isLiked, onToggle: toggleSpaceLike }}
-              onClose={() => (activityOpen = false)}
-            />
-          </div>
-        {:else}
-          <ActivityPanel {album} onClose={() => (activityOpen = false)} />
-        {/if}
+        <div class="fl-album-activity">
+          {#if isSpace}
+            <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
+            <div class="fl-album-activity-space h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
+              <SpaceMediaComments
+                spaceId={album.id}
+                canComment={album.isActivityEnabled}
+                likes={{
+                  count: activityManager.likeCount,
+                  liked: !!activityManager.isLiked,
+                  onToggle: toggleSpaceLike,
+                }}
+                onClose={() => (activityOpen = false)}
+              />
+            </div>
+          {:else}
+            <ActivityPanel {album} onClose={() => (activityOpen = false)} />
+          {/if}
+        </div>
       </Theme>
     {/if}
   </div>
@@ -633,3 +640,45 @@
     </Theme>
   </div>
 {/snippet}
+
+<style>
+  /*
+   * The prototype's .activity-panel (collections.css:1503, 1708-1716, 1823-1832): beside the album on
+   * a wide window, over it below 1000px, and a sheet from the bottom on phones, where a panel beside
+   * the album left the album a strip a few pixels wide.
+   */
+  .fl-album-activity {
+    block-size: 100%;
+    background: var(--fl-panel);
+  }
+
+  @media (max-width: 1000px) {
+    .fl-album-activity {
+      position: fixed;
+      inset-block: var(--fl-topbar-height) 0;
+      inset-inline-end: 0;
+      z-index: 40;
+      block-size: auto;
+      box-shadow: var(--fl-shadow-2);
+    }
+  }
+
+  @media (max-width: 700px) {
+    .fl-album-activity {
+      inset-block-start: auto;
+      inset-inline: 0;
+      block-size: min(72dvh, 100dvh - var(--fl-topbar-height-phone));
+      /* The tab bar floats over the foot of the page: the comment box ends above it. */
+      padding-block-end: calc(var(--fl-tabbar-height, 0px) + var(--fl-space-2));
+      overflow: hidden;
+      border-block-start: 1px solid var(--fl-border);
+      border-radius: var(--fl-radius-capsule) var(--fl-radius-capsule) 0 0;
+    }
+
+    .fl-album-activity :global(.activity),
+    .fl-album-activity-space {
+      inline-size: 100%;
+      border-inline-start: 0;
+    }
+  }
+</style>

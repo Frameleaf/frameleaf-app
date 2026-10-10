@@ -158,6 +158,12 @@
     enableRouting?: boolean;
     /** FL-30: rail and top bar. */
     shell?: Snippet;
+    /**
+     * The destination's name (Favorites, Archive, Recently added), drawn as the page's large title on
+     * the layout switch's row (prototype `.collection-header`). A page with a header of its own, such
+     * as an album or a person, passes that as `children` instead.
+     */
+    title?: string;
     /** Rendered above the results toolbar, inside the scrolling area. */
     children?: Snippet;
     /** Extra results-toolbar controls (sort, grouping, view). */
@@ -246,6 +252,7 @@
     onMutated,
     tagOptions = [],
     shell,
+    title,
     children,
     toolbar,
     selectionBar,
@@ -715,20 +722,19 @@
   );
 
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
-    const guard = beforeAction;
-    if (guard) {
-      void (async () => {
-        try {
-          if (await guard(id)) {
-            dispatchBulk(id, payload);
-          }
-        } catch (error) {
-          handleError(error, $t('error'));
-        }
-      })();
+    if (!beforeAction) {
+      dispatchBulk(id, payload);
       return;
     }
-    dispatchBulk(id, payload);
+    // The page's gate decides one microtask after the event that asked, never inside it, and a gate
+    // that throws is reported like one that rejects.
+    const gated = async () => {
+      await Promise.resolve();
+      if (await beforeAction(id)) {
+        dispatchBulk(id, payload);
+      }
+    };
+    gated().catch((error) => handleError(error, $t('error')));
   };
 
   /** The id-list filter fields a person/pet/tag's real name can be resolved for (FL-45 owner decision). */
@@ -1625,8 +1631,13 @@
       >
         {#snippet header()}
           <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
-          <div class="fl-library-header">
-            <div class="fl-library-header-content">{@render children?.()}</div>
+          <div class="fl-library-header" class:has-title={!!title}>
+            <div class="fl-library-header-content">
+              {#if title}
+                <h1 class="fl-library-title">{title}</h1>
+              {/if}
+              {@render children?.()}
+            </div>
             {#if !publicView && !phone && !firstRun}
               <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
             {/if}
@@ -1862,6 +1873,20 @@
     height: 100%;
     min-height: 0;
   }
+  /*
+   * The library as the page itself (Photos, Favorites, Archive ...) carries the page gutter: 24px with
+   * the page area's own 8px, which is also what keeps the date scrubber off the window edge. A page
+   * that wraps it (an album, a tag, a person) pads its own column the same way.
+   */
+  @media (min-width: 768px) {
+    :global(.fl-scope) > .fl-library {
+      padding-inline: var(--fl-space-4);
+    }
+    /* The information panel is docked at the page's edge, not floated in from it. */
+    :global(.fl-scope) > .fl-library:has(.fl-library-panel) {
+      padding-inline-end: 0;
+    }
+  }
   .fl-library-body {
     display: flex;
     flex: 1 1 auto;
@@ -1895,8 +1920,42 @@
   .fl-library-header > :global(.fl-layouts) {
     margin-block: 8px 0;
   }
+  /* The tabs' underline stays clear of the toolbar band (prototype `.collection-header.compact`, 8px). */
+  .fl-library-header:has(> :global(.fl-layouts)) {
+    padding-bottom: var(--fl-space-2);
+  }
+  /* Without tabs (phones), a page's own header keeps the room a row of controls above another gets. */
+  .fl-library-header:not(:has(> :global(.fl-layouts))):has(> .fl-library-header-content > :global(*)) {
+    padding-bottom: var(--fl-space-3);
+  }
+  /*
+   * A named destination (styles.css `.collection-header`, apple-style.css:220-225): the large title
+   * and the layout switch share one row, their feet on one line, above the toolbar.
+   */
+  .fl-library-header.has-title {
+    min-height: 77px;
+    /* The title starts on the line of the toolbar's count; the tabs end on the photos' edge. */
+    padding: 0 0 var(--fl-space-3);
+    padding-inline-start: var(--fl-space-3);
+  }
+  .fl-library-title {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
   .fl-library-toolbar {
     position: relative;
+  }
+  /*
+   * Phones: the photos keep the page area's 8px edge; the header and the toolbar's text and controls
+   * sit at the 16px page gutter.
+   */
+  @media (max-width: 767px) {
+    .fl-library-header,
+    .fl-library-header.has-title,
+    .fl-library-toolbar {
+      padding-inline: var(--fl-space-2);
+    }
   }
   .fl-library.has-sticky-toolbar .fl-library-toolbar {
     position: sticky;
@@ -1962,6 +2021,8 @@
   }
   .fl-library-panel {
     flex: 0 0 320px;
+    /* The date scrubber's ticks stay clear of the panel's edge. */
+    margin-inline-start: var(--fl-space-2);
     overflow-y: auto;
     border-inline-start: 1px solid var(--fl-border);
     background: var(--fl-panel);

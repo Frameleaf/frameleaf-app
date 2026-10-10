@@ -375,8 +375,10 @@
     );
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
+<UserPageLayout scrollbar={true}>
   <section class="pets">
+    <!-- The page's own large title, as on Tags and Places, rather than the layout's ruled bar. -->
+    <h1 class="fl-type-display">{data.meta.title}</h1>
     <div class="toolbar">
       <input
         type="search"
@@ -532,6 +534,17 @@
     gap: 1rem;
     padding: 1rem;
   }
+  h1 {
+    margin: 0;
+    padding-block-start: var(--fl-space-2);
+    color: var(--fl-text);
+  }
+  @media (max-width: 700px) {
+    /* The size Tags and Places step down to on phones. */
+    h1 {
+      font-size: var(--fl-font-title);
+    }
+  }
   .toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -572,6 +585,9 @@
     padding: 2rem;
     color: var(--fl-muted);
   }
+  .empty :global(svg) {
+    flex-shrink: 0;
+  }
   .form {
     display: flex;
     flex-direction: column;
@@ -581,7 +597,7 @@
   .form label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }

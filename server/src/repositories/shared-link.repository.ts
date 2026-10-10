@@ -47,6 +47,20 @@ const withSharedAssets = (eb: ExpressionBuilder<DB, 'shared_link'>, options: Sha
     .orderBy('asset.fileCreatedAt', 'asc');
 };
 
+/** How many items a link's cover shows. */
+const COVER_ASSETS = 4;
+
+/** An album link's items, by the rules of `withSharedAssets`: nothing deleted, Locked or hidden from this viewer. */
+const withSharedAlbumAssets = (eb: ExpressionBuilder<DB, 'shared_link'>, options: SharedLinkPrivacyOptions = {}) => {
+  return eb
+    .selectFrom('album_asset')
+    .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+    .whereRef('album_asset.albumId', '=', 'shared_link.albumId')
+    .where('asset.deletedAt', 'is', null)
+    .where(isNotLocked('asset'))
+    .$call((qb) => withHiddenContentFilter(qb, options));
+};
+
 export const withExifInfo = (eb: ExpressionBuilder<DB, 'asset'>) => {
   return eb
     .selectFrom('asset_exif')
@@ -160,25 +174,53 @@ export class SharedLinkRepository {
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
   getAll({ userId, id, albumId, ...options }: SharedLinkSearchOptions) {
-    return this.db
-      .selectFrom('shared_link')
-      .selectAll('shared_link')
-      .select((eb) => jsonArrayFrom(withSharedAssets(eb, options).limit(1)).as('assets'))
-      .where('shared_link.userId', '=', userId)
-      .leftJoinLateral(
-        (eb) =>
-          withSharedLinkAlbum(eb)
-            .innerJoinLateral(withAlbumOwner, (join) => join.onTrue())
-            .select((eb) => eb.fn.toJson('owner').as('owner'))
-            .as('album'),
-        (join) => join.onTrue(),
-      )
-      .select((eb) => eb.fn.toJson('album').$castTo<ShallowDehydrateObject<Album> | null>().as('album'))
-      .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
-      .$if(!!albumId, (eb) => eb.where('shared_link.albumId', '=', albumId!))
-      .$if(!!id, (eb) => eb.where('shared_link.id', '=', id!))
-      .orderBy('shared_link.createdAt', 'desc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('shared_link')
+        .selectAll('shared_link')
+        .select((eb) => jsonArrayFrom(withSharedAssets(eb, options).limit(COVER_ASSETS)).as('assets'))
+        // What a card shows of the link without loading its contents: how much it shares, and an album's cover items
+        // (the cover its owner chose, then the newest).
+        .select((eb) =>
+          eb
+            .case()
+            .when('shared_link.type', '=', SharedLinkType.Album)
+            .then(withSharedAlbumAssets(eb, options).select(sql<number>`count(*)::int`.as('count')))
+            .else(
+              withSharedAssets(eb, options)
+                .clearSelect()
+                .clearOrderBy()
+                .select(sql<number>`count(*)::int`.as('count')),
+            )
+            .end()
+            .as('assetCount'),
+        )
+        .select((eb) =>
+          jsonArrayFrom(
+            withSharedAlbumAssets(eb, options)
+              .innerJoin('album as cover_album', 'cover_album.id', 'album_asset.albumId')
+              .select('asset.id')
+              .orderBy((eb) => eb('asset.id', '=', eb.ref('cover_album.albumThumbnailAssetId')), 'desc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .limit(COVER_ASSETS),
+          ).as('coverAssets'),
+        )
+        .where('shared_link.userId', '=', userId)
+        .leftJoinLateral(
+          (eb) =>
+            withSharedLinkAlbum(eb)
+              .innerJoinLateral(withAlbumOwner, (join) => join.onTrue())
+              .select((eb) => eb.fn.toJson('owner').as('owner'))
+              .as('album'),
+          (join) => join.onTrue(),
+        )
+        .select((eb) => eb.fn.toJson('album').$castTo<ShallowDehydrateObject<Album> | null>().as('album'))
+        .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
+        .$if(!!albumId, (eb) => eb.where('shared_link.albumId', '=', albumId!))
+        .$if(!!id, (eb) => eb.where('shared_link.id', '=', id!))
+        .orderBy('shared_link.createdAt', 'desc')
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.BUFFER] })

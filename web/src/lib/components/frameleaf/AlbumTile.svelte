@@ -268,7 +268,7 @@
   .text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--fl-space-1);
     min-width: 0;
     padding: 0 2px;
   }

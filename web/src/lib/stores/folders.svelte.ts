@@ -6,8 +6,30 @@ import {
    */
   type AssetResponseDto,
 } from '@frameleaf/sdk';
-import { buildFolderTree, type FolderTree } from '$lib/frameleaf/folder-tree';
+import { persisted } from 'svelte-persisted-store';
+import { MediaQuery } from 'svelte/reactivity';
+import { get } from 'svelte/store';
+import {
+  buildFolderTree,
+  defaultFoldersView,
+  normalizeFoldersView,
+  type FoldersView,
+  type FolderTree,
+} from '$lib/frameleaf/folder-tree';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+
+/**
+ * The Folders browser's view (grid or columns) and whether file names show under the tiles. A
+ * per-device convenience like the Albums page's `albumDirectoryView`, never authority; readers
+ * repair a stale or edited value with `normalizeFoldersView`.
+ */
+export const foldersView = persisted<FoldersView>('frameleaf-folders-view', { ...defaultFoldersView });
+
+/** Columns need the room: the mock offers them from 900px (`FoldersV2.jsx` `wide`), never on phones. */
+const columnsFit = new MediaQuery('min-width: 900px');
+export const foldersColumnsFit = () => columnsFit.current;
+/** Whether the browser is showing columns right now: the viewer chose them and they fit. */
+export const foldersShowColumns = () => normalizeFoldersView(get(foldersView)).view === 'columns' && columnsFit.current;
 
 type AssetCache = {
   [path: string]: AssetResponseDto[];
@@ -15,8 +37,8 @@ type AssetCache = {
 
 /**
  * The Folders browser's data (FL-46): the folder tree with every folder's direct and total file
- * counts and sizes (`GET /view/folder/summary`), and a per-folder cache of its own files
- * (`GET /view/folder`), both limited server-side to the Timeline items the session may see.
+ * counts, sizes, cover and dates (`GET /view/folder/summary`), and a per-folder cache of its own
+ * files (`GET /view/folder`), both limited server-side to the Timeline items the session may see.
  */
 class FoldersStore {
   folders = $state.raw<FolderTree | null>(null);

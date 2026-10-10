@@ -490,7 +490,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3) var(--fl-space-2);
     padding-top: var(--fl-space-2);
   }
   .pl-toolbar input,
@@ -524,8 +524,9 @@
   .pl-page {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 0 0.5rem 2.5rem;
+    gap: var(--fl-space-3);
+    /* With the layout's own 8px, the page's gutter: the toolbar and faces start under the title. */
+    padding: 0 var(--fl-space-4) 2.5rem;
   }
   .pl-status {
     margin: 0;
@@ -536,6 +537,11 @@
     padding: 3rem 1rem;
     color: var(--fl-muted);
     text-align: center;
+  }
+  @media (max-width: 767px) {
+    .pl-page {
+      padding-inline: var(--fl-space-2);
+    }
   }
   @media (max-width: 700px) {
     .pl-toolbar input {
