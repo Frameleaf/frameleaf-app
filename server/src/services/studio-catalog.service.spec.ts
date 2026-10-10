@@ -191,7 +191,7 @@ describe(StudioCatalogService.name, () => {
       const [file] = family.files;
       const response = await sut.getFontFile(file.sha256);
       expect(response.contentType).toBe('font/woff2');
-      expect(response.cacheControl).toBe(CacheControl.PrivateImmutable);
+      expect(response.cacheControl).toBe(CacheControl.None);
       expect(response.fileName).toBe(file.file);
       expect(response.path.replaceAll('\\', '/')).toMatch(new RegExp(`/@fontsource/inter/files/${file.file}$`));
       expect(storage.checkFileExists).toHaveBeenCalledWith(response.path);

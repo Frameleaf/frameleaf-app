@@ -20,6 +20,8 @@ import { UUIDParamDto } from 'src/validation.js';
  * What a native Studio client reads before it edits (FL-348): the resources this deployment may use,
  * with their licences and capabilities, and the media facts behind a placed clip.
  */
+const STUDIO_FONT_CACHE_CONTROL = 'private, max-age=31536000, immutable, no-transform';
+
 @ApiTags(ApiTag.StudioProjects)
 @Controller('studio')
 export class StudioCatalogController {
@@ -62,7 +64,17 @@ export class StudioCatalogController {
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   async getStudioFontFile(@Res() res: Response, @Next() next: NextFunction, @Param() { sha256 }: StudioFontParamDto) {
-    await sendFile(res, next, () => this.service.getFontFile(sha256), this.logger);
+    await sendFile(
+      res,
+      next,
+      async () => {
+        const file = await this.service.getFontFile(sha256);
+        // The URL names its content by hash: cache for a year, never revalidate. Set only once the hash is known.
+        res.header('Cache-Control', STUDIO_FONT_CACHE_CONTROL);
+        return file;
+      },
+      this.logger,
+    );
   }
 
   @Get('assets/:id/media-facts')
