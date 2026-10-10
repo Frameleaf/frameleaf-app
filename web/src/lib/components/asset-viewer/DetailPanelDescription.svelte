@@ -91,7 +91,7 @@
 </script>
 
 {#if isOwner}
-  <section class="mt-10 px-4" data-testid="frameleaf-info-description">
+  <section class="mt-2 px-4" data-testid="frameleaf-info-description">
     <div class="flex h-8 w-full items-center justify-between text-sm">
       <Text color="muted">{$t('frameleaf_info_description')}</Text>
       {#if source === 'generated'}
@@ -142,7 +142,7 @@
     {/if}
   </section>
 {:else}
-  <section class="mt-6 px-4">
+  <section class="mt-2 px-4">
     <p class="w-full text-base wrap-break-word whitespace-pre-line text-black dark:text-white">
       {description || $t('frameleaf_viewer_no_description')}
     </p>

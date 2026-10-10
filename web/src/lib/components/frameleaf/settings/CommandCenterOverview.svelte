@@ -660,7 +660,7 @@
   /* command-center.css `.cc-action-row`: icon, title over its detail, chevron. */
   .action > span {
     display: grid;
-    gap: 3px;
+    gap: var(--fl-space-1);
     flex: 1;
     min-width: 0;
     color: var(--fl-text);

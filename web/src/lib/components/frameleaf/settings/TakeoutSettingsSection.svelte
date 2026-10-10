@@ -129,9 +129,11 @@
 </Dialog>
 
 <style>
+  /* Not a settings row: it brings the inset a row would have, so nothing sits on the card edge. */
   .takeout-section {
     display: grid;
     gap: 0.75rem;
+    padding-block: var(--fl-space-3);
     color: var(--fl-text);
   }
   .note {
@@ -140,7 +142,7 @@
     font-size: var(--fl-font-small);
   }
   h4 {
-    margin: 0 0 0.25rem;
+    margin: 0 0 var(--fl-space-2);
     font-size: var(--fl-font-small);
     font-weight: 600;
   }

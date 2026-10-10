@@ -43,7 +43,7 @@ describe('AccountTable (FL-76 CC-26)', () => {
 
     const table = screen.getByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'Items' })).toBeInTheDocument();
-    expect(within(table).getByRole('columnheader', { name: 'Storage used / quota' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Storage used / limit' })).toBeInTheDocument();
 
     const [, first, second] = within(table).getAllByRole('row');
     expect(within(first).getByText('1,234')).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe('AccountTable (FL-76 CC-26)', () => {
     expect(within(first).getByText(/remaining$/)).toBeInTheDocument();
 
     // No statistics for this account, and no quota: unlimited without a meter.
-    expect(within(second).getByLabelText('No item count')).toBeInTheDocument();
+    expect(within(second).getByLabelText('Not counted yet')).toBeInTheDocument();
     expect(within(second).getByText('/ unlimited')).toBeInTheDocument();
     expect(within(second).queryByRole('progressbar')).toBeNull();
   });
@@ -69,6 +69,6 @@ describe('AccountTable (FL-76 CC-26)', () => {
     });
     render(AccountTable, { users: [user] });
 
-    expect(screen.getByText('Over quota · new uploads need more space')).toBeInTheDocument();
+    expect(screen.getByText('Over the limit · new uploads wait until there’s more space')).toBeInTheDocument();
   });
 });

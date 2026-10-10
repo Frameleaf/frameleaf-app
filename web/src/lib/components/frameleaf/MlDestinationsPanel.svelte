@@ -823,7 +823,7 @@
   }
   .workloads {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     flex-wrap: wrap;
   }
   .facts {
@@ -871,7 +871,7 @@
   .dialog-body input[type='password'],
   .dialog-body input[type='number'] {
     width: 100%;
-    padding: 0.4375rem 0.625rem;
+    padding: 0.4375rem var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-raised);
@@ -894,7 +894,7 @@
   .dialog-body label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
   }
   .dialog-body fieldset {

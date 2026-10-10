@@ -322,6 +322,28 @@ describe('Frameleaf theme contract', () => {
     expect(css).toMatch(/\.frameleaf \.fl-focus-inset:focus-visible {\s*outline-offset: var\(--fl-focus-inset\);/);
   });
 
+  it('shows keyboard focus on a checkbox, radio and slider, which have no border to show it on', () => {
+    // A checkbox or radio is drawn smaller than its 44px box, so the ring is traced around what is
+    // drawn: the offset in the page colour, then the ring's width in the accent, on all four sides.
+    const around = (colour: string, reach: number) =>
+      [`${reach}px 0`, `-${reach}px 0`, `0 ${reach}px`, `0 -${reach}px`].map(
+        (side) => `drop-shadow(${side} 0 var(${colour}))`,
+      );
+    expect(base.get('--fl-focus-ring-drawn')?.split(/\s+(?=drop-shadow)/)).toEqual([
+      ...around('--fl-canvas', brand.focus.offset),
+      ...around('--fl-accent', brand.focus.width),
+    ]);
+    // app.css turned the outline off for every input. Only fields that show focus on their border
+    // lose it now: a slider keeps its outline, a checkbox or radio gets the traced ring.
+    expect(appCss).not.toMatch(/\n\s*input:focus-visible {/);
+    expect(appCss).toMatch(
+      /\n\s*input:not\(\[type='range']\):focus-visible {\s*outline-offset: 0px !important;\s*outline: none !important;\s*}/,
+    );
+    expect(appCss).toMatch(
+      /\n\s*input:is\(\[type='checkbox'], \[type='radio']\):focus-visible {\s*filter: var\(--fl-focus-ring-drawn\);\s*}/,
+    );
+  });
+
   it('declares one duration per motion pattern, mirrored for script use', () => {
     const cssNames: Record<string, string> = {
       fast: '--fl-motion-fast',
@@ -714,6 +736,24 @@ describe('Frameleaf theme contract', () => {
     expect(css).toMatch(/transition-duration: 0\.01ms !important/);
     expect(css).toMatch(/min-height: 44px/);
     expect(css).toMatch(/@media \(pointer: coarse\)[\S\s]*min-height: 48px/);
+  });
+
+  it('draws a checkbox or radio at its own size inside the touch target', () => {
+    // The 48px width is what made each one a 48px square; the 48px height stays as the target.
+    const coarse = blockAfter(css, '@media (pointer: coarse)');
+    expect(coarse).toMatch(
+      /\.frameleaf :where\(input\[type='checkbox'], input\[type='radio']\) {\s*min-width: auto;\s*}/,
+    );
+    // iOS draws them across the whole box, so there the height floor goes as well.
+    const ios = blockAfter(css, '@supports (-webkit-touch-callout: none)');
+    expect(ios).toMatch(
+      /\.frameleaf :where\(input\[type='checkbox'], input\[type='radio']\) {\s*min-height: auto;\s*min-width: auto;\s*}/,
+    );
+    // A box with no text beside it: its label takes no space with a mouse and is the target on touch.
+    expect(css).toMatch(/\n\.frameleaf :where\(label\.fl-check-target\) {\s*display: contents;\s*}/);
+    expect(coarse).toMatch(
+      /\.frameleaf :where\(label\.fl-check-target\) {[^}]*min-height: 48px;\s*min-width: 48px;\s*}/,
+    );
   });
 
   it('stops CSS motion outside .frameleaf roots too (FL-139)', () => {

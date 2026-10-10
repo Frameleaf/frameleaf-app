@@ -180,7 +180,7 @@
     font-size: 11px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--fl-space-2);
     color: var(--fl-muted);
   }
   .jm-enrichment-form > label {
@@ -194,7 +194,7 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: 5px;
-    padding: 9px;
+    padding: 9px var(--fl-space-3);
     font: inherit;
     font-size: 12px;
   }

@@ -635,11 +635,11 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
   }
   .field input[type='text'] {
-    padding: 0.375rem 0.5rem;
+    padding: 0.375rem var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

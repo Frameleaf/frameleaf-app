@@ -359,9 +359,7 @@
             { value: AssetTypeEnum.Video as string, label: $t('videos') },
           ].map((option) => {
             const count = typeCounts.get(option.value);
-            return count === undefined
-              ? option
-              : { ...option, label: withCount(option.label, count), hint: count.toLocaleString($locale) };
+            return count === undefined ? option : { ...option, label: withCount(option.label, count) };
           }),
         ]}
         onChange={(value) => setCondition('type', value ? { eq: value } : null)}
@@ -574,7 +572,7 @@
   .dates label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
@@ -601,7 +599,7 @@
     align-items: center;
     gap: 0.5rem;
     min-height: 32px;
-    padding: 0.125rem 0.375rem;
+    padding: 0.125rem var(--fl-space-2);
     font-size: var(--fl-font-small);
     border-radius: var(--fl-radius);
   }

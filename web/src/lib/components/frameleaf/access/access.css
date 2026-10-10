@@ -22,7 +22,7 @@
 .fl-access-head > div:first-child {
   display: grid;
   flex: 1 1 16rem;
-  gap: 0.125rem;
+  gap: var(--fl-space-1);
   min-width: 0;
 }
 
@@ -59,7 +59,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0.6875rem;
+  padding: 0.5rem var(--fl-space-3);
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
@@ -90,7 +90,7 @@
 
 .fl-access-empty {
   margin: 0;
-  padding: 0.5rem 0.6875rem;
+  padding: 0.5rem var(--fl-space-3);
   color: var(--fl-muted);
   border: 1px dashed var(--fl-border);
   border-radius: var(--fl-radius-control);
@@ -148,7 +148,7 @@
 
 .fl-access-field {
   display: grid;
-  gap: 0.375rem;
+  gap: var(--fl-space-2);
   color: var(--fl-text);
 }
 

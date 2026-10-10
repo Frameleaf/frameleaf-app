@@ -1027,8 +1027,9 @@
 <style>
   /*
    * The Albums page rhythm of apple-style.css:941-984 ("tighter rhythm, denser grid, like Photos'
-   * Albums"), over collections.css: page padding, a 10px header gap, 20px under the filters, 28px
-   * between shelves and sections, 17px section titles and a 164px (132px compact) grid.
+   * Albums"), over collections.css: page padding, 20px under the filters, 28px between shelves and
+   * sections, 17px section titles and a 164px (132px compact) grid. The gaps between rows of
+   * controls and between cards are the spacing tokens, never under the prototype's own.
    */
   .albums {
     padding: 18px 24px 64px;
@@ -1057,8 +1058,8 @@
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 14px 18px;
-    margin-bottom: 10px;
+    gap: var(--fl-space-4) var(--fl-space-5);
+    margin-bottom: var(--fl-space-3);
   }
   .heading h1 {
     margin: 0;
@@ -1066,7 +1067,7 @@
     font-weight: 700;
   }
   .heading p {
-    margin: 0.125rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
@@ -1074,7 +1075,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-3) var(--fl-space-2);
   }
   .search {
     display: flex;
@@ -1125,8 +1126,8 @@
   .filters {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
-    margin: 0 0 20px;
+    gap: var(--fl-space-2);
+    margin: 0 0 var(--fl-space-5);
   }
   .filters button {
     padding: 0 0.875rem;
@@ -1156,7 +1157,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
-    gap: 18px 12px;
+    gap: var(--fl-space-5) var(--fl-space-3);
     align-items: start;
   }
   .list {
@@ -1180,8 +1181,8 @@
   .plain h2 {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    margin: 0 0 10px;
+    gap: var(--fl-space-2);
+    margin: 0 0 var(--fl-space-3);
     padding-inline-start: 4px;
     font-size: 17px;
     font-weight: 600;
@@ -1194,7 +1195,7 @@
     gap: 0.25rem 1rem;
   }
   .spaces-head h2 {
-    margin-block-end: 0.25rem;
+    margin-block-end: var(--fl-space-2);
   }
   .spaces-links {
     display: flex;

@@ -9,23 +9,14 @@
     text: string;
     subtitle?: string;
     icon?: IconLike;
-    activeColor?: string;
-    textColor?: string;
+    /** A destructive entry, in the danger colour (`.mv-menu [role="menuitem"].danger`). */
+    danger?: boolean;
     onClick: () => void;
     shortcut?: Shortcut | null;
     shortcutLabel?: string;
   }
 
-  let {
-    text,
-    subtitle = '',
-    icon,
-    activeColor = 'bg-slate-300',
-    textColor = 'text-immich-fg dark:text-immich-dark-bg',
-    onClick,
-    shortcut = null,
-    shortcutLabel = '',
-  }: Props = $props();
+  let { text, subtitle = '', icon, danger = false, onClick, shortcut = null, shortcutLabel = '' }: Props = $props();
 
   let id: string = generateId();
 
@@ -54,27 +45,95 @@
   onclick={handleClick}
   onmouseover={() => ($selectedIdStore = id)}
   onmouseleave={() => ($selectedIdStore = undefined)}
-  class="w-full p-4 text-start text-sm font-medium {textColor} flex cursor-pointer items-center gap-2 border-gray-200 focus:ring-2 focus:outline-none focus:ring-inset {isActive
-    ? activeColor
-    : 'bg-slate-100'}"
+  class="fl-menu-option"
+  class:active={isActive}
+  class:danger
   role="menuitem"
 >
-  {#if icon}
-    <Icon {icon} aria-hidden size="18" />
-  {/if}
-  <div class="w-full">
-    <div class="flex justify-between">
+  <!-- The slot stays when a row has no icon (a choice that is not ticked), so every label starts on the same line. -->
+  <span class="fl-menu-option-icon" aria-hidden="true">
+    {#if icon}
+      <Icon {icon} aria-hidden size="18" />
+    {/if}
+  </span>
+  <div class="fl-menu-option-text">
+    <div class="fl-menu-option-line">
       {text}
       {#if shortcutLabel}
-        <span class="ps-4 text-gray-500">
+        <span class="fl-menu-option-hint">
           {shortcutLabel}
         </span>
       {/if}
     </div>
     {#if subtitle}
-      <p class="text-xs text-gray-500">
+      <p class="fl-menu-option-hint">
         {subtitle}
       </p>
     {/if}
   </div>
 </li>
+
+<style>
+  /* One entry of the viewer's menu (.mv-menu [role="menuitem"], media-viewer.css:161-190). */
+  .fl-menu-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 12px;
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-viewer-text);
+    font-size: var(--fl-font-small);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .fl-menu-option-icon {
+    display: inline-flex;
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+
+  .fl-menu-option :global(svg) {
+    flex-shrink: 0;
+    color: var(--fl-viewer-muted);
+  }
+
+  /* The pointer and the arrow keys share one highlight: the menu's active option. */
+  .fl-menu-option.active {
+    background: color-mix(in srgb, var(--fl-viewer-text) 6%, transparent);
+  }
+
+  .fl-menu-option.danger,
+  .fl-menu-option.danger :global(svg) {
+    color: var(--fl-danger);
+  }
+
+  .fl-menu-option-text {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fl-menu-option-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .fl-menu-option-hint {
+    color: var(--fl-viewer-muted);
+  }
+
+  p.fl-menu-option-hint {
+    font-size: var(--fl-font-micro);
+  }
+
+  /* Touch: the row is the tap target (tokens.css --fl-control-height). */
+  @media (pointer: coarse) {
+    .fl-menu-option {
+      min-height: var(--fl-control-height, 44px);
+    }
+  }
+</style>

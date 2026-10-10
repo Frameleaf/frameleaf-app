@@ -320,6 +320,15 @@
   --fl-focus-ring: 2px solid var(--fl-accent);
   --fl-focus-offset: 2px;
   --fl-focus-inset: -2px;
+  /*
+   * The same ring for a control drawn smaller than its box. A native checkbox or radio is a small
+   * square or circle inside a 44px box (the floor below), and an outline would ring the box. Drop
+   * shadows trace what is drawn instead: the offset in the page colour, then the ring in the
+   * accent. Whole pixels, so the edge stays sharp at every screen density.
+   */
+  --fl-focus-ring-drawn: drop-shadow(2px 0 0 var(--fl-canvas)) drop-shadow(-2px 0 0 var(--fl-canvas))
+    drop-shadow(0 2px 0 var(--fl-canvas)) drop-shadow(0 -2px 0 var(--fl-canvas)) drop-shadow(2px 0 0 var(--fl-accent))
+    drop-shadow(-2px 0 0 var(--fl-accent)) drop-shadow(0 2px 0 var(--fl-accent)) drop-shadow(0 -2px 0 var(--fl-accent));
   --fl-accent-soft: color-mix(in srgb, var(--fl-accent), transparent 86%);
   --fl-accent-soft-strong: color-mix(in srgb, var(--fl-accent), transparent 76%);
   --fl-ai-soft: color-mix(in srgb, var(--fl-ai), transparent 84%);
@@ -391,11 +400,41 @@
 .frameleaf :where(button:disabled) {
   cursor: default;
 }
+/*
+ * `fl-check-target`: the label around a checkbox or radio that has no text beside it, such as a
+ * table's row selector. With a mouse it takes no space; on a touch screen it is the 48px target.
+ */
+.frameleaf :where(label.fl-check-target) {
+  display: contents;
+}
 @media (pointer: coarse) {
   .frameleaf :where(button, input, select, summary),
   .fl-scope :where(.button, .fl-control) {
     min-height: 48px;
     min-width: 48px;
+  }
+  /*
+   * A checkbox or radio is drawn as large as its box allows, so the width floor made each one a
+   * 48px square. At its own width it is drawn at its own size, centred in the 48px-tall target.
+   */
+  .frameleaf :where(input[type='checkbox'], input[type='radio']) {
+    min-width: auto;
+  }
+  .frameleaf :where(label.fl-check-target) {
+    display: grid;
+    place-items: center;
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+/*
+ * Safari on iOS draws them across the whole box instead (its classic form controls do), so a tall
+ * box is a tall pill. There the box keeps its own height as well, and its label is the target.
+ */
+@supports (-webkit-touch-callout: none) {
+  .frameleaf :where(input[type='checkbox'], input[type='radio']) {
+    min-height: auto;
+    min-width: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -644,13 +644,15 @@
               class:active={active?.duplicateId === group.duplicateId}
               style:top="{(visibleStart + offset) * DUPLICATE_QUEUE_ROW_HEIGHT}px"
             >
-              <input
-                type="checkbox"
-                aria-label={$t('frameleaf_duplicates_select_group', { values: { name: groupTitle(group) } })}
-                disabled={!actionableOf(group)}
-                checked={selected.includes(group.duplicateId)}
-                onchange={() => toggleSelected(group.duplicateId)}
-              />
+              <label class="fl-check-target">
+                <input
+                  type="checkbox"
+                  aria-label={$t('frameleaf_duplicates_select_group', { values: { name: groupTitle(group) } })}
+                  disabled={!actionableOf(group)}
+                  checked={selected.includes(group.duplicateId)}
+                  onchange={() => toggleSelected(group.duplicateId)}
+                />
+              </label>
               <button
                 type="button"
                 aria-current={active?.duplicateId === group.duplicateId ? 'true' : undefined}
@@ -904,14 +906,14 @@
   .fl-dr-toolbar label {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
   }
   .fl-dr-toolbar input,
   .fl-dr-toolbar select {
     min-width: 220px;
-    padding: 7px 10px;
+    padding: 7px var(--fl-space-3);
     font-size: var(--fl-font-size);
     color: var(--fl-text);
     background: var(--fl-raised);
@@ -1047,7 +1049,7 @@
     align-items: center;
     gap: 8px;
     height: 68px;
-    padding: 0 9px;
+    padding: 0 var(--fl-space-3);
     border-bottom: 1px solid var(--fl-border);
   }
   .fl-dr-queue-row.active {
@@ -1158,7 +1160,7 @@
   }
   .fl-dr-heading > div:last-child {
     display: flex;
-    gap: 5px;
+    gap: var(--fl-space-2);
   }
   .fl-dr-access {
     padding: 12px 14px;

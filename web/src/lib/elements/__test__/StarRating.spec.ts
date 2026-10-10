@@ -18,11 +18,8 @@ describe('StarRating component', () => {
     expect(labels.length).toBe(3);
     const labelText = component.getAllByText('rating_count') as HTMLSpanElement[];
     expect(labelText.length).toBe(3);
-    const clearButton = component.getByRole('button') as HTMLButtonElement;
-    expect(clearButton).toBeInTheDocument();
-
-    // Check the clear button content
-    expect(clearButton.textContent).toBe('rating_clear');
+    // clearing belongs to whoever shows the stars (the viewer's rating row has its own Clear)
+    expect(component.queryByRole('button')).toBeNull();
 
     // Check the initial state
     expect(radioButtons[0].checked).toBe(false);

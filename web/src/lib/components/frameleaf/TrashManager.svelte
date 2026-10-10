@@ -927,7 +927,7 @@
   .trash-manager input:not([type='checkbox']),
   .trash-manager select {
     width: 100%;
-    padding: 10px;
+    padding: 10px var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-panel);
@@ -1032,7 +1032,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 6px;
+    padding: 4px var(--fl-space-2);
     font-size: var(--fl-font-micro);
     color: var(--fl-viewer-text);
     background: color-mix(in srgb, var(--fl-viewer-canvas) 73%, transparent);
@@ -1173,7 +1173,7 @@
       flex-basis: 100%;
     }
     .tm-detail {
-      padding: 10px;
+      padding: var(--fl-space-3);
     }
   }
 </style>

@@ -18,6 +18,8 @@ describe('next steps offer', () => {
     expect(arrivedFromSetup({ url: new URL('http://localhost/auth/onboarding?step=ready') })).toBe(true);
     expect(arrivedFromSetup({ url: new URL('http://localhost/auth/login') })).toBe(false);
     expect(arrivedFromSetup(null)).toBe(false);
+    // a public share page opened directly: the navigation has a source with no address
+    expect(arrivedFromSetup({ url: null })).toBe(false);
   });
 
   it('is offered to the account that finished setup, and survives a reload', () => {

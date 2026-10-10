@@ -1298,7 +1298,7 @@
     align-items: center;
     gap: 10px;
     width: min(410px, 55%);
-    padding: 5px 10px;
+    padding: 5px var(--fl-space-3);
     color: var(--fl-muted);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
@@ -1387,6 +1387,19 @@
   /* The ported forms still carry the legacy inset; keep them flush inside the card. */
   .cc-section :global(.ms-4) {
     margin-inline-start: 0;
+  }
+  /*
+   * They also space their rows with a 16px column gap and draw their own rules between them, from
+   * when a row had neither padding nor a divider. Each Setting row now carries both, so the gap
+   * doubled the space above every divider and the rules doubled the dividers. Rows sit flush
+   * against rows, as on the pages written for this layout; anything else keeps its gap.
+   */
+  .cc-section :global(.flex.flex-col.gap-4 > :is(.field, .group) + :is(.field, .group, .page-tools)),
+  .cc-section :global(.flex.flex-col.gap-4 > :is(.field, .group) + hr + :is(.field, .group, .page-tools)) {
+    margin-top: calc(-1 * var(--fl-space-4));
+  }
+  .cc-section :global(hr:has(+ :is(.field, .group, .page-tools))) {
+    display: none;
   }
   /* command-center.css `.cc-subtle`. */
   .cc-subtle {
@@ -1507,16 +1520,17 @@
     }
   }
   @media (max-width: 1000px) {
+    /* 16px between the breadcrumb and the scope line, so the two do not read as one sentence. */
     .cc-context-bar {
       flex-wrap: wrap;
-      gap: 10px;
+      gap: var(--fl-space-3) var(--fl-space-4);
     }
     .cc-search {
       flex: 1;
       min-width: 200px;
     }
     .cc-main {
-      padding: 20px;
+      padding: var(--fl-space-6);
     }
   }
   @media (max-width: 700px) {
@@ -1570,7 +1584,7 @@
       min-height: 44px;
     }
     .cc-context-bar {
-      padding: 9px 14px;
+      padding: 9px var(--fl-space-4);
     }
     .cc-search {
       flex-basis: 100%;
@@ -1579,8 +1593,9 @@
     .cc-search kbd {
       display: none;
     }
+    /* The phone gutter the Library and Albums use. */
     .cc-main {
-      padding: 18px 14px;
+      padding: var(--fl-space-5) var(--fl-space-4) var(--fl-space-3);
     }
   }
 </style>

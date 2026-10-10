@@ -188,6 +188,10 @@
 {/snippet}
 
 <style>
+  /* The profile and its actions stand clear of the tabbed pane under them. */
+  header {
+    margin-bottom: var(--fl-space-4);
+  }
   .detail-loading {
     display: flex;
     align-items: center;

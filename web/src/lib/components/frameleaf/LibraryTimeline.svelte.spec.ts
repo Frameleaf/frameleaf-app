@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
+import { captureLibraryAnchor } from '$lib/frameleaf/library-layout';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -211,6 +212,65 @@ describe('LibraryTimeline layout switch', () => {
     // the anchor is in the window the scroll lands on
     expect(landed).toBeGreaterThan(anchorTop() - 400);
     expect(landed).toBeLessThanOrEqual(anchorTop() + 1);
+  });
+
+  // The Timeline's rows only have an estimated height until they are laid out, so a place computed
+  // once can be short of where the anchor ends up (a deep link, then a switch to Timeline).
+  it('follows the anchor while the months above it settle after the switch', async () => {
+    const anchor = february.at(-1)!;
+    render(LibraryTimeline, { timelineManager: manager, session, grouping: 'days' });
+    await tick();
+    session.dispatch({ type: 'anchor', id: anchor.id });
+    const scrollTo = vi.spyOn(manager, 'scrollTo');
+    const anchorTop = () => manager.getTimelineMonthByAssetId(anchor.id)!.findAssetAbsolutePosition(anchor.id)!.top;
+
+    session.setLayout('timeline');
+    await tick();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    const placedAt = anchorTop();
+    // The header above the months is measured only now, and everything below it moves down.
+    manager.topSectionHeight += 900;
+    expect(anchorTop()).toBe(placedAt + 900);
+
+    await waitFor(() => {
+      const landed = scrollTo.mock.calls.at(-1)![0];
+      expect(landed).toBeGreaterThan(anchorTop() - 400);
+      expect(landed).toBeLessThanOrEqual(anchorTop() + 1);
+    });
+  });
+
+  // Each layout's header has its own height, so holding the first photo at its old height from the
+  // top of the page pushed the layout control and the Timeline's grouping row off the top.
+  it('stays at the head of the page when the switch is made there', async () => {
+    await manager.loadTimelineMonth({ year: 2024, month: 3 }, { cancelable: false });
+    render(LibraryTimeline, { timelineManager: manager, session, grouping: 'days' });
+    await tick();
+    manager.updateSlidingWindow();
+    // There is a photo on screen that the switch could hold in place.
+    expect(captureLibraryAnchor(manager)).toBeDefined();
+    const scrollTo = vi.spyOn(manager, 'scrollTo');
+
+    session.setLayout('timeline');
+    await tick();
+    await frames(4);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('holds the photo in view when the switch is made further down, with no anchor of its own', async () => {
+    render(LibraryTimeline, { timelineManager: manager, session, grouping: 'days' });
+    await tick();
+    const visible = february[0];
+    const top = manager.getTimelineMonthByAssetId(visible.id)!.findAssetAbsolutePosition(visible.id)!.top;
+    screen.getByTestId('frameleaf-timeline').querySelector<HTMLElement>('.fl-timeline-scroll')!.scrollTop = top;
+    manager.updateSlidingWindow();
+    const scrollTo = vi.spyOn(manager, 'scrollTo');
+
+    session.setLayout('timeline');
+    await tick();
+    await frames(4);
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
   });
 });
 

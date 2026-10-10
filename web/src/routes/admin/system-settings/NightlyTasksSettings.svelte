@@ -14,9 +14,9 @@
   const config = $derived(settingsDraft.baseline);
 </script>
 
-<div class="mt-2">
+<div>
   <div in:reveal>
-    <form autocomplete="off" class="mx-4 mt-4" onsubmit={(event) => event.preventDefault()}>
+    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingField
           inputType={SettingInputFieldType.TEXT}

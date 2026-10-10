@@ -231,7 +231,7 @@
   .mt-dialog-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
@@ -240,7 +240,7 @@
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    padding: 6px 9px;
+    padding: 6px var(--fl-space-3);
     font: inherit;
   }
   @media (max-width: 700px) {

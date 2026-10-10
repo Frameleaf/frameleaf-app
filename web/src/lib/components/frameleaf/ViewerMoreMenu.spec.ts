@@ -80,3 +80,20 @@ it('offers the server HDR formats only for a reconstructible HDR original', () =
   expect(screen.getByText('frameleaf_editor_export_hdr_jpeg')).toBeInTheDocument();
   expect(screen.getByText('frameleaf_editor_export_hdr_heic')).toBeInTheDocument();
 });
+
+// The ticked image display choice has a tick and the other has no icon; both keep the icon slot, so
+// the label of the one that is not ticked lines up with every other row of the menu.
+it('keeps the icon slot on the image display choice that is not ticked', () => {
+  render(ViewerMoreMenu, {
+    asset: assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image }),
+    preAction: vi.fn(),
+    onAction: vi.fn(),
+  });
+  const ticked = screen.getByRole('menuitem', { name: /frameleaf_image_display_auto/ });
+  const other = screen.getByRole('menuitem', { name: /frameleaf_image_display_sdr/ });
+  for (const row of [ticked, other, screen.getByRole('menuitem', { name: 'download' })]) {
+    expect(row.firstElementChild).toHaveClass('fl-menu-option-icon');
+  }
+  expect(ticked.firstElementChild?.querySelector('svg')).not.toBeNull();
+  expect(other.firstElementChild?.querySelector('svg')).toBeNull();
+});

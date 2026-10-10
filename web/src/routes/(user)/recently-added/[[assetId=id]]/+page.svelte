@@ -33,9 +33,10 @@
   };
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={false}>
+<UserPageLayout scrollbar={false}>
   <LibraryView
     bind:timelineManager
+    title={data.meta.title}
     {options}
     destination={{ kind: 'library' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_recently_added'))}

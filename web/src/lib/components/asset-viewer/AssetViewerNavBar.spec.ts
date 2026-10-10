@@ -383,6 +383,38 @@ describe('AssetViewerNavBar component', () => {
     }
   });
 
+  // The menu's highlight is its own `active` option, the same for the pointer and the keys, and the
+  // keys move through the options only: the group headings between them are never a choice.
+  it('highlights the More menu option the keys move to and skips the group headings', async () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+    const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, {
+      asset,
+      ...additionalProps,
+      canNavigateCollection: true,
+    });
+    await fireEvent.click(getByLabelText('frameleaf_viewer_more_actions'));
+
+    const menu = getByRole('menu', { hidden: true });
+    expect(menu.parentElement).toHaveClass('open');
+    const options = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const active = () => options.filter((option) => option.classList.contains('active'));
+    expect(menu.firstElementChild).toHaveAttribute('role', 'presentation');
+
+    await fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    await vi.waitFor(() => expect(active()).toEqual([options[0]]));
+    expect(menu).toHaveAttribute('aria-activedescendant', options[0].id);
+
+    await fireEvent.keyDown(menu, { key: 'End' });
+    await vi.waitFor(() => expect(active()).toEqual([options.at(-1)]));
+    await fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    await vi.waitFor(() => expect(active()).toEqual([options[0]]));
+    await fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    await vi.waitFor(() => expect(active()).toEqual([options.at(-1)]));
+    await fireEvent.keyDown(menu, { key: 'Home' });
+    await vi.waitFor(() => expect(active()).toEqual([options[0]]));
+  });
+
   // FL-35: the template's top row (MediaViewer.jsx:1023-1200), without the legacy Offline and zoom buttons (V-6).
   describe('toolbar', () => {
     it('follows the template order and leaves out the legacy Offline and zoom buttons', () => {

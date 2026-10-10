@@ -4,6 +4,8 @@ import { emptyDiscoveryQuery, isDiscoveryFilter, type DiscoveryQuery } from '$li
 import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
 import {
   allTextBranches,
+  availablePaletteModes,
+  availableSearchOperators,
   bucketsByYear,
   buildPaletteCatalog,
   commitCompletedTokens,
@@ -232,6 +234,63 @@ describe('suggestSearchTokens', () => {
 
   it('suggests nothing for an empty word', () => {
     expect(suggestSearchTokens('beach ', catalog)).toEqual([]);
+  });
+
+  it('offers only the operators it is given, so one the server cannot answer is not suggested', () => {
+    const offered = (operators?: ReturnType<typeof availableSearchOperators>) =>
+      suggestSearchTokens('te', catalog, 8, operators)
+        .filter((item) => item.kind === 'operator')
+        .map((item) => item.insert);
+    expect(offered()).toEqual(['text:']);
+    expect(offered(availableSearchOperators({ smartSearch: true, ocr: true }))).toEqual(['text:']);
+    expect(offered(availableSearchOperators({ smartSearch: true, ocr: false }))).toEqual([]);
+  });
+});
+
+describe('what the server can answer', () => {
+  const values = (capabilities: { smartSearch: boolean; ocr: boolean }) =>
+    availablePaletteModes(capabilities).map((entry) => entry.value);
+  const keys = (capabilities: { smartSearch: boolean; ocr: boolean }) =>
+    availableSearchOperators(capabilities).map((operator) => operator.key);
+
+  it('offers every mode and operator when smart search and text recognition are on', () => {
+    expect(values({ smartSearch: true, ocr: true })).toEqual([
+      'smart',
+      'all',
+      'originalFileName',
+      'description',
+      'ocr',
+      'originalPath',
+    ]);
+    expect(keys({ smartSearch: true, ocr: true })).toContain('text');
+  });
+
+  it('leaves out "Text in photos" and the text: operator when text recognition is off', () => {
+    expect(values({ smartSearch: true, ocr: false })).toEqual([
+      'smart',
+      'all',
+      'originalFileName',
+      'description',
+      'originalPath',
+    ]);
+    expect(keys({ smartSearch: true, ocr: false })).not.toContain('text');
+    expect(keys({ smartSearch: true, ocr: false })).toContain('file');
+  });
+
+  it('leaves out smart search when it is off, and both when neither is on', () => {
+    expect(values({ smartSearch: false, ocr: true })).toEqual([
+      'all',
+      'originalFileName',
+      'description',
+      'ocr',
+      'originalPath',
+    ]);
+    expect(values({ smartSearch: false, ocr: false })).toEqual([
+      'all',
+      'originalFileName',
+      'description',
+      'originalPath',
+    ]);
   });
 });
 

@@ -1455,7 +1455,8 @@
     Top navigation bar. The header and the footer stack at the same level, z-2, as in the template
     (apple-style.css:383-385), so where they overlap the later footer paints on top. The More menu is kept
     clear of the footer by its height cap (`.mv-menu` max-height: calc(100dvh - 150px), media-viewer.css:145;
-    see AssetViewerNavBar), not by raising the header above the footer.
+    see AssetViewerNavBar), not by raising the header above the footer. Only while one of its menus is
+    open does the header rise, above the Information card (see the style block).
   -->
   {#if $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
     <div class="relative z-2 col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
@@ -1866,8 +1867,7 @@
     isolation: isolate;
     transition:
       transform var(--fl-duration) var(--fl-spring),
-      opacity var(--fl-motion-slow) var(--fl-ease),
-      padding-inline-end var(--fl-duration) var(--fl-snappy);
+      opacity var(--fl-motion-slow) var(--fl-ease);
   }
 
   .fl-viewer-stage {
@@ -1996,6 +1996,15 @@
     translate: 0 12px;
   }
 
+  /*
+   * A menu or popover opened from the top bar (More, Rating) belongs to the header's layer, which
+   * sits under the Information card (z-index 5). While one is open the header is lifted above the
+   * card, so the menu is never drawn behind it.
+   */
+  [data-viewer-chrome='header']:has(:global([aria-expanded='true'])) {
+    z-index: 6;
+  }
+
   /* The frosted strips above the footer: the stack strip and the filmstrip (apple-style.css:383-392). */
   .fl-viewer-strip {
     isolation: isolate;
@@ -2026,12 +2035,16 @@
     display: none;
   }
 
-  /* Information: the floating glass card on tablet and desktop (apple-style.css:515-560). */
+  /*
+   * Information: the floating glass card on tablet and desktop (apple-style.css:515-560). It sits 76px
+   * clear of the header and of the footer, as the template draws it (the card is placed in the canvas
+   * rows, media-viewer.css:938-940), so the photo shows around it and a video's controls stay in reach.
+   */
   .fl-viewer-info {
     position: absolute;
-    top: max(76px, calc(env(safe-area-inset-top) + 68px));
+    top: calc(64px + env(safe-area-inset-top, 0px) + 76px);
     inset-inline-end: max(var(--fl-space-4), env(safe-area-inset-right));
-    bottom: 76px;
+    bottom: calc(var(--fl-viewer-footer-height) + 76px);
     z-index: 5;
     display: flex;
     flex-direction: column;
@@ -2055,7 +2068,8 @@
     justify-content: space-between;
     gap: var(--fl-space-2);
     padding: var(--fl-space-2);
-    padding-inline-start: var(--fl-space-5);
+    /* The heading starts on the line of the sections under it. */
+    padding-inline-start: var(--fl-space-6);
     border-bottom: 1px solid var(--fl-viewer-border);
   }
 
@@ -2097,20 +2111,23 @@
 
   /* Clear of the filmstrip or stack strip (apple-style.css:540-542). */
   .with-footer .fl-viewer-info {
-    bottom: calc(76px + var(--fl-viewer-strips-height, 0px) + var(--fl-space-3));
+    bottom: calc(var(--fl-viewer-footer-height) + var(--fl-viewer-strips-height, 0px) + 76px);
   }
 
   /*
-   * With the card open the photo and the Next arrow move aside by its width, so the photo sits in
-   * the free space and Next is never under the card.
+   * The card floats over the photo, which stays where it is (apple-style.css:515-518). Only the Next
+   * arrow steps aside, so a control that takes focus is never hidden under the card.
    */
   @media (min-width: 761px) {
-    .info-open .fl-viewer-canvas {
-      padding-inline-end: calc(var(--fl-viewer-info-width) + var(--fl-space-4) * 2);
-    }
-
     .info-open .fl-viewer-next {
       margin-inline-end: calc(var(--fl-viewer-info-width) + var(--fl-space-4));
+    }
+
+    /* The grown corner where the continuous shape is drawn (apple-style.css:541-546). */
+    @supports (corner-shape: squircle) {
+      .fl-viewer-info {
+        border-radius: 36px;
+      }
     }
   }
 

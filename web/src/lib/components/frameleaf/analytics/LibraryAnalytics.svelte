@@ -578,7 +578,7 @@
   }
   .badge {
     flex-shrink: 0;
-    padding: 3px 6px;
+    padding: 3px var(--fl-space-2);
     border: 1px solid var(--fl-border);
     border-radius: 3px;
     font-size: 9px;

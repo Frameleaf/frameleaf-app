@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
@@ -169,12 +169,31 @@ describe('LibraryRail', () => {
   });
 
   it('heads the rail with "Library" and the double-chevron collapse toggle', async () => {
-    render(LibraryRail);
+    const { container } = render(LibraryRail);
     const toggle = screen.getByRole('button', { name: 'Collapse navigation' });
 
+    expect(toggle.parentElement?.querySelector('.fl-rail-title')).toHaveTextContent('Library');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await fireEvent.click(toggle);
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+    // The icon-only rail has no room for the label.
+    await waitFor(() => expect(container.querySelector('.fl-rail-title')).toBeNull());
+  });
+
+  it('keeps Library Care, Settings and Support in the footer, after the list that scrolls', () => {
+    const { container } = render(LibraryRail);
+    const list = container.querySelector<HTMLElement>('.fl-sidebar-list')!;
+    const footer = container.querySelector<HTMLElement>('.fl-rail-footer')!;
+
+    expect(
+      within(footer)
+        .getAllByRole('link')
+        .map((link) => link.textContent?.trim()),
+    ).toEqual(['Library Care', 'Settings', 'Support Frameleaf']);
+    expect(list).not.toContainElement(footer);
+    expect(within(list).queryByRole('link', { name: 'Settings' })).toBeNull();
+    // Reading and tab order stay list first, footer last.
+    expect(list.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('lists each partner library under Shared spaces, and no "All shared spaces" entry', async () => {

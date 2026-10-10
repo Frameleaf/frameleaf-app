@@ -733,7 +733,7 @@
   }
   .chips {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     flex-wrap: wrap;
     margin-top: 0.375rem;
   }
@@ -804,7 +804,7 @@
   }
   .dialog-body input {
     width: 100%;
-    padding: 0.5rem;
+    padding: 0.5rem var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-raised);

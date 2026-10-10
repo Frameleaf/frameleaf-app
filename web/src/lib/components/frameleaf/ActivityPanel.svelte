@@ -321,10 +321,10 @@
   .activity {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
     inline-size: min(22rem, 100vw);
     block-size: 100%;
-    padding: 0.875rem;
+    padding: var(--fl-space-4);
     color: var(--fl-text);
     background: var(--fl-panel);
     border-inline-start: 1px solid var(--fl-border);
@@ -435,7 +435,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
   }
   .empty {
     color: var(--fl-muted);
@@ -453,7 +453,7 @@
   .bubble {
     flex: 1;
     min-inline-size: 0;
-    padding: 0.5rem 0.625rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
     background: var(--fl-raised);
     border-radius: var(--fl-radius-control);
   }
@@ -508,7 +508,7 @@
     flex: 1;
     min-inline-size: 0;
     resize: vertical;
-    padding: 0.5rem 0.625rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
     font: inherit;
     color: var(--fl-text);
     background: var(--fl-raised);

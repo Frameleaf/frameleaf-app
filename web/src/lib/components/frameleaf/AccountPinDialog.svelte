@@ -134,7 +134,7 @@
   }
   .field {
     display: grid;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     margin-bottom: 1rem;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);

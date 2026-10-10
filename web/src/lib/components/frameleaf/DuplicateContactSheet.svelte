@@ -271,8 +271,8 @@
   }
   .fl-dr-preview-actions {
     display: flex;
-    gap: 6px;
-    margin-top: 4px;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-2);
   }
   .fl-dr-sheet-toolbar {
     display: flex;

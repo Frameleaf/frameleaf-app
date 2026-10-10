@@ -54,6 +54,10 @@
 {/if}
 
 <style>
+  /* Not a settings row: it brings the inset a row would have, so the heading clears the card edge. */
+  .transfer {
+    padding-block: var(--fl-space-3);
+  }
   .transfer h3 {
     margin: 0;
     font-size: var(--fl-font-size);

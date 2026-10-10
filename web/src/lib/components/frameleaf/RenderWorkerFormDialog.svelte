@@ -322,13 +322,13 @@
   }
   label:not(.check) {
     display: grid;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   input:not([type='checkbox']),
   select {
-    padding: 0.4375rem 0.6875rem;
+    padding: 0.4375rem var(--fl-space-3);
     font: inherit;
     font-size: var(--fl-font-size);
     color: var(--fl-text);
@@ -365,7 +365,7 @@
   .check {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     color: var(--fl-text);
   }
   .row {

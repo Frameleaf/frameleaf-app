@@ -209,7 +209,8 @@
       {#if !sharedLink}
         <ButtonContextMenu
           direction="left"
-          align="top-right"
+          align="bottom-right"
+          offset={{ x: 0, y: 8 }}
           color="secondary"
           title={$t('frameleaf_viewer_more_actions')}
           icon={mdiDotsHorizontal}
@@ -217,9 +218,10 @@
           menuBottomInset={footerInset}
         >
           <!--
-            The menu is capped at the window height less 150px and scrolls inside (.mv-menu,
-            media-viewer.css:142-148), and its bottom edge always ends above the footer, so its lower
-            entries (Play slideshow, Show filmstrip) are never under the frosted footer, on phones too.
+            The menu hangs under its button, like the Rating popover beside it (.mv-menu,
+            media-viewer.css:130-148). It is capped at the window height less 150px and scrolls inside,
+            and its bottom edge always ends above the footer, so its lower entries (Play slideshow,
+            Show filmstrip) are never under the frosted footer, on phones too.
           -->
           <!--
             FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,

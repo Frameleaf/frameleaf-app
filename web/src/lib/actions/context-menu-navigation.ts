@@ -39,6 +39,13 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
     return container?.querySelector(`#${activeId}`) as HTMLElement | null;
   };
 
+  /**
+   * The rows the keys move through: the options only. A grouped menu also holds heading rows and
+   * separators, which have no id and are never a choice.
+   */
+  const getItems = (container: HTMLElement) =>
+    [...container.children].filter((child) => child.matches('[role^="menuitem"]')) as HTMLElement[];
+
   const close = () => {
     const { closeDropdown, selectionChanged } = options;
     selectionChanged(undefined);
@@ -56,7 +63,7 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
       return;
     }
 
-    const children = Array.from(container.children).filter((child) => child.tagName !== 'HR') as HTMLElement[];
+    const children = getItems(container);
     if (children.length === 0) {
       return;
     }
@@ -69,6 +76,23 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
     selectedNode?.scrollIntoView({ block: 'nearest' });
 
     selectionChanged(selectedNode?.id);
+  };
+
+  /** Home and End belong to an open menu only; a closed one leaves them to the page. */
+  const moveToEdge = (edge: 'first' | 'last', event: KeyboardEvent) => {
+    const { selectionChanged, container, isOpen } = options;
+    if (!isOpen || !container) {
+      return;
+    }
+    event.preventDefault();
+
+    const selectedNode = getItems(container).at(edge === 'first' ? 0 : -1);
+    if (!selectedNode) {
+      return;
+    }
+    selectedNode.scrollIntoView({ block: 'nearest' });
+
+    selectionChanged(selectedNode.id);
   };
 
   const onEscape = (event: KeyboardEvent) => {
@@ -98,6 +122,8 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
   const { destroy } = shortcuts(node, [
     { shortcut: { key: 'ArrowUp' }, onShortcut: (event) => moveSelection('up', event) },
     { shortcut: { key: 'ArrowDown' }, onShortcut: (event) => moveSelection('down', event) },
+    { shortcut: { key: 'Home' }, onShortcut: (event) => moveToEdge('first', event), preventDefault: false },
+    { shortcut: { key: 'End' }, onShortcut: (event) => moveToEdge('last', event), preventDefault: false },
     { shortcut: { key: 'Escape' }, onShortcut: (event) => onEscape(event), preventDefault: false },
     { shortcut: { key: ' ' }, onShortcut: (event) => handleClick(event) },
     { shortcut: { key: 'Enter' }, onShortcut: (event) => handleClick(event) },

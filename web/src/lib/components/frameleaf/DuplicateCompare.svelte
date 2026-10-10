@@ -259,7 +259,7 @@
   .fl-dr-suggested {
     position: absolute;
     top: 9px;
-    padding: 5px 7px;
+    padding: 5px var(--fl-space-2);
     font-size: var(--fl-font-micro);
     font-weight: 500;
     color: var(--fl-viewer-text);
@@ -287,13 +287,13 @@
   .fl-dr-reasons {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: var(--fl-space-2);
     padding: 0;
-    margin: 6px 0 0;
+    margin: var(--fl-space-2) 0 0;
     list-style: none;
   }
   .fl-dr-reasons li {
-    padding: 2px 7px;
+    padding: 2px var(--fl-space-2);
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
     border: 1px solid var(--fl-border);
@@ -331,7 +331,7 @@
   }
   .fl-dr-copy-actions {
     display: flex;
-    gap: 6px;
+    gap: var(--fl-space-2);
     margin-top: 12px;
   }
   .fl-dr-copy-actions :global(button:first-child) {
@@ -357,7 +357,7 @@
       border-radius: 0;
     }
     .fl-dr-copy {
-      padding: 10px;
+      padding: var(--fl-space-3);
     }
     kbd {
       display: none;

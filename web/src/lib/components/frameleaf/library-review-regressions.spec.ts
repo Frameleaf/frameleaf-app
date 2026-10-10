@@ -86,6 +86,37 @@ it('reports a rejected bulk precondition', async () => {
   expect(handleError).toHaveBeenCalledWith(error, expect.any(String));
 });
 
+it('runs the bulk precondition after the event that asked, and reports one that throws', async () => {
+  const error = new Error('precondition threw');
+  const handleError = vi.fn();
+  const dispatchBulk = vi.fn();
+  const beforeAction = vi.fn((id: string) => {
+    if (id === 'delete') {
+      throw error;
+    }
+    return true;
+  });
+  const run = closure('LibraryView', 'const runBulk =', '\n  };', 'runBulk', {
+    beforeAction,
+    dispatchBulk,
+    handleError,
+    $t: (key: string) => key,
+  });
+
+  run('archive');
+  // Not inside the asking event: the gate has not been consulted when the call returns.
+  expect(beforeAction).not.toHaveBeenCalled();
+  await Promise.resolve();
+  expect(beforeAction).toHaveBeenCalledExactlyOnceWith('archive');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(dispatchBulk).toHaveBeenCalledExactlyOnceWith('archive', undefined);
+
+  run('delete');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(handleError).toHaveBeenCalledWith(error, expect.any(String));
+  expect(dispatchBulk).toHaveBeenCalledOnce();
+});
+
 it('reports a failed shift-click range and clears its pending state', async () => {
   const error = new Error('range failed');
   const handleError = vi.fn();
