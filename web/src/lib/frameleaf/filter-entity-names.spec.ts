@@ -1,4 +1,4 @@
-import { getAlbumInfo, getPerson, getPet, getTagById } from '@frameleaf/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   forgetEntityNames,
@@ -12,6 +12,7 @@ vi.mock('@frameleaf/sdk', () => ({
   getPerson: vi.fn(),
   getPet: vi.fn(),
   getTagById: vi.fn(),
+  getVisitedLandmarks: vi.fn(),
 }));
 
 const person = (overrides: Partial<{ name: string; isHidden: boolean }> = {}) => ({
@@ -87,6 +88,13 @@ describe('resolveEntityName', () => {
   it('resolves a tag to its full nested path', async () => {
     vi.mocked(getTagById).mockResolvedValue(tag({ value: 'Trips/Rockies' }) as never);
     expect(await resolveEntityName('tag', 'tag-1')).toBe('Trips/Rockies');
+  });
+
+  it('names a landmark from the visited list, and one that is not on it as null (FL-353)', async () => {
+    vi.mocked(getVisitedLandmarks).mockResolvedValue([{ id: 'Q243', name: 'Eiffel Tower' }] as never);
+
+    await expect(resolveEntityName('landmark', 'Q243')).resolves.toBe('Eiffel Tower');
+    await expect(resolveEntityName('landmark', 'Q351')).resolves.toBeNull();
   });
 
   it('never throws — a failed or unauthorized lookup resolves to null instead', async () => {

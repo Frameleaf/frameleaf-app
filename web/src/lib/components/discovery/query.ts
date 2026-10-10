@@ -228,6 +228,8 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   petIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   tagIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   albumIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
+  // FL-353: taken at any of (or none of) these landmarks; a photo is at several, so there is no `all`
+  landmarkIds: { any: list(idValue), none: list(idValue) },
   checksum: { eq: anyString, ne: anyString, in: list(anyString), notIn: list(anyString) },
   encodedVideoPath: { eq: anyString, ne: anyString, in: list(anyString), notIn: list(anyString) },
 };
@@ -949,7 +951,7 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
   // FL-58: the owner's own pets, matched on confirmed observations only
   pets: ['petIds'],
   date: ['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt'],
-  places: ['city', 'state', 'country'],
+  places: ['city', 'state', 'country', 'landmarkIds'],
   media: [
     'type',
     'visibility',

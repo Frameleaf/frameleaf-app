@@ -8,6 +8,7 @@ describe('filterEntityIds', () => {
       petIds: { all: ['pet-1', 'pet-2'] },
       tagIds: { none: ['t1'] },
       albumIds: { any: ['a1'] },
+      landmarkIds: { any: ['Q243'], none: ['Q351'] },
       isFavorite: { eq: true },
     } as SearchFilter;
 
@@ -16,6 +17,7 @@ describe('filterEntityIds', () => {
       { field: 'petIds', kind: 'pet', ids: ['pet-1', 'pet-2'] },
       { field: 'tagIds', kind: 'tag', ids: ['t1'] },
       { field: 'albumIds', kind: 'album', ids: ['a1'] },
+      { field: 'landmarkIds', kind: 'landmark', ids: ['Q243', 'Q351'] },
     ]);
   });
 

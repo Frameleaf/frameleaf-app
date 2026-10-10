@@ -14,6 +14,7 @@
    */
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import type {
     ExploreBestPhotosPreview,
@@ -22,6 +23,8 @@
     ExploreShortcutCounts,
   } from '$lib/frameleaf/explore';
   import { buildExploreShortcuts, captureDay, isVideoAsset } from '$lib/frameleaf/explore';
+  import { landmarkKind, type LandmarkCard } from '$lib/frameleaf/landmarks';
+  import { formatLocalDateRange } from '$lib/frameleaf/memory-stories';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, type AlbumResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
@@ -35,10 +38,10 @@
     mdiMovieOpenOutline,
     mdiStarOutline,
   } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   /** The sections that load on their own request and can therefore fail on their own. */
-  export type ExploreSection = 'people' | 'places' | 'things' | 'memories' | 'albums' | 'recents';
+  export type ExploreSection = 'people' | 'places' | 'landmarks' | 'things' | 'memories' | 'albums' | 'recents';
 
   export interface ExploreMemoryCard {
     id: string;
@@ -52,6 +55,8 @@
   interface Props {
     people: ExplorePersonCard[];
     places: ExploreCoverCard[];
+    /** FL-354: landmarks and attractions the account has photos at. */
+    landmarks?: LandmarkCard[];
     things: ExploreCoverCard[];
     /** Newest captures first (not uploads). */
     recents: AssetResponseDto[];
@@ -71,6 +76,7 @@
   let {
     people,
     places,
+    landmarks = [],
     things,
     recents,
     memories,
@@ -94,6 +100,7 @@
       ? anyFailed ||
           people.length > 0 ||
           places.length > 0 ||
+          landmarks.length > 0 ||
           things.length > 0 ||
           recents.length > 0 ||
           memories.length > 0 ||
@@ -222,6 +229,43 @@
               <span>
                 <strong>{place.label}</strong>
                 <small>{countLabel(place.count)}</small>
+              </span>
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if failed.landmarks}
+      {@render failure('landmarks', $t('frameleaf_landmarks_title'), 3)}
+    {:else if landmarks.length > 0}
+      <section class="el-section el-rise" style="--i: 3" aria-labelledby="explore-landmarks-heading">
+        {@render heading('explore-landmarks-heading', $t('frameleaf_landmarks_title'), Route.places())}
+        <div class="el-places">
+          {#each landmarks as landmark (landmark.id)}
+            {@const kind = $t(landmarkKind(landmark.kind).labelKey)}
+            <a
+              href={landmark.href}
+              class="el-place fl-continuous-corners"
+              aria-label={$t('frameleaf_landmarks_card_label', {
+                values: { name: landmark.label, kind, count: landmark.count },
+              })}
+            >
+              {@render cover(landmark.coverAssetId)}
+              <span class="el-cover-shade"></span>
+              <span class="el-landmark-kind">
+                <LandmarkBadge {landmark} size={24} />
+                {kind}
+              </span>
+              <span>
+                <strong>{landmark.label}</strong>
+                <small>
+                  {countLabel(landmark.count)} · {formatLocalDateRange(
+                    landmark.firstDay,
+                    landmark.lastDay,
+                    $locale ?? undefined,
+                  )}
+                </small>
               </span>
             </a>
           {/each}
@@ -549,6 +593,21 @@
   .el-place strong,
   .el-place small {
     display: block;
+  }
+  /* FL-354: a landmark card names its kind beside its badge, over the cover's top corner. */
+  .el-landmark-kind {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 3px;
+    border-radius: var(--fl-radius-pill);
+    background: rgb(10 14 12 / 62%);
+    backdrop-filter: blur(12px);
+    font-size: 11px;
+    font-weight: 600;
   }
   .el-place strong {
     font-size: 15px;

@@ -15,6 +15,7 @@ import {
   fieldsInFilterSection,
   filterSectionForField,
   fromLegacySearch,
+  isDiscoveryFilter,
   isDiscoveryFilterActive,
   readDiscoveryQuery,
   structuredSearchRequest,
@@ -191,10 +192,17 @@ describe('the single Filter control', () => {
     expect(activeFilterCount({ ...emptyDiscoveryQuery(), text: 'lake', mode: 'smart' })).toBe(0);
   });
 
+  it('accepts a landmark condition as any of or none of, and never as all of (FL-353)', () => {
+    expect(isDiscoveryFilter({ landmarkIds: { any: ['Q243'], none: ['Q351'] } })).toBe(true);
+    // a photo is at several landmarks at once, so the server has no "all of these"
+    expect(isDiscoveryFilter({ landmarkIds: { all: ['Q243'] } })).toBe(false);
+  });
+
   it('deep-links each field into its filter panel section', () => {
     expect(filterSectionForField('personIds')).toBe('people');
     expect(filterSectionForField('takenAt')).toBe('date');
     expect(filterSectionForField('country')).toBe('places');
+    expect(filterSectionForField('landmarkIds')).toBe('places');
     expect(filterSectionForField('rating')).toBe('media');
     expect(filterSectionForField('tagIds')).toBe('tags');
     expect(filterSectionForField('albumIds')).toBe('all');
