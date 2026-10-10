@@ -146,6 +146,24 @@ describe('service worker asset requests', () => {
     await expect(third).resolves.toMatchObject({ status: 204 });
   });
 
+  it('keeps a shared load running until its last caller cancels', async () => {
+    // two tiles ask for the same thumbnail while it is still loading; one is then destroyed
+    const first = handleFetch(url('g'));
+    const second = handleFetch(url('g'));
+    const signal = vi.mocked(fetch).mock.calls[0][1]!.signal!;
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    handleCancel(url('g'));
+    expect(signal.aborted).toBe(false);
+    resolvers[0](new Response('shared'));
+    await expect(text(first)).resolves.toBe('shared');
+    await expect(text(second)).resolves.toBe('shared');
+
+    // the remaining caller's cancel still stops the body
+    handleCancel(url('g'));
+    expect(signal.aborted).toBe(true);
+  });
+
   it('still aborts a load every caller of which has cancelled', async () => {
     const first = handleFetch(url('f'));
     const signal = vi.mocked(fetch).mock.calls[0][1]!.signal!;

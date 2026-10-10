@@ -8,6 +8,7 @@ vi.mock('$lib/utils/sw-messaging', () => ({
 
 describe('Image component', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -49,10 +50,36 @@ describe('Image component', () => {
   });
 
   it('calls cancelImageUrl on unmount', () => {
+    vi.useFakeTimers();
     const { unmount } = render(Image, { src: '/test.jpg' });
     expect(cancelImageUrl).not.toHaveBeenCalled();
     unmount();
+    vi.runAllTimers();
     expect(cancelImageUrl).toHaveBeenCalledWith('/test.jpg');
+  });
+
+  it('leaves a shared image loading until the last element using it unmounts', () => {
+    vi.useFakeTimers();
+    const first = render(Image, { src: '/shared.jpg' });
+    const second = render(Image, { src: '/shared.jpg' });
+    first.unmount();
+    vi.runAllTimers();
+    expect(cancelImageUrl).not.toHaveBeenCalled();
+    second.unmount();
+    vi.runAllTimers();
+    expect(cancelImageUrl).toHaveBeenCalledExactlyOnceWith('/shared.jpg');
+  });
+
+  it('leaves the image loading for an element that replaces it in the same update', () => {
+    vi.useFakeTimers();
+    const first = render(Image, { src: '/replaced.jpg' });
+    first.unmount();
+    const second = render(Image, { src: '/replaced.jpg' });
+    vi.runAllTimers();
+    expect(cancelImageUrl).not.toHaveBeenCalled();
+    second.unmount();
+    vi.runAllTimers();
+    expect(cancelImageUrl).toHaveBeenCalledExactlyOnceWith('/replaced.jpg');
   });
 
   it('does not call onLoad after unmount', async () => {
