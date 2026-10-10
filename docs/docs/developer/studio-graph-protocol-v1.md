@@ -24,7 +24,7 @@ The page is delivered in four parts:
 | 3    | FL-308 (NAPI-019) | Effects, transitions, keyframes, easing, blends and parameter schemas.          |
 | 4    | FL-309 (NAPI-020) | Compositions, titles, sequence and project settings, and full command coverage. |
 
-Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Sections 15 to 17 add captions (FL-111), Lottie maps (FL-105) and masks and relinking (FL-348). Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
+Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Sections 15 to 17 add captions (FL-111), Lottie maps (FL-105) and masks and relinking (FL-348). Section 18 points to the render spec: what each effect and transition draws. Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
 
 ## 1. Where the graph lives
 
@@ -1506,7 +1506,7 @@ Every command has fixtures named `<command>/<case>` in `studio/graph-conformance
 
 Parameter types are `number` (with `min`, `max` and `step`), `boolean`, `select` (one of `options`), `color` (`#rrggbb` or `#rrggbbaa`), `text` and `json` (a string). A transition's `color` parameter is an array of three numbers (`valueFormat: "rgb-array"`).
 
-The catalogue is a clean-room file. It carries ids, names, types, numbers and option values. It carries no display label, no description and no shader source: a native client names its own controls. What a parameter does to the picture is the renderer's contract, not this protocol's.
+The catalogue is a clean-room file. It carries ids, names, types, numbers and option values. It carries no display label, no description and no shader source: a native client names its own controls. What a parameter does to the picture is the renderer's contract, which section 18 gives.
 
 **Drift.** `studio/adapters/web/test/graph-parameters.test.ts` rebuilds the catalogue from the registries of the prepared engine in the Studio engine workflow and fails on any difference. `GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test` regenerates it. The engine-free check (section 10) re-derives `contentSha256`, so a hand edit fails where the engine is not built.
 
@@ -2657,3 +2657,23 @@ A vertex is `{ position: [x, y], inHandle: [x, y], outHandle: [x, y], tangentMod
 - `from`, `durationInFrames`, `speed`, `trimStart`/`trimEnd`, links, effects and keyframes are unchanged. An `image` target keeps its source fields.
 
 **Media records.** The record is the one 3.5 describes. The server's `GET /studio/assets/{id}/media-facts` gives a native client the exact frame rate and whether the original has an audio track (FL-348), so its records agree with the web host's probe.
+
+## 18. Rendering effects and transitions
+
+This protocol says which effects and transitions a graph may name, and with which parameters (13.2.1). What they draw is specified in `studio/spec/`, the render spec, which is part of the native-app contract on the same terms as this page: a clean-room specification written by reading the engine, with no engine source text, versioned with the same engine pin.
+
+| Path                              | What it is                                                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `studio/spec/README.md`           | The shared rules: coordinates, sampling, the SDR and linear HDR domains, alpha, the hash and noise functions, colour helpers, the effect clock, parameter sanitising, the transition progress curve and the transition routes. |
+| `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                           |
+| `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                 |
+| `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                         |
+| `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, and the progress-curve table.                                                                                                           |
+
+**Native rules.**
+
+- A native client renders an effect or transition so that it passes every `pixel` and `edge` golden case of its id under the comparison rule of the render spec, and every `statistical` case by its mean bound.
+- An HDR project renders only the 16 effects the render spec lists for linear HDR, and no transition. When a frame needs anything else, a native client refuses to render that frame, as the engine does, and does not substitute an SDR render.
+- Where a page marks behaviour as not specifiable (platform font rasterisation of ASCII glyphs, for one), a native client draws its closest equivalent and must still pass the goldens that page names as binding.
+
+**Drift.** `studio/tools/render-goldens.browser.mjs` renders every golden case through the prepared engine and fails when one leaves its tolerance; `--write` regenerates the goldens. `studio/tools/render-goldens.test.mjs` checks coverage, the inputs, the progress curve and the clean-room rule without the engine. When an effect or transition changes, change its page and regenerate the goldens in the same change.
