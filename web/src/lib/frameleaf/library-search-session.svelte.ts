@@ -87,10 +87,12 @@ export class LibrarySearchSession {
       }
       const known = new Set(this.assets.map(({ id }) => id));
       for (const asset of response.assets.items) {
-        if (!known.has(asset.id)) {
-          known.add(asset.id);
-          this.assets.push(asset);
+        if (known.has(asset.id)) {
+          continue;
         }
+
+        known.add(asset.id);
+        this.assets.push(asset);
       }
       this.albums.push(...response.albums.items);
       this.askResponse = askResponse;

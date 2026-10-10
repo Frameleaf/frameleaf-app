@@ -299,14 +299,16 @@ describe('worst-case cost (FL-233)', () => {
       ],
     } as never);
     expect(recipe.masks.flatMap((mask) => mask.strokes ?? []).flatMap((stroke) => stroke.points)).toHaveLength(3072);
-    // CPU time of this worker, not wall time: a busy machine running the suite in parallel stretches
-    // the wall clock many times over without the render doing any more work
-    const started = process.cpuUsage();
+    // CPU time of this thread, not wall time: a busy machine running the suite in parallel stretches
+    // the wall clock many times over without the render doing any more work. The process-wide counter
+    // also bills this test for the garbage collector and compiler threads beside it.
+    const started = process.threadCpuUsage();
     applyDevelopCleanup(image, { width, height, channels: 3 }, recipe.cleanup);
     applyDevelopMasks(image, { width, height, channels: 3 }, recipe.masks, identityMaskMapping(width, height));
-    const { user, system } = process.cpuUsage(started);
-    // a few seconds on a laptop (before FL-233 review: minutes); the bound leaves room for a slow runner
-    expect((user + system) / 1000).toBeLessThan(15_000);
+    const { user, system } = process.threadCpuUsage(started);
+    // a few seconds on a laptop and about ten on a hosted runner (before FL-233 review: minutes). The
+    // bound is three times the hosted figure: 15 s was crossed once by a loaded runner (15.4 s).
+    expect((user + system) / 1000).toBeLessThan(30_000);
   }, 180_000);
 
   it('keeps at most 4096 stroke points in a recipe', () => {
