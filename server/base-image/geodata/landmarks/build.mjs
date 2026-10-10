@@ -27,11 +27,12 @@ const MAX_RUIN_RADIUS_M = 10_000;
 
 const sparql = async (endpoint, query) => {
   for (let attempt = 1; ; attempt++) {
+    // A dropped connection is retried like a refusal: one lost request must not cost a ten-minute build.
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/sparql-query', accept: 'text/tab-separated-values' },
       body: query,
-    });
+    }).catch((error) => ({ ok: false, status: String(error.cause ?? error), text: async () => '' }));
     if (response.ok) {
       const [, ...rows] = (await response.text()).split('\n');
       return rows.filter(Boolean).map((row) => row.split('\t'));
@@ -257,11 +258,40 @@ for (const place of places.values()) {
   kept.push(record);
 }
 
+// For these kinds, a place with no boundary that sits inside a mapped place of the same kind is part of
+// it or an older record of it (a themed land filed as a park at its park's coordinates, a demolished
+// stadium on the site of its successor), and the mapped place stands for both. Not so elsewhere: the
+// Parthenon is inside the Acropolis and is very much its own landmark.
+const within = ([x, y], ring) => {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      hit = !hit;
+    }
+  }
+  return hit;
+};
+const mapped = kept.filter((record) => record.areas?.length);
+const standalone = kept.filter(
+  (record) =>
+    record.areas?.length ||
+    !config.wholes.includes(record.kind) ||
+    !mapped.some(
+      (area) =>
+        area.kind === record.kind &&
+        metres([area.lon, area.lat], [record.lon, record.lat]) <= area.radiusM &&
+        area.areas.some((ring) => within([record.lon, record.lat], ring)),
+    ),
+);
+console.error(`${kept.length - standalone.length} places without a boundary are part of a mapped place of their kind`);
+
 // 4. Names.
 const names = new Map();
 const languages = config.locales.map((locale) => `'${locale}'`).join(',');
 for (const batch of chunks(
-  kept.map(({ id }) => id),
+  standalone.map(({ id }) => id),
   400,
 )) {
   const rows = await sparql(
@@ -276,7 +306,7 @@ for (const batch of chunks(
   }
 }
 
-const lines = kept
+const lines = standalone
   .map(({ id, kind, rank, lat, lon, radiusM, areas }) => {
     const { en, ...others } = names.get(id) ?? {};
     const name = en ?? Object.values(others)[0];
