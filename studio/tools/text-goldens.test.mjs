@@ -11,6 +11,7 @@ import { compareCase, decodeBuffer, sha256 } from './render-goldens.mjs';
 import {
   SINE_TOLERANCE, SINE_PRESETS, STYLE_FIELDS, IMAGE_SIZE, TEXT_MOTION_PRESETS,
   syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, randomRanks, bundledTitleFonts, bundledFontRecords,
+  SYNTHETIC_MEASURER_TABLE, sameWithin, usesSine, referenceImage, imageTolerance, referenceRequiredHeight, referenceColour,
   layoutCases, autoHeightCases, paintCases, styleScaleCases, motionCases, slotCases, unitCases, imageCases,
   referenceLayout, referenceAutoHeight, referencePaint, referenceAnimatedStyle, referenceMotionState, referenceCoarseSlot, referenceUnits,
 } from './text-goldens.mjs';
@@ -90,7 +91,12 @@ test('the prose reference reproduces every layout and auto-height golden bit for
 });
 
 test('the prose reference reproduces every paint and animated-style golden bit for bit', () => {
-  for (const c of goldens.paint) assert.deepEqual(plain(referencePaint(c.item, c.canvas, c.transform, synthetic, c.frame)), c.expected, `paint/${c.name}`);
+  for (const c of goldens.paint) {
+    assert.equal(c.exact, !usesSine(c.item.textMotion), `paint/${c.name}: exactness`);
+    assert(sameWithin(plain(referencePaint(c.item, c.canvas, c.transform, synthetic, c.frame)), c.expected, c.exact ? 0 : SINE_TOLERANCE), `paint/${c.name}`);
+    assert(referenceRequiredHeight(c.item, c.transform.width, synthetic) <= c.transform.height + 0.5, `paint/${c.name}: X6 would grow this box`);
+  }
+  assert(goldens.paint.filter((c) => !c.exact).length >= 5);
   for (const c of goldens.styleScale) {
     assert.deepEqual(plain(referenceAnimatedStyle(c.item, c.animated, c.canvas, catalogue.titleStyles)), c.expected, `styleScale/${c.name}`);
   }
@@ -115,13 +121,6 @@ test('the prose reference reproduces every text-motion state, slot and unit gold
   for (const c of goldens.units) assert.deepEqual(referenceUnits(c.lines, c.unit), { indices: c.indices, unitCount: c.unitCount }, `units/${c.name}`);
 });
 
-test('an 8-digit colour draws exactly as the rgba() string of the caption preset it replaces', () => {
-  const frame = (name) => goldens.image.find((c) => c.name === name).output.data;
-  assert.equal(frame('alpha/background-8-digit-equals-caption-rgba'), frame('background-translucent'));
-  assert.equal(frame('alpha/caption-shadow-8-digit'), frame('alpha/caption-shadow-rgba'));
-  assert.notEqual(frame('alpha/shadow-8-digit'), frame('underline-hard-shadow'));
-});
-
 test('the random order is a permutation fixed by the unit count and the seed', () => {
   for (const [count, seed] of [[1, 0], [2, 0], [9, 7], [9, -3], [40, 123456789]]) {
     const ranks = randomRanks(count, seed);
@@ -132,68 +131,83 @@ test('the random order is a permutation fixed by the unit count and the seed', (
   assert.deepEqual(randomRanks(9, 2.7), randomRanks(9, 2));
 });
 
-const colourOf = (text) => {
-  const hex = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(text);
-  if (hex) return [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16) / 255).concat(hex[2] ? parseInt(hex[2], 16) / 255 : 1);
-  const rgba = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(text);
-  assert(rgba, `unsupported test colour ${text}`);
-  // X12: the alpha of a functional colour is rounded to the nearest of 255 steps.
-  return [rgba[1] / 255, rgba[2] / 255, rgba[3] / 255, Math.round(Number(rgba[4]) * 255) / 255];
-};
+test('an 8-digit colour draws exactly as the rgba() string of the caption preset it replaces', () => {
+  const frame = (name) => goldens.image.find((c) => c.name === name).output.data;
+  assert.equal(frame('alpha/background-8-digit-equals-caption-rgba'), frame('background-translucent'));
+  assert.equal(frame('alpha/caption-shadow-8-digit'), frame('alpha/caption-shadow-rgba'));
+  assert.notEqual(frame('alpha/shadow-8-digit'), frame('underline-hard-shadow'));
+  // The forms a reader accepts (X12) and the 8-digit form a writer gives them.
+  assert.deepEqual(referenceColour('rgba(0, 0, 0, 0.55)'), referenceColour('#0000008c'));
+  assert.deepEqual(referenceColour('rgba(0, 0, 0, 0.6)'), referenceColour('#00000099'));
+  assert.deepEqual(referenceColour('rgb(51,102,204)'), referenceColour('#3366CC'));
+  assert.deepEqual(referenceColour('#36c'), referenceColour('#3366cc'));
+  assert.deepEqual(referenceColour('#36c8'), referenceColour('#3366cc88'));
+  assert.throws(() => referenceColour('rebeccapurple'));
+});
 
-test('image cases: stored frames have the geometry and colours the prose predicts', () => {
+test('image cases: declared classes, measured tolerances and the pixels the prose predicts', () => {
   const { width, height } = IMAGE_SIZE;
-  let checked = 0;
+  assert.deepEqual(goldens.imageSize, IMAGE_SIZE);
+  const classes = { pixel: 0, edge: 0, statistical: 0 };
   for (const c of goldens.image) {
-    assert.match(c.tolerance.class, /^(pixel|edge)$/, `${c.name} must be a pixel or edge case`);
+    classes[c.class]++;
+    const { measured, ...tolerance } = c.tolerance;
+    const { measured: _, ...declared } = imageTolerance(c);
+    assert.deepEqual(tolerance, declared, `image/${c.name}: tolerance must follow from the declared class`);
+    assert.equal(c.tolerance.class, c.class);
+    assert(referenceRequiredHeight(c.item, c.transform.width, synthetic) <= c.transform.height + 0.5, `image/${c.name}: X6 would grow this box`);
     const pixels = decodeBuffer(c.output.data, c.output.encoding);
     assert.equal(pixels.length, width * height * 4);
     assert(compareCase({ ...c, expected: pixels }, pixels).pass);
     assert(!compareCase({ ...c, expected: pixels }, pixels.map(() => 0)).pass, `${c.name}: a blank frame must fail`);
-    // Shapes in paint order, each a rectangle with a corner radius, a colour and a blur margin.
-    const ops = referencePaint(c.item, IMAGE_SIZE, c.transform, synthetic, 0);
-    const clip = ops.find((op) => op.op === 'clip');
-    const shapes = [];
-    for (const op of ops) {
-      const rect = op.op === 'background' ? { x: op.x, y: op.y, w: op.width, h: op.height, r: op.radius }
-        : op.op === 'underline' ? { x: op.x1, y: op.y - op.thickness / 2, w: op.x2 - op.x1, h: op.thickness, r: 0 } : null;
-      if (!rect) continue;
-      // X12: a shadow's alpha is the shadow colour's alpha times the alpha of the shape that casts it.
-      if (op.shadow) {
-        const cast = colourOf(op.shadow.color);
-        shapes.push({ ...rect, x: rect.x + op.shadow.offsetX, y: rect.y + op.shadow.offsetY, colour: [cast[0], cast[1], cast[2], cast[3] * colourOf(op.color)[3]], soft: op.shadow.blur });
-      }
-      shapes.push({ ...rect, colour: colourOf(op.color), soft: 0 });
-    }
-    assert(shapes.length > 0, `${c.name} draws nothing`);
-    // Signed distance of a pixel centre into a rectangle (positive inside), ignoring rounded corners.
-    const depth = (shape, px, py) => Math.min(px - shape.x, shape.x + shape.w - px, py - shape.y, shape.y + shape.h - py);
-    const core = (shape, px, py) => depth(shape, px, py) >= 1 && shape.soft === 0
-      && (Math.min(px - shape.x, shape.x + shape.w - px) >= shape.r + 1 || Math.min(py - shape.y, shape.y + shape.h - py) >= shape.r + 1);
-    const clear = (shape, px, py) => depth(shape, px, py) <= -(1.5 + 3 * shape.soft);
-    for (let j = 0; j < height; j++) {
-      for (let i = 0; i < width; i++) {
-        const px = i + 0.5;
-        const py = j + 0.5;
-        const got = pixels.slice((j * width + i) * 4, (j * width + i) * 4 + 4);
-        const inClip = depth({ x: clip.x, y: clip.y, w: clip.width, h: clip.height }, px, py);
-        let want = null;
-        if (inClip <= -1 || shapes.every((shape) => clear(shape, px, py))) want = [0, 0, 0, 0];
-        else if (inClip >= 1) {
-          const top = shapes.findLastIndex((shape) => core(shape, px, py));
-          if (top >= 0 && shapes.slice(top + 1).every((shape) => clear(shape, px, py)) && (shapes[top].colour[3] === 1 || shapes.slice(0, top).every((shape) => clear(shape, px, py)))) want = shapes[top].colour;
-        }
-        if (!want) continue;
-        checked++;
-        const visible = want[3] > 0;
-        want.forEach((value, k) => {
-          if (k < 3 && !visible) return;
-          assert(Math.abs(got[k] - value) <= 2 / 255 + 1e-9, `image/${c.name}: pixel (${i}, ${j}) channel ${k} is ${got[k]}, the prose gives ${value}`);
-        });
-      }
-    }
+    const { expected, undecided, blurred } = referenceImage(c);
+    if (c.class === 'pixel') assert.equal(undecided, 0, `image/${c.name}: a pixel case leaves nothing to the rasteriser`);
+    if (c.class === 'edge') assert(undecided > 0 && undecided <= 0.1 * width * height && !blurred);
+    if (c.class === 'statistical') assert(blurred, `image/${c.name}: only a blur is statistical`);
+    expected.forEach((want, index) => {
+      if (!want) return;
+      const got = pixels.slice(index * 4, index * 4 + 4);
+      assert(Math.abs(got[3] - want[3]) <= 2 / 255 + 1e-9, `image/${c.name}: pixel ${index % width}, ${Math.floor(index / width)} alpha is ${got[3]}, the prose gives ${want[3]}`);
+      if (want[3] === 0) return;
+      // An 8-bit premultiplied surface holds a colour to half a step of its alpha.
+      const bound = 2 / 255 + 0.5 / (want[3] * 255);
+      for (let k = 0; k < 3; k++) assert(Math.abs(got[k] - want[k]) <= bound, `image/${c.name}: pixel ${index % width}, ${Math.floor(index / width)} channel ${k} is ${got[k]}, the prose gives ${want[k]}`);
+    });
   }
-  assert(checked > goldens.image.length * width * height * 0.6, `only ${checked} pixels were decidable`);
+  assert(classes.pixel >= 10 && classes.edge >= 5 && classes.statistical === 1, JSON.stringify(classes));
+  // Not specifiable cases are never binding pixel cases.
+  assert.equal(goldens.image.find((c) => c.name === 'underline-blurred-shadow').class, 'statistical');
+  for (const c of goldens.image.filter((entry) => entry.item.backgroundRadius > 0)) assert.equal(c.class, 'edge', c.name);
+});
+
+test('the synthetic measurer is published as data and that data is the measurer', () => {
+  assert.deepEqual(goldens.syntheticMeasurer, SYNTHETIC_MEASURER_TABLE);
+  const table = goldens.syntheticMeasurer;
+  const factor = (char) => {
+    const code = char.codePointAt(0);
+    if (code === 0x20 || code === 0xa0 || table.advances[0].characters.includes(char)) return table.advances[0].factor;
+    if (table.advances[1].characters.includes(char)) return table.advances[1].factor;
+    if (code >= 0x41 && code <= 0x5a) return table.advances[2].factor;
+    if (code >= 0x2e80) return table.advances[3].factor;
+    return table.advances[4].factor;
+  };
+  const probe = "The quick MW mw ij l.,:;!|' 0123   日本 é-_@";
+  for (const [weight, size, spacing] of [[400, 32, 0], [500, 37.5, 2], [600, 40, -1], [700, 16, 0.5]]) {
+    let width = 0;
+    let count = 0;
+    for (const char of probe) { width += size * factor(char) * (weight >= table.weightFactor.fromWeight ? table.weightFactor.factor : 1); count++; }
+    const font = `italic ${weight} ${size}px "Anton", sans-serif`;
+    assert.equal(synthetic.measure(probe, font, spacing), width + count * spacing);
+    assert.deepEqual(synthetic.fontMetrics(font), { ascent: size * table.ascent, descent: size * table.descent });
+  }
+  for (const row of table.advances) assert(page.includes(`| ${row.factor} |`), `text.md does not publish the advance ${row.factor}`);
+});
+
+test('a weight or style a family lacks measures as the face it has', () => {
+  const lines = (name) => goldens.layout.find((c) => c.name === name).expected.lines.map((line) => [line.text, line.width, line.top, line.baseline, line.start]);
+  assert.deepEqual(lines('platform/missing-weight/Anton-bold'), lines('platform/missing-weight/Anton-normal'));
+  assert.deepEqual(lines('platform/missing-style/Orbitron-italic'), lines('platform/missing-style/Orbitron-normal'));
+  assert.deepEqual(lines('platform/missing-both/Bebas-Neue-semibold-italic'), lines('platform/missing-both/Bebas-Neue-normal'));
 });
 
 // The spec is prose and mathematics: no engine source text (the lint of render-goldens.test.mjs).

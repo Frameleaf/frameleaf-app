@@ -347,6 +347,93 @@
         "audioCodec": "mp4a.40.2",
         "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
+    ],
+    "hdr": [
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000001",
+        "storageType": "workspace",
+        "fileName": "surf.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2",
+        "colorTransfer": "pq"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000002",
+        "storageType": "workspace",
+        "fileName": "drone.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 8,
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "codec": "avc1.64002a",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "colorTransfer": "hlg"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000003",
+        "storageType": "workspace",
+        "fileName": "interview.mov",
+        "fileSize": 1,
+        "mimeType": "video/quicktime",
+        "duration": 10,
+        "width": 1920,
+        "height": 1080,
+        "fps": 29.97002997002997,
+        "codec": "hvc1",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000004",
+        "storageType": "workspace",
+        "fileName": "summit.jpg",
+        "fileSize": 1,
+        "mimeType": "image/jpeg",
+        "duration": 0,
+        "width": 4000,
+        "height": 3000,
+        "fps": 0,
+        "codec": "unknown",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0
+      },
+      {
+        "id": "0198a1c2-0000-7000-8000-000000000005",
+        "storageType": "workspace",
+        "fileName": "archive.mp4",
+        "fileSize": 1,
+        "mimeType": "video/mp4",
+        "duration": 12,
+        "width": 1280,
+        "height": 720,
+        "fps": 25,
+        "codec": "avc1.4d401f",
+        "bitrate": 1,
+        "tags": [],
+        "createdAt": 0,
+        "updatedAt": 0,
+        "audioCodec": "mp4a.40.2"
+      }
     ]
   },
   "seeds": {
@@ -14148,6 +14235,144 @@
                 "label": "drone.mp4",
                 "mediaId": "0198a1c2-0000-7000-8000-000000000002",
                 "originId": "b24405cf-7ae1-468c-85c9-3daf1436c349",
+                "sourceStart": 0,
+                "sourceEnd": 60,
+                "sourceDuration": 240,
+                "sourceFps": 30,
+                "trimStart": 0,
+                "trimEnd": 0,
+                "type": "video",
+                "src": "",
+                "sourceWidth": 1920,
+                "sourceHeight": 1080,
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 1920,
+                  "height": 1080,
+                  "rotation": 0
+                }
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "clip.add/media-colour-transfer-is-not-stored",
+      "story": "FL-348",
+      "covers": [
+        "clip.add"
+      ],
+      "summary": "A media record a client marked pq or hlg (render spec hdr.md H3) places the same clip: colorTransfer never reaches the graph.",
+      "base": "empty-30",
+      "media": "hdr",
+      "envelopes": [
+        {
+          "id": "clip.add",
+          "payload": {
+            "assetId": "0198a1c2-0000-7000-8000-000000000002",
+            "trackId": "v1",
+            "at": {
+              "num": 1,
+              "den": 1
+            },
+            "duration": {
+              "num": 2,
+              "den": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl348:clip.add/media-colour-transfer-is-not-stored",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "e19e24a32368904246bb11952c1de484978e1a72c14906b70a9a43b61deabff0",
+        "envelopeDigest": "84909bc332afdeaacb58545ee64a79dd501378abdc0ff24e981fde9e0c9d0fad",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "edf9e59a-c940-4bb4-bd6a-31cd0b499ad1",
+              "at": [
+                "timeline.items[0].originId"
+              ]
+            },
+            {
+              "draw": 1,
+              "id": "64492232-899f-46a1-8f89-8efe2c713197",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "64492232-899f-46a1-8f89-8efe2c713197",
+                "trackId": "v1",
+                "from": 30,
+                "durationInFrames": 60,
+                "label": "drone.mp4",
+                "mediaId": "0198a1c2-0000-7000-8000-000000000002",
+                "originId": "edf9e59a-c940-4bb4-bd6a-31cd0b499ad1",
                 "sourceStart": 0,
                 "sourceEnd": 60,
                 "sourceDuration": 240,

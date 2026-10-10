@@ -214,6 +214,8 @@ An effect parameter is keyframed only while the effect shows the parameter and i
 
 *Static values.* For the transform fields (`x`, `y`, `width`, `height`, `anchorX`, `anchorY`, `rotation`, `opacity`, `cornerRadius`) the static value is the clip's resolved transform field. Crop, text, shape and effect-parameter properties use the clip's own field of that name. `volume` uses the clip's gain in dB; how gains combine is outside this page.
 
+*An absent anchor.* The resolved transform's `anchorX` and `anchorY`, when the clip stores none, are half its **stored** `width` and `height` (or the fitted defaults of `layers.md` L6), taken before any keyframe. They are the static values of `anchorX`, `anchorY` and `anchor`, and they do **not** follow a keyframed `width`, `height` or `scale`: with a keyframed size and no anchor keyframe, the pivot stays at half the stored size while the box grows around its centre. `layers.md` L6 pins the drawn result with rendered cases.
+
 *Vector lanes own their components.* The three vector properties map to transform fields: `position` to (`x`, `y`), `scale` to (`width`, `height`), `anchor` to (`anchorX`, `anchorY`).
 
 - A vector group **with at least one keyframe** supplies both of its fields, and the scalar groups of those two fields are **not read**, whatever they hold. A vector group with no keyframe leaves the scalar groups in charge.

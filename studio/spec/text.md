@@ -56,8 +56,8 @@ Each span resolves its seven fields as *span value, else item value, else defaul
 
 for example `italic 600 48px "Playfair Display", sans-serif`, with the size printed as the shortest decimal that round-trips. The goldens carry this string as `font`.
 
-- **Weight.** `normal` 400, `medium` 500, `semibold` 600, `bold` 700. The platform picks the nearest weight the family has, by the CSS font-matching rule (for a wanted weight above 500: the nearest heavier, else the nearest lighter; for 400 or 500: 400 and 500 try each other first, then lighter, then heavier). A family with only weight 400 (Anton, Bebas Neue) is drawn synthetically emboldened by the platform at 600 and 700. **Implementation-defined**: the amount of synthetic emboldening is the platform's.
-- **Style.** `italic` uses the family's italic face. A family without one is drawn synthetically slanted by the platform. **Implementation-defined**: the slant is the platform's.
+- **Weight.** `normal` 400, `medium` 500, `semibold` 600, `bold` 700. When the family has no face of that weight, the text is set in the family's **nearest listed weight**: the face whose weight differs least from the wanted one, the lighter of two equally near. Among the bundled families this happens for Anton and Bebas Neue only, which have 400 alone: every weight of theirs is the 400 face. **Nothing is synthesised:** a native client does not embolden. The advance widths, the ascent and the descent are those of the face used, so the layout is the same at every weight (`platform/missing-weight/…`). **Implementation-defined:** the web editor's platform draws such a face artificially emboldened (heavier ink on the same advances); that ink is not the contract.
+- **Style.** `italic` uses the family's italic face of the weight chosen above. A family without an italic (Anton, Bebas Neue, Orbitron and Space Grotesk among the bundled ones) is set in its upright face of that weight, **not slanted**: a native client does not synthesise an italic. Advances and metrics are the upright face's (`platform/missing-style/…`, `platform/missing-both/…`). **Implementation-defined:** the web editor's platform slants the upright face artificially, on the same advances; that slant is not the contract.
 - **Missing family.** When the family is not available (not installed, not yet loaded, or refused), the engine measures and draws the text in the platform's default sans-serif face, at the same size, weight and style.
 - **Families on a native client.** The title styles of the catalogue use seven families: Inter, Inter Tight, Anton, Bebas Neue, Orbitron, Playfair Display and Space Grotesk. A native client draws exactly these seven, from the font files the server bundles, loaded before the title is drawn; it never substitutes a system face. A title that names any other family is **not drawable on the device**: the client leaves its rendering to the server. The web editor keeps its own loader for the other families of its font catalogue.
 - **Font files.** Each family, weight and style is published as two files, Latin and Latin Extended, in two formats: the WOFF2 files and a lossless TrueType or OpenType decode of each, for platforms that do not read WOFF2. A client loads the two as a **fallback chain** per family, weight and style: a character is taken from the Latin file if it has a glyph for it, else from the Latin Extended file, else from the platform's fallback fonts. Text is still measured and shaped as one run of the family; kerning between a glyph of one file and a glyph of the other is not specifiable. The goldens name the WOFF2 files they were made with and the hash of the decode of each.
@@ -76,11 +76,16 @@ Nothing else of the font enters layout. The numbers W, asc and desc are not spec
 
 With P = max(0, `textPadding`): the available width is A_w = max(1, B_w − 2P) and the available height A_h = B_h − 2P.
 
-**Auto height.** Before painting, the box grows to hold its text. Let H be the block height of X9 for the width B_w, w_s the stroke width (0 without `stroke`; here not limited to ≥ 0), and g = |`textShadow.offsetY`| + `textShadow.blur` (0 without a shadow). The required height is
+**Auto height.** Before a title is painted, its box grows to hold its text. The item meant here is the item of that frame: after the animated style of X13 (which also removes a stroke of width 0 or less and a shadow whose three numbers are 0, keyframes or not) and after the scaling of X3. Let H be the block height of X9 for the width B_w, w_s the stroke width (0 without a stroke), and g = |`textShadow.offsetY`| + `textShadow.blur` (0 without a shadow). The required height is
 
     H_req = H + 2P + 2·w_s + 2·g
 
-If H_req > B_h + 0.5, the box height becomes H_req; otherwise it is unchanged. The box never shrinks, and its centre stays, so it grows equally up and down. An item with a corner pin keeps its stored height. The grown box is the box of every later step (layout, clipping, motion).
+If H_req > B_h + 0.5, the box height becomes H_req; otherwise it is unchanged. The box never shrinks, and its centre stays, so it grows equally up and down. The grown box is the box of every later step: layout, the background, the clip of X12 and text motion all use it, and the stored `height` is not read again. Two consequences are binding:
+
+- The block always fits the box vertically: H + 2P ≤ B_h + 0.5 after growth, so the background box (height H + 2P, X10) is never cut by the clip at the top or bottom by more than half a pixel in all, and never at the sides (its width is at most B_w). What the clip does cut is what leaves the box sideways or lies beyond the room H_req reserved: a shadow displaced by `offsetX`, a stroke or glyph that overhangs a line's advance box, a line wider than the box.
+- An item with a **corner pin** is the exception: it keeps its stored height, is laid out and clipped in it, and can therefore lose text and background at the top and bottom.
+
+The `paint` and `image` goldens give the box that is painted, the box after this step. Every one of them satisfies H_req ≤ B_h + 0.5 under its measurer, so the engine would not have grown it, and the engine-free test checks that.
 
 **[X7] Stack flow (the default).** Each span is laid out on its own lines, one span after another, top to bottom. For a span with text t, face F and letter spacing ℓ, the lines are WRAP(t):
 
@@ -139,7 +144,9 @@ An empty line occupies its line box and draws nothing. Text taller or wider than
 - left x_b = c − w_b ÷ 2; top y_b = T − P;
 - corner radius r = max(0, min(R, w_b ÷ 2, h_b ÷ 2)) with R = max(0, `backgroundRadius`). A style preset's 999 therefore gives a pill.
 
-The box follows the text, not the item box: it is as wide as the widest line plus the padding, and never wider than the item box.
+**Construction of the rounded box.** One radius serves all four corners. For r = 0 the box is the plain rectangle. For r > 0 its outline is: the four straight sides, each shortened by r at both ends, joined by four **circular arcs** of radius r, each a quarter circle centred r inside its corner, at (x_b + r, y_b + r), (x_b + w_b − r, y_b + r), (x_b + w_b − r, y_b + h_b − r) and (x_b + r, y_b + h_b − r), tangent to both sides it joins. It is a true circle arc: not a superellipse, not a "continuous" or smoothed corner, and not a polygon. When r = h_b ÷ 2 the left and right ends are full semicircles and the vertical sides have length 0 (a pill); when r = w_b ÷ 2 likewise for the top and bottom. The radius is not reduced further for a thin box: the limit above is the only one. The interior is filled by the non-zero rule, anti-aliased by coverage. The outline is binding; the coverage of the pixels the arcs cross is the rasteriser's (X22), and the rounded goldens are `edge` cases.
+
+The box follows the text, not the item box: it is as wide as the widest line plus the padding, and never wider than the item box. Its edges are generally not on pixel boundaries (x_b and y_b come from line widths and heights); an unrounded box is then filled with exact coverage, each edge pixel taking the fraction of it the rectangle covers (`background-subpixel`).
 
 **[X11] Underline.** For an underlined line (stack flow) or run (inline flow) of font size z, baseline y_b, start x and width w:
 
@@ -155,7 +162,7 @@ The font's own underline metrics are not used. An inline run's underline starts 
 
 1. **Clip.** In an export the drawing is clipped to the box rectangle (0, 0, B_w, B_h): text, stroke and shadow outside it are cut. The web editor's live preview does not clip. **Native rule:** clip in export and in playback.
 2. **Background** (X10): filled with `backgroundColor`, as a rounded rectangle when r > 0. It casts **no** shadow.
-3. From here on the **shadow** is in force when `textShadow` is present: every later draw also paints its own shape again, in `textShadow.color` multiplied by the shape's own alpha, displaced by (`offsetX`, `offsetY`), blurred with a Gaussian of standard deviation σ = `blur` ÷ 2 px, underneath the shape. A blur of 0 gives a hard copy. Note that an animated shadow whose three numbers are all 0 is removed (X13), and a shadow with a fully transparent colour draws nothing.
+3. From here on the **shadow** is in force when `textShadow` is present: every later draw also paints its own shape again, in `textShadow.color` multiplied by the shape's own alpha, displaced by (`offsetX`, `offsetY`), blurred with a Gaussian of standard deviation σ = `blur` ÷ 2 px, underneath the shape. A blur of 0 gives a hard copy, displaced by exactly the offset. The Gaussian is the definition; how a platform approximates it (the canonical backend uses successive box filters for larger σ) is not pinned, and a blurred shadow is compared by its mean only (X22). Note that an animated shadow whose three numbers are all 0 is removed (X13), and a shadow with a fully transparent colour draws nothing.
 4. For each non-empty line, top to bottom:
    1. **Stroke**, when `stroke` is present with `width` > 0: the outline of the line's glyphs stroked `stroke.color`, **2 × width** wide, centred on the glyph outline, round joins. Half of it lies outside the glyph, so the visible outline is `width` px; the inner half is covered by the fill.
    2. **Fill**: in stack flow the whole line in the line's colour, from origin (x_0, y_b) on the alphabetic baseline, left to right, with the line's letter spacing and kerning. In inline flow each run in its colour from (x_0 + o, y_b).
@@ -163,7 +170,13 @@ The font's own underline metrics are not used. An inline run's underline starts 
 
 The stroke is drawn once per line for the whole line, also in inline flow. Because the shadow belongs to each draw, a line with a stroke casts the shadow of the stroke, then of the fill, then of the underline, each over what was drawn before: the fill's shadow lies over the line's own stroke where they overlap. Lines are drawn in order, so a later line's shadow falls on earlier lines. **Implementation-defined**; a native client reproduces the per-draw shadow.
 
-**Colours and alpha.** The engine accepts any CSS colour string. `title.setStyle` accepts and a native client writes only `#rrggbb` and `#rrggbbaa`, stored as given; `#rrggbb` is opaque and the last two digits of `#rrggbbaa` are the alpha a = value ÷ 255. The alpha applies per draw, as coverage × a, source-over:
+**Colours and alpha.** What a native client **writes** and what it must **read** differ.
+
+- **Writer.** `title.setStyle` accepts, and a native client writes, only `#rrggbb` and `#rrggbbaa` (hexadecimal digits of either case), stored as given (protocol 14.3.4).
+- **Reader.** A graph may hold other forms, written by the web editor and by the engine's caption styles. A native client must draw these six: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (either case; a short form doubles each digit), `rgb(r, g, b)` and `rgba(r, g, b, a)` with r, g and b whole numbers from 0 to 255 and a a decimal from 0 to 1, separated by commas with optional spaces. These cover everything the engine itself writes: its title styles and captions use six-digit hex in either case, and its caption styles use `rgba(r, g, b, a)` for `backgroundColor` and `textShadow.color`. The alpha of a functional form is round(255 a) ÷ 255.
+- **Anything else** (a colour name, `hsl()`, `oklch()`, percentages, the space-separated syntax) the engine draws by the CSS rules. A native client is not required to: it keeps the value in the graph and draws that field's default (X1), or no background, shadow or stroke where the default is none.
+
+`#rrggbb` is opaque; the last two digits of `#rrggbbaa` are the alpha a = value ÷ 255. The alpha applies per draw, as coverage × a, source-over:
 
 - **Text colour** (`color`, span `color`): the fill of the glyphs and the underline are each drawn at a. Where the fill lies over the line's own stroke, a translucent fill lets the inner half of the stroke show through.
 - **Background** (`backgroundColor`): the box is filled at a; nothing else changes.
@@ -172,14 +185,16 @@ The stroke is drawn once per line for the whole line, also in inline flow. Becau
 
 The item's opacity then multiplies the whole layer.
 
-The engine's own captions (protocol 15) hold two functional strings. The engine reads `rgb()` and `rgba()` by the CSS rules and rounds the alpha to the nearest of 255 steps, so each has an exact 8-digit form, and a native client that creates or restyles a caption writes that form: `rgba(0, 0, 0, 0.55)` is `#0000008c` and `rgba(0, 0, 0, 0.6)` is `#00000099`. In general `rgba(r, g, b, α)` is `#` + r, g, b and round(255 α) as two hex digits each. A native client that meets another CSS form in a graph (a named colour, `oklch()`) preserves it and may draw the item's default for that field. All drawing is source-over in the project's encoded SDR colour, as for any 2-D item.
+When a native client rewrites a field that holds a functional form, it writes the 8-digit form of the same colour: `#` followed by r, g, b and round(255 a), two hexadecimal digits each. The two strings of the standard caption (protocol 15) become `#0000008c` for `rgba(0, 0, 0, 0.55)` and `#00000099` for `rgba(0, 0, 0, 0.6)`, and draw identically (`alpha/background-8-digit-equals-caption-rgba`, `alpha/caption-shadow-8-digit`). All drawing is source-over in the project's encoded SDR colour, as for any 2-D item.
 
 **Opacity.** The painted box is one layer: the item's opacity multiplies the finished text (background, shadow, stroke, fill and underline together), not each draw. (The engine's CPU-only fallback applies the opacity to each draw separately, which makes overlapping parts show through; that is implementation-defined and not the contract.) Likewise the shadow offset is in box coordinates and turns with a rotated title.
 
 **[X13] Animated style and `textStyleScale`.** At frame f (relative to the item's start) each of `fontSize`, `lineHeight`, `textPadding`, `backgroundRadius`, `textShadowOffsetX`, `textShadowOffsetY`, `textShadowBlur` and `strokeWidth` that has keyframes takes its interpolated value (the keyframe rules of protocol 13.2.4) in place of the stored field, limited below: `fontSize` ≥ 1, `lineHeight` ≥ 0.1, `textPadding` ≥ 0, `backgroundRadius` ≥ 0, shadow blur ≥ 0, stroke width ≥ 0. A property without keyframes keeps the stored field. Spans are untouched: a span with its own `fontSize` ignores an animated item `fontSize`.
 
 - **Shadow.** If any of the three shadow properties is animated, or the item has a shadow, the shadow is (offsetX, offsetY, blur) with an absent number read as 0, in the item's shadow colour or `#000000`. If all three numbers are 0, there is **no** shadow at that frame.
-- **Stroke.** If `strokeWidth` is animated, or the item has a stroke, the stroke has the resolved width and the item's stroke colour or `#111827`. A width ≤ 0 means no stroke.
+- **Stroke.** If `strokeWidth` is animated, or the item has a stroke, the stroke has the resolved width and the item's stroke colour or `#111827`. A width ≤ 0 means **no stroke at that frame**, for every later step: X6 then counts no stroke width, and X12 draws none.
+
+The two removals happen on every frame, whether or not anything is animated: a stored stroke of width 0 or less, and a stored shadow whose offsets and blur are all 0, are absent when the title is measured (X6) and painted.
 
 **`textStyleScale`.** The stored number is a record of the scale a style preset was applied with. The renderer does not multiply anything by it: a title with `textStyleScale: 2` and no keyframes on it draws exactly as its other fields say.
 
@@ -246,11 +261,22 @@ A **state** is six numbers: offset (dx, dy) in px, uniform scale, rotation in ra
 **[X15] Units.** The slot's unit is its `unit`, or the preset's default unit (X18). Units are counted over the **laid-out lines** (after wrapping, X7 and X8), in line order, each line walked by code point:
 
 - `character`: every character that is not white space is a unit, numbered 0, 1, 2 … across all lines. White space belongs to no unit.
-- `word`: words as Unicode text segmentation finds them (UAX #29 word boundaries, segments that contain a letter, digit or ideograph), numbered across all lines. A character that is neither white space nor in such a segment (punctuation, a symbol) joins the previous word **of its line**; at the start of a line it joins the next word of that line; a line with punctuation and no word is one unit. White space belongs to no unit. A word split across two lines by BREAK is two units. Where Unicode word segmentation is unavailable: maximal runs of non-white-space characters.
+- `word`: a **word** is a maximal run of word characters and joiners, found by the explicit rule below, numbered across all lines. A character that is neither white space nor in a word (punctuation, a symbol, an emoji) joins the previous word **of its line**; at the start of a line it joins the next word of that line; a line with such characters and no word is one unit. White space belongs to no unit. A word split across two lines by BREAK is two units.
 - `line`: every character of line n (white space included) is in unit n; N is the number of lines, empty lines included.
 - `whole-clip`: every non-white-space character is in unit 0; N = 1, so stagger and order have no effect.
 
-White space is U+0009 to U+000D, U+0020, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF. A glyph in no unit is drawn without motion. Two parts of word segmentation are **not specifiable**: scripts written without spaces (Chinese, Japanese, Thai) depend on the platform's dictionary, and platforms disagree on whether letters joined by a full stop or a colon (`y.z`) are one word or two. The goldens use space-separated words without such joins.
+**The word rule.** Classify each code point: a *letter* (Unicode general category L), a *digit* (Nd), a *connector* (Pc, the underscore), an *extender* (a combining mark, category M, or a format character, category Cf, such as the soft hyphen and the zero-width joiner), or *other*. Then:
+
+- letters, digits and connectors are word characters, in any mixture (`abc123`, `1st`, `foo_bar1` are one word each);
+- an extender belongs to the word of the character before it, and is skipped when the neighbours of a joiner are examined;
+- an apostrophe, U+0027 or U+2019, is part of a word when the characters on both its sides are letters, or both are digits (`don't`, `rock'n'roll`, `5'6`; not `'quoted'`, `o'`);
+- U+002E, U+002C and U+003B (full stop, comma, semicolon) are part of a word when both sides are digits (`10.5`, `1,000`, `v1.2.3`; not `a.b`, `1.a`, `U.S.`);
+- U+00B7 and U+2024 (middle dot, one dot leader) are part of a word when both sides are letters;
+- every other character ends a word: the hyphen-minus and all dashes, the colon, the solidus, `@`, `&`, `+`, `=`, `#`, `$`, `%`, `×`, brackets, quotation marks and the rest (`stop-go`, `well-known`, `e-mail`, `10:30`, `me@home` are two words each).
+
+This is what the engine's word segmentation gives for these characters, written so that no platform segmenter is needed (`units` cases `apostrophes`, `digit-joiners`, `letters-do-not-join`, `symbols`, `accents`). **Implementation-defined** beyond it, and a native client applies the rule above as written: scripts written without spaces (a run of Han, kana or Thai letters is one word under this rule, where the engine may split it by dictionary), digits of category other than Nd, and an apostrophe or dot between a letter and a digit.
+
+White space is U+0009 to U+000D, U+0020, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF. A glyph in no unit is drawn without motion. The goldens use Latin words, digits and the punctuation named above.
 
 **The unit used at a frame (implementation-defined).** The engine chooses the unit kind once per frame, from a coarse slot decision that does not yet know N, and then evaluates each glyph with the exact rule of X14. The coarse decision is the rule of X14 with every window taken as: L = min(d, D ÷ 2) when the slot's `staggerFrames` is 0, and L = D ÷ 2 when it is above 0. If the coarse decision is "none", the frame is drawn without motion. Otherwise the units are counted with the coarse slot's unit kind, and each glyph is evaluated by X14 with that N. Usually both agree. They differ only for a staggered slot between its true window's end and D ÷ 2 (or the mirror for `out`): there a `loop` slot can run on the units of the `in` or `out` slot. A native client reproduces this.
 
@@ -289,9 +315,11 @@ G is seeded with a = (`seed` truncated to a 32-bit signed integer) + 2654435769 
 | `shimmer` | loop | word | 24, 0, linear | alpha = clamp01(1 − 0.35 × I × (0.5 + 0.5 × sin(2π × (p + HASH1(31 × `seed` + i))))) |
 | `swing` | loop | character | 32, 2, linear | rotation = 0.09 × I × sin(2π p) |
 
+**The sine.** sin is the binary64 sine of a binary64 argument, accurate to within one unit in the last place; any standard mathematical library qualifies, and none is prescribed. The results of the five presets that use it (`wave-in`, `pulse`, `wave`, `shimmer`, `swing`) are therefore not bit-exact across platforms. `shimmer` amplifies the difference most, because HASH1 multiplies a sine by 43758.5453 before taking the fraction: one unit in the last place there moves the alpha by about 5 × 10⁻¹². Every golden value that goes through a sine (the `motion` and `paint` cases marked `"exact": false`) is compared within 10⁻⁹; every other value is exact.
+
 HASH1(v): w = ((v rem 4096) + 4096) rem 4096 with rem the remainder that takes the dividend's sign; x = sin(w × 12.9898 + 78.233) × 43758.5453; HASH1 = x − ⌊x⌋. 2π is 2 × the binary64 π.
 
-Positive dy is downward: `fade-up` and `rise` start below their place and rise into it, `cascade` falls from above, `fade-down` and `sink` drop. `slide-mask` starts a full box width to the left, so the box clip (X12) hides it and it slides in from the box's left edge: the clip is what makes the mask. With `overshoot`, p passes 1: `pop` grows beyond its size and settles. The sine values make `wave-in`, `pulse`, `wave`, `shimmer` and `swing` reproducible to the precision of the platform's sine (the goldens allow 10⁻¹² for them); every other preset is exact.
+Positive dy is downward: `fade-up` and `rise` start below their place and rise into it, `cascade` falls from above, `fade-down` and `sink` drop. `slide-mask` starts a full box width to the left, so the box clip (X12) hides it and it slides in from the box's left edge: the clip is what makes the mask. With `overshoot`, p passes 1: `pop` grows beyond its size and settles. Only the five sine presets depend on the platform's sine; every other preset is exact.
 
 **[X19] Painting with motion (2-D route).** A frame f is drawn glyph by glyph when the item has `textMotion`, D > 0, f ≥ 0, and at least one of: a `loop` slot exists; an `in` slot exists and f < min(D, max(0, in offset) + U_in); an `out` slot exists and f ≥ max(0, D − max(0, out offset) − U_out), where U = D ÷ 2 for a slot with `staggerFrames` > 0 and min(max(0, `durationFrames`), D ÷ 2) otherwise, and the offsets are the stored ones, not limited. Every other frame, and every such frame whose coarse slot (X15) is "none", is drawn as X12. This test covers every frame on which a glyph can be away from its identity.
 
@@ -329,7 +357,8 @@ Not specifiable (platform input, as for ASCII glyphs):
 - the shaper: kerning, ligatures, contextual forms, bidirectional reordering, fallback fonts, and therefore the advance W of a string;
 - the font's ascent and descent as the platform reports them;
 - word boundaries in scripts written without spaces (X15);
-- the exact pixels of a blurred shadow and of a round-joined stroke.
+- the pixels of a **blurred shadow**: the kernel that approximates the Gaussian of X12 differs between platforms and between versions of one platform. `underline-blurred-shadow` is a `statistical` case, bound by its mean and never pixel by pixel;
+- the **anti-aliased coverage** of everything that is not an axis-aligned filled rectangle: the arcs of a rounded background, a round-joined stroke, and the edges of an underline that do not lie on pixel boundaries. (The canonical backend, for one, places the horizontal edges of such paths on quarter pixels. That is its rasteriser's doing, not a rule.) These are `edge` cases: the pixels the outline crosses are counted as outliers, all others are binding.
 
 Binding, given the platform's W, asc and desc:
 
@@ -415,14 +444,31 @@ Binding, given the platform's W, asc and desc:
 
   The decode of a file has the same base name with the extension `.ttf` under `server/resources/studio-fonts/`.
 
-- **Measurers.** Most cases use the **synthetic measurer** defined in `text-goldens.mjs`: a table of per-character advances in units of the font size, dyadic so that all arithmetic is exact, with no kerning, a factor 1.125 for weights 600 and above, asc = 0.9375 × size and desc = 0.25 × size. It is a test input, not a rule: it stands where a platform's text engine stands. The `platform` cases use the real 2-D measurer of the machine that wrote the goldens; every width and metric it returned is recorded in `platformMeasurements` as that case's input (as the ASCII atlas is), and the drift gate re-captures them on its own machine.
+- **Measurers.** Most cases use the **synthetic measurer**. It is a test input, not a rule: it stands where a platform's text engine stands, and a native test feeds it to its own layout in place of its font measurements. `syntheticMeasurer` in the goldens holds the same definition as data:
+
+  | Code point | Advance ÷ font size |
+  | --- | --- |
+  | U+0020, U+00A0, and `i` `j` `l` `.` `,` `:` `;` `!` `\|` `'` | 0.25 |
+  | `m` `w` `M` `W` | 0.875 |
+  | `A` to `Z` except `M` and `W` | 0.625 |
+  | U+2E80 and above | 1 |
+  | every other code point | 0.5 |
+
+  The first matching row wins. A face of weight 600 or more multiplies every advance by 1.125; the family and the style change nothing; there is no kerning. W(t, F, ℓ) = Σ over the code points of t of (size × factor × weight factor), plus ℓ once per code point. asc(F) = 0.9375 × size and desc(F) = 0.25 × size, for every face. All factors are dyadic, so the sums are exact for the sizes used.
+
+  The `platform` cases use the real 2-D measurer of the machine that wrote the goldens; every width and metric it returned is recorded in `platformMeasurements` as that case's input (as the ASCII atlas is), and the drift gate re-captures them on its own machine.
 - **`layout` cases** give an item and a box and expect the lines (text, font, size, colour, letter spacing, underline, width, top, baseline, start, line height, runs) with the block height and background box: X4 to X10. Exact.
 - **`autoHeight` cases** expect the grown box height (X6) on the platform measurer. Exact given the recorded measurements.
-- **`paint` cases** run the engine's 2-D renderer against a recording surface with the synthetic measurer and expect the ordered list of draws: clip, background, stroke, fill and underline, each with its geometry, colours, shadow, alpha, blur and glyph transform (X11, X12, X19). Exact.
+- **`paint` cases** run the engine's 2-D renderer against a recording surface with the synthetic measurer and expect the ordered list of draws: clip, background, stroke, fill and underline, each with its geometry, colours, shadow, alpha, blur and glyph transform (X11, X12, X19). Exact, except the cases whose text motion uses a sine preset (`"exact": false`), at 10⁻⁹.
 - **`styleScale` cases** expect the item after the animated-style resolution of X13. Exact.
-- **`motion` cases** expect the six state numbers for units and frames of every preset, order and easing (X14, X16 to X18). Exact, except the five sine presets at 10⁻¹².
-- **`slot` and `units` cases** expect the coarse slot (X15) at frames, and the unit index of every character of given lines for the four unit kinds (X15). Exact.
-- **`image` cases** are small frames rendered by the engine's 2-D renderer on the real canvas with the synthetic measurer and text made of no-break spaces, so that no glyph ink enters: they pin the pixels of the background box, the underline, the hard and blurred shadow, the clip, and the alpha of 8-digit colours on the background, the underline and the shadow (with the `rgba()` strings of the caption preset drawing identically to their 8-digit forms). Buffers are `rgba8`, straight alpha, as in the README; tolerances are measured against a hardware backend by the README's rule and compared with its comparison rule.
+- **`motion` cases** expect the six state numbers for units and frames of every preset, order and easing (X14, X16 to X18). Exact, except the cases of the five sine presets, at 10⁻⁹ (X18).
+- **`slot` and `units` cases** expect the coarse slot (X15) at frames, and the unit index of every character of given lines for the four unit kinds (X15), including the word rule's joiners and breakers. Exact, and reproduced without a platform segmenter.
+- **`image` cases** are 96 × 64 frames rendered by the engine's 2-D renderer on the real canvas with the synthetic measurer and text made of no-break spaces, so that no glyph ink enters. Buffers are `rgba8`, straight alpha, compared with the README's comparison rule. Each case **declares** its class, by what its geometry leaves to the rasteriser, and the tolerance follows from the class:
+  - `pixel`: every stroked or rounded edge lies on a pixel boundary, and every other edge belongs to an axis-aligned filled rectangle, whose coverage is the covered fraction of the pixel. Nothing is left to the rasteriser: no outliers, 2/255 per channel. These pin the background box and its exact coverage, the underline, the hard shadow and its offset, the clip, and the alpha of 8-digit colours.
+  - `edge`: a rounded corner, or an underline between pixel boundaries. The pixels the outline crosses (`undecidedPixels`) may differ; every other pixel is bound to 2/255.
+  - `statistical`: the blurred shadow, bound by its mean (0.02) only.
+
+  The hardware cross-check reports what it measured and must fit the declared tolerance. A colour stored on an 8-bit premultiplied surface is exact only to half a step of its alpha, which is why no `pixel` case has a nearly transparent partly covered pixel.
 
 Regenerate and check (Node 24, the prepared engine served by Vite):
 

@@ -18,8 +18,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encodeBuffer, decodeBuffer, sha256, deriveTolerance, compareCase } from './render-goldens.mjs';
 import {
-  TEXT_GOLDENS_FORMAT, TEXT_GOLDENS_VERSION, SINE_TOLERANCE, SINE_PRESETS, IMAGE_SIZE, ANIMATED_STYLE_FIELDS,
+  TEXT_GOLDENS_FORMAT, TEXT_GOLDENS_VERSION, SINE_TOLERANCE, IMAGE_SIZE, ANIMATED_STYLE_FIELDS,
   syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, bundledTitleFonts, bundledFontRecords,
+  SYNTHETIC_MEASURER_TABLE, sameWithin, usesSine, imageTolerance, referenceRequiredHeight,
   layoutCases, autoHeightCases, paintCases, styleScaleCases, motionCases, slotCases, unitCases, imageCases,
   referenceLayout, referenceAutoHeight, referencePaint, referenceAnimatedStyle, referenceMotionState, referenceCoarseSlot, referenceUnits,
 } from './text-goldens.mjs';
@@ -313,13 +314,17 @@ function checkReference(lists, results, catalogue) {
     assert.equal(height, results.autoHeight[i].expected.height, `autoHeight/${c.name}: prose reference differs from the engine`);
   });
   lists.paint.forEach((c, i) => {
-    assert.deepEqual(plain(referencePaint(c.item, c.canvas, c.transform, synthetic, c.frame)), plain(results.paint[i].expected), `paint/${c.name}: prose reference differs from the engine`);
+    assert(sameWithin(plain(referencePaint(c.item, c.canvas, c.transform, synthetic, c.frame)), plain(results.paint[i].expected), usesSine(c.item.textMotion) ? SINE_TOLERANCE : 0),
+      `paint/${c.name}: prose reference differs from the engine`);
+    // X6: the box of a paint case already holds its text, as the box the engine paints into does.
+    assert(referenceRequiredHeight(c.item, c.transform.width, synthetic) <= c.transform.height + 0.5, `paint/${c.name}: the engine would grow this box`);
   });
+  lists.image.forEach((c) => assert(referenceRequiredHeight(c.item, c.transform.width, synthetic) <= c.transform.height + 0.5, `image/${c.name}: the engine would grow this box`));
   lists.styleScale.forEach((c, i) => {
     assert.deepEqual(plain(referenceAnimatedStyle(c.item, c.animated, c.canvas, catalogue.titleStyles)), plain(results.styleScale[i].expected), `styleScale/${c.name}: prose reference differs from the engine`);
   });
   lists.motion.forEach((c, i) => {
-    const sine = Object.values(c.spec).some((slot) => SINE_PRESETS.includes(slot.presetId));
+    const sine = usesSine(c.spec);
     for (const [frame, unit, ...want] of results.motion[i].samples) {
       const s = referenceMotionState(c.spec, { frame, length: c.context.length, unitIndex: unit, unitCount: c.context.unitCount, fontSize: c.context.fontSize, boxWidth: c.context.boxWidth });
       const got = s ? [s.dx, s.dy, s.scale, s.rotation, s.alpha, s.soften] : [0, 0, 1, 0, 1, 0];
@@ -357,7 +362,9 @@ export async function runTextGoldens({ write = false } = {}) {
       try { assert.deepEqual(plain(actual), expected); } catch { failures++; console.error(`${kind}/${goldens[kind][i].name}: the engine no longer matches the golden`); }
     };
     goldens.layout.forEach((g, i) => { if (g.measurer === 'synthetic') same('layout', i, canonical.layout[i].expected, g.expected); });
-    goldens.paint.forEach((g, i) => same('paint', i, canonical.paint[i].expected, g.expected));
+    goldens.paint.forEach((g, i) => {
+      if (!sameWithin(plain(canonical.paint[i].expected), g.expected, g.exact ? 0 : SINE_TOLERANCE)) { failures++; console.error(`paint/${g.name}: the engine no longer matches the golden`); }
+    });
     goldens.styleScale.forEach((g, i) => same('styleScale', i, canonical.styleScale[i].expected, g.expected));
     goldens.slot.forEach((g, i) => same('slot', i, canonical.slot[i].slots, g.slots));
     goldens.units.forEach((g, i) => same('units', i, canonical.units[i], { indices: g.indices, unitCount: g.unitCount }));
@@ -395,21 +402,24 @@ export async function runTextGoldens({ write = false } = {}) {
     generatedBy: 'studio/tools/text-goldens.browser.mjs --write',
     renderer: { canonical: { ...canonical.environment, args: canonicalArgs }, crossCheck: cross ? { ...cross.environment, args: crossArgs } : null },
     fonts: fontRecord,
-    syntheticMeasurer: 'text-goldens.mjs syntheticMeasurer: per-character advances in units of the font size, x1.125 at weight 600 and above, no kerning; ascent 0.9375 and descent 0.25 of the size.',
-    comparison: `Numeric cases are exact in binary64 (0 and -0 are equal); motion cases with "exact": false allow ${SINE_TOLERANCE} per number. Image cases use render-goldens.mjs compareCase.`,
+    syntheticMeasurer: SYNTHETIC_MEASURER_TABLE,
+    comparison: `Numeric cases are exact in binary64 (0 and -0 are equal); motion and paint cases with "exact": false go through the sine and allow ${SINE_TOLERANCE} per number. Image cases use render-goldens.mjs compareCase with the tolerance of their declared class.`,
     imageSize: IMAGE_SIZE,
     layout: lists.layout.map((c, i) => ({ ...c, ...canonical.layout[i] })),
     autoHeight: lists.autoHeight.map((c, i) => ({ ...c, measurer: 'platform', ...canonical.autoHeight[i] })),
-    paint: lists.paint.map((c, i) => ({ ...c, measurer: 'synthetic', ...canonical.paint[i] })),
+    paint: lists.paint.map((c, i) => ({ ...c, measurer: 'synthetic', exact: !usesSine(c.item.textMotion), ...canonical.paint[i] })),
     styleScale: lists.styleScale.map((c, i) => ({ ...c, ...canonical.styleScale[i] })),
-    motion: lists.motion.map((c, i) => ({ name: c.name, exact: !Object.values(c.spec).some((slot) => SINE_PRESETS.includes(slot.presetId)), spec: c.spec, context: c.context,
+    motion: lists.motion.map((c, i) => ({ name: c.name, exact: !usesSine(c.spec), spec: c.spec, context: c.context,
       columns: ['frame', 'unit', 'dx', 'dy', 'scale', 'rotation', 'alpha', 'soften'], samples: canonical.motion[i].samples })),
     slot: lists.slot.map((c, i) => ({ ...c, ...canonical.slot[i] })),
     units: lists.units.map((c, i) => ({ ...c, ...canonical.units[i] })),
     image: lists.image.map((c, i) => {
       const encoding = 'rgba8-deflate-base64';
       const data = encodeBuffer(canonical.image[i].pixels, encoding);
-      const tolerance = deriveTolerance('sdr', decodeBuffer(data, encoding), cross?.image[i].pixels, `text/${c.name}`);
+      const stored = decodeBuffer(data, encoding);
+      // The class is declared by the case (text-goldens.mjs imageCases); the cross-check only reports what it measured and must fit.
+      const tolerance = imageTolerance(c, deriveTolerance('sdr', stored, cross?.image[i].pixels, `text/${c.name}`).measured);
+      if (cross) assert(compareCase({ name: c.name, tolerance, expected: stored }, cross.image[i].pixels).pass, `image/${c.name}: the hardware backend is outside the declared tolerance`);
       return { ...c, measurer: 'synthetic', tolerance, output: { encoding, data } };
     }),
   };

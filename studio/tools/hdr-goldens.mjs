@@ -31,13 +31,14 @@ export function decodeBuffer(data, encoding) {
 
 // ---- stage vectors -------------------------------------------------------------------------
 // A stage case is { name, stage, args, exact }. `exact` cases involve only + - x / , square roots,
-// comparisons and selection in binary64, and must be reproduced bit for bit; the others involve
-// powers, logarithms or exponentials and carry STAGE_TOLERANCE.
+// comparisons and selection in binary64 (and powers whose base is exactly 0 or 1, which IEEE 754
+// defines exactly), and must be reproduced bit for bit; the others involve powers, logarithms or
+// exponentials of other arguments and carry STAGE_TOLERANCE.
 export const STAGE_TOLERANCE = { abs: 1e-12, relative: 1e-9 };
 const EXACT_STAGES = ['resolve', 'sourceRange', 'timelineRange', 'decoderTransfer', 'bt709ToBt2020', 'bt2020ToBt709', 'ycbcrToSignal', 'rasterAdmission'];
 export const STAGES = [
   ...EXACT_STAGES, 'srgbDecode', 'srgbEncode', 'pqEncode', 'pqDecode', 'hlgOetf', 'hlgInverseOetf', 'hlgSystemGamma',
-  'hlgOotf', 'hlgInverseOotf', 'signalToWorking', 'workingToSignal', 'eetf', 'sdrDisplay',
+  'hlgOotf', 'hlgInverseOotf', 'signalToWorking', 'workingToSignal', 'eetf', 'sdrDisplay', 'ingestLight',
 ];
 
 const TRIPLETS = [
@@ -147,6 +148,10 @@ export function stageCases() {
     add('sdrDisplay', [t, { ...HDR, masteringPeakNits: 400 }]);
     add('sdrDisplay', [t, { ...HDR, referenceWhiteNits: 100 }]);
   }
+  // H13: the ends of the clip are selected, never computed (SRGB(1) is 1 - 2^-53 in binary64).
+  for (const t of [[1, 1, 1], [1, 0, 1 + 2 ** -52]]) add('sdrDisplay', [t, { ...HDR, sdrMonitoring: 'none' }], true);
+  add('sdrDisplay', [[-20, 1, 2], HDR], true);
+  add('sdrDisplay', [[1 - 2 ** -53, 0.5, 0.25], { ...HDR, sdrMonitoring: 'none' }]);
   // H11: admission of a still supplied as an HDR raster (see rasterFromSpec).
   for (const spec of [
     { width: 2, height: 1, transfer: 'pq', samples: 6 }, { width: 2, height: 1, transfer: 'hlg', samples: 6 },
@@ -163,6 +168,12 @@ export function stageCases() {
     { width: 1, height: 1, transfer: 'linear', gamut: 1, referenceWhite: 203, pixel: [1, 1, 1, -0.5] },
     { width: 1, height: 1, transfer: 'linear', gamut: 0, referenceWhite: 203, pixel: [1, 'NaN', 1, 1] },
   ]) add('rasterAdmission', [spec]);
+  // H10 by boundary: the scene light (HLG only), the display light and the working values of one
+  // signal, for a client whose decoder delivers light instead of the signal.
+  for (const transfer of ['pq', 'hlg']) {
+    for (const s of [SIGNALS[0], SIGNALS[2], SIGNALS[4], SIGNALS[5], SIGNALS[9], SIGNALS[10]]) add('ingestLight', [s, transfer, 203]);
+    add('ingestLight', [SIGNALS[9], transfer, 100]);
+  }
   return cases;
 }
 
@@ -423,9 +434,16 @@ function eetf(nits, sourcePeak, targetPeak) {
   }
   return Math.min(pqDecode(Math.min(e2, 1) * top), targetPeak);
 }
+// H10, stopped at each boundary: scene light (HLG only), display light in cd/m2, working values.
+function ingestLight(signal, transfer, white) {
+  const sceneLight = transfer === 'hlg' ? signal.map((v) => hlgInverseOetf(v)) : null;
+  const displayLight = sceneLight ? hlgOotf(sceneLight, 1000) : signal.map((v) => pqDecode(v));
+  return { sceneLight, displayLight, working: apply(TO_709, displayLight.map((v) => v / white)) };
+}
 // H13
 function sdrDisplay(working, color) {
   if (color.workingRange === 'sdr') return working.map(clamp01);
+  // Policy `none`: 0 at or below 0 and 1 at or above 1 by selection; SRGB only strictly between.
   const clip = () => working.map((v) => (v <= 0 ? 0 : v >= 1 ? 1 : srgbEncode(v)));
   if (color.sdrMonitoring === 'none') return clip();
   const y = 0.2126 * working[0] + 0.7152 * working[1] + 0.0722 * working[2];
@@ -473,6 +491,7 @@ export function referenceStage({ stage, args }) {
     case 'workingToSignal': return workingToSignal(...args);
     case 'eetf': return eetf(...args);
     case 'sdrDisplay': return sdrDisplay(args[0], resolveRecord(args[1], 'sdr'));
+    case 'ingestLight': return ingestLight(...args);
     case 'rasterAdmission': return rasterAdmitted(rasterFromSpec(args[0])) ? 'admitted' : 'rejected';
     default: throw new Error(`Unknown stage ${stage}`);
   }
