@@ -64,7 +64,7 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 | `fps`             | number         | The engine's frame rate as a float: exactly `frameRate.num / frameRate.den`. At most 120 (14.6.1).                                |
 | `frameRate`       | `{ num, den }` | The exact frame rate (section 3). Always present in normal form.                                                                  |
 | `backgroundColor` | `#rrggbb`      | Optional.                                                                                                                         |
-| `colorManagement` | object         | Optional. Absent means an SDR project. Its contents are owned by the managed-colour work (FL-97) and are opaque to this protocol. |
+| `colorManagement` | object         | Optional record of four fields (`studio/spec/hdr.md`, H1). Absent is not SDR: placed HDR media make a project HDR (H3).           |
 
 ### 2.3 `timeline`
 
@@ -194,6 +194,7 @@ Commands that place library media read a **media record** for each asset. This i
 | `width`, `height` | Pixels. They become `sourceWidth`/`sourceHeight`.                                                   |
 | `fps`             | The video's frame rate (0 for a still). It becomes `sourceFps`.                                     |
 | `audioCodec`      | Present when the video has sound. Its presence alone decides whether a linked audio item is placed. |
+| `colorTransfer`   | Optional: `sdr`, `pq`, `hlg` or `hdr`. The last three make a project HDR (`studio/spec/hdr.md` H3). |
 
 A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
 
@@ -2676,6 +2677,7 @@ This protocol says which effects and transitions a graph may name, and with whic
 | `studio/spec/README.md`           | The shared rules: coordinates, sampling, the SDR and linear HDR domains, alpha, the hash and noise functions, colour helpers, the effect clock, parameter sanitising, the transition progress curve and the transition routes. |
 | `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                           |
 | `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                 |
+| `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                           |
 | `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                         |
 | `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, and the progress-curve table.                                                                                                           |
 

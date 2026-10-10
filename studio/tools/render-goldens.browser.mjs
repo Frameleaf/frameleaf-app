@@ -21,6 +21,7 @@ import {
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
   encodeBuffer, decodeBuffer, roundHalf, sha256, deriveTolerance, compareCase, validateGoldens,
 } from './render-goldens.mjs';
+import { runHdrGoldens } from './hdr-goldens.browser.mjs';
 
 const studio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(studio, 'engine/package.json'));
@@ -277,6 +278,7 @@ if (!write) {
   console.log(JSON.stringify({ check: 'ASCII platform atlas input and independent CPU oracle', environment: canonical.environment, cases: atlasEvidence }));
   assert.equal(failures, 0, `${failures} golden cases drifted`);
   console.log('render goldens hold');
+  await runHdrGoldens({ write: false }); // studio/spec/hdr.md
   process.exit(0);
 }
 
@@ -350,3 +352,4 @@ await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 const readmePath = path.join(studio, 'spec/README.md');
 await writeFile(readmePath, replaceIndexMarkdown(await readFile(readmePath, 'utf8'), renderIndexMarkdown(index, transitionDoc.progressCurve.length)));
 console.log('wrote studio/spec/goldens/effects.json, transitions.json, index.json and the README index');
+await runHdrGoldens({ write: true });
