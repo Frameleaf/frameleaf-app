@@ -55,8 +55,11 @@
     memorySlideClass,
     memoryTitleCard,
   } from '$lib/frameleaf/memory-engine';
+  import { createLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
   import {
+    eventStoryLandmark,
     exportProgress,
+    isEventStory,
     isExportActive,
     latestExport,
     memoryEvidenceMs,
@@ -103,12 +106,14 @@
     mdiChevronDown,
     mdiChevronLeft,
     mdiChevronRight,
+    mdiCheck,
     mdiChevronUp,
     mdiClose,
     mdiDownload,
     mdiExportVariant,
     mdiHeart,
     mdiHeartOutline,
+    mdiImageAlbum,
     mdiImageMinusOutline,
     mdiImageSearch,
     mdiMenuLeft,
@@ -151,6 +156,31 @@
   const current = $derived(memoryManager.current);
   /** The memory's title and subtitle as the index shows them (the owner's own title first). */
   const headline = $derived(current ? $memoryHeadline(current.memory) : undefined);
+  /** FL-356: a visit to a landmark can be kept as an album of everything taken there on those days. */
+  const landmark = $derived(current ? eventStoryLandmark(current.memory) : undefined);
+  let albumSavedFor = $state<string>();
+  const albumSaved = $derived(!!current && albumSavedFor === current.memory.id);
+  const saveAsAlbum = async () => {
+    const memory = current?.memory;
+    if (!memory || !landmark || !headline || !isEventStory(memory)) {
+      return;
+    }
+    const { startDate, endDate } = memory.data;
+    try {
+      const albumId = await createLandmarkAlbum({
+        landmarkId: landmark.id,
+        startDate,
+        endDate,
+        albumName: headline.title,
+      });
+      if (albumId) {
+        albumSavedFor = memory.id;
+      }
+      status = albumId ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_search_save_snapshot_empty');
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    }
+  };
   const currentAssetId = $derived(current?.asset.id);
   // where the asset sits in its memory, for the progress bar and counter
   const assetIndex = $derived(current ? current.memory.assets.findIndex(({ id }) => id === currentAssetId) : -1);
@@ -1201,6 +1231,17 @@
                       <Icon icon={mdiRepeat} size="20" aria-hidden="true" />
                       {$t('frameleaf_memories_play_again')}
                     </button>
+                    {#if landmark}
+                      <button
+                        type="button"
+                        class="fmp-secondary"
+                        disabled={albumSaved}
+                        onclick={() => handlePromiseError(saveAsAlbum())}
+                      >
+                        <Icon icon={albumSaved ? mdiCheck : mdiImageAlbum} size="20" aria-hidden="true" />
+                        {albumSaved ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_memories_save_as_album')}
+                      </button>
+                    {/if}
                     {#if current.nextMemory}
                       {@const next = current.nextMemory}
                       <button

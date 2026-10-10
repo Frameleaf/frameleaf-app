@@ -23,6 +23,7 @@ import {
   isYearInReview,
   latestExport,
   memoryEvidenceMs,
+  eventStoryLandmark,
   memoryHeadline,
   memoryLocalDay,
   memoryStoryKind,
@@ -308,6 +309,19 @@ describe('memory stories', () => {
         title: 'Our summer',
         subtitle: '1 Jun 2026 – 4 Jun 2026 · 4 days',
       });
+    });
+
+    // FL-356
+    it('reads one day at a landmark as a day out, and a longer stay by the place', () => {
+      const landmark = { id: 'Q181185', name: 'Disneyland Park', kind: 'theme_park' };
+      const stay = memory(MemoryType.EventStory, { ...eventStory.data, landmark, title: landmark.name });
+      const visit = memory(MemoryType.EventStory, { ...stay.data, endDate: '2026-06-01', dayCount: 1 });
+
+      expect(memoryHeadline(visit, { t, locale: 'en' }).title).toBe('A day at Disneyland Park');
+      expect(memoryHeadline(stay, { t, locale: 'en' }).title).toBe('Disneyland Park');
+      expect(eventStoryLandmark(visit)).toEqual(landmark);
+      expect(eventStoryLandmark(eventStory)).toBeUndefined();
+      expect(eventStoryLandmark(recap)).toBeUndefined();
     });
 
     it('offers show less for the subject, the day and the kind', () => {

@@ -1,4 +1,11 @@
-import { searchMemories, updateMemory, type MemoryResponseDto } from '@frameleaf/sdk';
+import {
+  addAssetsToAlbum,
+  createAlbum,
+  searchAssets,
+  searchMemories,
+  updateMemory,
+  type MemoryResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -13,6 +20,9 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
   getMemoryShowLess: vi.fn().mockResolvedValue([]),
   updateMemory: vi.fn(),
+  searchAssets: vi.fn(),
+  createAlbum: vi.fn(),
+  addAssetsToAlbum: vi.fn(),
 }));
 
 const memory = (id: string, assets: unknown[]) =>
@@ -147,6 +157,29 @@ describe('MemoriesPanel', () => {
     await vi.waitFor(() => expect(memoryManager.memories).toHaveLength(1));
     expect(updateMemory).toHaveBeenLastCalledWith({ id: 'old', memoryUpdateDto: { isHidden: false } });
     expect(memoryManager.hidden).toHaveLength(0);
+  });
+
+  // FL-356: a visit to a landmark wears the landmark's badge and can be kept as an album.
+  it('saves a landmark visit as an album of everything taken there', async () => {
+    const landmark = { id: 'Q181185', name: 'Disneyland Park', kind: 'theme_park' };
+    const data = { kind: 'event_story', year: 2026, startDate: '2026-08-01', endDate: '2026-08-01', dayCount: 1 };
+    const visit = { ...onDay('visit', '2026-08-01', 2026), type: 'event_story', data: { ...data, landmark } };
+    memoryManager.memories = [visit as never, onDay('old', '2026-08-02', 2020)];
+    vi.mocked(searchAssets).mockResolvedValue({ assets: { items: [{ id: 'a' }], total: 1 } } as never);
+    vi.mocked(createAlbum).mockResolvedValue({ id: 'album' } as never);
+    vi.mocked(addAssetsToAlbum).mockResolvedValue([]);
+
+    const { container } = render(MemoriesPanel);
+
+    expect(container.querySelectorAll('.lm-badge-kind')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: /More actions for On this day/ }));
+    expect(screen.queryByRole('menuitem', { name: 'Save as album' })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /More actions for A day at Disneyland Park/ }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Save as album' }));
+
+    expect(await screen.findByText('Saved to Albums')).toBeInTheDocument();
+    expect(createAlbum).toHaveBeenCalledWith({ createAlbumDto: { albumName: 'A day at Disneyland Park' } });
+    expect(addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['a'] } });
   });
 
   it('loads hidden memories from the server', () => {
