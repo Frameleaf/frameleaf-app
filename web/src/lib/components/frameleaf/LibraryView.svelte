@@ -1294,7 +1294,17 @@
       onShare: available.share ? () => void performOnBar('create-shared-link', [asset.id]) : undefined,
       // Prototype `onMore={(id) => openViewer(id)}`: the viewer holds every other action.
       onMore: available.more ? () => openAsset(asset) : undefined,
+      onContextMenu: selectionBar || noSelectionBar ? undefined : (event) => void openTileMenu(asset, event),
     };
+  };
+
+  /** Right-click a tile: as in Finder it becomes the selection unless already in it, then the bar's actions open at the pointer. */
+  const openTileMenu = async (asset: TimelineAsset, event: MouseEvent) => {
+    if (!session.selection.includes(asset.id)) {
+      session.dispatch({ type: 'selection', ids: [asset.id] });
+      await tick();
+    }
+    selectionBarRef?.openContextMenu(event.clientX, event.clientY);
   };
 
   /** The first item in view order that is loaded. */
