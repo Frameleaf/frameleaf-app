@@ -1,4 +1,5 @@
 import { LoginResponseDto, ManualJobName } from '@frameleaf/sdk';
+import { setupCode } from 'src/fixtures.js';
 import { ownedWait } from 'src/harness-context.js';
 import { pollRequest } from 'src/harness-wait.js';
 import { settleMaintenanceCleanup } from 'src/maintenance-cleanup.js';
@@ -135,7 +136,9 @@ describe('/admin/database-backups', () => {
     }, 70_000);
 
     it.sequential('should not work when the server is configured', async () => {
-      const { status, body } = await request(app).post('/admin/database-backups/start-restore').send();
+      const { status, body } = await request(app)
+        .post('/admin/database-backups/start-restore')
+        .send({ code: setupCode });
 
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
@@ -144,7 +147,10 @@ describe('/admin/database-backups', () => {
     it.sequential('should enter maintenance mode in "database restore mode"', async () => {
       await utils.resetDatabase(); // reset database before running this test
 
-      const { status, headers } = await request(app).post('/admin/database-backups/start-restore').send();
+      // FL-292: starting a restore on an unclaimed server takes the setup code, like admin sign-up.
+      const { status, headers } = await request(app)
+        .post('/admin/database-backups/start-restore')
+        .send({ code: setupCode });
 
       expect(status).toBe(201);
 
