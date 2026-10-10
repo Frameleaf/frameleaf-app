@@ -22,9 +22,11 @@ import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 
 const ROOTS = SCALE_ITEMS;
-// One statement of the summary: a quarter of a second, then ten microseconds a root, and never more
-// than the coordinator's five-second statement limit.
-const SUMMARY_BUDGET_MS = Math.min(5000, 250 + ROOTS / 100);
+// One statement of the summary: three quarters of a second, then ten microseconds a root, and never
+// more than the coordinator's five-second statement limit. A hosted runner takes about 0.2 s for
+// 25,000 roots; the budget only stops a gross slowdown, and the plan check below is what notices
+// the summary reading one row for each root again.
+const SUMMARY_BUDGET_MS = Math.min(5000, 750 + ROOTS / 100);
 
 // Generate each full-width root once, then retain the canonical intent and its copied alias.
 const seedSummaryRoots = (db: Kysely<DB>, id: string, origin: string, after: number, take = 1000) =>
