@@ -25,6 +25,7 @@ import {
   SearchFilter,
   SearchHistogramDto,
   SearchHistogramResponseDto,
+  SearchLandmarkResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
   SearchResponseDto,
@@ -409,6 +410,21 @@ export class SearchService extends BaseService {
     const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.searchRepository.getCityAssetCounts(userIds, getHiddenContentQueryOptions(auth));
     return rows.map(({ city, count }) => ({ city, count: Number(count) }));
+  }
+
+  async getVisitedLandmarks(auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (!reverseGeocoding.enabled) {
+      return [];
+    }
+    const userIds = this.getUserIdsToSearch(auth);
+    const rows = await this.searchRepository.getVisitedLandmarks(userIds, getHiddenContentQueryOptions(auth));
+    return rows.map((row) => ({
+      ...row,
+      assetCount: Number(row.assetCount),
+      firstTakenAt: new Date(row.firstTakenAt).toISOString(),
+      lastTakenAt: new Date(row.lastTakenAt).toISOString(),
+    }));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {

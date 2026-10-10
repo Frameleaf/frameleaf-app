@@ -2,9 +2,131 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## FrameleafHandoffCreateDto
+
+
+```json
+{
+  "properties": {
+    "returnTo": {
+      "description": "The home address to sign in on; only an address this server published for its home network",
+      "maxLength": 2048,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## FrameleafHandoffRedeemDto
+
+
+```json
+{
+  "properties": {
+    "code": {
+      "description": "The code from POST oauth/frameleaf/handoff",
+      "maxLength": 200,
+      "minLength": 16,
+      "type": "string"
+    },
+    "rememberMe": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "type": "object"
+}
+```
+
+## FrameleafHandoffResponseDto
+
+
+```json
+{
+  "properties": {
+    "code": {
+      "description": "A single-use code for signing in on another address of this server",
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "url": {
+      "description": "Where to continue with the code: the home address asked for, when this server published it",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "expiresAt",
+    "url"
+  ],
+  "type": "object"
+}
+```
+
+## FrameleafLinkConfirmDto
+
+
+```json
+{
+  "properties": {
+    "confirmToken": {
+      "description": "The token a preview returned",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "confirmToken"
+  ],
+  "type": "object"
+}
+```
+
+## FrameleafLinkDto
+
+
+```json
+{
+  "properties": {
+    "codeVerifier": {
+      "description": "OAuth code verifier (PKCE)",
+      "type": "string"
+    },
+    "preview": {
+      "description": "Report what linking would change (for example becoming an administrator) without linking yet",
+      "type": "boolean"
+    },
+    "rememberMe": {
+      "description": "Persist authentication cookies across browser sessions (default true)",
+      "type": "boolean"
+    },
+    "state": {
+      "description": "OAuth state parameter",
+      "type": "string"
+    },
+    "url": {
+      "description": "OAuth callback URL",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "type": "object"
+}
+```
+
 ## FrameleafLinkResponseDto
 
-Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-38.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
+Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-39.md#useravatarcolor), [UserLicense](models-39.md#userlicense), [UserStatus](models-39.md#userstatus).
 
 ```json
 {
@@ -1417,7 +1539,7 @@ Related models: [HardwareBenchmarkSource](models-12.md#hardwarebenchmarksource),
 
 ## HdrAssetDevelopRecipe
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -1687,7 +1809,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
 
 ## HdrAssetDevelopRecipeV4
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -1919,276 +2041,6 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     "version": {
       "enum": [
         4
-      ],
-      "format": "int32",
-      "type": "integer"
-    },
-    "vibrance": {
-      "default": 0,
-      "description": "Saturation weighted towards muted colours",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "vignette": {
-      "default": 0,
-      "description": "Darkened (positive) or lightened (negative) edges",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "whites": {
-      "default": 0,
-      "description": "White point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    }
-  },
-  "required": [
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## HdrAssetDevelopRecipeV5
-
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "blacks": {
-      "default": 0,
-      "description": "Black point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "brilliance": {
-      "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "clarity": {
-      "default": 0,
-      "description": "Local contrast in the midtones",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "cleanup": {
-      "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopCleanup"
-      },
-      "maxItems": 32,
-      "type": "array"
-    },
-    "contrast": {
-      "default": 0,
-      "description": "Contrast around middle grey",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "crop": {
-      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
-      "default": {
-        "h": 1,
-        "w": 1,
-        "x": 0,
-        "y": 0
-      }
-    },
-    "dehaze": {
-      "default": 0,
-      "description": "Haze removal (positive) or addition (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "exposure": {
-      "default": 0,
-      "description": "Exposure in EV; each whole stop doubles the light",
-      "format": "double",
-      "maximum": 2,
-      "minimum": -2,
-      "type": "number"
-    },
-    "flipHorizontal": {
-      "default": false,
-      "description": "Mirror left to right",
-      "type": "boolean"
-    },
-    "flipVertical": {
-      "default": false,
-      "description": "Mirror top to bottom",
-      "type": "boolean"
-    },
-    "grain": {
-      "default": 0,
-      "description": "Film grain amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "hdr": {
-      "additionalProperties": false,
-      "default": {},
-      "properties": {
-        "intent": {
-          "default": "preserve",
-          "enum": [
-            "preserve"
-          ],
-          "type": "string"
-        },
-        "referenceWhite": {
-          "default": 203,
-          "enum": [
-            203
-          ],
-          "format": "int32",
-          "type": "integer"
-        },
-        "sdrToneMapper": {
-          "default": "libultrahdr/2.0.2-frameleaf.3",
-          "enum": [
-            "libultrahdr/2.0.2-frameleaf.3"
-          ],
-          "type": "string"
-        },
-        "version": {
-          "default": 3,
-          "enum": [
-            3
-          ],
-          "format": "int32",
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "highlights": {
-      "default": 0,
-      "description": "Highlight recovery (negative) or lift (positive)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "masks": {
-      "default": [],
-      "description": "Selective adjustments, applied in order after the global develop",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopMask"
-      },
-      "maxItems": 8,
-      "type": "array"
-    },
-    "noiseReduction": {
-      "default": 0,
-      "description": "Luminance noise reduction amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "perspective": {
-      "$ref": "#/components/schemas/AssetDevelopPerspective",
-      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
-    },
-    "preset": {
-      "$ref": "#/components/schemas/AssetDevelopPreset",
-      "default": "Original"
-    },
-    "presetStrength": {
-      "default": 100,
-      "description": "How much of the preset is applied, as a percentage",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "renderer": {
-      "default": "frameleaf-develop-hdr/3",
-      "enum": [
-        "frameleaf-develop-hdr/3"
-      ],
-      "type": "string"
-    },
-    "rotation": {
-      "default": 0,
-      "description": "Quarter-turn rotation in degrees, clockwise",
-      "maximum": 270,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "saturation": {
-      "default": 0,
-      "description": "Global saturation",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "shadows": {
-      "default": 0,
-      "description": "Shadow lift (positive) or deepening (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "sharpen": {
-      "default": 0,
-      "description": "Detail sharpening amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "straighten": {
-      "default": 0,
-      "description": "Straighten angle in degrees, applied before the crop",
-      "format": "double",
-      "maximum": 45,
-      "minimum": -45,
-      "type": "number"
-    },
-    "temperature": {
-      "default": 0,
-      "description": "Warm (positive) or cool (negative) white balance shift",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "tint": {
-      "default": 0,
-      "description": "Magenta (positive) or green (negative) tint",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "version": {
-      "enum": [
-        5
       ],
       "format": "int32",
       "type": "integer"

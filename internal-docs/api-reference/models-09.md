@@ -2,9 +2,106 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## CloudMlConnection
+
+
+```json
+{
+  "description": "not-configured: FRAMELEAF_CLOUD_URL is unset; not-linked: the server is not linked to a Frameleaf account; ready: the regional gateway answered; unavailable: linked but the cloud did not answer",
+  "enum": [
+    "not-configured",
+    "not-linked",
+    "ready",
+    "unavailable"
+  ],
+  "type": "string"
+}
+```
+
+## CloudMlConsentFeaturesDto
+
+
+```json
+{
+  "properties": {
+    "identityNames": {
+      "type": "boolean"
+    },
+    "medicalSignals": {
+      "type": "boolean"
+    },
+    "ocrAddon": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "identityNames",
+    "medicalSignals",
+    "ocrAddon"
+  ],
+  "type": "object"
+}
+```
+
+## CloudMlConsentHistoryResponseDto
+
+Related models: [CloudMlConsentRecordDto](models-09.md#cloudmlconsentrecorddto).
+
+```json
+{
+  "properties": {
+    "records": {
+      "items": {
+        "$ref": "#/components/schemas/CloudMlConsentRecordDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "records"
+  ],
+  "type": "object"
+}
+```
+
+## CloudMlConsentRecordDto
+
+Related models: [CloudMlConsentFeaturesDto](models-09.md#cloudmlconsentfeaturesdto).
+
+```json
+{
+  "properties": {
+    "acceptedAt": {
+      "type": "string"
+    },
+    "acceptedBy": {
+      "type": "string"
+    },
+    "features": {
+      "$ref": "#/components/schemas/CloudMlConsentFeaturesDto"
+    },
+    "revokedAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "acceptedAt",
+    "acceptedBy",
+    "features",
+    "revokedAt",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
 ## CloudMlConsentStateDto
 
-Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesdto).
+Related models: [CloudMlConsentFeaturesDto](models-09.md#cloudmlconsentfeaturesdto).
 
 ```json
 {
@@ -1374,7 +1471,7 @@ Related models: [CloudMlSettlementDto](models-09.md#cloudmlsettlementdto).
 
 ## CloudMlStatusResponseDto
 
-Related models: [CloudMlConnection](models-08.md#cloudmlconnection), [CloudMlConsentStateDto](models-09.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-18.md#mldestinationresponsedto).
+Related models: [CloudMlConnection](models-09.md#cloudmlconnection), [CloudMlConsentStateDto](models-09.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-18.md#mldestinationresponsedto).
 
 ```json
 {
@@ -2002,120 +2099,6 @@ Related models: [CloudTourEnding](models-09.md#cloudtourending).
   },
   "required": [
     "userId"
-  ],
-  "type": "object"
-}
-```
-
-## ClusterGroupRequestResponseDto
-
-
-```json
-{
-  "properties": {
-    "clusterGroupId": {
-      "description": "Cluster group the user is invited to join",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "Creation date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Request ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "userId": {
-      "description": "User the request was created for",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "clusterGroupId",
-    "createdAt",
-    "id",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## Colorspace
-
-
-```json
-{
-  "description": "Colorspace",
-  "enum": [
-    "srgb",
-    "p3"
-  ],
-  "type": "string"
-}
-```
-
-## ConfigCredential
-
-
-```json
-{
-  "description": "A server secret that can be replaced or cleared but never read back",
-  "enum": [
-    "smtp-password",
-    "oauth-client-secret",
-    "cloud-backup-s3-secret-key"
-  ],
-  "type": "string"
-}
-```
-
-## ConfigCredentialResponseDto
-
-Related models: [ConfigCredential](models-09.md#configcredential).
-
-```json
-{
-  "properties": {
-    "configured": {
-      "description": "Whether a value is stored. The value itself is never returned",
-      "type": "boolean"
-    },
-    "name": {
-      "$ref": "#/components/schemas/ConfigCredential"
-    }
-  },
-  "required": [
-    "configured",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## ConfigCredentialUpdateDto
-
-
-```json
-{
-  "properties": {
-    "value": {
-      "description": "The new secret. Stored as sent and never returned",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "value"
   ],
   "type": "object"
 }

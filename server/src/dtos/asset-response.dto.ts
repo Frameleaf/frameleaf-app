@@ -8,6 +8,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
 import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
+import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
@@ -83,6 +84,10 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
       .describe('The UTC timestamp when the asset was originally uploaded to Frameleaf.'),
     ownerId: z.uuidv4().describe('Owner user ID'),
     owner: UserResponseSchema.optional(),
+    landmarks: z
+      .array(LandmarkSummarySchema)
+      .optional()
+      .describe('Landmarks this asset was taken at, the most specific first. Only on the single-asset response.'),
     origin: PartnerOriginSchema.optional().describe(
       'FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})',
     ),

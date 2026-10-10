@@ -12,7 +12,7 @@ List shared space invitations
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePreviewResponseDto](models-31.md#sharedspacepreviewresponsedto).
+Models: [SharedSpacePreviewResponseDto](models-33.md#sharedspacepreviewresponsedto).
 
 Controller access declarations:
 
@@ -86,7 +86,7 @@ List recipient groups
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto).
+Models: [RecipientGroupResponseDto](models-29.md#recipientgroupresponsedto).
 
 Controller access declarations:
 
@@ -165,7 +165,7 @@ Create a recipient group
 
 Permission: `album.share`. Admin only: `false`.
 
-Models: [RecipientGroupCreateDto](models-28.md#recipientgroupcreatedto), [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto).
+Models: [RecipientGroupCreateDto](models-29.md#recipientgroupcreatedto), [RecipientGroupResponseDto](models-29.md#recipientgroupresponsedto).
 
 Controller access declarations:
 
@@ -329,7 +329,7 @@ Update a recipient group
 
 Permission: `album.share`. Admin only: `false`.
 
-Models: [RecipientGroupResponseDto](models-28.md#recipientgroupresponsedto), [RecipientGroupUpdateDto](models-28.md#recipientgroupupdatedto).
+Models: [RecipientGroupResponseDto](models-29.md#recipientgroupresponsedto), [RecipientGroupUpdateDto](models-29.md#recipientgroupupdatedto).
 
 Controller access declarations:
 
@@ -508,7 +508,7 @@ What happened in a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceActivityResponseDto](models-31.md#sharedspaceactivityresponsedto).
+Models: [SharedSpaceActivityResponseDto](models-32.md#sharedspaceactivityresponsedto).
 
 Controller access declarations:
 
@@ -611,7 +611,7 @@ List albums linked into a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceAlbumsResponseDto](models-31.md#sharedspacealbumsresponsedto).
+Models: [SharedSpaceAlbumsResponseDto](models-32.md#sharedspacealbumsresponsedto).
 
 Controller access declarations:
 
@@ -779,7 +779,7 @@ Link an album into a shared space
 
 Permission: `album.update`. Admin only: `false`.
 
-Models: [SharedSpaceAlbumsResponseDto](models-31.md#sharedspacealbumsresponsedto).
+Models: [SharedSpaceAlbumsResponseDto](models-32.md#sharedspacealbumsresponsedto).
 
 Controller access declarations:
 
@@ -873,7 +873,7 @@ List comments in a shared space
 
 Permission: `activity.read`. Admin only: `false`.
 
-Models: [SharedSpaceCommentsResponseDto](models-31.md#sharedspacecommentsresponsedto).
+Models: [SharedSpaceCommentsResponseDto](models-32.md#sharedspacecommentsresponsedto).
 
 Controller access declarations:
 
@@ -966,7 +966,7 @@ Comment in a shared space
 
 Permission: `activity.create`. Admin only: `false`.
 
-Models: [SharedSpaceCommentCreateDto](models-31.md#sharedspacecommentcreatedto), [SharedSpaceCommentResponseDto](models-31.md#sharedspacecommentresponsedto).
+Models: [SharedSpaceCommentCreateDto](models-32.md#sharedspacecommentcreatedto), [SharedSpaceCommentResponseDto](models-32.md#sharedspacecommentresponsedto).
 
 Controller access declarations:
 
@@ -1144,7 +1144,7 @@ Edit a shared space comment
 
 Permission: `activity.update`. Admin only: `false`.
 
-Models: [SharedSpaceCommentResponseDto](models-31.md#sharedspacecommentresponsedto), [SharedSpaceCommentUpdateDto](models-31.md#sharedspacecommentupdatedto).
+Models: [SharedSpaceCommentResponseDto](models-32.md#sharedspacecommentresponsedto), [SharedSpaceCommentUpdateDto](models-32.md#sharedspacecommentupdatedto).
 
 Controller access declarations:
 
@@ -1408,7 +1408,7 @@ List shared space members
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceMembersResponseDto](models-31.md#sharedspacemembersresponsedto).
+Models: [SharedSpaceMembersResponseDto](models-32.md#sharedspacemembersresponsedto).
 
 Controller access declarations:
 
@@ -1490,7 +1490,7 @@ What is new in a shared space since your last visit
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceNewResponseDto](models-31.md#sharedspacenewresponsedto).
+Models: [SharedSpaceNewResponseDto](models-32.md#sharedspacenewresponsedto).
 
 Controller access declarations:
 
@@ -1572,7 +1572,7 @@ People in a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePeopleResponseDto](models-31.md#sharedspacepeopleresponsedto).
+Models: [SharedSpacePeopleResponseDto](models-32.md#sharedspacepeopleresponsedto).
 
 Controller access declarations:
 
@@ -1654,7 +1654,7 @@ Link a person into a shared space
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [SharedSpacePeopleResponseDto](models-31.md#sharedspacepeopleresponsedto), [SharedSpacePersonLinkDto](models-31.md#sharedspacepersonlinkdto).
+Models: [SharedSpacePeopleResponseDto](models-32.md#sharedspacepeopleresponsedto), [SharedSpacePersonLinkDto](models-32.md#sharedspacepersonlinkdto).
 
 Controller access declarations:
 

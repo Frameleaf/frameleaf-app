@@ -107,7 +107,7 @@ Search users
 
 Permission: `adminUser.read`. Admin only: `true`.
 
-Models: [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -211,7 +211,7 @@ Create a user
 
 Permission: `adminUser.create`. Admin only: `true`.
 
-Models: [UserAdminCreateDto](models-38.md#useradmincreatedto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [UserAdminCreateDto](models-39.md#useradmincreatedto), [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -301,7 +301,7 @@ Delete a user
 
 Permission: `adminUser.delete`. Admin only: `true`.
 
-Models: [UserAdminDeleteDto](models-38.md#useradmindeletedto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [UserAdminDeleteDto](models-39.md#useradmindeletedto), [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -402,7 +402,7 @@ Retrieve a user
 
 Permission: `adminUser.read`. Admin only: `true`.
 
-Models: [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -493,7 +493,7 @@ Update a user
 
 Permission: `adminUser.update`. Admin only: `true`.
 
-Models: [UserAdminResponseDto](models-38.md#useradminresponsedto), [UserAdminUpdateDto](models-38.md#useradminupdatedto).
+Models: [UserAdminResponseDto](models-39.md#useradminresponsedto), [UserAdminUpdateDto](models-39.md#useradminupdatedto).
 
 Controller access declarations:
 
@@ -726,7 +726,7 @@ libraries, newest first, recorded by the services that made each change.
 
 Permission: `adminUser.read`. Admin only: `true`.
 
-Models: [UserAdminHistoryResponseDto](models-38.md#useradminhistoryresponsedto).
+Models: [UserAdminHistoryResponseDto](models-39.md#useradminhistoryresponsedto).
 
 Controller access declarations:
 
@@ -836,7 +836,7 @@ Retrieve whether a user has a PIN
 
 Permission: `adminUser.read`. Admin only: `true`.
 
-Models: [UserAdminPinCodeStateResponseDto](models-38.md#useradminpincodestateresponsedto).
+Models: [UserAdminPinCodeStateResponseDto](models-39.md#useradminpincodestateresponsedto).
 
 Controller access declarations:
 
@@ -923,7 +923,7 @@ Retrieve user preferences
 
 Permission: `adminUser.read`. Admin only: `true`.
 
-Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto).
+Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto).
 
 Controller access declarations:
 
@@ -1014,7 +1014,7 @@ Update user preferences
 
 Permission: `adminUser.update`. Admin only: `true`.
 
-Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-38.md#userpreferencesupdatedto).
+Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-39.md#userpreferencesupdatedto).
 
 Controller access declarations:
 
@@ -1126,7 +1126,7 @@ Restore a deleted user
 
 Permission: `adminUser.delete`. Admin only: `true`.
 
-Models: [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -1218,7 +1218,7 @@ Retrieve user sessions
 
 Permission: `adminSession.read`. Admin only: `true`.
 
-Models: [SessionResponseDto](models-31.md#sessionresponsedto).
+Models: [SessionResponseDto](models-32.md#sessionresponsedto).
 
 Controller access declarations:
 

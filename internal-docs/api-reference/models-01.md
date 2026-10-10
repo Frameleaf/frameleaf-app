@@ -4,7 +4,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## ActivityCreateDto
 
-Related models: [ReactionType](models-28.md#reactiontype).
+Related models: [ReactionType](models-29.md#reactiontype).
 
 ```json
 {
@@ -40,7 +40,7 @@ Related models: [ReactionType](models-28.md#reactiontype).
 
 ## ActivityResponseDto
 
-Related models: [ReactionType](models-28.md#reactiontype), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [ReactionType](models-29.md#reactiontype), [UserResponseDto](models-39.md#userresponsedto).
 
 ```json
 {
@@ -140,7 +140,7 @@ Related models: [AlbumUserAddDto](models-02.md#albumuseradddto).
 
 ## AdjustParameters
 
-Related models: [VideoAdjustModel](models-38.md#videoadjustmodel), [VideoDevelopPreset](models-38.md#videodeveloppreset).
+Related models: [VideoAdjustModel](models-40.md#videoadjustmodel), [VideoDevelopPreset](models-40.md#videodeveloppreset).
 
 ```json
 {
@@ -705,7 +705,7 @@ Related models: [AdminConfigAnalyticsDto](models-01.md#adminconfiganalyticsdto),
 
 ## AdminConfigFFmpegDto
 
-Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-37.md#tonemapping), [TranscodeHWAccel](models-37.md#transcodehwaccel), [TranscodePolicy](models-37.md#transcodepolicy), [VideoCodec](models-38.md#videocodec), [VideoContainer](models-38.md#videocontainer).
+Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-38.md#tonemapping), [TranscodeHWAccel](models-38.md#transcodehwaccel), [TranscodePolicy](models-38.md#transcodepolicy), [VideoCodec](models-40.md#videocodec), [VideoContainer](models-40.md#videocontainer).
 
 ```json
 {
@@ -841,7 +841,7 @@ Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrea
 
 ## AdminConfigFFmpegRealtimeDto
 
-Related models: [HlsVideoResolution](models-13.md#hlsvideoresolution), [VideoCodec](models-38.md#videocodec).
+Related models: [HlsVideoResolution](models-13.md#hlsvideoresolution), [VideoCodec](models-40.md#videocodec).
 
 ```json
 {
@@ -1320,7 +1320,7 @@ Related models: [CloudRouteMode](models-09.md#cloudroutemode).
 
 ## AdminConfigFrameleafCustomHostnameDto
 
-Related models: [RemoteHostnameStatus](models-28.md#remotehostnamestatus).
+Related models: [RemoteHostnameStatus](models-29.md#remotehostnamestatus).
 
 ```json
 {
@@ -1351,7 +1351,7 @@ Related models: [RemoteHostnameStatus](models-28.md#remotehostnamestatus).
 
 ## AdminConfigFrameleafRemoteAccessDto
 
-Related models: [AdminConfigFrameleafCustomHostnameDto](models-01.md#adminconfigframeleafcustomhostnamedto), [RemoteAccessMode](models-28.md#remoteaccessmode), [RemoteAccessPublicUrl](models-28.md#remoteaccesspublicurl).
+Related models: [AdminConfigFrameleafCustomHostnameDto](models-01.md#adminconfigframeleafcustomhostnamedto), [RemoteAccessMode](models-29.md#remoteaccessmode), [RemoteAccessPublicUrl](models-29.md#remoteaccesspublicurl).
 
 ```json
 {
@@ -1536,7 +1536,7 @@ Related models: [ImageFormat](models-14.md#imageformat).
 
 ## AdminConfigImageDescriptionDto
 
-Related models: [AdminConfigImageDescriptionPromptDto](models-01.md#adminconfigimagedescriptionpromptdto), [MachineLearningHardwareAcceleration](models-15.md#machinelearninghardwareacceleration).
+Related models: [AdminConfigImageDescriptionPromptDto](models-01.md#adminconfigimagedescriptionpromptdto), [MachineLearningHardwareAcceleration](models-16.md#machinelearninghardwareacceleration).
 
 ```json
 {
@@ -1804,7 +1804,7 @@ Related models: [AdminConfigAdvancedPromptDto](models-01.md#adminconfigadvancedp
 
 ## AdminConfigImageDto
 
-Related models: [AdminConfigEnhancedRawImageDto](models-01.md#adminconfigenhancedrawimagedto), [AdminConfigGeneratedFullsizeImageDto](models-01.md#adminconfiggeneratedfullsizeimagedto), [AdminConfigGeneratedImageDto](models-01.md#adminconfiggeneratedimagedto), [Colorspace](models-09.md#colorspace).
+Related models: [AdminConfigEnhancedRawImageDto](models-01.md#adminconfigenhancedrawimagedto), [AdminConfigGeneratedFullsizeImageDto](models-01.md#adminconfiggeneratedfullsizeimagedto), [AdminConfigGeneratedImageDto](models-01.md#adminconfiggeneratedimagedto), [Colorspace](models-10.md#colorspace).
 
 ```json
 {
@@ -2199,7 +2199,7 @@ Related models: [AdminConfigAskSearchDto](models-01.md#adminconfigasksearchdto).
 
 ## AdminConfigLoggingDto
 
-Related models: [LogLevel](models-15.md#loglevel).
+Related models: [LogLevel](models-16.md#loglevel).
 
 ```json
 {

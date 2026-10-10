@@ -12,7 +12,7 @@ Get utility activity
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [UtilityActivityResponseDto](models-38.md#utilityactivityresponsedto), [UtilityActivityTool](models-38.md#utilityactivitytool).
+Models: [UtilityActivityResponseDto](models-40.md#utilityactivityresponsedto), [UtilityActivityTool](models-40.md#utilityactivitytool).
 
 Controller access declarations:
 
@@ -97,7 +97,7 @@ Apply a reviewed trash change
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashApplyDto](models-37.md#trashapplydto), [TrashResponseDto](models-37.md#trashresponsedto).
+Models: [TrashApplyDto](models-38.md#trashapplydto), [TrashResponseDto](models-39.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -184,7 +184,7 @@ Empty trash
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashResponseDto](models-37.md#trashresponsedto).
+Models: [TrashResponseDto](models-39.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -264,7 +264,7 @@ List trash items
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-37.md#trashitemsort), [TrashItemsResponseDto](models-37.md#trashitemsresponsedto).
+Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-38.md#trashitemsort), [TrashItemsResponseDto](models-39.md#trashitemsresponsedto).
 
 Controller access declarations:
 
@@ -391,7 +391,7 @@ Restore trash
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashResponseDto](models-37.md#trashresponsedto).
+Models: [TrashResponseDto](models-39.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -471,7 +471,7 @@ Restore assets
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [BulkIdsDto](models-07.md#bulkidsdto), [TrashResponseDto](models-37.md#trashresponsedto).
+Models: [BulkIdsDto](models-07.md#bulkidsdto), [TrashResponseDto](models-39.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -561,7 +561,7 @@ Review a trash change
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashReviewDto](models-37.md#trashreviewdto), [TrashReviewResponseDto](models-37.md#trashreviewresponsedto).
+Models: [TrashReviewDto](models-39.md#trashreviewdto), [TrashReviewResponseDto](models-39.md#trashreviewresponsedto).
 
 Controller access declarations:
 
@@ -648,7 +648,7 @@ Get trash summary
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [TrashSummaryResponseDto](models-37.md#trashsummaryresponsedto).
+Models: [TrashSummaryResponseDto](models-39.md#trashsummaryresponsedto).
 
 Controller access declarations:
 

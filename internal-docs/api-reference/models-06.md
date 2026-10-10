@@ -46,7 +46,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## AssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-37.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-39.md#userresponsedto).
 
 ```json
 {
@@ -162,6 +162,13 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "isTrashed": {
       "description": "Is trashed",
       "type": "boolean"
+    },
+    "landmarks": {
+      "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+      "items": {
+        "$ref": "#/components/schemas/LandmarkSummaryDto"
+      },
+      "type": "array"
     },
     "libraryId": {
       "description": "Library ID",
@@ -305,7 +312,7 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
 
 ## AssetRestorationDestinationDto
 
-Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-17.md#mladmissionrefusal), [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind).
+Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestimatedto), [MlAdmissionRefusal](models-18.md#mladmissionrefusal), [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind).
 
 ```json
 {
@@ -1462,7 +1469,7 @@ Related models: [AssetWaveformChannelDto](models-06.md#assetwaveformchanneldto).
 
 ## AvatarUpdate
 
-Related models: [UserAvatarColor](models-38.md#useravatarcolor).
+Related models: [UserAvatarColor](models-39.md#useravatarcolor).
 
 ```json
 {
@@ -1724,7 +1731,7 @@ Related models: [BackupDeviceDto](models-06.md#backupdevicedto).
 
 ## BestPhotoAssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-37.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-07.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-39.md#userresponsedto).
 
 ```json
 {
@@ -1843,6 +1850,13 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "isTrashed": {
       "description": "Is trashed",
       "type": "boolean"
+    },
+    "landmarks": {
+      "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+      "items": {
+        "$ref": "#/components/schemas/LandmarkSummaryDto"
+      },
+      "type": "array"
     },
     "libraryId": {
       "description": "Library ID",
@@ -1980,96 +1994,6 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "updatedAt",
     "visibility",
     "width"
-  ],
-  "type": "object"
-}
-```
-
-## BestPhotoScoreDto
-
-
-```json
-{
-  "properties": {
-    "aestheticScore": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "bestFrameTimestampMs": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "computedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "diversityScore": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "frameMetadata": {
-      "additionalProperties": {},
-      "nullable": true,
-      "type": "object"
-    },
-    "frameScore": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "metadata": {
-      "additionalProperties": {},
-      "nullable": true,
-      "type": "object"
-    },
-    "score": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
-    },
-    "scoreVersion": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "subjectScore": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    },
-    "technicalScore": {
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "nullable": true,
-      "type": "number"
-    }
-  },
-  "required": [
-    "aestheticScore",
-    "bestFrameTimestampMs",
-    "computedAt",
-    "diversityScore",
-    "frameMetadata",
-    "frameScore",
-    "metadata",
-    "score",
-    "scoreVersion",
-    "subjectScore",
-    "technicalScore"
   ],
   "type": "object"
 }

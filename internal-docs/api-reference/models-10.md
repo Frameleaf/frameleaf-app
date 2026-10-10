@@ -2,6 +2,120 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ClusterGroupRequestResponseDto
+
+
+```json
+{
+  "properties": {
+    "clusterGroupId": {
+      "description": "Cluster group the user is invited to join",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Request ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "userId": {
+      "description": "User the request was created for",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "clusterGroupId",
+    "createdAt",
+    "id",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## Colorspace
+
+
+```json
+{
+  "description": "Colorspace",
+  "enum": [
+    "srgb",
+    "p3"
+  ],
+  "type": "string"
+}
+```
+
+## ConfigCredential
+
+
+```json
+{
+  "description": "A server secret that can be replaced or cleared but never read back",
+  "enum": [
+    "smtp-password",
+    "oauth-client-secret",
+    "cloud-backup-s3-secret-key"
+  ],
+  "type": "string"
+}
+```
+
+## ConfigCredentialResponseDto
+
+Related models: [ConfigCredential](models-10.md#configcredential).
+
+```json
+{
+  "properties": {
+    "configured": {
+      "description": "Whether a value is stored. The value itself is never returned",
+      "type": "boolean"
+    },
+    "name": {
+      "$ref": "#/components/schemas/ConfigCredential"
+    }
+  },
+  "required": [
+    "configured",
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## ConfigCredentialUpdateDto
+
+
+```json
+{
+  "properties": {
+    "value": {
+      "description": "The new secret. Stored as sent and never returned",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "value"
+  ],
+  "type": "object"
+}
+```
+
 ## ConfigFileActivationResponseDto
 
 
@@ -1773,166 +1887,5 @@ Related models: [DocumentField](models-10.md#documentfield), [DocumentFieldCandi
     "dismissed"
   ],
   "type": "string"
-}
-```
-
-## DocumentLineDto
-
-Related models: [DocumentLineStatus](models-10.md#documentlinestatus), [DocumentRegionDto](models-11.md#documentregiondto).
-
-```json
-{
-  "properties": {
-    "confidence": {
-      "description": "Recognition confidence (0-1)",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "editId": {
-      "description": "ID of the owner’s decision about this line",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "evidenceChanged": {
-      "description": "The decision was made against text that has since been read differently",
-      "type": "boolean"
-    },
-    "id": {
-      "description": "Recognized line ID, or the decision ID of a kept correction",
-      "type": "string"
-    },
-    "ocrId": {
-      "description": "Recognized line ID; null once the line is gone",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "recognizedText": {
-      "description": "The recognized text, while the recognized line exists",
-      "nullable": true,
-      "type": "string"
-    },
-    "region": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/DocumentRegionDto"
-        }
-      ],
-      "nullable": true
-    },
-    "revision": {
-      "description": "Revision of the owner’s decision",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "status": {
-      "$ref": "#/components/schemas/DocumentLineStatus"
-    },
-    "text": {
-      "description": "What the line reads: the owner’s correction or the recognized text",
-      "type": "string"
-    }
-  },
-  "required": [
-    "confidence",
-    "editId",
-    "evidenceChanged",
-    "id",
-    "ocrId",
-    "recognizedText",
-    "region",
-    "revision",
-    "status",
-    "text"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentLineEditDto
-
-Related models: [DocumentEditAction](models-10.md#documenteditaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/DocumentEditAction"
-    },
-    "ocrId": {
-      "description": "Recognized line the decision is about",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "recognizedText": {
-      "description": "The recognized text the caller read; refused when it changed",
-      "type": "string"
-    },
-    "revision": {
-      "description": "Revision of the existing decision, if there is one",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "value": {
-      "description": "The corrected text, for correct",
-      "maxLength": 2000,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "ocrId",
-    "recognizedText"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentLineStatus
-
-
-```json
-{
-  "description": "Where the text of a document line comes from",
-  "enum": [
-    "recognized",
-    "corrected",
-    "dismissed",
-    "kept"
-  ],
-  "type": "string"
-}
-```
-
-## DocumentRecognitionDto
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Text recognition is switched on",
-      "type": "boolean"
-    },
-    "routed": {
-      "description": "A processing destination is chosen for text recognition",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled",
-    "routed"
-  ],
-  "type": "object"
 }
 ```

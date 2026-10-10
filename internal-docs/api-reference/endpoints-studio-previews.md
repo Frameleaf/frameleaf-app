@@ -12,7 +12,7 @@ Open a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-33.md#studiopreviewstreamdto), [StudioPreviewStreamOpenDto](models-33.md#studiopreviewstreamopendto).
+Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto), [StudioPreviewStreamOpenDto](models-34.md#studiopreviewstreamopendto).
 
 Controller access declarations:
 
@@ -98,7 +98,7 @@ Close a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-33.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -184,7 +184,7 @@ Get a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-33.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -270,7 +270,7 @@ Answer a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamAnswerDto](models-33.md#studiopreviewstreamanswerdto), [StudioPreviewStreamDto](models-33.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamAnswerDto](models-34.md#studiopreviewstreamanswerdto), [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -366,7 +366,7 @@ Reconnect a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-33.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -453,7 +453,7 @@ Request a Studio preview frame
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewRequestDto](models-33.md#studiopreviewrequestdto), [StudioPreviewResponseDto](models-33.md#studiopreviewresponsedto).
+Models: [StudioPreviewRequestDto](models-34.md#studiopreviewrequestdto), [StudioPreviewResponseDto](models-34.md#studiopreviewresponsedto).
 
 Controller access declarations:
 
@@ -539,7 +539,7 @@ Cancel a Studio preview
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewDto](models-33.md#studiopreviewdto).
+Models: [StudioPreviewDto](models-34.md#studiopreviewdto).
 
 Controller access declarations:
 
@@ -657,7 +657,7 @@ Get a Studio preview
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewDto](models-33.md#studiopreviewdto).
+Models: [StudioPreviewDto](models-34.md#studiopreviewdto).
 
 Controller access declarations:
 

@@ -678,6 +678,50 @@ export class SearchRepository {
       .execute();
   }
 
+  /**
+   * Landmarks the viewer has media at (FL-353), with the same owners and privacy rules as
+   * `getCityAssetCounts`. The cover is the latest item; the place names are the most common among the items.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getVisitedLandmarks(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
+    return this.db
+      .selectFrom('asset_landmark')
+      .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+      .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.latitude', 'landmark.longitude'])
+      .select((eb) => [
+        eb.fn.countAll<number>().as('assetCount'),
+        eb.fn.min('asset.localDateTime').as('firstTakenAt'),
+        eb.fn.max('asset.localDateTime').as('lastTakenAt'),
+        sql<string>`(array_agg(asset.id order by asset."localDateTime" desc))[1]`.as('coverAssetId'),
+        sql<string | null>`mode() within group (order by asset_exif.city)`.as('city'),
+        sql<string | null>`mode() within group (order by asset_exif.state)`.as('state'),
+        sql<string | null>`mode() within group (order by asset_exif.country)`.as('country'),
+      ])
+      .where('asset.ownerId', '=', anyUuid(userIds))
+      .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where('asset.deletedAt', 'is', null)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .groupBy('landmark.id')
+      .orderBy('assetCount', 'desc')
+      .orderBy('landmark.id')
+      .execute();
+  }
+
+  /** The landmarks one asset was taken at, the most specific (smallest) first. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getAssetLandmarks(assetId: string) {
+    return this.db
+      .selectFrom('asset_landmark')
+      .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+      .select(['landmark.id', 'landmark.name', 'landmark.kind'])
+      .where('asset_landmark.assetId', '=', assetId)
+      .orderBy('landmark.radiusM')
+      .orderBy('landmark.id')
+      .execute();
+  }
+
   async upsert(assetId: string, embedding: string): Promise<void> {
     const adopt = async (db: Kysely<DB>) => {
       await db

@@ -12,7 +12,7 @@ Get all users
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserResponseDto](models-38.md#userresponsedto).
+Models: [UserResponseDto](models-39.md#userresponsedto).
 
 Controller access declarations:
 
@@ -94,7 +94,7 @@ Get current user
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserMeResponseDto](models-38.md#usermeresponsedto).
+Models: [UserMeResponseDto](models-39.md#usermeresponsedto).
 
 Controller access declarations:
 
@@ -174,7 +174,7 @@ Update current user
 
 Permission: `user.update`. Admin only: `false`.
 
-Models: [UserAdminResponseDto](models-38.md#useradminresponsedto), [UserUpdateMeDto](models-38.md#userupdatemedto).
+Models: [UserAdminResponseDto](models-39.md#useradminresponsedto), [UserUpdateMeDto](models-39.md#userupdatemedto).
 
 Controller access declarations:
 
@@ -515,7 +515,7 @@ List own device reconciliation history
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationHistoryDto](models-28.md#reconciliationhistorydto).
+Models: [ReconciliationHistoryDto](models-29.md#reconciliationhistorydto).
 
 Controller access declarations:
 
@@ -619,7 +619,7 @@ Start own device inventory reconciliation
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationResultDto](models-28.md#reconciliationresultdto), [ReconciliationStartDto](models-28.md#reconciliationstartdto).
+Models: [ReconciliationResultDto](models-29.md#reconciliationresultdto), [ReconciliationStartDto](models-29.md#reconciliationstartdto).
 
 Controller access declarations:
 
@@ -712,7 +712,7 @@ Reconcile one complete differing bucket
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ReconciliationBucketDto](models-28.md#reconciliationbucketdto), [ReconciliationResultDto](models-28.md#reconciliationresultdto).
+Models: [ReconciliationBucketDto](models-29.md#reconciliationbucketdto), [ReconciliationResultDto](models-29.md#reconciliationresultdto).
 
 Controller access declarations:
 
@@ -1237,7 +1237,7 @@ Retrieve user onboarding
 
 Permission: `userOnboarding.read`. Admin only: `false`.
 
-Models: [OnboardingResponseDto](models-18.md#onboardingresponsedto).
+Models: [OnboardingResponseDto](models-19.md#onboardingresponsedto).
 
 Controller access declarations:
 
@@ -1316,7 +1316,7 @@ Update user onboarding
 
 Permission: `userOnboarding.update`. Admin only: `false`.
 
-Models: [OnboardingDto](models-18.md#onboardingdto), [OnboardingResponseDto](models-18.md#onboardingresponsedto).
+Models: [OnboardingDto](models-19.md#onboardingdto), [OnboardingResponseDto](models-19.md#onboardingresponsedto).
 
 Controller access declarations:
 
@@ -1405,7 +1405,7 @@ Get my pinned collections
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [PinnedCollectionsResponseDto](models-26.md#pinnedcollectionsresponsedto).
+Models: [PinnedCollectionsResponseDto](models-27.md#pinnedcollectionsresponsedto).
 
 Controller access declarations:
 
@@ -1476,7 +1476,7 @@ Replace my pinned collections
 
 Permission: `userPreference.update`. Admin only: `false`.
 
-Models: [PinnedCollectionsResponseDto](models-26.md#pinnedcollectionsresponsedto), [PinnedCollectionsUpdateDto](models-26.md#pinnedcollectionsupdatedto).
+Models: [PinnedCollectionsResponseDto](models-27.md#pinnedcollectionsresponsedto), [PinnedCollectionsUpdateDto](models-27.md#pinnedcollectionsupdatedto).
 
 Controller access declarations:
 
@@ -1557,7 +1557,7 @@ Get my preferences
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto).
+Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto).
 
 Controller access declarations:
 
@@ -1636,7 +1636,7 @@ Update my preferences
 
 Permission: `userPreference.update`. Admin only: `false`.
 
-Models: [UserPreferencesResponseDto](models-38.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-38.md#userpreferencesupdatedto).
+Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-39.md#userpreferencesupdatedto).
 
 Controller access declarations:
 
@@ -1736,7 +1736,7 @@ Get my preference history
 
 Permission: `userPreference.read`. Admin only: `false`.
 
-Models: [UserPreferenceHistoryResponseDto](models-38.md#userpreferencehistoryresponsedto).
+Models: [UserPreferenceHistoryResponseDto](models-39.md#userpreferencehistoryresponsedto).
 
 Controller access declarations:
 
@@ -1976,7 +1976,7 @@ Retrieve a user
 
 Permission: `user.read`. Admin only: `false`.
 
-Models: [UserResponseDto](models-38.md#userresponsedto).
+Models: [UserResponseDto](models-39.md#userresponsedto).
 
 Controller access declarations:
 

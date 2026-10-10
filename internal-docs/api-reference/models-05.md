@@ -653,7 +653,7 @@ Related models: [AssetDevelopProposalCoordinates](models-04.md#assetdeveloppropo
 
 ## AssetEditActionItemDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-15.md#lookparameters), [MirrorParameters](models-17.md#mirrorparameters), [RotateParameters](models-29.md#rotateparameters), [SpeedParameters](models-32.md#speedparameters), [StabilizeParameters](models-32.md#stabilizeparameters), [StraightenParameters](models-32.md#straightenparameters), [TextOverlayParameters](models-37.md#textoverlayparameters), [ToggleParameters](models-37.md#toggleparameters), [TrimParameters](models-37.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-38.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
 
 ```json
 {
@@ -713,7 +713,7 @@ Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAct
 
 ## AssetEditActionItemResponseDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-15.md#lookparameters), [MirrorParameters](models-17.md#mirrorparameters), [RotateParameters](models-29.md#rotateparameters), [SpeedParameters](models-32.md#speedparameters), [StabilizeParameters](models-32.md#stabilizeparameters), [StraightenParameters](models-32.md#straightenparameters), [TextOverlayParameters](models-37.md#textoverlayparameters), [ToggleParameters](models-37.md#toggleparameters), [TrimParameters](models-37.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-38.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
 
 ```json
 {
@@ -1136,7 +1136,7 @@ Related models: [AssetFaceBoxDto](models-05.md#assetfaceboxdto).
 
 ## AssetFaceResponseDto
 
-Related models: [PersonResponseDto](models-19.md#personresponsedto), [SourceType](models-32.md#sourcetype).
+Related models: [PersonResponseDto](models-19.md#personresponsedto), [SourceType](models-33.md#sourcetype).
 
 ```json
 {
@@ -1653,7 +1653,7 @@ Related models: [AssetImageEnrichmentAction](models-05.md#assetimageenrichmentac
 
 ## AssetImageEnrichmentResponseDto
 
-Related models: [ImageDescriptionEnrichmentResponseDto](models-14.md#imagedescriptionenrichmentresponsedto), [NsfwDetectionEnrichmentResponseDto](models-18.md#nsfwdetectionenrichmentresponsedto).
+Related models: [ImageDescriptionEnrichmentResponseDto](models-14.md#imagedescriptionenrichmentresponsedto), [NsfwDetectionEnrichmentResponseDto](models-19.md#nsfwdetectionenrichmentresponsedto).
 
 ```json
 {

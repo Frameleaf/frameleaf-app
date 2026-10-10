@@ -95,7 +95,7 @@ Retrieve notifications
 
 Permission: `notification.read`. Admin only: `false`.
 
-Models: [NotificationDto](models-18.md#notificationdto), [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
+Models: [NotificationDto](models-19.md#notificationdto), [NotificationLevel](models-19.md#notificationlevel), [NotificationType](models-19.md#notificationtype).
 
 Controller access declarations:
 
@@ -214,7 +214,7 @@ Update notifications
 
 Permission: `notification.update`. Admin only: `false`.
 
-Models: [NotificationUpdateAllDto](models-18.md#notificationupdatealldto).
+Models: [NotificationUpdateAllDto](models-19.md#notificationupdatealldto).
 
 Controller access declarations:
 
@@ -379,7 +379,7 @@ Get a notification
 
 Permission: `notification.read`. Admin only: `false`.
 
-Models: [NotificationDto](models-18.md#notificationdto).
+Models: [NotificationDto](models-19.md#notificationdto).
 
 Controller access declarations:
 
@@ -469,7 +469,7 @@ Update a notification
 
 Permission: `notification.update`. Admin only: `false`.
 
-Models: [NotificationDto](models-18.md#notificationdto), [NotificationUpdateDto](models-18.md#notificationupdatedto).
+Models: [NotificationDto](models-19.md#notificationdto), [NotificationUpdateDto](models-19.md#notificationupdatedto).
 
 Controller access declarations:
 

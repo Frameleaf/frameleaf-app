@@ -2,6 +2,1072 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## MetadataSearchDto
+
+Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-31.md#searchfilter), [SearchOrder](models-31.md#searchorder).
+
+```json
+{
+  "properties": {
+    "albumIds": {
+      "deprecated": true,
+      "description": "Filter by album IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "checksum": {
+      "deprecated": true,
+      "description": "Filter by file checksum",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "city": {
+      "deprecated": true,
+      "description": "Filter by city name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "country": {
+      "deprecated": true,
+      "description": "Filter by country name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "createdAfter": {
+      "deprecated": true,
+      "description": "Filter by creation date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "createdBefore": {
+      "deprecated": true,
+      "description": "Filter by creation date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "cursor": {
+      "description": "Cursor for the next page of results",
+      "minLength": 1,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "description": {
+      "deprecated": true,
+      "description": "Filter by description text",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "encodedVideoPath": {
+      "deprecated": true,
+      "description": "Filter by encoded video file path",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "filter": {
+      "$ref": "#/components/schemas/SearchFilter",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "id": {
+      "deprecated": true,
+      "description": "Filter by asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "imageEnrichment": {
+      "$ref": "#/components/schemas/ImageEnrichmentFilter"
+    },
+    "isEncoded": {
+      "deprecated": true,
+      "description": "Filter by encoded status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isFavorite": {
+      "deprecated": true,
+      "description": "Filter by favorite status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isMotion": {
+      "deprecated": true,
+      "description": "Filter by motion photo status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isNotInAlbum": {
+      "deprecated": true,
+      "description": "Filter assets not in any album",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isOffline": {
+      "deprecated": true,
+      "description": "Filter by offline status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "lensModel": {
+      "deprecated": true,
+      "description": "Filter by lens model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "libraryId": {
+      "deprecated": true,
+      "description": "Library ID to filter by",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "make": {
+      "deprecated": true,
+      "description": "Filter by camera make",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "model": {
+      "deprecated": true,
+      "description": "Filter by camera model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "ocr": {
+      "deprecated": true,
+      "description": "Filter by OCR text content",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "order": {
+      "$ref": "#/components/schemas/AssetOrder",
+      "deprecated": true,
+      "description": "Sort order",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "orderBy": {
+      "$ref": "#/components/schemas/SearchOrder",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "originalFileName": {
+      "deprecated": true,
+      "description": "Filter by original file name",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "originalPath": {
+      "deprecated": true,
+      "description": "Filter by original file path",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "page": {
+      "deprecated": true,
+      "description": "Page number",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "personIds": {
+      "deprecated": true,
+      "description": "Filter by person IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "petIds": {
+      "deprecated": true,
+      "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "previewPath": {
+      "deprecated": true,
+      "description": "Filter by preview file path",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "rating": {
+      "deprecated": true,
+      "description": "Filter by rating [1-5], or null for unrated",
+      "maximum": 5,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v2.6.0",
+          "state": "Updated",
+          "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+        },
+        {
+          "version": "v3",
+          "state": "Updated",
+          "description": "Using -1 as a rating is no longer valid."
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "size": {
+      "description": "Number of results to return",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "state": {
+      "deprecated": true,
+      "description": "Filter by state/province name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "suppressedOnly": {
+      "description": "Return only suppressed content. Requires an elevated session.",
+      "type": "boolean"
+    },
+    "tagIds": {
+      "deprecated": true,
+      "description": "Filter by tag IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "nullable": true,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenAfter": {
+      "deprecated": true,
+      "description": "Filter by taken date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenBefore": {
+      "deprecated": true,
+      "description": "Filter by taken date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "thumbnailPath": {
+      "deprecated": true,
+      "description": "Filter by thumbnail file path",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedAfter": {
+      "deprecated": true,
+      "description": "Filter by trash date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedBefore": {
+      "deprecated": true,
+      "description": "Filter by trash date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedAfter": {
+      "deprecated": true,
+      "description": "Filter by update date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedBefore": {
+      "deprecated": true,
+      "description": "Filter by update date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "visibility": {
+      "$ref": "#/components/schemas/AssetVisibility",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "withDeleted": {
+      "deprecated": true,
+      "description": "Include deleted assets",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "withExif": {
+      "description": "Include EXIF data in response",
+      "type": "boolean"
+    },
+    "withPeople": {
+      "description": "Include people data in response",
+      "type": "boolean"
+    },
+    "withStacked": {
+      "description": "Include stacked assets",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MirrorAxis
+
+
+```json
+{
+  "description": "Axis to mirror along",
+  "enum": [
+    "horizontal",
+    "vertical"
+  ],
+  "type": "string"
+}
+```
+
+## MirrorParameters
+
+Related models: [MirrorAxis](models-18.md#mirroraxis).
+
+```json
+{
+  "properties": {
+    "axis": {
+      "$ref": "#/components/schemas/MirrorAxis"
+    }
+  },
+  "required": [
+    "axis"
+  ],
+  "type": "object"
+}
+```
+
+## MlAdmissionRefusal
+
+
+```json
+{
+  "description": "Reason a destination refused a workload",
+  "enum": [
+    "destination-missing",
+    "destination-disabled",
+    "workload-not-routed",
+    "workload-not-allowed",
+    "workload-not-served",
+    "consent-missing",
+    "disclosure-pending",
+    "budget-exceeded",
+    "endpoint-unresolved",
+    "destination-unhealthy",
+    "role-conflict",
+    "cloud-unavailable",
+    "entitlement-missing",
+    "consent-version-outdated",
+    "wallet-insufficient",
+    "quota-exceeded",
+    "model-mismatch",
+    "insufficient-memory",
+    "request-invalid"
+  ],
+  "type": "string"
+}
+```
+
+## MlAdmissionRequestDto
+
+Related models: [MlStudioFeature](models-18.md#mlstudiofeature), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "jobId": {
+      "description": "Job the admission is for, recorded with the accounting row",
+      "maxLength": 200,
+      "type": "string"
+    },
+    "studioFeature": {
+      "$ref": "#/components/schemas/MlStudioFeature"
+    },
+    "workload": {
+      "$ref": "#/components/schemas/MlWorkload"
+    }
+  },
+  "required": [
+    "workload"
+  ],
+  "type": "object"
+}
+```
+
+## MlAdmissionResponseDto
+
+Related models: [MlDestinationHealthStateDto](models-18.md#mldestinationhealthstatedto), [MlDestinationKind](models-18.md#mldestinationkind), [MlThroughputEstimateDto](models-18.md#mlthroughputestimatedto), [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "destinationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "estimate": {
+      "$ref": "#/components/schemas/MlThroughputEstimateDto"
+    },
+    "health": {
+      "$ref": "#/components/schemas/MlDestinationHealthStateDto"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MlDestinationKind"
+    },
+    "workload": {
+      "$ref": "#/components/schemas/MlWorkload"
+    }
+  },
+  "required": [
+    "destinationId",
+    "estimate",
+    "health",
+    "kind",
+    "workload"
+  ],
+  "type": "object"
+}
+```
+
+## MlCapabilitiesResponseDto
+
+Related models: [MlWorkloadCapabilityDto](models-18.md#mlworkloadcapabilitydto), [StudioCapabilitiesDto](models-34.md#studiocapabilitiesdto).
+
+```json
+{
+  "properties": {
+    "probedAt": {
+      "description": "When this snapshot was assembled",
+      "type": "string"
+    },
+    "studio": {
+      "$ref": "#/components/schemas/StudioCapabilitiesDto"
+    },
+    "workloads": {
+      "items": {
+        "$ref": "#/components/schemas/MlWorkloadCapabilityDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "probedAt",
+    "studio",
+    "workloads"
+  ],
+  "type": "object"
+}
+```
+
 ## MlCapabilityDestinationDto
 
 Related models: [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDestinationKind](models-18.md#mldestinationkind), [MlWorkerAcceleration](models-18.md#mlworkeracceleration), [MlWorkload](models-18.md#mlworkload).
@@ -89,7 +1155,7 @@ Related models: [MlDestinationHealth](models-18.md#mldestinationhealth), [MlDest
 
 ## MlDestinationCloudDto
 
-Related models: [MlAdmissionRefusal](models-17.md#mladmissionrefusal).
+Related models: [MlAdmissionRefusal](models-18.md#mladmissionrefusal).
 
 ```json
 {
@@ -586,7 +1652,7 @@ Related models: [MlWorkload](models-18.md#mlworkload).
 
 ## MlRestorationModelsResponseDto
 
-Related models: [MlWorkload](models-18.md#mlworkload), [RestorationGpuDto](models-29.md#restorationgpudto), [RestorationModelCapabilityDto](models-29.md#restorationmodelcapabilitydto).
+Related models: [MlWorkload](models-18.md#mlworkload), [RestorationGpuDto](models-30.md#restorationgpudto), [RestorationModelCapabilityDto](models-30.md#restorationmodelcapabilitydto).
 
 ```json
 {
@@ -908,7 +1974,7 @@ Related models: [MlWorkloadRouteDto](models-18.md#mlworkloadroutedto).
 
 ## NotificationCreateDto
 
-Related models: [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
+Related models: [NotificationLevel](models-19.md#notificationlevel), [NotificationType](models-19.md#notificationtype).
 
 ```json
 {
@@ -977,1375 +2043,5 @@ Related models: [NotificationLevel](models-18.md#notificationlevel), [Notificati
     "ids"
   ],
   "type": "object"
-}
-```
-
-## NotificationDto
-
-Related models: [NotificationLevel](models-18.md#notificationlevel), [NotificationType](models-18.md#notificationtype).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Creation date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "data": {
-      "additionalProperties": {},
-      "description": "Additional notification data",
-      "type": "object"
-    },
-    "description": {
-      "description": "Notification description",
-      "type": "string"
-    },
-    "id": {
-      "description": "Notification ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "level": {
-      "$ref": "#/components/schemas/NotificationLevel"
-    },
-    "readAt": {
-      "description": "Date when notification was read",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "title": {
-      "description": "Notification title",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/NotificationType"
-    }
-  },
-  "required": [
-    "createdAt",
-    "id",
-    "level",
-    "title",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationLevel
-
-
-```json
-{
-  "description": "Notification level",
-  "enum": [
-    "success",
-    "error",
-    "warning",
-    "info"
-  ],
-  "type": "string"
-}
-```
-
-## NotificationType
-
-
-```json
-{
-  "description": "Notification type",
-  "enum": [
-    "JobFailed",
-    "BackupFailed",
-    "SystemMessage",
-    "AlbumInvite",
-    "AlbumUpdate",
-    "ItemShare",
-    "ClusterGroupRequest",
-    "SharedSpaceMention",
-    "SharedSpaceReply",
-    "Custom"
-  ],
-  "type": "string"
-}
-```
-
-## NotificationUpdateAllDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Notification IDs to update",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "minItems": 1,
-      "type": "array"
-    },
-    "readAt": {
-      "description": "Date when notifications were read",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationUpdateDto
-
-
-```json
-{
-  "properties": {
-    "readAt": {
-      "description": "Date when notification was read",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## NsfwDetectionEnrichmentResponseDto
-
-Related models: [ImageEnrichmentReview](models-14.md#imageenrichmentreview).
-
-```json
-{
-  "properties": {
-    "appliedTags": {
-      "type": "boolean"
-    },
-    "effectiveIsNsfw": {
-      "type": "boolean"
-    },
-    "error": {
-      "type": "string"
-    },
-    "isNsfw": {
-      "type": "boolean"
-    },
-    "labels": {
-      "additionalProperties": {
-        "format": "double",
-        "type": "number"
-      },
-      "type": "object"
-    },
-    "modelName": {
-      "type": "string"
-    },
-    "review": {
-      "$ref": "#/components/schemas/ImageEnrichmentReview"
-    },
-    "score": {
-      "format": "double",
-      "type": "number"
-    },
-    "status": {
-      "enum": [
-        "missing",
-        "success",
-        "failed"
-      ],
-      "type": "string"
-    },
-    "updatedAt": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "appliedTags",
-    "effectiveIsNsfw",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## NumberFilter
-
-
-```json
-{
-  "properties": {
-    "eq": {
-      "format": "double",
-      "type": "number"
-    },
-    "gt": {
-      "format": "double",
-      "type": "number"
-    },
-    "gte": {
-      "format": "double",
-      "type": "number"
-    },
-    "in": {
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "minItems": 1,
-      "type": "array"
-    },
-    "lt": {
-      "format": "double",
-      "type": "number"
-    },
-    "lte": {
-      "format": "double",
-      "type": "number"
-    },
-    "ne": {
-      "format": "double",
-      "type": "number"
-    },
-    "notIn": {
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## NumberFilterNullable
-
-
-```json
-{
-  "properties": {
-    "eq": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "gt": {
-      "format": "double",
-      "type": "number"
-    },
-    "gte": {
-      "format": "double",
-      "type": "number"
-    },
-    "in": {
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "minItems": 1,
-      "type": "array"
-    },
-    "lt": {
-      "format": "double",
-      "type": "number"
-    },
-    "lte": {
-      "format": "double",
-      "type": "number"
-    },
-    "ne": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "notIn": {
-      "items": {
-        "format": "double",
-        "type": "number"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## OAuthAuthorizeResponseDto
-
-
-```json
-{
-  "properties": {
-    "url": {
-      "description": "OAuth authorization URL",
-      "type": "string"
-    }
-  },
-  "required": [
-    "url"
-  ],
-  "type": "object"
-}
-```
-
-## OAuthBackchannelLogoutDto
-
-
-```json
-{
-  "properties": {
-    "logout_token": {
-      "description": "OAuth logout token",
-      "type": "string"
-    }
-  },
-  "required": [
-    "logout_token"
-  ],
-  "type": "object"
-}
-```
-
-## OAuthCallbackDto
-
-
-```json
-{
-  "properties": {
-    "codeVerifier": {
-      "description": "OAuth code verifier (PKCE)",
-      "type": "string"
-    },
-    "rememberMe": {
-      "description": "Persist authentication cookies across browser sessions (default true)",
-      "type": "boolean"
-    },
-    "state": {
-      "description": "OAuth state parameter",
-      "type": "string"
-    },
-    "url": {
-      "description": "OAuth callback URL",
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "url"
-  ],
-  "type": "object"
-}
-```
-
-## OAuthConfigDto
-
-
-```json
-{
-  "properties": {
-    "codeChallenge": {
-      "description": "OAuth code challenge (PKCE)",
-      "type": "string"
-    },
-    "redirectUri": {
-      "description": "OAuth redirect URI",
-      "type": "string"
-    },
-    "state": {
-      "description": "OAuth state parameter",
-      "type": "string"
-    }
-  },
-  "required": [
-    "redirectUri"
-  ],
-  "type": "object"
-}
-```
-
-## OAuthTokenEndpointAuthMethod
-
-
-```json
-{
-  "description": "OAuth token endpoint auth method",
-  "enum": [
-    "client_secret_post",
-    "client_secret_basic"
-  ],
-  "type": "string"
-}
-```
-
-## OnThisDayDto
-
-
-```json
-{
-  "properties": {
-    "year": {
-      "description": "Year for on this day memory",
-      "maximum": 9999,
-      "minimum": 1000,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "year"
-  ],
-  "type": "object"
-}
-```
-
-## OnboardingDto
-
-
-```json
-{
-  "properties": {
-    "isOnboarded": {
-      "description": "Is user onboarded",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "isOnboarded"
-  ],
-  "type": "object"
-}
-```
-
-## OnboardingResponseDto
-
-
-```json
-{
-  "properties": {
-    "isOnboarded": {
-      "description": "Is user onboarded",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "isOnboarded"
-  ],
-  "type": "object"
-}
-```
-
-## OwnerBackupDeletionDateState
-
-
-```json
-{
-  "enum": [
-    "available",
-    "unavailable"
-  ],
-  "type": "string"
-}
-```
-
-## OwnerBackupHistoryResponseDto
-
-Related models: [OwnerBackupDeletionDateState](models-18.md#ownerbackupdeletiondatestate), [OwnerBackupItemState](models-18.md#ownerbackupitemstate).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "properties": {
-          "assetId": {
-            "type": "string"
-          },
-          "backupDate": {
-            "type": "string"
-          },
-          "deletionDate": {
-            "properties": {
-              "at": {
-                "nullable": true,
-                "type": "string"
-              },
-              "state": {
-                "$ref": "#/components/schemas/OwnerBackupDeletionDateState"
-              }
-            },
-            "required": [
-              "state",
-              "at"
-            ],
-            "type": "object"
-          },
-          "name": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/OwnerBackupItemState"
-          },
-          "thumbnailAvailable": {
-            "description": "An eligible recorded thumbnail; remote availability/integrity is checked when read",
-            "type": "boolean"
-          },
-          "trashDate": {
-            "description": "Known current trash timestamp; distinct from physical deletion",
-            "nullable": true,
-            "type": "string"
-          }
-        },
-        "required": [
-          "assetId",
-          "name",
-          "backupDate",
-          "state",
-          "trashDate",
-          "deletionDate",
-          "thumbnailAvailable"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "nextOffset": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "nextOffset",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## OwnerBackupItemState
-
-
-```json
-{
-  "enum": [
-    "trashed",
-    "deleted"
-  ],
-  "type": "string"
-}
-```
-
-## OwnerBackupKeptStatus
-
-
-```json
-{
-  "enum": [
-    "complete",
-    "degraded"
-  ],
-  "type": "string"
-}
-```
-
-## OwnerBackupRestoreDto
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      },
-      "maxItems": 100,
-      "minItems": 1,
-      "type": "array"
-    },
-    "manifestKey": {
-      "maxLength": 300,
-      "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetIds",
-    "manifestKey"
-  ],
-  "type": "object"
-}
-```
-
-## OwnerBackupRestoreResponseDto
-
-
-```json
-{
-  "properties": {
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "status": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "operationId",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## OwnerBackupsResponseDto
-
-Related models: [OwnerBackupKeptStatus](models-18.md#ownerbackupkeptstatus).
-
-```json
-{
-  "properties": {
-    "backups": {
-      "items": {
-        "properties": {
-          "backupDate": {
-            "type": "string"
-          },
-          "manifestKey": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/OwnerBackupKeptStatus"
-          }
-        },
-        "required": [
-          "manifestKey",
-          "backupDate",
-          "status"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "nextOffset": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "backups",
-    "nextOffset"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerBackfillDto
-
-
-```json
-{
-  "properties": {
-    "done": {
-      "description": "Items copied so far",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "state": {
-      "description": "Where the first copy stands",
-      "enum": [
-        "pending",
-        "running",
-        "done",
-        "stopped"
-      ],
-      "type": "string"
-    },
-    "total": {
-      "description": "Items to copy",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "done",
-    "state",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerCreateDto
-
-
-```json
-{
-  "properties": {
-    "sharedWithId": {
-      "description": "User ID to share with",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "sharedWithId"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerDirection
-
-
-```json
-{
-  "description": "Partner direction",
-  "enum": [
-    "shared-by",
-    "shared-with"
-  ],
-  "type": "string"
-}
-```
-
-## PartnerLockedNoticeResponseDto
-
-
-```json
-{
-  "properties": {
-    "flaggedAt": {
-      "description": "When the first Locked item arrived for an account without a PIN",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "show": {
-      "description": "Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "flaggedAt",
-    "show"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerOriginDto
-
-
-```json
-{
-  "properties": {
-    "rootOwnerId": {
-      "description": "The account that originally uploaded or created it",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "rootOwnerName": {
-      "description": "That account's name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "rootOwnerId",
-    "rootOwnerName"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerResponseDto
-
-Related models: [PartnerBackfillDto](models-18.md#partnerbackfilldto), [UserAvatarColor](models-38.md#useravatarcolor).
-
-```json
-{
-  "description": "Partner response",
-  "properties": {
-    "avatarColor": {
-      "$ref": "#/components/schemas/UserAvatarColor"
-    },
-    "backfill": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PartnerBackfillDto"
-        }
-      ],
-      "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
-      "nullable": true
-    },
-    "email": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "id": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "profileChangedAt": {
-      "description": "Profile change date",
-      "format": "date-time",
-      "type": "string"
-    },
-    "profileImagePath": {
-      "description": "Profile image path",
-      "type": "string"
-    }
-  },
-  "required": [
-    "avatarColor",
-    "email",
-    "id",
-    "name",
-    "profileChangedAt",
-    "profileImagePath"
-  ],
-  "type": "object"
-}
-```
-
-## PartnerUpdateDto
-
-
-```json
-{
-  "properties": {},
-  "type": "object"
-}
-```
-
-## PeopleListItemDto
-
-
-```json
-{
-  "properties": {
-    "assetCount": {
-      "description": "Number of timeline assets showing this person",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "birthDate": {
-      "description": "Person date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "color": {
-      "description": "Person color (hex)",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1.126.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "featuredAssetId": {
-      "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.1",
-          "state": "Added"
-        },
-        {
-          "version": "v3.2.1",
-          "state": "Alpha"
-        }
-      ],
-      "x-immich-state": "Alpha"
-    },
-    "id": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Is favorite",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1.126.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "isHidden": {
-      "description": "Is hidden",
-      "type": "boolean"
-    },
-    "lastSeenAt": {
-      "description": "Capture date of the most recent timeline asset showing this person",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    },
-    "thumbnailPath": {
-      "description": "Thumbnail path",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Last update date",
-      "format": "date-time",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1.107.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    }
-  },
-  "required": [
-    "assetCount",
-    "birthDate",
-    "id",
-    "isHidden",
-    "lastSeenAt",
-    "name",
-    "thumbnailPath"
-  ],
-  "type": "object"
-}
-```
-
-## PeopleResponse
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether people are enabled",
-      "type": "boolean"
-    },
-    "minimumFaces": {
-      "description": "People face threshold",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "sidebarWeb": {
-      "description": "Whether people appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled",
-    "sidebarWeb"
-  ],
-  "type": "object"
-}
-```
-
-## PeopleResponseDto
-
-Related models: [PeopleListItemDto](models-18.md#peoplelistitemdto).
-
-```json
-{
-  "description": "People response",
-  "properties": {
-    "hasNextPage": {
-      "description": "Whether there are more pages",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1.110.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        }
-      ],
-      "x-immich-state": "Stable"
-    },
-    "hidden": {
-      "description": "Number of hidden people",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "people": {
-      "items": {
-        "$ref": "#/components/schemas/PeopleListItemDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "description": "Total number of people",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "hidden",
-    "people",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## PeopleUpdate
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether people are enabled",
-      "type": "boolean"
-    },
-    "minimumFaces": {
-      "description": "People face threshold",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "sidebarWeb": {
-      "description": "Whether people appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PeopleUpdateDto
-
-Related models: [PeopleUpdateItem](models-18.md#peopleupdateitem).
-
-```json
-{
-  "properties": {
-    "people": {
-      "description": "People to update",
-      "items": {
-        "$ref": "#/components/schemas/PeopleUpdateItem"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "people"
-  ],
-  "type": "object"
-}
-```
-
-## PeopleUpdateItem
-
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Person date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "color": {
-      "description": "Person color (hex)",
-      "nullable": true,
-      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
-      "type": "string"
-    },
-    "featureFaceAssetId": {
-      "description": "Asset ID used for feature face thumbnail",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Person visibility (hidden)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id"
-  ],
-  "type": "object"
-}
-```
-
-## Permission
-
-
-```json
-{
-  "description": "List of permissions",
-  "enum": [
-    "all",
-    "activity.create",
-    "activity.read",
-    "activity.update",
-    "activity.delete",
-    "activity.statistics",
-    "apiKey.create",
-    "apiKey.read",
-    "apiKey.update",
-    "apiKey.delete",
-    "apiKey.rotate",
-    "asset.read",
-    "asset.update",
-    "asset.delete",
-    "asset.statistics",
-    "asset.share",
-    "asset.view",
-    "asset.download",
-    "asset.upload",
-    "asset.copy",
-    "asset.derive",
-    "assetFile.read",
-    "assetFile.delete",
-    "assetFile.download",
-    "asset.edit.get",
-    "asset.edit.create",
-    "asset.edit.delete",
-    "album.create",
-    "album.read",
-    "album.update",
-    "album.delete",
-    "album.statistics",
-    "album.share",
-    "album.download",
-    "albumAsset.create",
-    "albumAsset.delete",
-    "albumUser.create",
-    "albumUser.update",
-    "albumUser.delete",
-    "auth.changePassword",
-    "authDevice.delete",
-    "archive.read",
-    "backup.list",
-    "backup.download",
-    "backup.upload",
-    "backup.delete",
-    "clusterGroup.read",
-    "clusterGroup.leave",
-    "clusterGroupRequest.create",
-    "clusterGroupRequest.read",
-    "clusterGroupRequest.delete",
-    "adminConfig.read",
-    "adminConfig.update",
-    "userConfig.read",
-    "duplicate.read",
-    "duplicate.delete",
-    "face.create",
-    "face.read",
-    "face.update",
-    "face.delete",
-    "folder.read",
-    "job.create",
-    "job.read",
-    "library.create",
-    "library.read",
-    "library.update",
-    "library.delete",
-    "library.statistics",
-    "timeline.read",
-    "timeline.download",
-    "maintenance",
-    "map.read",
-    "map.search",
-    "memory.create",
-    "memory.read",
-    "memory.update",
-    "memory.delete",
-    "memory.statistics",
-    "memoryAsset.create",
-    "memoryAsset.delete",
-    "notification.create",
-    "notification.read",
-    "notification.update",
-    "notification.delete",
-    "partner.create",
-    "partner.read",
-    "partner.update",
-    "partner.delete",
-    "person.create",
-    "person.read",
-    "person.update",
-    "person.delete",
-    "person.statistics",
-    "person.merge",
-    "person.reassign",
-    "pinCode.create",
-    "pinCode.update",
-    "pinCode.delete",
-    "plugin.create",
-    "plugin.read",
-    "plugin.update",
-    "plugin.delete",
-    "server.about",
-    "server.apkLinks",
-    "server.storage",
-    "server.statistics",
-    "server.versionCheck",
-    "adminCloud.read",
-    "adminCloud.update",
-    "adminCloud.link",
-    "adminRemoteAccess.update",
-    "frameleafAccount.read",
-    "frameleafAccount.update",
-    "adminCloudMl.read",
-    "adminCloudMl.update",
-    "cloudMlJob.create",
-    "cloudMlJob.read",
-    "adminCloudBackup.read",
-    "adminCloudBackup.update",
-    "adminCloudBackup.run",
-    "serverLicense.read",
-    "serverLicense.update",
-    "serverLicense.delete",
-    "session.create",
-    "session.read",
-    "session.update",
-    "session.delete",
-    "session.lock",
-    "sharedLink.create",
-    "sharedLink.read",
-    "sharedLink.update",
-    "sharedLink.delete",
-    "stack.create",
-    "stack.read",
-    "stack.update",
-    "stack.delete",
-    "sync.stream",
-    "syncCheckpoint.read",
-    "syncCheckpoint.update",
-    "syncCheckpoint.delete",
-    "systemConfig.read",
-    "systemConfig.update",
-    "systemMetadata.read",
-    "systemMetadata.update",
-    "tag.create",
-    "tag.read",
-    "tag.update",
-    "tag.delete",
-    "tag.asset",
-    "user.read",
-    "user.update",
-    "userLicense.create",
-    "userLicense.read",
-    "userLicense.update",
-    "userLicense.delete",
-    "userOnboarding.read",
-    "userOnboarding.update",
-    "userOnboarding.delete",
-    "userPreference.read",
-    "userPreference.update",
-    "userProfileImage.create",
-    "userProfileImage.read",
-    "userProfileImage.update",
-    "userProfileImage.delete",
-    "queue.read",
-    "queue.update",
-    "queueJob.create",
-    "queueJob.read",
-    "queueJob.update",
-    "queueJob.delete",
-    "workflow.create",
-    "workflow.read",
-    "workflow.update",
-    "workflow.delete",
-    "workflow.logs",
-    "adminUser.create",
-    "adminUser.read",
-    "adminUser.update",
-    "adminUser.delete",
-    "adminSession.read",
-    "adminSession.delete",
-    "adminAuth.unlinkAll"
-  ],
-  "type": "string"
 }
 ```

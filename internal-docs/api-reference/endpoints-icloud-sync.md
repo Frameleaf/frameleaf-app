@@ -742,7 +742,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ICloudIdentityReuseAuthorityDto](models-13.md#icloudidentityreuseauthoritydto), [ICloudIdentityReuseAuthorityStatusDto](models-13.md#icloudidentityreuseauthoritystatusdto).
+Models: [ICloudIdentityReuseAuthorityDto](models-14.md#icloudidentityreuseauthoritydto), [ICloudIdentityReuseAuthorityStatusDto](models-14.md#icloudidentityreuseauthoritystatusdto).
 
 Controller access declarations:
 
@@ -1151,7 +1151,7 @@ Discover owned edit evidence and administrative authority
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [ICloudEditEvidenceResponseDto](models-13.md#icloudeditevidenceresponsedto).
+Models: [ICloudEditEvidenceResponseDto](models-14.md#icloudeditevidenceresponsedto).
 
 Controller access declarations:
 
@@ -1239,7 +1239,7 @@ Accept verified bytes as an administrative edit successor
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [ICloudEditDecisionResponseDto](models-13.md#icloudeditdecisionresponsedto), [ICloudEditSuccessorDto](models-13.md#icloudeditsuccessordto).
+Models: [ICloudEditDecisionResponseDto](models-13.md#icloudeditdecisionresponsedto), [ICloudEditSuccessorDto](models-14.md#icloudeditsuccessordto).
 
 Controller access declarations:
 

@@ -137,7 +137,7 @@ Restore own items from a chosen kept backup
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [OwnerBackupRestoreDto](models-18.md#ownerbackuprestoredto), [OwnerBackupRestoreResponseDto](models-18.md#ownerbackuprestoreresponsedto).
+Models: [OwnerBackupRestoreDto](models-19.md#ownerbackuprestoredto), [OwnerBackupRestoreResponseDto](models-19.md#ownerbackuprestoreresponsedto).
 
 Controller access declarations:
 

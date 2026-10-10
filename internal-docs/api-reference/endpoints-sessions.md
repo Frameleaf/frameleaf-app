@@ -83,7 +83,7 @@ Retrieve sessions
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [SessionResponseDto](models-31.md#sessionresponsedto).
+Models: [SessionResponseDto](models-32.md#sessionresponsedto).
 
 Controller access declarations:
 
@@ -165,7 +165,7 @@ Create a session
 
 Permission: `session.create`. Admin only: `false`.
 
-Models: [SessionCreateDto](models-31.md#sessioncreatedto), [SessionCreateResponseDto](models-31.md#sessioncreateresponsedto).
+Models: [SessionCreateDto](models-32.md#sessioncreatedto), [SessionCreateResponseDto](models-32.md#sessioncreateresponsedto).
 
 Controller access declarations:
 
@@ -336,7 +336,7 @@ Update a session
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [SessionResponseDto](models-31.md#sessionresponsedto), [SessionUpdateDto](models-31.md#sessionupdatedto).
+Models: [SessionResponseDto](models-32.md#sessionresponsedto), [SessionUpdateDto](models-32.md#sessionupdatedto).
 
 Controller access declarations:
 

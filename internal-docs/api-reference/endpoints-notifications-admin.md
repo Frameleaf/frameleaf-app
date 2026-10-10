@@ -12,7 +12,7 @@ Create a notification
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [NotificationCreateDto](models-18.md#notificationcreatedto), [NotificationDto](models-18.md#notificationdto).
+Models: [NotificationCreateDto](models-18.md#notificationcreatedto), [NotificationDto](models-19.md#notificationdto).
 
 Controller access declarations:
 
@@ -101,7 +101,7 @@ Render email template
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [TemplateDto](models-37.md#templatedto), [TemplateResponseDto](models-37.md#templateresponsedto).
+Models: [TemplateDto](models-38.md#templatedto), [TemplateResponseDto](models-38.md#templateresponsedto).
 
 Controller access declarations:
 
@@ -200,7 +200,7 @@ Send test email
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [AdminConfigSmtpDto](models-02.md#adminconfigsmtpdto), [TestEmailResponseDto](models-37.md#testemailresponsedto).
+Models: [AdminConfigSmtpDto](models-02.md#adminconfigsmtpdto), [TestEmailResponseDto](models-38.md#testemailresponsedto).
 
 Controller access declarations:
 

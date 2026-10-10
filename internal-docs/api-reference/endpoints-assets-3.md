@@ -111,7 +111,7 @@ List saved video versions
 
 Permission: `asset.edit.get`. Admin only: `false`.
 
-Models: [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
+Models: [VideoEditVersionResponseDto](models-40.md#videoeditversionresponsedto).
 
 Controller access declarations:
 
@@ -195,7 +195,7 @@ Export the current video version
 
 Permission: `asset.edit.create`. Admin only: `false`.
 
-Models: [VideoEditExportDto](models-38.md#videoeditexportdto), [VideoEditVersionResponseDto](models-38.md#videoeditversionresponsedto).
+Models: [VideoEditExportDto](models-40.md#videoeditexportdto), [VideoEditVersionResponseDto](models-40.md#videoeditversionresponsedto).
 
 Controller access declarations:
 

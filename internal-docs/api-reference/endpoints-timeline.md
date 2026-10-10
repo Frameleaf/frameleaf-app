@@ -12,7 +12,7 @@ Get time bucket
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-37.md#timebucketassetresponsedto), [TimeBucketDateType](models-37.md#timebucketdatetype).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-38.md#timebucketassetresponsedto), [TimeBucketDateType](models-38.md#timebucketdatetype).
 
 Controller access declarations:
 
@@ -280,7 +280,7 @@ Get time buckets
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimeBucketsResponseDto](models-37.md#timebucketsresponsedto).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimeBucketsResponseDto](models-38.md#timebucketsresponsedto).
 
 Controller access declarations:
 
@@ -539,7 +539,7 @@ Get timeline highlights
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimelineHighlightGrouping](models-37.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-37.md#timelinehighlightresponsedto).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineHighlightGrouping](models-38.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-38.md#timelinehighlightresponsedto).
 
 Controller access declarations:
 
@@ -819,7 +819,7 @@ Get the timeline in a flat order
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-37.md#timebucketassetresponsedto), [TimeBucketDateType](models-37.md#timebucketdatetype), [TimelineOrderedSort](models-37.md#timelineorderedsort).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-38.md#timebucketassetresponsedto), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineOrderedSort](models-38.md#timelineorderedsort).
 
 Controller access declarations:
 

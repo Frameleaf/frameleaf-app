@@ -2,6 +2,167 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## DocumentLineDto
+
+Related models: [DocumentLineStatus](models-11.md#documentlinestatus), [DocumentRegionDto](models-11.md#documentregiondto).
+
+```json
+{
+  "properties": {
+    "confidence": {
+      "description": "Recognition confidence (0-1)",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "editId": {
+      "description": "ID of the owner’s decision about this line",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "evidenceChanged": {
+      "description": "The decision was made against text that has since been read differently",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Recognized line ID, or the decision ID of a kept correction",
+      "type": "string"
+    },
+    "ocrId": {
+      "description": "Recognized line ID; null once the line is gone",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "recognizedText": {
+      "description": "The recognized text, while the recognized line exists",
+      "nullable": true,
+      "type": "string"
+    },
+    "region": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/DocumentRegionDto"
+        }
+      ],
+      "nullable": true
+    },
+    "revision": {
+      "description": "Revision of the owner’s decision",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/components/schemas/DocumentLineStatus"
+    },
+    "text": {
+      "description": "What the line reads: the owner’s correction or the recognized text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "confidence",
+    "editId",
+    "evidenceChanged",
+    "id",
+    "ocrId",
+    "recognizedText",
+    "region",
+    "revision",
+    "status",
+    "text"
+  ],
+  "type": "object"
+}
+```
+
+## DocumentLineEditDto
+
+Related models: [DocumentEditAction](models-10.md#documenteditaction).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/DocumentEditAction"
+    },
+    "ocrId": {
+      "description": "Recognized line the decision is about",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "recognizedText": {
+      "description": "The recognized text the caller read; refused when it changed",
+      "type": "string"
+    },
+    "revision": {
+      "description": "Revision of the existing decision, if there is one",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "value": {
+      "description": "The corrected text, for correct",
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "ocrId",
+    "recognizedText"
+  ],
+  "type": "object"
+}
+```
+
+## DocumentLineStatus
+
+
+```json
+{
+  "description": "Where the text of a document line comes from",
+  "enum": [
+    "recognized",
+    "corrected",
+    "dismissed",
+    "kept"
+  ],
+  "type": "string"
+}
+```
+
+## DocumentRecognitionDto
+
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Text recognition is switched on",
+      "type": "boolean"
+    },
+    "routed": {
+      "description": "A processing destination is chosen for text recognition",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled",
+    "routed"
+  ],
+  "type": "object"
+}
+```
+
 ## DocumentRegionDto
 
 
@@ -66,7 +227,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## DocumentResponseDto
 
-Related models: [DocumentFieldResponseDto](models-10.md#documentfieldresponsedto), [DocumentLineDto](models-10.md#documentlinedto), [DocumentRecognitionDto](models-10.md#documentrecognitiondto).
+Related models: [DocumentFieldResponseDto](models-10.md#documentfieldresponsedto), [DocumentLineDto](models-11.md#documentlinedto), [DocumentRecognitionDto](models-11.md#documentrecognitiondto).
 
 ```json
 {
@@ -1219,7 +1380,7 @@ Related models: [EnrichmentItemState](models-11.md#enrichmentitemstate), [Enrich
 
 ## EnrichmentPlanResponseDto
 
-Related models: [EnrichmentPlanCountsDto](models-11.md#enrichmentplancountsdto), [EnrichmentPlanDestinationDto](models-11.md#enrichmentplandestinationdto), [EnrichmentPlanItemDto](models-11.md#enrichmentplanitemdto), [EnrichmentStage](models-11.md#enrichmentstage), [MediaOperationDto](models-16.md#mediaoperationdto).
+Related models: [EnrichmentPlanCountsDto](models-11.md#enrichmentplancountsdto), [EnrichmentPlanDestinationDto](models-11.md#enrichmentplandestinationdto), [EnrichmentPlanItemDto](models-11.md#enrichmentplanitemdto), [EnrichmentStage](models-11.md#enrichmentstage), [MediaOperationDto](models-17.md#mediaoperationdto).
 
 ```json
 {
@@ -2210,128 +2371,6 @@ Related models: [FileTrashItemResponseDto](models-11.md#filetrashitemresponsedto
     "lastSignInAt",
     "linked",
     "linkedAt"
-  ],
-  "type": "object"
-}
-```
-
-## FrameleafHandoffCreateDto
-
-
-```json
-{
-  "properties": {
-    "returnTo": {
-      "description": "The home address to sign in on; only an address this server published for its home network",
-      "maxLength": 2048,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## FrameleafHandoffRedeemDto
-
-
-```json
-{
-  "properties": {
-    "code": {
-      "description": "The code from POST oauth/frameleaf/handoff",
-      "maxLength": 200,
-      "minLength": 16,
-      "type": "string"
-    },
-    "rememberMe": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "code"
-  ],
-  "type": "object"
-}
-```
-
-## FrameleafHandoffResponseDto
-
-
-```json
-{
-  "properties": {
-    "code": {
-      "description": "A single-use code for signing in on another address of this server",
-      "type": "string"
-    },
-    "expiresAt": {
-      "type": "string"
-    },
-    "url": {
-      "description": "Where to continue with the code: the home address asked for, when this server published it",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "code",
-    "expiresAt",
-    "url"
-  ],
-  "type": "object"
-}
-```
-
-## FrameleafLinkConfirmDto
-
-
-```json
-{
-  "properties": {
-    "confirmToken": {
-      "description": "The token a preview returned",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "confirmToken"
-  ],
-  "type": "object"
-}
-```
-
-## FrameleafLinkDto
-
-
-```json
-{
-  "properties": {
-    "codeVerifier": {
-      "description": "OAuth code verifier (PKCE)",
-      "type": "string"
-    },
-    "preview": {
-      "description": "Report what linking would change (for example becoming an administrator) without linking yet",
-      "type": "boolean"
-    },
-    "rememberMe": {
-      "description": "Persist authentication cookies across browser sessions (default true)",
-      "type": "boolean"
-    },
-    "state": {
-      "description": "OAuth state parameter",
-      "type": "string"
-    },
-    "url": {
-      "description": "OAuth callback URL",
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "url"
   ],
   "type": "object"
 }

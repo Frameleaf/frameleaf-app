@@ -12,7 +12,7 @@ List all activities
 
 Permission: `activity.read`. Admin only: `false`.
 
-Models: [ActivityResponseDto](models-01.md#activityresponsedto), [ReactionLevel](models-28.md#reactionlevel), [ReactionType](models-28.md#reactiontype).
+Models: [ActivityResponseDto](models-01.md#activityresponsedto), [ReactionLevel](models-29.md#reactionlevel), [ReactionType](models-29.md#reactiontype).
 
 Controller access declarations:
 

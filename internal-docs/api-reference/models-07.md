@@ -2,6 +2,96 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## BestPhotoScoreDto
+
+
+```json
+{
+  "properties": {
+    "aestheticScore": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "bestFrameTimestampMs": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "computedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "diversityScore": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "frameMetadata": {
+      "additionalProperties": {},
+      "nullable": true,
+      "type": "object"
+    },
+    "frameScore": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "metadata": {
+      "additionalProperties": {},
+      "nullable": true,
+      "type": "object"
+    },
+    "score": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "scoreVersion": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "subjectScore": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    },
+    "technicalScore": {
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "nullable": true,
+      "type": "number"
+    }
+  },
+  "required": [
+    "aestheticScore",
+    "bestFrameTimestampMs",
+    "computedAt",
+    "diversityScore",
+    "frameMetadata",
+    "frameScore",
+    "metadata",
+    "score",
+    "scoreVersion",
+    "subjectScore",
+    "technicalScore"
+  ],
+  "type": "object"
+}
+```
+
 ## BestPhotosResponseDto
 
 Related models: [BestPhotoAssetResponseDto](models-06.md#bestphotoassetresponsedto).
@@ -2200,70 +2290,5 @@ Related models: [ClassificationMatchDto](models-07.md#classificationmatchdto).
     "video"
   ],
   "type": "string"
-}
-```
-
-## ClassificationPlanResponseDto
-
-Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
-
-```json
-{
-  "properties": {
-    "added": {
-      "description": "Items that would be added or suggested",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "assetIds": {
-      "description": "Every item applying would change, for the apply call or a bulk job",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "durable": {
-      "description": "True when applying must run as a durable bulk job",
-      "type": "boolean"
-    },
-    "items": {
-      "description": "The first items that would be added",
-      "items": {
-        "$ref": "#/components/schemas/ClassificationScoredAssetDto"
-      },
-      "type": "array"
-    },
-    "matched": {
-      "description": "Items the rule matches now",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "removed": {
-      "description": "Items the rule applied that no longer match",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "truncated": {
-      "description": "True when there were more changes than one apply can carry",
-      "type": "boolean"
-    },
-    "visualSearchAvailable": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "added",
-    "assetIds",
-    "durable",
-    "items",
-    "matched",
-    "removed",
-    "truncated",
-    "visualSearchAvailable"
-  ],
-  "type": "object"
 }
 ```

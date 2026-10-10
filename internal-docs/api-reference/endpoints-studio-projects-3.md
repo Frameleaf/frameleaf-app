@@ -98,7 +98,7 @@ List Studio projects
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectListResponseDto](models-34.md#studioprojectlistresponsedto), [StudioProjectShelf](models-34.md#studioprojectshelf), [StudioProjectSort](models-34.md#studioprojectsort).
+Models: [StudioProjectListResponseDto](models-35.md#studioprojectlistresponsedto), [StudioProjectShelf](models-35.md#studioprojectshelf), [StudioProjectSort](models-35.md#studioprojectsort).
 
 Controller access declarations:
 
@@ -223,7 +223,7 @@ Create a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectCreateDto](models-33.md#studioprojectcreatedto), [StudioProjectDetailDto](models-33.md#studioprojectdetaildto).
+Models: [StudioProjectCreateDto](models-35.md#studioprojectcreatedto), [StudioProjectDetailDto](models-35.md#studioprojectdetaildto).
 
 Controller access declarations:
 
@@ -309,7 +309,7 @@ Empty the Studio trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectTrashEmptyResponseDto](models-34.md#studioprojecttrashemptyresponsedto).
+Models: [StudioProjectTrashEmptyResponseDto](models-35.md#studioprojecttrashemptyresponsedto).
 
 Controller access declarations:
 
@@ -472,7 +472,7 @@ Get a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDetailDto](models-33.md#studioprojectdetaildto).
+Models: [StudioProjectDetailDto](models-35.md#studioprojectdetaildto).
 
 Controller access declarations:
 
@@ -558,7 +558,7 @@ Update a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-34.md#studioprojectdto), [StudioProjectUpdateDto](models-34.md#studioprojectupdatedto).
+Models: [StudioProjectDto](models-35.md#studioprojectdto), [StudioProjectUpdateDto](models-35.md#studioprojectupdatedto).
 
 Controller access declarations:
 
@@ -654,7 +654,7 @@ Export a Studio project as a bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto), [StudioBundleExportCreateDto](models-32.md#studiobundleexportcreatedto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto), [StudioBundleExportCreateDto](models-34.md#studiobundleexportcreatedto).
 
 Controller access declarations:
 
@@ -751,7 +751,7 @@ List Studio review comments
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentListResponseDto](models-33.md#studiocommentlistresponsedto).
+Models: [StudioCommentListResponseDto](models-34.md#studiocommentlistresponsedto).
 
 Controller access declarations:
 
@@ -858,7 +858,7 @@ Add a Studio review comment
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentCreateDto](models-33.md#studiocommentcreatedto), [StudioCommentDto](models-33.md#studiocommentdto).
+Models: [StudioCommentCreateDto](models-34.md#studiocommentcreatedto), [StudioCommentDto](models-34.md#studiocommentdto).
 
 Controller access declarations:
 
@@ -1041,7 +1041,7 @@ Update a Studio review comment
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioCommentDto](models-33.md#studiocommentdto), [StudioCommentUpdateDto](models-33.md#studiocommentupdatedto).
+Models: [StudioCommentDto](models-34.md#studiocommentdto), [StudioCommentUpdateDto](models-34.md#studiocommentupdatedto).
 
 Controller access declarations:
 
@@ -1146,7 +1146,7 @@ Duplicate a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-34.md#studioprojectdto), [StudioProjectDuplicateDto](models-34.md#studioprojectduplicatedto).
+Models: [StudioProjectDto](models-35.md#studioprojectdto), [StudioProjectDuplicateDto](models-35.md#studioprojectduplicatedto).
 
 Controller access declarations:
 
@@ -1243,7 +1243,7 @@ List a Studio project’s exports
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportListResponseDto](models-33.md#studioexportlistresponsedto).
+Models: [StudioExportListResponseDto](models-34.md#studioexportlistresponsedto).
 
 Controller access declarations:
 
@@ -1350,7 +1350,7 @@ Export a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportCreateDto](models-33.md#studioexportcreatedto), [StudioExportCreateResponseDto](models-33.md#studioexportcreateresponsedto).
+Models: [StudioExportCreateDto](models-34.md#studioexportcreatedto), [StudioExportCreateResponseDto](models-34.md#studioexportcreateresponsedto).
 
 Controller access declarations:
 
@@ -1447,7 +1447,7 @@ List the files imported into a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectImportDto](models-34.md#studioprojectimportdto).
+Models: [StudioProjectImportDto](models-35.md#studioprojectimportdto).
 
 Controller access declarations:
 
@@ -1535,7 +1535,7 @@ Import a file into a Studio project
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectImportCreateDto](models-34.md#studioprojectimportcreatedto), [StudioProjectImportDto](models-34.md#studioprojectimportdto).
+Models: [StudioProjectImportCreateDto](models-35.md#studioprojectimportcreatedto), [StudioProjectImportDto](models-35.md#studioprojectimportdto).
 
 Controller access declarations:
 
@@ -1731,7 +1731,7 @@ List what a Studio project keeps and uses
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectInventoryDto](models-34.md#studioprojectinventorydto).
+Models: [StudioProjectInventoryDto](models-35.md#studioprojectinventorydto).
 
 Controller access declarations:
 
@@ -1817,7 +1817,7 @@ Acquire or renew the write lease
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectLeaseRequestDto](models-34.md#studioprojectleaserequestdto).
+Models: [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [StudioProjectLeaseRequestDto](models-35.md#studioprojectleaserequestdto).
 
 Controller access declarations:
 
@@ -1914,7 +1914,7 @@ Release the write lease
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectLeaseRequestDto](models-34.md#studioprojectleaserequestdto).
+Models: [StudioProjectLeaseRequestDto](models-35.md#studioprojectleaserequestdto).
 
 Controller access declarations:
 

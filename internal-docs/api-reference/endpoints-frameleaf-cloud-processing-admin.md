@@ -167,7 +167,7 @@ List Frameleaf Cloud consent records
 
 Permission: `adminCloudMl.read`. Admin only: `true`.
 
-Models: [CloudMlConsentHistoryResponseDto](models-08.md#cloudmlconsenthistoryresponsedto).
+Models: [CloudMlConsentHistoryResponseDto](models-09.md#cloudmlconsenthistoryresponsedto).
 
 Controller access declarations:
 

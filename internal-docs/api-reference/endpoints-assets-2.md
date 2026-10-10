@@ -473,7 +473,7 @@ Update an asset
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [AssetResponseDto](models-06.md#assetresponsedto), [UpdateAssetDto](models-37.md#updateassetdto).
+Models: [AssetResponseDto](models-06.md#assetresponsedto), [UpdateAssetDto](models-39.md#updateassetdto).
 
 Controller access declarations:
 

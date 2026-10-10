@@ -2,9 +2,616 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## JobName
+
+
+```json
+{
+  "description": "Job name",
+  "enum": [
+    "ICloudSync",
+    "ICloudRelations",
+    "AnalyticsCollect",
+    "AssetDelete",
+    "AssetDeleteCheck",
+    "AssetDetectFacesQueueAll",
+    "AssetDetectFaces",
+    "AssetDetectDuplicatesQueueAll",
+    "AssetDetectDuplicates",
+    "DuplicateResolutionLifecycle",
+    "AssetGenerateVideoDuplicateFramesQueueAll",
+    "AssetGenerateVideoDuplicateFrames",
+    "AssetEditThumbnailGeneration",
+    "AssetDevelopRender",
+    "AssetVideoEditGeneration",
+    "AssetEncodeVideoQueueAll",
+    "AssetEncodeVideo",
+    "StudioHdrProxyGenerate",
+    "AssetEmptyTrash",
+    "AssetExtractMetadataQueueAll",
+    "AssetExtractMetadata",
+    "AssetFileMigration",
+    "AssetGenerateThumbnailsQueueAll",
+    "AssetGenerateThumbnails",
+    "BestPhotosScoreQueueAll",
+    "BestPhotosScore",
+    "MediaHealthScanMissing",
+    "MediaHealthLocateMissing",
+    "MediaHealthScanCorrupt",
+    "MediaHealthDeleteCorrupt",
+    "AuditTableCleanup",
+    "DatabaseBackup",
+    "FacialRecognitionQueueAll",
+    "FacialRecognition",
+    "FileDelete",
+    "FileMigrationQueueAll",
+    "LibraryDeleteCheck",
+    "LibraryDelete",
+    "LibraryRemoveAsset",
+    "LibraryScanAssetsQueueAll",
+    "LibrarySyncAssets",
+    "LibrarySyncFilesQueueAll",
+    "LibrarySyncFiles",
+    "LibraryScanQueueAll",
+    "LibraryScanRun",
+    "HlsSessionCleanup",
+    "MemoryCleanup",
+    "MemoryGenerate",
+    "LandmarkMatchAll",
+    "MemoryExport",
+    "NotificationsCleanup",
+    "NotifyUserSignup",
+    "NotifyAlbumInvite",
+    "NotifyAlbumUpdate",
+    "UserDelete",
+    "UserDeleteCheck",
+    "UserSyncUsage",
+    "PersonCleanup",
+    "PersonFileMigration",
+    "profile-image-repair",
+    "PersonGenerateThumbnail",
+    "PersonIdentityRefresh",
+    "SessionCleanup",
+    "SendMail",
+    "SidecarQueueAll",
+    "SidecarCheck",
+    "SidecarWrite",
+    "SmartSearchQueueAll",
+    "SmartSearch",
+    "SmartSearchPostprocess",
+    "AssetMetadataPostprocess",
+    "ImageEnrichmentPostprocess",
+    "StorageTemplateMigration",
+    "StorageTemplateMigrationSingle",
+    "PhysicalDeduplicationMigrationDryRun",
+    "PhysicalDeduplicationMigrationApply",
+    "TagCleanup",
+    "VersionCheck",
+    "FrameleafHeartbeat",
+    "FrameleafLicenseRefresh",
+    "CloudMlDescriptionBatch",
+    "CloudBackupSchedule",
+    "CloudBackupVerify",
+    "PushDeliver",
+    "PushBackupStaleCheck",
+    "PartnerBackfill",
+    "PartnerCopyAsset",
+    "PartnerCopyAlbum",
+    "PartnerPropagate",
+    "OcrQueueAll",
+    "Ocr",
+    "ImageDescriptionQueueAll",
+    "ImageDescription",
+    "VideoMomentCaptions",
+    "NsfwDetectionQueueAll",
+    "NsfwDetection",
+    "PetRecognitionQueueAll",
+    "PetRecognition",
+    "PetRecognitionNearest",
+    "SmartAlbumReevaluateAll",
+    "SmartAlbumReevaluate",
+    "WorkflowAssetTrigger",
+    "IntegrityUntrackedFilesQueueAll",
+    "IntegrityUntrackedFiles",
+    "IntegrityUntrackedRefresh",
+    "IntegrityMissingFilesQueueAll",
+    "IntegrityMissingFiles",
+    "IntegrityMissingFilesRefresh",
+    "IntegrityChecksumFiles",
+    "IntegrityChecksumFilesRefresh",
+    "IntegrityDeleteReportType",
+    "IntegrityDeleteReports"
+  ],
+  "type": "string"
+}
+```
+
+## JobRunItemPageDto
+
+Related models: [JobRunItemResponseDto](models-15.md#jobrunitemresponsedto).
+
+```json
+{
+  "properties": {
+    "hasNextPage": {
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/JobRunItemResponseDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "hasNextPage",
+    "items"
+  ],
+  "type": "object"
+}
+```
+
+## JobRunItemResponseDto
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "lastProgressAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "lastStage": {
+      "nullable": true,
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "failed",
+        "needsAttention",
+        "cancelled",
+        "active",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked"
+      ],
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "enum": [
+          "worker_unavailable",
+          "no_dispatch_backlog",
+          "first_setup_pending",
+          "dependency_unavailable",
+          "dependency_wait",
+          "dependency_failed",
+          "retry_backoff",
+          "scheduled_delay",
+          "queue_paused",
+          "needs_attention",
+          "stage_failed",
+          "enumerating",
+          "workload-disabled",
+          "destination-unavailable",
+          "destination-configuration",
+          "destination-consent",
+          "destination-budget",
+          "source-unavailable",
+          "local-capacity"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "stageTotals": {
+      "properties": {
+        "active": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cancelled": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delayed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needsAttention": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retrying": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "completed",
+        "failed",
+        "needsAttention",
+        "cancelled",
+        "active",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "lastProgressAt",
+    "lastStage",
+    "outcome",
+    "reasons",
+    "stageTotals"
+  ],
+  "type": "object"
+}
+```
+
+## JobRunPageDto
+
+Related models: [JobRunResponseDto](models-15.md#jobrunresponsedto).
+
+```json
+{
+  "properties": {
+    "hasNextPage": {
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/JobRunResponseDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "hasNextPage",
+    "items"
+  ],
+  "type": "object"
+}
+```
+
+## JobRunResponseDto
+
+
+```json
+{
+  "properties": {
+    "active": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "blocked": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "cancelled": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "completed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "delayed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "enumerationDone": {
+      "type": "boolean"
+    },
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastProgressAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "lastStage": {
+      "nullable": true,
+      "type": "string"
+    },
+    "needsAttention": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "noDispatchBacklog": {
+      "type": "boolean"
+    },
+    "paused": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reasons": {
+      "items": {
+        "enum": [
+          "worker_unavailable",
+          "no_dispatch_backlog",
+          "first_setup_pending",
+          "dependency_unavailable",
+          "dependency_wait",
+          "dependency_failed",
+          "retry_backoff",
+          "scheduled_delay",
+          "queue_paused",
+          "needs_attention",
+          "stage_failed",
+          "enumerating",
+          "workload-disabled",
+          "destination-unavailable",
+          "destination-configuration",
+          "destination-consent",
+          "destination-budget",
+          "source-unavailable",
+          "local-capacity"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "retrying": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "stageTotals": {
+      "properties": {
+        "active": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cancelled": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delayed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needsAttention": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retrying": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "completed",
+        "failed",
+        "needsAttention",
+        "cancelled",
+        "active",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "running",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked",
+        "unavailable",
+        "needs_attention",
+        "completed",
+        "completed_with_errors",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "waiting": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "active",
+    "blocked",
+    "cancelled",
+    "completed",
+    "createdAt",
+    "delayed",
+    "enumerationDone",
+    "failed",
+    "finishedAt",
+    "id",
+    "kind",
+    "lastProgressAt",
+    "lastStage",
+    "needsAttention",
+    "noDispatchBacklog",
+    "paused",
+    "reasons",
+    "retrying",
+    "stageTotals",
+    "state",
+    "total",
+    "waiting"
+  ],
+  "type": "object"
+}
+```
+
+## KnownAssetDevelopCrop
+
+
+```json
+{
+  "properties": {
+    "h": {
+      "description": "Crop height as a fraction of the frame",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0.05,
+      "type": "number"
+    },
+    "w": {
+      "description": "Crop width as a fraction of the frame",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0.05,
+      "type": "number"
+    },
+    "x": {
+      "description": "Left edge of the crop as a fraction of the oriented frame width",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "y": {
+      "description": "Top edge of the crop as a fraction of the oriented frame height",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    }
+  },
+  "required": [
+    "h",
+    "w",
+    "x",
+    "y"
+  ],
+  "type": "object"
+}
+```
+
 ## KnownAssetDevelopRecipe
 
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopKeyFrame](models-04.md#assetdevelopkeyframe), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-14.md#knownassetdevelopcrop).
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopKeyFrame](models-04.md#assetdevelopkeyframe), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
 
 ```json
 {
@@ -227,6 +834,61 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
   },
   "required": [
     "version"
+  ],
+  "type": "object"
+}
+```
+
+## LandmarkIdsFilter
+
+
+```json
+{
+  "properties": {
+    "any": {
+      "items": {
+        "pattern": "^Q\\d{1,18}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "none": {
+      "items": {
+        "pattern": "^Q\\d{1,18}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
+## LandmarkSummaryDto
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "Landmark ID (its Wikidata ID, for example Q243)",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Kind of place, for example theme_park, museum or national_park",
+      "type": "string"
+    },
+    "name": {
+      "description": "Landmark name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "name"
   ],
   "type": "object"
 }
@@ -504,7 +1166,7 @@ Related models: [LibraryScanResponseDto](models-15.md#libraryscanresponsedto).
 
 ## LibraryScanResponseDto
 
-Related models: [LibraryScanPhase](models-15.md#libraryscanphase), [LibraryScanStopReason](models-15.md#libraryscanstopreason), [MediaOperationStatus](models-16.md#mediaoperationstatus).
+Related models: [LibraryScanPhase](models-15.md#libraryscanphase), [LibraryScanStopReason](models-15.md#libraryscanstopreason), [MediaOperationStatus](models-17.md#mediaoperationstatus).
 
 ```json
 {
@@ -1135,7 +1797,7 @@ Related models: [LicenseProductDto](models-15.md#licenseproductdto).
 
 ## LicenseResponseDto
 
-Related models: [UserLicense](models-38.md#userlicense).
+Related models: [UserLicense](models-39.md#userlicense).
 
 ```json
 {
@@ -1471,808 +2133,6 @@ Related models: [LivePhotoRelinkItemDto](models-15.md#livephotorelinkitemdto).
   "required": [
     "photoId",
     "videoId"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoRelinkResponseDto
-
-Related models: [LivePhotoRelinkResultDto](models-15.md#livephotorelinkresultdto).
-
-```json
-{
-  "properties": {
-    "results": {
-      "items": {
-        "$ref": "#/components/schemas/LivePhotoRelinkResultDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "results"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoRelinkResultDto
-
-
-```json
-{
-  "properties": {
-    "error": {
-      "type": "string"
-    },
-    "photoId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "success": {
-      "type": "boolean"
-    },
-    "videoId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "photoId",
-    "success",
-    "videoId"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoUploadCommitDto
-
-
-```json
-{
-  "properties": {
-    "stillResourceId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "videoResourceId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "stillResourceId",
-    "videoResourceId"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoUploadResultDto
-
-Related models: [AssetUploadResultDto](models-06.md#assetuploadresultdto).
-
-```json
-{
-  "properties": {
-    "still": {
-      "$ref": "#/components/schemas/AssetUploadResultDto"
-    },
-    "video": {
-      "$ref": "#/components/schemas/AssetUploadResultDto"
-    }
-  },
-  "required": [
-    "still",
-    "video"
-  ],
-  "type": "object"
-}
-```
-
-## LogLevel
-
-
-```json
-{
-  "description": "Log level",
-  "enum": [
-    "verbose",
-    "debug",
-    "log",
-    "warn",
-    "error",
-    "fatal"
-  ],
-  "type": "string"
-}
-```
-
-## LoginCredentialDto
-
-
-```json
-{
-  "properties": {
-    "email": {
-      "description": "User email",
-      "example": "testuser@email.com",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "password": {
-      "description": "User password",
-      "example": "password",
-      "type": "string"
-    },
-    "rememberMe": {
-      "description": "Persist authentication cookies across browser sessions (default true)",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "email",
-    "password"
-  ],
-  "type": "object"
-}
-```
-
-## LoginResponseDto
-
-
-```json
-{
-  "properties": {
-    "accessToken": {
-      "description": "Access token",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "Is admin user",
-      "type": "boolean"
-    },
-    "isOnboarded": {
-      "description": "Is onboarded",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "profileImagePath": {
-      "description": "Profile image path",
-      "type": "string"
-    },
-    "shouldChangePassword": {
-      "description": "Should change password",
-      "type": "boolean"
-    },
-    "userEmail": {
-      "description": "User email",
-      "format": "email",
-      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
-      "type": "string"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "accessToken",
-    "isAdmin",
-    "isOnboarded",
-    "name",
-    "profileImagePath",
-    "shouldChangePassword",
-    "userEmail",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## LogoutResponseDto
-
-
-```json
-{
-  "properties": {
-    "redirectUri": {
-      "description": "Redirect URI",
-      "type": "string"
-    },
-    "successful": {
-      "description": "Logout successful",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "redirectUri",
-    "successful"
-  ],
-  "type": "object"
-}
-```
-
-## LookParameters
-
-
-```json
-{
-  "properties": {
-    "intensity": {
-      "default": 100,
-      "description": "Filter or effect intensity",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "name": {
-      "description": "Filter or effect name",
-      "maxLength": 64,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## MachineLearningHardwareAcceleration
-
-
-```json
-{
-  "description": "Machine learning hardware acceleration backend",
-  "enum": [
-    "auto",
-    "openvino",
-    "cuda"
-  ],
-  "type": "string"
-}
-```
-
-## MachineLearningHardwareResponseDto
-
-Related models: [MachineLearningHardwareAcceleration](models-15.md#machinelearninghardwareacceleration).
-
-```json
-{
-  "properties": {
-    "cudaDeviceCount": {
-      "description": "Available PyTorch CUDA device count",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "openvinoDeviceIds": {
-      "description": "Available OpenVINO device IDs",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "preferredAcceleration": {
-      "$ref": "#/components/schemas/MachineLearningHardwareAcceleration",
-      "description": "Detected preferred hardware acceleration"
-    },
-    "providers": {
-      "description": "Available ONNX Runtime providers",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "torchCudaAvailable": {
-      "description": "Whether PyTorch CUDA is available",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "cudaDeviceCount",
-    "openvinoDeviceIds",
-    "preferredAcceleration",
-    "providers",
-    "torchCudaAvailable"
-  ],
-  "type": "object"
-}
-```
-
-## MaintenanceAction
-
-
-```json
-{
-  "description": "Maintenance action",
-  "enum": [
-    "start",
-    "end",
-    "select_database_restore",
-    "restore_database"
-  ],
-  "type": "string"
-}
-```
-
-## MaintenanceAuthDto
-
-
-```json
-{
-  "properties": {
-    "username": {
-      "description": "Maintenance username",
-      "type": "string"
-    }
-  },
-  "required": [
-    "username"
-  ],
-  "type": "object"
-}
-```
-
-## MaintenanceDetectInstallResponseDto
-
-Related models: [MaintenanceDetectInstallStorageFolderDto](models-15.md#maintenancedetectinstallstoragefolderdto).
-
-```json
-{
-  "properties": {
-    "storage": {
-      "items": {
-        "$ref": "#/components/schemas/MaintenanceDetectInstallStorageFolderDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "storage"
-  ],
-  "type": "object"
-}
-```
-
-## MaintenanceDetectInstallStorageFolderDto
-
-Related models: [StorageFolder](models-32.md#storagefolder).
-
-```json
-{
-  "properties": {
-    "files": {
-      "description": "Number of files in the folder",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "folder": {
-      "$ref": "#/components/schemas/StorageFolder"
-    },
-    "readable": {
-      "description": "Whether the folder is readable",
-      "type": "boolean"
-    },
-    "writable": {
-      "description": "Whether the folder is writable",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "files",
-    "folder",
-    "readable",
-    "writable"
-  ],
-  "type": "object"
-}
-```
-
-## MaintenanceLoginDto
-
-
-```json
-{
-  "properties": {
-    "token": {
-      "description": "Maintenance token",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## MaintenanceStatusResponseDto
-
-Related models: [MaintenanceAction](models-15.md#maintenanceaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MaintenanceAction"
-    },
-    "active": {
-      "type": "boolean"
-    },
-    "error": {
-      "type": "string"
-    },
-    "progress": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "reason": {
-      "description": "Why the server is in maintenance, as set by the administrator (public)",
-      "type": "string"
-    },
-    "task": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "active"
-  ],
-  "type": "object"
-}
-```
-
-## ManagedUploadsStatsResponseDto
-
-
-```json
-{
-  "properties": {
-    "ownerId": {
-      "description": "Account whose uploads these are",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "photos": {
-      "description": "Number of photos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "total": {
-      "description": "Total number of assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usage": {
-      "description": "Storage usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "usagePhysical": {
-      "description": "Storage usage in bytes, counting each distinct original file once",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "videos": {
-      "description": "Number of videos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "ownerId",
-    "photos",
-    "total",
-    "usage",
-    "usagePhysical",
-    "videos"
-  ],
-  "type": "object"
-}
-```
-
-## ManualJobName
-
-
-```json
-{
-  "description": "Manual job name",
-  "enum": [
-    "person-cleanup",
-    "tag-cleanup",
-    "user-cleanup",
-    "memory-cleanup",
-    "memory-create",
-    "backup-database",
-    "best-photos-backfill",
-    "physical-deduplication-dry-run",
-    "physical-deduplication-apply",
-    "integrity-missing-files",
-    "integrity-untracked-files",
-    "integrity-checksum-mismatch",
-    "integrity-missing-files-refresh",
-    "integrity-untracked-files-refresh",
-    "integrity-checksum-mismatch-refresh",
-    "integrity-missing-files-delete-all",
-    "integrity-untracked-files-delete-all",
-    "integrity-checksum-mismatch-delete-all",
-    "analytics-collect"
-  ],
-  "type": "string"
-}
-```
-
-## MapMarkerResponseDto
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum).
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City name",
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country name",
-      "nullable": true,
-      "type": "string"
-    },
-    "fileCreatedAt": {
-      "description": "UTC timestamp when the asset was captured",
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "lat": {
-      "description": "Latitude",
-      "format": "double",
-      "type": "number"
-    },
-    "localDateTime": {
-      "description": "Capture date and time in the local time zone where it was taken, encoded as UTC",
-      "format": "date-time",
-      "type": "string"
-    },
-    "lon": {
-      "description": "Longitude",
-      "format": "double",
-      "type": "number"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "state": {
-      "description": "State/Province name",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    }
-  },
-  "required": [
-    "city",
-    "country",
-    "id",
-    "lat",
-    "lon",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## MapReverseGeocodeResponseDto
-
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City name",
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country name",
-      "nullable": true,
-      "type": "string"
-    },
-    "state": {
-      "description": "State/Province name",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "city",
-    "country",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## MapStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "archived": {
-      "description": "The viewer's own located archived items",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "partner": {
-      "description": "Always 0: partners' items arrive as the viewer's own copies (kept for older clients)",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "unlocated": {
-      "description": "The viewer's own timeline items without a location",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "archived",
-    "partner",
-    "unlocated"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthActivityAction
-
-
-```json
-{
-  "description": "What the job did",
-  "enum": [
-    "scan",
-    "locate",
-    "relink-missing-media",
-    "recover-damaged-media",
-    "trash-damaged-media"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthActivityDto
-
-Related models: [MediaHealthActivityAction](models-15.md#mediahealthactivityaction), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaHealthActivityAction"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "items": {
-      "description": "Items the job covered",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "action",
-    "createdAt",
-    "finishedAt",
-    "id",
-    "items",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBucketDto
-
-Related models: [MediaHealthItemDto](models-16.md#mediahealthitemdto).
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Number of findings in the bucket",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthItemDto"
-      },
-      "type": "array"
-    },
-    "timeBucket": {
-      "description": "Timeline bucket date",
-      "type": "string"
-    }
-  },
-  "required": [
-    "count",
-    "items",
-    "timeBucket"
-  ],
-  "type": "object"
-}
-```
-
-## MediaHealthBulkActionDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Media health finding IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
   ],
   "type": "object"
 }

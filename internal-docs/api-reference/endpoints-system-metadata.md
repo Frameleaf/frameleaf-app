@@ -567,7 +567,7 @@ Retrieve reverse geocoding state
 
 Permission: `systemMetadata.read`. Admin only: `true`.
 
-Models: [ReverseGeocodingStateResponseDto](models-29.md#reversegeocodingstateresponsedto).
+Models: [ReverseGeocodingStateResponseDto](models-30.md#reversegeocodingstateresponsedto).
 
 Controller access declarations:
 
@@ -647,7 +647,7 @@ Retrieve version check state
 
 Permission: `systemMetadata.read`. Admin only: `true`.
 
-Models: [VersionCheckStateResponseDto](models-38.md#versioncheckstateresponsedto).
+Models: [VersionCheckStateResponseDto](models-40.md#versioncheckstateresponsedto).
 
 Controller access declarations:
 

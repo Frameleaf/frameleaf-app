@@ -12,7 +12,7 @@ Restore a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectRestoreDto](models-34.md#studioprojectrestoredto), [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto).
+Models: [StudioProjectRestoreDto](models-35.md#studioprojectrestoredto), [StudioProjectSaveResponseDto](models-35.md#studioprojectsaveresponsedto).
 
 Controller access declarations:
 
@@ -109,7 +109,7 @@ Queue a Studio clip source reversal
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioReverseConformEnqueueDto](models-34.md#studioreverseconformenqueuedto), [StudioReverseConformQueuedDto](models-34.md#studioreverseconformqueueddto).
+Models: [StudioReverseConformEnqueueDto](models-35.md#studioreverseconformenqueuedto), [StudioReverseConformQueuedDto](models-35.md#studioreverseconformqueueddto).
 
 Controller access declarations:
 
@@ -205,7 +205,7 @@ Apply a completed Studio clip source reversal
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto), [StudioReverseConformApplyDto](models-34.md#studioreverseconformapplydto).
+Models: [StudioProjectSaveResponseDto](models-35.md#studioprojectsaveresponsedto), [StudioReverseConformApplyDto](models-35.md#studioreverseconformapplydto).
 
 Controller access declarations:
 
@@ -302,7 +302,7 @@ List Studio project history
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectHistoryResponseDto](models-34.md#studioprojecthistoryresponsedto).
+Models: [StudioProjectHistoryResponseDto](models-35.md#studioprojecthistoryresponsedto).
 
 Controller access declarations:
 
@@ -409,7 +409,7 @@ Save a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectSaveDto](models-34.md#studioprojectsavedto), [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto).
+Models: [StudioProjectSaveDto](models-35.md#studioprojectsavedto), [StudioProjectSaveResponseDto](models-35.md#studioprojectsaveresponsedto).
 
 Controller access declarations:
 
@@ -506,7 +506,7 @@ Get a Studio project revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectRevisionDetailDto](models-34.md#studioprojectrevisiondetaildto).
+Models: [StudioProjectRevisionDetailDto](models-35.md#studioprojectrevisiondetaildto).
 
 Controller access declarations:
 
@@ -601,7 +601,7 @@ Compare two Studio project revisions
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDiffDto](models-34.md#studioprojectdiffdto).
+Models: [StudioProjectDiffDto](models-35.md#studioprojectdiffdto).
 
 Controller access declarations:
 
@@ -708,7 +708,7 @@ Transcribe a Studio clip
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioTranscriptionCreateDto](models-34.md#studiotranscriptioncreatedto), [StudioTranscriptionQueuedDto](models-34.md#studiotranscriptionqueueddto).
+Models: [StudioTranscriptionCreateDto](models-35.md#studiotranscriptioncreatedto), [StudioTranscriptionQueuedDto](models-35.md#studiotranscriptionqueueddto).
 
 Controller access declarations:
 
@@ -805,7 +805,7 @@ Get a Studio clip transcription
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioTranscriptionDto](models-34.md#studiotranscriptiondto).
+Models: [StudioTranscriptionDto](models-35.md#studiotranscriptiondto).
 
 Controller access declarations:
 
@@ -901,7 +901,7 @@ Restore a Studio project from the trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-34.md#studioprojectdto).
+Models: [StudioProjectDto](models-35.md#studioprojectdto).
 
 Controller access declarations:
 
@@ -987,7 +987,7 @@ List the Studio resources this server may use
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioResourceInventoryDto](models-34.md#studioresourceinventorydto).
+Models: [StudioResourceInventoryDto](models-35.md#studioresourceinventorydto).
 
 Controller access declarations:
 
@@ -1062,7 +1062,7 @@ Get a restored version for Studio
 
 Permission: `asset.edit.get`. Admin only: `false`.
 
-Models: [StudioRestoredVersionDto](models-34.md#studiorestoredversiondto).
+Models: [StudioRestoredVersionDto](models-35.md#studiorestoredversiondto).
 
 Controller access declarations:
 
@@ -1149,7 +1149,7 @@ Get your Studio workspace layout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioWorkspaceDto](models-34.md#studioworkspacedto).
+Models: [StudioWorkspaceDto](models-36.md#studioworkspacedto).
 
 Controller access declarations:
 
@@ -1223,7 +1223,7 @@ Save your Studio workspace layout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioWorkspaceDto](models-34.md#studioworkspacedto), [StudioWorkspaceSaveDto](models-34.md#studioworkspacesavedto).
+Models: [StudioWorkspaceDto](models-36.md#studioworkspacedto), [StudioWorkspaceSaveDto](models-36.md#studioworkspacesavedto).
 
 Controller access declarations:
 

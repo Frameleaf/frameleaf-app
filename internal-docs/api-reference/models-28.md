@@ -2,815 +2,1232 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
-## QueuesResponseLegacyDto
+## PreservationItemState
 
-Related models: [QueueResponseLegacyDto](models-27.md#queueresponselegacydto).
+
+```json
+{
+  "description": "`pending`, `copied`, `failed` or `skipped` for an export; `listed` for an item read from a package",
+  "enum": [
+    "pending",
+    "copied",
+    "failed",
+    "skipped",
+    "listed"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationItemsResponseDto
+
+Related models: [PreservationItemDto](models-27.md#preservationitemdto).
 
 ```json
 {
   "properties": {
-    "backgroundTask": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationItemDto"
+      },
+      "type": "array"
     },
-    "backupDatabase": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "duplicateDetection": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "editor": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "faceDetection": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "facialRecognition": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "imageDescription": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "imageEnrichment": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "integrityCheck": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "library": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "mediaHealth": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "metadataExtraction": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "migration": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "notifications": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "nsfwDetection": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "ocr": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "petRecognition": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "search": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "sidecar": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "smartSearch": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "storageTemplateMigration": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "thumbnailGeneration": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "videoConversion": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "videoDuplicateDetection": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
-    },
-    "workflow": {
-      "$ref": "#/components/schemas/QueueResponseLegacyDto"
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
     }
   },
   "required": [
-    "backgroundTask",
-    "backupDatabase",
-    "duplicateDetection",
-    "editor",
-    "faceDetection",
-    "facialRecognition",
-    "imageDescription",
-    "imageEnrichment",
-    "integrityCheck",
-    "library",
-    "mediaHealth",
-    "metadataExtraction",
-    "migration",
-    "notifications",
-    "nsfwDetection",
-    "ocr",
-    "petRecognition",
-    "search",
-    "sidecar",
-    "smartSearch",
-    "storageTemplateMigration",
-    "thumbnailGeneration",
-    "videoConversion",
-    "videoDuplicateDetection",
-    "workflow"
+    "items",
+    "total"
   ],
   "type": "object"
 }
 ```
 
-## RandomSearchDto
+## PreservationManifestSummaryDto
 
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter).
 
 ```json
 {
   "properties": {
-    "albumIds": {
-      "deprecated": true,
-      "description": "Filter by album IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
+    "complete": {
+      "description": "Every selected item was written; a complete package can still be damaged later",
+      "type": "boolean"
     },
-    "city": {
-      "deprecated": true,
-      "description": "Filter by city name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "country": {
-      "deprecated": true,
-      "description": "Filter by country name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "createdAfter": {
-      "deprecated": true,
-      "description": "Filter by creation date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
+    "createdAt": {
       "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
+      "type": "string"
     },
-    "createdBefore": {
-      "deprecated": true,
-      "description": "Filter by creation date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "filter": {
-      "$ref": "#/components/schemas/SearchFilter",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "imageEnrichment": {
-      "$ref": "#/components/schemas/ImageEnrichmentFilter"
-    },
-    "isEncoded": {
-      "deprecated": true,
-      "description": "Filter by encoded status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isFavorite": {
-      "deprecated": true,
-      "description": "Filter by favorite status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isMotion": {
-      "deprecated": true,
-      "description": "Filter by motion photo status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isNotInAlbum": {
-      "deprecated": true,
-      "description": "Filter assets not in any album",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isOffline": {
-      "deprecated": true,
-      "description": "Filter by offline status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "lensModel": {
-      "deprecated": true,
-      "description": "Filter by lens model",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "libraryId": {
-      "deprecated": true,
-      "description": "Library ID to filter by",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "make": {
-      "deprecated": true,
-      "description": "Filter by camera make",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "model": {
-      "deprecated": true,
-      "description": "Filter by camera model",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "ocr": {
-      "deprecated": true,
-      "description": "Filter by OCR text content",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "personIds": {
-      "deprecated": true,
-      "description": "Filter by person IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "petIds": {
-      "deprecated": true,
-      "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "rating": {
-      "deprecated": true,
-      "description": "Filter by rating [1-5], or null for unrated",
-      "maximum": 5,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v2.6.0",
-          "state": "Updated",
-          "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
-        },
-        {
-          "version": "v3",
-          "state": "Updated",
-          "description": "Using -1 as a rating is no longer valid."
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "size": {
-      "description": "Number of results to return",
-      "maximum": 1000,
-      "minimum": 1,
+    "exported": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
       "type": "integer"
     },
-    "state": {
-      "deprecated": true,
-      "description": "Filter by state/province name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
     },
-    "suppressedOnly": {
-      "description": "Return only suppressed content. Requires an elevated session.",
+    "includeLocked": {
       "type": "boolean"
     },
-    "tagIds": {
-      "deprecated": true,
-      "description": "Filter by tag IDs",
+    "includeMetadata": {
+      "type": "boolean"
+    },
+    "locked": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "packageId": {
+      "description": "The package’s own identity, from its manifest",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "producerVersion": {
+      "type": "string"
+    },
+    "scopeDescription": {
+      "type": "string"
+    },
+    "skipped": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "complete",
+    "createdAt",
+    "exported",
+    "failed",
+    "includeLocked",
+    "includeMetadata",
+    "locked",
+    "packageId",
+    "producerVersion",
+    "scopeDescription",
+    "skipped"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationPackageCountsDto
+
+
+```json
+{
+  "properties": {
+    "copied": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "listed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "locked": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "pending": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "skipped": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "copied",
+    "failed",
+    "listed",
+    "locked",
+    "pending",
+    "skipped",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationPackageDto
+
+Related models: [MediaOperationDto](models-17.md#mediaoperationdto), [PreservationManifestSummaryDto](models-28.md#preservationmanifestsummarydto), [PreservationPackageCountsDto](models-28.md#preservationpackagecountsdto), [PreservationPackageFormat](models-28.md#preservationpackageformat), [PreservationPackageOrigin](models-28.md#preservationpackageorigin), [PreservationPackageStatus](models-28.md#preservationpackagestatus), [PreservationSupportDto](models-28.md#preservationsupportdto), [PreservationVerificationDto](models-28.md#preservationverificationdto).
+
+```json
+{
+  "properties": {
+    "counts": {
+      "$ref": "#/components/schemas/PreservationPackageCountsDto"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "downloadable": {
+      "type": "boolean"
+    },
+    "expiresAt": {
+      "description": "When an uploaded package is discarded",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "format": {
+      "$ref": "#/components/schemas/PreservationPackageFormat"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "includeLocked": {
+      "type": "boolean"
+    },
+    "includeMetadata": {
+      "type": "boolean"
+    },
+    "lockedContent": {
+      "description": "It holds Locked items: downloading it needs an unlocked session",
+      "type": "boolean"
+    },
+    "manifest": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PreservationManifestSummaryDto"
+        }
+      ],
+      "nullable": true
+    },
+    "name": {
+      "type": "string"
+    },
+    "operation": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationDto"
+        }
+      ],
+      "description": "The newest job on this package",
+      "nullable": true
+    },
+    "origin": {
+      "$ref": "#/components/schemas/PreservationPackageOrigin"
+    },
+    "restorable": {
+      "type": "boolean"
+    },
+    "scopeDescription": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sizeBytes": {
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/PreservationPackageStatus"
+    },
+    "support": {
       "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
+        "$ref": "#/components/schemas/PreservationSupportDto"
       },
-      "nullable": true,
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
+      "type": "array"
     },
-    "takenAfter": {
-      "deprecated": true,
-      "description": "Filter by taken date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
+    "updatedAt": {
       "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
+      "type": "string"
+    },
+    "verification": {
+      "allOf": [
         {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
+          "$ref": "#/components/schemas/PreservationVerificationDto"
         }
       ],
-      "x-immich-state": "Deprecated"
-    },
-    "takenBefore": {
-      "deprecated": true,
-      "description": "Filter by taken date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "trashedAfter": {
-      "deprecated": true,
-      "description": "Filter by trash date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "trashedBefore": {
-      "deprecated": true,
-      "description": "Filter by trash date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum",
-      "deprecated": true,
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "updatedAfter": {
-      "deprecated": true,
-      "description": "Filter by update date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "updatedBefore": {
-      "deprecated": true,
-      "description": "Filter by update date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "visibility": {
-      "$ref": "#/components/schemas/AssetVisibility",
-      "deprecated": true,
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "withDeleted": {
-      "deprecated": true,
-      "description": "Include deleted assets",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "withExif": {
-      "description": "Include EXIF data in response",
+      "nullable": true
+    }
+  },
+  "required": [
+    "counts",
+    "createdAt",
+    "downloadable",
+    "expiresAt",
+    "format",
+    "id",
+    "includeLocked",
+    "includeMetadata",
+    "lockedContent",
+    "manifest",
+    "name",
+    "operation",
+    "origin",
+    "restorable",
+    "scopeDescription",
+    "sizeBytes",
+    "status",
+    "support",
+    "updatedAt",
+    "verification"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationPackageFormat
+
+
+```json
+{
+  "description": "How the package is stored on this server",
+  "enum": [
+    "directory",
+    "zip"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationPackageOrigin
+
+
+```json
+{
+  "description": "`export`: written by this server; `upload`: a package you uploaded; `server`: a package an administrator named on this server",
+  "enum": [
+    "export",
+    "upload",
+    "server"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationPackageStatus
+
+
+```json
+{
+  "description": "`building`: being written or not yet read; `ready`: every selected item is in it; `incomplete`: some items could not be copied; `unreadable`: its manifest or index could not be believed; `removed`: its files were deleted",
+  "enum": [
+    "building",
+    "ready",
+    "incomplete",
+    "unreadable",
+    "removed"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationPreviewDto
+
+Related models: [PreservationScopeDto](models-28.md#preservationscopedto).
+
+```json
+{
+  "properties": {
+    "includeLocked": {
+      "description": "Count Locked items as included; needs an unlocked session",
       "type": "boolean"
     },
-    "withPeople": {
-      "description": "Include people data in response",
-      "type": "boolean"
-    },
-    "withStacked": {
-      "description": "Include stacked assets",
-      "type": "boolean"
+    "scope": {
+      "$ref": "#/components/schemas/PreservationScopeDto"
     }
   },
   "type": "object"
 }
 ```
 
-## RatingsResponse
+## PreservationPreviewResponseDto
+
+Related models: [PreservationSupportDto](models-28.md#preservationsupportdto).
+
+```json
+{
+  "properties": {
+    "bytes": {
+      "type": "string"
+    },
+    "freeBytes": {
+      "description": "Free space where the package would be written",
+      "nullable": true,
+      "type": "string"
+    },
+    "includedBytes": {
+      "type": "string"
+    },
+    "includedItems": {
+      "description": "Items the export would include",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "items": {
+      "description": "Items matching, Locked ones not counted",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "lockedAllowed": {
+      "description": "This session is unlocked, so Locked items may be included",
+      "type": "boolean"
+    },
+    "lockedBytes": {
+      "type": "string"
+    },
+    "lockedItems": {
+      "description": "Locked items matching",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "maxItems": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "support": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationSupportDto"
+      },
+      "type": "array"
+    },
+    "withinLimit": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "bytes",
+    "freeBytes",
+    "includedBytes",
+    "includedItems",
+    "items",
+    "lockedAllowed",
+    "lockedBytes",
+    "lockedItems",
+    "maxItems",
+    "support",
+    "withinLimit"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreCountsDto
+
+
+```json
+{
+  "properties": {
+    "conflicts": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "existing": {
+      "description": "Originals the library already holds; they are matched, never copied again",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "findings": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "locked": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "matched": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "new": {
+      "description": "Originals the library does not hold",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "pending": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "ready": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "restored": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "skipped": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "trashed": {
+      "description": "Originals the library holds in the trash; restore them from the trash first",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "conflicts",
+    "existing",
+    "failed",
+    "findings",
+    "locked",
+    "matched",
+    "new",
+    "pending",
+    "ready",
+    "restored",
+    "skipped",
+    "total",
+    "trashed"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreCreateDto
+
+Related models: [PreservationDecision](models-27.md#preservationdecision).
+
+```json
+{
+  "properties": {
+    "conflictDefault": {
+      "$ref": "#/components/schemas/PreservationDecision",
+      "description": "What to do where the package and the library disagree and you have not chosen; `keep` when omitted"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "type": "string"
+    },
+    "packageId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "requestKey": {
+      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+      "pattern": "^[\\w.:-]{1,128}$",
+      "type": "string"
+    },
+    "restoreEditRecipes": {
+      "description": "Restore edit recipes; edited versions are rendered again",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "packageId"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreDto
+
+Related models: [MediaOperationDto](models-17.md#mediaoperationdto), [PreservationDecision](models-27.md#preservationdecision), [PreservationRestoreCountsDto](models-28.md#preservationrestorecountsdto), [PreservationRestoreStatus](models-28.md#preservationrestorestatus), [PreservationSupportDto](models-28.md#preservationsupportdto).
+
+```json
+{
+  "properties": {
+    "albums": {
+      "description": "Albums and collections in the package",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "conflictDefault": {
+      "$ref": "#/components/schemas/PreservationDecision"
+    },
+    "counts": {
+      "$ref": "#/components/schemas/PreservationRestoreCountsDto"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "operation": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationDto"
+        }
+      ],
+      "description": "The newest job on this restoration",
+      "nullable": true
+    },
+    "packageId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "people": {
+      "description": "Named people in the package",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "reasonKey": {
+      "nullable": true,
+      "type": "string"
+    },
+    "restoreEditRecipes": {
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/components/schemas/PreservationRestoreStatus"
+    },
+    "support": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationSupportDto"
+      },
+      "type": "array"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albums",
+    "conflictDefault",
+    "counts",
+    "createdAt",
+    "id",
+    "name",
+    "operation",
+    "packageId",
+    "people",
+    "reasonKey",
+    "restoreEditRecipes",
+    "status",
+    "support",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreItemDto
+
+Related models: [PreservationConflictDto](models-27.md#preservationconflictdto), [PreservationRestoreItemState](models-28.md#preservationrestoreitemstate), [PreservationRestoreMatch](models-28.md#preservationrestorematch).
+
+```json
+{
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "assetId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "conflicts": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationConflictDto"
+      },
+      "type": "array"
+    },
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "findings": {
+      "description": "Translation keys for what the restore left for you to look at",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "locked": {
+      "description": "Locked in the package or in your library; listed only to an unlocked session",
+      "type": "boolean"
+    },
+    "match": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PreservationRestoreMatch"
+        }
+      ],
+      "nullable": true
+    },
+    "name": {
+      "nullable": true,
+      "type": "string"
+    },
+    "reasonKey": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sourceAssetId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/PreservationRestoreItemState"
+    }
+  },
+  "required": [
+    "applied",
+    "assetId",
+    "conflicts",
+    "error",
+    "findings",
+    "id",
+    "locked",
+    "match",
+    "name",
+    "reasonKey",
+    "sourceAssetId",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreItemFilter
+
+
+```json
+{
+  "enum": [
+    "conflicts",
+    "failed",
+    "findings"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationRestoreItemState
+
+
+```json
+{
+  "enum": [
+    "pending",
+    "ready",
+    "failed",
+    "creating",
+    "restored",
+    "matched",
+    "skipped"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationRestoreItemsResponseDto
+
+Related models: [PreservationRestoreItemDto](models-28.md#preservationrestoreitemdto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationRestoreItemDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationRestoreMatch
+
+
+```json
+{
+  "enum": [
+    "new",
+    "existing",
+    "trashed"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationRestoreStatus
+
+
+```json
+{
+  "description": "`reviewing`: the package is being checked; `ready`: review the findings, then restore; `restoring`; `completed`; `unreadable`: the package cannot be believed",
+  "enum": [
+    "reviewing",
+    "ready",
+    "restoring",
+    "completed",
+    "unreadable"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationScopeDto
+
+Related models: [SearchFilter](models-31.md#searchfilter).
+
+```json
+{
+  "description": "What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.",
+  "properties": {
+    "assetIds": {
+      "description": "Exactly these items of yours, instead of a filter",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 100000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "filter": {
+      "$ref": "#/components/schemas/SearchFilter",
+      "description": "Your items matching these conditions; the whole library when empty"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PreservationServerPackageCreateDto
+
+
+```json
+{
+  "properties": {
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "type": "string"
+    },
+    "path": {
+      "description": "A package directory or ZIP file on this server, outside its media storage",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationSupportCategory
+
+
+```json
+{
+  "description": "A kind of information a package may carry",
+  "enum": [
+    "originals",
+    "dates",
+    "places",
+    "descriptions",
+    "ratings",
+    "favorites",
+    "archive",
+    "locked",
+    "albums",
+    "tags",
+    "people",
+    "editRecipes",
+    "livePhotos",
+    "stacks",
+    "documentCorrections",
+    "momentNotes",
+    "generatedDescriptions",
+    "generatedMoments",
+    "cameraDetails",
+    "sharing",
+    "pets",
+    "studioProjects",
+    "memories"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationSupportDto
+
+Related models: [PreservationSupportCategory](models-28.md#preservationsupportcategory), [PreservationSupportLevel](models-28.md#preservationsupportlevel).
+
+```json
+{
+  "properties": {
+    "category": {
+      "$ref": "#/components/schemas/PreservationSupportCategory"
+    },
+    "level": {
+      "$ref": "#/components/schemas/PreservationSupportLevel"
+    }
+  },
+  "required": [
+    "category",
+    "level"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationSupportLevel
+
+
+```json
+{
+  "description": "`restored`: comes back as it was; `restored-when-empty`: only where the library has none; `provenance-only`: kept as a record, never applied; `not-included`: not in a package",
+  "enum": [
+    "restored",
+    "restored-when-empty",
+    "provenance-only",
+    "not-included"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationUploadCreateDto
+
+
+```json
+{
+  "properties": {
+    "file": {
+      "description": "A `.frameleaf-preservation.zip` package",
+      "format": "binary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationVerificationDto
+
+Related models: [PreservationVerificationStatus](models-28.md#preservationverificationstatus).
+
+```json
+{
+  "properties": {
+    "changed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "checked": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "documentsChanged": {
+      "description": "Index documents whose digest no longer matches",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "missing": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "ok": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "reasonKey": {
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/PreservationVerificationStatus"
+    },
+    "unexpected": {
+      "description": "Files in the package its manifest does not account for",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "changed",
+    "checked",
+    "documentsChanged",
+    "finishedAt",
+    "missing",
+    "ok",
+    "reasonKey",
+    "status",
+    "unexpected"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationVerificationStatus
+
+
+```json
+{
+  "description": "`verified`: every file matches; `problems`: some are missing or changed; `unreadable`: the manifest or index cannot be believed",
+  "enum": [
+    "verified",
+    "problems",
+    "unreadable"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationVerifyState
+
+
+```json
+{
+  "description": "The latest verification of this item",
+  "enum": [
+    "ok",
+    "missing",
+    "changed"
+  ],
+  "type": "string"
+}
+```
+
+## PrivacyResponse
+
+Related models: [SuppressionResponse](models-36.md#suppressionresponse).
+
+```json
+{
+  "description": "Privacy preferences",
+  "properties": {
+    "suppression": {
+      "$ref": "#/components/schemas/SuppressionResponse"
+    }
+  },
+  "required": [
+    "suppression"
+  ],
+  "type": "object"
+}
+```
+
+## PrivacyUpdate
+
+Related models: [SuppressionUpdate](models-36.md#suppressionupdate).
+
+```json
+{
+  "description": "Privacy preferences",
+  "properties": {
+    "suppression": {
+      "$ref": "#/components/schemas/SuppressionUpdate"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PublicConfigDto
+
+Related models: [FrameleafPublicConfigDto](models-12.md#frameleafpublicconfigdto), [PublicConfigFrameleafCloudDto](models-28.md#publicconfigframeleafclouddto), [PublicConfigOAuthDto](models-28.md#publicconfigoauthdto), [PublicConfigPasswordLoginDto](models-28.md#publicconfigpasswordlogindto), [PublicConfigServerDto](models-28.md#publicconfigserverdto), [PublicConfigThemeDto](models-28.md#publicconfigthemedto).
+
+```json
+{
+  "properties": {
+    "frameleaf": {
+      "$ref": "#/components/schemas/FrameleafPublicConfigDto"
+    },
+    "frameleafCloud": {
+      "$ref": "#/components/schemas/PublicConfigFrameleafCloudDto"
+    },
+    "oauth": {
+      "$ref": "#/components/schemas/PublicConfigOAuthDto"
+    },
+    "passwordLogin": {
+      "$ref": "#/components/schemas/PublicConfigPasswordLoginDto"
+    },
+    "server": {
+      "$ref": "#/components/schemas/PublicConfigServerDto"
+    },
+    "theme": {
+      "$ref": "#/components/schemas/PublicConfigThemeDto"
+    }
+  },
+  "required": [
+    "frameleaf",
+    "frameleafCloud",
+    "oauth",
+    "passwordLogin",
+    "server",
+    "theme"
+  ],
+  "type": "object"
+}
+```
+
+## PublicConfigFrameleafCloudDto
+
+Related models: [PublicConfigFrameleafSignInDto](models-28.md#publicconfigframeleafsignindto).
+
+```json
+{
+  "properties": {
+    "signIn": {
+      "$ref": "#/components/schemas/PublicConfigFrameleafSignInDto"
+    }
+  },
+  "required": [
+    "signIn"
+  ],
+  "type": "object"
+}
+```
+
+## PublicConfigFrameleafSignInDto
+
+
+```json
+{
+  "properties": {
+    "buttonText": {
+      "description": "Sign in with Frameleaf button text",
+      "maxLength": 100,
+      "type": "string"
+    },
+    "showOnLocalLogin": {
+      "description": "Show Sign in with Frameleaf on the local sign-in page too",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "buttonText",
+    "showOnLocalLogin"
+  ],
+  "type": "object"
+}
+```
+
+## PublicConfigOAuthDto
+
+
+```json
+{
+  "properties": {
+    "autoLaunch": {
+      "description": "Auto launch",
+      "type": "boolean"
+    },
+    "buttonText": {
+      "description": "Button text",
+      "type": "string"
+    },
+    "enabled": {
+      "description": "Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "autoLaunch",
+    "buttonText",
+    "enabled"
+  ],
+  "type": "object"
+}
+```
+
+## PublicConfigPasswordLoginDto
 
 
 ```json
 {
   "properties": {
     "enabled": {
-      "description": "Whether ratings are enabled",
+      "description": "Enabled",
       "type": "boolean"
     }
   },
@@ -821,75 +1238,83 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](m
 }
 ```
 
-## RatingsUpdate
+## PublicConfigServerDto
 
 
 ```json
 {
   "properties": {
-    "enabled": {
-      "description": "Whether ratings are enabled",
-      "type": "boolean"
+    "loginPageMessage": {
+      "description": "Login page message",
+      "type": "string"
+    },
+    "name": {
+      "description": "Server name shown in settings; empty uses the host name",
+      "maxLength": 100,
+      "type": "string"
     }
   },
+  "required": [
+    "loginPageMessage",
+    "name"
+  ],
   "type": "object"
 }
 ```
 
-## ReactionLevel
-
-
-```json
-{
-  "description": "Reaction level",
-  "enum": [
-    "album",
-    "asset"
-  ],
-  "type": "string"
-}
-```
-
-## ReactionType
-
-
-```json
-{
-  "description": "Reaction type",
-  "enum": [
-    "comment",
-    "like"
-  ],
-  "type": "string"
-}
-```
-
-## RecentlyAddedResponse
+## PublicConfigThemeDto
 
 
 ```json
 {
   "properties": {
-    "sidebarWeb": {
-      "description": "Whether the recently added page appears in the web sidebar",
+    "customCss": {
+      "description": "Custom CSS for theming",
+      "type": "string"
+    }
+  },
+  "required": [
+    "customCss"
+  ],
+  "type": "object"
+}
+```
+
+## PurchaseResponse
+
+
+```json
+{
+  "properties": {
+    "hideBuyButtonUntil": {
+      "description": "Date until which to hide buy button",
+      "type": "string"
+    },
+    "showSupportBadge": {
+      "description": "Whether to show support badge",
       "type": "boolean"
     }
   },
   "required": [
-    "sidebarWeb"
+    "hideBuyButtonUntil",
+    "showSupportBadge"
   ],
   "type": "object"
 }
 ```
 
-## RecentlyAddedUpdate
+## PurchaseUpdate
 
 
 ```json
 {
   "properties": {
-    "sidebarWeb": {
-      "description": "Whether the recently added page appears in the web sidebar",
+    "hideBuyButtonUntil": {
+      "description": "Date until which to hide buy button",
+      "type": "string"
+    },
+    "showSupportBadge": {
+      "description": "Whether to show support badge",
       "type": "boolean"
     }
   },
@@ -897,1176 +1322,1070 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](m
 }
 ```
 
-## RecipientGroupCreateDto
+## PushActivityTokenDto
 
 
 ```json
 {
   "properties": {
-    "name": {
-      "description": "Name, visible to its owner only",
-      "maxLength": 100,
-      "minLength": 1,
+    "kind": {
+      "description": "The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)",
+      "enum": [
+        "cloud-backup-activation",
+        "studio-render"
+      ],
       "type": "string"
     },
-    "userIds": {
-      "description": "People in the group. Yourself and repeats are dropped.",
+    "operationId": {
+      "description": "Required for studio-render: the owned Studio render media operation this activity follows",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "token": {
+      "description": "The ActivityKit push token of this activity",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "token"
+  ],
+  "type": "object"
+}
+```
+
+## PushApnsEnvironment
+
+
+```json
+{
+  "description": "iOS only: the APNs environment of the tokens. A development build gets sandbox tokens, which only APNs sandbox delivers. Default production.",
+  "enum": [
+    "production",
+    "sandbox"
+  ],
+  "type": "string"
+}
+```
+
+## PushDeviceActivityDto
+
+
+```json
+{
+  "properties": {
+    "activityId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "activityId",
+    "kind",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## PushDeviceListResponseDto
+
+Related models: [PushDeviceResponseDto](models-28.md#pushdeviceresponsedto).
+
+```json
+{
+  "properties": {
+    "devices": {
       "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
+        "$ref": "#/components/schemas/PushDeviceResponseDto"
       },
-      "maxItems": 200,
       "type": "array"
     }
   },
   "required": [
-    "name",
-    "userIds"
+    "devices"
   ],
   "type": "object"
 }
 ```
 
-## RecipientGroupResponseDto
+## PushDeviceRegisterDto
 
-Related models: [UserResponseDto](models-38.md#userresponsedto).
+Related models: [PushApnsEnvironment](models-28.md#pushapnsenvironment), [PushPlatform](models-28.md#pushplatform), [PushPreferencesDto](models-28.md#pushpreferencesdto).
 
 ```json
 {
   "properties": {
+    "apnsEnvironment": {
+      "$ref": "#/components/schemas/PushApnsEnvironment"
+    },
+    "backupDeviceKey": {
+      "description": "This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "platform": {
+      "$ref": "#/components/schemas/PushPlatform"
+    },
+    "preferences": {
+      "$ref": "#/components/schemas/PushPreferencesDto"
+    },
+    "publicKey": {
+      "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "pushToStartToken": {
+      "description": "iOS only: the ActivityKit push-to-start token",
+      "maxLength": 4096,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+    },
+    "pushToken": {
+      "description": "The APNs device token or FCM registration token",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "platform",
+    "publicKey",
+    "pushToken"
+  ],
+  "type": "object"
+}
+```
+
+## PushDeviceResponseDto
+
+Related models: [PushApnsEnvironment](models-28.md#pushapnsenvironment), [PushDeviceActivityDto](models-28.md#pushdeviceactivitydto), [PushPlatform](models-28.md#pushplatform), [PushPreferencesResponseDto](models-28.md#pushpreferencesresponsedto).
+
+```json
+{
+  "description": "A registered push device. Push tokens are never returned.",
+  "properties": {
+    "activities": {
+      "items": {
+        "$ref": "#/components/schemas/PushDeviceActivityDto"
+      },
+      "type": "array"
+    },
+    "apnsEnvironment": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PushApnsEnvironment"
+        }
+      ],
+      "description": "iOS: the APNs environment; null for Android",
+      "nullable": true
+    },
+    "backupDeviceKey": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
     "createdAt": {
-      "description": "When the group was saved",
       "format": "date-time",
       "type": "string"
     },
+    "current": {
+      "description": "Whether this is the device of the session asking",
+      "type": "boolean"
+    },
+    "hasPushToStartToken": {
+      "type": "boolean"
+    },
     "id": {
-      "description": "Recipient group ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "lastDeliveredAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "platform": {
+      "$ref": "#/components/schemas/PushPlatform"
+    },
+    "preferences": {
+      "$ref": "#/components/schemas/PushPreferencesResponseDto"
+    },
+    "publicKeyFingerprint": {
+      "description": "A short fingerprint of the registered public key; never the token",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "activities",
+    "apnsEnvironment",
+    "backupDeviceKey",
+    "createdAt",
+    "current",
+    "hasPushToStartToken",
+    "id",
+    "lastDeliveredAt",
+    "platform",
+    "preferences",
+    "publicKeyFingerprint",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## PushDeviceUpdateDto
+
+Related models: [PushApnsEnvironment](models-28.md#pushapnsenvironment), [PushPreferencesDto](models-28.md#pushpreferencesdto).
+
+```json
+{
+  "properties": {
+    "apnsEnvironment": {
+      "$ref": "#/components/schemas/PushApnsEnvironment"
+    },
+    "backupDeviceKey": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "preferences": {
+      "$ref": "#/components/schemas/PushPreferencesDto"
+    },
+    "publicKey": {
+      "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "pushToStartToken": {
+      "description": "iOS only: a rotated ActivityKit push-to-start token, or null",
+      "maxLength": 4096,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+    },
+    "pushToken": {
+      "description": "A rotated APNs or FCM token",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PushEventType
+
+
+```json
+{
+  "description": "FL-228: an event this server delivers as a push notification",
+  "enum": [
+    "backup-needs-attention",
+    "backup-stale",
+    "cloud-backup-activation",
+    "shared-activity",
+    "memories",
+    "render-finished",
+    "render-progress",
+    "access-changed"
+  ],
+  "type": "string"
+}
+```
+
+## PushKnownEventsDto
+
+Related models: [PushEventType](models-28.md#pusheventtype).
+
+```json
+{
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/components/schemas/PushEventType"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "events"
+  ],
+  "type": "object"
+}
+```
+
+## PushPlatform
+
+
+```json
+{
+  "description": "FL-228: the push service a device receives notifications through",
+  "enum": [
+    "ios",
+    "android"
+  ],
+  "type": "string"
+}
+```
+
+## PushPreferencesDto
+
+
+```json
+{
+  "description": "Which events this device is told about; an omitted event keeps its current setting (on by default)",
+  "properties": {
+    "accessChanged": {
+      "type": "boolean"
+    },
+    "backupNeedsAttention": {
+      "type": "boolean"
+    },
+    "backupStale": {
+      "type": "boolean"
+    },
+    "cloudBackupActivation": {
+      "type": "boolean"
+    },
+    "memories": {
+      "type": "boolean"
+    },
+    "renderFinished": {
+      "type": "boolean"
+    },
+    "renderProgress": {
+      "type": "boolean"
+    },
+    "sharedActivity": {
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PushPreferencesResponseDto
+
+
+```json
+{
+  "properties": {
+    "accessChanged": {
+      "type": "boolean"
+    },
+    "backupNeedsAttention": {
+      "type": "boolean"
+    },
+    "backupStale": {
+      "type": "boolean"
+    },
+    "cloudBackupActivation": {
+      "type": "boolean"
+    },
+    "memories": {
+      "type": "boolean"
+    },
+    "renderFinished": {
+      "type": "boolean"
+    },
+    "renderProgress": {
+      "type": "boolean"
+    },
+    "sharedActivity": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "accessChanged",
+    "backupNeedsAttention",
+    "backupStale",
+    "cloudBackupActivation",
+    "memories",
+    "renderFinished",
+    "renderProgress",
+    "sharedActivity"
+  ],
+  "type": "object"
+}
+```
+
+## PushStatusResponseDto
+
+Related models: [PushUnavailableReason](models-28.md#pushunavailablereason).
+
+```json
+{
+  "properties": {
+    "available": {
+      "description": "Whether this server delivers push notifications now (it must be linked)",
+      "type": "boolean"
+    },
+    "encryption": {
+      "description": "How payloads are encrypted to the device key",
+      "properties": {
+        "cipher": {
+          "enum": [
+            "AES-256-GCM"
+          ],
+          "type": "string"
+        },
+        "kdf": {
+          "enum": [
+            "HKDF-SHA256"
+          ],
+          "type": "string"
+        },
+        "keyAgreement": {
+          "enum": [
+            "X25519"
+          ],
+          "type": "string"
+        },
+        "scheme": {
+          "enum": [
+            "frameleaf-push-v1"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scheme",
+        "keyAgreement",
+        "kdf",
+        "cipher"
+      ],
+      "type": "object"
+    },
+    "events": {
+      "description": "The events this server can deliver. Open-ended: ignore unfamiliar event names.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PushUnavailableReason"
+        }
+      ],
+      "description": "Why push is unavailable; null when available",
+      "nullable": true
+    },
+    "registered": {
+      "description": "Whether the session asking has registered its device",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "available",
+    "encryption",
+    "events",
+    "reason",
+    "registered"
+  ],
+  "type": "object"
+}
+```
+
+## PushUnavailableReason
+
+
+```json
+{
+  "description": "FL-228: why push notifications are unavailable on this server",
+  "enum": [
+    "not-configured",
+    "not-linked",
+    "clone-suspected"
+  ],
+  "type": "string"
+}
+```
+
+## QueueCommand
+
+
+```json
+{
+  "description": "Queue command to execute",
+  "enum": [
+    "start",
+    "pause",
+    "resume",
+    "empty",
+    "clear-failed"
+  ],
+  "type": "string"
+}
+```
+
+## QueueCommandDto
+
+Related models: [QueueCommand](models-28.md#queuecommand).
+
+```json
+{
+  "properties": {
+    "command": {
+      "$ref": "#/components/schemas/QueueCommand"
+    },
+    "force": {
+      "description": "Force the command execution (if applicable)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "type": "object"
+}
+```
+
+## QueueDeleteDto
+
+
+```json
+{
+  "properties": {
+    "failed": {
+      "description": "If true, will also remove failed jobs from the queue.",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v2.4.0",
+          "state": "Added"
+        },
+        {
+          "version": "v2.4.0",
+          "state": "Alpha"
+        }
+      ],
+      "x-immich-state": "Alpha"
+    }
+  },
+  "type": "object"
+}
+```
+
+## QueueJobAccountDto
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "Account ID",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
     "name": {
-      "description": "Name, visible to its owner only",
+      "description": "Account name",
       "type": "string"
-    },
-    "updatedAt": {
-      "description": "When the group last changed",
-      "format": "date-time",
-      "type": "string"
-    },
-    "users": {
-      "description": "People in the group who still have an account, by name",
-      "items": {
-        "$ref": "#/components/schemas/UserResponseDto"
-      },
-      "type": "array"
     }
   },
   "required": [
-    "createdAt",
     "id",
-    "name",
-    "updatedAt",
-    "users"
+    "name"
   ],
   "type": "object"
 }
 ```
 
-## RecipientGroupUpdateDto
+## QueueJobResponseDto
 
+Related models: [JobName](models-15.md#jobname), [QueueJobAccountDto](models-28.md#queuejobaccountdto), [QueueJobWorkerDto](models-28.md#queuejobworkerdto).
 
 ```json
 {
   "properties": {
-    "name": {
-      "description": "Name, visible to its owner only",
-      "maxLength": 100,
-      "minLength": 1,
+    "account": {
+      "$ref": "#/components/schemas/QueueJobAccountDto",
+      "description": "The account whose item the job works on, when the job names an asset, person, library or account"
+    },
+    "attemptsMade": {
+      "description": "How many times the job has been attempted",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "data": {
+      "additionalProperties": {},
+      "description": "Job data payload",
+      "type": "object"
+    },
+    "failedReason": {
+      "description": "Why the last attempt failed, for a failed job",
       "type": "string"
     },
-    "userIds": {
-      "description": "People in the group. Yourself and repeats are dropped.",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 200,
-      "type": "array"
+    "id": {
+      "description": "Job ID",
+      "type": "string"
+    },
+    "name": {
+      "$ref": "#/components/schemas/JobName"
+    },
+    "timestamp": {
+      "description": "Job creation timestamp",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "worker": {
+      "$ref": "#/components/schemas/QueueJobWorkerDto",
+      "description": "Where the job runs or ran"
     }
   },
+  "required": [
+    "data",
+    "name",
+    "timestamp",
+    "worker"
+  ],
   "type": "object"
 }
 ```
 
-## ReconciliationBucketDto
+## QueueJobStatus
+
+
+```json
+{
+  "description": "Queue job status",
+  "enum": [
+    "active",
+    "failed",
+    "completed",
+    "delayed",
+    "waiting",
+    "paused"
+  ],
+  "type": "string"
+}
+```
+
+## QueueJobWorkerDto
+
+Related models: [QueueJobWorkerKind](models-28.md#queuejobworkerkind).
+
+```json
+{
+  "properties": {
+    "kind": {
+      "$ref": "#/components/schemas/QueueJobWorkerKind"
+    },
+    "name": {
+      "description": "The processing destination name, for a machine-learning worker",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## QueueJobWorkerKind
+
+
+```json
+{
+  "description": "Where a queue job runs",
+  "enum": [
+    "server",
+    "local",
+    "lan",
+    "frameleaf-cloud"
+  ],
+  "type": "string"
+}
+```
+
+## QueueName
+
+
+```json
+{
+  "description": "Queue name",
+  "enum": [
+    "thumbnailGeneration",
+    "metadataExtraction",
+    "videoConversion",
+    "faceDetection",
+    "facialRecognition",
+    "smartSearch",
+    "duplicateDetection",
+    "videoDuplicateDetection",
+    "backgroundTask",
+    "storageTemplateMigration",
+    "migration",
+    "search",
+    "sidecar",
+    "library",
+    "notifications",
+    "backupDatabase",
+    "ocr",
+    "imageEnrichment",
+    "imageDescription",
+    "nsfwDetection",
+    "mediaHealth",
+    "workflow",
+    "integrityCheck",
+    "editor",
+    "petRecognition"
+  ],
+  "type": "string"
+}
+```
+
+## QueueOwnerStatisticsResponseDto
 
 
 ```json
 {
   "properties": {
-    "bucket": {
-      "maximum": 255,
+    "active": {
+      "description": "Number of active jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "completed": {
+      "description": "Number of completed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "delayed": {
+      "description": "Number of delayed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "failed": {
+      "description": "Number of failed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "paused": {
+      "description": "Number of paused jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "Whether a state had more jobs than were scanned, so its count is a lower bound",
+      "type": "boolean"
+    },
+    "waiting": {
+      "description": "Number of waiting jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "active",
+    "completed",
+    "delayed",
+    "failed",
+    "paused",
+    "truncated",
+    "waiting"
+  ],
+  "type": "object"
+}
+```
+
+## QueueResponseDto
+
+Related models: [QueueName](models-28.md#queuename), [QueueStatisticsDto](models-28.md#queuestatisticsdto).
+
+```json
+{
+  "properties": {
+    "hasUnfinishedWork": {
+      "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+      "type": "boolean"
+    },
+    "isPaused": {
+      "description": "Whether the queue is paused",
+      "type": "boolean"
+    },
+    "name": {
+      "$ref": "#/components/schemas/QueueName"
+    },
+    "statistics": {
+      "$ref": "#/components/schemas/QueueStatisticsDto"
+    }
+  },
+  "required": [
+    "hasUnfinishedWork",
+    "isPaused",
+    "name",
+    "statistics"
+  ],
+  "type": "object"
+}
+```
+
+## QueueResponseLegacyDto
+
+Related models: [QueueStatisticsDto](models-28.md#queuestatisticsdto), [QueueStatusLegacyDto](models-28.md#queuestatuslegacydto).
+
+```json
+{
+  "properties": {
+    "jobCounts": {
+      "$ref": "#/components/schemas/QueueStatisticsDto"
+    },
+    "queueStatus": {
+      "$ref": "#/components/schemas/QueueStatusLegacyDto"
+    },
+    "runId": {
+      "description": "Durable run created by a batch start",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobCounts",
+    "queueStatus"
+  ],
+  "type": "object"
+}
+```
+
+## QueueRetryFailedResponseDto
+
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "How many failed jobs were put back in the queue",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "count"
+  ],
+  "type": "object"
+}
+```
+
+## QueueRunDto
+
+Related models: [QueueName](models-28.md#queuename).
+
+```json
+{
+  "properties": {
+    "active": {
+      "description": "Jobs running now",
+      "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
-    "hashes": {
-      "items": {
-        "pattern": "^[a-f\\d]{64}$",
-        "type": "string"
-      },
-      "maxItems": 2000,
-      "type": "array"
-    }
-  },
-  "required": [
-    "bucket",
-    "hashes"
-  ],
-  "type": "object"
-}
-```
-
-## ReconciliationHistoryDto
-
-
-```json
-{
-  "properties": {
-    "nextOffset": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
+    "canPause": {
+      "description": "Whether this queue can be paused; background tasks cannot",
+      "type": "boolean"
     },
-    "runs": {
-      "items": {
-        "properties": {
-          "checkedAt": {
-            "description": "Inventory snapshot time, not a promise after commit",
-            "format": "date-time",
-            "type": "string"
-          },
-          "completedAt": {
-            "format": "date-time",
-            "nullable": true,
-            "type": "string"
-          },
-          "deviceId": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "type": "string"
-          },
-          "differingBuckets": {
-            "items": {
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
-              "type": "integer"
-            },
-            "type": "array"
-          },
-          "evidence": {
-            "description": "Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check",
-            "enum": [
-              "registered-current-originals"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "type": "string"
-          },
-          "itemsChecked": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "itemsMissing": {
-            "description": "Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis",
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "pendingBuckets": {
-            "items": {
-              "maximum": 9007199254740991,
-              "minimum": -9007199254740991,
-              "type": "integer"
-            },
-            "type": "array"
-          },
-          "startedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "deviceId",
-          "startedAt",
-          "checkedAt",
-          "completedAt",
-          "differingBuckets",
-          "pendingBuckets",
-          "itemsChecked",
-          "itemsMissing",
-          "evidence"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "nextOffset",
-    "runs"
-  ],
-  "type": "object"
-}
-```
-
-## ReconciliationResultDto
-
-
-```json
-{
-  "properties": {
-    "checkedAt": {
-      "description": "Inventory snapshot time, not a promise after commit",
-      "format": "date-time",
-      "type": "string"
+    "isPaused": {
+      "description": "Whether the queue is paused",
+      "type": "boolean"
     },
-    "completedAt": {
+    "lastProgressAt": {
       "format": "date-time",
       "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
       "type": "string"
     },
-    "deviceId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
+    "name": {
+      "$ref": "#/components/schemas/QueueName"
     },
-    "differingBuckets": {
-      "items": {
-        "maximum": 9007199254740991,
-        "minimum": -9007199254740991,
-        "type": "integer"
-      },
-      "type": "array"
+    "noDispatchBacklog": {
+      "type": "boolean"
     },
-    "evidence": {
-      "description": "Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check",
-      "enum": [
-        "registered-current-originals"
-      ],
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "itemsChecked": {
+    "processed": {
+      "description": "Jobs finished, completed or failed, since this run started",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
-    },
-    "itemsMissing": {
-      "description": "Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "missingHashes": {
-      "items": {
-        "pattern": "^[a-f\\d]{64}$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "pendingBuckets": {
-      "items": {
-        "maximum": 9007199254740991,
-        "minimum": -9007199254740991,
-        "type": "integer"
-      },
-      "type": "array"
     },
     "startedAt": {
+      "description": "When this run was first seen with work",
       "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "checkedAt",
-    "completedAt",
-    "deviceId",
-    "differingBuckets",
-    "evidence",
-    "id",
-    "itemsChecked",
-    "itemsMissing",
-    "missingHashes",
-    "pendingBuckets",
-    "startedAt"
-  ],
-  "type": "object"
-}
-```
-
-## ReconciliationStartDto
-
-
-```json
-{
-  "properties": {
-    "buckets": {
-      "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused.",
-      "items": {
-        "properties": {
-          "count": {
-            "maximum": 2000,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "digest": {
-            "pattern": "^[a-f\\d]{64}$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "count",
-          "digest"
-        ],
-        "type": "object"
-      },
-      "maxItems": 256,
-      "minItems": 256,
-      "type": "array"
-    }
-  },
-  "required": [
-    "buckets"
-  ],
-  "type": "object"
-}
-```
-
-## ReleaseChannel
-
-
-```json
-{
-  "description": "Release channel",
-  "enum": [
-    "stable",
-    "releaseCandidate"
-  ],
-  "type": "string"
-}
-```
-
-## ReleaseEventV1
-
-Related models: [ReleaseType](models-28.md#releasetype), [ServerVersionResponseDto](models-31.md#serverversionresponsedto).
-
-```json
-{
-  "properties": {
-    "checkedAt": {
-      "description": "When the server last checked for a latest version. As an ISO timestamp",
-      "type": "string"
-    },
-    "isAvailable": {
-      "description": "Whether a new version is available",
-      "type": "boolean"
-    },
-    "releaseVersion": {
-      "$ref": "#/components/schemas/ServerVersionResponseDto"
-    },
-    "serverVersion": {
-      "$ref": "#/components/schemas/ServerVersionResponseDto"
-    },
-    "type": {
-      "$ref": "#/components/schemas/ReleaseType",
-      "description": "Release type",
-      "nullable": true
-    }
-  },
-  "required": [
-    "checkedAt",
-    "isAvailable",
-    "releaseVersion",
-    "serverVersion",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## ReleaseType
-
-
-```json
-{
-  "enum": [
-    "major",
-    "premajor",
-    "minor",
-    "preminor",
-    "patch",
-    "prepatch",
-    "prerelease"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteAccessMode
-
-
-```json
-{
-  "description": "relay: every remote connection goes through the relay; relay-and-direct: direct connections too",
-  "enum": [
-    "relay",
-    "relay-and-direct"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteAccessPublicUrl
-
-
-```json
-{
-  "description": "The published address: the Frameleaf address, or the verified custom hostname",
-  "enum": [
-    "frameleaf",
-    "custom"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteAccessState
-
-
-```json
-{
-  "description": "What the edge worker is doing; unknown when no edge worker reported recently",
-  "enum": [
-    "off",
-    "idle",
-    "starting",
-    "ready",
-    "error",
-    "unknown"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteAccessStatusResponseDto
-
-Related models: [RemoteAccessMode](models-28.md#remoteaccessmode), [RemoteAccessPublicUrl](models-28.md#remoteaccesspublicurl), [RemoteAccessState](models-28.md#remoteaccessstate), [RemoteAccessTestCheckDto](models-28.md#remoteaccesstestcheckdto), [RemoteConnectionDto](models-28.md#remoteconnectiondto), [RemoteDirectGuidance](models-28.md#remotedirectguidance), [RemoteDnsRecordDto](models-28.md#remotednsrecorddto), [RemoteHostnameStatus](models-28.md#remotehostnamestatus), [RemoteMappingMethod](models-28.md#remotemappingmethod).
-
-```json
-{
-  "properties": {
-    "candidates": {
-      "items": {
-        "$ref": "#/components/schemas/RemoteConnectionDto"
-      },
-      "type": "array"
-    },
-    "certificateError": {
-      "description": "The last issuance or renewal problem",
       "nullable": true,
       "type": "string"
     },
-    "certificateExpiresAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "certificateName": {
-      "description": "The wildcard name the certificate covers",
-      "nullable": true,
-      "type": "string"
-    },
-    "cgnatSuspected": {
-      "type": "boolean"
-    },
-    "customHostname": {
-      "description": "The custom hostname, when one was added",
-      "nullable": true,
-      "type": "string"
-    },
-    "customHostnameCheckedAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "customHostnameProblem": {
-      "description": "Why the hostname is not verified yet",
-      "nullable": true,
-      "type": "string"
-    },
-    "customHostnameRecords": {
-      "description": "The two records to add at the DNS provider; empty until enrolled",
-      "items": {
-        "$ref": "#/components/schemas/RemoteDnsRecordDto"
-      },
-      "type": "array"
-    },
-    "customHostnameStatus": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/RemoteHostnameStatus"
-        }
+    "state": {
+      "enum": [
+        "running",
+        "retrying",
+        "delayed",
+        "paused",
+        "waiting",
+        "blocked",
+        "unavailable",
+        "needs_attention",
+        "completed",
+        "completed_with_errors",
+        "cancelled"
       ],
-      "nullable": true
-    },
-    "directExternalIp": {
-      "description": "The public address direct connections reach",
-      "nullable": true,
       "type": "string"
     },
-    "directGuidance": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/RemoteDirectGuidance"
-        }
-      ],
-      "nullable": true
-    },
-    "directListening": {
-      "type": "boolean"
-    },
-    "directPort": {
-      "description": "External port for direct connections",
+    "total": {
+      "description": "processed + active + waiting",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "enabled": {
-      "description": "Remote access is switched on",
+    "unavailable": {
+      "description": "Status could not be read; zero counts are unknown, not idle",
       "type": "boolean"
     },
-    "frameleafAddress": {
-      "description": "https://r.<label>.<direct domain>, once enrolled",
-      "nullable": true,
-      "type": "string"
-    },
-    "lastTestAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "lastTestChecks": {
-      "items": {
-        "$ref": "#/components/schemas/RemoteAccessTestCheckDto"
-      },
-      "type": "array"
-    },
-    "lastTestOk": {
-      "nullable": true,
-      "type": "boolean"
-    },
-    "mappingError": {
-      "description": "Why the router did not open the direct port",
-      "nullable": true,
-      "type": "string"
-    },
-    "mappingMethod": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/RemoteMappingMethod"
-        }
-      ],
-      "description": "How the direct port is open right now; null when it is not",
-      "nullable": true
-    },
-    "mode": {
-      "$ref": "#/components/schemas/RemoteAccessMode"
-    },
-    "portMapping": {
-      "description": "The router is asked to open the direct port automatically",
-      "type": "boolean"
-    },
-    "publicUrl": {
-      "description": "The address this server publishes",
-      "nullable": true,
-      "type": "string"
-    },
-    "publicUrlChoice": {
-      "$ref": "#/components/schemas/RemoteAccessPublicUrl"
-    },
-    "reason": {
-      "description": "Why it is off, idle or failing, in plain words",
-      "nullable": true,
-      "type": "string"
-    },
-    "relayBytesIn": {
-      "description": "Bytes received through the relay since the edge worker started",
+    "waiting": {
+      "description": "Jobs waiting to start, including those held by a paused queue",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
-    },
-    "relayBytesOut": {
-      "description": "Bytes sent through the relay since the edge worker started",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "relayConnected": {
-      "type": "boolean"
-    },
-    "relayConnectedAt": {
-      "description": "When the current relay connection was made",
-      "nullable": true,
-      "type": "string"
-    },
-    "relayLastError": {
-      "description": "The last relay problem, in plain words",
-      "nullable": true,
-      "type": "string"
-    },
-    "relayLastErrorAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "relayLatencyMs": {
-      "description": "Round trip to the relay, from its last keepalive",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "relayRegion": {
-      "description": "The relay this server uses (eu1, us1)",
-      "nullable": true,
-      "type": "string"
-    },
-    "relayRevoked": {
-      "description": "Frameleaf Cloud stopped the relay for this server; it is tried again once relinked",
-      "type": "boolean"
-    },
-    "status": {
-      "$ref": "#/components/schemas/RemoteAccessState"
-    },
-    "unavailableReason": {
-      "description": "Why remote access cannot be turned on (not set up, not linked, no plan); null when it can",
-      "nullable": true,
-      "type": "string"
-    },
-    "wanAddress": {
-      "description": "The direct address Frameleaf Cloud tested",
-      "nullable": true,
-      "type": "string"
-    },
-    "wanProblem": {
-      "description": "Why Frameleaf Cloud could not reach it: unreachable, timeout, certificate or not_public",
-      "nullable": true,
-      "type": "string"
-    },
-    "wanVerified": {
-      "description": "Frameleaf Cloud reached this server directly at wanAddress",
-      "type": "boolean"
     }
   },
   "required": [
-    "candidates",
-    "certificateError",
-    "certificateExpiresAt",
-    "certificateName",
-    "cgnatSuspected",
-    "customHostname",
-    "customHostnameCheckedAt",
-    "customHostnameProblem",
-    "customHostnameRecords",
-    "customHostnameStatus",
-    "directExternalIp",
-    "directGuidance",
-    "directListening",
-    "directPort",
-    "enabled",
-    "frameleafAddress",
-    "lastTestAt",
-    "lastTestChecks",
-    "lastTestOk",
-    "mappingError",
-    "mappingMethod",
-    "mode",
-    "portMapping",
-    "publicUrl",
-    "publicUrlChoice",
-    "reason",
-    "relayBytesIn",
-    "relayBytesOut",
-    "relayConnected",
-    "relayConnectedAt",
-    "relayLastError",
-    "relayLastErrorAt",
-    "relayLatencyMs",
-    "relayRegion",
-    "relayRevoked",
-    "status",
-    "unavailableReason",
-    "wanAddress",
-    "wanProblem",
-    "wanVerified"
-  ],
-  "type": "object"
-}
-```
-
-## RemoteAccessTestCheckDto
-
-
-```json
-{
-  "properties": {
-    "detail": {
-      "type": "string"
-    },
-    "id": {
-      "description": "certificate, listener, api, relay or direct",
-      "type": "string"
-    },
-    "ok": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "detail",
-    "id",
-    "ok"
-  ],
-  "type": "object"
-}
-```
-
-## RemoteAccessUpdateDto
-
-Related models: [RemoteAccessMode](models-28.md#remoteaccessmode), [RemoteAccessPublicUrl](models-28.md#remoteaccesspublicurl).
-
-```json
-{
-  "properties": {
-    "directPort": {
-      "description": "External port for direct connections",
-      "maximum": 65535,
-      "minimum": 1024,
-      "type": "integer"
-    },
-    "enabled": {
-      "description": "Turn remote access on or off",
-      "type": "boolean"
-    },
-    "mode": {
-      "$ref": "#/components/schemas/RemoteAccessMode"
-    },
-    "portMapping": {
-      "description": "Ask the router to open the direct port automatically",
-      "type": "boolean"
-    },
-    "publicUrl": {
-      "$ref": "#/components/schemas/RemoteAccessPublicUrl"
-    }
-  },
-  "type": "object"
-}
-```
-
-## RemoteAccessUsageResponseDto
-
-
-```json
-{
-  "properties": {
-    "bytes": {
-      "description": "Bytes through the relay this month, in and out, custom hostnames included",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "limitBytes": {
-      "description": "The relay allowance the plan includes each month",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "period": {
-      "description": "The month, YYYY-MM (UTC)",
-      "type": "string"
-    },
-    "periodEnd": {
-      "type": "string"
-    },
-    "periodStart": {
-      "type": "string"
-    },
-    "throttleBps": {
-      "description": "The slowed-down speed in bits per second, while throttled",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "throttleUntil": {
-      "description": "When the slowdown lifts, while throttled",
-      "nullable": true,
-      "type": "string"
-    },
-    "throttled": {
-      "description": "The allowance is used up: the relay is slowed down, never cut off",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "bytes",
-    "limitBytes",
-    "period",
-    "periodEnd",
-    "periodStart",
-    "throttleBps",
-    "throttleUntil",
-    "throttled"
-  ],
-  "type": "object"
-}
-```
-
-## RemoteConnectionDto
-
-Related models: [RemoteConnectionKind](models-28.md#remoteconnectionkind), [RemoteConnectionProtocol](models-28.md#remoteconnectionprotocol).
-
-```json
-{
-  "description": "One way to reach this server, in the order apps should try them",
-  "properties": {
-    "address": {
-      "description": "Host name or address, without brackets for IPv6",
-      "type": "string"
-    },
-    "custom": {
-      "description": "The administrator’s own hostname, verified by Frameleaf Cloud",
-      "type": "boolean"
-    },
-    "dnsRebindingProtection": {
-      "description": "The server refuses requests for another Host",
-      "type": "boolean"
-    },
-    "httpsRequired": {
-      "type": "boolean"
-    },
-    "ipv6": {
-      "type": "boolean"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/RemoteConnectionKind"
-    },
-    "local": {
-      "type": "boolean"
-    },
-    "port": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "protocol": {
-      "$ref": "#/components/schemas/RemoteConnectionProtocol"
-    },
-    "relay": {
-      "description": "Carried by the Frameleaf relay",
-      "type": "boolean"
-    },
-    "uri": {
-      "description": "The address to connect to, https only",
-      "type": "string"
-    },
-    "verified": {
-      "description": "Frameleaf Cloud verified this entry itself",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "address",
-    "custom",
-    "dnsRebindingProtection",
-    "httpsRequired",
-    "ipv6",
-    "kind",
-    "local",
-    "port",
-    "protocol",
-    "relay",
-    "uri",
-    "verified"
-  ],
-  "type": "object"
-}
-```
-
-## RemoteConnectionKind
-
-
-```json
-{
-  "description": "local, wan (a custom hostname too), ipv6 or relay",
-  "enum": [
-    "local",
-    "wan",
-    "relay",
-    "ipv6"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteConnectionProtocol
-
-
-```json
-{
-  "enum": [
-    "http",
-    "https"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteConnectionsResponseDto
-
-Related models: [RemoteConnectionDto](models-28.md#remoteconnectiondto).
-
-```json
-{
-  "properties": {
-    "connections": {
-      "description": "Ordered local, wan, ipv6, custom hostname, relay",
-      "items": {
-        "$ref": "#/components/schemas/RemoteConnectionDto"
-      },
-      "type": "array"
-    },
-    "instanceId": {
-      "description": "This server’s Frameleaf instance ID while it is linked",
-      "nullable": true,
-      "type": "string"
-    },
-    "publicUrl": {
-      "description": "The address this server publishes for remote access",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "connections",
-    "instanceId",
-    "publicUrl"
-  ],
-  "type": "object"
-}
-```
-
-## RemoteDirectGuidance
-
-
-```json
-{
-  "description": "bridge: running in a container whose network cannot reach the router",
-  "enum": [
-    "bridge"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteDnsRecordDto
-
-Related models: [RemoteDnsRecordType](models-28.md#remotednsrecordtype).
-
-```json
-{
-  "properties": {
-    "name": {
-      "type": "string"
-    },
-    "purpose": {
-      "description": "What the record is for, in plain words",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/RemoteDnsRecordType"
-    },
-    "value": {
-      "type": "string"
-    }
-  },
-  "required": [
+    "active",
+    "canPause",
+    "isPaused",
     "name",
-    "purpose",
-    "type",
-    "value"
+    "processed",
+    "startedAt",
+    "total",
+    "waiting"
   ],
   "type": "object"
 }
 ```
 
-## RemoteDnsRecordType
-
-
-```json
-{
-  "enum": [
-    "CNAME"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteHostnameStatus
-
-
-```json
-{
-  "description": "pending: waiting for its DNS records; verified: Frameleaf Cloud verified them",
-  "enum": [
-    "pending",
-    "verified"
-  ],
-  "type": "string"
-}
-```
-
-## RemoteHostnameUpdateDto
+## QueueStatisticsDto
 
 
 ```json
 {
   "properties": {
-    "hostname": {
-      "description": "A subdomain of a domain you own, such as photos.example.com",
-      "maxLength": 254,
-      "minLength": 1,
-      "type": "string"
+    "active": {
+      "description": "Number of active jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "completed": {
+      "description": "Number of completed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "delayed": {
+      "description": "Number of delayed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "failed": {
+      "description": "Number of failed jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "paused": {
+      "description": "Number of paused jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "waiting": {
+      "description": "Number of waiting jobs",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
     }
   },
   "required": [
-    "hostname"
+    "active",
+    "completed",
+    "delayed",
+    "failed",
+    "paused",
+    "waiting"
   ],
   "type": "object"
 }
 ```
 
-## RemoteMappingMethod
-
-
-```json
-{
-  "description": "How the direct port is opened: by the router (UPnP, NAT-PMP) or forwarded by hand",
-  "enum": [
-    "upnp",
-    "nat-pmp",
-    "manual"
-  ],
-  "type": "string"
-}
-```
-
-## RenderWorkerAdmissionDto
+## QueueStatusLegacyDto
 
 
 ```json
 {
   "properties": {
-    "codecs": {
-      "description": "Encoder and decoder names the check verified",
-      "items": {
-        "maxLength": 60,
-        "type": "string"
-      },
-      "maxItems": 64,
-      "type": "array"
-    },
-    "colorPrecision": {
-      "description": "Colour precision the conformance check verified; absent means 8-bit SDR only (FL-42)",
-      "properties": {
-        "dolbyVision": {
-          "description": "The check verified Dolby Vision output",
-          "type": "boolean"
-        },
-        "hdr10": {
-          "description": "The check verified HDR10 (PQ, BT.2020) output",
-          "type": "boolean"
-        },
-        "maxBitDepth": {
-          "description": "Highest bit depth the check rendered and verified",
-          "maximum": 16,
-          "minimum": 8,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "maxBitDepth",
-        "hdr10",
-        "dolbyVision"
-      ],
-      "type": "object"
-    },
-    "conformanceReportedAt": {
-      "description": "When the conformance check ran",
-      "format": "date-time",
-      "type": "string"
-    },
-    "engineDigest": {
-      "description": "Digest of the engine and patches actually loaded",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "enrolmentSecret": {
-      "minLength": 16,
-      "type": "string"
-    },
-    "formats": {
-      "description": "Containers and versioned paired-output profiles the check verified writing",
-      "items": {
-        "maxLength": 30,
-        "type": "string"
-      },
-      "maxItems": 32,
-      "type": "array"
-    },
-    "gpuMemoryBytes": {
-      "description": "GPU memory measured by the conformance check",
-      "nullable": true,
-      "pattern": "^\\d+$",
-      "type": "string"
-    },
-    "softwareRenderer": {
-      "description": "True when the renderer is a software or fallback device",
+    "isActive": {
+      "description": "Whether the queue is currently active (has running jobs)",
       "type": "boolean"
     },
-    "workerId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
+    "isPaused": {
+      "description": "Whether the queue is paused",
+      "type": "boolean"
     }
   },
   "required": [
-    "conformanceReportedAt",
-    "engineDigest",
-    "enrolmentSecret",
-    "gpuMemoryBytes",
-    "softwareRenderer",
-    "workerId"
+    "isActive",
+    "isPaused"
   ],
+  "type": "object"
+}
+```
+
+## QueueUpdateDto
+
+
+```json
+{
+  "properties": {
+    "isPaused": {
+      "description": "Whether to pause the queue",
+      "type": "boolean"
+    }
+  },
   "type": "object"
 }
 ```

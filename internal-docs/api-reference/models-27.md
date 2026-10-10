@@ -2,695 +2,2013 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
-## PreservationItemState
+## PhotographyWorkflowListDto
 
-
-```json
-{
-  "description": "`pending`, `copied`, `failed` or `skipped` for an export; `listed` for an item read from a package",
-  "enum": [
-    "pending",
-    "copied",
-    "failed",
-    "skipped",
-    "listed"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationItemsResponseDto
-
-Related models: [PreservationItemDto](models-26.md#preservationitemdto).
 
 ```json
 {
   "properties": {
-    "items": {
+    "galleries": {
       "items": {
-        "$ref": "#/components/schemas/PreservationItemDto"
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "pendingEdits": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "readyCount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "selectionDeadline": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "shootId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "submittedRounds": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unpaidOrders": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shootId",
+          "revision",
+          "title",
+          "mode",
+          "selectionDeadline",
+          "expiresAt",
+          "published",
+          "submittedRounds",
+          "unpaidOrders",
+          "readyCount",
+          "pendingEdits"
+        ],
+        "type": "object"
       },
       "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
     }
   },
   "required": [
-    "items",
-    "total"
+    "galleries"
   ],
   "type": "object"
 }
 ```
 
-## PreservationManifestSummaryDto
+## PhotographyWorkflowMutationDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedRevision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expectedRevision"
+  ],
+  "type": "object"
+}
+```
+
+## PhotographyWorkspaceDto
 
 
 ```json
 {
   "properties": {
-    "complete": {
-      "description": "Every selected item was written; a complete package can still be damaged later",
-      "type": "boolean"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "exported": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "failed": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "includeLocked": {
-      "type": "boolean"
-    },
-    "includeMetadata": {
-      "type": "boolean"
-    },
-    "locked": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "packageId": {
-      "description": "The package’s own identity, from its manifest",
+    "revision": {
       "format": "uuid",
+      "nullable": true,
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
-    "producerVersion": {
-      "type": "string"
-    },
-    "scopeDescription": {
-      "type": "string"
-    },
-    "skipped": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "shoots": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "description": "Owned source album; null retains an unavailable existing shoot",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "client": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "coverAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "Imported",
+              "Selected",
+              "Edited",
+              "Proofing",
+              "Delivered"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "Family portrait",
+              "Wedding",
+              "Portrait",
+              "Editorial",
+              "Commercial",
+              "Event",
+              "Personal"
+            ],
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "albumId",
+          "name",
+          "client",
+          "type",
+          "date",
+          "stage",
+          "unavailable",
+          "coverAssetId",
+          "assetCount"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     }
   },
   "required": [
-    "complete",
-    "createdAt",
-    "exported",
-    "failed",
-    "includeLocked",
-    "includeMetadata",
-    "locked",
-    "packageId",
-    "producerVersion",
-    "scopeDescription",
-    "skipped"
+    "revision",
+    "shoots"
   ],
   "type": "object"
 }
 ```
 
-## PreservationPackageCountsDto
+## PhotographyWorkspaceSaveDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedRevision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "shoots": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "description": "Owned source album; null retains an unavailable existing shoot",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "client": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "Imported",
+              "Selected",
+              "Edited",
+              "Proofing",
+              "Delivered"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "Family portrait",
+              "Wedding",
+              "Portrait",
+              "Editorial",
+              "Commercial",
+              "Event",
+              "Personal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "albumId",
+          "name",
+          "client",
+          "type",
+          "date",
+          "stage"
+        ],
+        "type": "object"
+      },
+      "maxItems": 200,
+      "type": "array"
+    }
+  },
+  "required": [
+    "expectedRevision",
+    "shoots"
+  ],
+  "type": "object"
+}
+```
+
+## PhotographyZipDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "captureIds": {
+      "default": [],
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    },
+    "outputs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "outputId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "captureId",
+          "outputId"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PhotographyZipResponseDto
 
 
 ```json
 {
   "properties": {
-    "copied": {
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ready"
+      ],
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "status",
+    "url"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationApplyDto
+
+Related models: [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "alreadyApplied": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "applied": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "estimatedBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
     "failed": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "listed": {
+    "fingerprint": {
+      "type": "string"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "mine": {
+      "description": "Whether the requesting administrator applied it",
+      "type": "boolean"
+    },
+    "operationId": {
+      "description": "The media operation applying the plan",
+      "type": "string"
+    },
+    "pauseRequested": {
+      "type": "boolean"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "processed": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "locked": {
+    "progress": {
+      "format": "double",
+      "type": "number"
+    },
+    "reclaimedBytes": {
+      "description": "Bytes actually removed from disk so far",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "pending": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "requestedById": {
+      "description": "Administrator who applied the plan; the job is theirs to pause or cancel",
+      "type": "string"
+    },
+    "requestedByName": {
+      "type": "string"
+    },
+    "retrying": {
+      "description": "Waiting for its one automatic retry",
+      "type": "boolean"
     },
     "skipped": {
+      "description": "Copies left alone because their evidence changed",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    },
     "total": {
+      "description": "Copies in the reviewed plan",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     }
   },
   "required": [
-    "copied",
+    "alreadyApplied",
+    "applied",
+    "createdAt",
+    "error",
+    "estimatedBytes",
     "failed",
-    "listed",
-    "locked",
-    "pending",
+    "fingerprint",
+    "finishedAt",
+    "mine",
+    "operationId",
+    "pauseRequested",
+    "planId",
+    "processed",
+    "progress",
+    "reclaimedBytes",
+    "requestedById",
+    "requestedByName",
+    "retrying",
     "skipped",
+    "status",
     "total"
   ],
   "type": "object"
 }
 ```
 
-## PreservationPackageDto
+## PhysicalDeduplicationApplyRequestDto
 
-Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [PreservationManifestSummaryDto](models-27.md#preservationmanifestsummarydto), [PreservationPackageCountsDto](models-27.md#preservationpackagecountsdto), [PreservationPackageFormat](models-27.md#preservationpackageformat), [PreservationPackageOrigin](models-27.md#preservationpackageorigin), [PreservationPackageStatus](models-27.md#preservationpackagestatus), [PreservationSupportDto](models-27.md#preservationsupportdto), [PreservationVerificationDto](models-27.md#preservationverificationdto).
 
 ```json
 {
   "properties": {
-    "counts": {
-      "$ref": "#/components/schemas/PreservationPackageCountsDto"
-    },
-    "createdAt": {
-      "format": "date-time",
+    "confirmation": {
+      "description": "`APPLY <planId>`, typed by the administrator",
+      "maxLength": 90,
       "type": "string"
     },
-    "downloadable": {
-      "type": "boolean"
-    },
-    "expiresAt": {
-      "description": "When an uploaded package is discarded",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "format": {
-      "$ref": "#/components/schemas/PreservationPackageFormat"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "includeLocked": {
-      "type": "boolean"
-    },
-    "includeMetadata": {
-      "type": "boolean"
-    },
-    "lockedContent": {
-      "description": "It holds Locked items: downloading it needs an unlocked session",
-      "type": "boolean"
-    },
-    "manifest": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PreservationManifestSummaryDto"
-        }
-      ],
-      "nullable": true
-    },
-    "name": {
-      "type": "string"
-    },
-    "operation": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationDto"
-        }
-      ],
-      "description": "The newest job on this package",
-      "nullable": true
-    },
-    "origin": {
-      "$ref": "#/components/schemas/PreservationPackageOrigin"
-    },
-    "restorable": {
-      "type": "boolean"
-    },
-    "scopeDescription": {
-      "nullable": true,
-      "type": "string"
-    },
-    "sizeBytes": {
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/PreservationPackageStatus"
-    },
-    "support": {
+    "excludedRetainedAssetIds": {
+      "description": "Retained originals whose group the administrator decided to leave as they are",
       "items": {
-        "$ref": "#/components/schemas/PreservationSupportDto"
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
       },
+      "maxItems": 500,
       "type": "array"
     },
-    "updatedAt": {
-      "format": "date-time",
+    "fingerprint": {
+      "description": "The fingerprint of the plan on screen, from the preview",
+      "pattern": "^[\\da-f]{64}$",
       "type": "string"
     },
-    "verification": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PreservationVerificationDto"
-        }
-      ],
-      "nullable": true
+    "reviewToken": {
+      "description": "From the review of this plan",
+      "pattern": "^[\\da-f]{64}$",
+      "type": "string"
     }
   },
   "required": [
-    "counts",
-    "createdAt",
-    "downloadable",
-    "expiresAt",
-    "format",
-    "id",
-    "includeLocked",
-    "includeMetadata",
-    "lockedContent",
-    "manifest",
-    "name",
-    "operation",
-    "origin",
-    "restorable",
-    "scopeDescription",
-    "sizeBytes",
-    "status",
-    "support",
-    "updatedAt",
-    "verification"
+    "confirmation",
+    "fingerprint",
+    "reviewToken"
   ],
   "type": "object"
 }
 ```
 
-## PreservationPackageFormat
+## PhysicalDeduplicationCopyDto
 
-
-```json
-{
-  "description": "How the package is stored on this server",
-  "enum": [
-    "directory",
-    "zip"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationPackageOrigin
-
-
-```json
-{
-  "description": "`export`: written by this server; `upload`: a package you uploaded; `server`: a package an administrator named on this server",
-  "enum": [
-    "export",
-    "upload",
-    "server"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationPackageStatus
-
-
-```json
-{
-  "description": "`building`: being written or not yet read; `ready`: every selected item is in it; `incomplete`: some items could not be copied; `unreadable`: its manifest or index could not be believed; `removed`: its files were deleted",
-  "enum": [
-    "building",
-    "ready",
-    "incomplete",
-    "unreadable",
-    "removed"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationPreviewDto
-
-Related models: [PreservationScopeDto](models-27.md#preservationscopedto).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [PhysicalDeduplicationDecision](models-27.md#physicaldeduplicationdecision), [PhysicalDeduplicationSkipReason](models-27.md#physicaldeduplicationskipreason).
 
 ```json
 {
   "properties": {
-    "includeLocked": {
-      "description": "Count Locked items as included; needs an unlocked session",
+    "assetId": {
+      "description": "Duplicate asset owned by a non-retained account",
+      "type": "string"
+    },
+    "canView": {
+      "description": "Whether the requesting administrator may view this asset and its thumbnail",
       "type": "boolean"
     },
-    "scope": {
-      "$ref": "#/components/schemas/PreservationScopeDto"
+    "checksum": {
+      "description": "Hex-encoded SHA-1 checksum of the original file",
+      "type": "string"
+    },
+    "checksumMatch": {
+      "description": "Whether checksum and byte size match a retained original",
+      "type": "boolean"
+    },
+    "decision": {
+      "$ref": "#/components/schemas/PhysicalDeduplicationDecision"
+    },
+    "duration": {
+      "description": "Video length in milliseconds, when known",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "height": {
+      "description": "Height in pixels, when known",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "originalFileName": {
+      "type": "string"
+    },
+    "originalPath": {
+      "description": "Path of the duplicate copy on disk",
+      "type": "string"
+    },
+    "ownerId": {
+      "type": "string"
+    },
+    "ownerName": {
+      "description": "Display name of the copy owner",
+      "type": "string"
+    },
+    "reason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PhysicalDeduplicationSkipReason"
+        }
+      ],
+      "description": "Present when the decision is skip",
+      "nullable": true
+    },
+    "retainedAssetId": {
+      "description": "Retained original this copy matches, if any",
+      "nullable": true,
+      "type": "string"
+    },
+    "sizeInBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    },
+    "width": {
+      "description": "Width in pixels, when known",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "assetId",
+    "canView",
+    "checksum",
+    "checksumMatch",
+    "decision",
+    "duration",
+    "height",
+    "originalFileName",
+    "originalPath",
+    "ownerId",
+    "ownerName",
+    "reason",
+    "retainedAssetId",
+    "sizeInBytes",
+    "type",
+    "width"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationCopyFile
+
+
+```json
+{
+  "description": "The copy's own former file: removed from disk, still the reviewed bytes, or different bytes now",
+  "enum": [
+    "removed",
+    "present",
+    "changed"
+  ],
+  "type": "string"
+}
+```
+
+## PhysicalDeduplicationDecision
+
+
+```json
+{
+  "description": "Physical deduplication plan decision for a duplicate copy",
+  "enum": [
+    "share",
+    "skip"
+  ],
+  "type": "string"
+}
+```
+
+## PhysicalDeduplicationPlanDto
+
+Related models: [PhysicalDeduplicationCopyDto](models-27.md#physicaldeduplicationcopydto), [PhysicalDeduplicationPlanMode](models-27.md#physicaldeduplicationplanmode), [PhysicalDeduplicationRetainedDto](models-27.md#physicaldeduplicationretaineddto).
+
+```json
+{
+  "properties": {
+    "applicableCopies": {
+      "description": "Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "copies": {
+      "items": {
+        "$ref": "#/components/schemas/PhysicalDeduplicationCopyDto"
+      },
+      "type": "array"
+    },
+    "copiesTruncated": {
+      "description": "True when more copies were reviewed than the stored preview keeps; totals still cover all of them",
+      "type": "boolean"
+    },
+    "deletedBytes": {
+      "description": "Measured: bytes actually removed from disk by applying this plan so far",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "eligibleAssets": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "fingerprint": {
+      "description": "Digest over the plan evidence; changes with every preview (FL-73)",
+      "type": "string"
+    },
+    "hiddenCopies": {
+      "description": "Copies left out of the rows because they are Locked media of another account; counted, never named",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "linkedAssets": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "logicalBytes": {
+      "description": "Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "masterUserId": {
+      "description": "Account whose originals are retained by this plan",
+      "type": "string"
+    },
+    "masterUserName": {
+      "description": "Display name of the retained account",
+      "type": "string"
+    },
+    "mode": {
+      "$ref": "#/components/schemas/PhysicalDeduplicationPlanMode"
+    },
+    "planId": {
+      "description": "Short name of this plan, typed to confirm applying it (FL-73)",
+      "type": "string"
+    },
+    "ranAt": {
+      "description": "When the plan was produced",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "reclaimableBytes": {
+      "description": "Estimate: bytes of the copies to share, with their generated files, that applying would free",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "retained": {
+      "items": {
+        "$ref": "#/components/schemas/PhysicalDeduplicationRetainedDto"
+      },
+      "type": "array"
+    },
+    "scopeUserId": {
+      "description": "When set, only copies owned by this account were reviewed; null means every account",
+      "nullable": true,
+      "type": "string"
+    },
+    "scopeUserName": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sharedOriginalBytes": {
+      "description": "Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "skippedExternal": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "skippedMissingMaster": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "applicableCopies",
+    "copies",
+    "copiesTruncated",
+    "deletedBytes",
+    "eligibleAssets",
+    "fingerprint",
+    "hiddenCopies",
+    "linkedAssets",
+    "logicalBytes",
+    "masterUserId",
+    "masterUserName",
+    "mode",
+    "planId",
+    "ranAt",
+    "reclaimableBytes",
+    "retained",
+    "scopeUserId",
+    "scopeUserName",
+    "sharedOriginalBytes",
+    "skippedExternal",
+    "skippedMissingMaster"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationPlanMode
+
+
+```json
+{
+  "description": "Whether the physical deduplication plan was a preview or an applied run",
+  "enum": [
+    "dry-run",
+    "apply"
+  ],
+  "type": "string"
+}
+```
+
+## PhysicalDeduplicationPreviewRequestDto
+
+
+```json
+{
+  "properties": {
+    "masterUserId": {
+      "description": "Account to retain originals in for this preview; defaults to the saved master account",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "scopeUserId": {
+      "description": "Limit the review to copies owned by this account",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
     }
   },
   "type": "object"
 }
 ```
 
-## PreservationPreviewResponseDto
+## PhysicalDeduplicationPreviewResponseDto
 
-Related models: [PreservationSupportDto](models-27.md#preservationsupportdto).
+Related models: [PhysicalDeduplicationApplyDto](models-27.md#physicaldeduplicationapplydto), [PhysicalDeduplicationPlanDto](models-27.md#physicaldeduplicationplandto).
 
 ```json
 {
   "properties": {
-    "bytes": {
-      "type": "string"
+    "applies": {
+      "description": "Recently applied plans, newest first (FL-73)",
+      "items": {
+        "$ref": "#/components/schemas/PhysicalDeduplicationApplyDto"
+      },
+      "type": "array"
     },
-    "freeBytes": {
-      "description": "Free space where the package would be written",
+    "applying": {
+      "description": "Whether a reviewed plan is being applied (FL-73)",
+      "type": "boolean"
+    },
+    "enabled": {
+      "description": "The saved `physicalDeduplication.enabled`",
+      "type": "boolean"
+    },
+    "plan": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PhysicalDeduplicationPlanDto"
+        }
+      ],
+      "description": "The latest plan, or null when none has run",
+      "nullable": true
+    },
+    "running": {
+      "description": "Whether a deduplication preview is queued or active",
+      "type": "boolean"
+    },
+    "savedMasterUserId": {
+      "description": "The saved `physicalDeduplication.masterUserId`",
       "nullable": true,
       "type": "string"
-    },
-    "includedBytes": {
+    }
+  },
+  "required": [
+    "applies",
+    "applying",
+    "enabled",
+    "plan",
+    "running",
+    "savedMasterUserId"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationRestoreRequestDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "A copy of the applied plan whose own file is still on disk",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationRetainedDto
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset that keeps the original file",
       "type": "string"
     },
-    "includedItems": {
-      "description": "Items the export would include",
+    "canView": {
+      "description": "Whether the requesting administrator may view this asset and its thumbnail",
+      "type": "boolean"
+    },
+    "checksum": {
+      "description": "Hex-encoded SHA-1 checksum of the original file",
+      "type": "string"
+    },
+    "duration": {
+      "description": "Video length in milliseconds, when known",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "fileAvailable": {
+      "description": "Whether the retained original file is on disk now, checked on every read (FL-71 UT-24)",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Height in pixels, when known",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "hiddenCopies": {
+      "description": "Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "originalFileName": {
+      "type": "string"
+    },
+    "originalPath": {
+      "description": "Path of the retained original file",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner of the retained asset (the retained account)",
+      "type": "string"
+    },
+    "ownerName": {
+      "description": "Display name of the retained account",
+      "type": "string"
+    },
+    "referencesAfter": {
+      "description": "Assets that would reference this original after the plan is applied",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "referencesBefore": {
+      "description": "Assets that reference this original before the plan is applied (including the retained asset)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sizeInBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    },
+    "width": {
+      "description": "Width in pixels, when known",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "assetId",
+    "canView",
+    "checksum",
+    "duration",
+    "fileAvailable",
+    "height",
+    "hiddenCopies",
+    "originalFileName",
+    "originalPath",
+    "ownerId",
+    "ownerName",
+    "referencesAfter",
+    "referencesBefore",
+    "sizeInBytes",
+    "type",
+    "width"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationRetainedFile
+
+
+```json
+{
+  "description": "The retained original on disk: still the reviewed bytes, gone, or different bytes",
+  "enum": [
+    "intact",
+    "missing",
+    "changed"
+  ],
+  "type": "string"
+}
+```
+
+## PhysicalDeduplicationReviewRequestDto
+
+
+```json
+{
+  "properties": {
+    "excludedRetainedAssetIds": {
+      "description": "Retained originals whose group the administrator decided to leave as they are",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "type": "array"
+    },
+    "fingerprint": {
+      "description": "The fingerprint of the plan on screen, from the preview",
+      "pattern": "^[\\da-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fingerprint"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationReviewResponseDto
+
+
+```json
+{
+  "properties": {
+    "confirmation": {
+      "description": "The phrase to type to apply this plan",
+      "type": "string"
+    },
+    "copies": {
+      "description": "Copies the reviewed plan will share",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "estimatedBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "excludedRetainedAssetIds": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fingerprint": {
+      "type": "string"
+    },
+    "hiddenCopies": {
+      "description": "Copies in the reviewed plan that are Locked media of another account; counted, never named",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "retainedOriginals": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reviewToken": {
+      "description": "Binds the plan to these per-group decisions; applying must present it",
+      "type": "string"
+    },
+    "reviewedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "confirmation",
+    "copies",
+    "estimatedBytes",
+    "excludedRetainedAssetIds",
+    "fingerprint",
+    "hiddenCopies",
+    "planId",
+    "retainedOriginals",
+    "reviewToken",
+    "reviewedAt"
+  ],
+  "type": "object"
+}
+```
+
+## PhysicalDeduplicationSkipReason
+
+
+```json
+{
+  "description": "Why a duplicate copy is skipped by the physical deduplication plan",
+  "enum": [
+    "external-library",
+    "missing-size",
+    "no-retained-match",
+    "already-shared",
+    "retained-file-missing"
+  ],
+  "type": "string"
+}
+```
+
+## PhysicalDeduplicationVerificationDto
+
+Related models: [PhysicalDeduplicationVerificationItemDto](models-27.md#physicaldeduplicationverificationitemdto).
+
+```json
+{
+  "properties": {
+    "copies": {
+      "description": "Copies the plan applied, listed or not",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "hiddenCopies": {
+      "description": "Copies that are Locked media of another account; counted, never named",
+      "maximum": 9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
     "items": {
-      "description": "Items matching, Locked ones not counted",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "lockedAllowed": {
-      "description": "This session is unlocked, so Locked items may be included",
-      "type": "boolean"
-    },
-    "lockedBytes": {
-      "type": "string"
-    },
-    "lockedItems": {
-      "description": "Locked items matching",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxItems": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "support": {
       "items": {
-        "$ref": "#/components/schemas/PreservationSupportDto"
+        "$ref": "#/components/schemas/PhysicalDeduplicationVerificationItemDto"
       },
       "type": "array"
     },
-    "withinLimit": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "bytes",
-    "freeBytes",
-    "includedBytes",
-    "includedItems",
-    "items",
-    "lockedAllowed",
-    "lockedBytes",
-    "lockedItems",
-    "maxItems",
-    "support",
-    "withinLimit"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationRestoreCountsDto
-
-
-```json
-{
-  "properties": {
-    "conflicts": {
+    "notLinked": {
+      "description": "Copies that no longer resolve to the retained original",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "existing": {
-      "description": "Originals the library already holds; they are matched, never copied again",
+    "operationId": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "removed": {
+      "description": "Copies whose own file is gone: that cannot be undone",
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "failed": {
+    "restorable": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "findings": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "locked": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "matched": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "new": {
-      "description": "Originals the library does not hold",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pending": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "ready": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
     "restored": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "skipped": {
+    "retainedChanged": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "total": {
+    "retainedIntact": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
     },
-    "trashed": {
-      "description": "Originals the library holds in the trash; restore them from the trash first",
+    "retainedMissing": {
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
+      "minimum": 0,
       "type": "integer"
+    },
+    "retainedOriginals": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "verified": {
+      "description": "Copies that resolve to a retained original still holding the reviewed bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "verifiedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
     }
   },
   "required": [
-    "conflicts",
-    "existing",
-    "failed",
-    "findings",
-    "locked",
-    "matched",
-    "new",
-    "pending",
-    "ready",
+    "copies",
+    "hiddenCopies",
+    "items",
+    "notLinked",
+    "operationId",
+    "planId",
+    "removed",
+    "restorable",
     "restored",
-    "skipped",
-    "total",
-    "trashed"
+    "retainedChanged",
+    "retainedIntact",
+    "retainedMissing",
+    "retainedOriginals",
+    "verified",
+    "verifiedAt"
   ],
   "type": "object"
 }
 ```
 
-## PreservationRestoreCreateDto
+## PhysicalDeduplicationVerificationItemDto
 
-Related models: [PreservationDecision](models-26.md#preservationdecision).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [PhysicalDeduplicationCopyFile](models-27.md#physicaldeduplicationcopyfile), [PhysicalDeduplicationRetainedFile](models-27.md#physicaldeduplicationretainedfile).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "canView": {
+      "description": "Whether the requesting administrator may view this asset and its thumbnail",
+      "type": "boolean"
+    },
+    "copyFile": {
+      "$ref": "#/components/schemas/PhysicalDeduplicationCopyFile"
+    },
+    "linked": {
+      "description": "Whether the asset still resolves to the retained original",
+      "type": "boolean"
+    },
+    "originalFileName": {
+      "type": "string"
+    },
+    "ownerName": {
+      "type": "string"
+    },
+    "restorable": {
+      "description": "Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes",
+      "type": "boolean"
+    },
+    "restored": {
+      "description": "Whether the asset is back on its own former file",
+      "type": "boolean"
+    },
+    "retainedFile": {
+      "$ref": "#/components/schemas/PhysicalDeduplicationRetainedFile"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    }
+  },
+  "required": [
+    "assetId",
+    "canView",
+    "copyFile",
+    "linked",
+    "originalFileName",
+    "ownerName",
+    "restorable",
+    "restored",
+    "retainedFile",
+    "type"
+  ],
+  "type": "object"
+}
+```
+
+## PinCodeChangeDto
+
+
+```json
+{
+  "properties": {
+    "newPinCode": {
+      "description": "New PIN code (4-6 digits)",
+      "pattern": "^\\d{6}$",
+      "type": "string"
+    },
+    "password": {
+      "description": "User password (required if PIN code is not provided)",
+      "example": "password",
+      "type": "string"
+    },
+    "pinCode": {
+      "description": "New PIN code (4-6 digits)",
+      "example": "123456",
+      "pattern": "^\\d{6}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "newPinCode"
+  ],
+  "type": "object"
+}
+```
+
+## PinCodeResetDto
+
+
+```json
+{
+  "properties": {
+    "password": {
+      "description": "User password (required if PIN code is not provided)",
+      "example": "password",
+      "type": "string"
+    },
+    "pinCode": {
+      "description": "New PIN code (4-6 digits)",
+      "example": "123456",
+      "pattern": "^\\d{6}$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PinCodeSetupDto
+
+
+```json
+{
+  "properties": {
+    "pinCode": {
+      "description": "PIN code (4-6 digits)",
+      "example": "123456",
+      "pattern": "^\\d{6}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pinCode"
+  ],
+  "type": "object"
+}
+```
+
+## PinnedCollection
+
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "Current access-filtered item count; null when unavailable",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "countCapped": {
+      "description": "Whether a semantic saved-search count reached the existing smart-search cap",
+      "type": "boolean"
+    },
+    "coverAssetId": {
+      "description": "Current readable cover asset; null when unavailable or empty",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "album",
+        "smart-album",
+        "saved-search",
+        "person",
+        "pet",
+        "memory",
+        "builtin"
+      ],
+      "type": "string"
+    },
+    "targetId": {
+      "description": "Null when unavailable; the inaccessible target identity is not disclosed",
+      "nullable": true,
+      "type": "string"
+    },
+    "title": {
+      "description": "Current access-filtered title; null when unavailable",
+      "nullable": true,
+      "type": "string"
+    },
+    "unavailable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "count",
+    "countCapped",
+    "coverAssetId",
+    "id",
+    "kind",
+    "targetId",
+    "title",
+    "unavailable"
+  ],
+  "type": "object"
+}
+```
+
+## PinnedCollectionRef
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Opaque pin ID chosen by the client and retained across reorders",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "album",
+        "smart-album",
+        "saved-search",
+        "person",
+        "pet",
+        "memory",
+        "builtin"
+      ],
+      "type": "string"
+    },
+    "targetId": {
+      "description": "Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID",
+      "maxLength": 100,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "targetId"
+  ],
+  "type": "object"
+}
+```
+
+## PinnedCollectionsResponseDto
+
+Related models: [PinnedCollection](models-27.md#pinnedcollection).
+
+```json
+{
+  "properties": {
+    "pins": {
+      "description": "Complete replacement snapshot in user order, including unavailable pins",
+      "items": {
+        "$ref": "#/components/schemas/PinnedCollection"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pins",
+    "revision"
+  ],
+  "type": "object"
+}
+```
+
+## PinnedCollectionsUpdateDto
+
+Related models: [PinnedCollectionRef](models-27.md#pinnedcollectionref).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedRevision": {
+      "description": "Revision returned by GET; null only when no pin list exists. A stale save returns 409",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "pins": {
+      "description": "Replace the complete ordered list to add, remove or reorder pins; an empty list clears it",
+      "items": {
+        "$ref": "#/components/schemas/PinnedCollectionRef"
+      },
+      "maxItems": 50,
+      "type": "array"
+    }
+  },
+  "required": [
+    "expectedRevision",
+    "pins"
+  ],
+  "type": "object"
+}
+```
+
+## PlacesResponseDto
+
+
+```json
+{
+  "properties": {
+    "admin1name": {
+      "description": "Administrative level 1 name (state/province)",
+      "type": "string"
+    },
+    "admin2name": {
+      "description": "Administrative level 2 name (county/district)",
+      "type": "string"
+    },
+    "latitude": {
+      "description": "Latitude coordinate",
+      "format": "double",
+      "type": "number"
+    },
+    "longitude": {
+      "description": "Longitude coordinate",
+      "format": "double",
+      "type": "number"
+    },
+    "name": {
+      "description": "Place name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "latitude",
+    "longitude",
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## PluginMethodResponseDto
+
+Related models: [WorkflowType](models-40.md#workflowtype).
+
+```json
+{
+  "properties": {
+    "allowedHosts": {
+      "description": "Hosts this method may send requests to; empty when it cannot reach other servers",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "description": {
+      "description": "Description",
+      "type": "string"
+    },
+    "hostFunctions": {
+      "type": "boolean"
+    },
+    "key": {
+      "description": "Key",
+      "type": "string"
+    },
+    "name": {
+      "description": "Name",
+      "type": "string"
+    },
+    "schema": {
+      "properties": {},
+      "type": "object"
+    },
+    "title": {
+      "description": "Title",
+      "type": "string"
+    },
+    "types": {
+      "description": "Workflow types",
+      "items": {
+        "$ref": "#/components/schemas/WorkflowType"
+      },
+      "type": "array"
+    },
+    "uiHints": {
+      "description": "Ui hints",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "allowedHosts",
+    "description",
+    "hostFunctions",
+    "key",
+    "name",
+    "title",
+    "types",
+    "uiHints"
+  ],
+  "type": "object"
+}
+```
+
+## PluginResponseDto
+
+Related models: [PluginMethodResponseDto](models-27.md#pluginmethodresponsedto).
+
+```json
+{
+  "properties": {
+    "author": {
+      "description": "Plugin author",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Creation date",
+      "type": "string"
+    },
+    "description": {
+      "description": "Plugin description",
+      "type": "string"
+    },
+    "id": {
+      "description": "Plugin ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "methods": {
+      "description": "Plugin methods",
+      "items": {
+        "$ref": "#/components/schemas/PluginMethodResponseDto"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "Plugin name",
+      "type": "string"
+    },
+    "title": {
+      "description": "Plugin title",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Last update date",
+      "type": "string"
+    },
+    "version": {
+      "description": "Plugin version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "author",
+    "createdAt",
+    "description",
+    "id",
+    "methods",
+    "name",
+    "title",
+    "updatedAt",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## PluginTemplateResponseDto
+
+Related models: [PluginTemplateStepResponseDto](models-27.md#plugintemplatestepresponsedto), [WorkflowTrigger](models-40.md#workflowtrigger).
+
+```json
+{
+  "properties": {
+    "description": {
+      "description": "Template description",
+      "type": "string"
+    },
+    "key": {
+      "description": "Template key (unique across all templates)",
+      "type": "string"
+    },
+    "steps": {
+      "description": "Workflow steps",
+      "items": {
+        "$ref": "#/components/schemas/PluginTemplateStepResponseDto"
+      },
+      "type": "array"
+    },
+    "title": {
+      "description": "Template title",
+      "type": "string"
+    },
+    "trigger": {
+      "$ref": "#/components/schemas/WorkflowTrigger",
+      "description": "Workflow trigger"
+    },
+    "uiHints": {
+      "description": "Ui hints, for example \"smart-album\"",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "description",
+    "key",
+    "steps",
+    "title",
+    "trigger",
+    "uiHints"
+  ],
+  "type": "object"
+}
+```
+
+## PluginTemplateStepResponseDto
+
+
+```json
+{
+  "properties": {
+    "config": {
+      "additionalProperties": {},
+      "description": "Step configuration",
+      "nullable": true,
+      "type": "object"
+    },
+    "enabled": {
+      "description": "Whether the step is enabled",
+      "type": "boolean"
+    },
+    "method": {
+      "description": "Step plugin method",
+      "type": "string"
+    }
+  },
+  "required": [
+    "config",
+    "method"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationConflictDto
+
+Related models: [PreservationConflictField](models-27.md#preservationconflictfield), [PreservationDecision](models-27.md#preservationdecision).
+
+```json
+{
+  "properties": {
+    "archived": {
+      "description": "The package’s value",
+      "nullable": true,
+      "type": "string"
+    },
+    "current": {
+      "description": "The library’s value",
+      "nullable": true,
+      "type": "string"
+    },
+    "decision": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PreservationDecision"
+        }
+      ],
+      "description": "Your choice; the restoration default applies when null",
+      "nullable": true
+    },
+    "field": {
+      "$ref": "#/components/schemas/PreservationConflictField"
+    }
+  },
+  "required": [
+    "archived",
+    "current",
+    "decision",
+    "field"
+  ],
+  "type": "object"
+}
+```
+
+## PreservationConflictField
+
+
+```json
+{
+  "description": "A field the package and the library can disagree about",
+  "enum": [
+    "date",
+    "description",
+    "location",
+    "rating",
+    "favorite",
+    "archive",
+    "editRecipe"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationDecision
+
+
+```json
+{
+  "description": "`keep` the library’s value, or `replace` it with the package’s",
+  "enum": [
+    "keep",
+    "replace"
+  ],
+  "type": "string"
+}
+```
+
+## PreservationDecisionsUpdateDto
+
+Related models: [PreservationDecision](models-27.md#preservationdecision), [PreservationItemDecisionsDto](models-27.md#preservationitemdecisionsdto).
 
 ```json
 {
   "properties": {
     "conflictDefault": {
-      "$ref": "#/components/schemas/PreservationDecision",
-      "description": "What to do where the package and the library disagree and you have not chosen; `keep` when omitted"
+      "$ref": "#/components/schemas/PreservationDecision"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/PreservationItemDecisionsDto"
+      },
+      "maxItems": 500,
+      "type": "array"
+    },
+    "restoreEditRecipes": {
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PreservationExportCreateDto
+
+Related models: [PreservationScopeDto](models-28.md#preservationscopedto).
+
+```json
+{
+  "properties": {
+    "includeLocked": {
+      "description": "Include your Locked items. Needs an unlocked session; they are restored Locked.",
+      "type": "boolean"
+    },
+    "includeMetadata": {
+      "description": "Include metadata sidecars, albums, people, tags and edit recipes. Checksums are always included.",
+      "type": "boolean"
     },
     "name": {
       "maxLength": 120,
       "minLength": 1,
       "type": "string"
     },
-    "packageId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
     "requestKey": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+      "description": "Idempotency key; a repeated submit answers with the first package",
       "pattern": "^[\\w.:-]{1,128}$",
       "type": "string"
     },
-    "restoreEditRecipes": {
-      "description": "Restore edit recipes; edited versions are rendered again",
-      "type": "boolean"
+    "scope": {
+      "$ref": "#/components/schemas/PreservationScopeDto"
     }
   },
   "required": [
-    "packageId"
+    "name"
   ],
   "type": "object"
 }
 ```
 
-## PreservationRestoreDto
+## PreservationItemDecisionsDto
 
-Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [PreservationDecision](models-26.md#preservationdecision), [PreservationRestoreCountsDto](models-27.md#preservationrestorecountsdto), [PreservationRestoreStatus](models-27.md#preservationrestorestatus), [PreservationSupportDto](models-27.md#preservationsupportdto).
+Related models: [PreservationDecision](models-27.md#preservationdecision).
 
 ```json
 {
   "properties": {
-    "albums": {
-      "description": "Albums and collections in the package",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "conflictDefault": {
-      "$ref": "#/components/schemas/PreservationDecision"
-    },
-    "counts": {
-      "$ref": "#/components/schemas/PreservationRestoreCountsDto"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
+    "decisions": {
+      "additionalProperties": {
+        "$ref": "#/components/schemas/PreservationDecision"
+      },
+      "type": "object"
     },
     "id": {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
-    },
-    "name": {
-      "type": "string"
-    },
-    "operation": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationDto"
-        }
-      ],
-      "description": "The newest job on this restoration",
-      "nullable": true
-    },
-    "packageId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "people": {
-      "description": "Named people in the package",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "reasonKey": {
-      "nullable": true,
-      "type": "string"
-    },
-    "restoreEditRecipes": {
-      "type": "boolean"
-    },
-    "status": {
-      "$ref": "#/components/schemas/PreservationRestoreStatus"
-    },
-    "support": {
-      "items": {
-        "$ref": "#/components/schemas/PreservationSupportDto"
-      },
-      "type": "array"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
     }
   },
   "required": [
-    "albums",
-    "conflictDefault",
-    "counts",
-    "createdAt",
-    "id",
-    "name",
-    "operation",
-    "packageId",
-    "people",
-    "reasonKey",
-    "restoreEditRecipes",
-    "status",
-    "support",
-    "updatedAt"
+    "decisions",
+    "id"
   ],
   "type": "object"
 }
 ```
 
-## PreservationRestoreItemDto
+## PreservationItemDto
 
-Related models: [PreservationConflictDto](models-26.md#preservationconflictdto), [PreservationRestoreItemState](models-27.md#preservationrestoreitemstate), [PreservationRestoreMatch](models-27.md#preservationrestorematch).
+Related models: [PreservationItemState](models-28.md#preservationitemstate), [PreservationVerifyState](models-28.md#preservationverifystate).
 
 ```json
 {
   "properties": {
-    "applied": {
-      "type": "boolean"
-    },
     "assetId": {
       "format": "uuid",
       "nullable": true,
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
-    "conflicts": {
-      "items": {
-        "$ref": "#/components/schemas/PreservationConflictDto"
-      },
-      "type": "array"
-    },
     "error": {
       "nullable": true,
       "type": "string"
-    },
-    "findings": {
-      "description": "Translation keys for what the restore left for you to look at",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
     },
     "id": {
       "format": "uuid",
@@ -698,22 +2016,21 @@ Related models: [PreservationConflictDto](models-26.md#preservationconflictdto),
       "type": "string"
     },
     "locked": {
-      "description": "Locked in the package or in your library; listed only to an unlocked session",
       "type": "boolean"
-    },
-    "match": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PreservationRestoreMatch"
-        }
-      ],
-      "nullable": true
     },
     "name": {
       "nullable": true,
       "type": "string"
     },
     "reasonKey": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sha256": {
+      "nullable": true,
+      "type": "string"
+    },
+    "sizeBytes": {
       "nullable": true,
       "type": "string"
     },
@@ -724,1668 +2041,30 @@ Related models: [PreservationConflictDto](models-26.md#preservationconflictdto),
       "type": "string"
     },
     "state": {
-      "$ref": "#/components/schemas/PreservationRestoreItemState"
+      "$ref": "#/components/schemas/PreservationItemState"
+    },
+    "verifyState": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/PreservationVerifyState"
+        }
+      ],
+      "nullable": true
     }
   },
   "required": [
-    "applied",
     "assetId",
-    "conflicts",
     "error",
-    "findings",
     "id",
     "locked",
-    "match",
     "name",
     "reasonKey",
+    "sha256",
+    "sizeBytes",
     "sourceAssetId",
-    "state"
+    "state",
+    "verifyState"
   ],
-  "type": "object"
-}
-```
-
-## PreservationRestoreItemFilter
-
-
-```json
-{
-  "enum": [
-    "conflicts",
-    "failed",
-    "findings"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationRestoreItemState
-
-
-```json
-{
-  "enum": [
-    "pending",
-    "ready",
-    "failed",
-    "creating",
-    "restored",
-    "matched",
-    "skipped"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationRestoreItemsResponseDto
-
-Related models: [PreservationRestoreItemDto](models-27.md#preservationrestoreitemdto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/PreservationRestoreItemDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationRestoreMatch
-
-
-```json
-{
-  "enum": [
-    "new",
-    "existing",
-    "trashed"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationRestoreStatus
-
-
-```json
-{
-  "description": "`reviewing`: the package is being checked; `ready`: review the findings, then restore; `restoring`; `completed`; `unreadable`: the package cannot be believed",
-  "enum": [
-    "reviewing",
-    "ready",
-    "restoring",
-    "completed",
-    "unreadable"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationScopeDto
-
-Related models: [SearchFilter](models-30.md#searchfilter).
-
-```json
-{
-  "description": "What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.",
-  "properties": {
-    "assetIds": {
-      "description": "Exactly these items of yours, instead of a filter",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 100000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "filter": {
-      "$ref": "#/components/schemas/SearchFilter",
-      "description": "Your items matching these conditions; the whole library when empty"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PreservationServerPackageCreateDto
-
-
-```json
-{
-  "properties": {
-    "name": {
-      "maxLength": 120,
-      "minLength": 1,
-      "type": "string"
-    },
-    "path": {
-      "description": "A package directory or ZIP file on this server, outside its media storage",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "path"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationSupportCategory
-
-
-```json
-{
-  "description": "A kind of information a package may carry",
-  "enum": [
-    "originals",
-    "dates",
-    "places",
-    "descriptions",
-    "ratings",
-    "favorites",
-    "archive",
-    "locked",
-    "albums",
-    "tags",
-    "people",
-    "editRecipes",
-    "livePhotos",
-    "stacks",
-    "documentCorrections",
-    "momentNotes",
-    "generatedDescriptions",
-    "generatedMoments",
-    "cameraDetails",
-    "sharing",
-    "pets",
-    "studioProjects",
-    "memories"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationSupportDto
-
-Related models: [PreservationSupportCategory](models-27.md#preservationsupportcategory), [PreservationSupportLevel](models-27.md#preservationsupportlevel).
-
-```json
-{
-  "properties": {
-    "category": {
-      "$ref": "#/components/schemas/PreservationSupportCategory"
-    },
-    "level": {
-      "$ref": "#/components/schemas/PreservationSupportLevel"
-    }
-  },
-  "required": [
-    "category",
-    "level"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationSupportLevel
-
-
-```json
-{
-  "description": "`restored`: comes back as it was; `restored-when-empty`: only where the library has none; `provenance-only`: kept as a record, never applied; `not-included`: not in a package",
-  "enum": [
-    "restored",
-    "restored-when-empty",
-    "provenance-only",
-    "not-included"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationUploadCreateDto
-
-
-```json
-{
-  "properties": {
-    "file": {
-      "description": "A `.frameleaf-preservation.zip` package",
-      "format": "binary",
-      "type": "string"
-    }
-  },
-  "required": [
-    "file"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationVerificationDto
-
-Related models: [PreservationVerificationStatus](models-27.md#preservationverificationstatus).
-
-```json
-{
-  "properties": {
-    "changed": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "checked": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "documentsChanged": {
-      "description": "Index documents whose digest no longer matches",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "missing": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "ok": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "reasonKey": {
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/PreservationVerificationStatus"
-    },
-    "unexpected": {
-      "description": "Files in the package its manifest does not account for",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "changed",
-    "checked",
-    "documentsChanged",
-    "finishedAt",
-    "missing",
-    "ok",
-    "reasonKey",
-    "status",
-    "unexpected"
-  ],
-  "type": "object"
-}
-```
-
-## PreservationVerificationStatus
-
-
-```json
-{
-  "description": "`verified`: every file matches; `problems`: some are missing or changed; `unreadable`: the manifest or index cannot be believed",
-  "enum": [
-    "verified",
-    "problems",
-    "unreadable"
-  ],
-  "type": "string"
-}
-```
-
-## PreservationVerifyState
-
-
-```json
-{
-  "description": "The latest verification of this item",
-  "enum": [
-    "ok",
-    "missing",
-    "changed"
-  ],
-  "type": "string"
-}
-```
-
-## PrivacyResponse
-
-Related models: [SuppressionResponse](models-34.md#suppressionresponse).
-
-```json
-{
-  "description": "Privacy preferences",
-  "properties": {
-    "suppression": {
-      "$ref": "#/components/schemas/SuppressionResponse"
-    }
-  },
-  "required": [
-    "suppression"
-  ],
-  "type": "object"
-}
-```
-
-## PrivacyUpdate
-
-Related models: [SuppressionUpdate](models-35.md#suppressionupdate).
-
-```json
-{
-  "description": "Privacy preferences",
-  "properties": {
-    "suppression": {
-      "$ref": "#/components/schemas/SuppressionUpdate"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PublicConfigDto
-
-Related models: [FrameleafPublicConfigDto](models-12.md#frameleafpublicconfigdto), [PublicConfigFrameleafCloudDto](models-27.md#publicconfigframeleafclouddto), [PublicConfigOAuthDto](models-27.md#publicconfigoauthdto), [PublicConfigPasswordLoginDto](models-27.md#publicconfigpasswordlogindto), [PublicConfigServerDto](models-27.md#publicconfigserverdto), [PublicConfigThemeDto](models-27.md#publicconfigthemedto).
-
-```json
-{
-  "properties": {
-    "frameleaf": {
-      "$ref": "#/components/schemas/FrameleafPublicConfigDto"
-    },
-    "frameleafCloud": {
-      "$ref": "#/components/schemas/PublicConfigFrameleafCloudDto"
-    },
-    "oauth": {
-      "$ref": "#/components/schemas/PublicConfigOAuthDto"
-    },
-    "passwordLogin": {
-      "$ref": "#/components/schemas/PublicConfigPasswordLoginDto"
-    },
-    "server": {
-      "$ref": "#/components/schemas/PublicConfigServerDto"
-    },
-    "theme": {
-      "$ref": "#/components/schemas/PublicConfigThemeDto"
-    }
-  },
-  "required": [
-    "frameleaf",
-    "frameleafCloud",
-    "oauth",
-    "passwordLogin",
-    "server",
-    "theme"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigFrameleafCloudDto
-
-Related models: [PublicConfigFrameleafSignInDto](models-27.md#publicconfigframeleafsignindto).
-
-```json
-{
-  "properties": {
-    "signIn": {
-      "$ref": "#/components/schemas/PublicConfigFrameleafSignInDto"
-    }
-  },
-  "required": [
-    "signIn"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigFrameleafSignInDto
-
-
-```json
-{
-  "properties": {
-    "buttonText": {
-      "description": "Sign in with Frameleaf button text",
-      "maxLength": 100,
-      "type": "string"
-    },
-    "showOnLocalLogin": {
-      "description": "Show Sign in with Frameleaf on the local sign-in page too",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "buttonText",
-    "showOnLocalLogin"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigOAuthDto
-
-
-```json
-{
-  "properties": {
-    "autoLaunch": {
-      "description": "Auto launch",
-      "type": "boolean"
-    },
-    "buttonText": {
-      "description": "Button text",
-      "type": "string"
-    },
-    "enabled": {
-      "description": "Enabled",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "autoLaunch",
-    "buttonText",
-    "enabled"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigPasswordLoginDto
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Enabled",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigServerDto
-
-
-```json
-{
-  "properties": {
-    "loginPageMessage": {
-      "description": "Login page message",
-      "type": "string"
-    },
-    "name": {
-      "description": "Server name shown in settings; empty uses the host name",
-      "maxLength": 100,
-      "type": "string"
-    }
-  },
-  "required": [
-    "loginPageMessage",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## PublicConfigThemeDto
-
-
-```json
-{
-  "properties": {
-    "customCss": {
-      "description": "Custom CSS for theming",
-      "type": "string"
-    }
-  },
-  "required": [
-    "customCss"
-  ],
-  "type": "object"
-}
-```
-
-## PurchaseResponse
-
-
-```json
-{
-  "properties": {
-    "hideBuyButtonUntil": {
-      "description": "Date until which to hide buy button",
-      "type": "string"
-    },
-    "showSupportBadge": {
-      "description": "Whether to show support badge",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "hideBuyButtonUntil",
-    "showSupportBadge"
-  ],
-  "type": "object"
-}
-```
-
-## PurchaseUpdate
-
-
-```json
-{
-  "properties": {
-    "hideBuyButtonUntil": {
-      "description": "Date until which to hide buy button",
-      "type": "string"
-    },
-    "showSupportBadge": {
-      "description": "Whether to show support badge",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PushActivityTokenDto
-
-
-```json
-{
-  "properties": {
-    "kind": {
-      "description": "The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes)",
-      "enum": [
-        "cloud-backup-activation",
-        "studio-render"
-      ],
-      "type": "string"
-    },
-    "operationId": {
-      "description": "Required for studio-render: the owned Studio render media operation this activity follows",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "token": {
-      "description": "The ActivityKit push token of this activity",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "kind",
-    "token"
-  ],
-  "type": "object"
-}
-```
-
-## PushApnsEnvironment
-
-
-```json
-{
-  "description": "iOS only: the APNs environment of the tokens. A development build gets sandbox tokens, which only APNs sandbox delivers. Default production.",
-  "enum": [
-    "production",
-    "sandbox"
-  ],
-  "type": "string"
-}
-```
-
-## PushDeviceActivityDto
-
-
-```json
-{
-  "properties": {
-    "activityId": {
-      "type": "string"
-    },
-    "kind": {
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "activityId",
-    "kind",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## PushDeviceListResponseDto
-
-Related models: [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto).
-
-```json
-{
-  "properties": {
-    "devices": {
-      "items": {
-        "$ref": "#/components/schemas/PushDeviceResponseDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "devices"
-  ],
-  "type": "object"
-}
-```
-
-## PushDeviceRegisterDto
-
-Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPlatform](models-27.md#pushplatform), [PushPreferencesDto](models-27.md#pushpreferencesdto).
-
-```json
-{
-  "properties": {
-    "apnsEnvironment": {
-      "$ref": "#/components/schemas/PushApnsEnvironment"
-    },
-    "backupDeviceKey": {
-      "description": "This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "platform": {
-      "$ref": "#/components/schemas/PushPlatform"
-    },
-    "preferences": {
-      "$ref": "#/components/schemas/PushPreferencesDto"
-    },
-    "publicKey": {
-      "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
-      "maxLength": 64,
-      "minLength": 1,
-      "type": "string"
-    },
-    "pushToStartToken": {
-      "description": "iOS only: the ActivityKit push-to-start token",
-      "maxLength": 4096,
-      "minLength": 1,
-      "nullable": true,
-      "type": "string"
-    },
-    "pushToken": {
-      "description": "The APNs device token or FCM registration token",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "platform",
-    "publicKey",
-    "pushToken"
-  ],
-  "type": "object"
-}
-```
-
-## PushDeviceResponseDto
-
-Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushDeviceActivityDto](models-27.md#pushdeviceactivitydto), [PushPlatform](models-27.md#pushplatform), [PushPreferencesResponseDto](models-27.md#pushpreferencesresponsedto).
-
-```json
-{
-  "description": "A registered push device. Push tokens are never returned.",
-  "properties": {
-    "activities": {
-      "items": {
-        "$ref": "#/components/schemas/PushDeviceActivityDto"
-      },
-      "type": "array"
-    },
-    "apnsEnvironment": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PushApnsEnvironment"
-        }
-      ],
-      "description": "iOS: the APNs environment; null for Android",
-      "nullable": true
-    },
-    "backupDeviceKey": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "current": {
-      "description": "Whether this is the device of the session asking",
-      "type": "boolean"
-    },
-    "hasPushToStartToken": {
-      "type": "boolean"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "lastDeliveredAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "platform": {
-      "$ref": "#/components/schemas/PushPlatform"
-    },
-    "preferences": {
-      "$ref": "#/components/schemas/PushPreferencesResponseDto"
-    },
-    "publicKeyFingerprint": {
-      "description": "A short fingerprint of the registered public key; never the token",
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "activities",
-    "apnsEnvironment",
-    "backupDeviceKey",
-    "createdAt",
-    "current",
-    "hasPushToStartToken",
-    "id",
-    "lastDeliveredAt",
-    "platform",
-    "preferences",
-    "publicKeyFingerprint",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## PushDeviceUpdateDto
-
-Related models: [PushApnsEnvironment](models-27.md#pushapnsenvironment), [PushPreferencesDto](models-27.md#pushpreferencesdto).
-
-```json
-{
-  "properties": {
-    "apnsEnvironment": {
-      "$ref": "#/components/schemas/PushApnsEnvironment"
-    },
-    "backupDeviceKey": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "preferences": {
-      "$ref": "#/components/schemas/PushPreferencesDto"
-    },
-    "publicKey": {
-      "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
-      "maxLength": 64,
-      "minLength": 1,
-      "type": "string"
-    },
-    "pushToStartToken": {
-      "description": "iOS only: a rotated ActivityKit push-to-start token, or null",
-      "maxLength": 4096,
-      "minLength": 1,
-      "nullable": true,
-      "type": "string"
-    },
-    "pushToken": {
-      "description": "A rotated APNs or FCM token",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PushEventType
-
-
-```json
-{
-  "description": "FL-228: an event this server delivers as a push notification",
-  "enum": [
-    "backup-needs-attention",
-    "backup-stale",
-    "cloud-backup-activation",
-    "shared-activity",
-    "memories",
-    "render-finished",
-    "render-progress",
-    "access-changed"
-  ],
-  "type": "string"
-}
-```
-
-## PushKnownEventsDto
-
-Related models: [PushEventType](models-27.md#pusheventtype).
-
-```json
-{
-  "properties": {
-    "events": {
-      "items": {
-        "$ref": "#/components/schemas/PushEventType"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "events"
-  ],
-  "type": "object"
-}
-```
-
-## PushPlatform
-
-
-```json
-{
-  "description": "FL-228: the push service a device receives notifications through",
-  "enum": [
-    "ios",
-    "android"
-  ],
-  "type": "string"
-}
-```
-
-## PushPreferencesDto
-
-
-```json
-{
-  "description": "Which events this device is told about; an omitted event keeps its current setting (on by default)",
-  "properties": {
-    "accessChanged": {
-      "type": "boolean"
-    },
-    "backupNeedsAttention": {
-      "type": "boolean"
-    },
-    "backupStale": {
-      "type": "boolean"
-    },
-    "cloudBackupActivation": {
-      "type": "boolean"
-    },
-    "memories": {
-      "type": "boolean"
-    },
-    "renderFinished": {
-      "type": "boolean"
-    },
-    "renderProgress": {
-      "type": "boolean"
-    },
-    "sharedActivity": {
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PushPreferencesResponseDto
-
-
-```json
-{
-  "properties": {
-    "accessChanged": {
-      "type": "boolean"
-    },
-    "backupNeedsAttention": {
-      "type": "boolean"
-    },
-    "backupStale": {
-      "type": "boolean"
-    },
-    "cloudBackupActivation": {
-      "type": "boolean"
-    },
-    "memories": {
-      "type": "boolean"
-    },
-    "renderFinished": {
-      "type": "boolean"
-    },
-    "renderProgress": {
-      "type": "boolean"
-    },
-    "sharedActivity": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "accessChanged",
-    "backupNeedsAttention",
-    "backupStale",
-    "cloudBackupActivation",
-    "memories",
-    "renderFinished",
-    "renderProgress",
-    "sharedActivity"
-  ],
-  "type": "object"
-}
-```
-
-## PushStatusResponseDto
-
-Related models: [PushUnavailableReason](models-27.md#pushunavailablereason).
-
-```json
-{
-  "properties": {
-    "available": {
-      "description": "Whether this server delivers push notifications now (it must be linked)",
-      "type": "boolean"
-    },
-    "encryption": {
-      "description": "How payloads are encrypted to the device key",
-      "properties": {
-        "cipher": {
-          "enum": [
-            "AES-256-GCM"
-          ],
-          "type": "string"
-        },
-        "kdf": {
-          "enum": [
-            "HKDF-SHA256"
-          ],
-          "type": "string"
-        },
-        "keyAgreement": {
-          "enum": [
-            "X25519"
-          ],
-          "type": "string"
-        },
-        "scheme": {
-          "enum": [
-            "frameleaf-push-v1"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scheme",
-        "keyAgreement",
-        "kdf",
-        "cipher"
-      ],
-      "type": "object"
-    },
-    "events": {
-      "description": "The events this server can deliver. Open-ended: ignore unfamiliar event names.",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "reason": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/PushUnavailableReason"
-        }
-      ],
-      "description": "Why push is unavailable; null when available",
-      "nullable": true
-    },
-    "registered": {
-      "description": "Whether the session asking has registered its device",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "available",
-    "encryption",
-    "events",
-    "reason",
-    "registered"
-  ],
-  "type": "object"
-}
-```
-
-## PushUnavailableReason
-
-
-```json
-{
-  "description": "FL-228: why push notifications are unavailable on this server",
-  "enum": [
-    "not-configured",
-    "not-linked",
-    "clone-suspected"
-  ],
-  "type": "string"
-}
-```
-
-## QueueCommand
-
-
-```json
-{
-  "description": "Queue command to execute",
-  "enum": [
-    "start",
-    "pause",
-    "resume",
-    "empty",
-    "clear-failed"
-  ],
-  "type": "string"
-}
-```
-
-## QueueCommandDto
-
-Related models: [QueueCommand](models-27.md#queuecommand).
-
-```json
-{
-  "properties": {
-    "command": {
-      "$ref": "#/components/schemas/QueueCommand"
-    },
-    "force": {
-      "description": "Force the command execution (if applicable)",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "command"
-  ],
-  "type": "object"
-}
-```
-
-## QueueDeleteDto
-
-
-```json
-{
-  "properties": {
-    "failed": {
-      "description": "If true, will also remove failed jobs from the queue.",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v2.4.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2.4.0",
-          "state": "Alpha"
-        }
-      ],
-      "x-immich-state": "Alpha"
-    }
-  },
-  "type": "object"
-}
-```
-
-## QueueJobAccountDto
-
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "Account ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "name": {
-      "description": "Account name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## QueueJobResponseDto
-
-Related models: [JobName](models-14.md#jobname), [QueueJobAccountDto](models-27.md#queuejobaccountdto), [QueueJobWorkerDto](models-27.md#queuejobworkerdto).
-
-```json
-{
-  "properties": {
-    "account": {
-      "$ref": "#/components/schemas/QueueJobAccountDto",
-      "description": "The account whose item the job works on, when the job names an asset, person, library or account"
-    },
-    "attemptsMade": {
-      "description": "How many times the job has been attempted",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "data": {
-      "additionalProperties": {},
-      "description": "Job data payload",
-      "type": "object"
-    },
-    "failedReason": {
-      "description": "Why the last attempt failed, for a failed job",
-      "type": "string"
-    },
-    "id": {
-      "description": "Job ID",
-      "type": "string"
-    },
-    "name": {
-      "$ref": "#/components/schemas/JobName"
-    },
-    "timestamp": {
-      "description": "Job creation timestamp",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "worker": {
-      "$ref": "#/components/schemas/QueueJobWorkerDto",
-      "description": "Where the job runs or ran"
-    }
-  },
-  "required": [
-    "data",
-    "name",
-    "timestamp",
-    "worker"
-  ],
-  "type": "object"
-}
-```
-
-## QueueJobStatus
-
-
-```json
-{
-  "description": "Queue job status",
-  "enum": [
-    "active",
-    "failed",
-    "completed",
-    "delayed",
-    "waiting",
-    "paused"
-  ],
-  "type": "string"
-}
-```
-
-## QueueJobWorkerDto
-
-Related models: [QueueJobWorkerKind](models-27.md#queuejobworkerkind).
-
-```json
-{
-  "properties": {
-    "kind": {
-      "$ref": "#/components/schemas/QueueJobWorkerKind"
-    },
-    "name": {
-      "description": "The processing destination name, for a machine-learning worker",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "kind",
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## QueueJobWorkerKind
-
-
-```json
-{
-  "description": "Where a queue job runs",
-  "enum": [
-    "server",
-    "local",
-    "lan",
-    "frameleaf-cloud"
-  ],
-  "type": "string"
-}
-```
-
-## QueueName
-
-
-```json
-{
-  "description": "Queue name",
-  "enum": [
-    "thumbnailGeneration",
-    "metadataExtraction",
-    "videoConversion",
-    "faceDetection",
-    "facialRecognition",
-    "smartSearch",
-    "duplicateDetection",
-    "videoDuplicateDetection",
-    "backgroundTask",
-    "storageTemplateMigration",
-    "migration",
-    "search",
-    "sidecar",
-    "library",
-    "notifications",
-    "backupDatabase",
-    "ocr",
-    "imageEnrichment",
-    "imageDescription",
-    "nsfwDetection",
-    "mediaHealth",
-    "workflow",
-    "integrityCheck",
-    "editor",
-    "petRecognition"
-  ],
-  "type": "string"
-}
-```
-
-## QueueOwnerStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "active": {
-      "description": "Number of active jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "completed": {
-      "description": "Number of completed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "delayed": {
-      "description": "Number of delayed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "failed": {
-      "description": "Number of failed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "paused": {
-      "description": "Number of paused jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "truncated": {
-      "description": "Whether a state had more jobs than were scanned, so its count is a lower bound",
-      "type": "boolean"
-    },
-    "waiting": {
-      "description": "Number of waiting jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "active",
-    "completed",
-    "delayed",
-    "failed",
-    "paused",
-    "truncated",
-    "waiting"
-  ],
-  "type": "object"
-}
-```
-
-## QueueResponseDto
-
-Related models: [QueueName](models-27.md#queuename), [QueueStatisticsDto](models-27.md#queuestatisticsdto).
-
-```json
-{
-  "properties": {
-    "hasUnfinishedWork": {
-      "description": "Whether durable work remains, including delayed, paused and unadmitted work",
-      "type": "boolean"
-    },
-    "isPaused": {
-      "description": "Whether the queue is paused",
-      "type": "boolean"
-    },
-    "name": {
-      "$ref": "#/components/schemas/QueueName"
-    },
-    "statistics": {
-      "$ref": "#/components/schemas/QueueStatisticsDto"
-    }
-  },
-  "required": [
-    "hasUnfinishedWork",
-    "isPaused",
-    "name",
-    "statistics"
-  ],
-  "type": "object"
-}
-```
-
-## QueueResponseLegacyDto
-
-Related models: [QueueStatisticsDto](models-27.md#queuestatisticsdto), [QueueStatusLegacyDto](models-27.md#queuestatuslegacydto).
-
-```json
-{
-  "properties": {
-    "jobCounts": {
-      "$ref": "#/components/schemas/QueueStatisticsDto"
-    },
-    "queueStatus": {
-      "$ref": "#/components/schemas/QueueStatusLegacyDto"
-    },
-    "runId": {
-      "description": "Durable run created by a batch start",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "jobCounts",
-    "queueStatus"
-  ],
-  "type": "object"
-}
-```
-
-## QueueRetryFailedResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "How many failed jobs were put back in the queue",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "count"
-  ],
-  "type": "object"
-}
-```
-
-## QueueRunDto
-
-Related models: [QueueName](models-27.md#queuename).
-
-```json
-{
-  "properties": {
-    "active": {
-      "description": "Jobs running now",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "canPause": {
-      "description": "Whether this queue can be paused; background tasks cannot",
-      "type": "boolean"
-    },
-    "isPaused": {
-      "description": "Whether the queue is paused",
-      "type": "boolean"
-    },
-    "lastProgressAt": {
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-      "type": "string"
-    },
-    "name": {
-      "$ref": "#/components/schemas/QueueName"
-    },
-    "noDispatchBacklog": {
-      "type": "boolean"
-    },
-    "processed": {
-      "description": "Jobs finished, completed or failed, since this run started",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "startedAt": {
-      "description": "When this run was first seen with work",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "state": {
-      "enum": [
-        "running",
-        "retrying",
-        "delayed",
-        "paused",
-        "waiting",
-        "blocked",
-        "unavailable",
-        "needs_attention",
-        "completed",
-        "completed_with_errors",
-        "cancelled"
-      ],
-      "type": "string"
-    },
-    "total": {
-      "description": "processed + active + waiting",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "unavailable": {
-      "description": "Status could not be read; zero counts are unknown, not idle",
-      "type": "boolean"
-    },
-    "waiting": {
-      "description": "Jobs waiting to start, including those held by a paused queue",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "active",
-    "canPause",
-    "isPaused",
-    "name",
-    "processed",
-    "startedAt",
-    "total",
-    "waiting"
-  ],
-  "type": "object"
-}
-```
-
-## QueueStatisticsDto
-
-
-```json
-{
-  "properties": {
-    "active": {
-      "description": "Number of active jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "completed": {
-      "description": "Number of completed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "delayed": {
-      "description": "Number of delayed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "failed": {
-      "description": "Number of failed jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "paused": {
-      "description": "Number of paused jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "waiting": {
-      "description": "Number of waiting jobs",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "active",
-    "completed",
-    "delayed",
-    "failed",
-    "paused",
-    "waiting"
-  ],
-  "type": "object"
-}
-```
-
-## QueueStatusLegacyDto
-
-
-```json
-{
-  "properties": {
-    "isActive": {
-      "description": "Whether the queue is currently active (has running jobs)",
-      "type": "boolean"
-    },
-    "isPaused": {
-      "description": "Whether the queue is paused",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "isActive",
-    "isPaused"
-  ],
-  "type": "object"
-}
-```
-
-## QueueUpdateDto
-
-
-```json
-{
-  "properties": {
-    "isPaused": {
-      "description": "Whether to pause the queue",
-      "type": "boolean"
-    }
-  },
   "type": "object"
 }
 ```

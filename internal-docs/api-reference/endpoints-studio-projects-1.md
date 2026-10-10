@@ -10,7 +10,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyGalleryDto](models-20.md#photographygallerydto).
+Models: [PhotographyGalleryDto](models-21.md#photographygallerydto).
 
 Controller access declarations:
 
@@ -74,7 +74,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyGalleryDto](models-20.md#photographygallerydto), [PhotographyGuestApprovalDto](models-20.md#photographyguestapprovaldto).
+Models: [PhotographyGalleryDto](models-21.md#photographygallerydto), [PhotographyGuestApprovalDto](models-21.md#photographyguestapprovaldto).
 
 Controller access declarations:
 
@@ -148,7 +148,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyChoicesDto](models-20.md#photographychoicesdto), [PhotographyGalleryDto](models-20.md#photographygallerydto).
+Models: [PhotographyChoicesDto](models-20.md#photographychoicesdto), [PhotographyGalleryDto](models-21.md#photographygallerydto).
 
 Controller access declarations:
 
@@ -286,7 +286,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyGalleryDto](models-20.md#photographygallerydto), [PhotographyOrderAcceptDto](models-22.md#photographyorderacceptdto).
+Models: [PhotographyGalleryDto](models-21.md#photographygallerydto), [PhotographyOrderAcceptDto](models-23.md#photographyorderacceptdto).
 
 Controller access declarations:
 
@@ -680,7 +680,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyGallerySessionDto](models-20.md#photographygallerysessiondto), [PhotographyGallerySessionResponseDto](models-20.md#photographygallerysessionresponsedto).
+Models: [PhotographyGallerySessionDto](models-21.md#photographygallerysessiondto), [PhotographyGallerySessionResponseDto](models-21.md#photographygallerysessionresponsedto).
 
 Controller access declarations:
 
@@ -745,7 +745,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyGalleryDto](models-20.md#photographygallerydto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
+Models: [PhotographyGalleryDto](models-21.md#photographygallerydto), [PhotographyWorkflowMutationDto](models-27.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -819,7 +819,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyZipDto](models-26.md#photographyzipdto), [PhotographyZipResponseDto](models-26.md#photographyzipresponsedto).
+Models: [PhotographyZipDto](models-27.md#photographyzipdto), [PhotographyZipResponseDto](models-27.md#photographyzipresponsedto).
 
 Controller access declarations:
 
@@ -1038,7 +1038,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyStudioPresetsDto](models-23.md#photographystudiopresetsdto).
+Models: [PhotographyStudioPresetsDto](models-24.md#photographystudiopresetsdto).
 
 Controller access declarations:
 
@@ -1094,7 +1094,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPresetSaveDto](models-22.md#photographypresetsavedto), [PhotographyStudioPresetsDto](models-23.md#photographystudiopresetsdto).
+Models: [PhotographyPresetSaveDto](models-23.md#photographypresetsavedto), [PhotographyStudioPresetsDto](models-24.md#photographystudiopresetsdto).
 
 Controller access declarations:
 
@@ -1162,7 +1162,7 @@ Read your private shoots
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkspaceDto](models-26.md#photographyworkspacedto).
+Models: [PhotographyWorkspaceDto](models-27.md#photographyworkspacedto).
 
 Controller access declarations:
 
@@ -1231,7 +1231,7 @@ Save your shoots using the loaded revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkspaceDto](models-26.md#photographyworkspacedto), [PhotographyWorkspaceSaveDto](models-26.md#photographyworkspacesavedto).
+Models: [PhotographyWorkspaceDto](models-27.md#photographyworkspacedto), [PhotographyWorkspaceSaveDto](models-27.md#photographyworkspacesavedto).
 
 Controller access declarations:
 
@@ -1313,7 +1313,7 @@ Read your private studio branding
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyBrandDto](models-19.md#photographybranddto).
+Models: [PhotographyBrandDto](models-20.md#photographybranddto).
 
 Controller access declarations:
 
@@ -1385,7 +1385,7 @@ Save private studio branding with the workspace revision
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyBrandDto](models-19.md#photographybranddto), [PhotographyBrandSaveDto](models-20.md#photographybrandsavedto).
+Models: [PhotographyBrandDto](models-20.md#photographybranddto), [PhotographyBrandSaveDto](models-20.md#photographybrandsavedto).
 
 Controller access declarations:
 
@@ -1467,7 +1467,7 @@ List your eligible unlocked studio logo images
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyLogoCandidatesDto](models-22.md#photographylogocandidatesdto).
+Models: [PhotographyLogoCandidatesDto](models-23.md#photographylogocandidatesdto).
 
 Controller access declarations:
 
@@ -1647,7 +1647,7 @@ Preview a watermark using the production font metrics and renderer
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyRenditionPreviewDto](models-22.md#photographyrenditionpreviewdto).
+Models: [PhotographyRenditionPreviewDto](models-23.md#photographyrenditionpreviewdto).
 
 Controller access declarations:
 
@@ -1722,7 +1722,7 @@ Read a page of unlocked shoot photos
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPhotosDto](models-22.md#photographyphotosdto).
+Models: [PhotographyPhotosDto](models-23.md#photographyphotosdto).
 
 Controller access declarations:
 
@@ -1815,7 +1815,7 @@ Rate or reject an owned photo in your shoot
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyRatingDto](models-22.md#photographyratingdto).
+Models: [PhotographyRatingDto](models-23.md#photographyratingdto).
 
 Controller access declarations:
 
@@ -1900,7 +1900,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographySiteDto](models-23.md#photographysitedto).
+Models: [PhotographySiteDto](models-24.md#photographysitedto).
 
 Controller access declarations:
 
@@ -1956,7 +1956,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographySiteDto](models-23.md#photographysitedto), [PhotographySiteSaveDto](models-23.md#photographysitesavedto).
+Models: [PhotographySiteDto](models-24.md#photographysitedto), [PhotographySiteSaveDto](models-24.md#photographysitesavedto).
 
 Controller access declarations:
 
@@ -2022,7 +2022,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPublicSiteDto](models-22.md#photographypublicsitedto).
+Models: [PhotographyPublicSiteDto](models-23.md#photographypublicsitedto).
 
 Controller access declarations:
 

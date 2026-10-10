@@ -10,7 +10,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowListDto](models-26.md#photographyworkflowlistdto).
+Models: [PhotographyWorkflowListDto](models-27.md#photographyworkflowlistdto).
 
 Controller access declarations:
 
@@ -66,7 +66,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -131,7 +131,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyApprovalDto](models-19.md#photographyapprovaldto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyApprovalDto](models-20.md#photographyapprovaldto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -206,7 +206,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyAssemblyDto](models-19.md#photographyassemblydto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyAssemblyDto](models-20.md#photographyassemblydto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -281,7 +281,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-26.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-27.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -364,7 +364,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowConfigDto](models-24.md#photographyworkflowconfigdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyWorkflowConfigDto](models-25.md#photographyworkflowconfigdto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -439,7 +439,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyIntakeDto](models-20.md#photographyintakedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyIntakeDto](models-21.md#photographyintakedto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -514,7 +514,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyOrderCreateDto](models-22.md#photographyordercreatedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyOrderCreateDto](models-23.md#photographyordercreatedto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -589,7 +589,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPaymentDto](models-22.md#photographypaymentdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyPaymentDto](models-23.md#photographypaymentdto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -672,7 +672,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPresetSaveDto](models-22.md#photographypresetsavedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyPresetSaveDto](models-23.md#photographypresetsavedto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -747,7 +747,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-26.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-27.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -830,7 +830,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyPublicationDto](models-22.md#photographypublicationdto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyPublicationDto](models-23.md#photographypublicationdto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -905,7 +905,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyInvitationDto](models-21.md#photographyinvitationdto), [PhotographyRecipientCreateDto](models-22.md#photographyrecipientcreatedto).
+Models: [PhotographyInvitationDto](models-22.md#photographyinvitationdto), [PhotographyRecipientCreateDto](models-23.md#photographyrecipientcreatedto).
 
 Controller access declarations:
 
@@ -980,7 +980,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyRecipientUpdateDto](models-22.md#photographyrecipientupdatedto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyRecipientUpdateDto](models-23.md#photographyrecipientupdatedto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -1063,7 +1063,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyWorkflowDto](models-25.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-26.md#photographyworkflowmutationdto).
+Models: [PhotographyWorkflowDto](models-26.md#photographyworkflowdto), [PhotographyWorkflowMutationDto](models-27.md#photographyworkflowmutationdto).
 
 Controller access declarations:
 
@@ -1138,7 +1138,7 @@ Complete operation contract:
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PhotographyStudioPresetApplyDto](models-23.md#photographystudiopresetapplydto), [PhotographyWorkflowDto](models-25.md#photographyworkflowdto).
+Models: [PhotographyStudioPresetApplyDto](models-24.md#photographystudiopresetapplydto), [PhotographyWorkflowDto](models-26.md#photographyworkflowdto).
 
 Controller access declarations:
 
@@ -1223,7 +1223,7 @@ Get the Studio media facts of an asset
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [StudioMediaFactsDto](models-33.md#studiomediafactsdto).
+Models: [StudioMediaFactsDto](models-34.md#studiomediafactsdto).
 
 Controller access declarations:
 
@@ -1397,7 +1397,7 @@ Import a Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto), [StudioBundleImportCreateDto](models-32.md#studiobundleimportcreatedto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto), [StudioBundleImportCreateDto](models-34.md#studiobundleimportcreatedto).
 
 Controller access declarations:
 
@@ -1483,7 +1483,7 @@ Get a Studio bundle job
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleOperationDto](models-33.md#studiobundleoperationdto).
+Models: [StudioBundleOperationDto](models-34.md#studiobundleoperationdto).
 
 Controller access declarations:
 
@@ -1568,7 +1568,7 @@ Upload a Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleUploadCreateDto](models-33.md#studiobundleuploadcreatedto), [StudioBundleUploadDto](models-33.md#studiobundleuploaddto).
+Models: [StudioBundleUploadCreateDto](models-34.md#studiobundleuploadcreatedto), [StudioBundleUploadDto](models-34.md#studiobundleuploaddto).
 
 Controller access declarations:
 
@@ -1735,7 +1735,7 @@ Get an uploaded Studio bundle
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioBundleUploadDto](models-33.md#studiobundleuploaddto).
+Models: [StudioBundleUploadDto](models-34.md#studiobundleuploaddto).
 
 Controller access declarations:
 
@@ -1820,7 +1820,7 @@ Get a Studio export
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioExportVersionDto](models-33.md#studioexportversiondto).
+Models: [StudioExportVersionDto](models-34.md#studioexportversiondto).
 
 Controller access declarations:
 
@@ -2079,7 +2079,7 @@ List the title fonts bundled with this server
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioFontCatalogDto](models-33.md#studiofontcatalogdto).
+Models: [StudioFontCatalogDto](models-34.md#studiofontcatalogdto).
 
 Controller access declarations:
 

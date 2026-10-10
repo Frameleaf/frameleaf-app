@@ -12,7 +12,7 @@ List render workers
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerDto](models-29.md#renderworkerdto).
+Models: [RenderWorkerDto](models-30.md#renderworkerdto).
 
 Controller access declarations:
 
@@ -90,7 +90,7 @@ Enrol a render worker
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerCreateDto](models-29.md#renderworkercreatedto), [RenderWorkerCreateResponseDto](models-29.md#renderworkercreateresponsedto).
+Models: [RenderWorkerCreateDto](models-30.md#renderworkercreatedto), [RenderWorkerCreateResponseDto](models-30.md#renderworkercreateresponsedto).
 
 Controller access declarations:
 
@@ -177,7 +177,7 @@ Search the render worker audit trail
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerAuditDto](models-29.md#renderworkerauditdto).
+Models: [RenderWorkerAuditDto](models-30.md#renderworkerauditdto).
 
 Controller access declarations:
 
@@ -278,7 +278,7 @@ Get render worker compatibility
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerCompatibilityResponseDto](models-29.md#renderworkercompatibilityresponsedto).
+Models: [RenderWorkerCompatibilityResponseDto](models-30.md#renderworkercompatibilityresponsedto).
 
 Controller access declarations:
 
@@ -354,7 +354,7 @@ Get render limits
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerLimitsResponseDto](models-29.md#renderworkerlimitsresponsedto).
+Models: [RenderWorkerLimitsResponseDto](models-30.md#renderworkerlimitsresponsedto).
 
 Controller access declarations:
 
@@ -430,7 +430,7 @@ Set render limits
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerLimitDto](models-29.md#renderworkerlimitdto), [RenderWorkerLimitUpdateDto](models-29.md#renderworkerlimitupdatedto).
+Models: [RenderWorkerLimitDto](models-30.md#renderworkerlimitdto), [RenderWorkerLimitUpdateDto](models-30.md#renderworkerlimitupdatedto).
 
 Controller access declarations:
 
@@ -672,7 +672,7 @@ Get a render worker
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerDto](models-29.md#renderworkerdto).
+Models: [RenderWorkerDto](models-30.md#renderworkerdto).
 
 Controller access declarations:
 
@@ -758,7 +758,7 @@ Update a render worker
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [RenderWorkerDto](models-29.md#renderworkerdto), [RenderWorkerUpdateDto](models-29.md#renderworkerupdatedto).
+Models: [RenderWorkerDto](models-30.md#renderworkerdto), [RenderWorkerUpdateDto](models-30.md#renderworkerupdatedto).
 
 Controller access declarations:
 
@@ -854,7 +854,7 @@ Admit a render worker
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerAdmissionDto](models-28.md#renderworkeradmissiondto), [RenderWorkerSessionDto](models-29.md#renderworkersessiondto).
+Models: [RenderWorkerAdmissionDto](models-29.md#renderworkeradmissiondto), [RenderWorkerSessionDto](models-30.md#renderworkersessiondto).
 
 Controller access declarations:
 
@@ -930,7 +930,7 @@ Claim the next admitted operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerClaimDto](models-29.md#renderworkerclaimdto), [RenderWorkerClaimRequestDto](models-29.md#renderworkerclaimrequestdto).
+Models: [RenderWorkerClaimDto](models-30.md#renderworkerclaimdto), [RenderWorkerClaimRequestDto](models-30.md#renderworkerclaimrequestdto).
 
 Controller access declarations:
 
@@ -1138,7 +1138,7 @@ Upload a whole-export artifact
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1290,7 +1290,7 @@ Acknowledge a cancellation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCancelAckDto](models-29.md#renderworkercancelackdto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCancelAckDto](models-30.md#renderworkercancelackdto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1386,7 +1386,7 @@ Plan a render checkpoint
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCheckpointPlanDto](models-29.md#renderworkercheckpointplandto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCheckpointPlanDto](models-30.md#renderworkercheckpointplandto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1482,7 +1482,7 @@ Complete a render checkpoint
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCheckpointCompleteDto](models-29.md#renderworkercheckpointcompletedto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCheckpointCompleteDto](models-30.md#renderworkercheckpointcompletedto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1589,7 +1589,7 @@ Complete a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCompleteDto](models-29.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCompleteDto](models-30.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1686,7 +1686,7 @@ Fail a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerFailDto](models-29.md#renderworkerfaildto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerFailDto](models-30.md#renderworkerfaildto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -1782,7 +1782,7 @@ Heartbeat a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerHeartbeatDto](models-29.md#renderworkerheartbeatdto), [RenderWorkerHeartbeatResponseDto](models-29.md#renderworkerheartbeatresponsedto).
+Models: [RenderWorkerHeartbeatDto](models-30.md#renderworkerheartbeatdto), [RenderWorkerHeartbeatResponseDto](models-30.md#renderworkerheartbeatresponsedto).
 
 Controller access declarations:
 
@@ -1975,7 +1975,7 @@ Report progress on a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerProgressDto](models-29.md#renderworkerprogressdto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerProgressDto](models-30.md#renderworkerprogressdto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 

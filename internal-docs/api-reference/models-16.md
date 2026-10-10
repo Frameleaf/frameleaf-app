@@ -2,6 +2,808 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## LivePhotoRelinkResponseDto
+
+Related models: [LivePhotoRelinkResultDto](models-16.md#livephotorelinkresultdto).
+
+```json
+{
+  "properties": {
+    "results": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoRelinkResultDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "results"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoRelinkResultDto
+
+
+```json
+{
+  "properties": {
+    "error": {
+      "type": "string"
+    },
+    "photoId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "videoId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "photoId",
+    "success",
+    "videoId"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoUploadCommitDto
+
+
+```json
+{
+  "properties": {
+    "stillResourceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "videoResourceId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "stillResourceId",
+    "videoResourceId"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoUploadResultDto
+
+Related models: [AssetUploadResultDto](models-06.md#assetuploadresultdto).
+
+```json
+{
+  "properties": {
+    "still": {
+      "$ref": "#/components/schemas/AssetUploadResultDto"
+    },
+    "video": {
+      "$ref": "#/components/schemas/AssetUploadResultDto"
+    }
+  },
+  "required": [
+    "still",
+    "video"
+  ],
+  "type": "object"
+}
+```
+
+## LogLevel
+
+
+```json
+{
+  "description": "Log level",
+  "enum": [
+    "verbose",
+    "debug",
+    "log",
+    "warn",
+    "error",
+    "fatal"
+  ],
+  "type": "string"
+}
+```
+
+## LoginCredentialDto
+
+
+```json
+{
+  "properties": {
+    "email": {
+      "description": "User email",
+      "example": "testuser@email.com",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "password": {
+      "description": "User password",
+      "example": "password",
+      "type": "string"
+    },
+    "rememberMe": {
+      "description": "Persist authentication cookies across browser sessions (default true)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "email",
+    "password"
+  ],
+  "type": "object"
+}
+```
+
+## LoginResponseDto
+
+
+```json
+{
+  "properties": {
+    "accessToken": {
+      "description": "Access token",
+      "type": "string"
+    },
+    "isAdmin": {
+      "description": "Is admin user",
+      "type": "boolean"
+    },
+    "isOnboarded": {
+      "description": "Is onboarded",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "profileImagePath": {
+      "description": "Profile image path",
+      "type": "string"
+    },
+    "shouldChangePassword": {
+      "description": "Should change password",
+      "type": "boolean"
+    },
+    "userEmail": {
+      "description": "User email",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "accessToken",
+    "isAdmin",
+    "isOnboarded",
+    "name",
+    "profileImagePath",
+    "shouldChangePassword",
+    "userEmail",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## LogoutResponseDto
+
+
+```json
+{
+  "properties": {
+    "redirectUri": {
+      "description": "Redirect URI",
+      "type": "string"
+    },
+    "successful": {
+      "description": "Logout successful",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "redirectUri",
+    "successful"
+  ],
+  "type": "object"
+}
+```
+
+## LookParameters
+
+
+```json
+{
+  "properties": {
+    "intensity": {
+      "default": 100,
+      "description": "Filter or effect intensity",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "name": {
+      "description": "Filter or effect name",
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+```
+
+## MachineLearningHardwareAcceleration
+
+
+```json
+{
+  "description": "Machine learning hardware acceleration backend",
+  "enum": [
+    "auto",
+    "openvino",
+    "cuda"
+  ],
+  "type": "string"
+}
+```
+
+## MachineLearningHardwareResponseDto
+
+Related models: [MachineLearningHardwareAcceleration](models-16.md#machinelearninghardwareacceleration).
+
+```json
+{
+  "properties": {
+    "cudaDeviceCount": {
+      "description": "Available PyTorch CUDA device count",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "openvinoDeviceIds": {
+      "description": "Available OpenVINO device IDs",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "preferredAcceleration": {
+      "$ref": "#/components/schemas/MachineLearningHardwareAcceleration",
+      "description": "Detected preferred hardware acceleration"
+    },
+    "providers": {
+      "description": "Available ONNX Runtime providers",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "torchCudaAvailable": {
+      "description": "Whether PyTorch CUDA is available",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cudaDeviceCount",
+    "openvinoDeviceIds",
+    "preferredAcceleration",
+    "providers",
+    "torchCudaAvailable"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceAction
+
+
+```json
+{
+  "description": "Maintenance action",
+  "enum": [
+    "start",
+    "end",
+    "select_database_restore",
+    "restore_database"
+  ],
+  "type": "string"
+}
+```
+
+## MaintenanceAuthDto
+
+
+```json
+{
+  "properties": {
+    "username": {
+      "description": "Maintenance username",
+      "type": "string"
+    }
+  },
+  "required": [
+    "username"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceDetectInstallResponseDto
+
+Related models: [MaintenanceDetectInstallStorageFolderDto](models-16.md#maintenancedetectinstallstoragefolderdto).
+
+```json
+{
+  "properties": {
+    "storage": {
+      "items": {
+        "$ref": "#/components/schemas/MaintenanceDetectInstallStorageFolderDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "storage"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceDetectInstallStorageFolderDto
+
+Related models: [StorageFolder](models-33.md#storagefolder).
+
+```json
+{
+  "properties": {
+    "files": {
+      "description": "Number of files in the folder",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "folder": {
+      "$ref": "#/components/schemas/StorageFolder"
+    },
+    "readable": {
+      "description": "Whether the folder is readable",
+      "type": "boolean"
+    },
+    "writable": {
+      "description": "Whether the folder is writable",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "files",
+    "folder",
+    "readable",
+    "writable"
+  ],
+  "type": "object"
+}
+```
+
+## MaintenanceLoginDto
+
+
+```json
+{
+  "properties": {
+    "token": {
+      "description": "Maintenance token",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MaintenanceStatusResponseDto
+
+Related models: [MaintenanceAction](models-16.md#maintenanceaction).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/MaintenanceAction"
+    },
+    "active": {
+      "type": "boolean"
+    },
+    "error": {
+      "type": "string"
+    },
+    "progress": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "reason": {
+      "description": "Why the server is in maintenance, as set by the administrator (public)",
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "active"
+  ],
+  "type": "object"
+}
+```
+
+## ManagedUploadsStatsResponseDto
+
+
+```json
+{
+  "properties": {
+    "ownerId": {
+      "description": "Account whose uploads these are",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "photos": {
+      "description": "Number of photos",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "total": {
+      "description": "Total number of assets",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "usage": {
+      "description": "Storage usage in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "usagePhysical": {
+      "description": "Storage usage in bytes, counting each distinct original file once",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "videos": {
+      "description": "Number of videos",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "ownerId",
+    "photos",
+    "total",
+    "usage",
+    "usagePhysical",
+    "videos"
+  ],
+  "type": "object"
+}
+```
+
+## ManualJobName
+
+
+```json
+{
+  "description": "Manual job name",
+  "enum": [
+    "person-cleanup",
+    "tag-cleanup",
+    "user-cleanup",
+    "memory-cleanup",
+    "memory-create",
+    "backup-database",
+    "best-photos-backfill",
+    "physical-deduplication-dry-run",
+    "physical-deduplication-apply",
+    "integrity-missing-files",
+    "integrity-untracked-files",
+    "integrity-checksum-mismatch",
+    "integrity-missing-files-refresh",
+    "integrity-untracked-files-refresh",
+    "integrity-checksum-mismatch-refresh",
+    "integrity-missing-files-delete-all",
+    "integrity-untracked-files-delete-all",
+    "integrity-checksum-mismatch-delete-all",
+    "analytics-collect"
+  ],
+  "type": "string"
+}
+```
+
+## MapMarkerResponseDto
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum).
+
+```json
+{
+  "properties": {
+    "city": {
+      "description": "City name",
+      "nullable": true,
+      "type": "string"
+    },
+    "country": {
+      "description": "Country name",
+      "nullable": true,
+      "type": "string"
+    },
+    "fileCreatedAt": {
+      "description": "UTC timestamp when the asset was captured",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "lat": {
+      "description": "Latitude",
+      "format": "double",
+      "type": "number"
+    },
+    "localDateTime": {
+      "description": "Capture date and time in the local time zone where it was taken, encoded as UTC",
+      "format": "date-time",
+      "type": "string"
+    },
+    "lon": {
+      "description": "Longitude",
+      "format": "double",
+      "type": "number"
+    },
+    "originalFileName": {
+      "description": "Original file name",
+      "type": "string"
+    },
+    "state": {
+      "description": "State/Province name",
+      "nullable": true,
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    }
+  },
+  "required": [
+    "city",
+    "country",
+    "id",
+    "lat",
+    "lon",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## MapReverseGeocodeResponseDto
+
+
+```json
+{
+  "properties": {
+    "city": {
+      "description": "City name",
+      "nullable": true,
+      "type": "string"
+    },
+    "country": {
+      "description": "Country name",
+      "nullable": true,
+      "type": "string"
+    },
+    "state": {
+      "description": "State/Province name",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "city",
+    "country",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## MapStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "archived": {
+      "description": "The viewer's own located archived items",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "partner": {
+      "description": "Always 0: partners' items arrive as the viewer's own copies (kept for older clients)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "unlocated": {
+      "description": "The viewer's own timeline items without a location",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "archived",
+    "partner",
+    "unlocated"
+  ],
+  "type": "object"
+}
+```
+
+## MediaHealthActivityAction
+
+
+```json
+{
+  "description": "What the job did",
+  "enum": [
+    "scan",
+    "locate",
+    "relink-missing-media",
+    "recover-damaged-media",
+    "trash-damaged-media"
+  ],
+  "type": "string"
+}
+```
+
+## MediaHealthActivityDto
+
+Related models: [MediaHealthActivityAction](models-16.md#mediahealthactivityaction), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/MediaHealthActivityAction"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Media operation ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "items": {
+      "description": "Items the job covered",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "action",
+    "createdAt",
+    "finishedAt",
+    "id",
+    "items",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## MediaHealthBucketDto
+
+Related models: [MediaHealthItemDto](models-16.md#mediahealthitemdto).
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "Number of findings in the bucket",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MediaHealthItemDto"
+      },
+      "type": "array"
+    },
+    "timeBucket": {
+      "description": "Timeline bucket date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "count",
+    "items",
+    "timeBucket"
+  ],
+  "type": "object"
+}
+```
+
+## MediaHealthBulkActionDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Media health finding IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
+
 ## MediaHealthBulkResponseDto
 
 Related models: [MediaHealthBulkResultDto](models-16.md#mediahealthbulkresultdto).
@@ -434,7 +1236,7 @@ Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MediaHealthC
 
 ## MediaHealthListResponseDto
 
-Related models: [MediaHealthBucketDto](models-15.md#mediahealthbucketdto), [MediaHealthRunResponseDto](models-16.md#mediahealthrunresponsedto).
+Related models: [MediaHealthBucketDto](models-16.md#mediahealthbucketdto), [MediaHealthRunResponseDto](models-16.md#mediahealthrunresponsedto).
 
 ```json
 {
@@ -506,7 +1308,7 @@ Related models: [MediaHealthBucketDto](models-15.md#mediahealthbucketdto), [Medi
 
 ## MediaHealthOperationDto
 
-Related models: [MediaHealthOperationMode](models-16.md#mediahealthoperationmode), [MediaOperationStatus](models-16.md#mediaoperationstatus).
+Related models: [MediaHealthOperationMode](models-16.md#mediahealthoperationmode), [MediaOperationStatus](models-17.md#mediaoperationstatus).
 
 ```json
 {
@@ -1013,7 +1815,7 @@ Related models: [MediaHealthRunResponseDto](models-16.md#mediahealthrunresponsed
 
 ## MediaHealthSummaryResponseDto
 
-Related models: [MediaHealthActivityDto](models-15.md#mediahealthactivitydto), [MediaHealthCareSettingsDto](models-16.md#mediahealthcaresettingsdto), [MediaHealthOperationDto](models-16.md#mediahealthoperationdto), [MediaHealthQueuesDto](models-16.md#mediahealthqueuesdto), [MediaHealthRunsDto](models-16.md#mediahealthrunsdto).
+Related models: [MediaHealthActivityDto](models-16.md#mediahealthactivitydto), [MediaHealthCareSettingsDto](models-16.md#mediahealthcaresettingsdto), [MediaHealthOperationDto](models-16.md#mediahealthoperationdto), [MediaHealthQueuesDto](models-16.md#mediahealthqueuesdto), [MediaHealthRunsDto](models-16.md#mediahealthrunsdto).
 
 ```json
 {
@@ -1060,7 +1862,7 @@ Related models: [MediaHealthActivityDto](models-15.md#mediahealthactivitydto), [
 
 ## MediaOperationAggregateDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
+Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
 
 ```json
 {
@@ -1194,7 +1996,7 @@ Related models: [MediaOperationBulkAction](models-16.md#mediaoperationbulkaction
 
 ## MediaOperationBulkItemDto
 
-Related models: [MediaOperationItemStatus](models-16.md#mediaoperationitemstatus).
+Related models: [MediaOperationItemStatus](models-17.md#mediaoperationitemstatus).
 
 ```json
 {
@@ -1231,7 +2033,7 @@ Related models: [MediaOperationItemStatus](models-16.md#mediaoperationitemstatus
 
 ## MediaOperationBulkPayloadDto
 
-Related models: [MediaOperationDuplicateGroupDto](models-16.md#mediaoperationduplicategroupdto), [MediaOperationLivePhotoPairDto](models-16.md#mediaoperationlivephotopairdto), [MediaOperationMediaHealthEntryDto](models-16.md#mediaoperationmediahealthentrydto).
+Related models: [MediaOperationDuplicateGroupDto](models-17.md#mediaoperationduplicategroupdto), [MediaOperationLivePhotoPairDto](models-17.md#mediaoperationlivephotopairdto), [MediaOperationMediaHealthEntryDto](models-17.md#mediaoperationmediahealthentrydto).
 
 ```json
 {
@@ -1487,808 +2289,5 @@ Related models: [MediaOperationCheckpointState](models-16.md#mediaoperationcheck
     "frameleaf-cloud"
   ],
   "type": "string"
-}
-```
-
-## MediaOperationDetailDto
-
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkItemDto](models-16.md#mediaoperationbulkitemdto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationCheckpointDto](models-16.md#mediaoperationcheckpointdto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-16.md#mediaoperationestimatedto), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Source asset, when the workload has exactly one",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "attempt": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "autoRetries": {
-      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "bulk": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
-        }
-      ],
-      "nullable": true
-    },
-    "bulkItems": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationBulkItemDto"
-      },
-      "type": "array"
-    },
-    "bulkRetryPending": {
-      "description": "Asset IDs waiting for their automatic retry",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "cancelAcknowledgedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cancelRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "checkpoints": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationCheckpointDto"
-      },
-      "type": "array"
-    },
-    "cloudJob": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudMlJobActivityDto"
-        }
-      ],
-      "nullable": true
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "destinationDetail": {
-      "description": "Which worker or endpoint the destination resolved to",
-      "nullable": true,
-      "type": "string"
-    },
-    "error": {
-      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "description": "Stable code the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "estimate": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationEstimateDto"
-        }
-      ],
-      "nullable": true
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "label": {
-      "description": "What the person sees in Activity; empty when withheld",
-      "type": "string"
-    },
-    "maxAttempts": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pausable": {
-      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
-      "type": "boolean"
-    },
-    "pauseRequestedAt": {
-      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "processedUnits": {
-      "type": "string"
-    },
-    "progress": {
-      "description": "Percent complete, from counted work",
-      "format": "double",
-      "type": "number"
-    },
-    "projectId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "resultAssetId": {
-      "description": "The asset a completed job published",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "retryAt": {
-      "description": "When a job waiting for its automatic retry may run again",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "retryOfId": {
-      "description": "The job this one retries",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revisionId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "settings": {
-      "additionalProperties": {},
-      "description": "User-visible render settings",
-      "type": "object"
-    },
-    "snapshot": {
-      "additionalProperties": {},
-      "type": "object"
-    },
-    "startedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    },
-    "totalUnits": {
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "withheld": {
-      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "assetId",
-    "attempt",
-    "autoRetries",
-    "bulk",
-    "bulkItems",
-    "bulkRetryPending",
-    "cancelAcknowledgedAt",
-    "cancelRequestedAt",
-    "checkpoints",
-    "createdAt",
-    "destination",
-    "destinationDetail",
-    "error",
-    "errorCode",
-    "estimate",
-    "finishedAt",
-    "id",
-    "kind",
-    "label",
-    "maxAttempts",
-    "pausable",
-    "pauseRequestedAt",
-    "processedUnits",
-    "progress",
-    "projectId",
-    "resultAssetId",
-    "retryAt",
-    "retryOfId",
-    "revisionId",
-    "settings",
-    "snapshot",
-    "startedAt",
-    "status",
-    "totalUnits",
-    "updatedAt",
-    "withheld"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationDto
-
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-16.md#mediaoperationestimatedto), [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Source asset, when the workload has exactly one",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "attempt": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "autoRetries": {
-      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "bulk": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
-        }
-      ],
-      "nullable": true
-    },
-    "cancelAcknowledgedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cancelRequestedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "cloudJob": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudMlJobActivityDto"
-        }
-      ],
-      "nullable": true
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "destinationDetail": {
-      "description": "Which worker or endpoint the destination resolved to",
-      "nullable": true,
-      "type": "string"
-    },
-    "error": {
-      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "description": "Stable code the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "estimate": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaOperationEstimateDto"
-        }
-      ],
-      "nullable": true
-    },
-    "finishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Media operation ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "label": {
-      "description": "What the person sees in Activity; empty when withheld",
-      "type": "string"
-    },
-    "maxAttempts": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pausable": {
-      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
-      "type": "boolean"
-    },
-    "pauseRequestedAt": {
-      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "processedUnits": {
-      "type": "string"
-    },
-    "progress": {
-      "description": "Percent complete, from counted work",
-      "format": "double",
-      "type": "number"
-    },
-    "projectId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "resultAssetId": {
-      "description": "The asset a completed job published",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "retryAt": {
-      "description": "When a job waiting for its automatic retry may run again",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "retryOfId": {
-      "description": "The job this one retries",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revisionId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "settings": {
-      "additionalProperties": {},
-      "description": "User-visible render settings",
-      "type": "object"
-    },
-    "startedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    },
-    "totalUnits": {
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "withheld": {
-      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "assetId",
-    "attempt",
-    "autoRetries",
-    "bulk",
-    "cancelAcknowledgedAt",
-    "cancelRequestedAt",
-    "createdAt",
-    "destination",
-    "destinationDetail",
-    "error",
-    "errorCode",
-    "estimate",
-    "finishedAt",
-    "id",
-    "kind",
-    "label",
-    "maxAttempts",
-    "pausable",
-    "pauseRequestedAt",
-    "processedUnits",
-    "progress",
-    "projectId",
-    "resultAssetId",
-    "retryAt",
-    "retryOfId",
-    "revisionId",
-    "settings",
-    "startedAt",
-    "status",
-    "totalUnits",
-    "updatedAt",
-    "withheld"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationDuplicateGroupDto
-
-Related models: [DuplicateDecisionKind](models-11.md#duplicatedecisionkind).
-
-```json
-{
-  "properties": {
-    "decision": {
-      "$ref": "#/components/schemas/DuplicateDecisionKind"
-    },
-    "decisionId": {
-      "description": "For `undo-duplicates`: the recorded decision to reverse",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "duplicateId": {
-      "description": "Duplicate group ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "keepAssetIds": {
-      "description": "Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "type": "array"
-    },
-    "memberIds": {
-      "description": "Every photo of the group, as reviewed",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "minItems": 2,
-      "type": "array"
-    }
-  },
-  "required": [
-    "decision",
-    "duplicateId",
-    "keepAssetIds",
-    "memberIds"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationEstimateDto
-
-
-```json
-{
-  "properties": {
-    "cloudCost": {
-      "additionalProperties": {},
-      "description": "Configured cloud rate detail, when one applies",
-      "nullable": true,
-      "type": "object"
-    },
-    "seconds": {
-      "description": "Measured estimate of remaining work",
-      "format": "double",
-      "type": "number"
-    },
-    "sizeBytes": {
-      "description": "Estimated output size",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "cloudCost",
-    "seconds",
-    "sizeBytes"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationItemStatus
-
-
-```json
-{
-  "description": "Per-item outcome of a bulk media operation",
-  "enum": [
-    "ok",
-    "skipped",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationKind
-
-
-```json
-{
-  "description": "Media operation kind",
-  "enum": [
-    "studio_export",
-    "studio_preview",
-    "studio_reverse_conform",
-    "studio_transcription",
-    "studio_preview_stream",
-    "restoration",
-    "restoration_preview",
-    "quick_edit",
-    "bulk",
-    "studio_bundle_export",
-    "studio_bundle_import",
-    "enrichment_plan",
-    "media_health",
-    "icloud_sync",
-    "takeout_import",
-    "physical_deduplication",
-    "library_scan",
-    "preservation_export",
-    "preservation_verify",
-    "preservation_review",
-    "preservation_restore",
-    "studio_export_publish",
-    "cloud_description_batch",
-    "cloud_ml_job",
-    "cloud_backup",
-    "cloud_restore",
-    "buddy_backup",
-    "buddy_restore"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationListResponseDto
-
-Related models: [MediaOperationDto](models-16.md#mediaoperationdto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "description": "Matching jobs, before paging",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationLivePhotoPairDto
-
-
-```json
-{
-  "properties": {
-    "photoId": {
-      "description": "Still image asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "videoId": {
-      "description": "Motion video asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "photoId",
-    "videoId"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationMediaHealthEntryDto
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "candidateId": {
-      "description": "Reviewed candidate ID, for a relink or a recovery",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "findingId": {
-      "description": "Media health finding ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "findingId"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationStatisticsDto
-
-Related models: [MediaOperationAggregateDto](models-16.md#mediaoperationaggregatedto).
-
-```json
-{
-  "properties": {
-    "active": {
-      "description": "Jobs the server is still working on",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "buckets": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationAggregateDto"
-      },
-      "type": "array"
-    },
-    "failed": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "unreleasedRemote": {
-      "description": "Remote jobs whose cleanup has not been acknowledged",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "active",
-    "buckets",
-    "failed",
-    "unreleasedRemote"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationStatus
-
-
-```json
-{
-  "description": "Media operation status",
-  "enum": [
-    "queued",
-    "preparing",
-    "rendering",
-    "validating",
-    "completed",
-    "cancelling",
-    "cancelled",
-    "failed",
-    "paused"
-  ],
-  "type": "string"
-}
-```
-
-## MemoriesResponse
-
-
-```json
-{
-  "properties": {
-    "duration": {
-      "description": "Memory duration in seconds",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "enabled": {
-      "description": "Whether memories are enabled",
-      "type": "boolean"
-    },
-    "sidebarWeb": {
-      "description": "Whether memories appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "duration",
-    "enabled",
-    "sidebarWeb"
-  ],
-  "type": "object"
-}
-```
-
-## MemoriesUpdate
-
-
-```json
-{
-  "properties": {
-    "duration": {
-      "description": "Memory duration in seconds",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "enabled": {
-      "description": "Whether memories are enabled",
-      "type": "boolean"
-    },
-    "sidebarWeb": {
-      "description": "Whether memories appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
 }
 ```

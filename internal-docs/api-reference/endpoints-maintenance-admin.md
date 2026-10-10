@@ -525,7 +525,7 @@ Set maintenance mode
 
 Permission: `maintenance`. Admin only: `true`.
 
-Models: [SetMaintenanceModeDto](models-31.md#setmaintenancemodedto).
+Models: [SetMaintenanceModeDto](models-32.md#setmaintenancemodedto).
 
 Controller access declarations:
 
@@ -604,7 +604,7 @@ Detect existing install
 
 Permission: `maintenance`. Admin only: `true`.
 
-Models: [MaintenanceDetectInstallResponseDto](models-15.md#maintenancedetectinstallresponsedto).
+Models: [MaintenanceDetectInstallResponseDto](models-16.md#maintenancedetectinstallresponsedto).
 
 Controller access declarations:
 
@@ -680,7 +680,7 @@ Log into maintenance mode
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MaintenanceAuthDto](models-15.md#maintenanceauthdto), [MaintenanceLoginDto](models-15.md#maintenancelogindto).
+Models: [MaintenanceAuthDto](models-16.md#maintenanceauthdto), [MaintenanceLoginDto](models-16.md#maintenancelogindto).
 
 Controller access declarations:
 
@@ -753,7 +753,7 @@ Get maintenance mode status
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MaintenanceStatusResponseDto](models-15.md#maintenancestatusresponsedto).
+Models: [MaintenanceStatusResponseDto](models-16.md#maintenancestatusresponsedto).
 
 Controller access declarations:
 
@@ -816,7 +816,7 @@ Restore a copy of an applied physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationRestoreRequestDto](models-26.md#physicaldeduplicationrestorerequestdto), [PhysicalDeduplicationVerificationDto](models-26.md#physicaldeduplicationverificationdto).
+Models: [PhysicalDeduplicationRestoreRequestDto](models-27.md#physicaldeduplicationrestorerequestdto), [PhysicalDeduplicationVerificationDto](models-27.md#physicaldeduplicationverificationdto).
 
 Controller access declarations:
 
@@ -915,7 +915,7 @@ Verify an applied physical deduplication plan
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationVerificationDto](models-26.md#physicaldeduplicationverificationdto).
+Models: [PhysicalDeduplicationVerificationDto](models-27.md#physicaldeduplicationverificationdto).
 
 Controller access declarations:
 
@@ -1004,7 +1004,7 @@ Apply a reviewed physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto), [PhysicalDeduplicationApplyRequestDto](models-26.md#physicaldeduplicationapplyrequestdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto), [PhysicalDeduplicationApplyRequestDto](models-27.md#physicaldeduplicationapplyrequestdto).
 
 Controller access declarations:
 
@@ -1092,7 +1092,7 @@ Review a physical deduplication plan
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationReviewRequestDto](models-26.md#physicaldeduplicationreviewrequestdto), [PhysicalDeduplicationReviewResponseDto](models-26.md#physicaldeduplicationreviewresponsedto).
+Models: [PhysicalDeduplicationReviewRequestDto](models-27.md#physicaldeduplicationreviewrequestdto), [PhysicalDeduplicationReviewResponseDto](models-27.md#physicaldeduplicationreviewresponsedto).
 
 Controller access declarations:
 
@@ -1180,7 +1180,7 @@ Get physical deduplication preview
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationPreviewResponseDto](models-26.md#physicaldeduplicationpreviewresponsedto).
+Models: [PhysicalDeduplicationPreviewResponseDto](models-27.md#physicaldeduplicationpreviewresponsedto).
 
 Controller access declarations:
 
@@ -1257,7 +1257,7 @@ Request physical deduplication preview
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [PhysicalDeduplicationPreviewRequestDto](models-26.md#physicaldeduplicationpreviewrequestdto).
+Models: [PhysicalDeduplicationPreviewRequestDto](models-27.md#physicaldeduplicationpreviewrequestdto).
 
 Controller access declarations:
 

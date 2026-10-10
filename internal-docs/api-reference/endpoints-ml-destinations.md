@@ -12,7 +12,7 @@ Get the worker inventory
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [WorkerInventoryResponseDto](models-39.md#workerinventoryresponsedto).
+Models: [WorkerInventoryResponseDto](models-40.md#workerinventoryresponsedto).
 
 Controller access declarations:
 
@@ -256,7 +256,7 @@ Get machine-learning capabilities
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MlCapabilitiesResponseDto](models-17.md#mlcapabilitiesresponsedto).
+Models: [MlCapabilitiesResponseDto](models-18.md#mlcapabilitiesresponsedto).
 
 Controller access declarations:
 
@@ -769,7 +769,7 @@ Admit a workload on a destination
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MlAdmissionRequestDto](models-17.md#mladmissionrequestdto), [MlAdmissionResponseDto](models-17.md#mladmissionresponsedto).
+Models: [MlAdmissionRequestDto](models-18.md#mladmissionrequestdto), [MlAdmissionResponseDto](models-18.md#mladmissionresponsedto).
 
 Controller access declarations:
 

@@ -4,7 +4,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## AskSearchPlanDto
 
-Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchAskMode](models-29.md#searchaskmode), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
+Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchAskMode](models-30.md#searchaskmode), [SearchFilter](models-31.md#searchfilter), [SearchOrder](models-31.md#searchorder).
 
 ```json
 {
@@ -933,7 +933,7 @@ Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06
 
 ## AskSearchResponseDto
 
-Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-30.md#searchresponsedto).
+Related models: [AskSearchPlanDto](models-04.md#asksearchplandto), [SearchResponseDto](models-31.md#searchresponsedto).
 
 ```json
 {

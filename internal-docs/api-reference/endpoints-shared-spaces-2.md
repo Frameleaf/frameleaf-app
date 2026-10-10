@@ -98,7 +98,7 @@ Preview a shared space
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpacePreviewResponseDto](models-31.md#sharedspacepreviewresponsedto).
+Models: [SharedSpacePreviewResponseDto](models-33.md#sharedspacepreviewresponsedto).
 
 Controller access declarations:
 
@@ -284,7 +284,7 @@ Mark a shared space seen
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [SharedSpaceNewResponseDto](models-31.md#sharedspacenewresponsedto).
+Models: [SharedSpaceNewResponseDto](models-32.md#sharedspacenewresponsedto).
 
 Controller access declarations:
 

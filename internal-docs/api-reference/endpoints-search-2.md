@@ -2,17 +2,104 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## searchSmartStatistics
+
+`POST /api/search/smart/statistics`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L89).
+
+Smart search statistics
+
+Permission: `asset.read`. Admin only: `false`.
+
+Models: [SmartSearchDto](models-33.md#smartsearchdto), [SmartSearchStatisticsResponseDto](models-33.md#smartsearchstatisticsresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Search)
+@Controller('search')
+@Post('smart/statistics')
+@Authenticated({ permission: Permission.AssetRead })
+@HttpCode(HttpStatus.OK)
+@Endpoint({
+    summary: 'Smart search statistics',
+    description:
+      'How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.",
+  "operationId": "searchSmartStatistics",
+  "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/SmartSearchDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/SmartSearchStatisticsResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Smart search statistics",
+  "tags": [
+    "Search"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.read",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## searchAssetStatistics
 
 `POST /api/search/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L51).
 
 Search asset statistics
 
 Permission: `asset.statistics`. Admin only: `false`.
 
-Models: [SearchStatisticsResponseDto](models-30.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-32.md#statisticssearchdto).
+Models: [SearchStatisticsResponseDto](models-31.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-33.md#statisticssearchdto).
 
 Controller access declarations:
 
@@ -96,13 +183,13 @@ Complete operation contract:
 
 `GET /api/search/suggestions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L206).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L219).
 
 Retrieve search suggestions
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchSuggestionType](models-30.md#searchsuggestiontype).
+Models: [SearchSuggestionType](models-32.md#searchsuggestiontype).
 
 Controller access declarations:
 

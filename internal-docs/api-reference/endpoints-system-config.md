@@ -686,7 +686,7 @@ Get machine learning hardware
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [MachineLearningHardwareResponseDto](models-15.md#machinelearninghardwareresponsedto).
+Models: [MachineLearningHardwareResponseDto](models-16.md#machinelearninghardwareresponsedto).
 
 Controller access declarations:
 
@@ -779,7 +779,7 @@ Trigger smart-album re-evaluate
 
 Permission: `systemConfig.update`. Admin only: `true`.
 
-Models: [SmartAlbumReevaluateRequestDto](models-31.md#smartalbumreevaluaterequestdto), [SmartAlbumReevaluateResponseDto](models-32.md#smartalbumreevaluateresponsedto).
+Models: [SmartAlbumReevaluateRequestDto](models-33.md#smartalbumreevaluaterequestdto), [SmartAlbumReevaluateResponseDto](models-33.md#smartalbumreevaluateresponsedto).
 
 Controller access declarations:
 
@@ -871,7 +871,7 @@ Estimate smart-album re-evaluate cost
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [SmartAlbumReevaluateEstimateDto](models-31.md#smartalbumreevaluateestimatedto).
+Models: [SmartAlbumReevaluateEstimateDto](models-33.md#smartalbumreevaluateestimatedto).
 
 Controller access declarations:
 
@@ -948,7 +948,7 @@ Get storage template options
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [SystemConfigTemplateStorageOptionDto](models-36.md#systemconfigtemplatestorageoptiondto).
+Models: [SystemConfigTemplateStorageOptionDto](models-38.md#systemconfigtemplatestorageoptiondto).
 
 Controller access declarations:
 

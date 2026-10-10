@@ -12,7 +12,7 @@ Get server information
 
 Permission: `server.about`. Admin only: `false`.
 
-Models: [ServerAboutResponseDto](models-30.md#serveraboutresponsedto).
+Models: [ServerAboutResponseDto](models-32.md#serveraboutresponsedto).
 
 Controller access declarations:
 
@@ -91,7 +91,7 @@ Get APK links
 
 Permission: `server.apkLinks`. Admin only: `false`.
 
-Models: [ServerApkLinksDto](models-31.md#serverapklinksdto).
+Models: [ServerApkLinksDto](models-32.md#serverapklinksdto).
 
 Controller access declarations:
 
@@ -175,7 +175,7 @@ Get app releases
 
 Permission: `server.about`. Admin only: `false`.
 
-Models: [ServerAppReleasesResponseDto](models-31.md#serverappreleasesresponsedto).
+Models: [ServerAppReleasesResponseDto](models-32.md#serverappreleasesresponsedto).
 
 Controller access declarations:
 
@@ -251,7 +251,7 @@ Get config
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerConfigDto](models-31.md#serverconfigdto).
+Models: [ServerConfigDto](models-32.md#serverconfigdto).
 
 Controller access declarations:
 
@@ -329,7 +329,7 @@ Get connections
 
 Permission: `server.about`. Admin only: `false`.
 
-Models: [RemoteConnectionsResponseDto](models-28.md#remoteconnectionsresponsedto).
+Models: [RemoteConnectionsResponseDto](models-29.md#remoteconnectionsresponsedto).
 
 Controller access declarations:
 
@@ -405,7 +405,7 @@ Get features
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerFeaturesDto](models-31.md#serverfeaturesdto).
+Models: [ServerFeaturesDto](models-32.md#serverfeaturesdto).
 
 Controller access declarations:
 
@@ -845,7 +845,7 @@ Warm the authenticated device catalog during setup
 
 Permission: `sync.stream`. Admin only: `false`.
 
-Models: [WarmLibrarySetupDto](models-39.md#warmlibrarysetupdto).
+Models: [WarmLibrarySetupDto](models-40.md#warmlibrarysetupdto).
 
 Controller access declarations:
 
@@ -918,7 +918,7 @@ Get supported media types
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerMediaTypesResponseDto](models-31.md#servermediatypesresponsedto).
+Models: [ServerMediaTypesResponseDto](models-32.md#servermediatypesresponsedto).
 
 Controller access declarations:
 
@@ -985,7 +985,7 @@ Ping
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerPingResponse](models-31.md#serverpingresponse).
+Models: [ServerPingResponse](models-32.md#serverpingresponse).
 
 Controller access declarations:
 
@@ -1052,7 +1052,7 @@ Set up a new server with a password administrator
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafSetupAdminDto](models-12.md#frameleafsetupadmindto), [FrameleafSetupErrorDto](models-12.md#frameleafsetuperrordto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
+Models: [FrameleafSetupAdminDto](models-12.md#frameleafsetupadmindto), [FrameleafSetupErrorDto](models-12.md#frameleafsetuperrordto), [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -1312,7 +1312,7 @@ Get statistics
 
 Permission: `server.statistics`. Admin only: `true`.
 
-Models: [ServerStatsResponseDto](models-31.md#serverstatsresponsedto).
+Models: [ServerStatsResponseDto](models-32.md#serverstatsresponsedto).
 
 Controller access declarations:
 
@@ -1392,7 +1392,7 @@ Get storage
 
 Permission: `server.storage`. Admin only: `false`.
 
-Models: [ServerStorageResponseDto](models-31.md#serverstorageresponsedto).
+Models: [ServerStorageResponseDto](models-32.md#serverstorageresponsedto).
 
 Controller access declarations:
 
@@ -1471,7 +1471,7 @@ Get server version
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerVersionResponseDto](models-31.md#serverversionresponsedto).
+Models: [ServerVersionResponseDto](models-32.md#serverversionresponsedto).
 
 Controller access declarations:
 
@@ -1538,7 +1538,7 @@ Get version check status
 
 Permission: `server.versionCheck`. Admin only: `false`.
 
-Models: [VersionCheckStateResponseDto](models-38.md#versioncheckstateresponsedto).
+Models: [VersionCheckStateResponseDto](models-40.md#versioncheckstateresponsedto).
 
 Controller access declarations:
 
@@ -1617,7 +1617,7 @@ Check for updates now
 
 Permission: `server.versionCheck`. Admin only: `true`.
 
-Models: [ReleaseEventV1](models-28.md#releaseeventv1).
+Models: [ReleaseEventV1](models-29.md#releaseeventv1).
 
 Controller access declarations:
 
@@ -1695,7 +1695,7 @@ Get version history
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ServerVersionHistoryResponseDto](models-31.md#serverversionhistoryresponsedto).
+Models: [ServerVersionHistoryResponseDto](models-32.md#serverversionhistoryresponsedto).
 
 Controller access declarations:
 

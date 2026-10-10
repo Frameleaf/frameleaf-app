@@ -1350,7 +1350,7 @@ Look up own asset safety by SHA-256
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SafetyLookupDto](models-29.md#safetylookupdto), [SafetyLookupResponseDto](models-29.md#safetylookupresponsedto).
+Models: [SafetyLookupDto](models-30.md#safetylookupdto), [SafetyLookupResponseDto](models-30.md#safetylookupresponsedto).
 
 Controller access declarations:
 
@@ -1432,7 +1432,7 @@ Summarize own library safety
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SafetySummaryDto](models-29.md#safetysummarydto).
+Models: [SafetySummaryDto](models-30.md#safetysummarydto).
 
 Controller access declarations:
 
@@ -1936,7 +1936,7 @@ Commit two verified Live Photo upload resources atomically
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [LivePhotoUploadCommitDto](models-15.md#livephotouploadcommitdto), [LivePhotoUploadResultDto](models-15.md#livephotouploadresultdto).
+Models: [LivePhotoUploadCommitDto](models-16.md#livephotouploadcommitdto), [LivePhotoUploadResultDto](models-16.md#livephotouploadresultdto).
 
 Controller access declarations:
 

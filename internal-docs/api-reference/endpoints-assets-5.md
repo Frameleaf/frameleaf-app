@@ -12,7 +12,7 @@ List Google Photos imports
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -85,7 +85,7 @@ Start a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutCreateDto](models-37.md#takeoutcreatedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutCreateDto](models-38.md#takeoutcreatedto), [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -172,7 +172,7 @@ List the permitted import locations
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [TakeoutRootsResponseDto](models-37.md#takeoutrootsresponsedto).
+Models: [TakeoutRootsResponseDto](models-38.md#takeoutrootsresponsedto).
 
 Controller access declarations:
 
@@ -320,7 +320,7 @@ Get a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -401,7 +401,7 @@ Stage a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutArchiveCreateDto](models-37.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
+Models: [TakeoutArchiveCreateDto](models-38.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-38.md#takeoutsourceresponsedto).
 
 Controller access declarations:
 
@@ -576,7 +576,7 @@ Upload part of a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
+Models: [TakeoutSourceResponseDto](models-38.md#takeoutsourceresponsedto).
 
 Controller access declarations:
 
@@ -696,7 +696,7 @@ Check a staged part of a Takeout archive
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutVerifyChunkDto](models-37.md#takeoutverifychunkdto).
+Models: [TakeoutVerifyChunkDto](models-38.md#takeoutverifychunkdto).
 
 Controller access declarations:
 
@@ -796,7 +796,7 @@ Pause, resume or cancel a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutControlDto](models-37.md#takeoutcontroldto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutControlDto](models-38.md#takeoutcontroldto), [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -888,7 +888,7 @@ Import the reviewed items
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutOptionsDto](models-37.md#takeoutoptionsdto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutOptionsDto](models-38.md#takeoutoptionsdto), [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -986,7 +986,7 @@ List the items of a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutItemState](models-37.md#takeoutitemstate), [TakeoutItemsResponseDto](models-37.md#takeoutitemsresponsedto).
+Models: [TakeoutItemState](models-38.md#takeoutitemstate), [TakeoutItemsResponseDto](models-38.md#takeoutitemsresponsedto).
 
 Controller access declarations:
 
@@ -1099,7 +1099,7 @@ Choose metadata for an item, or leave it out
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResolveDto](models-37.md#takeoutresolvedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutResolveDto](models-38.md#takeoutresolvedto), [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -1200,7 +1200,7 @@ List possible Live Photos in a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutPairState](models-37.md#takeoutpairstate), [TakeoutPairsResponseDto](models-37.md#takeoutpairsresponsedto).
+Models: [TakeoutPairState](models-38.md#takeoutpairstate), [TakeoutPairsResponseDto](models-38.md#takeoutpairsresponsedto).
 
 Controller access declarations:
 
@@ -1313,7 +1313,7 @@ Link or separate a possible Live Photo
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutPairDecisionDto](models-37.md#takeoutpairdecisiondto), [TakeoutPairsResponseDto](models-37.md#takeoutpairsresponsedto).
+Models: [TakeoutPairDecisionDto](models-38.md#takeoutpairdecisiondto), [TakeoutPairsResponseDto](models-38.md#takeoutpairsresponsedto).
 
 Controller access declarations:
 
@@ -1404,7 +1404,7 @@ Scan a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutResponseDto](models-38.md#takeoutresponsedto).
 
 Controller access declarations:
 

@@ -568,7 +568,7 @@ Get remote access
 
 Permission: `adminCloud.read`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto).
 
 Controller access declarations:
 
@@ -646,7 +646,7 @@ Change remote access
 
 Permission: `adminRemoteAccess.update`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto), [RemoteAccessUpdateDto](models-28.md#remoteaccessupdatedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto), [RemoteAccessUpdateDto](models-29.md#remoteaccessupdatedto).
 
 Controller access declarations:
 
@@ -822,7 +822,7 @@ Stop using the custom hostname
 
 Permission: `adminRemoteAccess.update`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto).
 
 Controller access declarations:
 
@@ -900,7 +900,7 @@ Use your own domain for remote access
 
 Permission: `adminRemoteAccess.update`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto), [RemoteHostnameUpdateDto](models-28.md#remotehostnameupdatedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto), [RemoteHostnameUpdateDto](models-29.md#remotehostnameupdatedto).
 
 Controller access declarations:
 
@@ -988,7 +988,7 @@ Check the custom hostname’s DNS records
 
 Permission: `adminRemoteAccess.update`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto).
 
 Controller access declarations:
 
@@ -1067,7 +1067,7 @@ Test remote access
 
 Permission: `adminRemoteAccess.update`. Admin only: `true`.
 
-Models: [RemoteAccessStatusResponseDto](models-28.md#remoteaccessstatusresponsedto).
+Models: [RemoteAccessStatusResponseDto](models-29.md#remoteaccessstatusresponsedto).
 
 Controller access declarations:
 
@@ -1146,7 +1146,7 @@ Get relay use this month
 
 Permission: `adminCloud.read`. Admin only: `true`.
 
-Models: [RemoteAccessUsageResponseDto](models-28.md#remoteaccessusageresponsedto).
+Models: [RemoteAccessUsageResponseDto](models-29.md#remoteaccessusageresponsedto).
 
 Controller access declarations:
 

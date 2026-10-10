@@ -12,7 +12,7 @@ List your media operations
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationListResponseDto](models-16.md#mediaoperationlistresponsedto), [MediaOperationStatus](models-16.md#mediaoperationstatus).
+Models: [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationListResponseDto](models-17.md#mediaoperationlistresponsedto), [MediaOperationStatus](models-17.md#mediaoperationstatus).
 
 Controller access declarations:
 
@@ -136,7 +136,7 @@ Queue a bulk operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationBulkCreateDto](models-16.md#mediaoperationbulkcreatedto), [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationBulkCreateDto](models-16.md#mediaoperationbulkcreatedto), [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -222,7 +222,7 @@ Get media operation statistics
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [MediaOperationStatisticsDto](models-16.md#mediaoperationstatisticsdto).
+Models: [MediaOperationStatisticsDto](models-17.md#mediaoperationstatisticsdto).
 
 Controller access declarations:
 
@@ -375,7 +375,7 @@ Get a media operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDetailDto](models-16.md#mediaoperationdetaildto).
+Models: [MediaOperationDetailDto](models-17.md#mediaoperationdetaildto).
 
 Controller access declarations:
 
@@ -460,7 +460,7 @@ Cancel a media operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -547,7 +547,7 @@ Pause a media operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -634,7 +634,7 @@ Resume a media operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -721,7 +721,7 @@ Retry a media operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -895,7 +895,7 @@ Get a completed source reversal result
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioReverseConformResultDto](models-34.md#studioreverseconformresultdto).
+Models: [StudioReverseConformResultDto](models-35.md#studioreverseconformresultdto).
 
 Controller access declarations:
 

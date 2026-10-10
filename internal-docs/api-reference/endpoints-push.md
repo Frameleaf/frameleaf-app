@@ -12,7 +12,7 @@ List own push devices
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [PushDeviceListResponseDto](models-27.md#pushdevicelistresponsedto).
+Models: [PushDeviceListResponseDto](models-28.md#pushdevicelistresponsedto).
 
 Controller access declarations:
 
@@ -144,7 +144,7 @@ Update this device’s push registration
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto), [PushDeviceUpdateDto](models-27.md#pushdeviceupdatedto).
+Models: [PushDeviceResponseDto](models-28.md#pushdeviceresponsedto), [PushDeviceUpdateDto](models-28.md#pushdeviceupdatedto).
 
 Controller access declarations:
 
@@ -225,7 +225,7 @@ Register this device for push
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushDeviceRegisterDto](models-27.md#pushdeviceregisterdto), [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto).
+Models: [PushDeviceRegisterDto](models-28.md#pushdeviceregisterdto), [PushDeviceResponseDto](models-28.md#pushdeviceresponsedto).
 
 Controller access declarations:
 
@@ -381,7 +381,7 @@ Set a Live Activity push token
 
 Permission: `session.update`. Admin only: `false`.
 
-Models: [PushActivityTokenDto](models-27.md#pushactivitytokendto), [PushDeviceResponseDto](models-27.md#pushdeviceresponsedto).
+Models: [PushActivityTokenDto](models-28.md#pushactivitytokendto), [PushDeviceResponseDto](models-28.md#pushdeviceresponsedto).
 
 Controller access declarations:
 
@@ -546,7 +546,7 @@ Push availability
 
 Permission: `session.read`. Admin only: `false`.
 
-Models: [PushStatusResponseDto](models-27.md#pushstatusresponsedto).
+Models: [PushStatusResponseDto](models-28.md#pushstatusresponsedto).
 
 Controller access declarations:
 

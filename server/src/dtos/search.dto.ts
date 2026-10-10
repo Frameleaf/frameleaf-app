@@ -4,6 +4,7 @@ import { Place } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
+import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import {
   AssetOrder,
   AssetOrderSchema,
@@ -119,6 +120,18 @@ const PlacesResponseSchema = z
   })
   .meta({ id: 'PlacesResponseDto' });
 
+const SearchLandmarkResponseSchema = LandmarkSummarySchema.extend({
+  latitude: z.number().meta({ format: 'double' }).describe('Latitude of the landmark'),
+  longitude: z.number().meta({ format: 'double' }).describe('Longitude of the landmark'),
+  assetCount: z.int().min(1).describe('Number of timeline photos and videos taken at this landmark'),
+  firstTakenAt: z.iso.datetime().describe('Local capture time of the earliest photo or video here'),
+  lastTakenAt: z.iso.datetime().describe('Local capture time of the latest photo or video here'),
+  coverAssetId: z.uuidv4().describe('The latest photo or video here, for use as a cover'),
+  city: z.string().nullable().describe('City most of these photos and videos were taken in'),
+  state: z.string().nullable().describe('State or region most of these photos and videos were taken in'),
+  country: z.string().nullable().describe('Country most of these photos and videos were taken in'),
+}).meta({ id: 'SearchLandmarkResponseDto' });
+
 const SearchCityCountResponseSchema = z
   .object({
     city: z.string().describe('City name, grouped as in GET /search/cities (which lists only cities with a photo)'),
@@ -170,6 +183,11 @@ const IdsFilterSchema = nonEmptyPartial({
   all: z.array(z.uuidv4()).min(1),
   none: z.array(z.uuidv4()).min(1),
 }).meta({ id: 'IdsFilter' });
+
+const landmarkIds = z.array(z.string().regex(/^Q\d{1,18}$/)).min(1);
+const LandmarkIdsFilterSchema = nonEmptyPartial({ any: landmarkIds, none: landmarkIds }).meta({
+  id: 'LandmarkIdsFilter',
+});
 
 const stringListShape = {
   in: z.array(z.string()).min(1),
@@ -311,6 +329,8 @@ const searchFilterBranchShape = {
   // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
   petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,
+  // FL-353: photos and videos taken at any of (or none of) these landmarks
+  landmarkIds: LandmarkIdsFilterSchema,
   albumIds: IdsFilterSchema,
   checksum: StringFilterSchema,
   encodedVideoPath: StringFilterSchema,
@@ -335,6 +355,7 @@ export const SearchFilterSchema = z
 export type IdFilter = z.infer<typeof IdFilterSchema>;
 export type IdFilterNullable = z.infer<typeof IdFilterNullableSchema>;
 export type IdsFilter = z.infer<typeof IdsFilterSchema>;
+export type LandmarkIdsFilter = z.infer<typeof LandmarkIdsFilterSchema>;
 export type StringFilter = z.infer<typeof StringFilterSchema>;
 export type StringFilterNullable = z.infer<typeof StringFilterNullableSchema>;
 export type StringPatternFilter = z.infer<typeof StringPatternFilterSchema>;
@@ -444,6 +465,7 @@ export class SearchPlacesDto extends createZodDto(SearchPlacesSchema) {}
 export class SearchPeopleDto extends createZodDto(SearchPeopleSchema) {}
 export class PlacesResponseDto extends createZodDto(PlacesResponseSchema) {}
 export class SearchCityCountResponseDto extends createZodDto(SearchCityCountResponseSchema) {}
+export class SearchLandmarkResponseDto extends createZodDto(SearchLandmarkResponseSchema) {}
 export class SearchSuggestionRequestDto extends createZodDto(SearchSuggestionRequestSchema) {}
 
 export function mapPlaces(place: Place): PlacesResponseDto {

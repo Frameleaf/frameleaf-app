@@ -2,6 +2,809 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## MediaOperationDetailDto
+
+Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkItemDto](models-16.md#mediaoperationbulkitemdto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationCheckpointDto](models-16.md#mediaoperationcheckpointdto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Source asset, when the workload has exactly one",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "attempt": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "autoRetries": {
+      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "bulk": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
+        }
+      ],
+      "nullable": true
+    },
+    "bulkItems": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationBulkItemDto"
+      },
+      "type": "array"
+    },
+    "bulkRetryPending": {
+      "description": "Asset IDs waiting for their automatic retry",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "cancelAcknowledgedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "cancelRequestedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "checkpoints": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationCheckpointDto"
+      },
+      "type": "array"
+    },
+    "cloudJob": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudMlJobActivityDto"
+        }
+      ],
+      "nullable": true
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "destination": {
+      "$ref": "#/components/schemas/MediaOperationDestination"
+    },
+    "destinationDetail": {
+      "description": "Which worker or endpoint the destination resolved to",
+      "nullable": true,
+      "type": "string"
+    },
+    "error": {
+      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
+      "nullable": true,
+      "type": "string"
+    },
+    "errorCode": {
+      "description": "Stable code the client turns into a message",
+      "nullable": true,
+      "type": "string"
+    },
+    "estimate": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationEstimateDto"
+        }
+      ],
+      "nullable": true
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Media operation ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MediaOperationKind"
+    },
+    "label": {
+      "description": "What the person sees in Activity; empty when withheld",
+      "type": "string"
+    },
+    "maxAttempts": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "pausable": {
+      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
+      "type": "boolean"
+    },
+    "pauseRequestedAt": {
+      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "processedUnits": {
+      "type": "string"
+    },
+    "progress": {
+      "description": "Percent complete, from counted work",
+      "format": "double",
+      "type": "number"
+    },
+    "projectId": {
+      "nullable": true,
+      "type": "string"
+    },
+    "resultAssetId": {
+      "description": "The asset a completed job published",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "retryAt": {
+      "description": "When a job waiting for its automatic retry may run again",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "retryOfId": {
+      "description": "The job this one retries",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "revisionId": {
+      "nullable": true,
+      "type": "string"
+    },
+    "settings": {
+      "additionalProperties": {},
+      "description": "User-visible render settings",
+      "type": "object"
+    },
+    "snapshot": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    },
+    "totalUnits": {
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "withheld": {
+      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "assetId",
+    "attempt",
+    "autoRetries",
+    "bulk",
+    "bulkItems",
+    "bulkRetryPending",
+    "cancelAcknowledgedAt",
+    "cancelRequestedAt",
+    "checkpoints",
+    "createdAt",
+    "destination",
+    "destinationDetail",
+    "error",
+    "errorCode",
+    "estimate",
+    "finishedAt",
+    "id",
+    "kind",
+    "label",
+    "maxAttempts",
+    "pausable",
+    "pauseRequestedAt",
+    "processedUnits",
+    "progress",
+    "projectId",
+    "resultAssetId",
+    "retryAt",
+    "retryOfId",
+    "revisionId",
+    "settings",
+    "snapshot",
+    "startedAt",
+    "status",
+    "totalUnits",
+    "updatedAt",
+    "withheld"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationDto
+
+Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Source asset, when the workload has exactly one",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "attempt": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "autoRetries": {
+      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "bulk": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
+        }
+      ],
+      "nullable": true
+    },
+    "cancelAcknowledgedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "cancelRequestedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "cloudJob": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudMlJobActivityDto"
+        }
+      ],
+      "nullable": true
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "destination": {
+      "$ref": "#/components/schemas/MediaOperationDestination"
+    },
+    "destinationDetail": {
+      "description": "Which worker or endpoint the destination resolved to",
+      "nullable": true,
+      "type": "string"
+    },
+    "error": {
+      "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
+      "nullable": true,
+      "type": "string"
+    },
+    "errorCode": {
+      "description": "Stable code the client turns into a message",
+      "nullable": true,
+      "type": "string"
+    },
+    "estimate": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaOperationEstimateDto"
+        }
+      ],
+      "nullable": true
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Media operation ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MediaOperationKind"
+    },
+    "label": {
+      "description": "What the person sees in Activity; empty when withheld",
+      "type": "string"
+    },
+    "maxAttempts": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "pausable": {
+      "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
+      "type": "boolean"
+    },
+    "pauseRequestedAt": {
+      "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "processedUnits": {
+      "type": "string"
+    },
+    "progress": {
+      "description": "Percent complete, from counted work",
+      "format": "double",
+      "type": "number"
+    },
+    "projectId": {
+      "nullable": true,
+      "type": "string"
+    },
+    "resultAssetId": {
+      "description": "The asset a completed job published",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "retryAt": {
+      "description": "When a job waiting for its automatic retry may run again",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "retryOfId": {
+      "description": "The job this one retries",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "revisionId": {
+      "nullable": true,
+      "type": "string"
+    },
+    "settings": {
+      "additionalProperties": {},
+      "description": "User-visible render settings",
+      "type": "object"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    },
+    "totalUnits": {
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "withheld": {
+      "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "assetId",
+    "attempt",
+    "autoRetries",
+    "bulk",
+    "cancelAcknowledgedAt",
+    "cancelRequestedAt",
+    "createdAt",
+    "destination",
+    "destinationDetail",
+    "error",
+    "errorCode",
+    "estimate",
+    "finishedAt",
+    "id",
+    "kind",
+    "label",
+    "maxAttempts",
+    "pausable",
+    "pauseRequestedAt",
+    "processedUnits",
+    "progress",
+    "projectId",
+    "resultAssetId",
+    "retryAt",
+    "retryOfId",
+    "revisionId",
+    "settings",
+    "startedAt",
+    "status",
+    "totalUnits",
+    "updatedAt",
+    "withheld"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationDuplicateGroupDto
+
+Related models: [DuplicateDecisionKind](models-11.md#duplicatedecisionkind).
+
+```json
+{
+  "properties": {
+    "decision": {
+      "$ref": "#/components/schemas/DuplicateDecisionKind"
+    },
+    "decisionId": {
+      "description": "For `undo-duplicates`: the recorded decision to reverse",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "duplicateId": {
+      "description": "Duplicate group ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "keepAssetIds": {
+      "description": "Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50000,
+      "type": "array"
+    },
+    "memberIds": {
+      "description": "Every photo of the group, as reviewed",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50000,
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "duplicateId",
+    "keepAssetIds",
+    "memberIds"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationEstimateDto
+
+
+```json
+{
+  "properties": {
+    "cloudCost": {
+      "additionalProperties": {},
+      "description": "Configured cloud rate detail, when one applies",
+      "nullable": true,
+      "type": "object"
+    },
+    "seconds": {
+      "description": "Measured estimate of remaining work",
+      "format": "double",
+      "type": "number"
+    },
+    "sizeBytes": {
+      "description": "Estimated output size",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "cloudCost",
+    "seconds",
+    "sizeBytes"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationItemStatus
+
+
+```json
+{
+  "description": "Per-item outcome of a bulk media operation",
+  "enum": [
+    "ok",
+    "skipped",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## MediaOperationKind
+
+
+```json
+{
+  "description": "Media operation kind",
+  "enum": [
+    "studio_export",
+    "studio_preview",
+    "studio_reverse_conform",
+    "studio_transcription",
+    "studio_preview_stream",
+    "restoration",
+    "restoration_preview",
+    "quick_edit",
+    "bulk",
+    "studio_bundle_export",
+    "studio_bundle_import",
+    "enrichment_plan",
+    "media_health",
+    "icloud_sync",
+    "takeout_import",
+    "physical_deduplication",
+    "library_scan",
+    "preservation_export",
+    "preservation_verify",
+    "preservation_review",
+    "preservation_restore",
+    "studio_export_publish",
+    "cloud_description_batch",
+    "cloud_ml_job",
+    "cloud_backup",
+    "cloud_restore",
+    "buddy_backup",
+    "buddy_restore"
+  ],
+  "type": "string"
+}
+```
+
+## MediaOperationListResponseDto
+
+Related models: [MediaOperationDto](models-17.md#mediaoperationdto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "description": "Matching jobs, before paging",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationLivePhotoPairDto
+
+
+```json
+{
+  "properties": {
+    "photoId": {
+      "description": "Still image asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "Motion video asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "photoId",
+    "videoId"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationMediaHealthEntryDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "candidateId": {
+      "description": "Reviewed candidate ID, for a relink or a recovery",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "findingId": {
+      "description": "Media health finding ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "findingId"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationStatisticsDto
+
+Related models: [MediaOperationAggregateDto](models-16.md#mediaoperationaggregatedto).
+
+```json
+{
+  "properties": {
+    "active": {
+      "description": "Jobs the server is still working on",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "buckets": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationAggregateDto"
+      },
+      "type": "array"
+    },
+    "failed": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "unreleasedRemote": {
+      "description": "Remote jobs whose cleanup has not been acknowledged",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "active",
+    "buckets",
+    "failed",
+    "unreleasedRemote"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationStatus
+
+
+```json
+{
+  "description": "Media operation status",
+  "enum": [
+    "queued",
+    "preparing",
+    "rendering",
+    "validating",
+    "completed",
+    "cancelling",
+    "cancelled",
+    "failed",
+    "paused"
+  ],
+  "type": "string"
+}
+```
+
+## MemoriesResponse
+
+
+```json
+{
+  "properties": {
+    "duration": {
+      "description": "Memory duration in seconds",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "enabled": {
+      "description": "Whether memories are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether memories appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "duration",
+    "enabled",
+    "sidebarWeb"
+  ],
+  "type": "object"
+}
+```
+
+## MemoriesUpdate
+
+
+```json
+{
+  "properties": {
+    "duration": {
+      "description": "Memory duration in seconds",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "enabled": {
+      "description": "Whether memories are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether memories appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
 ## MemoryCreateDto
 
 Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md#memorytype).
@@ -90,7 +893,7 @@ Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md
 
 ## MemoryData
 
-Related models: [BirthdayMemoryDto](models-07.md#birthdaymemorydto), [EventStoryDto](models-11.md#eventstorydto), [OnThisDayDto](models-18.md#onthisdaydto), [PersonRecapDto](models-19.md#personrecapdto), [PetStoryDto](models-19.md#petstorydto), [YearInReviewDto](models-39.md#yearinreviewdto).
+Related models: [BirthdayMemoryDto](models-07.md#birthdaymemorydto), [EventStoryDto](models-11.md#eventstorydto), [OnThisDayDto](models-19.md#onthisdaydto), [PersonRecapDto](models-19.md#personrecapdto), [PetStoryDto](models-20.md#petstorydto), [YearInReviewDto](models-40.md#yearinreviewdto).
 
 ```json
 {
@@ -346,7 +1149,7 @@ Related models: [MemoryExportFormat](models-17.md#memoryexportformat), [MemoryEx
 
 ## MemoryHighlightOptionsDto
 
-Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-33.md#studioexportresolution).
+Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-34.md#studioexportresolution).
 
 ```json
 {
@@ -376,7 +1179,7 @@ Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [Memo
 
 ## MemoryHighlightResponseDto
 
-Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-33.md#studioexportresolution).
+Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [MemoryHighlightDestination](models-17.md#memoryhighlightdestination), [StudioExportResolution](models-34.md#studioexportresolution).
 
 ```json
 {
@@ -815,1072 +1618,6 @@ Related models: [PersonMergeSuggestionDto](models-19.md#personmergesuggestiondto
   },
   "required": [
     "suggestions"
-  ],
-  "type": "object"
-}
-```
-
-## MetadataSearchDto
-
-Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
-
-```json
-{
-  "properties": {
-    "albumIds": {
-      "deprecated": true,
-      "description": "Filter by album IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "checksum": {
-      "deprecated": true,
-      "description": "Filter by file checksum",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "city": {
-      "deprecated": true,
-      "description": "Filter by city name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "country": {
-      "deprecated": true,
-      "description": "Filter by country name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "createdAfter": {
-      "deprecated": true,
-      "description": "Filter by creation date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "createdBefore": {
-      "deprecated": true,
-      "description": "Filter by creation date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "cursor": {
-      "description": "Cursor for the next page of results",
-      "minLength": 1,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "description": {
-      "deprecated": true,
-      "description": "Filter by description text",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "encodedVideoPath": {
-      "deprecated": true,
-      "description": "Filter by encoded video file path",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "filter": {
-      "$ref": "#/components/schemas/SearchFilter",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "id": {
-      "deprecated": true,
-      "description": "Filter by asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "imageEnrichment": {
-      "$ref": "#/components/schemas/ImageEnrichmentFilter"
-    },
-    "isEncoded": {
-      "deprecated": true,
-      "description": "Filter by encoded status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isFavorite": {
-      "deprecated": true,
-      "description": "Filter by favorite status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isMotion": {
-      "deprecated": true,
-      "description": "Filter by motion photo status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isNotInAlbum": {
-      "deprecated": true,
-      "description": "Filter assets not in any album",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "isOffline": {
-      "deprecated": true,
-      "description": "Filter by offline status",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "lensModel": {
-      "deprecated": true,
-      "description": "Filter by lens model",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "libraryId": {
-      "deprecated": true,
-      "description": "Library ID to filter by",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "make": {
-      "deprecated": true,
-      "description": "Filter by camera make",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "model": {
-      "deprecated": true,
-      "description": "Filter by camera model",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "ocr": {
-      "deprecated": true,
-      "description": "Filter by OCR text content",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder",
-      "deprecated": true,
-      "description": "Sort order",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "orderBy": {
-      "$ref": "#/components/schemas/SearchOrder",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        }
-      ]
-    },
-    "originalFileName": {
-      "deprecated": true,
-      "description": "Filter by original file name",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "originalPath": {
-      "deprecated": true,
-      "description": "Filter by original file path",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "page": {
-      "deprecated": true,
-      "description": "Page number",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "personIds": {
-      "deprecated": true,
-      "description": "Filter by person IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "petIds": {
-      "deprecated": true,
-      "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v3.2.0",
-          "state": "Added"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "previewPath": {
-      "deprecated": true,
-      "description": "Filter by preview file path",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "rating": {
-      "deprecated": true,
-      "description": "Filter by rating [1-5], or null for unrated",
-      "maximum": 5,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v2.6.0",
-          "state": "Updated",
-          "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
-        },
-        {
-          "version": "v3",
-          "state": "Updated",
-          "description": "Using -1 as a rating is no longer valid."
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "size": {
-      "description": "Number of results to return",
-      "maximum": 1000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "state": {
-      "deprecated": true,
-      "description": "Filter by state/province name",
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "suppressedOnly": {
-      "description": "Return only suppressed content. Requires an elevated session.",
-      "type": "boolean"
-    },
-    "tagIds": {
-      "deprecated": true,
-      "description": "Filter by tag IDs",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "nullable": true,
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "takenAfter": {
-      "deprecated": true,
-      "description": "Filter by taken date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "takenBefore": {
-      "deprecated": true,
-      "description": "Filter by taken date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "thumbnailPath": {
-      "deprecated": true,
-      "description": "Filter by thumbnail file path",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "trashedAfter": {
-      "deprecated": true,
-      "description": "Filter by trash date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "trashedBefore": {
-      "deprecated": true,
-      "description": "Filter by trash date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum",
-      "deprecated": true,
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "updatedAfter": {
-      "deprecated": true,
-      "description": "Filter by update date (after)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "updatedBefore": {
-      "deprecated": true,
-      "description": "Filter by update date (before)",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "visibility": {
-      "$ref": "#/components/schemas/AssetVisibility",
-      "deprecated": true,
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "withDeleted": {
-      "deprecated": true,
-      "description": "Include deleted assets",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v2",
-          "state": "Stable"
-        },
-        {
-          "version": "v3.2.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "withExif": {
-      "description": "Include EXIF data in response",
-      "type": "boolean"
-    },
-    "withPeople": {
-      "description": "Include people data in response",
-      "type": "boolean"
-    },
-    "withStacked": {
-      "description": "Include stacked assets",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## MirrorAxis
-
-
-```json
-{
-  "description": "Axis to mirror along",
-  "enum": [
-    "horizontal",
-    "vertical"
-  ],
-  "type": "string"
-}
-```
-
-## MirrorParameters
-
-Related models: [MirrorAxis](models-17.md#mirroraxis).
-
-```json
-{
-  "properties": {
-    "axis": {
-      "$ref": "#/components/schemas/MirrorAxis"
-    }
-  },
-  "required": [
-    "axis"
-  ],
-  "type": "object"
-}
-```
-
-## MlAdmissionRefusal
-
-
-```json
-{
-  "description": "Reason a destination refused a workload",
-  "enum": [
-    "destination-missing",
-    "destination-disabled",
-    "workload-not-routed",
-    "workload-not-allowed",
-    "workload-not-served",
-    "consent-missing",
-    "disclosure-pending",
-    "budget-exceeded",
-    "endpoint-unresolved",
-    "destination-unhealthy",
-    "role-conflict",
-    "cloud-unavailable",
-    "entitlement-missing",
-    "consent-version-outdated",
-    "wallet-insufficient",
-    "quota-exceeded",
-    "model-mismatch",
-    "insufficient-memory",
-    "request-invalid"
-  ],
-  "type": "string"
-}
-```
-
-## MlAdmissionRequestDto
-
-Related models: [MlStudioFeature](models-18.md#mlstudiofeature), [MlWorkload](models-18.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "jobId": {
-      "description": "Job the admission is for, recorded with the accounting row",
-      "maxLength": 200,
-      "type": "string"
-    },
-    "studioFeature": {
-      "$ref": "#/components/schemas/MlStudioFeature"
-    },
-    "workload": {
-      "$ref": "#/components/schemas/MlWorkload"
-    }
-  },
-  "required": [
-    "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlAdmissionResponseDto
-
-Related models: [MlDestinationHealthStateDto](models-18.md#mldestinationhealthstatedto), [MlDestinationKind](models-18.md#mldestinationkind), [MlThroughputEstimateDto](models-18.md#mlthroughputestimatedto), [MlWorkload](models-18.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "destinationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "estimate": {
-      "$ref": "#/components/schemas/MlThroughputEstimateDto"
-    },
-    "health": {
-      "$ref": "#/components/schemas/MlDestinationHealthStateDto"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MlDestinationKind"
-    },
-    "workload": {
-      "$ref": "#/components/schemas/MlWorkload"
-    }
-  },
-  "required": [
-    "destinationId",
-    "estimate",
-    "health",
-    "kind",
-    "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlCapabilitiesResponseDto
-
-Related models: [MlWorkloadCapabilityDto](models-18.md#mlworkloadcapabilitydto), [StudioCapabilitiesDto](models-33.md#studiocapabilitiesdto).
-
-```json
-{
-  "properties": {
-    "probedAt": {
-      "description": "When this snapshot was assembled",
-      "type": "string"
-    },
-    "studio": {
-      "$ref": "#/components/schemas/StudioCapabilitiesDto"
-    },
-    "workloads": {
-      "items": {
-        "$ref": "#/components/schemas/MlWorkloadCapabilityDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "probedAt",
-    "studio",
-    "workloads"
   ],
   "type": "object"
 }

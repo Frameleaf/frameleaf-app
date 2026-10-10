@@ -35718,6 +35718,50 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/search/landmarks": {
+      "get": {
+        "description": "Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.",
+        "operationId": "getVisitedLandmarks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SearchLandmarkResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve visited landmarks",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/search/large-assets": {
       "post": {
         "description": "Search for assets that are considered large based on specified criteria.",
@@ -60949,6 +60993,13 @@
             "description": "Is trashed",
             "type": "boolean"
           },
+          "landmarks": {
+            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "items": {
+              "$ref": "#/components/schemas/LandmarkSummaryDto"
+            },
+            "type": "array"
+          },
           "libraryId": {
             "description": "Library ID",
             "format": "uuid",
@@ -62421,6 +62472,13 @@
           "isTrashed": {
             "description": "Is trashed",
             "type": "boolean"
+          },
+          "landmarks": {
+            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "items": {
+              "$ref": "#/components/schemas/LandmarkSummaryDto"
+            },
+            "type": "array"
           },
           "libraryId": {
             "description": "Library ID",
@@ -77955,6 +78013,49 @@
         },
         "required": [
           "version"
+        ],
+        "type": "object"
+      },
+      "LandmarkIdsFilter": {
+        "properties": {
+          "any": {
+            "items": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LandmarkSummaryDto": {
+        "properties": {
+          "id": {
+            "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Kind of place, for example theme_park, museum or national_park",
+            "type": "string"
+          },
+          "name": {
+            "description": "Landmark name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name"
         ],
         "type": "object"
       },
@@ -107804,6 +107905,9 @@
           "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
           },
+          "landmarkIds": {
+            "$ref": "#/components/schemas/LandmarkIdsFilter"
+          },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
@@ -107924,6 +108028,9 @@
           },
           "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "landmarkIds": {
+            "$ref": "#/components/schemas/LandmarkIdsFilter"
           },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
@@ -108699,6 +108806,86 @@
           "buckets",
           "granularity",
           "total"
+        ],
+        "type": "object"
+      },
+      "SearchLandmarkResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of timeline photos and videos taken at this landmark",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "city": {
+            "description": "City most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          },
+          "coverAssetId": {
+            "description": "The latest photo or video here, for use as a cover",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "firstTakenAt": {
+            "description": "Local capture time of the earliest photo or video here",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Kind of place, for example theme_park, museum or national_park",
+            "type": "string"
+          },
+          "lastTakenAt": {
+            "description": "Local capture time of the latest photo or video here",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "latitude": {
+            "description": "Latitude of the landmark",
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Longitude of the landmark",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "Landmark name",
+            "type": "string"
+          },
+          "state": {
+            "description": "State or region most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "city",
+          "country",
+          "coverAssetId",
+          "firstTakenAt",
+          "id",
+          "kind",
+          "lastTakenAt",
+          "latitude",
+          "longitude",
+          "name",
+          "state"
         ],
         "type": "object"
       },

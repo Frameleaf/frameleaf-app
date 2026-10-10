@@ -6,7 +6,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 `POST /api/search/ask`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L138).
 
 Ask Search
 
@@ -87,7 +87,7 @@ Complete operation contract:
 
 `GET /api/search/cities`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L182).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L183).
 
 Retrieve assets by city
 
@@ -170,13 +170,13 @@ Complete operation contract:
 
 `GET /api/search/cities/counts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L194).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L195).
 
 Retrieve asset counts by city
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchCityCountResponseDto](models-29.md#searchcitycountresponsedto).
+Models: [SearchCityCountResponseDto](models-30.md#searchcitycountresponsedto).
 
 Controller access declarations:
 
@@ -244,13 +244,13 @@ Complete operation contract:
 
 `GET /api/search/explore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L149).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L150).
 
 Retrieve explore data
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchExploreResponseDto](models-29.md#searchexploreresponsedto).
+Models: [SearchExploreResponseDto](models-30.md#searchexploreresponsedto).
 
 Controller access declarations:
 
@@ -326,13 +326,13 @@ Complete operation contract:
 
 `POST /api/search/facets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L63).
 
 Search facet counts
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchFacetsDto](models-30.md#searchfacetsdto), [SearchFacetsResponseDto](models-30.md#searchfacetsresponsedto).
+Models: [SearchFacetsDto](models-31.md#searchfacetsdto), [SearchFacetsResponseDto](models-31.md#searchfacetsresponsedto).
 
 Controller access declarations:
 
@@ -413,13 +413,13 @@ Complete operation contract:
 
 `POST /api/search/histogram`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L76).
 
 Search date histogram
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchHistogramDto](models-30.md#searchhistogramdto), [SearchHistogramResponseDto](models-30.md#searchhistogramresponsedto).
+Models: [SearchHistogramDto](models-31.md#searchhistogramdto), [SearchHistogramResponseDto](models-31.md#searchhistogramresponsedto).
 
 Controller access declarations:
 
@@ -496,11 +496,85 @@ Complete operation contract:
 }
 ```
 
+## getVisitedLandmarks
+
+`GET /api/search/landmarks`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L207).
+
+Retrieve visited landmarks
+
+Permission: `asset.read`. Admin only: `false`.
+
+Models: [SearchLandmarkResponseDto](models-31.md#searchlandmarkresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Search)
+@Controller('search')
+@Get('landmarks')
+@Authenticated({ permission: Permission.AssetRead })
+@Endpoint({
+    summary: 'Retrieve visited landmarks',
+    description:
+      'Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.',
+    history: new HistoryBuilder().added('v3'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.",
+  "operationId": "getVisitedLandmarks",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/SearchLandmarkResponseDto"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Retrieve visited landmarks",
+  "tags": [
+    "Search"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3",
+      "state": "Added"
+    }
+  ],
+  "x-immich-permission": "asset.read"
+}
+```
+
 ## searchLargeAssets
 
 `POST /api/search/large-assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L114).
 
 Search large assets
 
@@ -1418,13 +1492,13 @@ Complete operation contract:
 
 `POST /api/search/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L38).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L39).
 
 Search assets by metadata
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [MetadataSearchDto](models-17.md#metadatasearchdto), [SearchResponseDto](models-30.md#searchresponsedto).
+Models: [MetadataSearchDto](models-18.md#metadatasearchdto), [SearchResponseDto](models-31.md#searchresponsedto).
 
 Controller access declarations:
 
@@ -1525,7 +1599,7 @@ Complete operation contract:
 
 `GET /api/search/person`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L161).
 
 Search people
 
@@ -1626,13 +1700,13 @@ Complete operation contract:
 
 `GET /api/search/places`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L171).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L172).
 
 Search places
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [PlacesResponseDto](models-26.md#placesresponsedto).
+Models: [PlacesResponseDto](models-27.md#placesresponsedto).
 
 Controller access declarations:
 
@@ -1718,13 +1792,13 @@ Complete operation contract:
 
 `POST /api/search/random`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L102).
 
 Search random assets
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetResponseDto](models-06.md#assetresponsedto), [RandomSearchDto](models-28.md#randomsearchdto).
+Models: [AssetResponseDto](models-06.md#assetresponsedto), [RandomSearchDto](models-29.md#randomsearchdto).
 
 Controller access declarations:
 
@@ -1811,13 +1885,13 @@ Complete operation contract:
 
 `POST /api/search/smart`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L125).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L126).
 
 Smart asset search
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [SearchResponseDto](models-30.md#searchresponsedto), [SmartSearchDto](models-32.md#smartsearchdto).
+Models: [SearchResponseDto](models-31.md#searchresponsedto), [SmartSearchDto](models-33.md#smartsearchdto).
 
 Controller access declarations:
 
@@ -1894,92 +1968,5 @@ Complete operation contract:
   ],
   "x-immich-permission": "asset.read",
   "x-immich-state": "Stable"
-}
-```
-
-## searchSmartStatistics
-
-`POST /api/search/smart/statistics`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L88).
-
-Smart search statistics
-
-Permission: `asset.read`. Admin only: `false`.
-
-Models: [SmartSearchDto](models-32.md#smartsearchdto), [SmartSearchStatisticsResponseDto](models-32.md#smartsearchstatisticsresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Search)
-@Controller('search')
-@Post('smart/statistics')
-@Authenticated({ permission: Permission.AssetRead })
-@HttpCode(HttpStatus.OK)
-@Endpoint({
-    summary: 'Smart search statistics',
-    description:
-      'How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.',
-    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.",
-  "operationId": "searchSmartStatistics",
-  "parameters": [],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/SmartSearchDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/SmartSearchStatisticsResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Smart search statistics",
-  "tags": [
-    "Search"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.read",
-  "x-immich-state": "Alpha"
 }
 ```

@@ -12,7 +12,7 @@ Retrieve queue counts and status
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [QueuesResponseLegacyDto](models-28.md#queuesresponselegacydto).
+Models: [QueuesResponseLegacyDto](models-29.md#queuesresponselegacydto).
 
 Controller access declarations:
 
@@ -183,7 +183,7 @@ Get running jobs
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RunningJobsResponseDto](models-29.md#runningjobsresponsedto).
+Models: [RunningJobsResponseDto](models-30.md#runningjobsresponsedto).
 
 Controller access declarations:
 
@@ -258,7 +258,7 @@ List durable job runs
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [JobRunPageDto](models-14.md#jobrunpagedto).
+Models: [JobRunPageDto](models-15.md#jobrunpagedto).
 
 Controller access declarations:
 
@@ -352,7 +352,7 @@ Inspect selected job run items
 
 Permission: `job.read`. Admin only: `true`.
 
-Models: [JobRunItemPageDto](models-14.md#jobrunitempagedto).
+Models: [JobRunItemPageDto](models-15.md#jobrunitempagedto).
 
 Controller access declarations:
 
@@ -456,7 +456,7 @@ Run jobs
 
 Permission: `job.create`. Admin only: `true`.
 
-Models: [QueueCommandDto](models-27.md#queuecommanddto), [QueueName](models-27.md#queuename), [QueueResponseLegacyDto](models-27.md#queueresponselegacydto).
+Models: [QueueCommandDto](models-28.md#queuecommanddto), [QueueName](models-28.md#queuename), [QueueResponseLegacyDto](models-28.md#queueresponselegacydto).
 
 Controller access declarations:
 

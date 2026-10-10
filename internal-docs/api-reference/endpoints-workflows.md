@@ -12,7 +12,7 @@ List all workflows
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-39.md#workflowresponsedto), [WorkflowTrigger](models-39.md#workflowtrigger).
+Models: [WorkflowResponseDto](models-40.md#workflowresponsedto), [WorkflowTrigger](models-40.md#workflowtrigger).
 
 Controller access declarations:
 
@@ -142,7 +142,7 @@ Create a workflow
 
 Permission: `workflow.create`. Admin only: `false`.
 
-Models: [WorkflowCreateDto](models-39.md#workflowcreatedto), [WorkflowResponseDto](models-39.md#workflowresponsedto).
+Models: [WorkflowCreateDto](models-40.md#workflowcreatedto), [WorkflowResponseDto](models-40.md#workflowresponsedto).
 
 Controller access declarations:
 
@@ -222,7 +222,7 @@ List all workflow triggers
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [WorkflowTriggerResponseDto](models-39.md#workflowtriggerresponsedto).
+Models: [WorkflowTriggerResponseDto](models-40.md#workflowtriggerresponsedto).
 
 Controller access declarations:
 
@@ -367,7 +367,7 @@ Retrieve a workflow
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-39.md#workflowresponsedto).
+Models: [WorkflowResponseDto](models-40.md#workflowresponsedto).
 
 Controller access declarations:
 
@@ -448,7 +448,7 @@ Update a workflow
 
 Permission: `workflow.update`. Admin only: `false`.
 
-Models: [WorkflowResponseDto](models-39.md#workflowresponsedto), [WorkflowUpdateDto](models-39.md#workflowupdatedto).
+Models: [WorkflowResponseDto](models-40.md#workflowresponsedto), [WorkflowUpdateDto](models-40.md#workflowupdatedto).
 
 Controller access declarations:
 
@@ -548,7 +548,7 @@ Retrieve workflow logs
 
 Permission: `workflow.logs`. Admin only: `false`.
 
-Models: [WorkflowLogEntryDto](models-39.md#workflowlogentrydto), [WorkflowResult](models-39.md#workflowresult).
+Models: [WorkflowLogEntryDto](models-40.md#workflowlogentrydto), [WorkflowResult](models-40.md#workflowresult).
 
 Controller access declarations:
 
@@ -757,7 +757,7 @@ Retrieve a workflow
 
 Permission: `workflow.read`. Admin only: `false`.
 
-Models: [WorkflowShareResponseDto](models-39.md#workflowshareresponsedto).
+Models: [WorkflowShareResponseDto](models-40.md#workflowshareresponsedto).
 
 Controller access declarations:
 

@@ -12,7 +12,7 @@ List preservation packages
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [PreservationPackageDto](models-27.md#preservationpackagedto).
+Models: [PreservationPackageDto](models-28.md#preservationpackagedto).
 
 Controller access declarations:
 
@@ -91,7 +91,7 @@ Create a preservation package
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [PreservationExportCreateDto](models-26.md#preservationexportcreatedto), [PreservationPackageDto](models-27.md#preservationpackagedto).
+Models: [PreservationExportCreateDto](models-27.md#preservationexportcreatedto), [PreservationPackageDto](models-28.md#preservationpackagedto).
 
 Controller access declarations:
 
@@ -257,7 +257,7 @@ Get a preservation package
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [PreservationPackageDto](models-27.md#preservationpackagedto).
+Models: [PreservationPackageDto](models-28.md#preservationpackagedto).
 
 Controller access declarations:
 
@@ -429,7 +429,7 @@ Get a preservation package item report
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [PreservationItemState](models-27.md#preservationitemstate), [PreservationItemsResponseDto](models-27.md#preservationitemsresponsedto), [PreservationVerifyState](models-27.md#preservationverifystate).
+Models: [PreservationItemState](models-28.md#preservationitemstate), [PreservationItemsResponseDto](models-28.md#preservationitemsresponsedto), [PreservationVerifyState](models-28.md#preservationverifystate).
 
 Controller access declarations:
 
@@ -640,7 +640,7 @@ Retry a preservation export
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -727,7 +727,7 @@ Verify a preservation package
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -815,7 +815,7 @@ Preview a preservation export
 
 Permission: `asset.download`. Admin only: `false`.
 
-Models: [PreservationPreviewDto](models-27.md#preservationpreviewdto), [PreservationPreviewResponseDto](models-27.md#preservationpreviewresponsedto).
+Models: [PreservationPreviewDto](models-28.md#preservationpreviewdto), [PreservationPreviewResponseDto](models-28.md#preservationpreviewresponsedto).
 
 Controller access declarations:
 
@@ -902,7 +902,7 @@ List restorations
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationRestoreDto](models-27.md#preservationrestoredto).
+Models: [PreservationRestoreDto](models-28.md#preservationrestoredto).
 
 Controller access declarations:
 
@@ -977,7 +977,7 @@ Start a restoration
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationRestoreCreateDto](models-27.md#preservationrestorecreatedto), [PreservationRestoreDto](models-27.md#preservationrestoredto).
+Models: [PreservationRestoreCreateDto](models-28.md#preservationrestorecreatedto), [PreservationRestoreDto](models-28.md#preservationrestoredto).
 
 Controller access declarations:
 
@@ -1064,7 +1064,7 @@ Get a restoration
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationRestoreDto](models-27.md#preservationrestoredto).
+Models: [PreservationRestoreDto](models-28.md#preservationrestoredto).
 
 Controller access declarations:
 
@@ -1147,7 +1147,7 @@ Restore a reviewed package
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [MediaOperationDto](models-16.md#mediaoperationdto).
+Models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -1235,7 +1235,7 @@ Record restoration choices
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationDecisionsUpdateDto](models-26.md#preservationdecisionsupdatedto), [PreservationRestoreDto](models-27.md#preservationrestoredto).
+Models: [PreservationDecisionsUpdateDto](models-27.md#preservationdecisionsupdatedto), [PreservationRestoreDto](models-28.md#preservationrestoredto).
 
 Controller access declarations:
 
@@ -1332,7 +1332,7 @@ Get restoration items
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationRestoreItemFilter](models-27.md#preservationrestoreitemfilter), [PreservationRestoreItemsResponseDto](models-27.md#preservationrestoreitemsresponsedto).
+Models: [PreservationRestoreItemFilter](models-28.md#preservationrestoreitemfilter), [PreservationRestoreItemsResponseDto](models-28.md#preservationrestoreitemsresponsedto).
 
 Controller access declarations:
 
@@ -1448,7 +1448,7 @@ Register a preservation package on the server
 
 Permission: `asset.upload`. Admin only: `true`.
 
-Models: [PreservationPackageDto](models-27.md#preservationpackagedto), [PreservationServerPackageCreateDto](models-27.md#preservationserverpackagecreatedto).
+Models: [PreservationPackageDto](models-28.md#preservationpackagedto), [PreservationServerPackageCreateDto](models-28.md#preservationserverpackagecreatedto).
 
 Controller access declarations:
 
@@ -1536,7 +1536,7 @@ Upload a preservation package
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [PreservationPackageDto](models-27.md#preservationpackagedto), [PreservationUploadCreateDto](models-27.md#preservationuploadcreatedto).
+Models: [PreservationPackageDto](models-28.md#preservationpackagedto), [PreservationUploadCreateDto](models-28.md#preservationuploadcreatedto).
 
 Controller access declarations:
 

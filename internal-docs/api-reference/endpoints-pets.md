@@ -12,7 +12,7 @@ Retrieve pets
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-19.md#petresponsedto).
+Models: [PetResponseDto](models-20.md#petresponsedto).
 
 Controller access declarations:
 
@@ -99,7 +99,7 @@ Create a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCreateDto](models-19.md#petcreatedto), [PetResponseDto](models-19.md#petresponsedto).
+Models: [PetCreateDto](models-19.md#petcreatedto), [PetResponseDto](models-20.md#petresponsedto).
 
 Controller access declarations:
 
@@ -271,7 +271,7 @@ Accept a pet recognition candidate
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCandidateReviewDto](models-19.md#petcandidatereviewdto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+Models: [PetCandidateReviewDto](models-19.md#petcandidatereviewdto), [PetObservationResponseDto](models-20.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -367,7 +367,7 @@ Reject a pet recognition candidate
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetCandidateRejectDto](models-19.md#petcandidaterejectdto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+Models: [PetCandidateRejectDto](models-19.md#petcandidaterejectdto), [PetObservationResponseDto](models-20.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -462,7 +462,7 @@ Retrieve the pet observations of an asset
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+Models: [PetObservationResponseDto](models-20.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -640,7 +640,7 @@ Cancel pet recognition
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-20.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -714,7 +714,7 @@ Retrieve pet recognition status
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-20.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -789,7 +789,7 @@ Start pet recognition
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetRecognitionStatusResponseDto](models-19.md#petrecognitionstatusresponsedto).
+Models: [PetRecognitionStatusResponseDto](models-20.md#petrecognitionstatusresponsedto).
 
 Controller access declarations:
 
@@ -941,7 +941,7 @@ Retrieve a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-19.md#petresponsedto).
+Models: [PetResponseDto](models-20.md#petresponsedto).
 
 Controller access declarations:
 
@@ -1026,7 +1026,7 @@ Update a pet
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetResponseDto](models-19.md#petresponsedto), [PetUpdateDto](models-19.md#petupdatedto).
+Models: [PetResponseDto](models-20.md#petresponsedto), [PetUpdateDto](models-20.md#petupdatedto).
 
 Controller access declarations:
 
@@ -1121,7 +1121,7 @@ Merge pets
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetMergeDto](models-19.md#petmergedto), [PetResponseDto](models-19.md#petresponsedto).
+Models: [PetMergeDto](models-19.md#petmergedto), [PetResponseDto](models-20.md#petresponsedto).
 
 Controller access declarations:
 
@@ -1216,7 +1216,7 @@ Retrieve pet observations
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+Models: [PetObservationResponseDto](models-20.md#petobservationresponsedto).
 
 Controller access declarations:
 
@@ -1304,7 +1304,7 @@ Add a pet observation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PetObservationCreateDto](models-19.md#petobservationcreatedto), [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+Models: [PetObservationCreateDto](models-19.md#petobservationcreatedto), [PetObservationResponseDto](models-20.md#petobservationresponsedto).
 
 Controller access declarations:
 

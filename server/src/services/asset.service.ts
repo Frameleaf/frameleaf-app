@@ -193,6 +193,15 @@ export class AssetService extends BaseService {
       data.people = [];
     }
 
+    // FL-353: where it was taken, when the place pack knows the spot
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled && typeof data.exifInfo?.latitude === 'number') {
+      const landmarks = await this.searchRepository.getAssetLandmarks(asset.id);
+      if (landmarks.length > 0) {
+        data.landmarks = landmarks;
+      }
+    }
+
     // FL-326: the viewer's own copy from a partner names the library it came from (info panel)
     if (!auth.sharedLink && asset.ownerId === auth.user.id) {
       const labels = await this.partnerOriginRepository.getOriginLabels('asset', [asset.id], auth.user.id);

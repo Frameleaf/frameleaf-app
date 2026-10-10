@@ -12,7 +12,7 @@ Get storage migration status
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [StorageMigrationStatusResponseDto](models-32.md#storagemigrationstatusresponsedto).
+Models: [StorageMigrationStatusResponseDto](models-33.md#storagemigrationstatusresponsedto).
 
 Controller access declarations:
 
@@ -89,7 +89,7 @@ Run storage migration in the background
 
 Permission: `queue.update`. Admin only: `true`.
 
-Models: [StorageMigrationStatusResponseDto](models-32.md#storagemigrationstatusresponsedto).
+Models: [StorageMigrationStatusResponseDto](models-33.md#storagemigrationstatusresponsedto).
 
 Controller access declarations:
 
@@ -167,7 +167,7 @@ List all queues
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueResponseDto](models-27.md#queueresponsedto).
+Models: [QueueResponseDto](models-28.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -246,7 +246,7 @@ Retrieve a queue
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueResponseDto](models-28.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -331,7 +331,7 @@ Update a queue
 
 Permission: `queue.update`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto), [QueueUpdateDto](models-27.md#queueupdatedto).
+Models: [QueueName](models-28.md#queuename), [QueueResponseDto](models-28.md#queueresponsedto), [QueueUpdateDto](models-28.md#queueupdatedto).
 
 Controller access declarations:
 
@@ -426,7 +426,7 @@ Empty a queue
 
 Permission: `queueJob.delete`. Admin only: `true`.
 
-Models: [QueueDeleteDto](models-27.md#queuedeletedto), [QueueName](models-27.md#queuename).
+Models: [QueueDeleteDto](models-28.md#queuedeletedto), [QueueName](models-28.md#queuename).
 
 Controller access declarations:
 
@@ -515,7 +515,7 @@ Retrieve queue jobs
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueJobResponseDto](models-27.md#queuejobresponsedto), [QueueJobStatus](models-27.md#queuejobstatus), [QueueName](models-27.md#queuename).
+Models: [QueueJobResponseDto](models-28.md#queuejobresponsedto), [QueueJobStatus](models-28.md#queuejobstatus), [QueueName](models-28.md#queuename).
 
 Controller access declarations:
 
@@ -626,7 +626,7 @@ Retry failed queue jobs
 
 Permission: `queueJob.create`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueRetryFailedResponseDto](models-27.md#queueretryfailedresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueRetryFailedResponseDto](models-28.md#queueretryfailedresponsedto).
 
 Controller access declarations:
 
@@ -712,7 +712,7 @@ Retrieve queue statistics for an account
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueOwnerStatisticsResponseDto](models-27.md#queueownerstatisticsresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueOwnerStatisticsResponseDto](models-28.md#queueownerstatisticsresponsedto).
 
 Controller access declarations:
 

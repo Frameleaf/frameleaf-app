@@ -481,7 +481,7 @@ Dismiss media health findings
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto).
+Models: [MediaHealthBulkActionDto](models-16.md#mediahealthbulkactiondto).
 
 Controller access declarations:
 
@@ -644,7 +644,7 @@ Relink missing media
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
+Models: [MediaHealthBulkActionDto](models-16.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
 
 Controller access declarations:
 
@@ -802,7 +802,7 @@ Reopen media health findings
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthBulkActionDto](models-15.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
+Models: [MediaHealthBulkActionDto](models-16.md#mediahealthbulkactiondto), [MediaHealthBulkResponseDto](models-16.md#mediahealthbulkresponsedto).
 
 Controller access declarations:
 

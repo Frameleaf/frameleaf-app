@@ -2,2229 +2,1936 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
-## StudioBundleMissingSourceDto
+## SharedSpacePreviewResponseDto
 
+Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-39.md#userresponsedto).
 
 ```json
 {
   "properties": {
-    "embedded": {
-      "description": "The bundle carries a verified copy that was not added: library media, or a project file that failed its checks",
+    "accepted": {
+      "description": "True once the recipient has joined the space",
       "type": "boolean"
     },
-    "fileName": {
+    "albumName": {
+      "description": "Shared space name",
+      "type": "string"
+    },
+    "assetCount": {
+      "description": "Items the recipient would see. Media marked sensitive, and Locked media, are not counted.",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "description": {
+      "description": "Shared space description",
+      "type": "string"
+    },
+    "endDate": {
+      "description": "Latest item date, sensitive and Locked media excluded",
+      "format": "date-time",
+      "type": "string"
+    },
+    "icon": {
+      "description": "Icon: a Material Design Icons name (null = default icon)",
       "nullable": true,
       "type": "string"
     },
     "id": {
+      "description": "Shared space ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "key": {
+    "invitedAt": {
+      "description": "When the invitation was sent",
+      "format": "date-time",
       "type": "string"
     },
-    "kind": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "embedded",
-    "fileName",
-    "id",
-    "key",
-    "kind"
-  ],
-  "type": "object"
-}
-```
-
-## StudioBundleOperationDto
-
-Related models: [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus), [StudioBundleExportResultDto](models-32.md#studiobundleexportresultdto), [StudioBundleImportResultDto](models-32.md#studiobundleimportresultdto).
-
-```json
-{
-  "properties": {
-    "attempt": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "autoRetries": {
-      "description": "Automatic retries this job has used; every job gets one before a failure is reported",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "nullable": true,
-      "type": "string"
-    },
-    "export": {
+    "invitedBy": {
       "allOf": [
         {
-          "$ref": "#/components/schemas/StudioBundleExportResultDto"
+          "$ref": "#/components/schemas/UserResponseDto"
         }
       ],
+      "description": "Who sent the invitation",
       "nullable": true
     },
-    "import": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioBundleImportResultDto"
-        }
-      ],
-      "nullable": true
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "maxAttempts": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "operationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "progress": {
-      "format": "double",
-      "type": "number"
-    },
-    "projectId": {
-      "description": "The exported project, or the project an import created",
-      "nullable": true,
-      "type": "string"
-    },
-    "retryAt": {
-      "description": "When a job waiting for its automatic retry may run again",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "attempt",
-    "autoRetries",
-    "error",
-    "errorCode",
-    "export",
-    "import",
-    "kind",
-    "maxAttempts",
-    "operationId",
-    "progress",
-    "projectId",
-    "retryAt",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## StudioBundleSourceDto
-
-Related models: [StudioBundleSourceMode](models-33.md#studiobundlesourcemode), [StudioBundleSourceResolution](models-33.md#studiobundlesourceresolution).
-
-```json
-{
-  "properties": {
-    "contentType": {
-      "nullable": true,
-      "type": "string"
-    },
-    "fileName": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Identifier on the exporting server",
-      "type": "string"
-    },
-    "key": {
-      "description": "Mapping key for the import request",
-      "type": "string"
-    },
-    "kind": {
-      "description": "`library-asset`, `edited-master` or `project-import` (a file kept with the project)",
-      "type": "string"
-    },
-    "mode": {
-      "$ref": "#/components/schemas/StudioBundleSourceMode"
-    },
-    "resolution": {
-      "$ref": "#/components/schemas/StudioBundleSourceResolution"
-    },
-    "sizeBytes": {
-      "description": "Size of the source file, when the exporting server knew it",
-      "nullable": true,
-      "type": "string"
-    },
-    "suggestedAssetId": {
-      "description": "An asset of yours with the same content",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "contentType",
-    "fileName",
-    "id",
-    "key",
-    "kind",
-    "mode",
-    "resolution",
-    "sizeBytes",
-    "suggestedAssetId"
-  ],
-  "type": "object"
-}
-```
-
-## StudioBundleSourceMode
-
-
-```json
-{
-  "description": "`embedded` carries a verified copy; `reference` names media on the exporting server",
-  "enum": [
-    "embedded",
-    "reference"
-  ],
-  "type": "string"
-}
-```
-
-## StudioBundleSourceResolution
-
-
-```json
-{
-  "description": "`kept`: the original is already available to you; `suggested`: an item of yours has the same content; `missing`: choose one or import without it",
-  "enum": [
-    "kept",
-    "suggested",
-    "missing"
-  ],
-  "type": "string"
-}
-```
-
-## StudioBundleUploadCreateDto
-
-
-```json
-{
-  "properties": {
-    "file": {
-      "description": "A `.frameleaf-studio.zip` bundle",
-      "format": "binary",
-      "type": "string"
-    }
-  },
-  "required": [
-    "file"
-  ],
-  "type": "object"
-}
-```
-
-## StudioBundleUploadDto
-
-Related models: [StudioBundleSourceDto](models-33.md#studiobundlesourcedto).
-
-```json
-{
-  "properties": {
-    "consumedAt": {
-      "description": "When an import first read it",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "digest": {
-      "description": "SHA-256 of the whole file",
-      "type": "string"
-    },
-    "engineRevision": {
-      "type": "string"
-    },
-    "expiresAt": {
-      "description": "When the upload is discarded",
-      "format": "date-time",
-      "type": "string"
-    },
-    "exportedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "fileName": {
-      "description": "The file name as uploaded",
-      "type": "string"
-    },
-    "id": {
-      "description": "Upload ID, used to start an import",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "producerVersion": {
-      "type": "string"
-    },
-    "projectName": {
-      "type": "string"
-    },
-    "revision": {
-      "description": "The revision the bundle was made from",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "sizeBytes": {
-      "type": "string"
-    },
-    "sources": {
-      "items": {
-        "$ref": "#/components/schemas/StudioBundleSourceDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "consumedAt",
-    "digest",
-    "engineRevision",
-    "expiresAt",
-    "exportedAt",
-    "fileName",
-    "id",
-    "producerVersion",
-    "projectName",
-    "revision",
-    "sizeBytes",
-    "sources"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCapabilitiesDto
-
-Related models: [StudioRenderEvidenceDto](models-34.md#studiorenderevidencedto).
-
-```json
-{
-  "properties": {
-    "gpuWorker": {
-      "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
-      "type": "boolean"
-    },
-    "render": {
-      "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
-      "items": {
-        "$ref": "#/components/schemas/StudioRenderEvidenceDto"
-      },
-      "type": "array"
-    },
-    "renderWorker": {
-      "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
-      "type": "boolean"
-    },
-    "restorationWorker": {
-      "description": "A destination can serve a restoration workload right now",
-      "type": "boolean"
-    },
-    "transcriptionWorker": {
-      "description": "A destination can serve the Studio AI workload right now",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "gpuWorker",
-    "render",
-    "renderWorker",
-    "restorationWorker",
-    "transcriptionWorker"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommandEnvelopeDto
-
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "Published command id (studio/frameleaf-studio-commands.json)",
-      "maxLength": 100,
-      "minLength": 1,
-      "type": "string"
-    },
-    "idempotencyKey": {
-      "maxLength": 128,
-      "minLength": 1,
-      "type": "string"
-    },
-    "issuedAt": {
-      "description": "Epoch milliseconds",
-      "format": "double",
-      "type": "number"
-    },
-    "payload": {
-      "additionalProperties": {},
-      "description": "Command payload; graph-shaped values pass through unread",
-      "type": "object"
-    },
-    "revision": {
-      "description": "The head revision the command was issued against",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "id",
-    "idempotencyKey",
-    "issuedAt",
-    "payload",
-    "revision"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommandSummaryDto
-
-
-```json
-{
-  "properties": {
-    "counts": {
-      "additionalProperties": {
-        "maximum": 9007199254740991,
-        "minimum": 0,
-        "type": "integer"
-      },
-      "description": "Command id to how many times it appeared",
-      "type": "object"
-    },
-    "total": {
-      "description": "Commands in the batch",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "counts",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommentCreateDto
-
-Related models: [StudioTimeDto](models-34.md#studiotimedto).
-
-```json
-{
-  "properties": {
-    "requestKey": {
-      "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "revision": {
+    "memberCount": {
+      "description": "People already in the shared space, including its owner",
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
-    "text": {
-      "maxLength": 2000,
-      "minLength": 1,
-      "type": "string"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioTimeDto"
-    }
-  },
-  "required": [
-    "revision",
-    "text",
-    "time"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommentDto
-
-Related models: [StudioTimeDto](models-34.md#studiotimedto).
-
-```json
-{
-  "properties": {
-    "authorId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "projectId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "resolvedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "resolvedById": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revision": {
-      "description": "The revision the reviewer was looking at",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "text": {
-      "type": "string"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioTimeDto"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "authorId",
-    "createdAt",
-    "id",
-    "projectId",
-    "resolvedAt",
-    "resolvedById",
-    "revision",
-    "text",
-    "time",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommentListResponseDto
-
-Related models: [StudioCommentDto](models-33.md#studiocommentdto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "description": "Oldest first",
-      "items": {
-        "$ref": "#/components/schemas/StudioCommentDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## StudioCommentUpdateDto
-
-
-```json
-{
-  "properties": {
-    "resolved": {
-      "type": "boolean"
-    },
-    "text": {
-      "maxLength": 2000,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## StudioExportAudio
-
-
-```json
-{
-  "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
-  "enum": [
-    "preserve",
-    "stereo"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportColor
-
-
-```json
-{
-  "description": "Colour handling; Dolby Vision needs a qualified worker",
-  "enum": [
-    "preserve",
-    "hdr10",
-    "dolby-vision"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportCreateDto
-
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSmoothMotionDto](models-33.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "audio": {
-      "$ref": "#/components/schemas/StudioExportAudio",
-      "description": "Defaults to `preserve`; a stereo downmix happens only when asked for"
-    },
-    "cloudConsent": {
-      "description": "You agree to the media leaving your network for this export",
-      "type": "boolean"
-    },
-    "color": {
-      "$ref": "#/components/schemas/StudioExportColor"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination",
-      "description": "Where it renders. A cloud destination needs `cloudConsent`"
-    },
-    "expectedRevision": {
-      "description": "The revision you are looking at; a newer head refuses the export with `409` instead of rendering it",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "format": {
-      "$ref": "#/components/schemas/StudioExportFormat"
-    },
-    "mastering": {
-      "$ref": "#/components/schemas/StudioExportMastering",
-      "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioExportQuality",
-      "description": "Defaults to `high`"
-    },
-    "range": {
-      "$ref": "#/components/schemas/StudioExportRangeDto",
-      "description": "Absent renders the whole main timeline"
-    },
-    "requestKey": {
-      "description": "Idempotency key; a repeated submit answers with the first export",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "resolution": {
-      "$ref": "#/components/schemas/StudioExportResolution"
-    },
-    "smoothMotion": {
-      "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
-    },
-    "subtitleMode": {
-      "$ref": "#/components/schemas/StudioExportSubtitleMode",
-      "description": "Defaults to `burn`"
-    }
-  },
-  "required": [
-    "color",
-    "destination",
-    "format",
-    "resolution"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportCreateResponseDto
-
-Related models: [MediaOperationDto](models-16.md#mediaoperationdto), [StudioExportVersionDto](models-33.md#studioexportversiondto).
-
-```json
-{
-  "properties": {
-    "operation": {
-      "$ref": "#/components/schemas/MediaOperationDto",
-      "description": "The render job; follow it in Activity"
-    },
-    "version": {
-      "$ref": "#/components/schemas/StudioExportVersionDto"
-    }
-  },
-  "required": [
-    "operation",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportFormat
-
-
-```json
-{
-  "description": "Container and codec",
-  "enum": [
-    "mp4-hevc-main10",
-    "mp4-h264",
-    "webm-av1",
-    "prores-422-hq",
-    "sdr-jpeg",
-    "hdr-jpeg",
-    "hdr-heic"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportListResponseDto
-
-Related models: [StudioExportVersionDto](models-33.md#studioexportversiondto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/StudioExportVersionDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "description": "Matching versions, before paging",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportMastering
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "maxNits": {
-      "exclusiveMinimum": true,
-      "format": "double",
-      "maximum": 10000,
-      "minimum": 0,
-      "multipleOf": 0.0001,
-      "type": "number"
-    },
-    "minNits": {
-      "format": "double",
-      "maximum": 10000,
-      "minimum": 0,
-      "multipleOf": 0.0001,
-      "type": "number"
-    },
-    "primaries": {
-      "description": "Declared BT.2020 mastering display primaries and D65 white point",
-      "enum": [
-        "bt2020"
-      ],
-      "type": "string"
-    }
-  },
-  "required": [
-    "maxNits",
-    "minNits",
-    "primaries"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportQuality
-
-
-```json
-{
-  "description": "Encoder quality preset",
-  "enum": [
-    "low",
-    "medium",
-    "high",
-    "ultra"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportRangeDto
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "inPoint": {
-      "description": "First included frame on the main timeline",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "outPoint": {
-      "description": "First excluded frame on the main timeline",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "inPoint",
-    "outPoint"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportRemoteReason
-
-
-```json
-{
-  "description": "Why a remote destination is asked to drop Studio export data",
-  "enum": [
-    "cancel",
-    "delete"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportResolution
-
-
-```json
-{
-  "description": "Output resolution",
-  "enum": [
-    "720p",
-    "1080p",
-    "1440p",
-    "2160p",
-    "original"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportScope
-
-
-```json
-{
-  "description": "Where a published Studio export lives",
-  "enum": [
-    "library",
-    "project"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportSettingsDto
-
-Related models: [StudioExportAudio](models-33.md#studioexportaudio), [StudioExportColor](models-33.md#studioexportcolor), [StudioExportFormat](models-33.md#studioexportformat), [StudioExportMastering](models-33.md#studioexportmastering), [StudioExportQuality](models-33.md#studioexportquality), [StudioExportRangeDto](models-33.md#studioexportrangedto), [StudioExportResolution](models-33.md#studioexportresolution), [StudioExportSubtitleMode](models-33.md#studioexportsubtitlemode).
-
-```json
-{
-  "properties": {
-    "audio": {
-      "$ref": "#/components/schemas/StudioExportAudio",
-      "description": "Absent on exports made before audio was a choice"
-    },
-    "color": {
-      "$ref": "#/components/schemas/StudioExportColor"
-    },
-    "format": {
-      "$ref": "#/components/schemas/StudioExportFormat"
-    },
-    "mastering": {
-      "$ref": "#/components/schemas/StudioExportMastering",
-      "description": "Declared PQ mastering display, fixed when this export was submitted"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioExportQuality",
-      "description": "Absent on exports made before quality was a choice"
-    },
-    "range": {
-      "$ref": "#/components/schemas/StudioExportRangeDto",
-      "description": "Absent renders the whole main timeline"
-    },
-    "resolution": {
-      "$ref": "#/components/schemas/StudioExportResolution"
-    },
-    "subtitleMode": {
-      "$ref": "#/components/schemas/StudioExportSubtitleMode",
-      "description": "Absent uses the native `burn` default"
-    }
-  },
-  "required": [
-    "color",
-    "format",
-    "resolution"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportSmoothMotionDto
-
-
-```json
-{
-  "description": "FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
-  "properties": {
-    "destinationId": {
-      "description": "Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "factor": {
-      "anyOf": [
-        {
-          "type": "number",
-          "format": "double",
-          "enum": [
-            2
-          ]
-        },
-        {
-          "type": "number",
-          "format": "double",
-          "enum": [
-            4
-          ]
-        },
-        {
-          "type": "number",
-          "format": "double",
-          "enum": [
-            8
-          ]
-        }
-      ],
-      "description": "How many frames each frame becomes"
-    }
-  },
-  "required": [
-    "destinationId",
-    "factor"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportSubtitleMode
-
-
-```json
-{
-  "description": "Burn captions, omit captions, publish a private SRT sibling, or embed a qualified MP4 text track; ordinary titles are preserved",
-  "enum": [
-    "burn",
-    "off",
-    "sidecar",
-    "embedded"
-  ],
-  "type": "string"
-}
-```
-
-## StudioExportVersionDto
-
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportScope](models-33.md#studioexportscope), [StudioExportSettingsDto](models-33.md#studioexportsettingsdto), [StudioExportVersionState](models-33.md#studioexportversionstate).
-
-```json
-{
-  "properties": {
-    "cancelledAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "contentType": {
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Export version ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "includesSharedSources": {
-      "description": "At least one source is shared with you rather than yours",
-      "type": "boolean"
-    },
-    "locked": {
-      "description": "The result inherited a lock from a Locked or sensitive source",
-      "type": "boolean"
-    },
-    "projectId": {
-      "description": "Null once the project was deleted for good",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "publishOperationId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "publishedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "renderOperationId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "resultAssetId": {
-      "description": "The asset a `library` result became",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "revision": {
-      "description": "The project revision that was rendered",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "scope": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioExportScope"
-        }
-      ],
-      "description": "Where the published result lives",
-      "nullable": true
-    },
-    "sensitive": {
-      "description": "The result inherited sensitive evidence from a source",
-      "type": "boolean"
-    },
-    "settings": {
-      "$ref": "#/components/schemas/StudioExportSettingsDto"
-    },
-    "sizeInBytes": {
-      "nullable": true,
-      "type": "string"
-    },
-    "sourceCount": {
-      "description": "Library sources the result was made from",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "state": {
-      "$ref": "#/components/schemas/StudioExportVersionState"
-    },
-    "subtitle": {
-      "description": "Owner-private sibling. Never contains text, server paths or a public grant",
-      "nullable": true,
-      "properties": {
-        "available": {
-          "type": "boolean"
-        },
-        "codec": {
-          "enum": [
-            "srt"
-          ],
-          "type": "string"
-        },
-        "cueCount": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "required": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "sha256": {
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
-        "sizeInBytes": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "codec",
-        "required",
-        "cueCount",
-        "sizeInBytes",
-        "sha256",
-        "available"
-      ],
-      "type": "object"
-    },
-    "version": {
-      "description": "The version number, once published",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "cancelledAt",
-    "contentType",
-    "createdAt",
-    "destination",
-    "error",
-    "errorCode",
-    "id",
-    "includesSharedSources",
-    "locked",
-    "projectId",
-    "publishOperationId",
-    "publishedAt",
-    "renderOperationId",
-    "resultAssetId",
-    "revision",
-    "scope",
-    "sensitive",
-    "settings",
-    "sizeInBytes",
-    "sourceCount",
-    "state",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## StudioExportVersionState
-
-
-```json
-{
-  "description": "Studio export version state",
-  "enum": [
-    "rendering",
-    "staged",
-    "published",
-    "failed",
-    "cancelled"
-  ],
-  "type": "string"
-}
-```
-
-## StudioFontCatalogDto
-
-Related models: [StudioFontFamilyDto](models-33.md#studiofontfamilydto).
-
-```json
-{
-  "properties": {
-    "families": {
-      "description": "The title font families bundled with this server",
-      "items": {
-        "$ref": "#/components/schemas/StudioFontFamilyDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "families"
-  ],
-  "type": "object"
-}
-```
-
-## StudioFontFamilyDto
-
-Related models: [StudioFontFileDto](models-33.md#studiofontfiledto).
-
-```json
-{
-  "properties": {
-    "copyright": {
-      "description": "The copyright line of the package's own licence file",
-      "type": "string"
-    },
-    "family": {
-      "description": "The family name a Studio graph writes in fontFamily",
-      "type": "string"
-    },
-    "files": {
-      "description": "Every bundled file of the family",
-      "items": {
-        "$ref": "#/components/schemas/StudioFontFileDto"
-      },
-      "type": "array"
-    },
-    "license": {
-      "description": "SPDX licence identifier, read from the package",
-      "type": "string"
-    },
-    "package": {
-      "description": "The package the files come from",
-      "type": "string"
-    },
-    "reservedFontName": {
-      "description": "The Reserved Font Name the licence declares, or null",
-      "nullable": true,
-      "type": "string"
-    },
-    "version": {
-      "description": "The exact package version bundled",
-      "type": "string"
-    }
-  },
-  "required": [
-    "copyright",
-    "family",
-    "files",
-    "license",
-    "package",
-    "reservedFontName",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## StudioFontFileDto
-
-Related models: [StudioFontFormat](models-33.md#studiofontformat), [StudioFontStyle](models-33.md#studiofontstyle).
-
-```json
-{
-  "properties": {
-    "decodedFrom": {
-      "description": "For a ttf file: the sha256 of the woff2 file it was decoded from; null for a woff2 file",
-      "nullable": true,
-      "type": "string"
-    },
-    "file": {
-      "description": "The file name, for display and diagnostics only",
-      "type": "string"
-    },
-    "format": {
-      "$ref": "#/components/schemas/StudioFontFormat"
-    },
-    "path": {
-      "description": "The API path that serves the bytes, relative to the API root",
-      "type": "string"
-    },
-    "sha256": {
-      "description": "SHA-256 of the file, lower-case hex; also its id in GET /studio/fonts/{sha256}",
-      "type": "string"
-    },
-    "size": {
-      "description": "Length in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "style": {
-      "$ref": "#/components/schemas/StudioFontStyle"
-    },
-    "subset": {
-      "description": "The Unicode subset the file covers: latin or latin-ext",
-      "type": "string"
-    },
-    "weight": {
-      "description": "CSS weight: 400 normal, 500 medium, 600 semibold, 700 bold",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "decodedFrom",
-    "file",
-    "format",
-    "path",
-    "sha256",
-    "size",
-    "style",
-    "subset",
-    "weight"
-  ],
-  "type": "object"
-}
-```
-
-## StudioFontFormat
-
-
-```json
-{
-  "description": "woff2: the file as its package ships it; ttf: the same font decompressed to sfnt, nothing else changed",
-  "enum": [
-    "woff2",
-    "ttf"
-  ],
-  "type": "string"
-}
-```
-
-## StudioFontStyle
-
-
-```json
-{
-  "enum": [
-    "normal",
-    "italic"
-  ],
-  "type": "string"
-}
-```
-
-## StudioMediaFactsDto
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSource](models-33.md#studiomediafactssource), [StudioRationalDto](models-34.md#studiorationaldto).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "audioCodec": {
-      "description": "The first audio track codec; its presence places a linked audio clip",
-      "nullable": true,
-      "type": "string"
-    },
-    "durationSeconds": {
-      "description": "Length in seconds; 0 for a still; null when unknown",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "fps": {
-      "description": "frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still",
-      "format": "double",
-      "type": "number"
-    },
-    "frameCount": {
-      "description": "Frames in the video stream when the container says; null otherwise",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "frameRate": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioRationalDto"
-        }
-      ],
-      "description": "The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown",
-      "nullable": true
-    },
-    "hasAudio": {
-      "description": "Whether the original has an audio track; null when it could not be read",
-      "nullable": true,
-      "type": "boolean"
-    },
-    "height": {
-      "description": "Display height in pixels, after rotation; null when unknown",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "mimeType": {
-      "description": "The original file type",
-      "type": "string"
-    },
-    "source": {
-      "$ref": "#/components/schemas/StudioMediaFactsSource"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    },
-    "videoCodec": {
-      "nullable": true,
-      "type": "string"
-    },
-    "width": {
-      "description": "Display width in pixels, after rotation; null when unknown",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetId",
-    "audioCodec",
-    "durationSeconds",
-    "fps",
-    "frameCount",
-    "frameRate",
-    "hasAudio",
-    "height",
-    "mimeType",
-    "source",
-    "type",
-    "videoCodec",
-    "width"
-  ],
-  "type": "object"
-}
-```
-
-## StudioMediaFactsSource
-
-
-```json
-{
-  "description": "probe: read from the original now; stored: the metadata extraction kept, when the original could not be read",
-  "enum": [
-    "probe",
-    "stored"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewDto
-
-Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewStatus](models-33.md#studiopreviewstatus), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "admissionReleased": {
-      "description": "Delivery was durably fenced; does not establish renderer termination",
-      "type": "boolean"
-    },
-    "cancellationState": {
-      "enum": [
-        "not-needed",
-        "requested",
-        "acknowledged",
-        "unavailable"
-      ],
-      "type": "string"
-    },
-    "consumerRequestId": {
-      "description": "Captured opt-in consumer admission identity",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "contentType": {
-      "nullable": true,
-      "type": "string"
-    },
-    "errorCode": {
-      "description": "Stable code the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "etag": {
-      "description": "Revision-bound entity tag for the frame endpoint",
-      "type": "string"
-    },
-    "expiresAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "framePts": {
-      "nullable": true,
-      "type": "string"
-    },
-    "framePtsTimebase": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Preview frame ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "operationId": {
-      "description": "The durable job rendering this frame, when one has been created",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "projectId": {
-      "type": "string"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioPreviewQuality"
-    },
-    "readyAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "rendererReleased": {
-      "description": "True only after the captured operation acknowledged cancellation with resources released",
-      "nullable": true,
-      "type": "boolean"
-    },
-    "requestedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "revision": {
-      "description": "The stored project revision this frame was rendered for",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "revisionDigest": {
-      "description": "Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved",
-      "type": "string"
-    },
-    "seekGeneration": {
-      "description": "The seek this frame answers",
-      "type": "string"
-    },
-    "sizeInBytes": {
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/StudioPreviewStatus"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto"
-    },
-    "toneMapped": {
-      "description": "The frame is an explicitly tone-mapped SDR rendering; never the colour authority",
-      "type": "boolean"
-    },
-    "viewportHeight": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "viewportWidth": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "contentType",
-    "errorCode",
-    "etag",
-    "expiresAt",
-    "framePts",
-    "framePtsTimebase",
-    "id",
-    "operationId",
-    "projectId",
-    "quality",
-    "readyAt",
-    "requestedAt",
-    "revision",
-    "revisionDigest",
-    "seekGeneration",
-    "sizeInBytes",
-    "status",
-    "time",
-    "toneMapped",
-    "viewportHeight",
-    "viewportWidth"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewQuality
-
-
-```json
-{
-  "description": "Studio preview quality",
-  "enum": [
-    "draft",
-    "standard",
-    "full"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewRequestDto
-
-Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "consumerRequestId": {
-      "description": "Opt in to a session-isolated admission; use a fresh UUID for each logical request",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "projectId": {
-      "description": "Studio project the frame belongs to",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioPreviewQuality"
-    },
-    "revision": {
-      "description": "Stored project revision the frame is bound to; a superseded revision is refused",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "seekGeneration": {
-      "default": 0,
-      "description": "The client's monotonic seek counter, echoed back on the result",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto"
-    },
-    "viewportHeight": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    },
-    "viewportWidth": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "projectId",
-    "quality",
-    "revision",
-    "time",
-    "viewportHeight",
-    "viewportWidth"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewResponseDto
-
-Related models: [StudioPreviewDto](models-33.md#studiopreviewdto).
-
-```json
-{
-  "properties": {
-    "currentRevision": {
-      "description": "The stored revision the project is on now",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "preview": {
-      "$ref": "#/components/schemas/StudioPreviewDto"
-    },
-    "supersededPreviewIds": {
-      "description": "Previews cancelled because the revision advanced",
+    "owner": {
+      "$ref": "#/components/schemas/UserResponseDto",
+      "description": "Who owns the shared space"
+    },
+    "previewAssetIds": {
+      "description": "Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation.",
       "items": {
         "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
         "type": "string"
       },
+      "maxItems": 12,
+      "type": "array"
+    },
+    "role": {
+      "$ref": "#/components/schemas/AlbumUserRole",
+      "description": "The role the recipient gets on accept"
+    },
+    "startDate": {
+      "description": "Earliest item date, sensitive and Locked media excluded",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "accepted",
+    "albumName",
+    "assetCount",
+    "description",
+    "icon",
+    "id",
+    "invitedAt",
+    "invitedBy",
+    "memberCount",
+    "owner",
+    "previewAssetIds",
+    "role"
+  ],
+  "type": "object"
+}
+```
+
+## SignUpDto
+
+
+```json
+{
+  "properties": {
+    "email": {
+      "description": "User email",
+      "example": "testuser@email.com",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "name": {
+      "description": "User name",
+      "example": "Admin",
+      "type": "string"
+    },
+    "password": {
+      "description": "User password",
+      "example": "password",
+      "type": "string"
+    },
+    "setupCode": {
+      "description": "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
+      "maxLength": 32,
+      "type": "string"
+    },
+    "setupTicket": {
+      "description": "Instead of the code: a setup ticket from POST server/setup/code, from the same device",
+      "maxLength": 256,
+      "type": "string"
+    }
+  },
+  "required": [
+    "email",
+    "name",
+    "password"
+  ],
+  "type": "object"
+}
+```
+
+## SmartAlbumBuiltInKind
+
+
+```json
+{
+  "enum": [
+    "travel",
+    "documents",
+    "screenshots",
+    "food",
+    "pets",
+    "nature"
+  ],
+  "type": "string"
+}
+```
+
+## SmartAlbumReevaluateEstimateDto
+
+
+```json
+{
+  "properties": {
+    "totalAssets": {
+      "description": "Total image assets that will be evaluated (currently equals withDescription)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "withDescription": {
+      "description": "Image assets with a successfully completed description",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "totalAssets",
+    "withDescription"
+  ],
+  "type": "object"
+}
+```
+
+## SmartAlbumReevaluateRequestDto
+
+Related models: [SmartAlbumBuiltInKind](models-33.md#smartalbumbuiltinkind).
+
+```json
+{
+  "properties": {
+    "kind": {
+      "$ref": "#/components/schemas/SmartAlbumBuiltInKind",
+      "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind."
+    }
+  },
+  "type": "object"
+}
+```
+
+## SmartAlbumReevaluateResponseDto
+
+
+```json
+{
+  "properties": {
+    "queued": {
+      "description": "Whether the re-evaluate job was newly enqueued (false = already in-flight)",
+      "type": "boolean"
+    },
+    "runId": {
+      "description": "Canonical run accepted by this request; absent when no local work was accepted",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "queued"
+  ],
+  "type": "object"
+}
+```
+
+## SmartSearchDto
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-31.md#searchfilter).
+
+```json
+{
+  "properties": {
+    "albumIds": {
+      "deprecated": true,
+      "description": "Filter by album IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "city": {
+      "deprecated": true,
+      "description": "Filter by city name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "country": {
+      "deprecated": true,
+      "description": "Filter by country name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "createdAfter": {
+      "deprecated": true,
+      "description": "Filter by creation date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "createdBefore": {
+      "deprecated": true,
+      "description": "Filter by creation date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "filter": {
+      "$ref": "#/components/schemas/SearchFilter",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "imageEnrichment": {
+      "$ref": "#/components/schemas/ImageEnrichmentFilter"
+    },
+    "isEncoded": {
+      "deprecated": true,
+      "description": "Filter by encoded status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isFavorite": {
+      "deprecated": true,
+      "description": "Filter by favorite status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isMotion": {
+      "deprecated": true,
+      "description": "Filter by motion photo status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isNotInAlbum": {
+      "deprecated": true,
+      "description": "Filter assets not in any album",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isOffline": {
+      "deprecated": true,
+      "description": "Filter by offline status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "language": {
+      "description": "Search language code",
+      "type": "string"
+    },
+    "lensModel": {
+      "deprecated": true,
+      "description": "Filter by lens model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "libraryId": {
+      "deprecated": true,
+      "description": "Library ID to filter by",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "make": {
+      "deprecated": true,
+      "description": "Filter by camera make",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "model": {
+      "deprecated": true,
+      "description": "Filter by camera model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "ocr": {
+      "deprecated": true,
+      "description": "Filter by OCR text content",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "page": {
+      "deprecated": true,
+      "description": "Page number",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "personIds": {
+      "deprecated": true,
+      "description": "Filter by person IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "petIds": {
+      "deprecated": true,
+      "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "query": {
+      "description": "Natural language search query",
+      "type": "string"
+    },
+    "queryAssetId": {
+      "description": "Asset ID to use as search reference",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "rating": {
+      "deprecated": true,
+      "description": "Filter by rating [1-5], or null for unrated",
+      "maximum": 5,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v2.6.0",
+          "state": "Updated",
+          "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+        },
+        {
+          "version": "v3",
+          "state": "Updated",
+          "description": "Using -1 as a rating is no longer valid."
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "size": {
+      "description": "Number of results to return",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "state": {
+      "deprecated": true,
+      "description": "Filter by state/province name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "suppressedOnly": {
+      "description": "Return only suppressed content. Requires an elevated session.",
+      "type": "boolean"
+    },
+    "tagIds": {
+      "deprecated": true,
+      "description": "Filter by tag IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "nullable": true,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenAfter": {
+      "deprecated": true,
+      "description": "Filter by taken date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenBefore": {
+      "deprecated": true,
+      "description": "Filter by taken date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedAfter": {
+      "deprecated": true,
+      "description": "Filter by trash date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedBefore": {
+      "deprecated": true,
+      "description": "Filter by trash date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedAfter": {
+      "deprecated": true,
+      "description": "Filter by update date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedBefore": {
+      "deprecated": true,
+      "description": "Filter by update date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "visibility": {
+      "$ref": "#/components/schemas/AssetVisibility",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "withDeleted": {
+      "deprecated": true,
+      "description": "Include deleted assets",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "withExif": {
+      "description": "Include EXIF data in response",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## SmartSearchStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "capped": {
+      "description": "More than 1000 assets match; total is the cap",
+      "type": "boolean"
+    },
+    "total": {
+      "description": "Assets smart search would rank for this body, counted up to 1000",
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "capped",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## SourceType
+
+
+```json
+{
+  "description": "Face detection source type",
+  "enum": [
+    "machine-learning",
+    "exif",
+    "manual"
+  ],
+  "type": "string"
+}
+```
+
+## SpeedParameters
+
+
+```json
+{
+  "properties": {
+    "endMs": {
+      "description": "Speed segment end time in milliseconds",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "rate": {
+      "description": "Playback speed multiplier",
+      "format": "double",
+      "maximum": 4,
+      "minimum": 0.25,
+      "type": "number"
+    },
+    "startMs": {
+      "description": "Speed segment start time in milliseconds",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "rate"
+  ],
+  "type": "object"
+}
+```
+
+## StabilizeParameters
+
+
+```json
+{
+  "properties": {
+    "cropEdges": {
+      "description": "Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render",
+      "type": "boolean"
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## StackCreateDto
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "Asset IDs (first becomes primary, min 2)",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "minItems": 2,
       "type": "array"
     }
   },
   "required": [
-    "currentRevision",
-    "preview",
-    "supersededPreviewIds"
+    "assetIds"
   ],
   "type": "object"
 }
 ```
 
-## StudioPreviewStatus
+## StackResponseDto
 
-
-```json
-{
-  "description": "Studio preview status",
-  "enum": [
-    "pending",
-    "rendering",
-    "ready",
-    "superseded",
-    "failed",
-    "evicted"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewStreamAnswerDto
-
+Related models: [AssetResponseDto](models-06.md#assetresponsedto).
 
 ```json
 {
+  "description": "Stack response",
   "properties": {
-    "negotiation": {
-      "description": "The round this answer answers",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "sdp": {
-      "description": "A complete session description (SDP)",
-      "maxLength": 65536,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "negotiation",
-    "sdp"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewStreamBoundsDto
-
-
-```json
-{
-  "properties": {
-    "maxBitrateKbps": {
-      "description": "Bitrate the worker may not exceed; the server writes it into the relayed answer",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxDurationSeconds": {
-      "description": "The session closes after this long; playing on opens a new one",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxFrameRate": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxHeight": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "maxWidth": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "maxBitrateKbps",
-    "maxDurationSeconds",
-    "maxFrameRate",
-    "maxHeight",
-    "maxWidth"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewStreamCloseReason
-
-
-```json
-{
-  "description": "Why a closed session closed",
-  "enum": [
-    "closed",
-    "superseded",
-    "revoked",
-    "stale-revision",
-    "expired",
-    "worker-lost",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewStreamDto
-
-Related models: [StudioPreviewStreamBoundsDto](models-33.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-33.md#studiopreviewstreamclosereason), [StudioPreviewStreamState](models-33.md#studiopreviewstreamstate), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "bounds": {
-      "$ref": "#/components/schemas/StudioPreviewStreamBoundsDto"
-    },
-    "closeReason": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioPreviewStreamCloseReason"
-        }
-      ],
-      "nullable": true
-    },
-    "currentRevision": {
-      "description": "The stored head, when the session closed as stale",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "expiresAt": {
-      "description": "The hard end of this session",
-      "format": "date-time",
-      "type": "string"
+    "assets": {
+      "items": {
+        "$ref": "#/components/schemas/AssetResponseDto"
+      },
+      "type": "array"
     },
     "id": {
-      "description": "Stream session ID",
+      "description": "Stack ID",
       "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
     },
-    "keepaliveMs": {
-      "description": "Poll at least this often, or the session is closed",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
+    "primaryAssetId": {
+      "description": "Primary asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assets",
+    "id",
+    "primaryAssetId"
+  ],
+  "type": "object"
+}
+```
+
+## StackUpdateDto
+
+
+```json
+{
+  "properties": {
+    "primaryAssetId": {
+      "description": "Primary asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## StatisticsSearchDto
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-31.md#searchfilter).
+
+```json
+{
+  "properties": {
+    "albumIds": {
+      "deprecated": true,
+      "description": "Filter by album IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
     },
-    "negotiation": {
-      "description": "The offer/answer round; an answer must name it",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "offer": {
-      "description": "The worker's offer for this round, while it waits for an answer",
-      "maxLength": 65536,
-      "minLength": 1,
+    "city": {
+      "deprecated": true,
+      "description": "Filter by city name",
       "nullable": true,
-      "type": "string"
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
     },
-    "projectId": {
-      "type": "string"
+    "country": {
+      "deprecated": true,
+      "description": "Filter by country name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
     },
-    "revision": {
-      "description": "The stored project revision this session plays",
-      "maximum": 9007199254740991,
+    "createdAfter": {
+      "deprecated": true,
+      "description": "Filter by creation date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "createdBefore": {
+      "deprecated": true,
+      "description": "Filter by creation date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "description": {
+      "deprecated": true,
+      "description": "Filter by description text",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "filter": {
+      "$ref": "#/components/schemas/SearchFilter",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "imageEnrichment": {
+      "$ref": "#/components/schemas/ImageEnrichmentFilter"
+    },
+    "isEncoded": {
+      "deprecated": true,
+      "description": "Filter by encoded status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isFavorite": {
+      "deprecated": true,
+      "description": "Filter by favorite status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isMotion": {
+      "deprecated": true,
+      "description": "Filter by motion photo status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isNotInAlbum": {
+      "deprecated": true,
+      "description": "Filter assets not in any album",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "isOffline": {
+      "deprecated": true,
+      "description": "Filter by offline status",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "lensModel": {
+      "deprecated": true,
+      "description": "Filter by lens model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "libraryId": {
+      "deprecated": true,
+      "description": "Library ID to filter by",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "make": {
+      "deprecated": true,
+      "description": "Filter by camera make",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "model": {
+      "deprecated": true,
+      "description": "Filter by camera model",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "ocr": {
+      "deprecated": true,
+      "description": "Filter by OCR text content",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "personIds": {
+      "deprecated": true,
+      "description": "Filter by person IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "petIds": {
+      "deprecated": true,
+      "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "rating": {
+      "deprecated": true,
+      "description": "Filter by rating [1-5], or null for unrated",
+      "maximum": 5,
       "minimum": 1,
-      "type": "integer"
-    },
-    "start": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto",
-      "description": "Where playback starts"
+      "nullable": true,
+      "type": "integer",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v2.6.0",
+          "state": "Updated",
+          "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+        },
+        {
+          "version": "v3",
+          "state": "Updated",
+          "description": "Using -1 as a rating is no longer valid."
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
     },
     "state": {
-      "$ref": "#/components/schemas/StudioPreviewStreamState"
+      "deprecated": true,
+      "description": "Filter by state/province name",
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "suppressedOnly": {
+      "description": "Return only suppressed content. Requires an elevated session.",
+      "type": "boolean"
+    },
+    "tagIds": {
+      "deprecated": true,
+      "description": "Filter by tag IDs",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "nullable": true,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenAfter": {
+      "deprecated": true,
+      "description": "Filter by taken date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "takenBefore": {
+      "deprecated": true,
+      "description": "Filter by taken date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedAfter": {
+      "deprecated": true,
+      "description": "Filter by trash date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "trashedBefore": {
+      "deprecated": true,
+      "description": "Filter by trash date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedAfter": {
+      "deprecated": true,
+      "description": "Filter by update date (after)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "updatedBefore": {
+      "deprecated": true,
+      "description": "Filter by update date (before)",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "visibility": {
+      "$ref": "#/components/schemas/AssetVisibility",
+      "deprecated": true,
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v2",
+          "state": "Stable"
+        },
+        {
+          "version": "v3.2.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
     }
   },
-  "required": [
-    "bounds",
-    "closeReason",
-    "currentRevision",
-    "expiresAt",
-    "id",
-    "keepaliveMs",
-    "negotiation",
-    "offer",
-    "projectId",
-    "revision",
-    "start",
-    "state"
-  ],
   "type": "object"
 }
 ```
 
-## StudioPreviewStreamOpenDto
-
-Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "projectId": {
-      "description": "Studio project to play",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioPreviewQuality"
-    },
-    "revision": {
-      "description": "Stored project revision to play; a superseded revision is refused",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto"
-    },
-    "viewportHeight": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    },
-    "viewportWidth": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "projectId",
-    "quality",
-    "revision",
-    "time",
-    "viewportHeight",
-    "viewportWidth"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewStreamState
+## StorageFolder
 
 
 ```json
 {
-  "description": "Where the session is",
+  "description": "Storage folder",
   "enum": [
-    "queued",
-    "negotiating",
-    "offered",
-    "answered",
-    "closed"
+    "encoded-video",
+    "library",
+    "upload",
+    "profile",
+    "thumbs",
+    "backups",
+    "exports"
   ],
   "type": "string"
 }
 ```
 
-## StudioPreviewTimeDto
+## StorageMigrationStatusResponseDto
 
+Related models: [QueueStatisticsDto](models-28.md#queuestatisticsdto).
 
 ```json
 {
   "properties": {
-    "denominator": {
-      "description": "Time denominator; must be positive",
-      "pattern": "^-?\\d{1,16}$",
-      "type": "string"
+    "enabled": {
+      "description": "Whether the storage template is turned on; a run moves nothing while it is off",
+      "type": "boolean"
     },
-    "numerator": {
-      "description": "Time numerator, in seconds over the denominator",
-      "pattern": "^-?\\d{1,16}$",
+    "hasUnfinishedWork": {
+      "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+      "type": "boolean"
+    },
+    "isActive": {
+      "description": "Whether a migration is running now",
+      "type": "boolean"
+    },
+    "isPaused": {
+      "description": "Whether the storage template migration queue is paused",
+      "type": "boolean"
+    },
+    "statistics": {
+      "$ref": "#/components/schemas/QueueStatisticsDto"
+    },
+    "template": {
+      "description": "The storage template originals are moved to",
       "type": "string"
     }
   },
   "required": [
-    "denominator",
-    "numerator"
+    "enabled",
+    "hasUnfinishedWork",
+    "isActive",
+    "isPaused",
+    "statistics",
+    "template"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectAccess
+## StraightenParameters
 
-
-```json
-{
-  "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
-  "enum": [
-    "owner",
-    "reviewer"
-  ],
-  "type": "string"
-}
-```
-
-## StudioProjectCreateDto
-
-Related models: [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto).
 
 ```json
 {
   "properties": {
-    "clientId": {
-      "description": "This editor instance; it receives the lease",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
+    "angle": {
+      "description": "Straighten angle in degrees",
+      "format": "double",
+      "maximum": 45,
+      "minimum": -45,
+      "type": "number"
     },
-    "envelope": {
-      "$ref": "#/components/schemas/StudioProjectEnvelopeDto",
-      "description": "An initial document, saved as revision 1"
-    },
-    "name": {
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "requestKey": {
-      "description": "Owner-scoped idempotency key for project creation; reuse requires the same payload",
-      "pattern": "^[\\w.:-]{1,128}$",
-      "type": "string"
-    },
-    "spaceId": {
-      "description": "Share the project with a shared space for review",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
+    "fill": {
+      "description": "Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom",
+      "type": "boolean"
     }
   },
   "required": [
-    "clientId",
-    "name"
+    "angle"
   ],
   "type": "object"
 }
 ```
 
-## StudioProjectDetailDto
+## StringFilter
 
-Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto), [StudioProjectShelf](models-34.md#studioprojectshelf).
 
 ```json
 {
   "properties": {
-    "access": {
-      "$ref": "#/components/schemas/StudioProjectAccess"
-    },
-    "archivedAt": {
-      "description": "When the owner archived it",
-      "format": "date-time",
-      "nullable": true,
+    "eq": {
       "type": "string"
     },
-    "createdAt": {
-      "format": "date-time",
+    "in": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "ne": {
       "type": "string"
     },
-    "deletedAt": {
-      "description": "When it was moved to the trash",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "digest": {
-      "description": "Key-sorted SHA-256 of the head envelope; null when withheld",
-      "nullable": true,
-      "type": "string"
-    },
-    "duplicatedFromId": {
-      "description": "The project this one was duplicated from; null for a reviewer",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "envelope": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
-        }
-      ],
-      "nullable": true
-    },
-    "id": {
-      "description": "Studio project ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "importedFromBundle": {
-      "description": "The project was read in from a portable bundle; always false for a reviewer",
-      "type": "boolean"
-    },
-    "lastOpenedAt": {
-      "description": "When an editor last opened it; null for a reviewer",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "lease": {
-      "$ref": "#/components/schemas/StudioProjectLeaseDto"
-    },
-    "name": {
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "The only account that may write",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "purgeAfter": {
-      "description": "When a trashed project is deleted for good; its library media is never touched",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "resources": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioProjectResourcesDto"
-        }
-      ],
-      "nullable": true
-    },
-    "revision": {
-      "description": "Head revision number; 0 until the first save",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "shelf": {
-      "$ref": "#/components/schemas/StudioProjectShelf"
-    },
-    "spaceId": {
-      "description": "Shared space whose members may review the project",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "thumbnailAssetId": {
-      "description": "Library asset the owner chose as the poster; null for a reviewer",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "withheld": {
-      "description": "The graph was withheld because a source is unavailable to you",
-      "type": "boolean"
+    "notIn": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
     }
   },
-  "required": [
-    "access",
-    "archivedAt",
-    "createdAt",
-    "deletedAt",
-    "digest",
-    "duplicatedFromId",
-    "envelope",
-    "id",
-    "importedFromBundle",
-    "lastOpenedAt",
-    "lease",
-    "name",
-    "ownerId",
-    "purgeAfter",
-    "resources",
-    "revision",
-    "shelf",
-    "spaceId",
-    "thumbnailAssetId",
-    "updatedAt",
-    "withheld"
-  ],
+  "type": "object"
+}
+```
+
+## StringFilterNullable
+
+
+```json
+{
+  "properties": {
+    "eq": {
+      "nullable": true,
+      "type": "string"
+    },
+    "in": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "ne": {
+      "nullable": true,
+      "type": "string"
+    },
+    "notIn": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
   "type": "object"
 }
 ```

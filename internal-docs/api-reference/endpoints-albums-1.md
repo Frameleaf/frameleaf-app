@@ -830,7 +830,7 @@ Update an album
 
 Permission: `album.update`. Admin only: `false`.
 
-Models: [AlbumResponseDto](models-02.md#albumresponsedto), [UpdateAlbumDto](models-37.md#updatealbumdto).
+Models: [AlbumResponseDto](models-02.md#albumresponsedto), [UpdateAlbumDto](models-39.md#updatealbumdto).
 
 Controller access declarations:
 
@@ -1311,7 +1311,7 @@ Retrieve album map markers
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [MapMarkerResponseDto](models-15.md#mapmarkerresponsedto).
+Models: [MapMarkerResponseDto](models-16.md#mapmarkerresponsedto).
 
 Controller access declarations:
 
@@ -1570,7 +1570,7 @@ Update user role
 
 Permission: `albumUser.update`. Admin only: `false`.
 
-Models: [UpdateAlbumUserDto](models-37.md#updatealbumuserdto).
+Models: [UpdateAlbumUserDto](models-39.md#updatealbumuserdto).
 
 Controller access declarations:
 

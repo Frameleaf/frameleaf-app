@@ -417,7 +417,7 @@ Correct or dismiss a line of text
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [DocumentLineEditDto](models-10.md#documentlineeditdto), [DocumentResponseDto](models-11.md#documentresponsedto).
+Models: [DocumentLineEditDto](models-11.md#documentlineeditdto), [DocumentResponseDto](models-11.md#documentresponsedto).
 
 Controller access declarations:
 

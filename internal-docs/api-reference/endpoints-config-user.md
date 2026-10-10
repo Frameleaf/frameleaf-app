@@ -12,7 +12,7 @@ Get the configuration with user visibility
 
 Permission: `userConfig.read`. Admin only: `false`.
 
-Models: [UserConfigDto](models-38.md#userconfigdto).
+Models: [UserConfigDto](models-39.md#userconfigdto).
 
 Controller access declarations:
 
@@ -87,7 +87,7 @@ Get the default configuration with user visibility
 
 Permission: `userConfig.read`. Admin only: `false`.
 
-Models: [UserConfigDto](models-38.md#userconfigdto).
+Models: [UserConfigDto](models-39.md#userconfigdto).
 
 Controller access declarations:
 

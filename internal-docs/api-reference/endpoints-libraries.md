@@ -204,7 +204,7 @@ Retrieve managed upload statistics
 
 Permission: `library.statistics`. Admin only: `true`.
 
-Models: [ManagedUploadsStatsResponseDto](models-15.md#manageduploadsstatsresponsedto).
+Models: [ManagedUploadsStatsResponseDto](models-16.md#manageduploadsstatsresponsedto).
 
 Controller access declarations:
 
@@ -453,7 +453,7 @@ Update a library
 
 Permission: `library.update`. Admin only: `true`.
 
-Models: [LibraryResponseDto](models-15.md#libraryresponsedto), [UpdateLibraryDto](models-38.md#updatelibrarydto).
+Models: [LibraryResponseDto](models-15.md#libraryresponsedto), [UpdateLibraryDto](models-39.md#updatelibrarydto).
 
 Controller access declarations:
 
@@ -985,7 +985,7 @@ Validate library settings
 
 Permission: `See authentication declaration`. Admin only: `true`.
 
-Models: [ValidateLibraryDto](models-38.md#validatelibrarydto), [ValidateLibraryResponseDto](models-38.md#validatelibraryresponsedto).
+Models: [ValidateLibraryDto](models-40.md#validatelibrarydto), [ValidateLibraryResponseDto](models-40.md#validatelibraryresponsedto).
 
 Controller access declarations:
 

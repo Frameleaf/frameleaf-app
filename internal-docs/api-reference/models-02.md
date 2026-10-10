@@ -191,7 +191,7 @@ Related models: [AdminConfigFacesDto](models-01.md#adminconfigfacesdto).
 
 ## AdminConfigNewVersionCheckDto
 
-Related models: [ReleaseChannel](models-28.md#releasechannel), [VersionCheckFrequency](models-38.md#versioncheckfrequency).
+Related models: [ReleaseChannel](models-29.md#releasechannel), [VersionCheckFrequency](models-40.md#versioncheckfrequency).
 
 ```json
 {
@@ -321,7 +321,7 @@ Related models: [AdminConfigSmtpDto](models-02.md#adminconfigsmtpdto).
 
 ## AdminConfigOAuthDto
 
-Related models: [OAuthTokenEndpointAuthMethod](models-18.md#oauthtokenendpointauthmethod).
+Related models: [OAuthTokenEndpointAuthMethod](models-19.md#oauthtokenendpointauthmethod).
 
 ```json
 {
@@ -1227,7 +1227,7 @@ Related models: [AlbumIconSuggestionResponseDto](models-02.md#albumiconsuggestio
 
 ## AlbumResponseDto
 
-Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-06.md#assetorder), [ContributorCountResponseDto](models-10.md#contributorcountresponsedto), [PartnerOriginDto](models-18.md#partnerorigindto), [SmartAlbumBuiltInKind](models-31.md#smartalbumbuiltinkind).
+Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-06.md#assetorder), [ContributorCountResponseDto](models-10.md#contributorcountresponsedto), [PartnerOriginDto](models-19.md#partnerorigindto), [SmartAlbumBuiltInKind](models-33.md#smartalbumbuiltinkind).
 
 ```json
 {
@@ -1860,7 +1860,7 @@ Related models: [AlbumUserRole](models-02.md#albumuserrole).
 
 ## AlbumUserResponseDto
 
-Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-39.md#userresponsedto).
 
 ```json
 {
