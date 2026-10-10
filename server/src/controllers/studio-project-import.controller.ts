@@ -19,6 +19,7 @@ import { mkdirSync } from 'node:fs';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
 import {
   StudioProjectImportCreateDto,
   StudioProjectImportDto,
@@ -100,6 +101,21 @@ export class StudioProjectImportController {
   })
   getStudioProjectImports(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioProjectImportDto[]> {
     return this.service.list(auth, id);
+  }
+
+  @Get(':id/inventory')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List what a Studio project keeps and uses',
+    description:
+      'The files kept with one of your projects, and the fonts, bundled LUTs and models its current revision names, each with its licence and whether this server may run it (GET /studio/resources lists everything it may).',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioProjectInventory(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<StudioProjectInventoryDto> {
+    return this.service.inventory(auth, id);
   }
 
   @Get(':id/imports/:importId/file')

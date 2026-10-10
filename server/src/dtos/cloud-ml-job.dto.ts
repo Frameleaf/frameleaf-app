@@ -43,7 +43,9 @@ const CloudMlJobEstimateRequestSchema = z
     restorationId: z
       .uuidv7()
       .optional()
-      .describe('For the full stage: the reviewed preview it renders in full, with the same model and settings'),
+      .describe(
+        'For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed',
+      ),
     mode: AssetRestorationModeSchema.optional().describe('Restoration preview: faithful or creative'),
     upscale: z
       .union([z.literal(2).meta({ format: 'double' }), z.literal(4).meta({ format: 'double' })])
@@ -167,6 +169,11 @@ const CloudMlJobEstimateResponseSchema = z
     upscale: CloudMlJobUpscaleSchema.nullable().describe(
       'Photo upscales only (FC-46): the factor each photo really gets under the 64 MP output cap; null otherwise',
     ),
+    quoteOnly: z
+      .boolean()
+      .describe(
+        'A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full',
+      ),
   })
   .meta({ id: 'CloudMlJobEstimateResponseDto' });
 

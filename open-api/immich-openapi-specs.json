@@ -40663,6 +40663,63 @@
         "x-immich-state": "Stable"
       }
     },
+    "/studio/assets/{id}/media-facts": {
+      "get": {
+        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+        "operationId": "getStudioMediaFacts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMediaFactsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Studio media facts of an asset",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/bundles/exports/{id}/download": {
       "get": {
         "description": "The finished file of one of your own exports. It is reachable by no other route and is deleted when it expires.",
@@ -42829,6 +42886,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/inventory": {
+      "get": {
+        "description": "The files kept with one of your projects, and the fonts, bundled LUTs and models its current revision names, each with its licence and whether this server may run it (GET /studio/resources lists everything it may).",
+        "operationId": "getStudioProjectInventory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectInventoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List what a Studio project keeps and uses",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/lease": {
       "post": {
         "description": "One editor instance writes at a time. The holder renews with the same call; a free or lapsed lease is taken; a live lease held elsewhere is refused with `409` unless `takeover` is set explicitly.",
@@ -43487,6 +43600,51 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/resources": {
+      "get": {
+        "description": "Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.",
+        "operationId": "getStudioResources",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioResourceInventoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the Studio resources this server may use",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -66263,7 +66421,7 @@
             "description": "Preview: the part of the frame to preview"
           },
           "restorationId": {
-            "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings",
+            "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -66380,6 +66538,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "quoteOnly": {
+            "description": "A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full",
+            "type": "boolean"
+          },
           "refusal": {
             "allOf": [
               {
@@ -66440,6 +66602,7 @@
           "perUnit",
           "permission",
           "plannedWorkers",
+          "quoteOnly",
           "refusal",
           "runSeconds",
           "spentTodayUsd",
@@ -112513,6 +112676,104 @@
         ],
         "type": "string"
       },
+      "StudioMediaFactsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "audioCodec": {
+            "description": "The first audio track codec; its presence places a linked audio clip",
+            "nullable": true,
+            "type": "string"
+          },
+          "durationSeconds": {
+            "description": "Length in seconds; 0 for a still; null when unknown",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "fps": {
+            "description": "frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still",
+            "format": "double",
+            "type": "number"
+          },
+          "frameCount": {
+            "description": "Frames in the video stream when the container says; null otherwise",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "frameRate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioRationalDto"
+              }
+            ],
+            "description": "The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown",
+            "nullable": true
+          },
+          "hasAudio": {
+            "description": "Whether the original has an audio track; null when it could not be read",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Display height in pixels, after rotation; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "mimeType": {
+            "description": "The original file type",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioMediaFactsSource"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "videoCodec": {
+            "nullable": true,
+            "type": "string"
+          },
+          "width": {
+            "description": "Display width in pixels, after rotation; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "audioCodec",
+          "durationSeconds",
+          "fps",
+          "frameCount",
+          "frameRate",
+          "hasAudio",
+          "height",
+          "mimeType",
+          "source",
+          "type",
+          "videoCodec",
+          "width"
+        ],
+        "type": "object"
+      },
+      "StudioMediaFactsSource": {
+        "description": "probe: read from the original now; stored: the metadata extraction kept, when the original could not be read",
+        "enum": [
+          "probe",
+          "stored"
+        ],
+        "type": "string"
+      },
       "StudioPreviewDto": {
         "properties": {
           "admissionReleased": {
@@ -113498,6 +113759,58 @@
         ],
         "type": "string"
       },
+      "StudioProjectInventoryDto": {
+        "properties": {
+          "fonts": {
+            "description": "Font families the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "keptFiles": {
+            "description": "Files kept with the project (FL-103, FL-105)",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectImportDto"
+            },
+            "type": "array"
+          },
+          "luts": {
+            "description": "Bundled LUTs the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "models": {
+            "description": "Models the head graph names",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The head revision the graph references were read from; 0 for an empty project",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fonts",
+          "keptFiles",
+          "luts",
+          "models",
+          "projectId",
+          "revision"
+        ],
+        "type": "object"
+      },
       "StudioProjectLeaseDto": {
         "properties": {
           "autosaveDebounceMs": {
@@ -113578,6 +113891,52 @@
         "required": [
           "items",
           "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectResourceKind": {
+        "description": "What the graph references",
+        "enum": [
+          "font",
+          "lut",
+          "model"
+        ],
+        "type": "string"
+      },
+      "StudioProjectResourceUseDto": {
+        "properties": {
+          "allowed": {
+            "description": "Whether it may run on this server",
+            "type": "boolean"
+          },
+          "detail": {
+            "description": "Why not, when it may not",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioProjectResourceKind"
+          },
+          "license": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "As written in the graph",
+            "type": "string"
+          },
+          "rightsId": {
+            "description": "The rights row it resolves to",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowed",
+          "detail",
+          "kind",
+          "license",
+          "name",
+          "rightsId"
         ],
         "type": "object"
       },
@@ -113960,6 +114319,27 @@
         },
         "type": "object"
       },
+      "StudioRationalDto": {
+        "properties": {
+          "den": {
+            "description": "Denominator, positive; the pair is reduced",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "description": "Numerator",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
+      },
       "StudioRenderCandidateDto": {
         "properties": {
           "dolbyVision": {
@@ -114065,6 +114445,147 @@
           "hdr10",
           "maxBitDepth",
           "sessions"
+        ],
+        "type": "object"
+      },
+      "StudioResourceApprovalDto": {
+        "description": "The owner approval the allowed rows come from",
+        "nullable": true,
+        "properties": {
+          "approvedBy": {
+            "type": "string"
+          },
+          "approvedOn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvedBy",
+          "approvedOn"
+        ],
+        "type": "object"
+      },
+      "StudioResourceInventoryDto": {
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/StudioResourceApprovalDto"
+          },
+          "distributionApproved": {
+            "description": "Whether the engine as a whole may be redistributed; false blocks every redistribution use",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Every reviewed resource, sorted by id",
+            "items": {
+              "$ref": "#/components/schemas/StudioResourceItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "approval",
+          "distributionApproved",
+          "items"
+        ],
+        "type": "object"
+      },
+      "StudioResourceItemDto": {
+        "properties": {
+          "approvedOn": {
+            "description": "The date the owner approved this exact row, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "capability": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioWorkerCapability"
+              }
+            ],
+            "description": "The worker capability that runs it (GET /ml-destinations/capabilities says whether one is available), or null when the editor alone uses it",
+            "nullable": true
+          },
+          "id": {
+            "description": "The rights row id, e.g. font:Roboto or model:onnx-community/whisper-base_timestamped",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioResourceItemKind"
+          },
+          "license": {
+            "description": "The licence, as reviewed; null when the review records none",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name a graph or a job uses: a font family, a model id",
+            "type": "string"
+          },
+          "producers": {
+            "description": "For a model: the generated-file producers it serves (transcript, tts, musicgen)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "restrictions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Why the owner withheld a use, by use name (redistribution, localRuntime, hostedUse)",
+            "type": "object"
+          },
+          "uses": {
+            "$ref": "#/components/schemas/StudioResourceUsesDto"
+          }
+        },
+        "required": [
+          "approvedOn",
+          "capability",
+          "id",
+          "kind",
+          "license",
+          "name",
+          "producers",
+          "restrictions",
+          "uses"
+        ],
+        "type": "object"
+      },
+      "StudioResourceItemKind": {
+        "description": "What the resource is",
+        "enum": [
+          "font",
+          "lut",
+          "audio",
+          "model",
+          "voice",
+          "weights",
+          "tool",
+          "runtime",
+          "asset"
+        ],
+        "type": "string"
+      },
+      "StudioResourceUsesDto": {
+        "properties": {
+          "hostedUse": {
+            "description": "May run on Frameleaf Cloud",
+            "type": "boolean"
+          },
+          "localRuntime": {
+            "description": "May run on this server or a LAN worker",
+            "type": "boolean"
+          },
+          "redistribution": {
+            "description": "May be copied to someone else (a bundle, a download)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hostedUse",
+          "localRuntime",
+          "redistribution"
         ],
         "type": "object"
       },
@@ -114437,6 +114958,18 @@
           "refusal"
         ],
         "type": "object"
+      },
+      "StudioWorkerCapability": {
+        "description": "A Studio worker capability, as the command catalogue names it",
+        "enum": [
+          "analysisWorker",
+          "generationWorker",
+          "gpuWorker",
+          "renderWorker",
+          "restorationWorker",
+          "transcriptionWorker"
+        ],
+        "type": "string"
       },
       "StudioWorkspaceDto": {
         "properties": {
