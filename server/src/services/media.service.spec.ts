@@ -3405,6 +3405,8 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
+      // Without a retained version the saved edits and files are this render's inputs: fully fenced.
+      expect(mocks.job.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id, { derivatives: true });
       expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
         1,
@@ -3802,6 +3804,8 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Failed);
 
+      // A retained version's publication decides about later saves and replaced thumbnails itself.
+      expect(mocks.job.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id, { derivatives: false });
       expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
       expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
