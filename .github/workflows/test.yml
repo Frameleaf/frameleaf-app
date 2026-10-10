@@ -345,8 +345,7 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     # The suite is split by server/test/vitest.medium-suites.mjs: this protected check runs every medium
-    # spec except the listed scale specs, which server-medium-scale-tests runs beside it. One serial
-    # run of everything took 83 of this job's 90 minutes and was cancelled at the limit.
+    # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
     name: Medium Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
@@ -420,17 +419,11 @@ jobs:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
-    # The 15,000-item queue run and the scale specs (25,000 items each by default, FRAMELEAF_SCALE_ITEMS for
-    # more; queue-scale.spec.ts still loads 500,000 roots), in two fixed groups with a database each.
+    # The queue pipeline run and the scale specs (25,000 items each by default, FRAMELEAF_SCALE_ITEMS for
+    # more), with a database of their own.
     name: Medium Scale Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        suite:
-          - queue-scale
-          - library-scale
     permissions:
       contents: read
     defaults:
@@ -469,9 +462,9 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: .
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
           MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
-          FRAMELEAF_MEDIUM_SUITE: ${{ matrix.suite }}
+          FRAMELEAF_MEDIUM_SUITE: scale
         run: |
           set -euo pipefail
           docker_cli=$(readlink -f "$(command -v docker)")
@@ -492,7 +485,7 @@ jobs:
       - name: Remove medium runner after failure or cancellation
         if: always()
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
         run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
   e2e-tests-server-cli:

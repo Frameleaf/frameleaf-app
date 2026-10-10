@@ -13,6 +13,16 @@ if (!Number.isSafeInteger(SCALE_ITEMS) || SCALE_ITEMS < 5000 || SCALE_ITEMS % 50
 }
 
 /**
+ * How many media the four-stage queue pipeline spec runs through the production facade: 3,000 (it
+ * was 15,000, twenty-two minutes on a hosted runner). `FRAMELEAF_PIPELINE_MEDIA` runs more by hand.
+ */
+const pipeline = process.env.FRAMELEAF_PIPELINE_MEDIA;
+export const PIPELINE_MEDIA = pipeline === undefined || pipeline === '' ? 3000 : Number(pipeline);
+if (!Number.isSafeInteger(PIPELINE_MEDIA) || PIPELINE_MEDIA < 3000 || PIPELINE_MEDIA % 1000 !== 0) {
+  throw new Error(`FRAMELEAF_PIPELINE_MEDIA must be a multiple of 1000 from 3000 up, got "${pipeline}"`);
+}
+
+/**
  * A test of `SCALE_ITEMS` items: `%i` in its name is the size, and its timeout is `perItemMs` for
  * each item, never under a minute.
  */
