@@ -297,3 +297,5 @@ test('extra cases: absent and non-finite keys, the block glitch that glitches, t
 // The keyframe page and its goldens (studio/spec/keyframes.md) are checked with this file.
 await import('./keyframe-goldens.test.mjs');
 
+// The HDR and colour-management page (studio/spec/hdr.md) has its own engine-free checks.
+import './hdr-goldens.test.mjs';
