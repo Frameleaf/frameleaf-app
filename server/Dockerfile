@@ -86,15 +86,15 @@ FROM base-server-build AS base-server-geodata
 # Reverse-geocoding data from a fixed snapshot, listed with its checksums, capture dates and CC BY 4.0
 # attribution in server/base-image/geodata/geodata.lock. fetch.sh takes each file from Frameleaf's host
 # (static.frameleaf.cloud/geodata/$GEODATA_SNAPSHOT/) and falls back to its pinned capture URL; both must
-# match the checksum. GEODATA_DATE is the newest capture in the set (countryInfo.txt, 2026-09-13; the
-# others are from 2026-09-11), not the build time, so amd64 and arm64 builds ship identical data and a new
-# image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
+# match the checksum. GEODATA_DATE is the newest file in the set (the landmark place pack, built
+# 2026-10-10; the GeoNames captures are from 2026-09-11 and 2026-09-13), not the build time, so amd64 and
+# arm64 builds ship identical data and a new image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
 # GEODATA_DATE together.
-ARG GEODATA_SNAPSHOT=2026-09-11
-ARG GEODATA_DATE=2026-09-13T00:06:31+00:00
+ARG GEODATA_SNAPSHOT=2026-10-10
+ARG GEODATA_DATE=2026-10-10T00:00:00+00:00
 COPY server/base-image/geodata/ ./geodata/
 RUN GEODATA_SNAPSHOT="$GEODATA_SNAPSHOT" ./geodata/fetch.sh geodata/geodata.lock /build/geodata && \
-  chmod 444 /build/geodata/*.txt /build/geodata/*.geojson && \
+  chmod 444 /build/geodata/*.txt /build/geodata/*.geojson /build/geodata/*.gz && \
   umask 0333 && unzip /build/geodata/cities500.zip -d /build/geodata/ && \
   rm /build/geodata/cities500.zip && printf '%s' "$GEODATA_DATE" > /build/geodata/geodata-date.txt
 
