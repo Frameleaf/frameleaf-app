@@ -49,7 +49,17 @@
         "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 },
         "frameRate": { "$ref": "#/$defs/positiveRational" },
         "backgroundColor": { "$ref": "#/$defs/hexColour" },
-        "colorManagement": { "type": "object" }
+        "colorManagement": {
+          "description": "Managed colour (studio/spec/hdr.md, H1). The engine reads these four fields and never writes the object.",
+          "type": "object",
+          "properties": {
+            "workingRange": { "enum": ["sdr", "hdr"] },
+            "referenceWhiteNits": { "type": "number", "exclusiveMinimum": 0 },
+            "masteringPeakNits": { "type": "number", "exclusiveMinimum": 0 },
+            "sdrMonitoring": { "enum": ["bt2390", "none"] }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     },
@@ -578,7 +588,8 @@
         "width": { "type": "integer", "minimum": 0 },
         "height": { "type": "integer", "minimum": 0 },
         "fps": { "type": "number", "minimum": 0 },
-        "audioCodec": { "type": "string" }
+        "audioCodec": { "type": "string" },
+        "colorTransfer": { "enum": ["sdr", "pq", "hlg", "hdr"] }
       },
       "additionalProperties": true
     }
