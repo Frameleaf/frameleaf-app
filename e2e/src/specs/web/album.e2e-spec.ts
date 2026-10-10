@@ -250,6 +250,10 @@ test.describe('Album', () => {
       'aria-pressed',
       'true',
     );
+    // Measure the drawing target after the sheet's scale/translation animation has settled.
+    await faceDialog.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
     const image = faceDialog.locator('.ft-stage img');
     const bounds = await image.evaluate((element: HTMLImageElement) => {
       const rect = element.getBoundingClientRect();
@@ -561,7 +565,8 @@ test.describe('Album', () => {
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: 'Move earlier' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('status')).toContainText(`“${second}” is now 1 of 2`);
+    const announcement = `“${second}” is now 1 of 2`;
+    await expect(page.getByRole('status').filter({ hasText: announcement })).toContainText(announcement);
     await expect.poll(names).toEqual([second, first]);
 
     // The order is saved on the server for this person and survives a reload.

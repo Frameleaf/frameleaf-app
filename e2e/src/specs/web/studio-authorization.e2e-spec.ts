@@ -339,7 +339,7 @@ test.describe('Studio authorization gates (FL-112)', () => {
         await page.goto(`/studio?project=${projectId}`);
         await expect(page.getByRole('heading', { level: 1, name: PROJECT_NAME })).toBeVisible();
         await expect(page.getByRole('textbox', { name: 'Project name' })).toHaveCount(0);
-        await expect(page.getByText('Review only')).toBeVisible();
+        await expect(page.getByText('View only')).toBeVisible();
       });
       await record('source', scenario, async () => {
         const opened = await jsonOf(page, `/studio/projects/${projectId}`);

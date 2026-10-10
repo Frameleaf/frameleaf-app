@@ -44,9 +44,10 @@ run = [
 
 [tasks.open-api-typescript]
 run = [
-  "oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts",
+  "node scripts/generate-typescript-sdk.mjs",
   { task = "//:sdk:install" },
   { task = "//:sdk:build" },
+  { task = "//:sdk:test" },
 ]
 
 [tasks.open-api]
@@ -136,6 +137,10 @@ run = "pnpm --filter @frameleaf/sdk install --frozen-lockfile"
 [tasks."sdk:build"]
 dir = "packages/sdk"
 run = "pnpm build"
+
+[tasks."sdk:test"]
+dir = "packages/sdk"
+run = "pnpm test"
 
 # i18n tasks
 [tasks."i18n:format"]

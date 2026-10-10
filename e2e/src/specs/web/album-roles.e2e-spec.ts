@@ -1,6 +1,8 @@
 import {
   AlbumUserRole,
+  createActivity,
   LoginResponseDto,
+  ReactionType,
   removeUserFromAlbum,
   setUserOnboarding,
   updateAlbumInfo,
@@ -85,8 +87,8 @@ test.describe('Album roles', () => {
       await expect(page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(row.share ? 1 : 0);
       await expect(page.getByRole('button', { name: 'Members', exact: true })).toHaveCount(row.share ? 0 : 1);
       await expect(page.getByRole('button', { name: 'Shared links' })).toHaveCount(row.links ? 1 : 0);
-      // Activity is offered to every role.
-      await expect(page.getByRole('button', { name: /^Activity/ })).toBeVisible();
+      // Likes and comments are offered to every role.
+      await expect(page.getByRole('button', { name: /^Likes & comments/ })).toBeVisible();
 
       const more = await openMore(page);
       await expect(more.getByRole('menuitem', { name: 'Edit details' })).toHaveCount(row.edit ? 1 : 0);
@@ -107,6 +109,10 @@ test.describe('Album roles', () => {
 
   test('keeps the history readable when comments are turned off', async ({ context, page }) => {
     const album = await sharedAlbum('Quiet album');
+    await createActivity(
+      { activityCreateDto: { albumId: album.id, type: ReactionType.Comment, comment: 'Earlier conversation' } },
+      { headers: asBearerAuth(viewer.accessToken) },
+    );
     await updateAlbumInfo(
       { id: album.id, updateAlbumDto: { isActivityEnabled: false } },
       { headers: asBearerAuth(owner.accessToken) },
@@ -114,8 +120,9 @@ test.describe('Album roles', () => {
 
     await utils.setAuthCookies(context, viewer.accessToken);
     await page.goto(`/albums/${album.id}`);
-    await page.getByRole('button', { name: /^Activity/ }).click();
+    await page.getByRole('button', { name: /^Likes & comments/ }).click();
     await expect(page.getByText(/Likes and comments are turned off here/)).toBeVisible();
+    await expect(page.getByText('Earlier conversation', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Like', exact: true })).toBeDisabled();
     await expect(page.getByRole('textbox', { name: 'Write a comment' })).toHaveCount(0);
   });

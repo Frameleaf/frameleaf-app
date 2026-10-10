@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import sharp from 'sharp';
 import { expect, it, vi } from 'vitest';
@@ -58,6 +59,21 @@ it('serves a manifest and editor hello compatible with the current Studio host',
   expect(isStudioFrameHello(hello)).toBe(true);
   expect(hello.protocolVersion).toBe(STUDIO_FRAME_PROTOCOL_VERSION);
   expect(hello.engineRevision).toBe(manifest.json.engineRevision);
+});
+
+it('authorization browser and component checks use the production English read-only label', () => {
+  const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
+  const english = JSON.parse(read('../../i18n/en.json'));
+  for (const relative of [
+    './specs/web/studio-authorization.e2e-spec.ts',
+    '../../web/src/lib/components/frameleaf/StudioHost.authorization.spec.ts',
+  ]) {
+    const source = read(relative);
+    const labels = [...source.matchAll(/getByText\('([^']+)'\)\)\.toBeVisible\(\)/g)].map((match) => match[1]);
+    expect(labels, relative).toEqual([english.frameleaf_studio_read_only]);
+  }
+  const component = read('../../web/src/lib/components/frameleaf/StudioHost.authorization.spec.ts');
+  expect(component.match(/frameleaf_studio_read_only: '([^']+)'/)[1]).toBe(english.frameleaf_studio_read_only);
 });
 
 it.each([

@@ -544,7 +544,57 @@
       "path": "patches/0112-filler-apply-undo-routing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "947139bbfe0b3624e26068bfd85c49d4dc943c43d73997368e969d9ece810034"
+    },
+    {
+      "path": "patches/0113-crop-rotation-keyboard-entry.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f2654c4ba8a405a02648f0869b8b937d9b5ff94b72d8f116f8cfa1b1ed60c43"
+    },
+    {
+      "path": "patches/0114-explicit-seek-scope-currentness.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "84343a37c06cbab32598d0073072dee5e6ea65c0b7d9a7becadf1182b9b1e7fa"
+    },
+    {
+      "path": "patches/0115-caption-order-independent-lookup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "31bcfd1874b2f5de4afff3e9259412ca932e9557928f4d41814d392caf86e51a"
+    },
+    {
+      "path": "patches/0116-still-default-project-duration.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "28558d507d6d08bf312c47e3bd16b0e0608d3cb8d2eec6c19959878d9229909e"
+    },
+    {
+      "path": "patches/0118-adaptive-preview-render-size.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "26a6a89d91cab552055e002094e8f51aed0846a2c981943db05f6664ae069a5f"
+    },
+    {
+      "path": "patches/0117-durable-media-relink.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e4ae0e6649505e6b8c79ecd18637affa331fddb1384fcbd4471a6678819c44d2"
+    },
+    {
+      "path": "patches/0119-linear-hdr-additive-dissolve.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d8361eeb34d96415483288c4eb84e5638ef47c4c725dbb094b448e812e8fd19d"
+    },
+    {
+      "path": "patches/0120-additive-half-subnormal-coverage.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "081806cdda71e4f08711c86bbb6c09071e1bf658836aa9ca57ecc08d245bcc57"
+    },
+    {
+      "path": "patches/0121-property-slider-optional-actions-test.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ab5e3087011ed22eb27e4eeefaebdb659ce3aa1b49f0c2999f26c640ad25a776"
+    },
+    {
+      "path": "patches/0122-rolling-edit-linked-track-lock-preflight.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0b145069a4c5460163f4c9d1b056440f3e34ca353994478407db450ae947912c"
     }
   ],
-  "sourceSha256": "5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec"
+  "sourceSha256": "6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3"
 }

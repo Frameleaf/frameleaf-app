@@ -103,6 +103,7 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
 const ASSET = '0198a1c2-0000-7000-8000-00000000c001'
 const STILL = '0198a1c2-0000-7000-8000-00000000c002'
 const OTHER = '0198a1c2-0000-7000-8000-00000000c003'
+const REPLACEMENT = '0198a1c2-0000-7000-8000-00000000c004'
 
 const media: MediaMetadata[] = [
   {
@@ -156,6 +157,8 @@ const media: MediaMetadata[] = [
     updatedAt: 0,
   },
 ]
+
+media.push({ ...media[0]!, id: REPLACEMENT, fileName: 'replacement.mp4', contentHash: 'b'.repeat(64) })
 
 const seconds = (num: number, den = 1) => ({ num, den })
 const track = (id: string, kind: 'video' | 'audio', order: number) => ({
@@ -295,6 +298,7 @@ const ENGINE_CASES: Record<
   StudioEngineCommandId,
   (f: Fixture) => { payload: Record<string, unknown>; graph?: () => Promise<Project> }
 > = {
+  'media.relink': () => ({ payload: { mediaId: ASSET, assetId: REPLACEMENT } }),
   'captions.set': () => ({ payload: { captions: [{ id: 'canonical-caption', start: seconds(1), end: seconds(2), text: 'Caption' }] } }),
   'clip.add': () => ({ payload: { trackId: 'v1', assetId: STILL, at: seconds(10), duration: seconds(1) } }),
   'clip.delete': (f) => ({ payload: { clipId: f.title } }),
@@ -443,6 +447,12 @@ function session(
     revision: () => state.revision,
     assets: () => [],
     restore: async () => false,
+    commitRelink: async (graph) => {
+      if (!state.keeps) return false
+      state.graph = graph
+      state.revision += 1
+      return true
+    },
     history,
     stage: (graph) => {
       if (!state.keeps) return 'ignored'

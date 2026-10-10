@@ -458,10 +458,31 @@
   };
 
   const engineHandlers = createStudioEngineCommandHandlers({
+    origin: () => session,
     projectId: () => project.id,
     graph: () => project.graph,
     revision: () => project.revision,
     assets: () => assets,
+    projectImports: () => projectImports,
+    commitRelink: async (graph, revision) => {
+      if (dirty) {
+        throw new Error('Save the current editor edits before relinking through a command');
+      }
+      const projectId = project.id;
+      const userId = authManager.user.id;
+      const version = project.graphVersion ?? 0;
+      const result = await session.commitEditorDraft(
+        graph,
+        revision,
+        version,
+        () =>
+          authManager.authenticated &&
+          authManager.user.id === userId &&
+          project.id === projectId &&
+          (project.graphVersion ?? 0) === version,
+      );
+      return result.status === 'saved';
+    },
     stage: (graph, commandIds, envelopes) => session.stage(graph, commandIds, envelopes),
     restore: (revision) => session.restore(revision),
     engine: engineForCommands,
@@ -631,6 +652,24 @@
   const services: StudioHostServices = {
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
+    commitEditorDraft: async (graph, baseRevision, scope) => {
+      const current = () =>
+        !accessLost &&
+        !forbidden &&
+        authManager.authenticated &&
+        authManager.user.id === scope.userId &&
+        project.id === scope.projectId &&
+        (project.graphVersion ?? 0) === scope.graphVersion;
+      if (!current()) {
+        return { status: 'rejected', reason: 'The editor origin changed' };
+      }
+      const before = project.graph;
+      const result = await session.commitEditorDraft(graph, baseRevision, scope.graphVersion, current);
+      if (result.status === 'saved' && current() && before) {
+        history.record(before, graph);
+      }
+      return result;
+    },
     reloadProject: () => session.reload(),
     resolveAsset: (assetId) => assets.find((asset) => asset.id === assetId),
     notify: (message, tone) => {
@@ -689,8 +728,22 @@
       if (projectId === STUDIO_DRAFT_PROJECT_ID || sessionState?.access !== 'owner') {
         throw new Error($t('frameleaf_studio_import_needs_saved_project'));
       }
+      const userId = authManager.user.id;
+      const version = project.graphVersion ?? 0;
+      const scope = upload.scope;
+      const current = () =>
+        authManager.authenticated &&
+        authManager.user.id === userId &&
+        project.id === projectId &&
+        (project.graphVersion ?? 0) === version;
+      if (scope && (scope.projectId !== projectId || scope.userId !== userId || scope.graphVersion !== version)) {
+        throw new Error('The editor origin changed before upload');
+      }
       const kept = await uploadStudioProjectImport(projectId, upload);
-      if (project.id === projectId) {
+      if (scope && !current()) {
+        throw new Error('The editor origin changed during upload');
+      }
+      if (current()) {
         projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
       }
       return kept;

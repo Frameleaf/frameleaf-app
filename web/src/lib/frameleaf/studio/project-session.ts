@@ -61,7 +61,7 @@ import {
 } from '@frameleaf/sdk';
 import type { StudioCommandEnvelope } from './commands';
 import { holdBackHiddenClips, withHeldClips, type StudioHeldClip } from './hidden-clips';
-import type { StudioProjectHandle } from './host-contract';
+import type { StudioProjectHandle, StudioEditorCommitResult } from './host-contract';
 
 /* ------------------------------------------------------------------ */
 /* Contract constants (mirrored from server/src/utils/studio-project.ts) */
@@ -289,6 +289,13 @@ export interface StudioProjectSession {
     baseRevision: number,
     graphVersion: number,
   ): StudioStageOutcome;
+  /** One-shot leased relink save. A refusal never stages or retries the replacement graph. */
+  commitEditorDraft(
+    graph: unknown,
+    baseRevision: number,
+    graphVersion: number,
+    isCurrent?: () => boolean,
+  ): Promise<StudioEditorCommitResult>;
   /** Send the staged draft now, if there is one. */
   flush(): Promise<void>;
   /** Discard the draft and re-read the project. Resolves a `conflict` by accepting the head. */
@@ -359,6 +366,15 @@ const draftHandle = (name: string): StudioProjectHandle => ({
   hasLease: true,
 });
 
+/** JSONB may reorder object keys; compare the complete JSON value, preserving array order. */
+function jsonContent(value: unknown): string | undefined {
+  return JSON.stringify(value, (_key, entry: unknown) =>
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(Object.entries(entry).sort(([left], [right]) => left.localeCompare(right)))
+      : entry,
+  );
+}
+
 export const createStudioProjectSession = (options: StudioProjectSessionOptions): StudioProjectSession => {
   const api = options.api ?? studioProjectSdkApi;
   const now = options.now ?? (() => Date.now());
@@ -408,6 +424,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   let renewMs = STUDIO_LEASE_RENEW_MS;
   /** Bumped by open, reload, saveAsCopy and dispose; responses from an older value are dropped. */
   let generation = 0;
+  let committing = false;
   /**
    * `project.graphVersion`: bumped whenever the host puts a graph in place that the editor did not
    * make (a host-side stage, Reload, a restore). Never reset, so it only moves forward (FL-174).
@@ -658,7 +675,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       await saving;
       if (draft === current) return;
     }
-    if (!draft || disposed) {
+    if (!draft || disposed || committing) {
       return;
     }
     if (
@@ -935,6 +952,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     editorGraphVersion: number | undefined,
     origin: 'host' | 'editor',
   ): StudioStageOutcome => {
+    if (committing) {
+      return 'ignored';
+    }
     // Edits made after the lease was lost are kept with the draft until the person reacquires,
     // takes over or saves a copy; they are never dropped (FL-89).
     // A final editor snapshot may arrive after archive/trash revoked the lease. Keep it locally
@@ -1015,6 +1035,128 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
 
     stageEditor(graph, commands, baseRevision, editorGraphVersion) {
       return stageGraph(graph, commands, [], baseRevision, editorGraphVersion, 'editor');
+    },
+
+    async commitEditorDraft(graph, baseRevision, editorGraphVersion, isCurrent = () => true) {
+      const refuse = (reason: string): StudioEditorCommitResult => ({ status: 'rejected', reason });
+      if (
+        disposed ||
+        committing ||
+        saving ||
+        !projectId ||
+        !isOnline() ||
+        !isCurrent() ||
+        state.access !== 'owner' ||
+        !state.project.hasLease ||
+        state.conflict ||
+        !['saved', 'dirty'].includes(state.status)
+      ) {
+        return refuse('The project cannot be saved here now');
+      }
+      if (editorGraphVersion !== graphVersion || followEditorSaves(baseRevision) !== state.project.revision) {
+        return refuse('The project changed before the replacement could be saved');
+      }
+      const gen = generation;
+      const id = projectId;
+      const previous = state.project;
+      const previousDraft = draft;
+      const expectedRevision = draft?.baseRevision ?? state.project.revision;
+      const envelope = envelopeFor(graph);
+      const live = () =>
+        !disposed && gen === generation && projectId === id && graphVersion === editorGraphVersion && isCurrent();
+      committing = true;
+      cancel(debounce);
+      debounce = null;
+      cancel(retry);
+      retry = null;
+      let accepted: { revision: number; lease: StudioProjectLeaseDto | null } | null = null;
+      let uncertainty = false;
+      let failure = 'The replacement could not be saved';
+      let saveConflict: StudioConflict | null = null;
+      try {
+        try {
+          accepted = await api.save(id, {
+            clientId,
+            requestKey: newKey(),
+            expectedRevision,
+            envelope,
+            summary: {
+              counts: { ...previousDraft?.counts, 'media.relink': 1 },
+              total: (previousDraft?.total ?? 0) + 1,
+            },
+          });
+        } catch (error) {
+          failure = error instanceof Error ? error.message : String(error);
+          saveConflict = readStudioConflict(error);
+          if (!live()) {
+            return refuse('The editor origin changed during the save');
+          }
+          // A lost response is reconciled by reading this origin once, never by republishing B.
+          try {
+            const head = await api.get(id);
+            if (!live()) {
+              return refuse('The editor origin changed during reconciliation');
+            }
+            if (
+              head.id === id &&
+              head.ownerId &&
+              head.access === 'owner' &&
+              head.envelope &&
+              head.envelope.engine === envelope.engine &&
+              head.envelope.engineRevision === envelope.engineRevision &&
+              jsonContent(head.envelope.graph) === jsonContent(envelope.graph) &&
+              head.revision >= expectedRevision
+            ) {
+              accepted = { revision: head.revision, lease: head.lease };
+            } else {
+              uncertainty = head.id !== id || head.access !== 'owner' || head.revision !== expectedRevision;
+            }
+          } catch {
+            uncertainty = true;
+          }
+        }
+        if (!live()) {
+          return refuse('The editor origin changed during the save');
+        }
+        if (!accepted) {
+          if (saveConflict) {
+            uncertainty = true;
+            if (isShelvedConflict(saveConflict)) {
+              shelve(saveConflict);
+            } else if (saveConflict.reason === 'stale-revision' || saveConflict.reason === 'revision-missing') {
+              emit({ status: 'conflict', conflict: saveConflict, error: failure });
+            } else {
+              loseLease(saveConflict);
+            }
+          } else if (uncertainty) {
+            emit({
+              status: 'conflict',
+              error: 'The save outcome is uncertain. Reload the stored revision before editing.',
+              conflict: { reason: 'stale-revision', currentRevision: null, lease: null },
+            });
+          } else {
+            emit({ status: previousDraft ? 'dirty' : 'saved', error: failure });
+          }
+          return refuse(failure);
+        }
+        if (accepted.lease) {
+          applyLease(accepted.lease);
+        }
+        draft = null;
+        editorSaves.set(baseRevision, accepted.revision);
+        emit({
+          project: { ...previous, graph, revision: accepted.revision, hasLease: state.project.hasLease },
+          lastSavedAt: now(),
+          status: state.project.hasLease ? 'saved' : 'review',
+          error: null,
+        });
+        return { status: 'saved', revision: accepted.revision };
+      } finally {
+        committing = false;
+        if (live() && draft === previousDraft && previousDraft && !uncertainty) {
+          scheduleFlush();
+        }
+      }
     },
 
     async flush() {

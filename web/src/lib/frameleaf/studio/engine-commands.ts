@@ -19,7 +19,7 @@
 import type { StudioCommandHandler } from './bridge';
 import { StudioCommandRejectedError } from './bridge';
 import type { StudioCommandEnvelope, StudioCommandId } from './commands';
-import type { StudioAssetRef, StudioCommandEngine } from './host-contract';
+import type { StudioAssetRef, StudioCommandEngine, StudioProjectImportRef } from './host-contract';
 
 /**
  * The canonical commands whose semantics the engine provides. Kept here, not in the adapter, so the
@@ -67,6 +67,7 @@ export const studioEngineCommandIds = [
   'marker.add',
   'marker.remove',
   'marker.update',
+  'media.relink',
   'music.add',
   'project.applyTemplate',
   'project.setMasterAudio',
@@ -139,10 +140,15 @@ export interface StudioEngineCommandOptions {
   /** The graph the session holds now (the draft, or the stored head). */
   graph: () => unknown;
   projectId?: () => string;
+  /** The session identity fences an account/project A–B–A transition during engine awaits. */
+  origin?: () => unknown;
   /** The project revision the bridge reports back. */
   revision: () => number;
   /** Library media the session may place. */
   assets: () => readonly StudioAssetRef[];
+  projectImports?: () => readonly StudioProjectImportRef[];
+  /** Relink is complete only after its leased save is acknowledged. */
+  commitRelink?: (graph: unknown, revision: number) => Promise<boolean>;
   /**
    * Stage a graph as the next draft, with the command ids for the revision summary and the envelopes
    * the server checks and counts (FL-92). Answers as the project session does: `ignored` or
@@ -173,6 +179,8 @@ export const createStudioEngineCommandHandlers = (
 ): Partial<Record<StudioCommandId, StudioCommandHandler>> => {
   const apply: StudioCommandHandler = async (envelope: StudioCommandEnvelope) => {
     const graph = options.graph();
+    const origin = options.origin?.();
+    const projectId = options.projectId?.();
     if (!graph || typeof graph !== 'object') {
       throw rejectedBy('invalid', 'The project has no graph to edit yet');
     }
@@ -180,16 +188,20 @@ export const createStudioEngineCommandHandlers = (
     if (!engine) {
       throw rejectedBy('failed', 'The Studio engine is not available');
     }
-    const outcome = await engine.apply(graph, [envelope], options.assets(), options.projectId?.());
+    const outcome = await engine.apply(graph, [envelope], options.assets(), projectId, options.projectImports?.());
     if (outcome.status === 'rejected') {
       throw rejectedBy(outcome.reason, outcome.detail);
     }
     // The editor may have saved a newer draft while the engine worked; this result was computed
     // from the older graph and must not overwrite it.
-    if (options.graph() !== graph) {
+    if (options.graph() !== graph || options.projectId?.() !== projectId || options.origin?.() !== origin) {
       throw rejectedBy('stale-revision', 'The project changed while the command was applied');
     }
-    if (!kept(options.stage(outcome.graph, [envelope.id], [envelope]))) {
+    if (envelope.id === 'media.relink') {
+      if (!options.commitRelink || !(await options.commitRelink(outcome.graph, envelope.revision))) {
+        throw notKept();
+      }
+    } else if (!kept(options.stage(outcome.graph, [envelope.id], [envelope]))) {
       throw notKept();
     }
     options.history.record(graph, outcome.graph);

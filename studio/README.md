@@ -148,10 +148,13 @@ failed admitted writes retain possible partial origin artifacts and propagate th
 real failure instead of recursively deleting files with unproven ownership. This
 is not a cross-tab collision guarantee or automated orphan recovery. Stale origin
 permission failures still fail, but do not notify a replacement workspace gate.
-Authored controller/history, real in-memory filesystem and service probe/decode
-barriers cover the boundary; none have been executed locally. Patch ordering and
-raw provenance remain pinned, while the adapted source digest retains the last
-genuine hosted value pending new hosted preparation and artifact recovery.
+Controller/history, real in-memory filesystem and service probe/decode barriers
+have authored regression coverage. Qualification results must identify the exact
+source digest, tested paths and execution environment; authored coverage alone
+does not establish an executed pass. Patch ordering and raw provenance remain
+pinned. The adapted source digest identifies the prepared patched source, not a
+hosted qualification result. Local preparation and focused regression results do
+not qualify a new source for hosted execution, browser behavior or activation.
 Microphone device/permission/hotplug/latency, browser and native recording,
 sample/channel/pitch/EQ/transition rendering, silence/filler undo and full caption
 styling/export acceptance remain open FL-103 gates.

@@ -1,0 +1,207 @@
+--- a/src/features/timeline/stores/actions/edit/trim-actions.ts
++++ b/src/features/timeline/stores/actions/edit/trim-actions.ts
+@@ -476,15 +476,28 @@
+     () => {
+       const itemsStore = useItemsStore.getState()
+       const itemsBefore = itemsStore.items
++      const rightBefore = itemsBefore.find((item) => item.id === rightId)
++      const leftBefore = itemsBefore.find((item) => item.id === leftId)
++      if (!leftBefore || !rightBefore) return
++      const linkedSelectionEnabled = isLinkedSelectionEnabled()
++      const synchronizedItems = [
++        ...getSynchronizedLinkedItemsForEdit(itemsBefore, leftId, linkedSelectionEnabled),
++        ...getSynchronizedLinkedItemsForEdit(itemsBefore, rightId, linkedSelectionEnabled),
++      ]
++      // Refuse the entire roll before writing either side of a locked linked cut.
++      if (
++        synchronizedItems.some((item) => {
++          const track = itemsStore.tracks.find((candidate) => candidate.id === item.trackId)
++          return track?.locked === true
++        })
++      )
++        return
+       const counterpartPair = getSynchronizedLinkedCounterpartPairForEdit(
+         itemsBefore,
+         leftId,
+         rightId,
+-        isLinkedSelectionEnabled(),
+-      )
+-      const rightBefore = itemsBefore.find((item) => item.id === rightId)
+-      const leftBefore = itemsBefore.find((item) => item.id === leftId)
+-      if (!leftBefore || !rightBefore) return
++        linkedSelectionEnabled,
++      )
+       const transitions = useTransitionsStore.getState().transitions
+       const keyframesByItemId = useKeyframesStore.getState().keyframesByItemId
+       const timelineFps = useTimelineSettingsStore.getState().fps
+--- a/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
++++ b/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
+@@ -800,3 +800,168 @@
++  it.each(['video-track', 'audio-track', 'extra-audio-track', 'right-audio-track'])(
++    'refuses rolling atomically when synchronized track %s is locked',
++    (lockedTrackId) => {
++      useItemsStore
++        .getState()
++        .setTracks(
++          [
++            ...useItemsStore.getState().tracks,
++            makeTrack({ id: 'extra-audio-track', name: 'A2', order: 3, kind: 'audio' }),
++            makeTrack({ id: 'right-audio-track', name: 'A3', order: 4, kind: 'audio' }),
++          ].map((track) => ({ ...track, locked: track.id === lockedTrackId })),
++        )
++      useItemsStore.getState().setItems([
++        makeVideoItem(),
++        makeAudioItem(),
++        makeAudioItem({ id: 'extra-audio-1', trackId: 'extra-audio-track' }),
++        makeVideoItem({
++          id: 'video-2',
++          from: 60,
++          sourceStart: 30,
++          sourceEnd: 90,
++          linkedGroupId: 'group-2',
++        }),
++        makeAudioItem({
++          id: 'audio-2',
++          trackId: lockedTrackId === 'right-audio-track' ? 'right-audio-track' : 'audio-track',
++          from: 60,
++          sourceStart: 30,
++          sourceEnd: 90,
++          linkedGroupId: 'group-2',
++        }),
++        makeAudioItem({
++          id: 'extra-audio-2',
++          trackId: 'extra-audio-track',
++          from: 60,
++          sourceStart: 30,
++          sourceEnd: 90,
++          linkedGroupId: 'group-2',
++        }),
++        makeTextItem(),
++      ])
++      // Keep a real pre-existing redo entry: refusal must not erase retained history.
++      trimItemEnd('caption-1', -1)
++      useTimelineCommandStore.getState().undo()
++      useTimelineSettingsStore.setState({ isDirty: false })
++      const graph = () =>
++        structuredClone({
++          items: useItemsStore.getState().items,
++          tracks: useItemsStore.getState().tracks,
++          transitions: useTransitionsStore.getState().transitions,
++          keyframes: useKeyframesStore.getState().keyframes,
++          compositions: useCompositionsStore.getState().compositions,
++          undo: useTimelineCommandStore.getState().undoStack,
++          redo: useTimelineCommandStore.getState().redoStack,
++          dirty: useTimelineSettingsStore.getState().isDirty,
++        })
++      const before = graph()
++      expect(before.redo).toHaveLength(1)
++
++      rollingTrimItems('video-1', 'video-2', 10)
++
++      expect(graph()).toEqual(before)
++    },
++  )
++
++  it('rolls linked source ranges with a fixed span and full graph undo/redo', () => {
++    useItemsStore.getState().setItems([
++      makeVideoItem(),
++      makeAudioItem(),
++      makeVideoItem({
++        id: 'video-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++      makeAudioItem({
++        id: 'audio-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++      makeTextItem(),
++    ])
++    const graph = () =>
++      structuredClone({
++        items: useItemsStore.getState().items,
++        tracks: useItemsStore.getState().tracks,
++        transitions: useTransitionsStore.getState().transitions,
++        keyframes: useKeyframesStore.getState().keyframes,
++        compositions: useCompositionsStore.getState().compositions,
++      })
++    const before = graph()
++    const expected = {
++      ...before,
++      items: before.items.map((item) =>
++        ['video-1', 'audio-1'].includes(item.id)
++          ? { ...item, durationInFrames: 70, sourceEnd: 70 }
++          : ['video-2', 'audio-2'].includes(item.id)
++            ? { ...item, from: 70, durationInFrames: 50, sourceStart: 40 }
++            : item,
++      ),
++    }
++
++    rollingTrimItems('video-1', 'video-2', 10)
++
++    expect(graph()).toEqual(expected)
++    for (const trackId of ['video-track', 'audio-track']) {
++      const placed = graph().items.filter((item) => item.trackId === trackId)
++      expect(placed.map((item) => [item.from, item.durationInFrames])).toEqual([
++        [0, 70],
++        [70, 50],
++      ])
++      expect(Math.max(...placed.map((item) => item.from + item.durationInFrames))).toBe(120)
++    }
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    useTimelineCommandStore.getState().undo()
++    expect(graph()).toEqual(before)
++    useTimelineCommandStore.getState().redo()
++    expect(graph()).toEqual(expected)
++  })
++
++  it('rolls only the unlocked primary cut when linked selection is disabled', () => {
++    useEditorStore.setState({ linkedSelectionEnabled: false })
++    useItemsStore
++      .getState()
++      .setTracks(
++        useItemsStore
++          .getState()
++          .tracks.map((track) => ({ ...track, locked: track.id === 'audio-track' })),
++      )
++    useItemsStore.getState().setItems([
++      makeVideoItem(),
++      makeAudioItem(),
++      makeVideoItem({
++        id: 'video-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++      makeAudioItem({
++        id: 'audio-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++    ])
++    const before = structuredClone(useItemsStore.getState().items)
++
++    rollingTrimItems('video-1', 'video-2', 10)
++
++    expect(useItemsStore.getState().items).toEqual(
++      before.map((item) =>
++        item.id === 'video-1'
++          ? { ...item, durationInFrames: 70, sourceEnd: 70 }
++          : item.id === 'video-2'
++            ? { ...item, from: 70, durationInFrames: 50, sourceStart: 40 }
++            : item,
++      ),
++    )
++  })
++
+   it('rolls linked companions with the transitioned clip pair', () => {
+     useItemsStore.getState().setItems([
+       makeVideoItem({

@@ -8,7 +8,7 @@
  * file picker opens.
  */
 import { useEffect } from 'react'
-import { call } from '../host-port'
+import { call, post } from '../host-port'
 
 export interface BundleExportDialogProps {
   open: boolean
@@ -24,7 +24,16 @@ export function BundleExportDialog({ open, onClose, onBeforeExport }: BundleExpo
     onClose()
     void (async () => {
       // The editor saves first, so the bundle is written from what the person sees.
-      await onBeforeExport?.().catch(() => undefined)
+      try {
+        await onBeforeExport?.()
+      } catch (error) {
+        post({
+          type: 'notify',
+          message: error instanceof Error ? error.message : String(error),
+          tone: 'error',
+        })
+        return
+      }
       await call('submitCommands', [
         {
           id: 'project.exportBundle',

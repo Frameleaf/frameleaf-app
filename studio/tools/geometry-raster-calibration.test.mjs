@@ -470,3 +470,55 @@ test('exact filler undo source admits fixed fixtures without changing bounds or 
   }
   assert.equal(JSON.stringify(envelope), original)
 })
+
+test('reviewed additive source retains raster bounds and strict source/browser admission', () => {
+  const source = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, sourceFiller))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + 'e', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})
+
+for (const source of [
+  '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904',
+  '723f55c7faae8dc989406bbf7df7a1f795ef1d2053b17379fb71beb87005fcca',
+  '6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3',
+]) test(`reviewed producer ${source} retains raster policy and strict admission`, () => {
+  const previousSource = 'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d'
+  const original = JSON.stringify(envelope)
+  for (const f of envelope.envelopes) {
+    const admitted = validateBaseRaster(fixture(f), envelope, binding(f.backend, source))
+    const previous = validateBaseRaster(fixture(f), envelope, binding(f.backend, previousSource))
+    assert.deepEqual({ ...admitted, binding: previous.binding }, previous)
+    for (const foreign of [source.slice(0, -1) + '5', '0'.repeat(64), 'f'.repeat(64)])
+      assert.throws(
+        () => validateBaseRaster(fixture(f), envelope, binding(f.backend, foreign)),
+        /RASTER_SOURCE_BROWSER/,
+      )
+    assert.throws(
+      () =>
+        validateBaseRaster(fixture(f), envelope, {
+          ...binding(f.backend, source),
+          browser: '148.0.7778.97',
+        }),
+      /RASTER_SOURCE_BROWSER/,
+    )
+  }
+  assert.equal(JSON.stringify(envelope), original)
+})

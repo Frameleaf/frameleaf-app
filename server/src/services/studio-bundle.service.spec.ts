@@ -1246,6 +1246,163 @@ describe(StudioBundleService.name, () => {
       expect(operations.create.mock.calls[1][0].snapshot.imports).toEqual([voice, lut]);
     });
 
+    it('round trips saved Lottie override maps through archive bytes and the real kept-file importer', async () => {
+      const bytes = Buffer.from(
+        JSON.stringify({
+          v: '5.9.0',
+          w: 320,
+          h: 180,
+          fr: 30,
+          ip: 0,
+          op: 90,
+          layers: [],
+          assets: [],
+        }),
+      );
+      const saved = {
+        ...envelope,
+        graph: {
+          id: 'lottie-project',
+          name: 'Lottie',
+          description: '',
+          createdAt: 0,
+          updatedAt: 0,
+          duration: 0,
+          schemaVersion: 15,
+          metadata: { width: 320, height: 180, fps: 30 },
+          timeline: {
+            tracks: [
+              {
+                id: 'v1',
+                name: 'Video',
+                kind: 'video',
+                height: 80,
+                locked: false,
+                visible: true,
+                muted: false,
+                solo: false,
+                order: 0,
+              },
+            ],
+            items: [
+              {
+                id: 'template',
+                type: 'lottie',
+                trackId: 'v1',
+                mediaId: logo,
+                importId: logo,
+                from: 30,
+                durationInFrames: 90,
+                label: 'Template',
+                src: '',
+                width: 320,
+                height: 180,
+                lottieFps: 30,
+                lottieDuration: 3,
+                animationId: 'existing-animation',
+                themeId: 'existing-theme',
+                colorOverrides: { c0: '#FF8000' },
+                textOverrides: { '0': 'Hello', 's:title': '' },
+                slotOverrides: { opacity: 25, position: [10, -20] },
+              },
+            ],
+            currentFrame: 0,
+            zoomLevel: 1,
+            scrollPosition: 0,
+          },
+        },
+      };
+      const rows = rowsOf(sourceProject.id).map((row) =>
+        row.id === logo
+          ? {
+              ...row,
+              contentType: 'application/json',
+              checksum: sha256(bytes).toString('hex'),
+              sizeBytes: bytes.length,
+              path: join(studioImportProjectFolder(owner.user.id, sourceProject.id), `${logo}.json`),
+              fileName: 'animation.json',
+              externalReferences: 0,
+            }
+          : row,
+      );
+      fs.files.set(rows.find((row) => row.id === logo)!.path, bytes);
+      projects.listImports.mockResolvedValue(rows);
+      projects.getRevision.mockResolvedValue({
+        id: newUuidV7(),
+        revision: 5,
+        digest: studioEnvelopeDigest(saved),
+        envelope: saved,
+      });
+      const exportJob = exportJobOf(
+        true,
+        kept.map((item) => item.id),
+      );
+      Object.assign(exportJob.snapshot as object, { revision: 5, digest: studioEnvelopeDigest(saved) });
+      await sut.run({ operation: exportJob, claimToken: 'lottie-export' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      const exported = lastResult();
+      const bundle = fs.files.get(exported.path as string)!;
+      const source = {
+        size: bundle.length,
+        read: (position: number, length: number) => Promise.resolve(bundle.subarray(position, position + length)),
+      };
+      const directory = await readZipDirectory(source);
+      const manifest = await readBundleManifest(bundle);
+      const projectBytes = await readZipEntry(source, directory.byName.get('project.json')!);
+      const archived = JSON.parse(projectBytes.toString('utf8'));
+      expect(manifest.project.revision).toBe(5);
+      expect(manifest.files['project.json']).toEqual({
+        bytes: projectBytes.length,
+        sha256: sha256(projectBytes).toString('hex'),
+      });
+      // Literal output oracle: do not derive expected maps by copying the input or running editor helpers.
+      expect(archived.graph.timeline.items[0]).toMatchObject({
+        id: 'template',
+        type: 'lottie',
+        mediaId: logo,
+        importId: logo,
+        animationId: 'existing-animation',
+        themeId: 'existing-theme',
+        from: 30,
+        durationInFrames: 90,
+        colorOverrides: { c0: '#FF8000' },
+        textOverrides: { '0': 'Hello', 's:title': '' },
+        slotOverrides: { opacity: 25, position: [10, -20] },
+      });
+      const carried = manifest.sources.find((item) => item.key === `project-import:${logo}`)!;
+      expect(carried).toMatchObject({
+        mode: 'embedded',
+        contentType: 'application/json',
+        sha256: sha256(bytes).toString('hex'),
+        bytes: bytes.length,
+      });
+      expect(await readZipEntry(source, directory.byName.get(carried.path!)!)).toEqual(bytes);
+      // Remove original kept files: the import must recover them from the archive, not donor state.
+      for (const path of fs.files.keys()) if (path !== exported.path) fs.files.delete(path);
+      const upload = uploadOf(bundle, manifest);
+      await sut.run({ operation: importJobOf(upload), claimToken: 'lottie-import' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(projects.createWithRevision).toHaveBeenCalledOnce();
+      const created = projects.createWithRevision.mock.calls[0][0];
+      expect(created.revision.envelope.graph).toEqual(archived.graph);
+      expect((created.revision.envelope.graph as typeof saved.graph).timeline.items[0]).toMatchObject({
+        animationId: 'existing-animation',
+        themeId: 'existing-theme',
+        colorOverrides: { c0: '#FF8000' },
+        textOverrides: { '0': 'Hello', 's:title': '' },
+        slotOverrides: { opacity: 25, position: [10, -20] },
+      });
+      const imported = registered.find((item) => item.id === logo)!;
+      expect(imported).toMatchObject({
+        contentType: 'application/json',
+        externalReferences: 0,
+        checksum: sha256(bytes).toString('hex'),
+        sizeBytes: bytes.length,
+      });
+      expect(fs.files.get(imported.path as string)).toEqual(bytes);
+      expect(lastResult()).toMatchObject({ embeddedVerified: 5, missing: [] });
+    });
+
     it('refuses extraction before opening an output when temporary storage cannot be reserved', async () => {
       const { bundle, manifest } = handMade([kept[0]]);
       const upload = uploadOf(bundle, manifest);
