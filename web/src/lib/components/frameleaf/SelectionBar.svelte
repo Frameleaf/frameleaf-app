@@ -178,6 +178,9 @@
   let dialogOpen = $state(false);
   let moreButton = $state<HTMLButtonElement | undefined>();
   let menu = $state<HTMLDivElement | undefined>();
+  /** Where a tile's right-click opened the menu; null when it hangs from More. */
+  let menuAt = $state<{ x: number; y: number } | null>(null);
+  let returnFocus: HTMLElement | null = null;
 
   const menuId = $props.id();
 
@@ -302,7 +305,32 @@
 
   const closeMenu = () => {
     menuOpen = false;
-    moreButton?.focus();
+    (menuAt ? returnFocus : moreButton)?.focus();
+  };
+
+  /** A tile's right-click: the quick actions as a menu at the pointer. */
+  export const openContextMenu = (x: number, y: number) => {
+    returnFocus = document.activeElement as HTMLElement | null;
+    menuAt = { x, y };
+    menuOpen = true;
+  };
+
+  /** Editing works on one item, so a multiple selection's menu leaves the editors out. */
+  const EDITING_ACTIONS = new Set(['quick-edit', 'studio']);
+  let contextLeading = $derived(
+    leading.filter((action) => !action.disabled && !(count > 1 && EDITING_ACTIONS.has(action.id))),
+  );
+
+  /** Opens up from a click in the lower half, and never runs past the window. */
+  const contextPlacement = (at: { x: number; y: number }) => {
+    const up = at.y > innerHeight / 2;
+    return {
+      up,
+      left: `${Math.max(8, Math.min(at.x, innerWidth - 264))}px`,
+      top: up ? undefined : `${at.y}px`,
+      bottom: up ? `${innerHeight - at.y}px` : undefined,
+      maxHeight: `${(up ? at.y : innerHeight - at.y) - 8}px`,
+    };
   };
 
   const menuKeydown = (event: KeyboardEvent) => {
@@ -354,8 +382,18 @@
         menuOpen = false;
       }
     };
+    // A menu at the pointer stays where it was put, so scrolling the photos away from it closes it.
+    const onScroll = (event: Event) => {
+      if (menuAt && !menu?.contains(event.target as Node)) {
+        menuOpen = false;
+      }
+    };
     document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('scroll', onScroll, true);
+    };
   });
 
   /** Run an action as if chosen from the bar, for the library's keyboard shortcuts and tile actions. */
@@ -469,13 +507,17 @@
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? menuId : undefined}
-            onclick={() => (menuOpen = !menuOpen)}
+            onclick={() => {
+              menuAt = null;
+              menuOpen = !menuOpen;
+            }}
             onkeydown={(event) => {
               if (!(event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
                 return;
               }
 
               event.preventDefault();
+              menuAt = null;
               menuOpen = true;
             }}
           >
@@ -483,7 +525,7 @@
             <span>{$t('more')}</span>
           </button>
 
-          {#if menuOpen || menuLeaving}
+          {#if (menuOpen || menuLeaving) && !menuAt}
             <div
               bind:this={menu}
               id={menuId}
@@ -519,6 +561,60 @@
     </div>
   </div>
 </div>
+
+<!--
+  A tile's right-click menu: outside the bar, whose frosted capsule and slide-in would otherwise
+  hold a fixed menu inside them. A quick list: the page's actions that apply now (no editors for a
+  multiple selection) and the bar's own buttons, without "Send a copy…"; everything else stays under More.
+-->
+{#if menuAt && (menuOpen || menuLeaving)}
+  {@const place = contextPlacement(menuAt)}
+  <div
+    bind:this={menu}
+    id={menuId}
+    class="menu is-context fl-pop"
+    class:fl-origin-bottom-start={place.up}
+    style:left={place.left}
+    style:top={place.top}
+    style:bottom={place.bottom}
+    style:max-block-size={place.maxHeight}
+    role="menu"
+    tabindex="-1"
+    inert={!menuOpen}
+    aria-hidden={menuOpen ? undefined : 'true'}
+    aria-label={$t('frameleaf_selection_actions')}
+    data-testid="selection-context-menu"
+    onkeydown={menuKeydown}
+    oncontextmenu={(event) => event.preventDefault()}
+  >
+    {#each contextLeading as action (action.id)}
+      <button
+        type="button"
+        role="menuitem"
+        tabindex="-1"
+        onclick={() => {
+          menuOpen = false;
+          action.onClick();
+        }}
+      >
+        <Icon icon={action.icon} size="1rem" />
+        {action.label}
+      </button>
+    {/each}
+    {#each primary.filter((action) => action.id !== 'send-copy') as action (action.id)}
+      <button
+        type="button"
+        role="menuitem"
+        tabindex="-1"
+        class:is-danger={action.danger}
+        onclick={() => perform(action.id)}
+      >
+        <Icon icon={icon(action.icon)} size="1rem" />
+        {$t(action.labelKey)}
+      </button>
+    {/each}
+  </div>
+{/if}
 
 {#if dialog === 'change-date'}
   <BulkDateDialog
@@ -735,6 +831,13 @@
     border-radius: var(--fl-radius-card);
     box-shadow: var(--fl-shadow-2);
     padding: 0.35rem;
+  }
+  .menu.is-context {
+    position: fixed;
+    inset-block-end: auto;
+    inset-inline-end: auto;
+    z-index: 40;
+    inline-size: 16rem;
   }
   .menu button {
     inline-size: 100%;

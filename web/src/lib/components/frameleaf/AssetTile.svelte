@@ -465,6 +465,11 @@
     oncontextmenu={(event) => {
       if (pressing) {
         event.preventDefault();
+        return;
+      }
+      if (quickActions?.onContextMenu) {
+        event.preventDefault();
+        quickActions.onContextMenu(event);
       }
     }}
   >

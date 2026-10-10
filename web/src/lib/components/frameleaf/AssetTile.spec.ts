@@ -232,4 +232,13 @@ describe('AssetTile selection and touch', () => {
     const { container } = render(AssetTile, { asset: asset(), width: 200, height: 133 });
     expect(container.querySelector('canvas')).toBeNull();
   });
+
+  it('hands a right-click to the page instead of the browser menu', async () => {
+    const onContextMenu = vi.fn();
+    render(AssetTile, { asset: asset(), width: 200, height: 133, quickActions: { onContextMenu } });
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    screen.getByRole('button', { name: /A photo/ }).dispatchEvent(event);
+    expect(onContextMenu).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+  });
 });
