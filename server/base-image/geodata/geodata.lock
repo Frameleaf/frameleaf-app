@@ -1,7 +1,7 @@
 # Reverse-geocoding inputs, pinned by SHA-256 (FL-191).
 #
 # Each file is fetched from Frameleaf's own host first,
-# https://static.frameleaf.cloud/geodata/2026-10-10/<file>, and from the capture URL below second. Both
+# https://static.frameleaf.cloud/geodata/2026-10-11/<file>, and from the capture URL below second. Both
 # copies must match the checksum. GeoNames publishes no versioned files, so the GeoNames entries are
 # Internet Archive captures of its daily dumps; the capture time is in each URL.
 #
@@ -21,4 +21,4 @@ c4ec45f18921948fc2bce5b1e89bcef98c0236c7bea986918999b3e3f71bd3ef  cities500.zip 
 fe8196f90676f40a8845f24cc0687dadc668fe8c0f9de6458da65fda50b48aba  admin2Codes.txt  https://web.archive.org/web/20260911002112id_/https://download.geonames.org/export/dump/admin2Codes.txt
 93bafc525813f22e4711ff9ed6d626343094ce48c26388dc7c49189b3d7d5512  countryInfo.txt  https://web.archive.org/web/20260913000631id_/https://download.geonames.org/export/dump/countryInfo.txt
 239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255  ne_10m_admin_0_countries.geojson  https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson
-ad2371e52dd2b9f86e697d3b68819a693d0d2440b188a3c3a2899e36fc8dcd5d  landmarks.ndjson.gz  https://raw.githubusercontent.com/Frameleaf/frameleaf-app/4b01abae314bbf38b8e3fc22f6497e6ae7fb541a/server/base-image/geodata/landmarks/landmarks.ndjson.gz
+428d4f0ff532f63db2a24cb3db8078b9ba7e5e6199b3be6bc3f9861bfbd5b78c  landmarks.ndjson.gz  https://raw.githubusercontent.com/Frameleaf/frameleaf-app/cdfdf8b7d84fd4f0e2b892b181ab9fd8fc7f207f/server/base-image/geodata/landmarks/landmarks.ndjson.gz
