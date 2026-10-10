@@ -368,7 +368,11 @@
             sources[key] = value;
           }
         }
-        return { ...next, sources };
+        // …and the invisible layers svelte-maplibre reads the bubbles through, as the stock map does
+        // (shared-components/map/Map.svelte): a markers source left with no layer drops its tiles, and
+        // the bubbles are gone until the obstacle layer has brought the tiles back.
+        const markerLayers = previous.layers.filter((layer) => layer.type === 'fill' && layer.source === 'geojson');
+        return { ...next, sources, layers: [...next.layers, ...markerLayers] };
       },
     });
   });
@@ -490,7 +494,11 @@
       }}
       onload={(instance: Map) => {
         // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
-        const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
+        // MapLibre fires both events from inside a frame, after it has evaluated the layers and before
+        // it draws them, and a layer added there is drawn with no layout: the renderer throws. A theme
+        // change does just that (it drops the obstacle layer from a source that keeps its tiles), so
+        // the style is only changed once the frame is over.
+        const layoutLabels = () => queueMicrotask(() => applyClusterLabelLayout(instance, 'geojson'));
         instance.on('styledata', layoutLabels);
         instance.on('sourcedata', (event: { sourceId?: string }) => {
           if (event.sourceId === 'geojson') {

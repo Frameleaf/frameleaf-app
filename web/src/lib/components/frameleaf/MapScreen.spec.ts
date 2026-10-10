@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
+import { CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
 import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
@@ -167,5 +168,64 @@ describe('MapScreen (FL-193)', () => {
     await waitFor(() => expect(rows()).toBe(240));
     vi.unstubAllGlobals();
     mapSettings.update((settings) => ({ ...settings, showAssetPanel: false }));
+  });
+
+  it('keeps the markers source and the layers its bubbles are read through when the theme swaps the style', () => {
+    const setStyle = vi.fn();
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle,
+    });
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const [url, { transformStyle }] = setStyle.mock.calls[0];
+    expect(url).toBe('https://tiles.frameleaf.cloud/v1/style/light.json');
+
+    const markers = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } };
+    const tiles = { type: 'vector', url: 'https://tiles.frameleaf.cloud/v1.json' };
+    const swapped = transformStyle(
+      {
+        version: 8,
+        sources: { tiles, geojson: markers },
+        layers: [
+          { id: 'land', type: 'background' },
+          { id: 'fill-1', type: 'fill', source: 'geojson' },
+          clusterObstacleLayer('geojson'),
+        ],
+      },
+      { version: 8, sources: { tiles }, layers: [{ id: 'land-dark', type: 'background' }] },
+    );
+
+    expect(swapped.sources).toEqual({ tiles, geojson: markers });
+    // Not the obstacles: they go back on with the place-name offsets, which the new style has lost.
+    expect(swapped.layers.map(({ id }: { id: string }) => id)).toEqual(['land-dark', 'fill-1']);
+  });
+
+  it('puts the bubble obstacles back after a theme change only once MapLibre has drawn its frame', async () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const listeners: Record<string, (event: { sourceId?: string }) => void> = {};
+    let obstacles: unknown;
+    const addLayer = vi.fn((layer: unknown) => {
+      obstacles = layer;
+    });
+    // The new style has dropped the obstacle layer and kept the markers source, tiles and all.
+    getMapLibreStubProps().onload?.({
+      on: (type: string, listener: (event: { sourceId?: string }) => void) => (listeners[type] = listener),
+      getLayer: () => obstacles,
+      getSource: () => ({}),
+      getStyle: () => ({ layers: [] }),
+      hasImage: () => true,
+      addLayer,
+    });
+
+    // MapLibre reports the change from inside its frame, after it has evaluated the layers and before
+    // it draws them: a symbol layer added here is drawn with no layout and throws in the renderer.
+    listeners.sourcedata({ sourceId: 'geojson' });
+    listeners.styledata({});
+    expect(addLayer).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(addLayer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: CLUSTER_OBSTACLE_LAYER }));
   });
 });
