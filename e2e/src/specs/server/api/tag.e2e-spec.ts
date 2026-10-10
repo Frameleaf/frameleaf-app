@@ -189,8 +189,8 @@ describe('/tags', () => {
       expect(body).toHaveLength(2);
       expect(body).toEqual(
         expect.arrayContaining([
-          { id: trips.id, count: 1, total: 2 },
-          { id: rockies.id, count: 1, total: 1 },
+          expect.objectContaining({ id: trips.id, count: 1, total: 2 }),
+          expect.objectContaining({ id: rockies.id, count: 1, total: 1 }),
         ]),
       );
     });

@@ -219,6 +219,9 @@ export type SharedLink = {
   slug: string | null;
   /** Only the link owner's display name is loaded; see `SharedLinkRepository.get`. */
   owner?: { name: string } | null;
+  /** Loaded by `SharedLinkRepository.getAll`, which does not load a link's contents. */
+  assetCount?: number | null;
+  coverAssets?: { id: string }[];
 };
 
 export type Album = Selectable<AlbumTable> & {

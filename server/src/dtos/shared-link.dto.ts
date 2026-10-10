@@ -100,6 +100,15 @@ const SharedLinkResponseSchema = z
     createdAt: isoDatetimeToDate.describe('Creation date'),
     expiresAt: isoDatetimeToDate.nullable().describe('Expiration date'),
     assets: z.array(AssetResponseSchema),
+    assetCount: z
+      .int()
+      .min(0)
+      .describe("Number of assets the link shares: its own for an individual link, the album's for an album link"),
+    coverAssetIds: z
+      .array(z.uuidv4())
+      .describe(
+        "Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first",
+      ),
     album: AlbumResponseSchema.optional(),
     allowUpload: z.boolean().describe('Allow uploads'),
     allowDownload: z.boolean().describe('Allow downloads'),
@@ -148,11 +157,24 @@ export const sharedLinkUrl = (
   return `${base}${path}`;
 };
 
+const SHARED_LINK_COVER_ASSETS = 4;
+
+/** An album's cover items from its loaded assets (oldest first): the cover its owner chose, then the newest. */
+const albumCoverAssets = (album: SharedLink['album']): { id: string }[] => {
+  const newest = (album?.assets ?? []).toReversed();
+  const chosen = newest.find(({ id }) => id === album?.albumThumbnailAssetId);
+  return chosen ? [chosen, ...newest.filter((asset) => asset !== chosen)] : newest;
+};
+
 export function mapSharedLink(
   sharedLink: SharedLink,
   options: { stripAssetMetadata: boolean; externalDomain?: string },
 ): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
+  const isAlbum = sharedLink.type === SharedLinkType.Album;
+  // The list of links loads the count and an album's cover on their own; one link read alone carries everything.
+  const assetCount = sharedLink.assetCount ?? (isAlbum ? (sharedLink.album?.assets.length ?? 0) : assets.length);
+  const coverAssets = isAlbum ? (sharedLink.coverAssets ?? albumCoverAssets(sharedLink.album)) : assets;
 
   const response = {
     id: sharedLink.id,
@@ -164,6 +186,8 @@ export function mapSharedLink(
     createdAt: sharedLink.createdAt,
     expiresAt: sharedLink.expiresAt,
     assets: assets.map((asset) => mapAsset(asset, { stripMetadata: options.stripAssetMetadata })),
+    assetCount,
+    coverAssetIds: coverAssets.slice(0, SHARED_LINK_COVER_ASSETS).map(({ id }) => id),
     album: sharedLink.album ? mapAlbum(sharedLink.album) : undefined,
     allowUpload: sharedLink.allowUpload,
     allowDownload: sharedLink.allowDownload,
@@ -178,6 +202,8 @@ export function mapSharedLink(
   if (response.album) {
     response.album.hasSharedLink = true;
     response.album.shared = true;
+    // the list of links does not load the album's assets, which is where mapAlbum counts them
+    response.album.assetCount = assetCount;
   }
 
   return response;
