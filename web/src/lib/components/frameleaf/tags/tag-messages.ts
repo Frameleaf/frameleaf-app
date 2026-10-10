@@ -8,6 +8,8 @@ import { tagColorId, type FrameleafTagNode, type TagColorId } from '$lib/framele
  */
 export type TagDialogResult =
   | { type: 'created' | 'renamed' | 'recolored' | 'moved'; tag: TagResponseDto }
+  // `node` is the tag that was merged away, `tag` the one it went into
+  | { type: 'merged'; tag: TagResponseDto; node: FrameleafTagNode }
   | { type: 'deleted'; node: FrameleafTagNode };
 
 /** The name of one of the eight tag colours. */
@@ -38,6 +40,9 @@ export const tagResultMessage = ($t: MessageFormatter, result: TagDialogResult):
     }
     case 'moved': {
       return $t('frameleaf_tags_moved');
+    }
+    case 'merged': {
+      return $t('frameleaf_tags_merged', { values: { name: result.node.name, target: result.tag.name } });
     }
     default: {
       return $t('frameleaf_tags_tag_deleted');

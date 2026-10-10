@@ -17,6 +17,9 @@ import {
   tagDotColor,
   tagInsideSummary,
   tagMatches,
+  tagMergeLockedEffect,
+  tagMergePreview,
+  tagMergeProblem,
   tagMoveProblem,
   tagMoveTargets,
   tagNameTaken,
@@ -359,6 +362,68 @@ describe('Frameleaf tag tree adapter', () => {
       const stale = { ...node('travel') };
       expect(tagMoveProblem(tree, stale, 'banff')).toBe('inside-itself');
       expect(tagMoveTargets(tree, stale).map((target) => target.id)).not.toContain('canada');
+    });
+  });
+
+  describe('merging a tag', () => {
+    const tree = buildTagTree(
+      [
+        tag({ id: 'travel', name: 'Travel' }),
+        tag({ id: 'canada', name: 'Canada', parentId: 'travel', value: 'Travel/Canada' }),
+        tag({ id: 'banff', name: 'Banff', parentId: 'canada', value: 'Travel/Canada/Banff' }),
+        tag({ id: 'jasper', name: 'Jasper', parentId: 'canada', value: 'Travel/Canada/Jasper' }),
+        tag({ id: 'inner', name: 'Canada', parentId: 'canada', value: 'Travel/Canada/Canada' }),
+        tag({ id: 'trips', name: 'Trips' }),
+        tag({ id: 'trips-banff', name: 'Banff', parentId: 'trips', value: 'Trips/Banff' }),
+        tag({ id: 'trips-jasper', name: 'jasper', parentId: 'trips', value: 'Trips/jasper' }),
+        tag({ id: 'empty', name: 'Empty' }),
+      ],
+      [stat('travel', 0, 60), stat('canada', 12, 60), stat('banff', 30, 30), stat('jasper', 18, 18)],
+    );
+    const node = (id: string) => tree.byId.get(id)!;
+
+    it('allows a merge into any other tag that is not inside it, the tag it sits in included', () => {
+      expect(tagMergeProblem(tree, node('canada'), 'trips')).toBeNull();
+      expect(tagMergeProblem(tree, node('canada'), 'travel')).toBeNull();
+      expect(tagMergeProblem(tree, node('banff'), 'jasper')).toBeNull();
+    });
+
+    it('refuses a merge into the tag itself or a tag inside it', () => {
+      expect(tagMergeProblem(tree, node('canada'), 'canada')).toBe('inside-itself');
+      expect(tagMergeProblem(tree, node('travel'), 'banff')).toBe('inside-itself');
+      expect(tagMergeProblem(tree, { ...node('travel') }, 'canada')).toBe('inside-itself');
+    });
+
+    it('asks for a tag when none is chosen, or the chosen one is gone', () => {
+      expect(tagMergeProblem(tree, node('canada'), null)).toBe('no-target');
+      expect(tagMergeProblem(tree, node('canada'), 'deleted-meanwhile')).toBe('no-target');
+    });
+
+    it('says when a merge changes what is hidden with Locked content', () => {
+      // a rule on the merged tag follows it: the tag merged into becomes Locked
+      expect(tagMergeLockedEffect(node('canada'), node('empty'), new Set(['canada']))).toBe('locks');
+      // Locked only through the tag above it: its items leave that tag's cover
+      expect(tagMergeLockedEffect(node('canada'), node('empty'), new Set(['travel']))).toBe('reveals');
+      // nothing changes when the tag merged into is under a rule already, or no rule is involved
+      expect(tagMergeLockedEffect(node('banff'), node('jasper'), new Set(['canada']))).toBeNull();
+      expect(tagMergeLockedEffect(node('canada'), node('empty'), new Set(['empty', 'canada']))).toBeNull();
+      expect(tagMergeLockedEffect(node('canada'), node('empty'), new Set())).toBeNull();
+    });
+
+    it('counts the items of exactly the tag and the tags directly inside it', () => {
+      expect(tagMergePreview(node('canada'), node('empty'))).toEqual({ items: 12, inside: 3, sameName: 0 });
+      expect(tagMergePreview(node('travel'), node('empty'))).toEqual({ items: 0, inside: 1, sameName: 0 });
+      expect(tagMergePreview(node('banff'), node('jasper'))).toEqual({ items: 30, inside: 0, sameName: 0 });
+    });
+
+    it('counts the tags inside that meet a tag of exactly their name there, as the server merges them', () => {
+      // "Banff" meets "Banff"; "Jasper" does not meet "jasper", which the server keeps as a tag of its own
+      expect(tagMergePreview(node('canada'), node('trips'))).toEqual({ items: 12, inside: 3, sameName: 1 });
+    });
+
+    it('does not count the tag itself when it is merged into the tag it sits in', () => {
+      // "Travel/Canada/Canada" takes over the path "Travel/Canada"; it is not merged with the tag that goes
+      expect(tagMergePreview(node('canada'), node('travel'))).toEqual({ items: 12, inside: 3, sameName: 0 });
     });
   });
 

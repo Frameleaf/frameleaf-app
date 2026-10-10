@@ -317,6 +317,66 @@ export const tagMoveProblem = (
   return tagNameTaken(tree, parentId, node.name, node.id) ? 'name-taken' : null;
 };
 
+export type TagMergeProblem = 'no-target' | 'inside-itself';
+
+/**
+ * Why a tag cannot be merged into `targetId`, or null when it can: nothing is chosen (or the chosen
+ * tag is gone), or it is the tag itself or one inside it. The tags a tag may be merged into are the
+ * ones it may be moved under (`tagMoveTargets`). The server refuses the same merges.
+ */
+export const tagMergeProblem = (
+  tree: FrameleafTagTree,
+  node: FrameleafTagNode,
+  targetId: string | null,
+): TagMergeProblem | null => {
+  const target = targetId ? tree.byId.get(targetId) : undefined;
+  if (!target) {
+    return 'no-target';
+  }
+  return isWithinTag(target, node) ? 'inside-itself' : null;
+};
+
+/**
+ * What merging `node` into `target` does, in the numbers the Tags screen shows: the items carrying
+ * exactly the tag (they carry the other tag instead), the tags directly inside it (they move across
+ * with everything in them), and how many of those meet a tag of their own name there and are merged
+ * with it. The server merges tags of exactly the same name, so names are compared exactly here too.
+ */
+export const tagMergePreview = (
+  node: FrameleafTagNode,
+  target: FrameleafTagNode,
+): { items: number; inside: number; sameName: number } => {
+  // Merged into the tag it sits in, the tag itself is still listed there; it is the one that goes.
+  const names = new Set(target.children.filter((child) => child.id !== node.id).map((child) => child.name));
+  return {
+    items: node.count,
+    inside: node.children.length,
+    sameName: node.children.filter((child) => names.has(child.name)).length,
+  };
+};
+
+/**
+ * What a merge does to what is hidden with Locked content, when it changes it. A Locked rule on the
+ * merged tag follows it to the tag it is merged into (`locks`: the server never lets a merge show
+ * what a rule hid). A tag that is Locked only through a tag above it loses that once its items carry
+ * a tag elsewhere (`reveals`), as when it is moved out. Null when the tag merged into is under a
+ * rule already, or neither tag is.
+ */
+export const tagMergeLockedEffect = (
+  node: FrameleafTagNode,
+  target: FrameleafTagNode,
+  lockedTagIds: ReadonlySet<string>,
+): 'locks' | 'reveals' | null => {
+  const underRule = (tag: FrameleafTagNode) => [tag.id, ...tagAncestorIds(tag)].some((id) => lockedTagIds.has(id));
+  if (underRule(target)) {
+    return null;
+  }
+  if (lockedTagIds.has(node.id)) {
+    return 'locks';
+  }
+  return underRule(node) ? 'reveals' : null;
+};
+
 /**
  * Prototype "Give the tag a name without slashes." (`discovery-data.mjs` `tagName`): trimmed, 1–60
  * characters, no slash or control character. Returns the cleaned name, or null when it is not valid.
