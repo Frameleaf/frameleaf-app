@@ -172,6 +172,7 @@
         startDate,
         endDate,
         albumName: headline.title,
+        assetIds: memory.assets.map(({ id }) => id),
       });
       if (albumId) {
         albumSavedFor = memory.id;

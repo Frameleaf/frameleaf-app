@@ -179,7 +179,8 @@ describe('MemoriesPanel', () => {
 
     expect(await screen.findByText('Saved to Albums')).toBeInTheDocument();
     expect(createAlbum).toHaveBeenCalledWith({ createAlbumDto: { albumName: 'A day at Disneyland Park' } });
-    expect(addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['a'] } });
+    // everything taken at the landmark that day, and the memory's own item taken beside it
+    expect(addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['a', 'visit-asset'] } });
   });
 
   it('loads hidden memories from the server', () => {
