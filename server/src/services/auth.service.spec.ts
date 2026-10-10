@@ -2078,6 +2078,30 @@ describe(AuthService.name, () => {
     expect(mocks.user.setPinCodeAndLockSessions).not.toHaveBeenCalled();
   });
 
+  it('counts concurrent PIN guesses and refuses pending checks once the account is locked', async () => {
+    const auth = AuthFactory.from().session().build();
+    const { promise: credentials, resolve } = Promise.withResolvers<{ pinCode: string; password: string }>();
+    mocks.user.getForPinCode.mockReturnValue(credentials);
+    mocks.crypto.compareBcrypt.mockReturnValue(false);
+    const attempts = Array.from({ length: 30 }, () =>
+      sut.changePinCode(auth, { pinCode: '000000', newPinCode: '654321' }),
+    );
+    const results = Promise.allSettled(attempts);
+    resolve({ pinCode: '123456 (hashed)', password: '' });
+    const outcomes = await results;
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'rejected' && outcome.reason.message === 'Wrong PIN code'),
+    ).toHaveLength(5);
+    expect(
+      outcomes.filter(
+        (outcome) => outcome.status === 'rejected' && outcome.reason.message.includes('Too many failed PIN attempts'),
+      ),
+    ).toHaveLength(25);
+    expect(mocks.crypto.compareBcrypt).toHaveBeenCalledTimes(5);
+    await expect(sut.resetPinCode(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
+    expect(mocks.user.setPinCodeAndLockSessions).not.toHaveBeenCalled();
+  });
+
   describe('unlockSession', () => {
     it('should unlock the session for sixty minutes', async () => {
       vi.useFakeTimers();
