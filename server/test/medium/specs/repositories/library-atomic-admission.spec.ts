@@ -33,6 +33,7 @@ import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { withExecutionCleanup } from 'src/utils/execution-signal.js';
 import { emptyLibraryScanResult, libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { explainLibrarySettlement, getLibraryQueueDB } from 'test/medium/library-queue-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 
 /** Real queue/domain/asset transactions. Synthetic media calibrates ledger admission, not decoding throughput. */
@@ -599,31 +600,32 @@ describe('library atomic source admission', () => {
     expect(rows).toEqual([{ selectionId: null, state: 'pending', jobState: 'pending', id: expect.any(String) }]);
   });
 
-  it('streams 500000 actual asset/source admissions with no eager pending media and a capped paused/slow feeder', async () => {
+  scaleIt('streams %i asset/source admissions with no eager pending media and a capped feeder', 1.2, async () => {
     // Fixed 250-item JS pages; counters only. No collected ID list, per-asset spies, raw RSS SLA or decoded-media claim.
     await sql`update job_queue set paused = true where name = ${queue}`.execute(db);
     let maximumPage = 0;
-    for (let page = 0; page < 500_000 / QUEUE_BATCH; page++) {
+    const pages = SCALE_ITEMS / QUEUE_BATCH;
+    for (let page = 0; page < pages; page++) {
       const outcome = await accept(QUEUE_BATCH);
       if (!outcome || !('value' in outcome)) throw new Error('Source acceptance lost its domain claim');
       maximumPage = Math.max(maximumPage, outcome.value.length);
-      if ([0, 999, 1999].includes(page)) {
+      if ([0, pages / 2 - 1, pages - 1].includes(page)) {
         expect(await live()).toBe(0);
         expect(await header()).toMatchObject({ state: 'enumerating', capturedAt: null, sourceClosedAt: null });
         expect(await store.feedManifest(queue)).toBe(0);
       }
     }
     expect(maximumPage).toBe(250);
-    expect(await new AssetRepository(db).getLibraryAssetCount(library.id)).toBe(500_000);
-    expect(await members()).toBe(500_000);
+    expect(await new AssetRepository(db).getLibraryAssetCount(library.id)).toBe(SCALE_ITEMS);
+    expect(await members()).toBe(SCALE_ITEMS);
     await accept(0, true);
     expect(await store.feedManifest(queue)).toBe(0);
     await sql`update job_queue set paused = false where name = ${queue}`.execute(db);
     for (let page = 0; page < 4; page++) expect(await store.feedManifest(queue)).toBe(250);
     for (let attempt = 0; attempt < 3; attempt++) expect(await store.feedManifest(queue)).toBe(0);
     expect(await live()).toBe(1000);
-    expect(await members()).toBe(500_000);
-  }, 600_000);
+    expect(await members()).toBe(SCALE_ITEMS);
+  });
 
   it('invalidates a copier final-page acknowledgement on late child append without resetting its monotonic cursor', async () => {
     await accept(2, true);
@@ -1714,7 +1716,7 @@ describe('library atomic source admission', () => {
     },
   );
 
-  it.each([50_000, 500_000])(
+  it.each([SCALE_ITEMS / 10, SCALE_ITEMS])(
     'bounds physical cleanup/control SQL work behind %i blocked shared owners and fairly revisits arrivals',
     async (size) => {
       const destination = `${queue}-privacy-prefix`,

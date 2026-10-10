@@ -8,10 +8,12 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim, QueueIntent } from 'src/queue/types.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('late shared selection recovery budget', () => {
-  it('keeps coordinator recovery bounded when a run attaches after the final handler sharing pass', async () => {
+  // Capture, then one sharing transaction per 250 items; recovery/page bounds stay independent of the size.
+  scaleIt('keeps coordinator recovery bounded when a run of %i items attaches after sharing', 0.36, async () => {
     const db = await getKyselyDB();
     let controlDb: Kysely<any> | undefined;
     try {
@@ -36,7 +38,9 @@ describe('late shared selection recovery budget', () => {
         freezeSelection(
           db,
           { ...producer(), name: 'child' },
-          db.selectFrom(sql<{ id: string }>`(select generate_series(1,500000)::text id)`.as('selected')).select('id'),
+          db
+            .selectFrom(sql<{ id: string }>`(select generate_series(1,${SCALE_ITEMS})::text id)`.as('selected'))
+            .select('id'),
           {
             claim,
             signal: new AbortController().signal,
@@ -79,7 +83,7 @@ describe('late shared selection recovery budget', () => {
         expect(performance.now() - started).toBeLessThan(1000);
       } finally {
         process.stdout.write(
-          `${JSON.stringify({ lateSharedItems: 500_000, recoveryMs: performance.now() - started, statementTimeoutMs: 5000 })}\n`,
+          `${JSON.stringify({ lateSharedItems: SCALE_ITEMS, recoveryMs: performance.now() - started, statementTimeoutMs: 5000 })}\n`,
         );
       }
       expect(await store.complete(claim, [])).toBe(false);
@@ -139,27 +143,27 @@ describe('late shared selection recovery budget', () => {
           expect(await recovery.complete(unrelated, [])).toBe(true);
           await recovery.heartbeat(worker, []);
         }
-        expect(pages).toBeLessThanOrEqual(2001);
+        expect(pages).toBeLessThanOrEqual(SCALE_ITEMS / 250 + 1);
       }
-      expect(pages).toBe(2001); // Final empty page acknowledges an exact multiple of250.
+      expect(pages).toBe(SCALE_ITEMS / 250 + 1); // Final empty page acknowledges an exact multiple of250.
       expect(await recovery.hasUnfinishedWork(queue)).toBe(false);
       const {
         rows: [counts],
       } = await sql`select count(*)::int count from job_run_item
         where "runId" = ${lateRun}::uuid and "selectionId" is not null`.execute(db);
-      expect(counts).toEqual({ count: 500_000 });
+      expect(counts).toEqual({ count: SCALE_ITEMS });
       expect((await store.listRuns(100, 0)).find((run) => run.id === lateRun)).toMatchObject({
-        total: 500_000,
-        needsAttention: 500_000,
+        total: SCALE_ITEMS,
+        needsAttention: SCALE_ITEMS,
         enumerationDone: true,
         finishedAt: expect.any(Date),
       });
       process.stdout.write(
-        `${JSON.stringify({ copiedItems: 500_000, pages, maxPageMs, tailRows, mediaExecutions: 0 })}\n`,
+        `${JSON.stringify({ copiedItems: SCALE_ITEMS, pages, maxPageMs, tailRows, mediaExecutions: 0 })}\n`,
       );
     } finally {
       await controlDb?.destroy();
       await db.destroy();
     }
-  }, 180_000); // CI must finish capture and 2,001 sharing transactions; recovery/page bounds stay independent.
+  });
 });

@@ -11,6 +11,7 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueExecution, QueueIntent } from 'src/queue/types.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('real large producer selection capture', () => {
@@ -20,7 +21,7 @@ describe('real large producer selection capture', () => {
   });
   afterAll(async () => db?.destroy());
 
-  it('captures 500000 real asset rows while unrelated claims, heartbeats and publications continue', async () => {
+  scaleIt('captures %i real asset rows while unrelated claims and publications continue', 0.24, async () => {
     const ownerId = randomUUID();
     const groupId = randomUUID();
     await sql`insert into cluster_group(id) values (${groupId}::uuid)`.execute(db);
@@ -32,7 +33,7 @@ describe('real large producer selection capture', () => {
       "fileCreatedAt","fileModifiedAt","localDateTime")
       select md5(${ownerId} || ':' || n::text)::uuid, ${ownerId}::uuid, 'IMAGE', '/fixture/' || n || '.jpg',
         n || '.jpg', decode(md5(${ownerId} || ':' || n::text), 'hex'), 'sha1', now(), now(), now()
-      from generate_series(1, 500000) n`.execute(db);
+      from generate_series(1, ${SCALE_ITEMS}) n`.execute(db);
     await sql`analyze asset`.execute(db);
     const store = new SqlQueueStore(db);
     const queue = `scale-capture-${randomUUID()}`;
@@ -96,10 +97,10 @@ describe('real large producer selection capture', () => {
       count("jobId")::int admitted from job_run_item where "runId" = ${runId}::uuid and "selectionId" is not null`.execute(
       db,
     );
-    expect(counts).toEqual({ selected: 500_000, admitted: 0 });
+    expect(counts).toEqual({ selected: SCALE_ITEMS, admitted: 0 });
     expect(await store.feedManifest(queue)).toBe(0);
     process.stdout.write(
-      `${JSON.stringify({ fixtureAssets: 500_000, capturedItems: counts.selected, mediaExecutions: 0, probes, maxProbeMs, captureMs })}\n`,
+      `${JSON.stringify({ fixtureAssets: SCALE_ITEMS, capturedItems: counts.selected, mediaExecutions: 0, probes, maxProbeMs, captureMs })}\n`,
     );
     const {
       rows: [database],
@@ -134,11 +135,11 @@ describe('real large producer selection capture', () => {
       expect((await store.listRunItems(runId, 1, 0))?.[0]).toMatchObject({ outcome: 'needsAttention' });
       const failed = (await store.listRuns(10, 0)).find((run) => run.id === runId);
       expect(failed).toMatchObject({
-        total: 500_000,
-        needsAttention: 500_000,
+        total: SCALE_ITEMS,
+        needsAttention: SCALE_ITEMS,
         enumerationDone: true,
         finishedAt: expect.any(Date),
-        stageTotals: { total: 500_001, failed: 1, needsAttention: 500_000 },
+        stageTotals: { total: SCALE_ITEMS + 1, failed: 1, needsAttention: SCALE_ITEMS },
       });
       type Plan = {
         'Node Type'?: string;
@@ -198,7 +199,7 @@ describe('real large producer selection capture', () => {
       for (const measurement of measurements) {
         expect(
           measurement.examined,
-          `${measurement.predicate}: terminal 500k manifest must be skipped by its header`,
+          `${measurement.predicate}: terminal manifest must be skipped by its header`,
         ).toBeLessThan(50);
       }
       expect(await control.retryFailed(queue)).toBe(1);
@@ -221,7 +222,7 @@ describe('real large producer selection capture', () => {
       rows: [after],
     } = await sql`select count(*)::int selected, count("jobId")::int admitted
       from job_run_item where "runId" = ${runId}::uuid and "selectionId" is not null`.execute(db);
-    expect(after).toEqual({ selected: 500_000, admitted: 250 });
+    expect(after).toEqual({ selected: SCALE_ITEMS, admitted: 250 });
     const [active] = await store.claim(queue, worker);
     await store.clear(queue, ['pending', 'waiting']);
     expect(await store.hasUnfinishedWork(queue)).toBe(true);
@@ -229,10 +230,10 @@ describe('real large producer selection capture', () => {
     expect(await store.hasUnfinishedWork(queue)).toBe(false);
     expect(await store.feedManifest(queue)).toBe(0);
     expect((await store.listRuns(10, 0)).find((run) => run.id === runId)).toMatchObject({
-      total: 500_000,
-      cancelled: 499_999,
+      total: SCALE_ITEMS,
+      cancelled: SCALE_ITEMS - 1,
       completed: 1,
       finishedAt: expect.any(Date),
     });
-  }, 120_000);
+  });
 });
