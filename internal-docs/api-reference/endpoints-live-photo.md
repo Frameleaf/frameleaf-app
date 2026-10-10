@@ -87,7 +87,7 @@ Relink live photos
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LivePhotoRelinkDto](models-15.md#livephotorelinkdto), [LivePhotoRelinkResponseDto](models-16.md#livephotorelinkresponsedto).
+Models: [LivePhotoRelinkDto](models-16.md#livephotorelinkdto), [LivePhotoRelinkResponseDto](models-16.md#livephotorelinkresponsedto).
 
 Controller access declarations:
 

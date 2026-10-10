@@ -2,6 +2,26 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## SearchStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "total": {
+      "description": "Total number of matching assets",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total"
+  ],
+  "type": "object"
+}
+```
+
 ## SearchSuggestionType
 
 

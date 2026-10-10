@@ -1728,6 +1728,7 @@ Related models: [SearchHistogramBucketDto](models-31.md#searchhistogrambucketdto
 
 ## SearchLandmarkResponseDto
 
+Related models: [LandmarkIconDto](models-15.md#landmarkicondto).
 
 ```json
 {
@@ -1759,6 +1760,10 @@ Related models: [SearchHistogramBucketDto](models-31.md#searchhistogrambucketdto
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
       "type": "string"
+    },
+    "icon": {
+      "$ref": "#/components/schemas/LandmarkIconDto",
+      "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
     },
     "id": {
       "description": "Landmark ID (its Wikidata ID, for example Q243)",
@@ -1864,26 +1869,6 @@ Related models: [SearchAlbumResponseDto](models-30.md#searchalbumresponsedto), [
   "required": [
     "albums",
     "assets"
-  ],
-  "type": "object"
-}
-```
-
-## SearchStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "total": {
-      "description": "Total number of matching assets",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "total"
   ],
   "type": "object"
 }

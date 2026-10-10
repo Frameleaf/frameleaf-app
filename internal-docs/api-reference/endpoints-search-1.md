@@ -6,7 +6,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 `POST /api/search/ask`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L138).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L145).
 
 Ask Search
 
@@ -87,7 +87,7 @@ Complete operation contract:
 
 `GET /api/search/cities`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L183).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L190).
 
 Retrieve assets by city
 
@@ -170,7 +170,7 @@ Complete operation contract:
 
 `GET /api/search/cities/counts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L195).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L202).
 
 Retrieve asset counts by city
 
@@ -244,7 +244,7 @@ Complete operation contract:
 
 `GET /api/search/explore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L150).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L157).
 
 Retrieve explore data
 
@@ -326,7 +326,7 @@ Complete operation contract:
 
 `POST /api/search/facets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L70).
 
 Search facet counts
 
@@ -413,7 +413,7 @@ Complete operation contract:
 
 `POST /api/search/histogram`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L76).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L83).
 
 Search date histogram
 
@@ -500,7 +500,7 @@ Complete operation contract:
 
 `GET /api/search/landmarks`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L207).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L214).
 
 Retrieve visited landmarks
 
@@ -570,11 +570,92 @@ Complete operation contract:
 }
 ```
 
+## getLandmarkIcon
+
+`GET /api/search/landmarks/{id}/icon`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L226).
+
+Get landmark icon
+
+Permission: `asset.read`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Search)
+@Controller('search')
+@Get('landmarks/:id/icon')
+@FileResponse()
+@Authenticated({ permission: Permission.AssetRead })
+@Endpoint({
+    summary: 'Get landmark icon',
+    description:
+      "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+    history: new HistoryBuilder().added('v3'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+  "operationId": "getLandmarkIcon",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "pattern": "^Q\\d{1,18}$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get landmark icon",
+  "tags": [
+    "Search"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3",
+      "state": "Added"
+    }
+  ],
+  "x-immich-permission": "asset.read"
+}
+```
+
 ## searchLargeAssets
 
 `POST /api/search/large-assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L121).
 
 Search large assets
 
@@ -1492,7 +1573,7 @@ Complete operation contract:
 
 `POST /api/search/metadata`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L46).
 
 Search assets by metadata
 
@@ -1599,7 +1680,7 @@ Complete operation contract:
 
 `GET /api/search/person`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L168).
 
 Search people
 
@@ -1700,7 +1781,7 @@ Complete operation contract:
 
 `GET /api/search/places`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L179).
 
 Search places
 
@@ -1792,7 +1873,7 @@ Complete operation contract:
 
 `POST /api/search/random`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L109).
 
 Search random assets
 
@@ -1885,7 +1966,7 @@ Complete operation contract:
 
 `POST /api/search/smart`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L133).
 
 Smart asset search
 

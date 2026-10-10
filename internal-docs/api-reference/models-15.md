@@ -839,6 +839,29 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
 }
 ```
 
+## LandmarkIconDto
+
+
+```json
+{
+  "properties": {
+    "background": {
+      "description": "The icon's own background colour (#rrggbb): fill the circle around the icon with it",
+      "type": "string"
+    },
+    "tile": {
+      "description": "Whether the icon fills its frame and is drawn edge to edge; otherwise it is a mark drawn inset",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "background",
+    "tile"
+  ],
+  "type": "object"
+}
+```
+
 ## LandmarkIdsFilter
 
 
@@ -868,10 +891,15 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
 
 ## LandmarkSummaryDto
 
+Related models: [LandmarkIconDto](models-15.md#landmarkicondto).
 
 ```json
 {
   "properties": {
+    "icon": {
+      "$ref": "#/components/schemas/LandmarkIconDto",
+      "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
+    },
     "id": {
       "description": "Landmark ID (its Wikidata ID, for example Q243)",
       "type": "string"
@@ -2085,55 +2113,5 @@ Related models: [LivePhotoCandidateDto](models-15.md#livephotocandidatedto).
     "low"
   ],
   "type": "string"
-}
-```
-
-## LivePhotoRelinkDto
-
-Related models: [LivePhotoRelinkItemDto](models-15.md#livephotorelinkitemdto).
-
-```json
-{
-  "properties": {
-    "pairs": {
-      "items": {
-        "$ref": "#/components/schemas/LivePhotoRelinkItemDto"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "pairs"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoRelinkItemDto
-
-
-```json
-{
-  "properties": {
-    "photoId": {
-      "description": "Still image asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "videoId": {
-      "description": "Motion video asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "photoId",
-    "videoId"
-  ],
-  "type": "object"
 }
 ```

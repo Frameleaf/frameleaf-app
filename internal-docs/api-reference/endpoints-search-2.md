@@ -6,7 +6,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 `POST /api/search/smart/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L89).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L96).
 
 Smart search statistics
 
@@ -93,13 +93,13 @@ Complete operation contract:
 
 `POST /api/search/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L58).
 
 Search asset statistics
 
 Permission: `asset.statistics`. Admin only: `false`.
 
-Models: [SearchStatisticsResponseDto](models-31.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-33.md#statisticssearchdto).
+Models: [SearchStatisticsResponseDto](models-32.md#searchstatisticsresponsedto), [StatisticsSearchDto](models-33.md#statisticssearchdto).
 
 Controller access declarations:
 
@@ -183,7 +183,7 @@ Complete operation contract:
 
 `GET /api/search/suggestions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L219).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/search.controller.ts#L239).
 
 Retrieve search suggestions
 

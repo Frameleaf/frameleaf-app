@@ -2,6 +2,56 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## LivePhotoRelinkDto
+
+Related models: [LivePhotoRelinkItemDto](models-16.md#livephotorelinkitemdto).
+
+```json
+{
+  "properties": {
+    "pairs": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoRelinkItemDto"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "pairs"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoRelinkItemDto
+
+
+```json
+{
+  "properties": {
+    "photoId": {
+      "description": "Still image asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "Motion video asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "photoId",
+    "videoId"
+  ],
+  "type": "object"
+}
+```
+
 ## LivePhotoRelinkResponseDto
 
 Related models: [LivePhotoRelinkResultDto](models-16.md#livephotorelinkresultdto).

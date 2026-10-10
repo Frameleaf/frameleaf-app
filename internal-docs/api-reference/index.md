@@ -1,6 +1,6 @@
 # Complete Frameleaf server API reference
 
-Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **856 OpenAPI operations**, **1575 schemas**, and **24 deliberately excluded controller routes**.
+Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **857 OpenAPI operations**, **1576 schemas**, and **24 deliberately excluded controller routes**.
 
 Start with [authentication and mobile workflows](auth-mobile.md) and [streaming, workers and other protocols](protocols.md), then the [complete worker wire models](worker-wire-models.md). Separate Frameleaf Cloud control-plane contracts are maintained with the Cloud service. Server URLs are relative to your installation, not the Cloud account host. This complete internal reference is kept outside the public documentation build; it includes administrative, Cloud integration and worker contracts.
 
@@ -102,8 +102,8 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 12: FrameleafHandoffCreateDto through HdrAssetDevelopRecipeV4](models-12.md)
 - [Models 13: HdrAssetDevelopRecipeV5 through ICloudEditDeviceHolderKind](models-13.md)
 - [Models 14: ICloudEditEvidenceResponseDto through JobCreateDto](models-14.md)
-- [Models 15: JobName through LivePhotoRelinkItemDto](models-15.md)
-- [Models 16: LivePhotoRelinkResponseDto through MediaOperationDestination](models-16.md)
+- [Models 15: JobName through LivePhotoMatchConfidence](models-15.md)
+- [Models 16: LivePhotoRelinkDto through MediaOperationDestination](models-16.md)
 - [Models 17: MediaOperationDetailDto through MergeSuggestionsResponseDto](models-17.md)
 - [Models 18: MetadataSearchDto through NotificationDeleteAllDto](models-18.md)
 - [Models 19: NotificationDto through PetObservationCreateDto](models-19.md)
@@ -118,8 +118,8 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 28: PreservationItemState through QueueUpdateDto](models-28.md)
 - [Models 29: QueuesResponseLegacyDto through RenderWorkerAdmissionDto](models-29.md)
 - [Models 30: RenderWorkerAuditDto through SearchFacetResponseDto](models-30.md)
-- [Models 31: SearchFacetsDto through SearchStatisticsResponseDto](models-31.md)
-- [Models 32: SearchSuggestionType through SharedSpacePersonResponseDto](models-32.md)
+- [Models 31: SearchFacetsDto through SearchResponseDto](models-31.md)
+- [Models 32: SearchStatisticsResponseDto through SharedSpacePersonResponseDto](models-32.md)
 - [Models 33: SharedSpacePreviewResponseDto through StringFilterNullable](models-33.md)
 - [Models 34: StringPatternFilter through StudioProjectAccess](models-34.md)
 - [Models 35: StudioProjectCreateDto through StudioTranscriptionQueuedDto](models-35.md)

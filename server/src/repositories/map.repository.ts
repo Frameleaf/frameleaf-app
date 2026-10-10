@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import isoCountries from 'i18n-iso-countries';
 import { type Expression, type Insertable, type Kysely, type NotNull, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import readLine from 'node:readline';
 import { gunzipSync } from 'node:zlib';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -75,6 +76,31 @@ export class MapRepository {
     @InjectKysely() private db: Kysely<MapDB>,
   ) {
     this.logger.setContext(MapRepository.name);
+  }
+
+  private landmarkIcons?: Map<string, { background: string; tile: boolean }>;
+
+  /**
+   * The brand icons that ship for landmarks, by landmark id: how to draw each (FL-355). Read once. The icon
+   * pack is optional, so without it every landmark simply shows the icon for its kind.
+   */
+  getLandmarkIcons(): Map<string, { background: string; tile: boolean }> {
+    if (!this.landmarkIcons) {
+      const { resourcePaths } = this.configRepository.getEnv();
+      try {
+        const index = JSON.parse(readFileSync(join(resourcePaths.geodata.landmarkIcons, 'icons.json'), 'utf8'));
+        this.landmarkIcons = new Map(Object.entries(index));
+      } catch {
+        this.landmarkIcons = new Map();
+      }
+    }
+    return this.landmarkIcons;
+  }
+
+  /** Where a landmark's brand icon is on disk, if it has one. `id` must already be a checked landmark id. */
+  getLandmarkIconPath(id: string): string | undefined {
+    const { resourcePaths } = this.configRepository.getEnv();
+    return this.getLandmarkIcons().has(id) ? join(resourcePaths.geodata.landmarkIcons, `${id}.png`) : undefined;
   }
 
   /** Imports the bundled geodata when it is newer than the last import. Resolves to whether an import ran. */

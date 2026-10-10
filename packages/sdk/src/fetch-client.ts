@@ -4174,7 +4174,15 @@ export type ImageEncodingInfo = {
     transfer?: number | "adaptive";
     width?: number;
 };
+export type LandmarkIconDto = {
+    /** The icon's own background colour (#rrggbb): fill the circle around the icon with it */
+    background: string;
+    /** Whether the icon fills its frame and is drawn edge to edge; otherwise it is a mark drawn inset */
+    tile: boolean;
+};
 export type LandmarkSummaryDto = {
+    /** Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind */
+    icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
     /** Kind of place, for example theme_park, museum or national_park */
@@ -12065,6 +12073,8 @@ export type SearchLandmarkResponseDto = {
     coverAssetId: string;
     /** Local capture time of the earliest photo or video here */
     firstTakenAt: string;
+    /** Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind */
+    icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
     /** Kind of place, for example theme_park, museum or national_park */
@@ -24877,6 +24887,19 @@ export function getVisitedLandmarks(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: SearchLandmarkResponseDto[];
     }>("/search/landmarks", {
+        ...opts
+    }));
+}
+/**
+ * Get landmark icon
+ */
+export function getLandmarkIcon({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/search/landmarks/${encodeURIComponent(id)}/icon`, {
         ...opts
     }));
 }

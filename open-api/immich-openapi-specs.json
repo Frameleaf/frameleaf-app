@@ -35762,6 +35762,58 @@
         "x-immich-permission": "asset.read"
       }
     },
+    "/search/landmarks/{id}/icon": {
+      "get": {
+        "description": "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+        "operationId": "getLandmarkIcon",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get landmark icon",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/search/large-assets": {
       "post": {
         "description": "Search for assets that are considered large based on specified criteria.",
@@ -78016,6 +78068,23 @@
         ],
         "type": "object"
       },
+      "LandmarkIconDto": {
+        "properties": {
+          "background": {
+            "description": "The icon's own background colour (#rrggbb): fill the circle around the icon with it",
+            "type": "string"
+          },
+          "tile": {
+            "description": "Whether the icon fills its frame and is drawn edge to edge; otherwise it is a mark drawn inset",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "background",
+          "tile"
+        ],
+        "type": "object"
+      },
       "LandmarkIdsFilter": {
         "properties": {
           "any": {
@@ -78039,6 +78108,10 @@
       },
       "LandmarkSummaryDto": {
         "properties": {
+          "icon": {
+            "$ref": "#/components/schemas/LandmarkIconDto",
+            "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
+          },
           "id": {
             "description": "Landmark ID (its Wikidata ID, for example Q243)",
             "type": "string"
@@ -108838,6 +108911,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
+          },
+          "icon": {
+            "$ref": "#/components/schemas/LandmarkIconDto",
+            "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
           },
           "id": {
             "description": "Landmark ID (its Wikidata ID, for example Q243)",
