@@ -155,6 +155,70 @@
         "blendMode": { "$ref": "#/$defs/blendMode" },
         "text": { "type": "string" },
         "color": { "type": "string" },
+        "textSpans": { "type": "array", "items": { "$ref": "#/$defs/textSpan" } },
+        "spanLayout": { "enum": ["stack", "inline"] },
+        "fontSize": { "type": "number" },
+        "fontFamily": { "type": "string", "minLength": 1 },
+        "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "fontStyle": { "enum": ["normal", "italic"] },
+        "underline": { "type": "boolean" },
+        "textAlign": { "enum": ["left", "center", "right"] },
+        "verticalAlign": { "enum": ["top", "middle", "bottom"] },
+        "lineHeight": { "type": "number" },
+        "letterSpacing": { "type": "number" },
+        "textPadding": { "type": "number", "minimum": 0 },
+        "backgroundColor": { "type": "string" },
+        "backgroundRadius": { "type": "number", "minimum": 0 },
+        "textShadow": {
+          "type": "object",
+          "required": ["offsetX", "offsetY", "blur", "color"],
+          "properties": {
+            "offsetX": { "type": "number" },
+            "offsetY": { "type": "number" },
+            "blur": { "type": "number" },
+            "color": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "stroke": {
+          "type": "object",
+          "required": ["width", "color"],
+          "properties": { "width": { "type": "number" }, "color": { "type": "string" } },
+          "additionalProperties": false
+        },
+        "textStylePresetId": { "type": "string", "minLength": 1 },
+        "textStyleScale": { "type": "number", "exclusiveMinimum": 0 },
+        "shapeType": { "enum": ["rectangle", "circle", "triangle", "ellipse", "star", "polygon", "heart", "path"] },
+        "fillColor": { "type": "string" },
+        "fillEnabled": { "type": "boolean" },
+        "fillType": { "enum": ["solid", "linear"] },
+        "gradientStartColor": { "type": "string" },
+        "gradientEndColor": { "type": "string" },
+        "gradientAngle": { "type": "number" },
+        "strokeColor": { "type": "string" },
+        "strokeWidth": { "type": "number", "minimum": 0 },
+        "strokeEnabled": { "type": "boolean" },
+        "strokeLineCap": { "enum": ["butt", "round", "square"] },
+        "strokeLineJoin": { "enum": ["miter", "round", "bevel"] },
+        "strokeMiterLimit": { "type": "number", "exclusiveMinimum": 0 },
+        "trimPathStart": { "type": "number", "minimum": 0, "maximum": 100 },
+        "trimPathEnd": { "type": "number", "minimum": 0, "maximum": 100 },
+        "trimPathOffset": { "type": "number" },
+        "taperStartWidth": { "type": "number", "minimum": 0, "maximum": 200 },
+        "taperEndWidth": { "type": "number", "minimum": 0, "maximum": 200 },
+        "taperStartLength": { "type": "number", "minimum": 0, "maximum": 100 },
+        "taperEndLength": { "type": "number", "minimum": 0, "maximum": 100 },
+        "cornerRadius": { "type": "number" },
+        "direction": { "enum": ["up", "down", "left", "right"] },
+        "points": { "type": "number" },
+        "innerRadius": { "type": "number" },
+        "pathVertices": { "type": "array", "items": { "$ref": "#/$defs/pathVertex" } },
+        "pathClosed": { "type": "boolean" },
+        "isMask": { "type": "boolean" },
+        "maskType": { "enum": ["clip", "alpha"] },
+        "maskFeather": { "type": "number", "minimum": 0, "maximum": 100 },
+        "maskOpacity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "maskInvert": { "type": "boolean" },
         "textMotion": { "$ref": "#/$defs/textMotion" },
         "textRole": { "const": "caption" },
         "captionSource": {
@@ -183,8 +247,42 @@
           "if": { "properties": { "type": { "const": "controller" } } },
           "then": { "required": ["controllerKind", "transform"] }
         },
-        { "if": { "properties": { "type": { "const": "shape" } } }, "then": { "required": ["shapeType"] } }
+        { "if": { "properties": { "type": { "const": "shape" } } }, "then": { "required": ["shapeType", "fillColor"] } },
+        {
+          "if": { "properties": { "type": { "const": "shape" }, "shapeType": { "const": "path" } }, "required": ["shapeType"] },
+          "then": { "required": ["pathClosed", "fillEnabled", "strokeEnabled", "strokeLineCap", "strokeLineJoin", "strokeMiterLimit"] }
+        }
       ],
+      "additionalProperties": true
+    },
+    "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] },
+    "textSpan": {
+      "description": "One styled run of a title (14.3.4). A field it does not carry is the title's own.",
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "fontSize": { "type": "number" },
+        "fontFamily": { "type": "string", "minLength": 1 },
+        "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "fontStyle": { "enum": ["normal", "italic"] },
+        "underline": { "type": "boolean" },
+        "color": { "type": "string" },
+        "letterSpacing": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "point": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+    "pathVertex": {
+      "description": "A pen-path vertex (17.1): position 0..1 of the shape's box, handles relative to the vertex.",
+      "type": "object",
+      "required": ["position", "inHandle", "outHandle", "tangentMode"],
+      "properties": {
+        "position": { "$ref": "#/$defs/point" },
+        "inHandle": { "$ref": "#/$defs/point" },
+        "outHandle": { "$ref": "#/$defs/point" },
+        "tangentMode": { "enum": ["corner", "smooth", "continuous", "broken"] }
+      },
       "additionalProperties": true
     },
     "transform": {

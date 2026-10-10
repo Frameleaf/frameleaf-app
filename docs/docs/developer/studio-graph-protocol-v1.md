@@ -24,7 +24,7 @@ The page is delivered in four parts:
 | 3    | FL-308 (NAPI-019) | Effects, transitions, keyframes, easing, blends and parameter schemas.          |
 | 4    | FL-309 (NAPI-020) | Compositions, titles, sequence and project settings, and full command coverage. |
 
-Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Sections 15 to 17 add captions (FL-111), Lottie maps (FL-105) and masks and relinking (FL-348). Section 18 points to the render spec: what each effect and transition draws. Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
+Sections 1 to 11 are part 1, section 12 is part 2, section 13 is part 3 and section 14 is part 4. Sections 15 to 17 add captions (FL-111), Lottie maps (FL-105) and masks, relinking and shapes (FL-348); 14.3.4 and 14.3.5 add single title style fields and the title fonts. Section 18 points to the render spec: what each effect and transition draws. Section numbers never change: a later part added sections after them, and section 8.3, which lists every command.
 
 ## 1. Where the graph lives
 
@@ -100,7 +100,7 @@ Every item has `id`, `trackId`, `from` (first frame, integer, at least 0), `dura
 | `audio`              | `sourceStart`, `sourceEnd`, `sourceFps`, `mediaId`       | A video's linked sound, or audio media.                                                                |
 | `image`              | `mediaId`                                                | A still.                                                                                               |
 | `text`               | `text`, `color`                                          | A title or caption.                                                                                    |
-| `shape`              | `shapeType`                                              |                                                                                                        |
+| `shape`              | `shapeType`, `fillColor`                                 | A drawn shape or pen path, or a mask (17.1). Its fields are in 17.5.                                   |
 | `composition`        | `compositionId`, `compositionWidth`, `compositionHeight` | An instance of a composition (14.2.1).                                                                 |
 | `adjustment`         |                                                          | Applies its effects to the tracks above it.                                                            |
 | `controller`         | `controllerKind: "null"`, `transform`                    | A null object.                                                                                         |
@@ -108,7 +108,7 @@ Every item has `id`, `trackId`, `from` (first frame, integer, at least 0), `dura
 
 Source fields of a media clip are integer frames counted at `sourceFps`, the source's own rate, not the project's (section 3.4): `sourceStart`, `sourceEnd` and `sourceDuration`. `trimStart` and `trimEnd` are legacy counters. They are written as `0` when a clip is placed and must be preserved as found.
 
-Common optional fields: `originId` (lineage shared by the parts of a split clip), `linkedGroupId` (shared by linked audio and video), `transform`, `crop`, `cornerPin`, `effects`, `blendMode`, `volume`, fades, audio EQ fields, `speed`, `motionModifiers`, `motionLayers` and `transformParent`. Parts 2 to 4 specify the commands that write them. The schema lists their types and ranges. Part 2 also reads and writes `embeddedAudioMuted` (set on a video that was unlinked from its sound, 12.6.1) and reads `textRole` and `captionSource` on text items (attached captions, 12.2.1). Part 3 writes `effects` (13.2.2), `motionModifiers` (13.6.2), `textMotion` on titles (13.7.1) and `frameleafKenBurns` on stills (13.7.2), and says how `blendMode` is edited (13.8.4). Part 4 writes `compositionId` and the composition window (14.2.1), `compositionControlOverrides` (14.4.2), and the style fields of a title (14.3.2).
+Common optional fields: `originId` (lineage shared by the parts of a split clip), `linkedGroupId` (shared by linked audio and video), `transform`, `crop`, `cornerPin`, `effects`, `blendMode`, `volume`, fades, audio EQ fields, `speed`, `motionModifiers`, `motionLayers` and `transformParent`. Parts 2 to 4 specify the commands that write them. The schema lists their types and ranges. Part 2 also reads and writes `embeddedAudioMuted` (set on a video that was unlinked from its sound, 12.6.1) and reads `textRole` and `captionSource` on text items (attached captions, 12.2.1). Part 3 writes `effects` (13.2.2), `motionModifiers` (13.6.2), `textMotion` on titles (13.7.1) and `frameleafKenBurns` on stills (13.7.2), and says how `blendMode` is edited (13.8.4). Part 4 writes `compositionId` and the composition window (14.2.1), `compositionControlOverrides` (14.4.2), and the style fields of a title (14.3.2, 14.3.4). Section 17 writes the mask fields of a shape (17.1), creates shapes (17.4) and writes their fill, stroke, geometry and pen path (17.5).
 
 `generatedId` replaces `mediaId` on an item that shows Frameleaf-generated media (for example a reversed conform). Such an item never carries `mediaId`, `src`, `audioSrc`, `thumbnailUrl`, `waveformData` or any `reverseConform*` field in a stored graph.
 
@@ -138,6 +138,8 @@ Loading normalises as follows:
 - Tracks are written in ascending `order`, and classic `V`/`A` names are renumbered by position (12.2.8, fixture `normal-form/tracks-sorted-and-renamed`).
 - `inPoint` and `outPoint` are clamped to the timeline's extent (12.2.7, fixture `normal-form/in-out-clamped`).
 - Empty `transitions`, `keyframes` and `markers` arrays are removed.
+- On a `shape`: `taperStartWidth` and `taperEndWidth` are clamped to 0..200 and `taperStartLength` and `taperEndLength` to 0..100. A shape with `strokeEnabled: true` and a `strokeWidth` below 1 (or none) gets `strokeWidth: 1`. A mask (`isMask: true`) gets `blendMode: "normal"`.
+- On a `shape` whose `shapeType` is `path`: `pathClosed` is `true` on a mask and otherwise `true` when absent. An open path (`pathClosed: false`) gets `fillEnabled: false`; a closed one gets `fillEnabled: true` when absent. `strokeEnabled: true`, `strokeLineCap: "butt"`, `strokeLineJoin: "miter"` and `strokeMiterLimit: 4` are written when absent, and each vertex without a `tangentMode` gets one (17.1).
 
 Fixture `normal-form/normalises-a-hand-written-graph` shows each rule.
 
@@ -301,14 +303,14 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 ### 8.1 Status of every graph-changing command
 
-The catalogue has 74 commands with `mutatesGraph: true`.
+The catalogue has 77 commands with `mutatesGraph: true`.
 
-- **Engine (56):** the engine gives them meaning. Their mutation rules are in parts 2 to 4, captions, Lottie maps, masks and relinking: sections 12 to 17.
+- **Engine (59):** the engine gives them meaning. Their mutation rules are in parts 2 to 4, captions, Lottie maps, masks, relinking and shapes: sections 12 to 17.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
 - **Not implemented (15):** the remaining 15 are refused by the engine as `not-implemented` (8.2).
 
-`commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 74.
+`commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 77.
 
 | Status                                           | Commands                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -322,6 +324,7 @@ The catalogue has 74 commands with `mutatesGraph: true`.
 | Engine: media source relink                      | `media.relink`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Engine: masks and relinking                      | `clip.setMask`, `clip.relink`                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Engine: shapes and title styles                  | `shape.add`, `shape.setStyle`, `title.setStyle`                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                                                              |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
@@ -332,7 +335,7 @@ At this engine revision the web engine refuses these 15 commands as `not-impleme
 
 ### 8.3 Every graph-changing command
 
-One row for each of the 74 commands the catalogue marks `mutatesGraph`, in alphabetical order. **Section** is where this page states the command's rule.
+One row for each of the 77 commands the catalogue marks `mutatesGraph`, in alphabetical order. **Section** is where this page states the command's rule.
 
 - **Engine:** the section gives the mutation rule, and the fixtures hold applied and rejected cases named `<command>/<case>`.
 - **Host:** answered by the host's history (section 9). The engine refuses the envelope (`not-implemented/history.undo`, `not-implemented/history.redo`); the `history` scripts record what the host does.
@@ -406,8 +409,11 @@ One row for each of the 74 commands the catalogue marks `mutatesGraph`, in alpha
 | `sequence.setActive`               | Not implemented | 8.2     | Do not record it. Do not change `topLevelSequenceIds` (14.2.1).                                                        |
 | `sequence.setFields`               | Not implemented | 8.2     | Do not record it. Do not change a composition's `name`, nor write caption settings into the graph.                     |
 | `sequence.setSettings`             | Engine          | 14.6.1  |                                                                                                                        |
+| `shape.add`                        | Engine          | 17.4    | Adds a shape or pen path, on a new top layer or a named video track; may be a mask.                                    |
+| `shape.setStyle`                   | Engine          | 17.5    | Sets or clears the fill, stroke, geometry and pen-path fields of a shape.                                              |
 | `text.setMotion`                   | Engine          | 13.7.1  |                                                                                                                        |
 | `title.add`                        | Engine          | 14.3.1  |                                                                                                                        |
+| `title.setStyle`                   | Engine          | 14.3.4  | Sets or clears single title style fields, the preset scale and the styled spans.                                       |
 | `track.add`                        | Engine          | 12.7.1  |                                                                                                                        |
 | `track.closeGap`                   | Engine          | 12.7.5  |                                                                                                                        |
 | `track.remove`                     | Engine          | 12.7.2  |                                                                                                                        |
@@ -1228,6 +1234,8 @@ An empty `patch` is applied and changes nothing.
 - **Sync lock, Overlap, Transitions:** none.
 
 **Draws:** none.
+
+Single style fields of a title (its font, size, colour, shadow and the rest) are written by `title.setStyle` (14.3.4), not by this command.
 
 Fixtures `clip.update/style-bold`, `…/style-minimal`, `…/style-lower-third` and `…/animation` record what three styles and one animation write. Sections 14.3.2 and 14.3.3 specify the whole vocabulary.
 
@@ -2296,6 +2304,92 @@ An `animation` is an alias of the catalogue's `titleAnimations.aliases`, which n
 
 It writes the title's `textMotion` **whole**: each slot is the preset's entry in `textMotion.defaults`, plus `presetId` and `seed: 0`. A `loop` slot the title had is removed (`clip.update/animation-replaces-motion`). These defaults are the presets' own; `text.setMotion` has its own rules for the values it stores (13.7.1). In `clip.update` an empty `animation` is refused (`invalid`); `title.add` reads it as absent.
 
+#### 14.3.4 `title.setStyle`
+
+Sets or clears single style fields of a title, beside the named styles of 14.3.2. Payload: `clipId`, `style`, optional `spans`, optional `spanLayout`. `style` is required and may be empty.
+
+Every `style` field is optional. A field left out is unchanged. `null` removes the field from the title, so the renderer's default applies again; a field marked _kept_ cannot be cleared. Numbers are finite and inside the range, both ends included.
+
+**Colours.** A colour in these commands is `#rrggbb` or `#rrggbbaa` (hexadecimal digits of either case; the last pair is alpha, `00` clear to `ff` opaque), and is stored exactly as given. Every other CSS form (`#rgb`, `rgb()`, `rgba()`, names, `oklch()`) is refused (`…/colour-with-alpha`, `…/colour-rgba-function`, `…/colour-short-hex`). A stored graph may still hold other forms, because the web editor's colour fields and its caption styles write them: the caption styles write `rgba(r, g, b, a)` for `backgroundColor` and for `textShadow.color`. A native client reads such a value as the colour it names and, when it rewrites the field, writes `#rrggbb` followed by `round(a × 255)` as two hexadecimal digits (`rgba(0, 0, 0, 0.55)` becomes `#0000008c`). The render spec (`studio/spec/layers.md`, `studio/spec/text.md`) says how the alpha is applied.
+
+| `style` field      | Value                                                         | Absent in the graph means |
+| ------------------ | ------------------------------------------------------------- | ------------------------- |
+| `color`            | colour; _kept_                                                | (always present)          |
+| `fontSize`         | 8..500, in pixels of the canvas                               | 60                        |
+| `fontFamily`       | a family of `fonts.families` in the parameter catalogue       | `Inter` (`fonts.default`) |
+| `fontWeight`       | `normal`, `medium`, `semibold` or `bold` (400, 500, 600, 700) | `normal`                  |
+| `fontStyle`        | `normal` or `italic`                                          | `normal`                  |
+| `underline`        | boolean                                                       | `false`                   |
+| `lineHeight`       | 0.5..3, a multiple of the font size                           | 1.2                       |
+| `letterSpacing`    | −20..100, in pixels                                           | 0                         |
+| `textPadding`      | 0..160, in pixels                                             | 16                        |
+| `backgroundColor`  | colour                                                        | no background             |
+| `backgroundRadius` | 0..999 (the editor offers 0..200; a pill style writes 999)    | 0                         |
+| `textShadow`       | `{ offsetX, offsetY, blur, color }`, or `null`                | no shadow                 |
+| `stroke`           | `{ width, color }`, or `null`                                 | no outline                |
+| `textStyleScale`   | 0.5..6; not clearable; see below                              | 1                         |
+
+`textShadow` and `stroke` are written whole: every field of the object is required and no other is allowed. `offsetX` and `offsetY` are −100..100, `blur` is 0..160, and `width` is 0..24. `textAlign` and `verticalAlign` are not `style` fields: `clip.update`'s `position` writes them (12.6.2).
+
+**`fontFamily`.** The value is a family **name** of the engine's font catalogue, exactly as `fonts.families` of `studio/graph-parameters-v1.json` spells it. Any other string is refused, and so is a URL or a file name: a font named by locator never resolves (`studio/resource-inventory.json`, kind `font`). The catalogue also lists each family's weights; the engine does not check that the family has the weight asked for, and neither does this command. Section 14.3.5 says which families a native client draws.
+
+**`textStyleScale`** is the editor's scale control. It applies only to a title that has `textStylePresetId` (a title given a preset style, 14.3.2), and it writes the title's own preset again, whole, at the new scale: every field of the preset's `fields` in the catalogue, with `backgroundColor`, `textShadow` and `stroke` removed when the preset has none, and then, with `s` the scale and `round` as in 14.3.2:
+
+```text
+fontSize         = round( fontSize of 14.3.2 × s )
+backgroundRadius = 999 when the preset's is 999, else round( backgroundRadius × s )
+letterSpacing    = letterSpacing × s
+textPadding      = round( textPadding × s )
+textShadow       = offsetX × s, offsetY × s, blur × s, the preset's color
+stroke.width     = stroke.width × s
+textStyleScale   = s
+```
+
+computed in doubles. So a scale change discards single fields set earlier, as it does in the editor, and the other `style` fields of the same payload are applied after it (`title.setStyle/scale`, `…/scale-then-field`).
+
+**`spans`** is `null` or an array of 1 to 64 spans `{ text, fontSize?, fontFamily?, fontWeight?, fontStyle?, underline?, color?, letterSpacing? }`, each field with the type and range of the table and no `null`. An array replaces `textSpans`, each span written with only the fields it was given. It also writes `text` (the spans' texts joined by a line feed) and `label` (the first line of that text with surrounding white space removed, or `Text` when that is empty), as the editor's span editor does. `null` removes `textSpans` and leaves `text` and `label` as they are. A span field that is absent takes the title's own field, and that in turn the default of the table. `style` fields never rewrite the spans.
+
+**`spanLayout`** is `stack` (each span is its own group of lines; the meaning of an absent field), `inline` (the spans flow as one wrapped text, with the first span's font, size and letter spacing for all), or `null`, which removes the field.
+
+**Refusals, in order**
+
+1. A payload field other than `clipId`, `style`, `spans` and `spanLayout`: `invalid`.
+2. `clipId` missing or empty; no such clip: `invalid`.
+3. The clip is not a `text` item: `invalid`. A caption (`textRole: "caption"`) is a text item and is accepted.
+4. `style` absent or not a plain object: `invalid`.
+5. The clip's track is locked: `failed`.
+6. A `style` field the table does not list: `invalid`.
+7. `textStyleScale` outside 0.5..6, then on a title without `textStylePresetId`: `invalid`.
+8. The scalar fields in table order, each: `null` on a _kept_ field, or a value outside its type or range: `invalid`. Then `textShadow`, then `stroke`: not `null` and not a plain object, a field the object does not have, a missing or out-of-range field: `invalid`.
+9. `spans` neither `null` nor an array of 1 to 64; a span that is not a plain object, has an unknown field, has no string `text`, or has a field outside its type or range: `invalid`.
+10. `spanLayout` not `stack`, `inline` or `null`: `invalid`.
+
+An empty `style` with no `spans` and no `spanLayout` is applied and changes nothing.
+
+**Consequences**
+
+- **Linked:** none. Only the named title changes.
+- **Locks:** checked (rule 5), unlike `clip.update`.
+- **Keyframes.** `fontSize`, `lineHeight`, `textPadding`, `backgroundRadius`, the three `textShadow…` properties and `textStyleScale` can be keyframed (13.2.5). This command writes the title's **static** field and leaves `timeline.keyframes` as it is: where a property has keyframes they still decide the drawn value, and the static field is what is drawn once the keyframes are removed (`title.setStyle/keyframed-field-keeps-keyframes`). A keyframed `textStyleScale` is not re-derived by this command.
+- **Sync lock, Overlap, Transitions:** none.
+
+**Draws:** none.
+
+#### 14.3.5 Title fonts
+
+A title's `fontFamily` (and a span's) is a family name of the engine's font catalogue: `fonts.families` of `studio/graph-parameters-v1.json`, 120 families at this revision, each with the weights it has. The web editor loads a family from Google Fonts when a title uses it; those files are not part of the product.
+
+**Bundled families.** Seven families ship with the server, because the title styles of 14.3.2 use them: `Inter`, `Inter Tight`, `Anton`, `Bebas Neue`, `Orbitron`, `Playfair Display` and `Space Grotesk`. All seven are under the SIL Open Font License 1.1; `licenses/THIRD-PARTY-NOTICES.md` has each one's copyright line and the licence text.
+
+- `GET /studio/fonts` (any signed-in session or API key) lists them: for each family its name as a graph writes it, the package and exact version the files come from, `license`, `copyright`, `reservedFontName`, and `files`. A file has `weight` (400, 500, 600 or 700: the four values of `fontWeight`), `style` (`normal` or `italic`), `subset` (`latin` or `latin-ext`), `format`, `size`, `sha256`, `decodedFrom` and `path`. Every font is listed twice: once with `format: "woff2"`, the file as its package ships it, and once with `format: "ttf"`, the same font decompressed to its TrueType (sfnt) form and nothing else changed (no subsetting, no merging), with `decodedFrom` naming the `sha256` of its WOFF2 file. The decode is checked when the catalogue is generated: same tables, same glyph count, and every table WOFF2 stores untransformed byte for byte. A client loads whichever format its platform registers; the two draw the same glyphs.
+- `GET /studio/fonts/{sha256}` (same authentication) answers the bytes of one listed file, as `font/woff2` or `font/ttf`. The URL names the content, so the answer never changes and is sent with `Cache-Control: private, max-age=31536000, immutable`. A hash the catalogue does not list is `404`. Nothing else is reachable through it: the server looks the hash up in its catalogue and never reads a name or path from the request.
+- A client checks `sha256` after download, keeps the file under that hash, and re-reads the catalogue after a server update; a file whose hash is still listed is unchanged.
+- **Fallback chain.** The files are per subset, as the package ships them. For one family, weight and style a client loads the `latin` file and the `latin-ext` file as a fallback chain, `latin` first: a character is drawn from the first of the two that has a glyph for it. The two files of a pair have the same metrics, so a line may mix them. A family has only the weights and styles the catalogue lists (`Anton` and `Bebas Neue` have 400 alone; `Orbitron` and `Space Grotesk` have no italic; `Orbitron` has no `latin-ext`). For a weight or style that is not listed a client uses the nearest listed weight of the family and does not synthesise a bold or an italic the web would not.
+
+**Native rule.** A native client draws exactly the bundled families, from these files. It offers only them in its font picker. A title or span whose family is not one of the seven, or whose text needs a glyph outside the bundled subsets, is **not drawable on the device**: the client shows it as such, keeps the graph as it is, and leaves drawing it to the web editor or to a server render. It never substitutes another family silently and never fetches a font from anywhere else. `title.setStyle` itself accepts every catalogue family, as the web editor may write any of them (`title.setStyle/each-title-family` writes the seven).
+
+**Server renders.** A render names the font files it may read in the job's resource catalogue (`studio/resource-inventory.json`, kind `font`), one file per family. At this revision no job fills that catalogue with the bundled files, so a server render still refuses a title font as `not-bundled`. Giving a render the bundled files changes the shape of the worker's font manifest and is a separate change with its own worker contract; it is not part of this protocol revision.
+
 ### 14.4 Published controls
 
 A group can publish **controls**: named values of its clips that each of its composition clips may override.
@@ -2605,7 +2699,7 @@ native slot rendering and bundle round-trip output require separate qualificatio
 
 ## 17. Masks and relinking (FL-348)
 
-Both commands change only the named main-timeline clips. They draw no ids, write no clock, and a refusal leaves the graph and history untouched. Fixtures are named `clip.setMask/<case>` and `clip.relink/<case>` (story FL-348). The web editor's own mask controls write exactly the fields of 17.1, and its drafts report each shape whose mask fields changed as one `clip.setMask` in the revision summary.
+`clip.setMask` and `clip.relink` change only the named main-timeline clips. They draw no ids, write no clock, and a refusal leaves the graph and history untouched. Fixtures are named `clip.setMask/<case>` and `clip.relink/<case>` (story FL-348). Sections 17.4 and 17.5 create shapes and write their other fields. The web editor's own mask controls write exactly the fields of 17.1, and its drafts report each shape whose mask fields changed as one `clip.setMask` in the revision summary.
 
 ### 17.1 `clip.setMask`
 
@@ -2637,7 +2731,7 @@ A vertex is `{ position: [x, y], inHandle: [x, y], outHandle: [x, y], tangentMod
 - It writes `isMask: true`, `blendMode: "normal"` and all four mask fields. A shape that was not a mask also gets `pathClosed: true`. A `path` replaces `pathVertices`. `mask: {}` turns a shape into a hard clip mask with the defaults.
 - Nothing else changes: the shape's transform, keyframes, fill and stroke stay as they are. Size and place the mask with `clip.setTransform` (12.6.3).
 
-**Not covered.** There is no command that creates a shape. A native client masks a shape that is already in the graph (a pen path, a rectangle or an ellipse made in the web editor).
+**Creating a mask.** `shape.add` (17.4) creates a shape, and with its `mask` field creates it as a mask: a pen path drawn with a stylus is one `shape.add` with `shapeType: "path"`, `style.pathVertices` and `mask`. `shape.setStyle` (17.5) also replaces the pen path of a shape, mask or not.
 
 ### 17.2 `clip.relink`
 
@@ -2672,6 +2766,111 @@ The web host refuses canonical relink while the editor reports unsubmitted edits
 
 Cancellation changes nothing. Admission, command or save failure keeps the previous live graph. An ambiguous save is reconciled by reading the current origin once, without retrying the rejected replacement. If the outcome cannot be established, guard editing until explicit reload. Fence project/account/mount transitions during every await, including A–B–A and unmount. Local CPU conformance verifies graph rules; browser render/save/reopen, network durability and worker output need separate qualification.
 
+### 17.4 `shape.add`
+
+Adds a shape as the editor's shape tool makes it, or a pen path, and optionally makes it a mask. Payload: `shapeType`, `at`, optional `duration`, `trackId`, `style`, `transform`, `mask`.
+
+`shapeType` is `rectangle`, `circle`, `triangle`, `ellipse`, `star`, `polygon`, `heart` or `path`.
+
+**The new shape.** With `side = min(canvas width, canvas height) × 0.25` on the project's canvas:
+
+| `shapeType`    | Fields before `style`, `transform` and `mask`                                                                                                                                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| any but `path` | `label` = the type with its first letter in upper case, `fillColor: "#3b82f6"`, `strokeWidth: 0`, and `transform: { x: 0, y: 0, width: side, height: side, rotation: 0, opacity: 1, aspectRatioLocked: true }`                                                                             |
+| `rectangle`    | also `cornerRadius: 0`                                                                                                                                                                                                                                                                     |
+| `triangle`     | also `direction: "up"`                                                                                                                                                                                                                                                                     |
+| `star`         | also `points: 5`, `innerRadius: 0.5`                                                                                                                                                                                                                                                       |
+| `polygon`      | also `points: 6`                                                                                                                                                                                                                                                                           |
+| `path`         | `label: "Path"`, `fillColor: "#3b82f6"`, `fillEnabled: false`, `strokeColor: "#3b82f6"`, `strokeWidth: 4`, `strokeEnabled: true`, `strokeLineCap: "round"`, `strokeLineJoin: "round"`, `strokeMiterLimit: 4`, `pathClosed: true`, and the same `transform` with `aspectRatioLocked: false` |
+
+The item is `{ id, type: "shape", trackId, from, durationInFrames, label, shapeType, … }`. `durationInFrames` is `duration` in frames, or 60 seconds at the project rate (section 3.3). A `path` needs `style.pathVertices`: the pen's vertices in the form of 17.1, normalised to the shape's box, so a client that draws on the canvas gives the path's bounding box as `transform` and the vertices relative to it.
+
+Then, in this order:
+
+- `mask`, an object with any of `type`, `feather`, `opacity` and `invert` of 17.1 (no `path`), writes what `clip.setMask` writes on a shape that is not yet a mask: `isMask: true`, `blendMode: "normal"`, `maskType` (`clip` when absent), `maskFeather` (given, else 10 for `alpha` and 0 for `clip`), `maskOpacity` (100 when absent), `maskInvert` (`false` when absent) and `pathClosed: true`.
+- `style` writes the shape fields of 17.5, by its rules, on that shape.
+- `transform` replaces any of `x`, `y`, `width`, `height`, `rotation`, `opacity` and `aspectRatioLocked` of the box: `x` and `y` finite, `width` and `height` above 0, `rotation` 0..360, `opacity` 0..1.
+
+**The track.**
+
+- With `trackId`, the shape goes on that track, which must be a video track. When it would share a frame with a clip there it starts later, by the rule of `title.add` (14.3.1, `shape.add/on-track-moves-past-taken-place`).
+- Without `trackId`, the shape gets a **new video track above every video track**, as the editor's shape tool gives it, and starts exactly at `at`. The track is `{ id: "track-" + draw, name, kind: "video", height: 100, locked: false, syncLock: true, visible: true, muted: false, solo: false, volume: 0, order, items: [] }`. `order` is the lowest `order` among the video tracks minus 1; with no video track, the lowest among the audio tracks minus 1; with no track, 0. A track's kind is its `kind`, or the kind its `V1`/`A1` name gives it. The name and the renumbering of the classic names are those of 12.2.8 (`shape.add/first-layer-of-an-audio-project`, `…/two-in-one-batch`).
+
+The shape is appended to `timeline.items`.
+
+**Refusals, in order**
+
+1. A payload field not listed above: `invalid`.
+2. `shapeType` is not one of the eight: `invalid`.
+3. `at` is not a valid non-negative time; `duration` is present and is not a valid time, or rounds to less than one frame: `invalid`.
+4. `trackId` is present and is empty, names no track, names a group, or names an audio track: `invalid`.
+5. `shapeType` is `path` and `style` is not an object with `pathVertices`: `invalid`.
+6. `mask` is not a plain object, has a field other than the four, or a field outside its type or range (17.1): `invalid`.
+7. `style` fails a rule of 17.5, checked on the shape with its mask fields: `invalid`.
+8. `transform` is not a plain object, has a field not listed, or a field outside its type or range: `invalid`.
+9. `trackId` names a locked track: `failed`.
+
+**Draws:** the shape's `id`, then, when a track is created, the draw of its `id`.
+
+### 17.5 `shape.setStyle`
+
+Sets or clears the fill, stroke, geometry and pen-path fields of a shape. Payload: `clipId`, `style`. The same `style` object, with the same rules, is the `style` of `shape.add` (17.4).
+
+Every `style` field is optional. A field left out is unchanged. `null` removes the field from the shape; a field marked _kept_ cannot be cleared. Numbers are finite and inside the range, both ends included. Colours are as in 14.3.4: `#rrggbb` or `#rrggbbaa`, stored as given.
+
+| `style` field                            | Value                                    | Shapes                                     | Absent in the graph means             |
+| ---------------------------------------- | ---------------------------------------- | ------------------------------------------ | ------------------------------------- |
+| `fillColor`                              | colour; _kept_                           | all                                        | (always present)                      |
+| `fillEnabled`                            | boolean                                  | all                                        | `true`                                |
+| `fillType`                               | `solid` or `linear`                      | all                                        | `solid`                               |
+| `gradientStartColor`, `gradientEndColor` | colour                                   | all                                        | `fillColor` and `#8b5cf6`             |
+| `gradientAngle`                          | −180..180, degrees; 0 runs left to right | all                                        | 0                                     |
+| `strokeColor`                            | colour                                   | all                                        | no stroke                             |
+| `strokeWidth`                            | 0..50, in pixels                         | all                                        | 0                                     |
+| `strokeEnabled`                          | boolean                                  | all                                        | on when there is a width and a colour |
+| `strokeLineCap`                          | `butt`, `round` or `square`              | all                                        | `butt`                                |
+| `strokeLineJoin`                         | `miter`, `round` or `bevel`              | all                                        | `miter`                               |
+| `strokeMiterLimit`                       | 1..20                                    | all                                        | 4                                     |
+| `trimPathStart`, `trimPathEnd`           | 0..100, percent of the outline           | all                                        | 0 and 100                             |
+| `trimPathOffset`                         | −360..360, degrees                       | all                                        | 0                                     |
+| `taperStartWidth`, `taperEndWidth`       | 0..200, percent of the stroke width      | all                                        | 100                                   |
+| `taperStartLength`, `taperEndLength`     | 0..100, percent of the visible path      | all                                        | 0                                     |
+| `cornerRadius`                           | 0..100; rounds the outline itself        | `rectangle`, `triangle`, `star`, `polygon` | 0                                     |
+| `direction`                              | `up`, `down`, `left` or `right`          | `triangle`                                 | `up`                                  |
+| `points`                                 | integer 3..12                            | `star`, `polygon`                          | 5 for a star, 6 for a polygon         |
+| `innerRadius`                            | 0.1..0.9, a share of the outer radius    | `star`                                     | 0.5                                   |
+| `pathClosed`                             | boolean; _kept_                          | `path`                                     | (always present on a path)            |
+| `pathVertices`                           | 2 to 1000 vertices of 17.1; _kept_       | `path`                                     | (always present on a path)            |
+
+On a `path`, `fillEnabled`, `strokeEnabled`, `strokeLineCap`, `strokeLineJoin` and `strokeMiterLimit` are _kept_ too, because loading writes them when they are absent (2.6). The item's `cornerRadius` is not `transform.cornerRadius`, which clips the box of any clip. The mask fields are `clip.setMask`'s (17.1), and the box is `clip.setTransform`'s (12.6.3).
+
+**Ranges are the editor's.** The ranges of the table are those of the web editor's own controls, and a command refuses a value outside them. The renderer does not clamp to them: it uses `points`, `innerRadius`, `gradientAngle`, `trimPathOffset`, `cornerRadius`, `strokeWidth` and `strokeMiterLimit` as stored, so a graph the web editor or an older client saved may hold a value outside the table. `studio/spec/layers.md` ("Ranges a client writes, and what the renderer does outside them") states what is drawn for each such value, including the ones that draw nothing or are implementation-defined. A native client offers the ranges of this table in its controls and writes only values inside them, and it draws a stored value outside them as the render spec says, without rewriting it. The same holds for the title fields of 14.3.4.
+
+**After the fields are written**, on the shape as it would then be:
+
+- A `path` that is a mask must stay closed: `pathClosed: false` on a mask is refused.
+- A closed path (`pathClosed` true) needs at least 3 vertices.
+- An open path has no fill: `fillEnabled: true` in the same `style` is refused, and otherwise `fillEnabled: false` is written.
+- When `strokeEnabled` is `true` and `strokeWidth` is absent or below 1, `strokeWidth: 1` is written (`shape.setStyle/enabled-stroke-has-width`).
+
+**Refusals, in order**
+
+1. A payload field other than `clipId` and `style`: `invalid`.
+2. `clipId` missing or empty; no such clip: `invalid`.
+3. The clip is not a `shape`: `invalid`.
+4. `style` absent or not a plain object: `invalid`.
+5. The clip's track is locked: `failed`.
+6. A `style` field the table does not list: `invalid`.
+7. The fields in table order up to `pathClosed`, each: a field its shape type does not have; `null` on a _kept_ field; a value outside its type or range: `invalid`.
+8. `pathVertices`: `null`, a shape that is not a `path`, fewer than 2 or more than 1000 vertices, a bad vertex (17.1): `invalid`.
+9. The four rules above, in that order: `invalid`.
+
+An empty `style` is applied and changes nothing. A mask is a shape, and its fields may be written; they draw again when the mask is cleared.
+
+**Consequences.** Linked, sync lock, overlap and transitions: none. Locks: checked. Keyframes on `strokeWidth`, the trim and taper properties and `pathVertex:…` (13.2.5) are left as they are and still decide the drawn value where they exist.
+
+**Draws:** none.
+
 ## 18. Rendering effects and transitions
 
 This protocol says which effects and transitions a graph may name, and with which parameters (13.2.1). What they draw is specified in `studio/spec/`, the render spec, which is part of the native-app contract on the same terms as this page: a clean-room specification written by reading the engine, with no engine source text, versioned with the same engine pin.
@@ -2682,6 +2881,8 @@ This protocol says which effects and transitions a graph may name, and with whic
 | `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                           |
 | `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                 |
 | `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                           |
+| `studio/spec/layers.md`           | Layer compositing: what a frame of a project looks like beyond effects and transitions (layer order, background, transform, opacity, blend modes, crop, masks, shapes).                                                        |
+| `studio/spec/text.md`             | Titles and text: style fields, layout, spans, text motion, and the font files a native client draws with (14.3).                                                                                                               |
 | `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                         |
 | `studio/spec/keyframes.md`        | Keyframe interpolation: what each easing computes, the value of a keyframed property at a frame, velocity handles and path tangents (13.2.6).                                                                                  |
 | `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, the progress-curve table, the keyframe values and the ASCII glyph atlases the goldens were rendered with.                               |

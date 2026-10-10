@@ -975,6 +975,31 @@ export const studioCommandMirror = {
       width: 'number?',
     },
   },
+  'shape.add': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      at: 'time',
+      duration: 'duration?',
+      mask: 'object?',
+      shapeType: 'string',
+      style: 'object?',
+      trackId: 'string?',
+      transform: 'object?',
+    },
+  },
+  'shape.setStyle': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      clipId: 'string',
+      style: 'object',
+    },
+  },
   'text.setMotion': {
     scope: 'clip',
     mutatesGraph: true,
@@ -997,6 +1022,18 @@ export const studioCommandMirror = {
       position: 'string?',
       style: 'string?',
       text: 'string',
+    },
+  },
+  'title.setStyle': {
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    capability: null,
+    payload: {
+      clipId: 'string',
+      spanLayout: 'string?',
+      spans: 'object[]?',
+      style: 'object',
     },
   },
   'track.add': {

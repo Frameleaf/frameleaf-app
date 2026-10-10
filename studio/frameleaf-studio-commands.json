@@ -1325,6 +1325,37 @@
     },
     {
       "capability": null,
+      "description": "Add a shape or a pen path, on a new top layer or a named video track, optionally as a mask.",
+      "id": "shape.add",
+      "manifestIds": ["command.addItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "at": "time",
+        "duration": "duration?",
+        "mask": "object?",
+        "shapeType": "string",
+        "style": "object?",
+        "trackId": "string?",
+        "transform": "object?"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear the fill, stroke, geometry and pen-path fields of a shape.",
+      "id": "shape.setStyle",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "style": "object"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
       "description": "Set per-character, per-word or per-line text animation.",
       "id": "text.setMotion",
       "manifestIds": ["readme.keyframe-animation.4"],
@@ -1349,6 +1380,21 @@
         "position": "string?",
         "style": "string?",
         "text": "string"
+      },
+      "scope": "clip",
+      "undoable": true
+    },
+    {
+      "capability": null,
+      "description": "Set or clear single style fields and the styled spans of a title.",
+      "id": "title.setStyle",
+      "manifestIds": ["command.updateItem"],
+      "mutatesGraph": true,
+      "payload": {
+        "clipId": "string",
+        "spanLayout": "string?",
+        "spans": "object[]?",
+        "style": "object"
       },
       "scope": "clip",
       "undoable": true
@@ -1449,7 +1495,7 @@
     }
   ],
   "counts": {
-    "commands": 94,
+    "commands": 97,
     "commandsWithoutManifestRow": 23,
     "manifestRows": 210,
     "manifestRowsDeclaredNonCommand": 28,

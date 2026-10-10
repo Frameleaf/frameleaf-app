@@ -25,6 +25,11 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 | `../tools/render-goldens.test.mjs` | Engine-free checks: coverage, inputs, the progress curve, the comparison rule, the T6 reference, the published atlases and the clean-room lint. |
 | `../tools/clip-reference.mjs` | T6 written out: the Canvas 2D clip and stroke transitions computed from the pages alone. |
 | `../tools/keyframe-goldens.mjs`, `.browser.mjs`, `.test.mjs` | The keyframe cases and a reference written from `keyframes.md`; the engine run; the engine-free check. |
+| `layers.md` | Layer compositing: frame assembly, layer order, background, transform and parents, opacity, blend modes, crop, corner radius, masks and shapes. |
+| `goldens/layers.json` | Layer goldens: small project frames rendered by the engine's frame renderer. |
+| `text.md` | Titles and text: style fields, layout, spans, text motion, colours and alpha, and the bundled font files. |
+| `goldens/text.json` | Text goldens: layout and motion values and small frames, made with the bundled fonts it names by hash. |
+| `../tools/layer-goldens.*`, `../tools/text-goldens.*` | Cases and prose references, engine runs and engine-free checks of the layer and text pages; run from the two render-goldens files. |
 
 The five colour effects that had numeric oracles before this spec (brightness, contrast, exposure, saturation, levels) keep `../tools/photometric-goldens.mjs` as an independent equation check; their pages restate those equations.
 

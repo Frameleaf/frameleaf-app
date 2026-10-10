@@ -106,8 +106,11 @@ export const studioCommandIds = [
   'sequence.setActive',
   'sequence.setFields',
   'sequence.setSettings',
+  'shape.add',
+  'shape.setStyle',
   'text.setMotion',
   'title.add',
+  'title.setStyle',
   'track.add',
   'track.closeGap',
   'track.remove',
@@ -162,6 +165,91 @@ export type StudioRetimePolicy = 'keep-time' | 'keep-frames';
  * round trip lossless for fields no Frameleaf release knows about yet.
  */
 export type StudioOpaqueValue = Readonly<Record<string, unknown>>;
+
+export type StudioShapeType = 'rectangle' | 'circle' | 'triangle' | 'ellipse' | 'star' | 'polygon' | 'heart' | 'path';
+
+/** A pen-path vertex: position 0..1 of the shape's box, handles relative to the vertex. */
+export type StudioPathVertex = {
+  position: [number, number];
+  inHandle: [number, number];
+  outHandle: [number, number];
+  tangentMode?: 'corner' | 'smooth' | 'continuous' | 'broken';
+};
+
+/** The shape fields of `shape.add` and `shape.setStyle` (graph protocol 17.5); colours are `#rrggbb` or `#rrggbbaa`. */
+export type StudioShapeStyle = {
+  fillColor?: string;
+  fillEnabled?: boolean | null;
+  fillType?: 'solid' | 'linear' | null;
+  gradientStartColor?: string | null;
+  gradientEndColor?: string | null;
+  gradientAngle?: number | null;
+  strokeColor?: string | null;
+  strokeWidth?: number | null;
+  strokeEnabled?: boolean | null;
+  strokeLineCap?: 'butt' | 'round' | 'square' | null;
+  strokeLineJoin?: 'miter' | 'round' | 'bevel' | null;
+  strokeMiterLimit?: number | null;
+  trimPathStart?: number | null;
+  trimPathEnd?: number | null;
+  trimPathOffset?: number | null;
+  taperStartWidth?: number | null;
+  taperEndWidth?: number | null;
+  taperStartLength?: number | null;
+  taperEndLength?: number | null;
+  cornerRadius?: number | null;
+  direction?: 'up' | 'down' | 'left' | 'right' | null;
+  points?: number | null;
+  innerRadius?: number | null;
+  pathClosed?: boolean;
+  pathVertices?: StudioPathVertex[];
+};
+
+export type StudioShapeBox = {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  opacity?: number;
+  aspectRatioLocked?: boolean;
+};
+
+/** The mask fields of `clip.setMask` (17.1) without the pen path, for a shape made as a mask. */
+export type StudioNewShapeMask = { type?: 'clip' | 'alpha'; feather?: number; opacity?: number; invert?: boolean };
+
+export type StudioTitleFontWeight = 'normal' | 'medium' | 'semibold' | 'bold';
+
+/** The title fields of `title.setStyle` (graph protocol 14.3.4); colours are `#rrggbb` or `#rrggbbaa`. */
+export type StudioTitleStyle = {
+  color?: string;
+  fontSize?: number | null;
+  /** A family of the engine's font catalogue (`fonts.families` of the parameter catalogue). */
+  fontFamily?: string | null;
+  fontWeight?: StudioTitleFontWeight | null;
+  fontStyle?: 'normal' | 'italic' | null;
+  underline?: boolean | null;
+  lineHeight?: number | null;
+  letterSpacing?: number | null;
+  textPadding?: number | null;
+  backgroundColor?: string | null;
+  backgroundRadius?: number | null;
+  textShadow?: { offsetX: number; offsetY: number; blur: number; color: string } | null;
+  stroke?: { width: number; color: string } | null;
+  /** Only on a title that has a style preset: re-applies the preset at this scale. */
+  textStyleScale?: number;
+};
+
+export type StudioTitleSpan = {
+  text: string;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: StudioTitleFontWeight;
+  fontStyle?: 'normal' | 'italic';
+  underline?: boolean;
+  color?: string;
+  letterSpacing?: number;
+};
 
 export type StudioRippleOption = {
   /** When true later clips on the track follow the edit. */
@@ -434,6 +522,18 @@ export interface StudioCommandPayloads {
     height?: number;
     timing?: StudioRetimePolicy;
   };
+  /** Graph protocol 17.4. Without `trackId` the shape gets a new layer above every video track. */
+  'shape.add': {
+    shapeType: StudioShapeType;
+    at: StudioTime;
+    duration?: StudioDuration;
+    trackId?: string;
+    style?: StudioShapeStyle;
+    transform?: StudioShapeBox;
+    mask?: StudioNewShapeMask;
+  };
+  /** Graph protocol 17.5. A field left out is unchanged; `null` removes an optional field. */
+  'shape.setStyle': { clipId: string; style: StudioShapeStyle };
   'text.setMotion': { clipId: string; motion: StudioOpaqueValue | null };
   'title.add': {
     at: StudioTime;
@@ -442,6 +542,13 @@ export interface StudioCommandPayloads {
     style?: string;
     position?: string;
     animation?: string;
+  };
+  /** Graph protocol 14.3.4. A field left out is unchanged; `null` removes an optional field. */
+  'title.setStyle': {
+    clipId: string;
+    style: StudioTitleStyle;
+    spans?: StudioTitleSpan[] | null;
+    spanLayout?: 'stack' | 'inline' | null;
   };
   'track.add': { kind: string; name?: string; index?: number };
   /** With `at`, the gap at that time; without it, every gap on the track. */
@@ -1058,6 +1165,18 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     undoable: true,
   }),
   define({
+    id: 'shape.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
+    id: 'shape.setStyle',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
     id: 'text.setMotion',
     scope: 'clip',
     mutatesGraph: true,
@@ -1065,6 +1184,12 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   }),
   define({
     id: 'title.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+  }),
+  define({
+    id: 'title.setStyle',
     scope: 'clip',
     mutatesGraph: true,
     undoable: true,

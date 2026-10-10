@@ -17,6 +17,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { asciiAtlasSpec, validateAsciiAtlas, renderAsciiReference, settleAsciiGuard, ASCII_ATLASES_FORMAT, encodeAsciiAtlas } from './ascii-reference.mjs';
 import { runKeyframeGoldens } from './keyframe-goldens.browser.mjs';
+import { runLayerGoldens } from './layer-goldens.browser.mjs';
+import { runTextGoldens } from './text-goldens.browser.mjs';
 import {
   GOLDENS_FORMAT, GOLDENS_VERSION, EFFECT_SIZE, TRANSITION_SIZE, GPU_TRANSITIONS, PROGRESS_CURVE_CASES,
   effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
@@ -284,6 +286,8 @@ if (!write) {
   console.log('render goldens hold');
   await runKeyframeGoldens({ write: false, origin });
   await runHdrGoldens({ write: false }); // studio/spec/hdr.md
+  await runLayerGoldens({ write: false });
+  await runTextGoldens({ write: false });
   process.exit(0);
 }
 
@@ -379,3 +383,5 @@ await writeFile(path.join(studio, 'spec/goldens/ascii-atlases.json'), `${JSON.st
 await runKeyframeGoldens({ write: true, origin });
 console.log('wrote studio/spec/goldens/effects.json, transitions.json, ascii-atlases.json, keyframes.json, index.json and the README index');
 await runHdrGoldens({ write: true });
+await runLayerGoldens({ write: true });
+await runTextGoldens({ write: true });
