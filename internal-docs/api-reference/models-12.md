@@ -4,7 +4,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## FrameleafLinkResponseDto
 
-Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-37.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
+Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-38.md#useravatarcolor), [UserLicense](models-38.md#userlicense), [UserStatus](models-38.md#userstatus).
 
 ```json
 {

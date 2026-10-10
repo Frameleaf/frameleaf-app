@@ -2058,6 +2058,7 @@ Related models: [DuplicateDecisionKind](models-11.md#duplicatedecisionkind).
     "studio_export",
     "studio_preview",
     "studio_reverse_conform",
+    "studio_transcription",
     "studio_preview_stream",
     "restoration",
     "restoration_preview",

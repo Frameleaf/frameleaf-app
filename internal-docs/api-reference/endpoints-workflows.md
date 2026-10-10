@@ -142,7 +142,7 @@ Create a workflow
 
 Permission: `workflow.create`. Admin only: `false`.
 
-Models: [WorkflowCreateDto](models-38.md#workflowcreatedto), [WorkflowResponseDto](models-39.md#workflowresponsedto).
+Models: [WorkflowCreateDto](models-39.md#workflowcreatedto), [WorkflowResponseDto](models-39.md#workflowresponsedto).
 
 Controller access declarations:
 

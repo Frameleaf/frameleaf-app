@@ -12,7 +12,7 @@ Link OAuth account
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [OAuthCallbackDto](models-18.md#oauthcallbackdto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [OAuthCallbackDto](models-18.md#oauthcallbackdto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -162,7 +162,7 @@ Unlink OAuth account
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [UserAdminResponseDto](models-38.md#useradminresponsedto).
 
 Controller access declarations:
 

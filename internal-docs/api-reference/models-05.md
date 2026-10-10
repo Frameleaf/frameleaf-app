@@ -1401,6 +1401,152 @@ Related models: [AssetFileType](models-05.md#assetfiletype).
 }
 ```
 
+## AssetFilmstripFormat
+
+
+```json
+{
+  "description": "Sprite sheet image format",
+  "enum": [
+    "jpeg",
+    "webp"
+  ],
+  "type": "string"
+}
+```
+
+## AssetFilmstripFrameDto
+
+
+```json
+{
+  "properties": {
+    "index": {
+      "description": "Frame position, 0-based",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "timeMs": {
+      "description": "Timestamp of the frame in the video, in milliseconds",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "x": {
+      "description": "Left edge of the frame in the sprite, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "y": {
+      "description": "Top edge of the frame in the sprite, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "index",
+    "timeMs",
+    "x",
+    "y"
+  ],
+  "type": "object"
+}
+```
+
+## AssetFilmstripResponseDto
+
+Related models: [AssetFilmstripFormat](models-05.md#assetfilmstripformat), [AssetFilmstripFrameDto](models-05.md#assetfilmstripframedto).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "columns": {
+      "description": "Tiles per sprite row",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "durationMs": {
+      "description": "Duration of the video, in milliseconds",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "format": {
+      "$ref": "#/components/schemas/AssetFilmstripFormat"
+    },
+    "frameHeight": {
+      "description": "Height of every frame tile, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "frameWidth": {
+      "description": "Width of every frame tile, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "frames": {
+      "description": "Frames in time order, left to right, top to bottom",
+      "items": {
+        "$ref": "#/components/schemas/AssetFilmstripFrameDto"
+      },
+      "type": "array"
+    },
+    "mimeType": {
+      "description": "Content type of the sprite",
+      "type": "string"
+    },
+    "rows": {
+      "description": "Sprite rows",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "spriteHeight": {
+      "description": "Sprite height, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "spriteWidth": {
+      "description": "Sprite width, in pixels",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "version": {
+      "description": "Changes whenever the video changes; pass it to the sprite request",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "columns",
+    "durationMs",
+    "format",
+    "frameHeight",
+    "frameWidth",
+    "frames",
+    "mimeType",
+    "rows",
+    "spriteHeight",
+    "spriteWidth",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
 ## AssetIdErrorReason
 
 
@@ -2022,47 +2168,5 @@ Related models: [AssetMetadataUpsertItemDto](models-05.md#assetmetadataupsertite
     "y4"
   ],
   "type": "object"
-}
-```
-
-## AssetOrder
-
-
-```json
-{
-  "description": "Asset sort order",
-  "enum": [
-    "asc",
-    "desc"
-  ],
-  "type": "string"
-}
-```
-
-## AssetOrderBy
-
-
-```json
-{
-  "description": "Asset sorting property",
-  "enum": [
-    "takenAt",
-    "createdAt"
-  ],
-  "type": "string"
-}
-```
-
-## AssetRejectReason
-
-
-```json
-{
-  "description": "Rejection reason if rejected",
-  "enum": [
-    "duplicate",
-    "unsupported-format"
-  ],
-  "type": "string"
 }
 ```

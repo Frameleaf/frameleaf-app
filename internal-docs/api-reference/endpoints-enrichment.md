@@ -98,7 +98,7 @@ Find moments like a video frame
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentSearchResponseDto](models-38.md#videomomentsearchresponsedto).
+Models: [VideoMomentSearchResponseDto](models-39.md#videomomentsearchresponsedto).
 
 Controller access declarations:
 
@@ -197,7 +197,7 @@ Search video moments
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentSearchDto](models-38.md#videomomentsearchdto), [VideoMomentSearchResponseDto](models-38.md#videomomentsearchresponsedto).
+Models: [VideoMomentSearchDto](models-39.md#videomomentsearchdto), [VideoMomentSearchResponseDto](models-39.md#videomomentsearchresponsedto).
 
 Controller access declarations:
 
@@ -620,7 +620,7 @@ Choose a video cover frame
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [VideoMomentCoverDto](models-38.md#videomomentcoverdto), [VideoMomentsResponseDto](models-38.md#videomomentsresponsedto).
+Models: [VideoMomentCoverDto](models-38.md#videomomentcoverdto), [VideoMomentsResponseDto](models-39.md#videomomentsresponsedto).
 
 Controller access declarations:
 
@@ -717,7 +717,7 @@ Get video moments
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [VideoMomentsResponseDto](models-38.md#videomomentsresponsedto).
+Models: [VideoMomentsResponseDto](models-39.md#videomomentsresponsedto).
 
 Controller access declarations:
 
@@ -990,7 +990,7 @@ Update a video moment
 
 Permission: `asset.update`. Admin only: `false`.
 
-Models: [VideoMomentDto](models-38.md#videomomentdto), [VideoMomentUpdateDto](models-38.md#videomomentupdatedto).
+Models: [VideoMomentDto](models-38.md#videomomentdto), [VideoMomentUpdateDto](models-39.md#videomomentupdatedto).
 
 Controller access declarations:
 

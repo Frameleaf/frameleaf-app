@@ -2,6 +2,84 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ClassificationPreviewDto
+
+Related models: [ClassificationMediaType](models-07.md#classificationmediatype).
+
+```json
+{
+  "properties": {
+    "mediaType": {
+      "$ref": "#/components/schemas/ClassificationMediaType",
+      "default": "any"
+    },
+    "personIds": {
+      "default": [],
+      "description": "Match any of these people",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "sampleSize": {
+      "default": 500,
+      "description": "How many of the newest items a visual preview reads",
+      "maximum": 2000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "tagIds": {
+      "default": [],
+      "description": "Match any of these tags, or a tag beneath one of them",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "takenAfter": {
+      "default": null,
+      "description": "Taken on or after this day (YYYY-MM-DD)",
+      "nullable": true,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "takenBefore": {
+      "default": null,
+      "description": "Taken on or before this day (YYYY-MM-DD)",
+      "nullable": true,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "threshold": {
+      "default": 0.25,
+      "description": "The confidence a visual phrase has to reach",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "visualQueries": {
+      "default": [],
+      "description": "Visual category phrases compared with each item",
+      "items": {
+        "maxLength": 120,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
 ## ClassificationPreviewResponseDto
 
 Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
@@ -2379,58 +2457,6 @@ Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesd
     "features",
     "revokedAt",
     "version"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConsentStateDto
-
-Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesdto).
-
-```json
-{
-  "properties": {
-    "acceptedVersion": {
-      "description": "The version an administrator accepted on this server",
-      "nullable": true,
-      "type": "string"
-    },
-    "documentUrl": {
-      "description": "The full consent text, when Frameleaf Cloud links one",
-      "nullable": true,
-      "type": "string"
-    },
-    "features": {
-      "$ref": "#/components/schemas/CloudMlConsentFeaturesDto",
-      "description": "The feature choices on record"
-    },
-    "outdated": {
-      "description": "Consent was given, but for an older version; processing is refused until renewed",
-      "type": "boolean"
-    },
-    "recordedVersion": {
-      "description": "The version Frameleaf Cloud has on record for this server",
-      "nullable": true,
-      "type": "string"
-    },
-    "requiredVersion": {
-      "description": "The consent version Frameleaf Cloud requires now",
-      "type": "string"
-    },
-    "summary": {
-      "description": "What the consent covers, as Frameleaf Cloud words it",
-      "type": "string"
-    }
-  },
-  "required": [
-    "acceptedVersion",
-    "documentUrl",
-    "features",
-    "outdated",
-    "recordedVersion",
-    "requiredVersion",
-    "summary"
   ],
   "type": "object"
 }

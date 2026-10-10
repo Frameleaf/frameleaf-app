@@ -1213,11 +1213,98 @@ Complete operation contract:
 }
 ```
 
+## getStudioMediaFacts
+
+`GET /api/studio/assets/{id}/media-facts`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-catalog.controller.ts#L80).
+
+Get the Studio media facts of an asset
+
+Permission: `asset.read`. Admin only: `false`.
+
+Models: [StudioMediaFactsDto](models-33.md#studiomediafactsdto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio')
+@Get('assets/:id/media-facts')
+@Authenticated({ permission: Permission.AssetRead })
+@Endpoint({
+    summary: 'Get the Studio media facts of an asset',
+    description:
+      'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+  "operationId": "getStudioMediaFacts",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioMediaFactsDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get the Studio media facts of an asset",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.read",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## downloadStudioBundle
 
 `GET /api/studio/bundles/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L172).
 
 Download a Studio bundle
 
@@ -1304,7 +1391,7 @@ Complete operation contract:
 
 `POST /api/studio/bundles/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L113).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L148).
 
 Import a Studio bundle
 
@@ -1390,7 +1477,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L161).
 
 Get a Studio bundle job
 
@@ -1475,7 +1562,7 @@ Complete operation contract:
 
 `POST /api/studio/bundles/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L105).
 
 Upload a Studio bundle
 
@@ -1493,9 +1580,7 @@ Controller access declarations:
 @Authenticated()
 @ApiConsumes('multipart/form-data')
 @ApiBody({ description: 'A Studio bundle to import', type: StudioBundleUploadCreateDto })
-@UseInterceptors(
-    FileInterceptor('file', { storage: bundleUploadStorage, limits: { files: 1, fileSize: STUDIO_BUNDLE_MAX_BYTES } }),
-  )
+@UseInterceptors(StudioBundleUploadInterceptor)
 @Endpoint({
     summary: 'Upload a Studio bundle',
     description:
@@ -1567,7 +1652,7 @@ Complete operation contract:
 
 `DELETE /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L136).
 
 Discard an uploaded Studio bundle
 
@@ -1644,7 +1729,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L90).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L125).
 
 Get an uploaded Studio bundle
 
@@ -1984,30 +2069,30 @@ Complete operation contract:
 }
 ```
 
-## searchStudioProjects
+## getStudioFonts
 
-`GET /api/studio/projects`
+`GET /api/studio/fonts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-catalog.controller.ts#L45).
 
-List Studio projects
+List the title fonts bundled with this server
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectListResponseDto](models-34.md#studioprojectlistresponsedto), [StudioProjectShelf](models-34.md#studioprojectshelf), [StudioProjectSort](models-34.md#studioprojectsort).
+Models: [StudioFontCatalogDto](models-33.md#studiofontcatalogdto).
 
 Controller access declarations:
 
 ```typescript
 @ApiTags(ApiTag.StudioProjects)
-@Controller('studio/projects')
-@Get()
+@Controller('studio')
+@Get('fonts')
 @Authenticated()
 @Endpoint({
-    summary: 'List Studio projects',
+    summary: 'List the title fonts bundled with this server',
     description:
-      'One shelf of the project library. The active shelf holds projects you own and projects shared with a space you belong to; the archive and the trash hold your own only.',
-    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+      'The title font families a native Studio client draws (graph protocol 14.3.5): each family as a graph names it, its package, version, licence and copyright line, and every bundled file with its weight, style, Unicode subset, format, size and SHA-256. Each font is listed twice: as WOFF2, and decoded to TTF for a client that cannot load WOFF2. The files are served by GET /studio/fonts/{sha256}.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
 ```
 
@@ -2015,65 +2100,15 @@ Complete operation contract:
 
 ```json
 {
-  "description": "One shelf of the project library. The active shelf holds projects you own and projects shared with a space you belong to; the archive and the trash hold your own only.",
-  "operationId": "searchStudioProjects",
-  "parameters": [
-    {
-      "name": "query",
-      "required": false,
-      "in": "query",
-      "description": "Case-insensitive part of the name",
-      "schema": {
-        "maxLength": 200,
-        "type": "string"
-      }
-    },
-    {
-      "name": "shelf",
-      "required": false,
-      "in": "query",
-      "description": "Which shelf to list; `active` when omitted",
-      "schema": {
-        "$ref": "#/components/schemas/StudioProjectShelf"
-      }
-    },
-    {
-      "name": "skip",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "minimum": 0,
-        "maximum": 9007199254740991,
-        "default": 0,
-        "type": "integer"
-      }
-    },
-    {
-      "name": "sort",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "$ref": "#/components/schemas/StudioProjectSort"
-      }
-    },
-    {
-      "name": "take",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "minimum": 1,
-        "maximum": 200,
-        "default": 50,
-        "type": "integer"
-      }
-    }
-  ],
+  "description": "The title font families a native Studio client draws (graph protocol 14.3.5): each family as a graph names it, its package, version, licence and copyright line, and every bundled file with its weight, style, Unicode subset, format, size and SHA-256. Each font is listed twice: as WOFF2, and decoded to TTF for a client that cannot load WOFF2. The files are served by GET /studio/fonts/{sha256}.",
+  "operationId": "getStudioFonts",
+  "parameters": [],
   "responses": {
     "200": {
       "content": {
         "application/json": {
           "schema": {
-            "$ref": "#/components/schemas/StudioProjectListResponseDto"
+            "$ref": "#/components/schemas/StudioFontCatalogDto"
           }
         }
       },
@@ -2091,103 +2126,17 @@ Complete operation contract:
       "api_key": []
     }
   ],
-  "summary": "List Studio projects",
+  "summary": "List the title fonts bundled with this server",
   "tags": [
     "Studio projects"
   ],
   "x-immich-history": [
     {
-      "version": "v3.0.0",
+      "version": "v3.2.0",
       "state": "Added"
     },
     {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## createStudioProject
-
-`POST /api/studio/projects`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L94).
-
-Create a Studio project
-
-Permission: `See authentication declaration`. Admin only: `false`.
-
-Models: [StudioProjectCreateDto](models-33.md#studioprojectcreatedto), [StudioProjectDetailDto](models-33.md#studioprojectdetaildto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.StudioProjects)
-@Controller('studio/projects')
-@Post()
-@HttpCode(HttpStatus.CREATED)
-@Authenticated()
-@Endpoint({
-    summary: 'Create a Studio project',
-    description:
-      'Creates an empty project owned by you and hands the write lease to the given editor instance. An initial document, when given, is saved as revision 1.',
-    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Creates an empty project owned by you and hands the write lease to the given editor instance. An initial document, when given, is saved as revision 1.",
-  "operationId": "createStudioProject",
-  "parameters": [],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/StudioProjectCreateDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "201": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/StudioProjectDetailDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Create a Studio project",
-  "tags": [
-    "Studio projects"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
+      "version": "v3.2.0",
       "state": "Alpha"
     }
   ],

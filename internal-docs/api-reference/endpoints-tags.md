@@ -12,7 +12,7 @@ Retrieve tags
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagResponseDto](models-36.md#tagresponsedto).
+Models: [TagResponseDto](models-37.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -94,7 +94,7 @@ Create a tag
 
 Permission: `tag.create`. Admin only: `false`.
 
-Models: [TagCreateDto](models-36.md#tagcreatedto), [TagResponseDto](models-36.md#tagresponsedto).
+Models: [TagCreateDto](models-36.md#tagcreatedto), [TagResponseDto](models-37.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -183,7 +183,7 @@ Upsert tags
 
 Permission: `tag.create`. Admin only: `false`.
 
-Models: [TagResponseDto](models-36.md#tagresponsedto), [TagUpsertDto](models-36.md#tagupsertdto).
+Models: [TagResponseDto](models-37.md#tagresponsedto), [TagUpsertDto](models-37.md#tagupsertdto).
 
 Controller access declarations:
 
@@ -364,7 +364,7 @@ Retrieve tag statistics
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagStatisticsResponseDto](models-36.md#tagstatisticsresponsedto).
+Models: [TagStatisticsResponseDto](models-37.md#tagstatisticsresponsedto).
 
 Controller access declarations:
 
@@ -525,7 +525,7 @@ Retrieve a tag
 
 Permission: `tag.read`. Admin only: `false`.
 
-Models: [TagResponseDto](models-36.md#tagresponsedto).
+Models: [TagResponseDto](models-37.md#tagresponsedto).
 
 Controller access declarations:
 
@@ -615,7 +615,7 @@ Update a tag
 
 Permission: `tag.update`. Admin only: `false`.
 
-Models: [TagResponseDto](models-36.md#tagresponsedto), [TagUpdateDto](models-36.md#tagupdatedto).
+Models: [TagResponseDto](models-37.md#tagresponsedto), [TagUpdateDto](models-37.md#tagupdatedto).
 
 Controller access declarations:
 

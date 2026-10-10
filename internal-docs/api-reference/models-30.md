@@ -727,7 +727,7 @@ Related models: [SearchFacetResponseDto](models-29.md#searchfacetresponsedto).
 
 ## SearchFilter
 
-Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [SearchFilterBranch](models-30.md#searchfilterbranch), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
+Related models: [BoolFilter](models-07.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [SearchFilterBranch](models-30.md#searchfilterbranch), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
 
 ```json
 {
@@ -779,6 +779,12 @@ Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md
       "$ref": "#/components/schemas/BoolFilter"
     },
     "isOffline": {
+      "$ref": "#/components/schemas/BoolFilter"
+    },
+    "isPanorama": {
+      "$ref": "#/components/schemas/BoolFilter"
+    },
+    "isScreenshot": {
       "$ref": "#/components/schemas/BoolFilter"
     },
     "lensModel": {
@@ -849,7 +855,7 @@ Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md
 
 ## SearchFilterBranch
 
-Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
+Related models: [BoolFilter](models-07.md#boolfilter), [DateFilter](models-10.md#datefilter), [DateFilterNullable](models-10.md#datefilternullable), [EnumFilterAssetType](models-11.md#enumfilterassettype), [EnumFilterAssetVisibility](models-11.md#enumfilterassetvisibility), [IdFilter](models-14.md#idfilter), [IdFilterNullable](models-14.md#idfilternullable), [IdsFilter](models-14.md#idsfilter), [NumberFilter](models-18.md#numberfilter), [NumberFilterNullable](models-18.md#numberfilternullable), [StringFilter](models-32.md#stringfilter), [StringFilterNullable](models-32.md#stringfilternullable), [StringPatternFilter](models-32.md#stringpatternfilter), [StringSimilarityFilter](models-32.md#stringsimilarityfilter).
 
 ```json
 {
@@ -901,6 +907,12 @@ Related models: [BoolFilter](models-06.md#boolfilter), [DateFilter](models-10.md
       "$ref": "#/components/schemas/BoolFilter"
     },
     "isOffline": {
+      "$ref": "#/components/schemas/BoolFilter"
+    },
+    "isPanorama": {
+      "$ref": "#/components/schemas/BoolFilter"
+    },
+    "isScreenshot": {
       "$ref": "#/components/schemas/BoolFilter"
     },
     "lensModel": {
@@ -1710,7 +1722,7 @@ Related models: [SearchHistogramBucketDto](models-30.md#searchhistogrambucketdto
 
 ## SearchOrder
 
-Related models: [AssetOrder](models-05.md#assetorder), [SearchOrderField](models-30.md#searchorderfield).
+Related models: [AssetOrder](models-06.md#assetorder), [SearchOrderField](models-30.md#searchorderfield).
 
 ```json
 {
@@ -1902,39 +1914,6 @@ Related models: [SearchAlbumResponseDto](models-29.md#searchalbumresponsedto), [
     "licensed",
     "version",
     "versionUrl"
-  ],
-  "type": "object"
-}
-```
-
-## ServerApkLinksDto
-
-
-```json
-{
-  "properties": {
-    "arm64v8a": {
-      "description": "APK download link for ARM64 v8a architecture",
-      "type": "string"
-    },
-    "armeabiv7a": {
-      "description": "APK download link for ARM EABI v7a architecture",
-      "type": "string"
-    },
-    "universal": {
-      "description": "APK download link for universal architecture",
-      "type": "string"
-    },
-    "x86_64": {
-      "description": "APK download link for x86_64 architecture",
-      "type": "string"
-    }
-  },
-  "required": [
-    "arm64v8a",
-    "armeabiv7a",
-    "universal",
-    "x86_64"
   ],
   "type": "object"
 }

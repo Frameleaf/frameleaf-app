@@ -2,6 +2,80 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ConfigFileActivationResponseDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "epoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "sourceKind": {
+      "enum": [
+        "file"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "epoch",
+    "sourceKind"
+  ],
+  "type": "object"
+}
+```
+
+## ConfigFileReloadDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedEpoch": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "expectedEpoch"
+  ],
+  "type": "object"
+}
+```
+
+## ContributorCountResponseDto
+
+
+```json
+{
+  "properties": {
+    "assetCount": {
+      "description": "Number of assets contributed",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetCount",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
 ## CreateAlbumDto
 
 Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserCreateDto](models-02.md#albumusercreatedto).

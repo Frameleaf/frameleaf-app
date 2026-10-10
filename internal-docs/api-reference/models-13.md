@@ -1816,7 +1816,10 @@ Related models: [ICloudEditPublicationChannel](models-13.md#icloudeditpublicatio
                   "type": "string"
                 },
                 "suggestedAdministrativeLabel": {
-                  "const": "administrative-original",
+                  "enum": [
+                    "administrative-original",
+                    null
+                  ],
                   "nullable": true,
                   "type": "string"
                 }
@@ -2035,8 +2038,10 @@ Related models: [ICloudEditPublicationChannel](models-13.md#icloudeditpublicatio
       "type": "boolean"
     },
     "executionAvailable": {
-      "const": false,
       "description": "Foundation consent does not enable weekly execution or identity reuse",
+      "enum": [
+        false
+      ],
       "type": "boolean"
     },
     "includeProtected": {

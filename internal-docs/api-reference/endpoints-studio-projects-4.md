@@ -2,11 +2,408 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## restoreStudioProjectRevision
+
+`POST /api/studio/projects/{id}/restore`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L322).
+
+Restore a Studio project revision
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioProjectRestoreDto](models-34.md#studioprojectrestoredto), [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Post(':id/restore')
+@HttpCode(HttpStatus.CREATED)
+@Authenticated()
+@Endpoint({
+    summary: 'Restore a Studio project revision',
+    description:
+      'Appends a new revision with the content of an earlier one. History is never rewritten; the restore is itself a revision.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Appends a new revision with the content of an earlier one. History is never rewritten; the restore is itself a revision.",
+  "operationId": "restoreStudioProjectRevision",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/StudioProjectRestoreDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Restore a Studio project revision",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## enqueueStudioReverseConform
+
+`POST /api/studio/projects/{id}/reverse-conform`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L206).
+
+Queue a Studio clip source reversal
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioReverseConformEnqueueDto](models-34.md#studioreverseconformenqueuedto), [StudioReverseConformQueuedDto](models-34.md#studioreverseconformqueueddto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Post(':id/reverse-conform')
+@HttpCode(HttpStatus.CREATED)
+@Authenticated()
+@Endpoint({
+    summary: 'Queue a Studio clip source reversal',
+    description: 'Owner-only local source reversal bound to a stored revision and the requesting editor lease.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Owner-only local source reversal bound to a stored revision and the requesting editor lease.",
+  "operationId": "enqueueStudioReverseConform",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/StudioReverseConformEnqueueDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioReverseConformQueuedDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Queue a Studio clip source reversal",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## applyStudioReverseConform
+
+`POST /api/studio/projects/{id}/reverse-conform/apply`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L223).
+
+Apply a completed Studio clip source reversal
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioProjectSaveResponseDto](models-34.md#studioprojectsaveresponsedto), [StudioReverseConformApplyDto](models-34.md#studioreverseconformapplydto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Post(':id/reverse-conform/apply')
+@HttpCode(HttpStatus.OK)
+@Authenticated()
+@Endpoint({
+    summary: 'Apply a completed Studio clip source reversal',
+    description:
+      'Rechecks ownership, current source access, lease and the original revision before relinking the clip. Newer edits are never overwritten.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Rechecks ownership, current source access, lease and the original revision before relinking the clip. Newer edits are never overwritten.",
+  "operationId": "applyStudioReverseConform",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/StudioReverseConformApplyDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Apply a completed Studio clip source reversal",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## getStudioProjectHistory
+
+`GET /api/studio/projects/{id}/revisions`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L339).
+
+List Studio project history
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioProjectHistoryResponseDto](models-34.md#studioprojecthistoryresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Get(':id/revisions')
+@Authenticated()
+@Endpoint({
+    summary: 'List Studio project history',
+    description: 'Revisions newest first, without their documents.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Revisions newest first, without their documents.",
+  "operationId": "getStudioProjectHistory",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "skip",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "default": 0,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "take",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "minimum": 1,
+        "maximum": 200,
+        "default": 50,
+        "type": "integer"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioProjectHistoryResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List Studio project history",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
 ## saveStudioProjectRevision
 
 `POST /api/studio/projects/{id}/revisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L265).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L305).
 
 Save a Studio project revision
 
@@ -103,7 +500,7 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L314).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L354).
 
 Get a Studio project revision
 
@@ -198,13 +595,13 @@ Complete operation contract:
 
 `GET /api/studio/projects/{id}/revisions/{revision}/diff`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L328).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L368).
 
 Compare two Studio project revisions
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDiffDto](models-33.md#studioprojectdiffdto).
+Models: [StudioProjectDiffDto](models-34.md#studioprojectdiffdto).
 
 Controller access declarations:
 
@@ -301,17 +698,210 @@ Complete operation contract:
 }
 ```
 
+## createStudioTranscription
+
+`POST /api/studio/projects/{id}/transcriptions`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L240).
+
+Transcribe a Studio clip
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioTranscriptionCreateDto](models-34.md#studiotranscriptioncreatedto), [StudioTranscriptionQueuedDto](models-34.md#studiotranscriptionqueueddto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Post(':id/transcriptions')
+@HttpCode(HttpStatus.CREATED)
+@Authenticated()
+@Endpoint({
+    summary: 'Transcribe a Studio clip',
+    description:
+      'Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.",
+  "operationId": "createStudioTranscription",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/StudioTranscriptionCreateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioTranscriptionQueuedDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Transcribe a Studio clip",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## getStudioTranscription
+
+`GET /api/studio/projects/{id}/transcriptions/{transcriptionId}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L257).
+
+Get a Studio clip transcription
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioTranscriptionDto](models-34.md#studiotranscriptiondto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio/projects')
+@Get(':id/transcriptions/:transcriptionId')
+@Authenticated()
+@Endpoint({
+    summary: 'Get a Studio clip transcription',
+    description:
+      'Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.",
+  "operationId": "getStudioTranscription",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "transcriptionId",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioTranscriptionDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get a Studio clip transcription",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
 ## restoreStudioProjectFromTrash
 
 `POST /api/studio/projects/{id}/trash/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-project.controller.ts#L160).
 
 Restore a Studio project from the trash
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioProjectDto](models-33.md#studioprojectdto).
+Models: [StudioProjectDto](models-34.md#studioprojectdto).
 
 Controller access declarations:
 
@@ -380,6 +970,81 @@ Complete operation contract:
     },
     {
       "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## getStudioResources
+
+`GET /api/studio/resources`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-catalog.controller.ts#L33).
+
+List the Studio resources this server may use
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [StudioResourceInventoryDto](models-34.md#studioresourceinventorydto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.StudioProjects)
+@Controller('studio')
+@Get('resources')
+@Authenticated()
+@Endpoint({
+    summary: 'List the Studio resources this server may use',
+    description:
+      'Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.",
+  "operationId": "getStudioResources",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StudioResourceInventoryDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List the Studio resources this server may use",
+  "tags": [
+    "Studio projects"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
       "state": "Alpha"
     }
   ],

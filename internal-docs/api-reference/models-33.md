@@ -2,6 +2,41 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## StudioBundleMissingSourceDto
+
+
+```json
+{
+  "properties": {
+    "embedded": {
+      "description": "The bundle carries a verified copy that was not added: library media, or a project file that failed its checks",
+      "type": "boolean"
+    },
+    "fileName": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "embedded",
+    "fileName",
+    "id",
+    "key",
+    "kind"
+  ],
+  "type": "object"
+}
+```
+
 ## StudioBundleOperationDto
 
 Related models: [MediaOperationKind](models-16.md#mediaoperationkind), [MediaOperationStatus](models-16.md#mediaoperationstatus), [StudioBundleExportResultDto](models-32.md#studiobundleexportresultdto), [StudioBundleImportResultDto](models-32.md#studiobundleimportresultdto).
@@ -1165,6 +1200,281 @@ Related models: [MediaOperationDestination](models-16.md#mediaoperationdestinati
 }
 ```
 
+## StudioFontCatalogDto
+
+Related models: [StudioFontFamilyDto](models-33.md#studiofontfamilydto).
+
+```json
+{
+  "properties": {
+    "families": {
+      "description": "The title font families bundled with this server",
+      "items": {
+        "$ref": "#/components/schemas/StudioFontFamilyDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "families"
+  ],
+  "type": "object"
+}
+```
+
+## StudioFontFamilyDto
+
+Related models: [StudioFontFileDto](models-33.md#studiofontfiledto).
+
+```json
+{
+  "properties": {
+    "copyright": {
+      "description": "The copyright line of the package's own licence file",
+      "type": "string"
+    },
+    "family": {
+      "description": "The family name a Studio graph writes in fontFamily",
+      "type": "string"
+    },
+    "files": {
+      "description": "Every bundled file of the family",
+      "items": {
+        "$ref": "#/components/schemas/StudioFontFileDto"
+      },
+      "type": "array"
+    },
+    "license": {
+      "description": "SPDX licence identifier, read from the package",
+      "type": "string"
+    },
+    "package": {
+      "description": "The package the files come from",
+      "type": "string"
+    },
+    "reservedFontName": {
+      "description": "The Reserved Font Name the licence declares, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "version": {
+      "description": "The exact package version bundled",
+      "type": "string"
+    }
+  },
+  "required": [
+    "copyright",
+    "family",
+    "files",
+    "license",
+    "package",
+    "reservedFontName",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## StudioFontFileDto
+
+Related models: [StudioFontFormat](models-33.md#studiofontformat), [StudioFontStyle](models-33.md#studiofontstyle).
+
+```json
+{
+  "properties": {
+    "decodedFrom": {
+      "description": "For a ttf file: the sha256 of the woff2 file it was decoded from; null for a woff2 file",
+      "nullable": true,
+      "type": "string"
+    },
+    "file": {
+      "description": "The file name, for display and diagnostics only",
+      "type": "string"
+    },
+    "format": {
+      "$ref": "#/components/schemas/StudioFontFormat"
+    },
+    "path": {
+      "description": "The API path that serves the bytes, relative to the API root",
+      "type": "string"
+    },
+    "sha256": {
+      "description": "SHA-256 of the file, lower-case hex; also its id in GET /studio/fonts/{sha256}",
+      "type": "string"
+    },
+    "size": {
+      "description": "Length in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "style": {
+      "$ref": "#/components/schemas/StudioFontStyle"
+    },
+    "subset": {
+      "description": "The Unicode subset the file covers: latin or latin-ext",
+      "type": "string"
+    },
+    "weight": {
+      "description": "CSS weight: 400 normal, 500 medium, 600 semibold, 700 bold",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "decodedFrom",
+    "file",
+    "format",
+    "path",
+    "sha256",
+    "size",
+    "style",
+    "subset",
+    "weight"
+  ],
+  "type": "object"
+}
+```
+
+## StudioFontFormat
+
+
+```json
+{
+  "description": "woff2: the file as its package ships it; ttf: the same font decompressed to sfnt, nothing else changed",
+  "enum": [
+    "woff2",
+    "ttf"
+  ],
+  "type": "string"
+}
+```
+
+## StudioFontStyle
+
+
+```json
+{
+  "enum": [
+    "normal",
+    "italic"
+  ],
+  "type": "string"
+}
+```
+
+## StudioMediaFactsDto
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSource](models-33.md#studiomediafactssource), [StudioRationalDto](models-34.md#studiorationaldto).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "audioCodec": {
+      "description": "The first audio track codec; its presence places a linked audio clip",
+      "nullable": true,
+      "type": "string"
+    },
+    "durationSeconds": {
+      "description": "Length in seconds; 0 for a still; null when unknown",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "fps": {
+      "description": "frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still",
+      "format": "double",
+      "type": "number"
+    },
+    "frameCount": {
+      "description": "Frames in the video stream when the container says; null otherwise",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "frameRate": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioRationalDto"
+        }
+      ],
+      "description": "The exact average frame rate of the video stream (30000/1001, not 29.97); null for a still or when unknown",
+      "nullable": true
+    },
+    "hasAudio": {
+      "description": "Whether the original has an audio track; null when it could not be read",
+      "nullable": true,
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Display height in pixels, after rotation; null when unknown",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "mimeType": {
+      "description": "The original file type",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/components/schemas/StudioMediaFactsSource"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    },
+    "videoCodec": {
+      "nullable": true,
+      "type": "string"
+    },
+    "width": {
+      "description": "Display width in pixels, after rotation; null when unknown",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "assetId",
+    "audioCodec",
+    "durationSeconds",
+    "fps",
+    "frameCount",
+    "frameRate",
+    "hasAudio",
+    "height",
+    "mimeType",
+    "source",
+    "type",
+    "videoCodec",
+    "width"
+  ],
+  "type": "object"
+}
+```
+
+## StudioMediaFactsSource
+
+
+```json
+{
+  "description": "probe: read from the original now; stored: the metadata extraction kept, when the original could not be read",
+  "enum": [
+    "probe",
+    "stored"
+  ],
+  "type": "string"
+}
+```
+
 ## StudioPreviewDto
 
 Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [StudioPreviewStatus](models-33.md#studiopreviewstatus), [StudioPreviewTimeDto](models-33.md#studiopreviewtimedto).
@@ -1732,7 +2042,7 @@ Related models: [StudioPreviewQuality](models-33.md#studiopreviewquality), [Stud
 
 ## StudioProjectCreateDto
 
-Related models: [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto).
+Related models: [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto).
 
 ```json
 {
@@ -1774,7 +2084,7 @@ Related models: [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto
 
 ## StudioProjectDetailDto
 
-Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto), [StudioProjectShelf](models-34.md#studioprojectshelf).
+Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto), [StudioProjectShelf](models-34.md#studioprojectshelf).
 
 ```json
 {
@@ -1914,307 +2224,6 @@ Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [Studio
     "thumbnailAssetId",
     "updatedAt",
     "withheld"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectDiffDto
-
-Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto).
-
-```json
-{
-  "properties": {
-    "added": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "byteDelta": {
-      "description": "Size change of the serialized graph",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "changed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "commands": {
-      "$ref": "#/components/schemas/StudioCommandSummaryDto",
-      "description": "Commands the saves between the two revisions reported"
-    },
-    "from": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "identical": {
-      "description": "The two envelopes have the same digest",
-      "type": "boolean"
-    },
-    "paths": {
-      "description": "Changed graph paths, aggregated and capped",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "removed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "to": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "truncated": {
-      "description": "More paths changed than are listed",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "added",
-    "byteDelta",
-    "changed",
-    "commands",
-    "from",
-    "identical",
-    "paths",
-    "removed",
-    "to",
-    "truncated"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectDto
-
-Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectShelf](models-34.md#studioprojectshelf).
-
-```json
-{
-  "properties": {
-    "access": {
-      "$ref": "#/components/schemas/StudioProjectAccess"
-    },
-    "archivedAt": {
-      "description": "When the owner archived it",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "deletedAt": {
-      "description": "When it was moved to the trash",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "duplicatedFromId": {
-      "description": "The project this one was duplicated from; null for a reviewer",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Studio project ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "importedFromBundle": {
-      "description": "The project was read in from a portable bundle; always false for a reviewer",
-      "type": "boolean"
-    },
-    "lastOpenedAt": {
-      "description": "When an editor last opened it; null for a reviewer",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "lease": {
-      "$ref": "#/components/schemas/StudioProjectLeaseDto"
-    },
-    "name": {
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "The only account that may write",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "purgeAfter": {
-      "description": "When a trashed project is deleted for good; its library media is never touched",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "revision": {
-      "description": "Head revision number; 0 until the first save",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "shelf": {
-      "$ref": "#/components/schemas/StudioProjectShelf"
-    },
-    "spaceId": {
-      "description": "Shared space whose members may review the project",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "thumbnailAssetId": {
-      "description": "Library asset the owner chose as the poster; null for a reviewer",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "access",
-    "archivedAt",
-    "createdAt",
-    "deletedAt",
-    "duplicatedFromId",
-    "id",
-    "importedFromBundle",
-    "lastOpenedAt",
-    "lease",
-    "name",
-    "ownerId",
-    "purgeAfter",
-    "revision",
-    "shelf",
-    "spaceId",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectDuplicateDto
-
-
-```json
-{
-  "properties": {
-    "name": {
-      "description": "Name of the copy; the client supplies the translated default",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## StudioProjectEnvelopeDto
-
-
-```json
-{
-  "properties": {
-    "engine": {
-      "description": "The engine that produced the graph; `freecut`",
-      "type": "string"
-    },
-    "engineRevision": {
-      "description": "Pinned engine revision the editor was built from",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "graph": {
-      "additionalProperties": {},
-      "description": "Opaque engine document, stored and returned byte for byte",
-      "type": "object"
-    },
-    "schemaVersion": {
-      "description": "Envelope shape version; the server accepts exactly one",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "engine",
-    "engineRevision",
-    "graph",
-    "schemaVersion"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectHistoryResponseDto
-
-Related models: [StudioProjectRevisionDto](models-34.md#studioprojectrevisiondto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "description": "Newest first",
-      "items": {
-        "$ref": "#/components/schemas/StudioProjectRevisionDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectImportCreateDto
-
-
-```json
-{
-  "properties": {
-    "file": {
-      "description": "The file to import",
-      "format": "binary",
-      "type": "string"
-    },
-    "id": {
-      "description": "The media id the editor gave this file; retrying the same file with it is idempotent",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "file",
-    "id"
   ],
   "type": "object"
 }

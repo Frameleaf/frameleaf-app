@@ -2,6 +2,123 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## BestPhotosResponseDto
+
+Related models: [BestPhotoAssetResponseDto](models-06.md#bestphotoassetresponsedto).
+
+```json
+{
+  "properties": {
+    "count": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/BestPhotoAssetResponseDto"
+      },
+      "type": "array"
+    },
+    "nextPage": {
+      "nullable": true,
+      "type": "string"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "count",
+    "items",
+    "nextPage",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## BirthdayMemoryDto
+
+
+```json
+{
+  "properties": {
+    "age": {
+      "description": "Age reached on this birthday",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "date": {
+      "description": "The birthday this year, 'yyyy-MM-dd'",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Discriminator for a birthday",
+      "enum": [
+        "birthday"
+      ],
+      "type": "string"
+    },
+    "name": {
+      "description": "Their name when the memory was made",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Whether the birthday is a person's or a pet's",
+      "enum": [
+        "person",
+        "pet"
+      ],
+      "type": "string"
+    },
+    "subjectId": {
+      "description": "The owner's person or pet whose birthday it is",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "year": {
+      "description": "Year of this birthday",
+      "maximum": 9999,
+      "minimum": 1000,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "age",
+    "date",
+    "kind",
+    "name",
+    "subject",
+    "subjectId",
+    "year"
+  ],
+  "type": "object"
+}
+```
+
+## BoolFilter
+
+
+```json
+{
+  "properties": {
+    "eq": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "eq"
+  ],
+  "type": "object"
+}
+```
+
 ## BuddyAcceptDto
 
 
@@ -2147,84 +2264,6 @@ Related models: [ClassificationScoredAssetDto](models-08.md#classificationscored
     "truncated",
     "visualSearchAvailable"
   ],
-  "type": "object"
-}
-```
-
-## ClassificationPreviewDto
-
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype).
-
-```json
-{
-  "properties": {
-    "mediaType": {
-      "$ref": "#/components/schemas/ClassificationMediaType",
-      "default": "any"
-    },
-    "personIds": {
-      "default": [],
-      "description": "Match any of these people",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50,
-      "type": "array"
-    },
-    "sampleSize": {
-      "default": 500,
-      "description": "How many of the newest items a visual preview reads",
-      "maximum": 2000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "tagIds": {
-      "default": [],
-      "description": "Match any of these tags, or a tag beneath one of them",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50,
-      "type": "array"
-    },
-    "takenAfter": {
-      "default": null,
-      "description": "Taken on or after this day (YYYY-MM-DD)",
-      "nullable": true,
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
-    },
-    "takenBefore": {
-      "default": null,
-      "description": "Taken on or before this day (YYYY-MM-DD)",
-      "nullable": true,
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
-    },
-    "threshold": {
-      "default": 0.25,
-      "description": "The confidence a visual phrase has to reach",
-      "format": "double",
-      "maximum": 1,
-      "minimum": 0,
-      "type": "number"
-    },
-    "visualQueries": {
-      "default": [],
-      "description": "Visual category phrases compared with each item",
-      "items": {
-        "maxLength": 120,
-        "minLength": 1,
-        "type": "string"
-      },
-      "maxItems": 10,
-      "type": "array"
-    }
-  },
   "type": "object"
 }
 ```

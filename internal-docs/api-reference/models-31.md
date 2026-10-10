@@ -2,9 +2,42 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ServerApkLinksDto
+
+
+```json
+{
+  "properties": {
+    "arm64v8a": {
+      "description": "APK download link for ARM64 v8a architecture",
+      "type": "string"
+    },
+    "armeabiv7a": {
+      "description": "APK download link for ARM EABI v7a architecture",
+      "type": "string"
+    },
+    "universal": {
+      "description": "APK download link for universal architecture",
+      "type": "string"
+    },
+    "x86_64": {
+      "description": "APK download link for x86_64 architecture",
+      "type": "string"
+    }
+  },
+  "required": [
+    "arm64v8a",
+    "armeabiv7a",
+    "universal",
+    "x86_64"
+  ],
+  "type": "object"
+}
+```
+
 ## ServerAppReleasesResponseDto
 
-Related models: [ServerApkLinksDto](models-30.md#serverapklinksdto).
+Related models: [ServerApkLinksDto](models-31.md#serverapklinksdto).
 
 ```json
 {
@@ -462,7 +495,7 @@ Related models: [FrameleafVia](models-12.md#frameleafvia).
 
 ## ServerStatsResponseDto
 
-Related models: [UsageByUserDto](models-37.md#usagebyuserdto).
+Related models: [UsageByUserDto](models-38.md#usagebyuserdto).
 
 ```json
 {
@@ -1884,6 +1917,16 @@ Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](m
       "$ref": "#/components/schemas/UserResponseDto",
       "description": "Who owns the shared space"
     },
+    "previewAssetIds": {
+      "description": "Up to 12 items the recipient may see in the preview, newest first. Media marked sensitive, hidden media and Locked media are never included. Fetch each picture with GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail; no other asset endpoint opens to an invitation.",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+    },
     "role": {
       "$ref": "#/components/schemas/AlbumUserRole",
       "description": "The role the recipient gets on accept"
@@ -1905,6 +1948,7 @@ Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](m
     "invitedBy",
     "memberCount",
     "owner",
+    "previewAssetIds",
     "role"
   ],
   "type": "object"
@@ -2010,30 +2054,6 @@ Related models: [SmartAlbumBuiltInKind](models-31.md#smartalbumbuiltinkind).
       "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind."
     }
   },
-  "type": "object"
-}
-```
-
-## SmartAlbumReevaluateResponseDto
-
-
-```json
-{
-  "properties": {
-    "queued": {
-      "description": "Whether the re-evaluate job was newly enqueued (false = already in-flight)",
-      "type": "boolean"
-    },
-    "runId": {
-      "description": "Canonical run accepted by this request; absent when no local work was accepted",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "queued"
-  ],
   "type": "object"
 }
 ```

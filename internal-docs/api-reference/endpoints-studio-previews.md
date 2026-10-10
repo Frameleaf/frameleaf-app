@@ -447,7 +447,7 @@ Complete operation contract:
 
 `POST /api/studio/previews`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L42).
 
 Request a Studio preview frame
 
@@ -533,7 +533,7 @@ Complete operation contract:
 
 `DELETE /api/studio/previews/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L118).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L104).
 
 Cancel a Studio preview
 
@@ -651,7 +651,7 @@ Complete operation contract:
 
 `GET /api/studio/previews/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L55).
 
 Get a Studio preview
 
@@ -746,7 +746,7 @@ Complete operation contract:
 
 `GET /api/studio/previews/{id}/frame`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L70).
 
 View a Studio preview frame
 

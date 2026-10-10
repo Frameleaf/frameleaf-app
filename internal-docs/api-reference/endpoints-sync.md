@@ -12,7 +12,7 @@ Delete acknowledgements
 
 Permission: `syncCheckpoint.delete`. Admin only: `false`.
 
-Models: [SyncAckDeleteDto](models-34.md#syncackdeletedto).
+Models: [SyncAckDeleteDto](models-35.md#syncackdeletedto).
 
 Controller access declarations:
 
@@ -95,7 +95,7 @@ Retrieve acknowledgements
 
 Permission: `syncCheckpoint.read`. Admin only: `false`.
 
-Models: [SyncAckDto](models-34.md#syncackdto).
+Models: [SyncAckDto](models-35.md#syncackdto).
 
 Controller access declarations:
 
@@ -178,7 +178,7 @@ Acknowledge changes
 
 Permission: `syncCheckpoint.update`. Admin only: `false`.
 
-Models: [SyncAckSetDto](models-34.md#syncacksetdto).
+Models: [SyncAckSetDto](models-35.md#syncacksetdto).
 
 Controller access declarations:
 
@@ -262,7 +262,7 @@ Retrieve all acknowledgements
 
 Permission: `syncCheckpoint.read`. Admin only: `false`.
 
-Models: [SyncAckV2Dto](models-34.md#syncackv2dto).
+Models: [SyncAckV2Dto](models-35.md#syncackv2dto).
 
 Controller access declarations:
 

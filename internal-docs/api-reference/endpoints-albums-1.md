@@ -1870,7 +1870,7 @@ Preview a classification rule
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [ClassificationPreviewDto](models-07.md#classificationpreviewdto), [ClassificationPreviewResponseDto](models-08.md#classificationpreviewresponsedto).
+Models: [ClassificationPreviewDto](models-08.md#classificationpreviewdto), [ClassificationPreviewResponseDto](models-08.md#classificationpreviewresponsedto).
 
 Controller access declarations:
 

@@ -890,6 +890,290 @@ Complete operation contract:
 }
 ```
 
+## getAssetFilmstrip
+
+`GET /api/assets/{id}/filmstrip`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-media.controller.ts#L32).
+
+Get video filmstrip
+
+Permission: `asset.view`. Admin only: `false`.
+
+Models: [AssetFilmstripFormat](models-05.md#assetfilmstripformat), [AssetFilmstripResponseDto](models-05.md#assetfilmstripresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('assets')
+@Get(':id/filmstrip')
+@Authenticated({ permission: Permission.AssetView, sharedLink: true })
+@Endpoint({
+    summary: 'Get video filmstrip',
+    description:
+      'The index of a filmstrip sprite sheet for a Studio timeline: `count` frames sampled at the centre of equal slices of the video, each `height` pixels high, laid out left to right and top to bottom. Returns each frame timestamp and its position in the sprite; fetch the image from `/assets/{id}/filmstrip/sprite` with the same parameters and `version`. Made on first request from the playback rendition, cached, and remade when the video changes. 404 for anything that is not a video.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "The index of a filmstrip sprite sheet for a Studio timeline: `count` frames sampled at the centre of equal slices of the video, each `height` pixels high, laid out left to right and top to bottom. Returns each frame timestamp and its position in the sprite; fetch the image from `/assets/{id}/filmstrip/sprite` with the same parameters and `version`. Made on first request from the playback rendition, cached, and remade when the video changes. 404 for anything that is not a video.",
+  "operationId": "getAssetFilmstrip",
+  "parameters": [
+    {
+      "name": "count",
+      "required": false,
+      "in": "query",
+      "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+      "schema": {
+        "minimum": 1,
+        "maximum": 120,
+        "default": 20,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "format",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "default": "jpeg",
+        "$ref": "#/components/schemas/AssetFilmstripFormat"
+      }
+    },
+    {
+      "name": "height",
+      "required": false,
+      "in": "query",
+      "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+      "schema": {
+        "minimum": 32,
+        "maximum": 240,
+        "default": 90,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "key",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    },
+    {
+      "name": "slug",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetFilmstripResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get video filmstrip",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.view",
+  "x-immich-state": "Alpha"
+}
+```
+
+## viewAssetFilmstripSprite
+
+`GET /api/assets/{id}/filmstrip/sprite`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-media.controller.ts#L48).
+
+View video filmstrip sprite
+
+Permission: `asset.view`. Admin only: `false`.
+
+Models: [AssetFilmstripFormat](models-05.md#assetfilmstripformat).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('assets')
+@Get(':id/filmstrip/sprite')
+@FileResponse()
+@Authenticated({ permission: Permission.AssetView, sharedLink: true })
+@Endpoint({
+    summary: 'View video filmstrip sprite',
+    description:
+      'The filmstrip sprite sheet (JPEG or WebP) the filmstrip index describes, for the same `count`, `height` and `format`. With `version`, 404 when the video changed since that index was read.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "The filmstrip sprite sheet (JPEG or WebP) the filmstrip index describes, for the same `count`, `height` and `format`. With `version`, 404 when the video changed since that index was read.",
+  "operationId": "viewAssetFilmstripSprite",
+  "parameters": [
+    {
+      "name": "count",
+      "required": false,
+      "in": "query",
+      "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+      "schema": {
+        "minimum": 1,
+        "maximum": 120,
+        "default": 20,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "format",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "default": "jpeg",
+        "$ref": "#/components/schemas/AssetFilmstripFormat"
+      }
+    },
+    {
+      "name": "height",
+      "required": false,
+      "in": "query",
+      "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+      "schema": {
+        "minimum": 32,
+        "maximum": 240,
+        "default": 90,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "key",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    },
+    {
+      "name": "slug",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    },
+    {
+      "name": "version",
+      "required": false,
+      "in": "query",
+      "description": "The `version` from the filmstrip index. When given and the video changed since, 404 is returned",
+      "schema": {
+        "pattern": "^[0-9a-f]{16}$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "View video filmstrip sprite",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.view",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## getAssetImageEnrichment
 
 `GET /api/assets/{id}/image-enrichment`
@@ -1752,308 +2036,6 @@ Complete operation contract:
     }
   ],
   "summary": "List restorations of an asset",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.get",
-  "x-immich-state": "Alpha"
-}
-```
-
-## requestAssetRestoration
-
-`POST /api/assets/{id}/restorations`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L81).
-
-Request a restoration preview
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [AssetRestorationRequestDto](models-06.md#assetrestorationrequestdto), [AssetRestorationResponseDto](models-06.md#assetrestorationresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Post(':id/restorations')
-@HttpCode(HttpStatus.CREATED)
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Request a restoration preview',
-    description:
-      'Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.",
-  "operationId": "requestAssetRestoration",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/AssetRestorationRequestDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "201": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetRestorationResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Request a restoration preview",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Alpha"
-}
-```
-
-## setCurrentAssetRestoration
-
-`PUT /api/assets/{id}/restorations/current`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L98).
-
-Choose the restoration used for playback
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [AssetRestorationListResponseDto](models-06.md#assetrestorationlistresponsedto), [AssetRestorationSelectDto](models-06.md#assetrestorationselectdto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Put(':id/restorations/current')
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Choose the restoration used for playback',
-    description:
-      'Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.",
-  "operationId": "setCurrentAssetRestoration",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/AssetRestorationSelectDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetRestorationListResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Choose the restoration used for playback",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
-  "x-immich-state": "Alpha"
-}
-```
-
-## getAssetRestorationOptions
-
-`GET /api/assets/{id}/restorations/options`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L65).
-
-Get restoration options for an asset
-
-Permission: `asset.edit.get`. Admin only: `false`.
-
-Models: [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationOptionsDto](models-06.md#assetrestorationoptionsdto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Get(':id/restorations/options')
-@Authenticated({ permission: Permission.AssetEditGet })
-@Endpoint({
-    summary: 'Get restoration options for an asset',
-    description:
-      'The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.",
-  "operationId": "getAssetRestorationOptions",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "mode",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "default": "faithful",
-        "$ref": "#/components/schemas/AssetRestorationMode"
-      }
-    },
-    {
-      "name": "upscale",
-      "required": false,
-      "in": "query",
-      "schema": {
-        "minimum": -9007199254740991,
-        "maximum": 9007199254740991,
-        "default": 2,
-        "type": "integer"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetRestorationOptionsDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Get restoration options for an asset",
   "tags": [
     "Assets"
   ],

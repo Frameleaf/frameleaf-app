@@ -2,6 +2,487 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## listTakeoutImports
+
+`GET /api/takeout`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L58).
+
+List Google Photos imports
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Get()
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({ summary: 'List Google Photos imports', history: history() })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "listTakeoutImports",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutResponseDto"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List Google Photos imports",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## createTakeoutImport
+
+`POST /api/takeout`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L65).
+
+Start a Google Photos import
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutCreateDto](models-37.md#takeoutcreatedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Post()
+@HttpCode(HttpStatus.CREATED)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({
+    summary: 'Start a Google Photos import',
+    description:
+      'Creates an import to stage Takeout archives into. Administrators may instead name a folder inside one of the permitted import locations.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Creates an import to stage Takeout archives into. Administrators may instead name a folder inside one of the permitted import locations.",
+  "operationId": "createTakeoutImport",
+  "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/TakeoutCreateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TakeoutResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Start a Google Photos import",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## getTakeoutRoots
+
+`GET /api/takeout/roots`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L78).
+
+List the permitted import locations
+
+Permission: `See authentication declaration`. Admin only: `true`.
+
+Models: [TakeoutRootsResponseDto](models-37.md#takeoutrootsresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Get('roots')
+@Authenticated({ admin: true })
+@Endpoint({ summary: 'List the permitted import locations', history: history() })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "getTakeoutRoots",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TakeoutRootsResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List the permitted import locations",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
+
+## deleteTakeoutImport
+
+`DELETE /api/takeout/{id}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L92).
+
+Delete a Google Photos import
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Delete(':id')
+@HttpCode(HttpStatus.NO_CONTENT)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({
+    summary: 'Delete a Google Photos import',
+    description: 'Removes the import and its staged copies. Everything it brought into the library stays there.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Removes the import and its staged copies. Everything it brought into the library stays there.",
+  "operationId": "deleteTakeoutImport",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "204": {
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Delete a Google Photos import",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## getTakeoutImport
+
+`GET /api/takeout/{id}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L85).
+
+Get a Google Photos import
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Get(':id')
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({ summary: 'Get a Google Photos import', history: history() })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "getTakeoutImport",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TakeoutResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get a Google Photos import",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
+## createTakeoutArchive
+
+`POST /api/takeout/{id}/archives`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L104).
+
+Stage a Takeout archive
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [TakeoutArchiveCreateDto](models-37.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('takeout')
+@Post(':id/archives')
+@HttpCode(HttpStatus.CREATED)
+@Authenticated({ permission: Permission.AssetUpload })
+@Endpoint({ summary: 'Stage a Takeout archive', history: history() })
+```
+
+Complete operation contract:
+
+```json
+{
+  "operationId": "createTakeoutArchive",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/TakeoutArchiveCreateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TakeoutSourceResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Stage a Takeout archive",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.0.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.0.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## deleteTakeoutArchive
 
 `DELETE /api/takeout/{id}/archives/{archiveId}`
@@ -315,7 +796,7 @@ Pause, resume or cancel a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutControlDto](models-36.md#takeoutcontroldto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutControlDto](models-37.md#takeoutcontroldto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -407,7 +888,7 @@ Import the reviewed items
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutOptionsDto](models-36.md#takeoutoptionsdto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutOptionsDto](models-37.md#takeoutoptionsdto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -505,7 +986,7 @@ List the items of a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutItemState](models-36.md#takeoutitemstate), [TakeoutItemsResponseDto](models-36.md#takeoutitemsresponsedto).
+Models: [TakeoutItemState](models-37.md#takeoutitemstate), [TakeoutItemsResponseDto](models-37.md#takeoutitemsresponsedto).
 
 Controller access declarations:
 
@@ -618,7 +1099,7 @@ Choose metadata for an item, or leave it out
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutResolveDto](models-36.md#takeoutresolvedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
+Models: [TakeoutResolveDto](models-37.md#takeoutresolvedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
 
 Controller access declarations:
 
@@ -719,7 +1200,7 @@ List possible Live Photos in a Google Photos import
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutPairState](models-36.md#takeoutpairstate), [TakeoutPairsResponseDto](models-36.md#takeoutpairsresponsedto).
+Models: [TakeoutPairState](models-37.md#takeoutpairstate), [TakeoutPairsResponseDto](models-37.md#takeoutpairsresponsedto).
 
 Controller access declarations:
 
@@ -832,7 +1313,7 @@ Link or separate a possible Live Photo
 
 Permission: `asset.upload`. Admin only: `false`.
 
-Models: [TakeoutPairDecisionDto](models-36.md#takeoutpairdecisiondto), [TakeoutPairsResponseDto](models-36.md#takeoutpairsresponsedto).
+Models: [TakeoutPairDecisionDto](models-37.md#takeoutpairdecisiondto), [TakeoutPairsResponseDto](models-37.md#takeoutpairsresponsedto).
 
 Controller access declarations:
 

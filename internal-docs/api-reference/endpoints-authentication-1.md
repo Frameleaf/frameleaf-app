@@ -12,7 +12,7 @@ Register admin
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [SignUpDto](models-31.md#signupdto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [SignUpDto](models-31.md#signupdto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -90,7 +90,7 @@ Change password
 
 Permission: `auth.changePassword`. Admin only: `false`.
 
-Models: [ChangePasswordDto](models-07.md#changepassworddto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [ChangePasswordDto](models-07.md#changepassworddto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -332,7 +332,7 @@ Complete operation contract:
 
 `DELETE /api/auth/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L154).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L155).
 
 Reset pin code
 
@@ -346,6 +346,7 @@ Controller access declarations:
 @ApiTags(ApiTag.Authentication)
 @Controller('auth')
 @Delete('pin-code')
+@RateLimited(RATE_LIMITS.login)
 @Authenticated({ permission: Permission.PinCodeDelete })
 @HttpCode(HttpStatus.NO_CONTENT)
 @Endpoint({
@@ -512,6 +513,7 @@ Controller access declarations:
 @ApiTags(ApiTag.Authentication)
 @Controller('auth')
 @Put('pin-code')
+@RateLimited(RATE_LIMITS.login)
 @Authenticated({ permission: Permission.PinCodeUpdate })
 @HttpCode(HttpStatus.NO_CONTENT)
 @Endpoint({
@@ -581,7 +583,7 @@ Complete operation contract:
 
 `POST /api/auth/session/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L180).
 
 Lock auth session
 
@@ -651,7 +653,7 @@ Complete operation contract:
 
 `POST /api/auth/session/unlock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L168).
 
 Unlock auth session
 

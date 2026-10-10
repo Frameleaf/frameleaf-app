@@ -91,7 +91,7 @@ Get APK links
 
 Permission: `server.apkLinks`. Admin only: `false`.
 
-Models: [ServerApkLinksDto](models-30.md#serverapklinksdto).
+Models: [ServerApkLinksDto](models-31.md#serverapklinksdto).
 
 Controller access declarations:
 
@@ -845,7 +845,7 @@ Warm the authenticated device catalog during setup
 
 Permission: `sync.stream`. Admin only: `false`.
 
-Models: [WarmLibrarySetupDto](models-38.md#warmlibrarysetupdto).
+Models: [WarmLibrarySetupDto](models-39.md#warmlibrarysetupdto).
 
 Controller access declarations:
 
@@ -1052,7 +1052,7 @@ Set up a new server with a password administrator
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafSetupAdminDto](models-12.md#frameleafsetupadmindto), [FrameleafSetupErrorDto](models-12.md#frameleafsetuperrordto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [FrameleafSetupAdminDto](models-12.md#frameleafsetupadmindto), [FrameleafSetupErrorDto](models-12.md#frameleafsetuperrordto), [UserAdminResponseDto](models-38.md#useradminresponsedto).
 
 Controller access declarations:
 

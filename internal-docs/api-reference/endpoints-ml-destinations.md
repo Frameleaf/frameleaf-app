@@ -12,7 +12,7 @@ Get the worker inventory
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [WorkerInventoryResponseDto](models-38.md#workerinventoryresponsedto).
+Models: [WorkerInventoryResponseDto](models-39.md#workerinventoryresponsedto).
 
 Controller access declarations:
 

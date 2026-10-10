@@ -2,6 +2,811 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## SuppressionUpdate
+
+Related models: [SuppressionScope](models-34.md#suppressionscope).
+
+```json
+{
+  "properties": {
+    "personIds": {
+      "description": "Person IDs to suppress from locked browsing sessions",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "petIds": {
+      "description": "Pet IDs to suppress from locked browsing sessions",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "scope": {
+      "$ref": "#/components/schemas/SuppressionScope",
+      "description": "Whether suppression applies only to owned assets or all visible assets"
+    },
+    "tagIds": {
+      "description": "Tag IDs to suppress from locked browsing sessions",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
+## SyncAckDeleteDto
+
+Related models: [SyncEntityType](models-36.md#syncentitytype).
+
+```json
+{
+  "properties": {
+    "types": {
+      "description": "Sync entity types to delete acks for",
+      "items": {
+        "$ref": "#/components/schemas/SyncEntityType"
+      },
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
+## SyncAckDto
+
+
+```json
+{
+  "properties": {
+    "ack": {
+      "description": "Acknowledgment ID",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "AlbumAssetAccessV1",
+        "AlbumAssetAccessDeleteV1",
+        "PartnerAssetAccessV1",
+        "PartnerAssetAccessDeleteV1",
+        "PinnedCollectionV1",
+        "PinnedCollectionDeleteV1",
+        "AssetTrashStateV1",
+        "AssetTrashStateDeleteV1",
+        "DuplicateGroupV1",
+        "DuplicateGroupDeleteV1",
+        "SharedSpaceV1",
+        "SharedSpaceDeleteV1",
+        "SharedSpaceMemberV1",
+        "SharedSpaceMemberDeleteV1",
+        "SharedSpaceAlbumV1",
+        "SharedSpaceAlbumDeleteV1",
+        "SharedSpacePersonV1",
+        "SharedSpacePersonDeleteV1",
+        "PetV1",
+        "PetDeleteV1",
+        "PetObservationV1",
+        "PetObservationDeleteV1",
+        "TagV1",
+        "TagDeleteV1",
+        "AssetTagV1",
+        "AssetTagDeleteV1",
+        "AuthUserV1",
+        "AuthUserV2",
+        "UserV1",
+        "UserDeleteV1",
+        "AssetV1",
+        "AssetV2",
+        "AssetV3",
+        "AssetBootstrapV1",
+        "AssetDeleteV2",
+        "AssetDeleteV1",
+        "AssetExifV1",
+        "AssetEditV1",
+        "AssetEditDeleteV1",
+        "AssetMetadataV1",
+        "AssetMetadataDeleteV1",
+        "AssetOcrV1",
+        "AssetOcrDeleteV1",
+        "PartnerV1",
+        "PartnerDeleteV1",
+        "PartnerAssetV1",
+        "PartnerAssetV2",
+        "PartnerAssetBackfillV1",
+        "PartnerAssetBackfillV2",
+        "PartnerAssetDeleteV1",
+        "PartnerAssetExifV1",
+        "PartnerAssetExifBackfillV1",
+        "PartnerStackBackfillV1",
+        "PartnerStackDeleteV1",
+        "PartnerStackV1",
+        "AlbumV1",
+        "AlbumV2",
+        "AlbumV3",
+        "AlbumBootstrapV1",
+        "AlbumDeleteV2",
+        "AlbumDeleteV1",
+        "AlbumUserV1",
+        "AlbumUserBackfillV1",
+        "AlbumUserDeleteV1",
+        "AlbumAssetCreateV1",
+        "AlbumAssetCreateV2",
+        "AlbumAssetUpdateV1",
+        "AlbumAssetUpdateV2",
+        "AlbumAssetBackfillV1",
+        "AlbumAssetBackfillV2",
+        "AlbumAssetExifCreateV1",
+        "AlbumAssetExifUpdateV1",
+        "AlbumAssetExifBackfillV1",
+        "AlbumToAssetV1",
+        "AlbumToAssetDeleteV1",
+        "AlbumToAssetBackfillV1",
+        "MemoryV1",
+        "MemoryDeleteV1",
+        "MemoryToAssetV1",
+        "MemoryToAssetDeleteV1",
+        "StackV1",
+        "StackDeleteV1",
+        "PersonV1",
+        "PersonDeleteV1",
+        "AssetFaceV1",
+        "AssetFaceV2",
+        "AssetFaceV3",
+        "AssetFaceDeleteV1",
+        "UserMetadataV1",
+        "PinnedCollectionsV1",
+        "UserMetadataDeleteV1",
+        "SyncAckV1",
+        "SyncResetV1",
+        "SyncCompleteV1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "ack",
+    "type"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAckSetDto
+
+
+```json
+{
+  "properties": {
+    "acks": {
+      "description": "Acknowledgment IDs (max 1000)",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    }
+  },
+  "required": [
+    "acks"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAckV1
+
+
+```json
+{
+  "properties": {},
+  "type": "object"
+}
+```
+
+## SyncAckV2Dto
+
+Related models: [SyncEntityType](models-36.md#syncentitytype).
+
+```json
+{
+  "properties": {
+    "ack": {
+      "description": "Acknowledgment ID",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/SyncEntityType"
+    }
+  },
+  "required": [
+    "ack",
+    "type"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumAssetAccessDeleteV1
+
+
+```json
+{
+  "description": "Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.",
+  "properties": {
+    "albumId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumAssetAccessV1
+
+Related models: [SyncAssetV2](models-35.md#syncassetv2).
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "asset": {
+      "$ref": "#/components/schemas/SyncAssetV2"
+    }
+  },
+  "required": [
+    "albumId",
+    "asset"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumDeleteV1
+
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumSourceLinkDeleteV1
+
+
+```json
+{
+  "properties": {
+    "linkId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "linkId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumSourceLinkV1
+
+Related models: [AlbumSourceKind](models-02.md#albumsourcekind).
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "The server album the source is linked to",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "When the link was made",
+      "format": "date-time",
+      "type": "string"
+    },
+    "deviceKey": {
+      "description": "The device the source id belongs to, when it is device-local",
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Link ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/AlbumSourceKind"
+    },
+    "lastSourceName": {
+      "description": "The phone name the server album last followed (the rename guard)",
+      "type": "string"
+    },
+    "sourceId": {
+      "description": "The source on the phone",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "When the link last changed",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "createdAt",
+    "deviceKey",
+    "id",
+    "kind",
+    "lastSourceName",
+    "sourceId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumToAssetDeleteV1
+
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumToAssetV1
+
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumUserDeleteV1
+
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumUserV1
+
+Related models: [AlbumUserRole](models-02.md#albumuserrole).
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/components/schemas/AlbumUserRole"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "albumId",
+    "role",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumV1
+
+Related models: [AssetOrder](models-06.md#assetorder).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "description": {
+      "description": "Album description",
+      "type": "string"
+    },
+    "id": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isActivityEnabled": {
+      "description": "Is activity enabled",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Album name",
+      "type": "string"
+    },
+    "order": {
+      "$ref": "#/components/schemas/AssetOrder"
+    },
+    "ownerId": {
+      "description": "Owner ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "thumbnailAssetId": {
+      "description": "Thumbnail asset ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "description",
+    "id",
+    "isActivityEnabled",
+    "name",
+    "order",
+    "ownerId",
+    "thumbnailAssetId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumV2
+
+Related models: [AssetOrder](models-06.md#assetorder).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "description": {
+      "description": "Album description",
+      "type": "string"
+    },
+    "id": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isActivityEnabled": {
+      "description": "Is activity enabled",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Album name",
+      "type": "string"
+    },
+    "order": {
+      "$ref": "#/components/schemas/AssetOrder"
+    },
+    "thumbnailAssetId": {
+      "description": "Thumbnail asset ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "description",
+    "id",
+    "isActivityEnabled",
+    "name",
+    "order",
+    "thumbnailAssetId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAlbumV3
+
+Related models: [AlbumKind](models-02.md#albumkind), [AssetOrder](models-06.md#assetorder).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "deletedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "description": {
+      "description": "Album description",
+      "type": "string"
+    },
+    "icon": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Album ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isActivityEnabled": {
+      "description": "Is activity enabled",
+      "type": "boolean"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/AlbumKind"
+    },
+    "name": {
+      "description": "Album name",
+      "type": "string"
+    },
+    "order": {
+      "$ref": "#/components/schemas/AssetOrder"
+    },
+    "parentId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "sortOrder": {
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "thumbnailAssetId": {
+      "description": "Thumbnail asset ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "deletedAt",
+    "description",
+    "icon",
+    "id",
+    "isActivityEnabled",
+    "kind",
+    "name",
+    "order",
+    "parentId",
+    "sortOrder",
+    "thumbnailAssetId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAssetDeleteV1
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAssetEditDeleteV1
+
+
+```json
+{
+  "properties": {
+    "editId": {
+      "description": "Edit ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "editId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncAssetEditV1
+
+
+```json
+{
+  "properties": {
+    "action": {
+      "description": "Edit action; future values pass through unchanged",
+      "type": "string"
+    },
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Edit ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "parameters": {
+      "additionalProperties": {},
+      "description": "Edit parameters",
+      "type": "object"
+    },
+    "sequence": {
+      "description": "Edit sequence",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "action",
+    "assetId",
+    "id",
+    "parameters",
+    "sequence"
+  ],
+  "type": "object"
+}
+```
+
 ## SyncAssetExifV1
 
 Related models: [ImageEncodingInfo](models-14.md#imageencodinginfo).
@@ -975,7 +1780,7 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](m
 
 ## SyncAuthUserV1
 
-Related models: [UserAvatarColor](models-37.md#useravatarcolor).
+Related models: [UserAvatarColor](models-38.md#useravatarcolor).
 
 ```json
 {
@@ -1068,725 +1873,5 @@ Related models: [UserAvatarColor](models-37.md#useravatarcolor).
     "storageLabel"
   ],
   "type": "object"
-}
-```
-
-## SyncAuthUserV2
-
-Related models: [UserAvatarColor](models-37.md#useravatarcolor).
-
-```json
-{
-  "properties": {
-    "avatarColor": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/UserAvatarColor"
-        }
-      ],
-      "nullable": true
-    },
-    "deletedAt": {
-      "description": "User deleted at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "email": {
-      "description": "User email",
-      "type": "string"
-    },
-    "hasProfileImage": {
-      "description": "User has profile image",
-      "type": "boolean"
-    },
-    "id": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isAdmin": {
-      "description": "User is admin",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "User name",
-      "type": "string"
-    },
-    "oauthId": {
-      "description": "User OAuth ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "pinCode": {
-      "description": "User pin code",
-      "nullable": true,
-      "type": "string"
-    },
-    "profileChangedAt": {
-      "description": "User profile changed at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "quotaSizeInBytes": {
-      "description": "Quota size in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "quotaUsageInBytes": {
-      "description": "Quota usage in bytes",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "storageLabel": {
-      "description": "User storage label",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "deletedAt",
-    "email",
-    "hasProfileImage",
-    "id",
-    "isAdmin",
-    "name",
-    "oauthId",
-    "pinCode",
-    "profileChangedAt",
-    "quotaSizeInBytes",
-    "quotaUsageInBytes",
-    "storageLabel"
-  ],
-  "type": "object"
-}
-```
-
-## SyncCompleteV1
-
-
-```json
-{
-  "properties": {},
-  "type": "object"
-}
-```
-
-## SyncDuplicateGroupDeleteV1
-
-
-```json
-{
-  "properties": {
-    "groupId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "groupId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncDuplicateGroupV1
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      },
-      "minItems": 2,
-      "type": "array"
-    },
-    "groupId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetIds",
-    "groupId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncEntityType
-
-
-```json
-{
-  "description": "Sync entity type",
-  "enum": [
-    "AlbumAssetAccessV1",
-    "AlbumAssetAccessDeleteV1",
-    "PartnerAssetAccessV1",
-    "PartnerAssetAccessDeleteV1",
-    "PinnedCollectionV1",
-    "PinnedCollectionDeleteV1",
-    "AssetTrashStateV1",
-    "AssetTrashStateDeleteV1",
-    "DuplicateGroupV1",
-    "DuplicateGroupDeleteV1",
-    "SharedSpaceV1",
-    "SharedSpaceDeleteV1",
-    "SharedSpaceMemberV1",
-    "SharedSpaceMemberDeleteV1",
-    "SharedSpaceAlbumV1",
-    "SharedSpaceAlbumDeleteV1",
-    "SharedSpacePersonV1",
-    "SharedSpacePersonDeleteV1",
-    "PetV1",
-    "PetDeleteV1",
-    "AlbumSourceLinkV1",
-    "AlbumSourceLinkDeleteV1",
-    "PetObservationV1",
-    "PetObservationDeleteV1",
-    "TagV1",
-    "TagDeleteV1",
-    "AssetTagV1",
-    "AssetTagDeleteV1",
-    "AuthUserV1",
-    "AuthUserV2",
-    "UserV1",
-    "UserDeleteV1",
-    "AssetV1",
-    "AssetV2",
-    "AssetV3",
-    "AssetBootstrapV1",
-    "AssetDeleteV2",
-    "AssetDeleteV1",
-    "AssetExifV1",
-    "AssetEditV1",
-    "AssetEditDeleteV1",
-    "AssetMetadataV1",
-    "AssetMetadataDeleteV1",
-    "AssetOcrV1",
-    "AssetOcrDeleteV1",
-    "PartnerV1",
-    "PartnerDeleteV1",
-    "PartnerAssetV1",
-    "PartnerAssetV2",
-    "PartnerAssetBackfillV1",
-    "PartnerAssetBackfillV2",
-    "PartnerAssetDeleteV1",
-    "PartnerAssetExifV1",
-    "PartnerAssetExifBackfillV1",
-    "PartnerStackBackfillV1",
-    "PartnerStackDeleteV1",
-    "PartnerStackV1",
-    "AlbumV1",
-    "AlbumV2",
-    "AlbumV3",
-    "AlbumBootstrapV1",
-    "AlbumDeleteV2",
-    "AlbumDeleteV1",
-    "AlbumUserV1",
-    "AlbumUserBackfillV1",
-    "AlbumUserDeleteV1",
-    "AlbumAssetCreateV1",
-    "AlbumAssetCreateV2",
-    "AlbumAssetUpdateV1",
-    "AlbumAssetUpdateV2",
-    "AlbumAssetBackfillV1",
-    "AlbumAssetBackfillV2",
-    "AlbumAssetExifCreateV1",
-    "AlbumAssetExifUpdateV1",
-    "AlbumAssetExifBackfillV1",
-    "AlbumToAssetV1",
-    "AlbumToAssetDeleteV1",
-    "AlbumToAssetBackfillV1",
-    "MemoryV1",
-    "MemoryDeleteV1",
-    "MemoryToAssetV1",
-    "MemoryToAssetDeleteV1",
-    "StackV1",
-    "StackDeleteV1",
-    "PersonV1",
-    "PersonDeleteV1",
-    "AssetFaceV1",
-    "AssetFaceV2",
-    "AssetFaceV3",
-    "AssetFaceDeleteV1",
-    "UserMetadataV1",
-    "PinnedCollectionsV1",
-    "UserMetadataDeleteV1",
-    "SyncAckV1",
-    "SyncResetV1",
-    "SyncCompleteV1"
-  ],
-  "type": "string"
-}
-```
-
-## SyncMemoryAssetDeleteV1
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "memoryId": {
-      "description": "Memory ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "memoryId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncMemoryAssetV1
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "memoryId": {
-      "description": "Memory ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "memoryId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncMemoryDeleteV1
-
-
-```json
-{
-  "properties": {
-    "memoryId": {
-      "description": "Memory ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "memoryId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncMemoryV1
-
-Related models: [MemoryType](models-17.md#memorytype).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "data": {
-      "additionalProperties": {},
-      "description": "Data",
-      "type": "object"
-    },
-    "deletedAt": {
-      "description": "Deleted at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "hideAt": {
-      "description": "Hide at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Memory ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isSaved": {
-      "description": "Is saved",
-      "type": "boolean"
-    },
-    "memoryAt": {
-      "description": "Memory at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "Owner ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "seenAt": {
-      "description": "Seen at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "showAt": {
-      "description": "Show at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/MemoryType"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "data",
-    "deletedAt",
-    "hideAt",
-    "id",
-    "isSaved",
-    "memoryAt",
-    "ownerId",
-    "seenAt",
-    "showAt",
-    "type",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPartnerAssetAccessDeleteV1
-
-
-```json
-{
-  "description": "Drop this partner-source asset and its descriptive mirror data, preserving independently authorized sources.",
-  "properties": {
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "sharedById": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "sharedById"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPartnerAssetAccessV1
-
-Related models: [SyncAssetV2](models-35.md#syncassetv2).
-
-```json
-{
-  "properties": {
-    "asset": {
-      "$ref": "#/components/schemas/SyncAssetV2"
-    },
-    "sharedById": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "asset",
-    "sharedById"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPartnerDeleteV1
-
-
-```json
-{
-  "properties": {
-    "sharedById": {
-      "description": "Shared by ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "sharedWithId": {
-      "description": "Shared with ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "sharedById",
-    "sharedWithId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPartnerV1
-
-
-```json
-{
-  "properties": {
-    "inTimeline": {
-      "description": "In timeline",
-      "type": "boolean"
-    },
-    "sharedById": {
-      "description": "Shared by ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "sharedWithId": {
-      "description": "Shared with ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "inTimeline",
-    "sharedById",
-    "sharedWithId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPersonDeleteV1
-
-
-```json
-{
-  "properties": {
-    "personId": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "personId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPersonV1
-
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Birth date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "color": {
-      "description": "Color",
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "faceAssetId": {
-      "description": "Face asset ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Person ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Is favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Is hidden",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Person name",
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "Owner ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "birthDate",
-    "color",
-    "createdAt",
-    "faceAssetId",
-    "id",
-    "isFavorite",
-    "isHidden",
-    "name",
-    "ownerId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPetDeleteV1
-
-
-```json
-{
-  "properties": {
-    "petId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "petId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPetObservationDeleteV1
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "observationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "petId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "observationId",
-    "petId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncPetObservationV1
-
-Related models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
-
-```json
-{
-  "$ref": "#/components/schemas/PetObservationResponseDto"
-}
-```
-
-## SyncPetV1
-
-Related models: [PetResponseDto](models-19.md#petresponsedto).
-
-```json
-{
-  "$ref": "#/components/schemas/PetResponseDto"
 }
 ```

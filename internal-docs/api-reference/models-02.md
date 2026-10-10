@@ -1227,7 +1227,7 @@ Related models: [AlbumIconSuggestionResponseDto](models-02.md#albumiconsuggestio
 
 ## AlbumResponseDto
 
-Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-05.md#assetorder), [ContributorCountResponseDto](models-09.md#contributorcountresponsedto), [PartnerOriginDto](models-18.md#partnerorigindto), [SmartAlbumBuiltInKind](models-31.md#smartalbumbuiltinkind).
+Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](models-02.md#albumuserresponsedto), [AssetOrder](models-06.md#assetorder), [ContributorCountResponseDto](models-10.md#contributorcountresponsedto), [PartnerOriginDto](models-18.md#partnerorigindto), [SmartAlbumBuiltInKind](models-31.md#smartalbumbuiltinkind).
 
 ```json
 {
@@ -1952,7 +1952,7 @@ Related models: [BulkIdErrorReason](models-07.md#bulkiderrorreason).
 
 ## AlbumsResponse
 
-Related models: [AssetOrder](models-05.md#assetorder).
+Related models: [AssetOrder](models-06.md#assetorder).
 
 ```json
 {
@@ -1970,7 +1970,7 @@ Related models: [AssetOrder](models-05.md#assetorder).
 
 ## AlbumsUpdate
 
-Related models: [AssetOrder](models-05.md#assetorder).
+Related models: [AssetOrder](models-06.md#assetorder).
 
 ```json
 {

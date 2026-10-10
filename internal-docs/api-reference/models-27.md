@@ -1098,7 +1098,7 @@ Related models: [SuppressionResponse](models-34.md#suppressionresponse).
 
 ## PrivacyUpdate
 
-Related models: [SuppressionUpdate](models-34.md#suppressionupdate).
+Related models: [SuppressionUpdate](models-35.md#suppressionupdate).
 
 ```json
 {

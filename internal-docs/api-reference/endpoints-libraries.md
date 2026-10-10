@@ -453,7 +453,7 @@ Update a library
 
 Permission: `library.update`. Admin only: `true`.
 
-Models: [LibraryResponseDto](models-15.md#libraryresponsedto), [UpdateLibraryDto](models-37.md#updatelibrarydto).
+Models: [LibraryResponseDto](models-15.md#libraryresponsedto), [UpdateLibraryDto](models-38.md#updatelibrarydto).
 
 Controller access declarations:
 

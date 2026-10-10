@@ -174,7 +174,7 @@ Update current user
 
 Permission: `user.update`. Admin only: `false`.
 
-Models: [UserAdminResponseDto](models-37.md#useradminresponsedto), [UserUpdateMeDto](models-38.md#userupdatemedto).
+Models: [UserAdminResponseDto](models-38.md#useradminresponsedto), [UserUpdateMeDto](models-38.md#userupdatemedto).
 
 Controller access declarations:
 

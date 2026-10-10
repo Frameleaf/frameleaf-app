@@ -2,6 +2,58 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## CloudMlConsentStateDto
+
+Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesdto).
+
+```json
+{
+  "properties": {
+    "acceptedVersion": {
+      "description": "The version an administrator accepted on this server",
+      "nullable": true,
+      "type": "string"
+    },
+    "documentUrl": {
+      "description": "The full consent text, when Frameleaf Cloud links one",
+      "nullable": true,
+      "type": "string"
+    },
+    "features": {
+      "$ref": "#/components/schemas/CloudMlConsentFeaturesDto",
+      "description": "The feature choices on record"
+    },
+    "outdated": {
+      "description": "Consent was given, but for an older version; processing is refused until renewed",
+      "type": "boolean"
+    },
+    "recordedVersion": {
+      "description": "The version Frameleaf Cloud has on record for this server",
+      "nullable": true,
+      "type": "string"
+    },
+    "requiredVersion": {
+      "description": "The consent version Frameleaf Cloud requires now",
+      "type": "string"
+    },
+    "summary": {
+      "description": "What the consent covers, as Frameleaf Cloud words it",
+      "type": "string"
+    }
+  },
+  "required": [
+    "acceptedVersion",
+    "documentUrl",
+    "features",
+    "outdated",
+    "recordedVersion",
+    "requiredVersion",
+    "summary"
+  ],
+  "type": "object"
+}
+```
+
 ## CloudMlConsentTermsDto
 
 
@@ -593,7 +645,7 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Asse
       "description": "Preview: the part of the frame to preview"
     },
     "restorationId": {
-      "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings",
+      "description": "For the full stage: the reviewed preview it renders in full, with the same model and settings. Omitted, a full-stage estimate is a quote for the whole file from the source alone (quoteOnly), priced with the given settings; it cannot be confirmed",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
       "type": "string"
@@ -717,6 +769,10 @@ Related models: [CloudMlJobConsentDto](models-09.md#cloudmljobconsentdto), [Clou
       "minimum": -9007199254740991,
       "type": "integer"
     },
+    "quoteOnly": {
+      "description": "A full-stage quote made without a reviewed preview (FL-348): what the whole file would cost with these settings. It cannot be confirmed; preview first, then estimate the reviewed preview in full",
+      "type": "boolean"
+    },
     "refusal": {
       "allOf": [
         {
@@ -777,6 +833,7 @@ Related models: [CloudMlJobConsentDto](models-09.md#cloudmljobconsentdto), [Clou
     "perUnit",
     "permission",
     "plannedWorkers",
+    "quoteOnly",
     "refusal",
     "runSeconds",
     "spentTodayUsd",
@@ -1317,7 +1374,7 @@ Related models: [CloudMlSettlementDto](models-09.md#cloudmlsettlementdto).
 
 ## CloudMlStatusResponseDto
 
-Related models: [CloudMlConnection](models-08.md#cloudmlconnection), [CloudMlConsentStateDto](models-08.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-18.md#mldestinationresponsedto).
+Related models: [CloudMlConnection](models-08.md#cloudmlconnection), [CloudMlConsentStateDto](models-09.md#cloudmlconsentstatedto), [CloudMlWalletDto](models-09.md#cloudmlwalletdto), [MlDestinationResponseDto](models-18.md#mldestinationresponsedto).
 
 ```json
 {
@@ -2059,80 +2116,6 @@ Related models: [ConfigCredential](models-09.md#configcredential).
   },
   "required": [
     "value"
-  ],
-  "type": "object"
-}
-```
-
-## ConfigFileActivationResponseDto
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "epoch": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "sourceKind": {
-      "enum": [
-        "file"
-      ],
-      "type": "string"
-    }
-  },
-  "required": [
-    "epoch",
-    "sourceKind"
-  ],
-  "type": "object"
-}
-```
-
-## ConfigFileReloadDto
-
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "expectedEpoch": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "expectedEpoch"
-  ],
-  "type": "object"
-}
-```
-
-## ContributorCountResponseDto
-
-
-```json
-{
-  "properties": {
-    "assetCount": {
-      "description": "Number of assets contributed",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetCount",
-    "userId"
   ],
   "type": "object"
 }

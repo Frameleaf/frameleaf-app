@@ -2,9 +2,51 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## AssetOrder
+
+
+```json
+{
+  "description": "Asset sort order",
+  "enum": [
+    "asc",
+    "desc"
+  ],
+  "type": "string"
+}
+```
+
+## AssetOrderBy
+
+
+```json
+{
+  "description": "Asset sorting property",
+  "enum": [
+    "takenAt",
+    "createdAt"
+  ],
+  "type": "string"
+}
+```
+
+## AssetRejectReason
+
+
+```json
+{
+  "description": "Rejection reason if rejected",
+  "enum": [
+    "duplicate",
+    "unsupported-format"
+  ],
+  "type": "string"
+}
+```
+
 ## AssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-37.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -1237,6 +1279,109 @@ Related models: [AssetMediaStatus](models-05.md#assetmediastatus).
 }
 ```
 
+## AssetWaveformChannelDto
+
+
+```json
+{
+  "properties": {
+    "max": {
+      "description": "Highest sample in each bucket, -1 to 1",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "type": "array"
+    },
+    "min": {
+      "description": "Lowest sample in each bucket, -1 to 1",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "max",
+    "min"
+  ],
+  "type": "object"
+}
+```
+
+## AssetWaveformChannelMode
+
+
+```json
+{
+  "description": "mono downmixes every channel into one; all returns each channel (up to 8)",
+  "enum": [
+    "mono",
+    "all"
+  ],
+  "type": "string"
+}
+```
+
+## AssetWaveformResponseDto
+
+Related models: [AssetWaveformChannelDto](models-06.md#assetwaveformchanneldto).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "bucketCount": {
+      "description": "Peak pairs per channel",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "bucketDurationMs": {
+      "description": "Audio time each bucket covers, in milliseconds",
+      "format": "double",
+      "type": "number"
+    },
+    "channels": {
+      "description": "One entry for mono, otherwise one per channel",
+      "items": {
+        "$ref": "#/components/schemas/AssetWaveformChannelDto"
+      },
+      "type": "array"
+    },
+    "durationMs": {
+      "description": "Duration of the decoded audio, in milliseconds",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "hasAudio": {
+      "description": "false for a video without an audio track; channels is then empty",
+      "type": "boolean"
+    },
+    "version": {
+      "description": "Changes whenever the video changes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "bucketCount",
+    "bucketDurationMs",
+    "channels",
+    "durationMs",
+    "hasAudio",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
 ## AudioCodec
 
 
@@ -1317,7 +1462,7 @@ Related models: [AssetMediaStatus](models-05.md#assetmediastatus).
 
 ## AvatarUpdate
 
-Related models: [UserAvatarColor](models-37.md#useravatarcolor).
+Related models: [UserAvatarColor](models-38.md#useravatarcolor).
 
 ```json
 {
@@ -1579,7 +1724,7 @@ Related models: [BackupDeviceDto](models-06.md#backupdevicedto).
 
 ## BestPhotoAssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-36.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-06.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [PartnerOriginDto](models-18.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-37.md#tagresponsedto), [UserResponseDto](models-38.md#userresponsedto).
 
 ```json
 {
@@ -1925,123 +2070,6 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     "scoreVersion",
     "subjectScore",
     "technicalScore"
-  ],
-  "type": "object"
-}
-```
-
-## BestPhotosResponseDto
-
-Related models: [BestPhotoAssetResponseDto](models-06.md#bestphotoassetresponsedto).
-
-```json
-{
-  "properties": {
-    "count": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/BestPhotoAssetResponseDto"
-      },
-      "type": "array"
-    },
-    "nextPage": {
-      "nullable": true,
-      "type": "string"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "count",
-    "items",
-    "nextPage",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## BirthdayMemoryDto
-
-
-```json
-{
-  "properties": {
-    "age": {
-      "description": "Age reached on this birthday",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "date": {
-      "description": "The birthday this year, 'yyyy-MM-dd'",
-      "type": "string"
-    },
-    "kind": {
-      "description": "Discriminator for a birthday",
-      "enum": [
-        "birthday"
-      ],
-      "type": "string"
-    },
-    "name": {
-      "description": "Their name when the memory was made",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Whether the birthday is a person's or a pet's",
-      "enum": [
-        "person",
-        "pet"
-      ],
-      "type": "string"
-    },
-    "subjectId": {
-      "description": "The owner's person or pet whose birthday it is",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "year": {
-      "description": "Year of this birthday",
-      "maximum": 9999,
-      "minimum": 1000,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "age",
-    "date",
-    "kind",
-    "name",
-    "subject",
-    "subjectId",
-    "year"
-  ],
-  "type": "object"
-}
-```
-
-## BoolFilter
-
-
-```json
-{
-  "properties": {
-    "eq": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "eq"
   ],
   "type": "object"
 }

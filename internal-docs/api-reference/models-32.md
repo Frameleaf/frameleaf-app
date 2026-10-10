@@ -2,6 +2,30 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## SmartAlbumReevaluateResponseDto
+
+
+```json
+{
+  "properties": {
+    "queued": {
+      "description": "Whether the re-evaluate job was newly enqueued (false = already in-flight)",
+      "type": "boolean"
+    },
+    "runId": {
+      "description": "Canonical run accepted by this request; absent when no local work was accepted",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "queued"
+  ],
+  "type": "object"
+}
+```
+
 ## SmartSearchDto
 
 Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter).
@@ -1574,6 +1598,49 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](m
 }
 ```
 
+## StorageMigrationStatusResponseDto
+
+Related models: [QueueStatisticsDto](models-27.md#queuestatisticsdto).
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Whether the storage template is turned on; a run moves nothing while it is off",
+      "type": "boolean"
+    },
+    "hasUnfinishedWork": {
+      "description": "Whether durable work remains, including delayed, paused and unadmitted work",
+      "type": "boolean"
+    },
+    "isActive": {
+      "description": "Whether a migration is running now",
+      "type": "boolean"
+    },
+    "isPaused": {
+      "description": "Whether the storage template migration queue is paused",
+      "type": "boolean"
+    },
+    "statistics": {
+      "$ref": "#/components/schemas/QueueStatisticsDto"
+    },
+    "template": {
+      "description": "The storage template originals are moved to",
+      "type": "string"
+    }
+  },
+  "required": [
+    "enabled",
+    "hasUnfinishedWork",
+    "isActive",
+    "isPaused",
+    "statistics",
+    "template"
+  ],
+  "type": "object"
+}
+```
+
 ## StraightenParameters
 
 
@@ -1852,7 +1919,7 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](m
 
 ## StudioBundleImportResultDto
 
-Related models: [StudioBundleMissingSourceDto](models-32.md#studiobundlemissingsourcedto).
+Related models: [StudioBundleMissingSourceDto](models-33.md#studiobundlemissingsourcedto).
 
 ```json
 {
@@ -1892,41 +1959,6 @@ Related models: [StudioBundleMissingSourceDto](models-32.md#studiobundlemissings
     "missing",
     "projectId",
     "relinked"
-  ],
-  "type": "object"
-}
-```
-
-## StudioBundleMissingSourceDto
-
-
-```json
-{
-  "properties": {
-    "embedded": {
-      "description": "The bundle carries a verified copy that was not added: library media, or a project file that failed its checks",
-      "type": "boolean"
-    },
-    "fileName": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "key": {
-      "type": "string"
-    },
-    "kind": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "embedded",
-    "fileName",
-    "id",
-    "key",
-    "kind"
   ],
   "type": "object"
 }

@@ -2,6 +2,307 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## StudioProjectDiffDto
+
+Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto).
+
+```json
+{
+  "properties": {
+    "added": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "byteDelta": {
+      "description": "Size change of the serialized graph",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "changed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "commands": {
+      "$ref": "#/components/schemas/StudioCommandSummaryDto",
+      "description": "Commands the saves between the two revisions reported"
+    },
+    "from": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "identical": {
+      "description": "The two envelopes have the same digest",
+      "type": "boolean"
+    },
+    "paths": {
+      "description": "Changed graph paths, aggregated and capped",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "removed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "to": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "More paths changed than are listed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "added",
+    "byteDelta",
+    "changed",
+    "commands",
+    "from",
+    "identical",
+    "paths",
+    "removed",
+    "to",
+    "truncated"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectDto
+
+Related models: [StudioProjectAccess](models-33.md#studioprojectaccess), [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [StudioProjectShelf](models-34.md#studioprojectshelf).
+
+```json
+{
+  "properties": {
+    "access": {
+      "$ref": "#/components/schemas/StudioProjectAccess"
+    },
+    "archivedAt": {
+      "description": "When the owner archived it",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "deletedAt": {
+      "description": "When it was moved to the trash",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "duplicatedFromId": {
+      "description": "The project this one was duplicated from; null for a reviewer",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Studio project ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "importedFromBundle": {
+      "description": "The project was read in from a portable bundle; always false for a reviewer",
+      "type": "boolean"
+    },
+    "lastOpenedAt": {
+      "description": "When an editor last opened it; null for a reviewer",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "lease": {
+      "$ref": "#/components/schemas/StudioProjectLeaseDto"
+    },
+    "name": {
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "The only account that may write",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "purgeAfter": {
+      "description": "When a trashed project is deleted for good; its library media is never touched",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "revision": {
+      "description": "Head revision number; 0 until the first save",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "shelf": {
+      "$ref": "#/components/schemas/StudioProjectShelf"
+    },
+    "spaceId": {
+      "description": "Shared space whose members may review the project",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "thumbnailAssetId": {
+      "description": "Library asset the owner chose as the poster; null for a reviewer",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "access",
+    "archivedAt",
+    "createdAt",
+    "deletedAt",
+    "duplicatedFromId",
+    "id",
+    "importedFromBundle",
+    "lastOpenedAt",
+    "lease",
+    "name",
+    "ownerId",
+    "purgeAfter",
+    "revision",
+    "shelf",
+    "spaceId",
+    "thumbnailAssetId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectDuplicateDto
+
+
+```json
+{
+  "properties": {
+    "name": {
+      "description": "Name of the copy; the client supplies the translated default",
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## StudioProjectEnvelopeDto
+
+
+```json
+{
+  "properties": {
+    "engine": {
+      "description": "The engine that produced the graph; `freecut`",
+      "type": "string"
+    },
+    "engineRevision": {
+      "description": "Pinned engine revision the editor was built from",
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "graph": {
+      "additionalProperties": {},
+      "description": "Opaque engine document, stored and returned byte for byte",
+      "type": "object"
+    },
+    "schemaVersion": {
+      "description": "Envelope shape version; the server accepts exactly one",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "engine",
+    "engineRevision",
+    "graph",
+    "schemaVersion"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectHistoryResponseDto
+
+Related models: [StudioProjectRevisionDto](models-34.md#studioprojectrevisiondto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "description": "Newest first",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectRevisionDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectImportCreateDto
+
+
+```json
+{
+  "properties": {
+    "file": {
+      "description": "The file to import",
+      "format": "binary",
+      "type": "string"
+    },
+    "id": {
+      "description": "The media id the editor gave this file; retrying the same file with it is idempotent",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "id"
+  ],
+  "type": "object"
+}
+```
+
 ## StudioProjectImportDto
 
 Related models: [StudioProjectImportKind](models-34.md#studioprojectimportkind).
@@ -81,6 +382,65 @@ Related models: [StudioProjectImportKind](models-34.md#studioprojectimportkind).
 }
 ```
 
+## StudioProjectInventoryDto
+
+Related models: [StudioProjectImportDto](models-34.md#studioprojectimportdto), [StudioProjectResourceUseDto](models-34.md#studioprojectresourceusedto).
+
+```json
+{
+  "properties": {
+    "fonts": {
+      "description": "Font families the head graph names",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+      },
+      "type": "array"
+    },
+    "keptFiles": {
+      "description": "Files kept with the project (FL-103, FL-105)",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectImportDto"
+      },
+      "type": "array"
+    },
+    "luts": {
+      "description": "Bundled LUTs the head graph names",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+      },
+      "type": "array"
+    },
+    "models": {
+      "description": "Models the head graph names",
+      "items": {
+        "$ref": "#/components/schemas/StudioProjectResourceUseDto"
+      },
+      "type": "array"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "revision": {
+      "description": "The head revision the graph references were read from; 0 for an empty project",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "fonts",
+    "keptFiles",
+    "luts",
+    "models",
+    "projectId",
+    "revision"
+  ],
+  "type": "object"
+}
+```
+
 ## StudioProjectLeaseDto
 
 
@@ -157,7 +517,7 @@ Related models: [StudioProjectImportKind](models-34.md#studioprojectimportkind).
 
 ## StudioProjectListResponseDto
 
-Related models: [StudioProjectDto](models-33.md#studioprojectdto).
+Related models: [StudioProjectDto](models-34.md#studioprojectdto).
 
 ```json
 {
@@ -178,6 +538,65 @@ Related models: [StudioProjectDto](models-33.md#studioprojectdto).
   "required": [
     "items",
     "total"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectResourceKind
+
+
+```json
+{
+  "description": "What the graph references",
+  "enum": [
+    "font",
+    "lut",
+    "model"
+  ],
+  "type": "string"
+}
+```
+
+## StudioProjectResourceUseDto
+
+Related models: [StudioProjectResourceKind](models-34.md#studioprojectresourcekind).
+
+```json
+{
+  "properties": {
+    "allowed": {
+      "description": "Whether it may run on this server",
+      "type": "boolean"
+    },
+    "detail": {
+      "description": "Why not, when it may not",
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/StudioProjectResourceKind"
+    },
+    "license": {
+      "nullable": true,
+      "type": "string"
+    },
+    "name": {
+      "description": "As written in the graph",
+      "type": "string"
+    },
+    "rightsId": {
+      "description": "The rights row it resolves to",
+      "type": "string"
+    }
+  },
+  "required": [
+    "allowed",
+    "detail",
+    "kind",
+    "license",
+    "name",
+    "rightsId"
   ],
   "type": "object"
 }
@@ -294,7 +713,7 @@ Related models: [StudioUnsupportedSourceDto](models-34.md#studiounsupportedsourc
 
 ## StudioProjectRevisionDetailDto
 
-Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto).
+Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto), [StudioProjectResourcesDto](models-34.md#studioprojectresourcesdto).
 
 ```json
 {
@@ -440,7 +859,7 @@ Related models: [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto).
 
 ## StudioProjectSaveDto
 
-Related models: [StudioCommandEnvelopeDto](models-33.md#studiocommandenvelopedto), [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-33.md#studioprojectenvelopedto).
+Related models: [StudioCommandEnvelopeDto](models-33.md#studiocommandenvelopedto), [StudioCommandSummaryDto](models-33.md#studiocommandsummarydto), [StudioProjectEnvelopeDto](models-34.md#studioprojectenvelopedto).
 
 ```json
 {
@@ -627,6 +1046,33 @@ Related models: [StudioProjectLeaseDto](models-34.md#studioprojectleasedto), [St
 }
 ```
 
+## StudioRationalDto
+
+
+```json
+{
+  "properties": {
+    "den": {
+      "description": "Denominator, positive; the pair is reduced",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "num": {
+      "description": "Numerator",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "den",
+    "num"
+  ],
+  "type": "object"
+}
+```
+
 ## StudioRenderCandidateDto
 
 Related models: [StudioExportFormat](models-33.md#studioexportformat).
@@ -744,6 +1190,179 @@ Related models: [MediaOperationDestination](models-16.md#mediaoperationdestinati
     "hdr10",
     "maxBitDepth",
     "sessions"
+  ],
+  "type": "object"
+}
+```
+
+## StudioResourceApprovalDto
+
+
+```json
+{
+  "description": "The owner approval the allowed rows come from",
+  "nullable": true,
+  "properties": {
+    "approvedBy": {
+      "type": "string"
+    },
+    "approvedOn": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "approvedBy",
+    "approvedOn"
+  ],
+  "type": "object"
+}
+```
+
+## StudioResourceInventoryDto
+
+Related models: [StudioResourceApprovalDto](models-34.md#studioresourceapprovaldto), [StudioResourceItemDto](models-34.md#studioresourceitemdto).
+
+```json
+{
+  "properties": {
+    "approval": {
+      "$ref": "#/components/schemas/StudioResourceApprovalDto"
+    },
+    "distributionApproved": {
+      "description": "Whether the engine as a whole may be redistributed; false blocks every redistribution use",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "Every reviewed resource, sorted by id",
+      "items": {
+        "$ref": "#/components/schemas/StudioResourceItemDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "approval",
+    "distributionApproved",
+    "items"
+  ],
+  "type": "object"
+}
+```
+
+## StudioResourceItemDto
+
+Related models: [StudioResourceItemKind](models-34.md#studioresourceitemkind), [StudioResourceUsesDto](models-34.md#studioresourceusesdto), [StudioWorkerCapability](models-34.md#studioworkercapability).
+
+```json
+{
+  "properties": {
+    "approvedOn": {
+      "description": "The date the owner approved this exact row, or null",
+      "nullable": true,
+      "type": "string"
+    },
+    "capability": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioWorkerCapability"
+        }
+      ],
+      "description": "The worker capability that runs it (GET /ml-destinations/capabilities says whether one is available), or null when the editor alone uses it",
+      "nullable": true
+    },
+    "id": {
+      "description": "The rights row id, e.g. font:Roboto or model:onnx-community/whisper-base_timestamped",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/StudioResourceItemKind"
+    },
+    "license": {
+      "description": "The licence, as reviewed; null when the review records none",
+      "nullable": true,
+      "type": "string"
+    },
+    "name": {
+      "description": "The name a graph or a job uses: a font family, a model id",
+      "type": "string"
+    },
+    "producers": {
+      "description": "For a model: the generated-file producers it serves (transcript, tts, musicgen)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "restrictions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Why the owner withheld a use, by use name (redistribution, localRuntime, hostedUse)",
+      "type": "object"
+    },
+    "uses": {
+      "$ref": "#/components/schemas/StudioResourceUsesDto"
+    }
+  },
+  "required": [
+    "approvedOn",
+    "capability",
+    "id",
+    "kind",
+    "license",
+    "name",
+    "producers",
+    "restrictions",
+    "uses"
+  ],
+  "type": "object"
+}
+```
+
+## StudioResourceItemKind
+
+
+```json
+{
+  "description": "What the resource is",
+  "enum": [
+    "font",
+    "lut",
+    "audio",
+    "model",
+    "voice",
+    "weights",
+    "tool",
+    "runtime",
+    "asset"
+  ],
+  "type": "string"
+}
+```
+
+## StudioResourceUsesDto
+
+
+```json
+{
+  "properties": {
+    "hostedUse": {
+      "description": "May run on Frameleaf Cloud",
+      "type": "boolean"
+    },
+    "localRuntime": {
+      "description": "May run on this server or a LAN worker",
+      "type": "boolean"
+    },
+    "redistribution": {
+      "description": "May be copied to someone else (a bundle, a download)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "hostedUse",
+    "localRuntime",
+    "redistribution"
   ],
   "type": "object"
 }
@@ -1139,6 +1758,272 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Asse
 }
 ```
 
+## StudioTranscriptionCreateDto
+
+
+```json
+{
+  "properties": {
+    "clipId": {
+      "description": "A video or audio clip on the main timeline of the head revision",
+      "pattern": "^[\\w-]{1,128}$",
+      "type": "string"
+    },
+    "destinationId": {
+      "description": "The machine-learning destination to run on, named explicitly",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "language": {
+      "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
+      "maxLength": 35,
+      "minLength": 2,
+      "type": "string"
+    }
+  },
+  "required": [
+    "clipId",
+    "destinationId",
+    "language"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionCue
+
+Related models: [StudioTranscriptionTime](models-34.md#studiotranscriptiontime).
+
+```json
+{
+  "properties": {
+    "end": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "start": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "end",
+    "start",
+    "text"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionDto
+
+Related models: [MediaOperationStatus](models-16.md#mediaoperationstatus), [StudioTranscriptionResultDto](models-34.md#studiotranscriptionresultdto).
+
+```json
+{
+  "properties": {
+    "clipId": {
+      "pattern": "^[\\w-]{1,128}$",
+      "type": "string"
+    },
+    "destinationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "language": {
+      "description": "The language asked for (`auto` or a BCP 47 tag)",
+      "type": "string"
+    },
+    "progress": {
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "result": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioTranscriptionResultDto"
+        }
+      ],
+      "description": "Present once the job has completed",
+      "nullable": true
+    },
+    "revision": {
+      "description": "The revision whose clip was transcribed",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "clipId",
+    "destinationId",
+    "error",
+    "id",
+    "language",
+    "progress",
+    "projectId",
+    "result",
+    "revision",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionQueuedDto
+
+Related models: [MediaOperationStatus](models-16.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "id",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionResultDto
+
+Related models: [StudioTranscriptionCue](models-34.md#studiotranscriptioncue), [StudioTranscriptionWord](models-34.md#studiotranscriptionword).
+
+```json
+{
+  "properties": {
+    "cues": {
+      "description": "Ready for `captions.set`: `{ start, end, text }` only",
+      "items": {
+        "$ref": "#/components/schemas/StudioTranscriptionCue"
+      },
+      "type": "array"
+    },
+    "language": {
+      "description": "The Whisper language code the speech was transcribed in",
+      "type": "string"
+    },
+    "languageProbability": {
+      "description": "How sure detection was; 1 when the language was given",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "model": {
+      "description": "The Whisper model the worker used",
+      "type": "string"
+    },
+    "words": {
+      "description": "Word timings, for word-by-word caption styles",
+      "items": {
+        "$ref": "#/components/schemas/StudioTranscriptionWord"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "cues",
+    "language",
+    "languageProbability",
+    "model",
+    "words"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionTime
+
+
+```json
+{
+  "description": "Exact seconds on the main sequence, reduced",
+  "properties": {
+    "den": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "num": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "den",
+    "num"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionWord
+
+Related models: [StudioTranscriptionTime](models-34.md#studiotranscriptiontime).
+
+```json
+{
+  "properties": {
+    "cue": {
+      "description": "Index of the cue the word belongs to",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "end": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "start": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "cue",
+    "end",
+    "start",
+    "text"
+  ],
+  "type": "object"
+}
+```
+
 ## StudioUnsupportedSourceDto
 
 Related models: [DecodeRefusal](models-10.md#decoderefusal).
@@ -1166,6 +2051,24 @@ Related models: [DecodeRefusal](models-10.md#decoderefusal).
     "refusal"
   ],
   "type": "object"
+}
+```
+
+## StudioWorkerCapability
+
+
+```json
+{
+  "description": "A Studio worker capability, as the command catalogue names it",
+  "enum": [
+    "analysisWorker",
+    "generationWorker",
+    "gpuWorker",
+    "renderWorker",
+    "restorationWorker",
+    "transcriptionWorker"
+  ],
+  "type": "string"
 }
 ```
 
@@ -1280,810 +2183,5 @@ Related models: [SuppressionScope](models-34.md#suppressionscope).
     "visible"
   ],
   "type": "string"
-}
-```
-
-## SuppressionUpdate
-
-Related models: [SuppressionScope](models-34.md#suppressionscope).
-
-```json
-{
-  "properties": {
-    "personIds": {
-      "description": "Person IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "petIds": {
-      "description": "Pet IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "scope": {
-      "$ref": "#/components/schemas/SuppressionScope",
-      "description": "Whether suppression applies only to owned assets or all visible assets"
-    },
-    "tagIds": {
-      "description": "Tag IDs to suppress from locked browsing sessions",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## SyncAckDeleteDto
-
-Related models: [SyncEntityType](models-35.md#syncentitytype).
-
-```json
-{
-  "properties": {
-    "types": {
-      "description": "Sync entity types to delete acks for",
-      "items": {
-        "$ref": "#/components/schemas/SyncEntityType"
-      },
-      "type": "array"
-    }
-  },
-  "type": "object"
-}
-```
-
-## SyncAckDto
-
-
-```json
-{
-  "properties": {
-    "ack": {
-      "description": "Acknowledgment ID",
-      "type": "string"
-    },
-    "type": {
-      "enum": [
-        "AlbumAssetAccessV1",
-        "AlbumAssetAccessDeleteV1",
-        "PartnerAssetAccessV1",
-        "PartnerAssetAccessDeleteV1",
-        "PinnedCollectionV1",
-        "PinnedCollectionDeleteV1",
-        "AssetTrashStateV1",
-        "AssetTrashStateDeleteV1",
-        "DuplicateGroupV1",
-        "DuplicateGroupDeleteV1",
-        "SharedSpaceV1",
-        "SharedSpaceDeleteV1",
-        "SharedSpaceMemberV1",
-        "SharedSpaceMemberDeleteV1",
-        "SharedSpaceAlbumV1",
-        "SharedSpaceAlbumDeleteV1",
-        "SharedSpacePersonV1",
-        "SharedSpacePersonDeleteV1",
-        "PetV1",
-        "PetDeleteV1",
-        "PetObservationV1",
-        "PetObservationDeleteV1",
-        "TagV1",
-        "TagDeleteV1",
-        "AssetTagV1",
-        "AssetTagDeleteV1",
-        "AuthUserV1",
-        "AuthUserV2",
-        "UserV1",
-        "UserDeleteV1",
-        "AssetV1",
-        "AssetV2",
-        "AssetV3",
-        "AssetBootstrapV1",
-        "AssetDeleteV2",
-        "AssetDeleteV1",
-        "AssetExifV1",
-        "AssetEditV1",
-        "AssetEditDeleteV1",
-        "AssetMetadataV1",
-        "AssetMetadataDeleteV1",
-        "AssetOcrV1",
-        "AssetOcrDeleteV1",
-        "PartnerV1",
-        "PartnerDeleteV1",
-        "PartnerAssetV1",
-        "PartnerAssetV2",
-        "PartnerAssetBackfillV1",
-        "PartnerAssetBackfillV2",
-        "PartnerAssetDeleteV1",
-        "PartnerAssetExifV1",
-        "PartnerAssetExifBackfillV1",
-        "PartnerStackBackfillV1",
-        "PartnerStackDeleteV1",
-        "PartnerStackV1",
-        "AlbumV1",
-        "AlbumV2",
-        "AlbumV3",
-        "AlbumBootstrapV1",
-        "AlbumDeleteV2",
-        "AlbumDeleteV1",
-        "AlbumUserV1",
-        "AlbumUserBackfillV1",
-        "AlbumUserDeleteV1",
-        "AlbumAssetCreateV1",
-        "AlbumAssetCreateV2",
-        "AlbumAssetUpdateV1",
-        "AlbumAssetUpdateV2",
-        "AlbumAssetBackfillV1",
-        "AlbumAssetBackfillV2",
-        "AlbumAssetExifCreateV1",
-        "AlbumAssetExifUpdateV1",
-        "AlbumAssetExifBackfillV1",
-        "AlbumToAssetV1",
-        "AlbumToAssetDeleteV1",
-        "AlbumToAssetBackfillV1",
-        "MemoryV1",
-        "MemoryDeleteV1",
-        "MemoryToAssetV1",
-        "MemoryToAssetDeleteV1",
-        "StackV1",
-        "StackDeleteV1",
-        "PersonV1",
-        "PersonDeleteV1",
-        "AssetFaceV1",
-        "AssetFaceV2",
-        "AssetFaceV3",
-        "AssetFaceDeleteV1",
-        "UserMetadataV1",
-        "PinnedCollectionsV1",
-        "UserMetadataDeleteV1",
-        "SyncAckV1",
-        "SyncResetV1",
-        "SyncCompleteV1"
-      ],
-      "type": "string"
-    }
-  },
-  "required": [
-    "ack",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAckSetDto
-
-
-```json
-{
-  "properties": {
-    "acks": {
-      "description": "Acknowledgment IDs (max 1000)",
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    }
-  },
-  "required": [
-    "acks"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAckV1
-
-
-```json
-{
-  "properties": {},
-  "type": "object"
-}
-```
-
-## SyncAckV2Dto
-
-Related models: [SyncEntityType](models-35.md#syncentitytype).
-
-```json
-{
-  "properties": {
-    "ack": {
-      "description": "Acknowledgment ID",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/SyncEntityType"
-    }
-  },
-  "required": [
-    "ack",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumAssetAccessDeleteV1
-
-
-```json
-{
-  "description": "Drop this album-source asset and its descriptive mirror data, preserving independently authorized sources.",
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "assetId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumAssetAccessV1
-
-Related models: [SyncAssetV2](models-35.md#syncassetv2).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "asset": {
-      "$ref": "#/components/schemas/SyncAssetV2"
-    }
-  },
-  "required": [
-    "albumId",
-    "asset"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumSourceLinkDeleteV1
-
-
-```json
-{
-  "properties": {
-    "linkId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "linkId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumSourceLinkV1
-
-Related models: [AlbumSourceKind](models-02.md#albumsourcekind).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "The server album the source is linked to",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When the link was made",
-      "format": "date-time",
-      "type": "string"
-    },
-    "deviceKey": {
-      "description": "The device the source id belongs to, when it is device-local",
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Link ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/AlbumSourceKind"
-    },
-    "lastSourceName": {
-      "description": "The phone name the server album last followed (the rename guard)",
-      "type": "string"
-    },
-    "sourceId": {
-      "description": "The source on the phone",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "When the link last changed",
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "createdAt",
-    "deviceKey",
-    "id",
-    "kind",
-    "lastSourceName",
-    "sourceId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumToAssetDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumToAssetV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumUserDeleteV1
-
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumUserV1
-
-Related models: [AlbumUserRole](models-02.md#albumuserrole).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "role": {
-      "$ref": "#/components/schemas/AlbumUserRole"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "albumId",
-    "role",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV1
-
-Related models: [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "description": {
-      "description": "Album description",
-      "type": "string"
-    },
-    "id": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
-    "ownerId": {
-      "description": "Owner ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "description",
-    "id",
-    "isActivityEnabled",
-    "name",
-    "order",
-    "ownerId",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV2
-
-Related models: [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "description": {
-      "description": "Album description",
-      "type": "string"
-    },
-    "id": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
-    "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "description",
-    "id",
-    "isActivityEnabled",
-    "name",
-    "order",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAlbumV3
-
-Related models: [AlbumKind](models-02.md#albumkind), [AssetOrder](models-05.md#assetorder).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "Created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "deletedAt": {
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "description": {
-      "description": "Album description",
-      "type": "string"
-    },
-    "icon": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "description": "Album ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isActivityEnabled": {
-      "description": "Is activity enabled",
-      "type": "boolean"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/AlbumKind"
-    },
-    "name": {
-      "description": "Album name",
-      "type": "string"
-    },
-    "order": {
-      "$ref": "#/components/schemas/AssetOrder"
-    },
-    "parentId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "sortOrder": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "thumbnailAssetId": {
-      "description": "Thumbnail asset ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Updated at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "deletedAt",
-    "description",
-    "icon",
-    "id",
-    "isActivityEnabled",
-    "kind",
-    "name",
-    "order",
-    "parentId",
-    "sortOrder",
-    "thumbnailAssetId",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAssetDeleteV1
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAssetEditDeleteV1
-
-
-```json
-{
-  "properties": {
-    "editId": {
-      "description": "Edit ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "editId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAssetEditV1
-
-
-```json
-{
-  "properties": {
-    "action": {
-      "description": "Edit action; future values pass through unchanged",
-      "type": "string"
-    },
-    "assetId": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "id": {
-      "description": "Edit ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "parameters": {
-      "additionalProperties": {},
-      "description": "Edit parameters",
-      "type": "object"
-    },
-    "sequence": {
-      "description": "Edit sequence",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "action",
-    "assetId",
-    "id",
-    "parameters",
-    "sequence"
-  ],
-  "type": "object"
 }
 ```

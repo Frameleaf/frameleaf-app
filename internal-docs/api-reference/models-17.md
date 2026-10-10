@@ -90,7 +90,7 @@ Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md
 
 ## MemoryData
 
-Related models: [BirthdayMemoryDto](models-06.md#birthdaymemorydto), [EventStoryDto](models-11.md#eventstorydto), [OnThisDayDto](models-18.md#onthisdaydto), [PersonRecapDto](models-19.md#personrecapdto), [PetStoryDto](models-19.md#petstorydto), [YearInReviewDto](models-39.md#yearinreviewdto).
+Related models: [BirthdayMemoryDto](models-07.md#birthdaymemorydto), [EventStoryDto](models-11.md#eventstorydto), [OnThisDayDto](models-18.md#onthisdaydto), [PersonRecapDto](models-19.md#personrecapdto), [PetStoryDto](models-19.md#petstorydto), [YearInReviewDto](models-39.md#yearinreviewdto).
 
 ```json
 {
@@ -822,7 +822,7 @@ Related models: [PersonMergeSuggestionDto](models-19.md#personmergesuggestiondto
 
 ## MetadataSearchDto
 
-Related models: [AssetOrder](models-05.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
+Related models: [AssetOrder](models-06.md#assetorder), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ImageEnrichmentFilter](models-14.md#imageenrichmentfilter), [SearchFilter](models-30.md#searchfilter), [SearchOrder](models-30.md#searchorder).
 
 ```json
 {

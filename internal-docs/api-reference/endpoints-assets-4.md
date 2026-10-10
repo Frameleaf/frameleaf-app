@@ -2,6 +2,308 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## requestAssetRestoration
+
+`POST /api/assets/{id}/restorations`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L81).
+
+Request a restoration preview
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [AssetRestorationRequestDto](models-06.md#assetrestorationrequestdto), [AssetRestorationResponseDto](models-06.md#assetrestorationresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Post(':id/restorations')
+@HttpCode(HttpStatus.CREATED)
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Request a restoration preview',
+    description:
+      'Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.",
+  "operationId": "requestAssetRestoration",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/AssetRestorationRequestDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "201": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetRestorationResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Request a restoration preview",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
+## setCurrentAssetRestoration
+
+`PUT /api/assets/{id}/restorations/current`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L98).
+
+Choose the restoration used for playback
+
+Permission: `asset.edit.create`. Admin only: `false`.
+
+Models: [AssetRestorationListResponseDto](models-06.md#assetrestorationlistresponsedto), [AssetRestorationSelectDto](models-06.md#assetrestorationselectdto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Put(':id/restorations/current')
+@Authenticated({ permission: Permission.AssetEditCreate })
+@Endpoint({
+    summary: 'Choose the restoration used for playback',
+    description:
+      'Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.",
+  "operationId": "setCurrentAssetRestoration",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/AssetRestorationSelectDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Choose the restoration used for playback",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.create",
+  "x-immich-state": "Alpha"
+}
+```
+
+## getAssetRestorationOptions
+
+`GET /api/assets/{id}/restorations/options`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L65).
+
+Get restoration options for an asset
+
+Permission: `asset.edit.get`. Admin only: `false`.
+
+Models: [AssetRestorationMode](models-06.md#assetrestorationmode), [AssetRestorationOptionsDto](models-06.md#assetrestorationoptionsdto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Get(':id/restorations/options')
+@Authenticated({ permission: Permission.AssetEditGet })
+@Endpoint({
+    summary: 'Get restoration options for an asset',
+    description:
+      'The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.",
+  "operationId": "getAssetRestorationOptions",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "mode",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "default": "faithful",
+        "$ref": "#/components/schemas/AssetRestorationMode"
+      }
+    },
+    {
+      "name": "upscale",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991,
+        "default": 2,
+        "type": "integer"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetRestorationOptionsDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get restoration options for an asset",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.get",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## discardAssetRestoration
 
 `DELETE /api/assets/{id}/restorations/{restorationId}`
@@ -1241,6 +1543,130 @@ Complete operation contract:
 }
 ```
 
+## getAssetWaveform
+
+`GET /api/assets/{id}/waveform`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-media.controller.ts#L67).
+
+Get video audio waveform
+
+Permission: `asset.view`. Admin only: `false`.
+
+Models: [AssetWaveformChannelMode](models-06.md#assetwaveformchannelmode), [AssetWaveformResponseDto](models-06.md#assetwaveformresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('assets')
+@Get(':id/waveform')
+@Authenticated({ permission: Permission.AssetView, sharedLink: true })
+@Endpoint({
+    summary: 'Get video audio waveform',
+    description:
+      'Minimum and maximum sample per bucket of the video’s first audio track, normalized to -1..1, mono or per channel, for a Studio timeline. A video without audio returns `hasAudio: false` and no channels; anything that is not a video is 404. Made on first request from the playback rendition, cached, and remade when the video changes.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Minimum and maximum sample per bucket of the video’s first audio track, normalized to -1..1, mono or per channel, for a Studio timeline. A video without audio returns `hasAudio: false` and no channels; anything that is not a video is 404. Made on first request from the playback rendition, cached, and remade when the video changes.",
+  "operationId": "getAssetWaveform",
+  "parameters": [
+    {
+      "name": "buckets",
+      "required": false,
+      "in": "query",
+      "description": "Peak pairs to return per channel (default 1000); fewer are returned for very short audio",
+      "schema": {
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "type": "integer"
+      }
+    },
+    {
+      "name": "channels",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "default": "mono",
+        "$ref": "#/components/schemas/AssetWaveformChannelMode"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "key",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    },
+    {
+      "name": "slug",
+      "required": false,
+      "in": "query",
+      "schema": {
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetWaveformResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get video audio waveform",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.view",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## readCastMedia
 
 `GET /api/cast/{token}`
@@ -1643,487 +2069,6 @@ Complete operation contract:
       "state": "Alpha"
     }
   ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## listTakeoutImports
-
-`GET /api/takeout`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L58).
-
-List Google Photos imports
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Get()
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({ summary: 'List Google Photos imports', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "listTakeoutImports",
-  "parameters": [],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "items": {
-              "$ref": "#/components/schemas/TakeoutResponseDto"
-            },
-            "type": "array"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "List Google Photos imports",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## createTakeoutImport
-
-`POST /api/takeout`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L65).
-
-Start a Google Photos import
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutCreateDto](models-36.md#takeoutcreatedto), [TakeoutResponseDto](models-37.md#takeoutresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Post()
-@HttpCode(HttpStatus.CREATED)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({
-    summary: 'Start a Google Photos import',
-    description:
-      'Creates an import to stage Takeout archives into. Administrators may instead name a folder inside one of the permitted import locations.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Creates an import to stage Takeout archives into. Administrators may instead name a folder inside one of the permitted import locations.",
-  "operationId": "createTakeoutImport",
-  "parameters": [],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/TakeoutCreateDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "201": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Start a Google Photos import",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## getTakeoutRoots
-
-`GET /api/takeout/roots`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L78).
-
-List the permitted import locations
-
-Permission: `See authentication declaration`. Admin only: `true`.
-
-Models: [TakeoutRootsResponseDto](models-37.md#takeoutrootsresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Get('roots')
-@Authenticated({ admin: true })
-@Endpoint({ summary: 'List the permitted import locations', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "getTakeoutRoots",
-  "parameters": [],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutRootsResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "List the permitted import locations",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-admin-only": true,
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## deleteTakeoutImport
-
-`DELETE /api/takeout/{id}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L92).
-
-Delete a Google Photos import
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Delete(':id')
-@HttpCode(HttpStatus.NO_CONTENT)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({
-    summary: 'Delete a Google Photos import',
-    description: 'Removes the import and its staged copies. Everything it brought into the library stays there.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Removes the import and its staged copies. Everything it brought into the library stays there.",
-  "operationId": "deleteTakeoutImport",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "204": {
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Delete a Google Photos import",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## getTakeoutImport
-
-`GET /api/takeout/{id}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L85).
-
-Get a Google Photos import
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutResponseDto](models-37.md#takeoutresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Get(':id')
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({ summary: 'Get a Google Photos import', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "getTakeoutImport",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Get a Google Photos import",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
-  "x-immich-state": "Alpha"
-}
-```
-
-## createTakeoutArchive
-
-`POST /api/takeout/{id}/archives`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L104).
-
-Stage a Takeout archive
-
-Permission: `asset.upload`. Admin only: `false`.
-
-Models: [TakeoutArchiveCreateDto](models-36.md#takeoutarchivecreatedto), [TakeoutSourceResponseDto](models-37.md#takeoutsourceresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller('takeout')
-@Post(':id/archives')
-@HttpCode(HttpStatus.CREATED)
-@Authenticated({ permission: Permission.AssetUpload })
-@Endpoint({ summary: 'Stage a Takeout archive', history: history() })
-```
-
-Complete operation contract:
-
-```json
-{
-  "operationId": "createTakeoutArchive",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/TakeoutArchiveCreateDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "201": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/TakeoutSourceResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Stage a Takeout archive",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.0.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.upload",
   "x-immich-state": "Alpha"
 }
 ```

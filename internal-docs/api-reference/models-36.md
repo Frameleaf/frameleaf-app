@@ -2,6 +2,726 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## SyncAuthUserV2
+
+Related models: [UserAvatarColor](models-38.md#useravatarcolor).
+
+```json
+{
+  "properties": {
+    "avatarColor": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserAvatarColor"
+        }
+      ],
+      "nullable": true
+    },
+    "deletedAt": {
+      "description": "User deleted at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "email": {
+      "description": "User email",
+      "type": "string"
+    },
+    "hasProfileImage": {
+      "description": "User has profile image",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isAdmin": {
+      "description": "User is admin",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "oauthId": {
+      "description": "User OAuth ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "pinCode": {
+      "description": "User pin code",
+      "nullable": true,
+      "type": "string"
+    },
+    "profileChangedAt": {
+      "description": "User profile changed at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "quotaSizeInBytes": {
+      "description": "Quota size in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "quotaUsageInBytes": {
+      "description": "Quota usage in bytes",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "storageLabel": {
+      "description": "User storage label",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "deletedAt",
+    "email",
+    "hasProfileImage",
+    "id",
+    "isAdmin",
+    "name",
+    "oauthId",
+    "pinCode",
+    "profileChangedAt",
+    "quotaSizeInBytes",
+    "quotaUsageInBytes",
+    "storageLabel"
+  ],
+  "type": "object"
+}
+```
+
+## SyncCompleteV1
+
+
+```json
+{
+  "properties": {},
+  "type": "object"
+}
+```
+
+## SyncDuplicateGroupDeleteV1
+
+
+```json
+{
+  "properties": {
+    "groupId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "groupId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncDuplicateGroupV1
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "minItems": 2,
+      "type": "array"
+    },
+    "groupId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetIds",
+    "groupId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncEntityType
+
+
+```json
+{
+  "description": "Sync entity type",
+  "enum": [
+    "AlbumAssetAccessV1",
+    "AlbumAssetAccessDeleteV1",
+    "PartnerAssetAccessV1",
+    "PartnerAssetAccessDeleteV1",
+    "PinnedCollectionV1",
+    "PinnedCollectionDeleteV1",
+    "AssetTrashStateV1",
+    "AssetTrashStateDeleteV1",
+    "DuplicateGroupV1",
+    "DuplicateGroupDeleteV1",
+    "SharedSpaceV1",
+    "SharedSpaceDeleteV1",
+    "SharedSpaceMemberV1",
+    "SharedSpaceMemberDeleteV1",
+    "SharedSpaceAlbumV1",
+    "SharedSpaceAlbumDeleteV1",
+    "SharedSpacePersonV1",
+    "SharedSpacePersonDeleteV1",
+    "PetV1",
+    "PetDeleteV1",
+    "AlbumSourceLinkV1",
+    "AlbumSourceLinkDeleteV1",
+    "PetObservationV1",
+    "PetObservationDeleteV1",
+    "TagV1",
+    "TagDeleteV1",
+    "AssetTagV1",
+    "AssetTagDeleteV1",
+    "AuthUserV1",
+    "AuthUserV2",
+    "UserV1",
+    "UserDeleteV1",
+    "AssetV1",
+    "AssetV2",
+    "AssetV3",
+    "AssetBootstrapV1",
+    "AssetDeleteV2",
+    "AssetDeleteV1",
+    "AssetExifV1",
+    "AssetEditV1",
+    "AssetEditDeleteV1",
+    "AssetMetadataV1",
+    "AssetMetadataDeleteV1",
+    "AssetOcrV1",
+    "AssetOcrDeleteV1",
+    "PartnerV1",
+    "PartnerDeleteV1",
+    "PartnerAssetV1",
+    "PartnerAssetV2",
+    "PartnerAssetBackfillV1",
+    "PartnerAssetBackfillV2",
+    "PartnerAssetDeleteV1",
+    "PartnerAssetExifV1",
+    "PartnerAssetExifBackfillV1",
+    "PartnerStackBackfillV1",
+    "PartnerStackDeleteV1",
+    "PartnerStackV1",
+    "AlbumV1",
+    "AlbumV2",
+    "AlbumV3",
+    "AlbumBootstrapV1",
+    "AlbumDeleteV2",
+    "AlbumDeleteV1",
+    "AlbumUserV1",
+    "AlbumUserBackfillV1",
+    "AlbumUserDeleteV1",
+    "AlbumAssetCreateV1",
+    "AlbumAssetCreateV2",
+    "AlbumAssetUpdateV1",
+    "AlbumAssetUpdateV2",
+    "AlbumAssetBackfillV1",
+    "AlbumAssetBackfillV2",
+    "AlbumAssetExifCreateV1",
+    "AlbumAssetExifUpdateV1",
+    "AlbumAssetExifBackfillV1",
+    "AlbumToAssetV1",
+    "AlbumToAssetDeleteV1",
+    "AlbumToAssetBackfillV1",
+    "MemoryV1",
+    "MemoryDeleteV1",
+    "MemoryToAssetV1",
+    "MemoryToAssetDeleteV1",
+    "StackV1",
+    "StackDeleteV1",
+    "PersonV1",
+    "PersonDeleteV1",
+    "AssetFaceV1",
+    "AssetFaceV2",
+    "AssetFaceV3",
+    "AssetFaceDeleteV1",
+    "UserMetadataV1",
+    "PinnedCollectionsV1",
+    "UserMetadataDeleteV1",
+    "SyncAckV1",
+    "SyncResetV1",
+    "SyncCompleteV1"
+  ],
+  "type": "string"
+}
+```
+
+## SyncMemoryAssetDeleteV1
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "memoryId": {
+      "description": "Memory ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "memoryId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncMemoryAssetV1
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "memoryId": {
+      "description": "Memory ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "memoryId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncMemoryDeleteV1
+
+
+```json
+{
+  "properties": {
+    "memoryId": {
+      "description": "Memory ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "memoryId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncMemoryV1
+
+Related models: [MemoryType](models-17.md#memorytype).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "data": {
+      "additionalProperties": {},
+      "description": "Data",
+      "type": "object"
+    },
+    "deletedAt": {
+      "description": "Deleted at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "hideAt": {
+      "description": "Hide at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "id": {
+      "description": "Memory ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isSaved": {
+      "description": "Is saved",
+      "type": "boolean"
+    },
+    "memoryAt": {
+      "description": "Memory at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "seenAt": {
+      "description": "Seen at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "showAt": {
+      "description": "Show at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/MemoryType"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "data",
+    "deletedAt",
+    "hideAt",
+    "id",
+    "isSaved",
+    "memoryAt",
+    "ownerId",
+    "seenAt",
+    "showAt",
+    "type",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPartnerAssetAccessDeleteV1
+
+
+```json
+{
+  "description": "Drop this partner-source asset and its descriptive mirror data, preserving independently authorized sources.",
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "sharedById": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "sharedById"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPartnerAssetAccessV1
+
+Related models: [SyncAssetV2](models-35.md#syncassetv2).
+
+```json
+{
+  "properties": {
+    "asset": {
+      "$ref": "#/components/schemas/SyncAssetV2"
+    },
+    "sharedById": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset",
+    "sharedById"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPartnerDeleteV1
+
+
+```json
+{
+  "properties": {
+    "sharedById": {
+      "description": "Shared by ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "sharedWithId": {
+      "description": "Shared with ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sharedById",
+    "sharedWithId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPartnerV1
+
+
+```json
+{
+  "properties": {
+    "inTimeline": {
+      "description": "In timeline",
+      "type": "boolean"
+    },
+    "sharedById": {
+      "description": "Shared by ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "sharedWithId": {
+      "description": "Shared with ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "inTimeline",
+    "sharedById",
+    "sharedWithId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPersonDeleteV1
+
+
+```json
+{
+  "properties": {
+    "personId": {
+      "description": "Person ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "personId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPersonV1
+
+
+```json
+{
+  "properties": {
+    "birthDate": {
+      "description": "Birth date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "color": {
+      "description": "Color",
+      "nullable": true,
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "faceAssetId": {
+      "description": "Face asset ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "description": "Person ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isFavorite": {
+      "description": "Is favorite",
+      "type": "boolean"
+    },
+    "isHidden": {
+      "description": "Is hidden",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Person name",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "description": "Updated at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "birthDate",
+    "color",
+    "createdAt",
+    "faceAssetId",
+    "id",
+    "isFavorite",
+    "isHidden",
+    "name",
+    "ownerId",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPetDeleteV1
+
+
+```json
+{
+  "properties": {
+    "petId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "petId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPetObservationDeleteV1
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "observationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "petId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "observationId",
+    "petId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncPetObservationV1
+
+Related models: [PetObservationResponseDto](models-19.md#petobservationresponsedto).
+
+```json
+{
+  "$ref": "#/components/schemas/PetObservationResponseDto"
+}
+```
+
+## SyncPetV1
+
+Related models: [PetResponseDto](models-19.md#petresponsedto).
+
+```json
+{
+  "$ref": "#/components/schemas/PetResponseDto"
+}
+```
+
 ## SyncPinnedCollectionDeleteV1
 
 
@@ -748,7 +1468,7 @@ Related models: [UserMetadataKey](models-38.md#usermetadatakey).
 
 ## SyncUserV1
 
-Related models: [UserAvatarColor](models-37.md#useravatarcolor).
+Related models: [UserAvatarColor](models-38.md#useravatarcolor).
 
 ```json
 {
@@ -1132,925 +1852,6 @@ Related models: [SystemConfigHistoryEntryDto](models-36.md#systemconfighistoryen
   "required": [
     "name"
   ],
-  "type": "object"
-}
-```
-
-## TagResponseDto
-
-
-```json
-{
-  "properties": {
-    "color": {
-      "description": "Tag color (hex)",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "Creation date",
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "description": "Tag ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "name": {
-      "description": "Tag name",
-      "type": "string"
-    },
-    "parentId": {
-      "description": "Parent tag ID",
-      "type": "string"
-    },
-    "updatedAt": {
-      "description": "Last update date",
-      "format": "date-time",
-      "type": "string"
-    },
-    "value": {
-      "description": "Tag value (full path)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "id",
-    "name",
-    "updatedAt",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## TagStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Timeline items tagged with exactly this tag",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Tag ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "total": {
-      "description": "Timeline items tagged with this tag or any tag nested under it",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "count",
-    "id",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## TagUpdateDto
-
-
-```json
-{
-  "properties": {
-    "color": {
-      "description": "Tag color (hex)",
-      "nullable": true,
-      "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
-      "type": "string"
-    },
-    "name": {
-      "description": "Tag name",
-      "pattern": "^[^/]*$",
-      "type": "string"
-    },
-    "parentId": {
-      "description": "Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## TagUpsertDto
-
-
-```json
-{
-  "properties": {
-    "tags": {
-      "description": "Tag names to upsert",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "tags"
-  ],
-  "type": "object"
-}
-```
-
-## TagsResponse
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether tags are enabled",
-      "type": "boolean"
-    },
-    "sidebarWeb": {
-      "description": "Whether tags appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "enabled",
-    "sidebarWeb"
-  ],
-  "type": "object"
-}
-```
-
-## TagsUpdate
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "description": "Whether tags are enabled",
-      "type": "boolean"
-    },
-    "sidebarWeb": {
-      "description": "Whether tags appear in web sidebar",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## TakeoutAction
-
-
-```json
-{
-  "description": "The step a job carries out",
-  "enum": [
-    "scan",
-    "import"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutAlbumDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Items in the folder",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "folder": {
-      "description": "The export folder",
-      "type": "string"
-    },
-    "name": {
-      "description": "The album name it becomes",
-      "type": "string"
-    },
-    "selected": {
-      "description": "Recreated by the next import",
-      "type": "boolean"
-    },
-    "year": {
-      "description": "One of Google’s automatic year folders",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "count",
-    "folder",
-    "name",
-    "selected",
-    "year"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutArchiveCreateDto
-
-
-```json
-{
-  "properties": {
-    "name": {
-      "description": "The archive’s file name",
-      "maxLength": 255,
-      "minLength": 1,
-      "type": "string"
-    },
-    "size": {
-      "description": "The archive’s size in bytes",
-      "maximum": 1099511627776,
-      "minimum": 22,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "name",
-    "size"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutControlAction
-
-
-```json
-{
-  "description": "What to do with the running job",
-  "enum": [
-    "pause",
-    "resume",
-    "cancel"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutControlDto
-
-Related models: [TakeoutControlAction](models-36.md#takeoutcontrolaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/TakeoutControlAction"
-    }
-  },
-  "required": [
-    "action"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutCountsDto
-
-
-```json
-{
-  "properties": {
-    "failed": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "files": {
-      "description": "Files found in the sources",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "hiddenLocked": {
-      "description": "Items going into Locked, not listed until Locked is unlocked",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "imported": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "importing": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "items": {
-      "description": "Photos and videos",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "matched": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "matchedOriginals": {
-      "description": "Items already in the library, whose album memberships are restored",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "newAssets": {
-      "description": "Items still to import that are not in the library yet",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "ready": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "rejected": {
-      "description": "Archive entries refused",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "review": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "skipped": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "suggestedPairs": {
-      "description": "Possible Live Photo pairs awaiting a decision",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "unresolvedPairs": {
-      "description": "Live Photo pairs that could not be linked",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "failed",
-    "files",
-    "hiddenLocked",
-    "imported",
-    "importing",
-    "items",
-    "matched",
-    "matchedOriginals",
-    "newAssets",
-    "ready",
-    "rejected",
-    "review",
-    "skipped",
-    "suggestedPairs",
-    "unresolvedPairs"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutCreateDto
-
-
-```json
-{
-  "properties": {
-    "directory": {
-      "description": "Administrators only: the directory inside the root, relative to it; empty for the root itself",
-      "maxLength": 4096,
-      "type": "string"
-    },
-    "name": {
-      "description": "A name for this import",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "rootId": {
-      "description": "Administrators only: the permitted import root to read a server directory from",
-      "maxLength": 32,
-      "type": "string"
-    }
-  },
-  "required": [
-    "name"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutItemKind
-
-
-```json
-{
-  "description": "Photo or video",
-  "enum": [
-    "image",
-    "video"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutItemResponseDto
-
-Related models: [TakeoutItemKind](models-36.md#takeoutitemkind), [TakeoutItemState](models-36.md#takeoutitemstate), [TakeoutMetadataDto](models-36.md#takeoutmetadatadto), [TakeoutSidecarCandidateDto](models-37.md#takeoutsidecarcandidatedto), [TakeoutWarning](models-37.md#takeoutwarning).
-
-```json
-{
-  "properties": {
-    "albums": {
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "assetId": {
-      "description": "The library item it became or matched, when this session may open it",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "candidates": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutSidecarCandidateDto"
-      },
-      "type": "array"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "folder": {
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/TakeoutItemKind"
-    },
-    "locked": {
-      "type": "boolean"
-    },
-    "metadata": {
-      "$ref": "#/components/schemas/TakeoutMetadataDto"
-    },
-    "path": {
-      "description": "Path inside the export",
-      "type": "string"
-    },
-    "sidecarId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "size": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "source": {
-      "description": "The archive or directory the file came from",
-      "type": "string"
-    },
-    "state": {
-      "$ref": "#/components/schemas/TakeoutItemState"
-    },
-    "warnings": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutWarning"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "albums",
-    "assetId",
-    "candidates",
-    "error",
-    "folder",
-    "id",
-    "kind",
-    "locked",
-    "metadata",
-    "path",
-    "sidecarId",
-    "size",
-    "source",
-    "state",
-    "warnings"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutItemState
-
-
-```json
-{
-  "description": "What happened to one photo or video",
-  "enum": [
-    "ready",
-    "review",
-    "importing",
-    "imported",
-    "matched",
-    "skipped",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutItemsResponseDto
-
-Related models: [TakeoutItemResponseDto](models-36.md#takeoutitemresponsedto).
-
-```json
-{
-  "properties": {
-    "hiddenLocked": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutItemResponseDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "hiddenLocked",
-    "items",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutMetadataDto
-
-
-```json
-{
-  "properties": {
-    "archived": {
-      "description": "Archived in Google Photos",
-      "type": "boolean"
-    },
-    "createdAt": {
-      "description": "When Google Photos received the photo (ISO 8601)",
-      "type": "string"
-    },
-    "description": {
-      "description": "Description",
-      "type": "string"
-    },
-    "favorite": {
-      "description": "Favorite in Google Photos",
-      "type": "boolean"
-    },
-    "latitude": {
-      "description": "Latitude",
-      "format": "double",
-      "type": "number"
-    },
-    "locked": {
-      "description": "In the Google Photos Locked Folder; imported into Locked",
-      "type": "boolean"
-    },
-    "longitude": {
-      "description": "Longitude",
-      "format": "double",
-      "type": "number"
-    },
-    "takenAt": {
-      "description": "When the photo was taken (ISO 8601)",
-      "type": "string"
-    },
-    "title": {
-      "description": "File name Google Photos recorded",
-      "type": "string"
-    },
-    "trashed": {
-      "description": "In the Google Photos trash; not imported",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "title"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutOptionsDto
-
-
-```json
-{
-  "properties": {
-    "albums": {
-      "default": true,
-      "description": "Recreate album memberships, including for photos already in the library",
-      "type": "boolean"
-    },
-    "archive": {
-      "default": true,
-      "description": "Bring over archived photos as archived",
-      "type": "boolean"
-    },
-    "dates": {
-      "default": true,
-      "description": "Bring over the dates photos were taken",
-      "type": "boolean"
-    },
-    "descriptions": {
-      "default": true,
-      "description": "Bring over descriptions",
-      "type": "boolean"
-    },
-    "favorites": {
-      "default": true,
-      "description": "Bring over favorites",
-      "type": "boolean"
-    },
-    "locations": {
-      "default": true,
-      "description": "Bring over locations",
-      "type": "boolean"
-    },
-    "selectedAlbums": {
-      "description": "Album folders to recreate; omitted means every folder that is not a year folder",
-      "items": {
-        "maxLength": 4096,
-        "type": "string"
-      },
-      "maxItems": 20000,
-      "type": "array"
-    },
-    "sidecarReview": {
-      "default": true,
-      "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
-      "type": "boolean"
-    },
-    "updateMatchedMetadata": {
-      "default": false,
-      "description": "Fill metadata missing from photos already in the library; values already there are never replaced",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## TakeoutOptionsResponseDto
-
-
-```json
-{
-  "properties": {
-    "albums": {
-      "type": "boolean"
-    },
-    "archive": {
-      "type": "boolean"
-    },
-    "dates": {
-      "type": "boolean"
-    },
-    "descriptions": {
-      "type": "boolean"
-    },
-    "favorites": {
-      "type": "boolean"
-    },
-    "locations": {
-      "type": "boolean"
-    },
-    "selectedAlbums": {
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "sidecarReview": {
-      "type": "boolean"
-    },
-    "updateMatchedMetadata": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "albums",
-    "archive",
-    "dates",
-    "descriptions",
-    "favorites",
-    "locations",
-    "sidecarReview",
-    "updateMatchedMetadata"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutPairDecisionDto
-
-
-```json
-{
-  "properties": {
-    "approve": {
-      "description": "True links them as one Live Photo; false keeps them separate",
-      "type": "boolean"
-    },
-    "photoItemId": {
-      "description": "The still photo",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "videoItemId": {
-      "description": "The motion video",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "approve",
-    "photoItemId",
-    "videoItemId"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutPairResponseDto
-
-Related models: [TakeoutPairState](models-36.md#takeoutpairstate).
-
-```json
-{
-  "properties": {
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "photoItemId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "photoPath": {
-      "type": "string"
-    },
-    "state": {
-      "$ref": "#/components/schemas/TakeoutPairState"
-    },
-    "videoItemId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "videoPath": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "error",
-    "photoItemId",
-    "photoPath",
-    "state",
-    "videoItemId",
-    "videoPath"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutPairState
-
-
-```json
-{
-  "description": "A possible Live Photo pair and the owner’s decision",
-  "enum": [
-    "suggested",
-    "approved",
-    "skipped",
-    "linked",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutPairsResponseDto
-
-Related models: [TakeoutPairResponseDto](models-36.md#takeoutpairresponsedto).
-
-```json
-{
-  "properties": {
-    "pairs": {
-      "items": {
-        "$ref": "#/components/schemas/TakeoutPairResponseDto"
-      },
-      "type": "array"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "pairs",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## TakeoutPhase
-
-
-```json
-{
-  "description": "The step the import has reached",
-  "enum": [
-    "sources",
-    "scanning",
-    "review",
-    "importing",
-    "completed"
-  ],
-  "type": "string"
-}
-```
-
-## TakeoutResolveDto
-
-
-```json
-{
-  "properties": {
-    "sidecarId": {
-      "description": "The sidecar to use; null imports without one",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "skip": {
-      "description": "True leaves the item out of the import; false brings it back",
-      "type": "boolean"
-    }
-  },
   "type": "object"
 }
 ```

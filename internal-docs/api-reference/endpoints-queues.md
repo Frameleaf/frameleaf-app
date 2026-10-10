@@ -2,6 +2,161 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## getStorageMigrationStatus
+
+`GET /api/admin/storage-migration`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/storage-migration-admin.controller.ts#L18).
+
+Get storage migration status
+
+Permission: `queue.read`. Admin only: `true`.
+
+Models: [StorageMigrationStatusResponseDto](models-32.md#storagemigrationstatusresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Queues)
+@Controller('admin/storage-migration')
+@Get()
+@Authenticated({ permission: Permission.QueueRead, admin: true })
+@Endpoint({
+    summary: 'Get storage migration status',
+    description:
+      'Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
+  "operationId": "getStorageMigrationStatus",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get storage migration status",
+  "tags": [
+    "Queues"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "queue.read",
+  "x-immich-state": "Alpha"
+}
+```
+
+## runStorageMigrationInBackground
+
+`POST /api/admin/storage-migration`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/storage-migration-admin.controller.ts#L30).
+
+Run storage migration in the background
+
+Permission: `queue.update`. Admin only: `true`.
+
+Models: [StorageMigrationStatusResponseDto](models-32.md#storagemigrationstatusresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Queues)
+@Controller('admin/storage-migration')
+@Post()
+@Authenticated({ permission: Permission.QueueUpdate, admin: true })
+@HttpCode(HttpStatus.ACCEPTED)
+@Endpoint({
+    summary: 'Run storage migration in the background',
+    description:
+      'Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.",
+  "operationId": "runStorageMigrationInBackground",
+  "parameters": [],
+  "responses": {
+    "202": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Run storage migration in the background",
+  "tags": [
+    "Queues"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "queue.update",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## getQueues
 
 `GET /api/queues`

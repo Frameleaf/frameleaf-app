@@ -1793,7 +1793,7 @@ Related models: [OwnerBackupKeptStatus](models-18.md#ownerbackupkeptstatus).
 
 ## PartnerResponseDto
 
-Related models: [PartnerBackfillDto](models-18.md#partnerbackfilldto), [UserAvatarColor](models-37.md#useravatarcolor).
+Related models: [PartnerBackfillDto](models-18.md#partnerbackfilldto), [UserAvatarColor](models-38.md#useravatarcolor).
 
 ```json
 {

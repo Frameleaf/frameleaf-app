@@ -204,7 +204,7 @@ Get activated file configuration epoch
 
 Permission: `systemConfig.read`. Admin only: `true`.
 
-Models: [ConfigFileActivationResponseDto](models-09.md#configfileactivationresponsedto).
+Models: [ConfigFileActivationResponseDto](models-10.md#configfileactivationresponsedto).
 
 Controller access declarations:
 
@@ -279,7 +279,7 @@ Activate the configured server file
 
 Permission: `systemConfig.update`. Admin only: `true`.
 
-Models: [ConfigFileActivationResponseDto](models-09.md#configfileactivationresponsedto), [ConfigFileReloadDto](models-09.md#configfilereloaddto).
+Models: [ConfigFileActivationResponseDto](models-10.md#configfileactivationresponsedto), [ConfigFileReloadDto](models-10.md#configfilereloaddto).
 
 Controller access declarations:
 
@@ -779,7 +779,7 @@ Trigger smart-album re-evaluate
 
 Permission: `systemConfig.update`. Admin only: `true`.
 
-Models: [SmartAlbumReevaluateRequestDto](models-31.md#smartalbumreevaluaterequestdto), [SmartAlbumReevaluateResponseDto](models-31.md#smartalbumreevaluateresponsedto).
+Models: [SmartAlbumReevaluateRequestDto](models-31.md#smartalbumreevaluaterequestdto), [SmartAlbumReevaluateResponseDto](models-32.md#smartalbumreevaluateresponsedto).
 
 Controller access declarations:
 

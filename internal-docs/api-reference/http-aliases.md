@@ -64,7 +64,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## handshake
 
-`GET /buddy/v1/vaults/{vaultId}/handshake` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L53).
+`GET /buddy/v1/vaults/{vaultId}/handshake` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L60).
 
 ```typescript
 @ApiExcludeController()
@@ -75,7 +75,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## inventory
 
-`POST /buddy/v1/vaults/{vaultId}/inventory` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L64).
+`POST /buddy/v1/vaults/{vaultId}/inventory` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L71).
 
 ```typescript
 @ApiExcludeController()
@@ -86,7 +86,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## reserve
 
-`POST /buddy/v1/vaults/{vaultId}/reservations` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L78).
+`POST /buddy/v1/vaults/{vaultId}/reservations` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L85).
 
 ```typescript
 @ApiExcludeController()
@@ -97,7 +97,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## put
 
-`PUT /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L91).
+`PUT /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L98).
 
 ```typescript
 @ApiExcludeController()
@@ -108,7 +108,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## get
 
-`GET /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L105).
+`GET /buddy/v1/vaults/{vaultId}/objects/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L112).
 
 ```typescript
 @ApiExcludeController()
@@ -119,7 +119,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## snapshots
 
-`GET /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L118).
+`GET /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L125).
 
 ```typescript
 @ApiExcludeController()
@@ -130,7 +130,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## snapshot
 
-`GET /buddy/v1/vaults/{vaultId}/snapshots/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L133).
+`GET /buddy/v1/vaults/{vaultId}/snapshots/{id}` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L140).
 
 ```typescript
 @ApiExcludeController()
@@ -141,7 +141,7 @@ These 24 controller routes are intentionally excluded from OpenAPI. Paths below 
 
 ## commit
 
-`POST /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L148).
+`POST /buddy/v1/vaults/{vaultId}/snapshots` — [source](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup-peer.controller.ts#L155).
 
 ```typescript
 @ApiExcludeController()

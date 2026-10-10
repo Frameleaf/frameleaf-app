@@ -6,7 +6,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 `DELETE /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L103).
 
 Delete database backup
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L48).
 
 List database backups
 
@@ -161,7 +161,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L60).
 
 Get backup restore verification
 
@@ -237,7 +237,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L71).
 
 Record a backup restore test
 
@@ -324,11 +324,13 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/start-restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L112).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L114).
 
 Start database backup restore flow
 
 Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [FrameleafSetupCodeDto](models-12.md#frameleafsetupcodedto).
 
 Controller access declarations:
 
@@ -336,6 +338,7 @@ Controller access declarations:
 @ApiTags(ApiTag.DatabaseBackups)
 @Controller('admin/database-backups')
 @Post('start-restore')
+@RateLimited(RATE_LIMITS.frameleafSetup)
 @Endpoint({
     summary: 'Start database backup restore flow',
     description: 'Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)',
@@ -351,6 +354,16 @@ Complete operation contract:
   "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
   "operationId": "startDatabaseRestoreFlow",
   "parameters": [],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/FrameleafSetupCodeDto"
+        }
+      }
+    },
+    "required": true
+  },
   "responses": {
     "201": {
       "description": ""
@@ -378,7 +391,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/upload`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L137).
 
 Upload database backup
 
@@ -461,7 +474,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/{filename}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L84).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L86).
 
 Download database backup
 

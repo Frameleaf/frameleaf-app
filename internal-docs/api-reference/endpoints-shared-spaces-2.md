@@ -6,7 +6,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 `DELETE /api/shared-spaces/{id}/people/{linkId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L257).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L295).
 
 Unlink a person from a shared space
 
@@ -92,7 +92,7 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L131).
 
 Preview a shared space
 
@@ -110,8 +110,8 @@ Controller access declarations:
 @Endpoint({
     summary: 'Preview a shared space',
     description:
-      'What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.',
-    history: new HistoryBuilder().added('v3'),
+      'What the shared space exposes, for someone holding an invitation to it or already in it. previewAssetIds lists up to 12 of the newest items, never media marked sensitive, hidden media or Locked media; their small thumbnails come from GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail. No file names, people or places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.',
+    history: new HistoryBuilder().added('v3').updated('v3.2.1', 'Added previewAssetIds'),
   })
 ```
 
@@ -119,7 +119,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
+  "description": "What the shared space exposes, for someone holding an invitation to it or already in it. previewAssetIds lists up to 12 of the newest items, never media marked sensitive, hidden media or Locked media; their small thumbnails come from GET /shared-spaces/{id}/preview/assets/{assetId}/thumbnail. No file names, people or places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
   "operationId": "getSharedSpacePreview",
   "parameters": [
     {
@@ -164,9 +164,113 @@ Complete operation contract:
     {
       "version": "v3",
       "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Updated",
+      "description": "Added previewAssetIds"
     }
   ],
   "x-immich-permission": "album.read"
+}
+```
+
+## viewSharedSpacePreviewThumbnail
+
+`GET /api/shared-spaces/{id}/preview/assets/{assetId}/thumbnail`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L143).
+
+View a shared space preview thumbnail
+
+Permission: `album.read`. Admin only: `false`.
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.SharedSpaces)
+@Controller('shared-spaces')
+@Get(':id/preview/assets/:assetId/thumbnail')
+@FileResponse()
+@Authenticated({ permission: Permission.AlbumRead })
+@Endpoint({
+    summary: 'View a shared space preview thumbnail',
+    description:
+      'The small thumbnail of one item listed in previewAssetIds, for someone holding an invitation to the shared space or already in it. Only the ids the preview lists right now are served, and only at thumbnail size; any other item, size or caller gets 404.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "The small thumbnail of one item listed in previewAssetIds, for someone holding an invitation to the shared space or already in it. Only the ids the preview lists right now are served, and only at thumbnail size; any other item, size or caller gets 404.",
+  "operationId": "viewSharedSpacePreviewThumbnail",
+  "parameters": [
+    {
+      "name": "assetId",
+      "required": true,
+      "in": "path",
+      "description": "One of the previewAssetIds of the shared space preview",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    },
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "description": "Shared space ID",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/octet-stream": {
+          "schema": {
+            "format": "binary",
+            "type": "string"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "View a shared space preview thumbnail",
+  "tags": [
+    "Shared spaces"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "album.read",
+  "x-immich-state": "Alpha"
 }
 ```
 
@@ -174,7 +278,7 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/visit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L270).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L308).
 
 Mark a shared space seen
 

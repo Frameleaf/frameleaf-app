@@ -1,6 +1,6 @@
 # Complete Frameleaf server API reference
 
-Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **842 OpenAPI operations**, **1541 schemas**, and **24 deliberately excluded controller routes**.
+Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **855 OpenAPI operations**, **1572 schemas**, and **24 deliberately excluded controller routes**.
 
 Start with [authentication and mobile workflows](auth-mobile.md) and [streaming, workers and other protocols](protocols.md), then the [complete worker wire models](worker-wire-models.md). Separate Frameleaf Cloud control-plane contracts are maintained with the Cloud service. Server URLs are relative to your installation, not the Cloud account host. This complete internal reference is kept outside the public documentation build; it includes administrative, Cloud integration and worker contracts.
 
@@ -92,12 +92,12 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 2: AdminConfigMachineLearningDto through AnalyticsHistoryDto](models-02.md)
 - [Models 3: AnalyticsHostDto through AskSearchDto](models-03.md)
 - [Models 4: AskSearchPlanDto through AssetDevelopProposalCoordinates](models-04.md)
-- [Models 5: AssetDevelopRecipeDto through AssetRejectReason](models-05.md)
-- [Models 6: AssetResponseDto through BoolFilter](models-06.md)
-- [Models 7: BuddyAcceptDto through ClassificationPreviewDto](models-07.md)
-- [Models 8: ClassificationPreviewResponseDto through CloudMlConsentStateDto](models-08.md)
-- [Models 9: CloudMlConsentTermsDto through ContributorCountResponseDto](models-09.md)
-- [Models 10: CreateAlbumDto through DocumentRecognitionDto](models-10.md)
+- [Models 5: AssetDevelopRecipeDto through AssetOcrResponseDto](models-05.md)
+- [Models 6: AssetOrder through BestPhotoScoreDto](models-06.md)
+- [Models 7: BestPhotosResponseDto through ClassificationPlanResponseDto](models-07.md)
+- [Models 8: ClassificationPreviewDto through CloudMlConsentRecordDto](models-08.md)
+- [Models 9: CloudMlConsentStateDto through ConfigCredentialUpdateDto](models-09.md)
+- [Models 10: ConfigFileActivationResponseDto through DocumentRecognitionDto](models-10.md)
 - [Models 11: DocumentRegionDto through FrameleafLinkDto](models-11.md)
 - [Models 12: FrameleafLinkResponseDto through HdrAssetDevelopRecipeV5](models-12.md)
 - [Models 13: HdrAssetDevelopRecipeV6 through ICloudIdentityRole](models-13.md)
@@ -117,16 +117,16 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 27: PreservationItemState through QueueUpdateDto](models-27.md)
 - [Models 28: QueuesResponseLegacyDto through RenderWorkerAdmissionDto](models-28.md)
 - [Models 29: RenderWorkerAuditDto through SearchFacetResponseDto](models-29.md)
-- [Models 30: SearchFacetsDto through ServerApkLinksDto](models-30.md)
-- [Models 31: ServerAppReleasesResponseDto through SmartAlbumReevaluateResponseDto](models-31.md)
-- [Models 32: SmartSearchDto through StudioBundleMissingSourceDto](models-32.md)
-- [Models 33: StudioBundleOperationDto through StudioProjectImportCreateDto](models-33.md)
-- [Models 34: StudioProjectImportDto through SyncAssetEditV1](models-34.md)
-- [Models 35: SyncAssetExifV1 through SyncPetV1](models-35.md)
-- [Models 36: SyncPinnedCollectionDeleteV1 through TakeoutResolveDto](models-36.md)
-- [Models 37: TakeoutResponseDto through UserConfigImageDto](models-37.md)
-- [Models 38: UserConfigMachineLearningDto through WorkflowIssueDto](models-38.md)
-- [Models 39: WorkflowLogEntryDto through YearInReviewDto](models-39.md)
+- [Models 30: SearchFacetsDto through ServerAboutResponseDto](models-30.md)
+- [Models 31: ServerApkLinksDto through SmartAlbumReevaluateRequestDto](models-31.md)
+- [Models 32: SmartAlbumReevaluateResponseDto through StudioBundleImportResultDto](models-32.md)
+- [Models 33: StudioBundleMissingSourceDto through StudioProjectDetailDto](models-33.md)
+- [Models 34: StudioProjectDiffDto through SuppressionScope](models-34.md)
+- [Models 35: SuppressionUpdate through SyncAuthUserV1](models-35.md)
+- [Models 36: SyncAuthUserV2 through TagCreateDto](models-36.md)
+- [Models 37: TagResponseDto through UpdateAssetDto](models-37.md)
+- [Models 38: UpdateLibraryDto through VideoMomentDto](models-38.md)
+- [Models 39: VideoMomentFrameDto through YearInReviewDto](models-39.md)
 
 [HTTP aliases and discovery](http-aliases.md). The complete machine-readable contract lives in `open-api/immich-openapi-specs.json`; `coverage.json` maps every operation and model to its page and records source hashes.
 
