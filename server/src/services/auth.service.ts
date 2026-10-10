@@ -417,14 +417,21 @@ export class AuthService extends BaseService {
 
   private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
     // Throttle PIN brute-force per user (security.md M5).
-    const now = Date.now();
-    const state = pinAttemptsByUser.get(userId);
+    let now = Date.now();
+    let state = pinAttemptsByUser.get(userId);
     if (state && state.lockedUntil > now) {
       const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
       throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
     }
 
     const user = await this.userRepository.getForPinCode(userId);
+    // A pending credential read must observe failures from other requests before checking another guess.
+    now = Date.now();
+    state = pinAttemptsByUser.get(userId);
+    if (state && state.lockedUntil > now) {
+      const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+      throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+    }
     try {
       this.validatePinCodeSecret(user, dto);
     } catch (error) {
