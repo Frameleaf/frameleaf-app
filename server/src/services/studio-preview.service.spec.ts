@@ -1,12 +1,13 @@
 import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { open, realpath } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import type { Mock } from 'vitest';
 
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
   open: vi.fn(),
+  realpath: vi.fn((path) => Promise.resolve(String(path))),
 }));
 import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
@@ -49,10 +50,10 @@ const frameStub = (overrides: Partial<StudioPreviewFrame> = {}): StudioPreviewFr
     status: StudioPreviewStatus.Ready,
     operationId: '0195e2a0-0000-7000-8000-0000000000ff',
     seekGeneration: '7',
-    framePath: '/frames/a.png',
+    framePath: `${studioPreviewFrameFolder(authStub.user1.user.id, '0195e2a0-0000-7000-8000-000000000001')}/frame.png`,
     contentType: 'image/png',
     sizeInBytes: '2048',
-    frameChecksum: null,
+    frameChecksum: Buffer.from(createHash('sha256').update(Buffer.alloc(2048)).digest('hex'), 'hex'),
     framePts: '3003',
     framePtsTimebase: '1/90000',
     toneMapped: false,
@@ -153,6 +154,12 @@ describe(StudioPreviewService.name, () => {
 
   beforeEach(() => {
     mocks = getMocks();
+    vi.mocked(realpath).mockImplementation((path) => Promise.resolve(String(path)));
+    vi.mocked(open).mockResolvedValue({
+      stat: () => storage.stat('/preview/frame.png'),
+      createReadStream: () => Readable.from([Buffer.alloc(2048)]),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as never);
 
     previews = {
       upsert: vi.fn().mockResolvedValue({
@@ -178,7 +185,7 @@ describe(StudioPreviewService.name, () => {
           ...frame,
           status: StudioPreviewStatus.Evicted,
           framePath: null,
-          frameChecksum: null,
+          frameChecksum: Buffer.from(createHash('sha256').update(Buffer.alloc(2048)).digest('hex'), 'hex'),
           sizeInBytes: null,
         };
       }),
@@ -369,7 +376,7 @@ describe(StudioPreviewService.name, () => {
     it('checks real file bytes and refuses a symlink on disk', async () => {
       const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
       const { tmpdir } = await import('node:os');
-      const root = await fs.mkdtemp(`${tmpdir()}/frameleaf-preview-`);
+      const root = await fs.realpath(await fs.mkdtemp(`${tmpdir()}/frameleaf-preview-`));
       StorageCore.setMediaLocation(root);
       try {
         const directory = studioPreviewFrameFolder(authStub.user1.user.id, 'frame-1');
@@ -377,14 +384,38 @@ describe(StudioPreviewService.name, () => {
         const path = `${directory}/frame.png`;
         await fs.writeFile(path, Buffer.alloc(2048));
         vi.mocked(open).mockImplementation(fs.open);
+        vi.mocked(realpath).mockImplementation(fs.realpath);
         vi.mocked(previews.getForOwner).mockResolvedValue(undefined);
         await expect(sut.onRenderCompleted(operation, { ...output, path })).resolves.toEqual({ published: false });
         await expect(sut.onRenderCompleted(operation, { ...output, path, checksum: 'ab'.repeat(32) })).rejects.toThrow(
           'checksum',
         );
+        const other = `${root}/other-owner`;
+        await fs.mkdir(other);
+        await fs.writeFile(`${other}/private.png`, Buffer.alloc(2048, 1));
+        vi.mocked(previews.getForOwner).mockResolvedValue(
+          frameStub({
+            id: 'frame-1',
+            framePath: path,
+            frameChecksum: Buffer.from(output.checksum, 'hex'),
+          }),
+        );
+        vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
+        const delivered = await sut.getFrame(authStub.user1, 'frame-1', {});
+        if ('notModified' in delivered) throw new Error('Expected frame bytes');
+        await fs.rename(path, `${path}.verified`);
+        await fs.symlink(`${other}/private.png`, path);
+        const chunks: Buffer[] = [];
+        for await (const chunk of delivered.stream) chunks.push(Buffer.from(chunk));
+        expect(Buffer.concat(chunks)).toEqual(Buffer.alloc(2048));
+        await expect(sut.getFrame(authStub.user1, 'frame-1', {})).rejects.toThrow('symlink');
+        await fs.symlink(other, `${directory}/nested`);
+        await expect(
+          sut.onRenderCompleted(operation, { ...output, path: `${directory}/nested/private.png` }),
+        ).rejects.toThrow('symlink');
         await fs.symlink(path, `${directory}/link.png`);
         await expect(sut.onRenderCompleted(operation, { ...output, path: `${directory}/link.png` })).rejects.toThrow(
-          'regular file',
+          'symlink',
         );
       } finally {
         StorageCore.setMediaLocation('/data');
@@ -813,7 +844,7 @@ describe(StudioPreviewService.name, () => {
 
       const result = await sut.getFrame(authStub.user1, frameStub().id, {});
 
-      expect(result).toMatchObject({ etag: etag(), file: expect.objectContaining({ path: '/frames/a.png' }) });
+      expect(result).toMatchObject({ etag: etag(), file: expect.objectContaining({ path: frameStub().framePath }) });
       expect(previews.markAccessed).toHaveBeenCalled();
       expect(projects.getReadableRevision).toHaveBeenCalledWith('project-1', authStub.user1.user.id);
     });

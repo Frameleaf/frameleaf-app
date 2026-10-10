@@ -1,12 +1,8 @@
+import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 
-vi.mock('node:fs/promises', async (original) => ({
-  ...(await original<typeof import('node:fs/promises')>()),
-  open: vi.fn(),
-}));
-import { Kysely, sql } from 'kysely';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StudioPreviewCancelQueryDto } from 'src/dtos/studio-preview.dto.js';
 import {
@@ -42,6 +38,12 @@ import { StudioDestination } from 'src/utils/studio-resources.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { automock, getKyselyDB } from 'test/utils.js';
+
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  open: vi.fn(),
+  realpath: vi.fn((path) => Promise.resolve(String(path))),
+}));
 
 let database: Kysely<DB>;
 beforeAll(async () => {
