@@ -634,7 +634,12 @@
       "path": "patches/0132-anime4k-retained-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0beba4ba12bdab8010432c1245f82699c2c71621a1e513be32a7ed0faeca45dd"
+    },
+    {
+      "path": "patches/0133-anime4k-retention-cancellation.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f9b862cf9c139e9758c29e46b50a4cb51f27eea85f6d109047bc2f4d8d846a67"
     }
   ],
-  "sourceSha256": "4e4ecbb2befc62564d3d570e5bbba840d68806f11a1f564f3a910a9d61350d69"
+  "sourceSha256": "1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e"
 }
