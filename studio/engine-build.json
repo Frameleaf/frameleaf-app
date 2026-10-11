@@ -624,7 +624,17 @@
       "path": "patches/0128-persisted-subtitle-discriminator.patch",
       "sha256": "814f21171d2100a1680365d2a9b7c9b57d1485330417367d6feda4dd4c211e0f",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0130-native-roll-transient-lock-cancellation.patch",
+      "sha256": "c8c57cf897e8e3ce40808ec3a3ff61532dc1f52bf3e2b16599a6da87e8d971d0",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0132-anime4k-retained-provenance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0beba4ba12bdab8010432c1245f82699c2c71621a1e513be32a7ed0faeca45dd"
     }
   ],
-  "sourceSha256": "da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327"
+  "sourceSha256": "4e4ecbb2befc62564d3d570e5bbba840d68806f11a1f564f3a910a9d61350d69"
 }
