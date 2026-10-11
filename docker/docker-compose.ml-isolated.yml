@@ -1,0 +1,61 @@
+# Apply after the matching release Compose file. See the model-staging guide.
+services:
+  frameleaf-server:
+    networks:
+      - default
+      - ml-inference
+
+  immich-machine-learning:
+    networks: !override
+      - ml-inference
+    ports: !reset []
+    # Do not pass the server .env (backup/provisioning credentials) to inference.
+    env_file: !override
+      - path: .env.ml
+        required: false
+    environment:
+      MACHINE_LEARNING_MODEL_DOWNLOADS: 'false'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      HF_HOME: /tmp/hf-home
+    volumes:
+      - ${FRAMELEAF_ML_CACHE:-model-cache}:/cache:ro
+    cap_drop:
+      - ALL
+    security_opt: !override
+      - no-new-privileges:true
+
+  immich-model-staging:
+    profiles:
+      - model-staging
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
+    entrypoint: ['tini', '--', 'python', '-m', 'immich_ml.staging']
+    env_file:
+      - path: .env.ml
+        required: false
+      - path: ./model-staging.env
+        required: false
+    environment:
+      MACHINE_LEARNING_MODEL_DOWNLOADS: 'true'
+      HF_HOME: /tmp/hf-home
+    volumes:
+      - ${FRAMELEAF_ML_CACHE:-model-cache}:/cache
+    networks:
+      - ml-downloads
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+
+networks:
+  ml-inference:
+    internal: true
+    driver: bridge
+    driver_opts:
+      # Internal alone still exposes the host's bridge address.
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.gateway_mode_ipv6: isolated
+  ml-downloads:
+    driver: bridge
