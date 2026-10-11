@@ -1,0 +1,67 @@
+{
+  "provider": "frameleaf",
+  "region": "us-east-1",
+  "endpoint": "https://s3.us-east-1.backup.frameleaf.cloud/",
+  "bucket": "fl-eu-0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "quotaBytes": 1000000000000,
+  "readOnly": false,
+  "versioning": true,
+  "sseC": {
+    "required": true,
+    "algorithm": "AES256"
+  },
+  "policy": {
+    "denies": [
+      "s3:DeleteObjectVersion",
+      "s3:PutBucketVersioning",
+      "s3:DeleteBucket",
+      "s3:PutBucketPolicy",
+      "s3:PutLifecycleConfiguration"
+    ]
+  },
+  "version": 4,
+  "storageId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53",
+  "location": {
+    "locationId": "loc-01",
+    "cityId": "ashburn",
+    "city": "Ashburn",
+    "country": "United States",
+    "countryCode": "US"
+  },
+  "coverage": {
+    "scope": "all"
+  },
+  "capability": {
+    "version": 1,
+    "operation": "upload",
+    "expiresAt": "2026-10-11T12:15:00.000Z",
+    "refreshAfterSec": 600,
+    "credentials": {
+      "accessKeyId": "ASIASYNTHETICEXAMPLE",
+      "secretAccessKey": "synthetic-secret-key-example",
+      "sessionToken": "synthetic-session-token-example"
+    }
+  },
+  "objectFormats": {
+    "read": [
+      {
+        "format": "frameleaf-client-backup",
+        "version": 1
+      },
+      {
+        "format": "legacy-sse-c",
+        "version": 1
+      }
+    ],
+    "write": [
+      {
+        "format": "frameleaf-client-backup",
+        "version": 1
+      },
+      {
+        "format": "legacy-sse-c",
+        "version": 1
+      }
+    ]
+  }
+}

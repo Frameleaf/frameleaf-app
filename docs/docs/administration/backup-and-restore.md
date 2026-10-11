@@ -45,6 +45,14 @@ During Frameleaf recovery, transient rate counters, upload leases, Socket.IO att
 
 Start the matching Frameleaf release, check database health and migrations, sign in as representative users, and verify original media bytes, albums, locked/hidden access and sharing behavior. An imported destination remains inactive until its importer verification succeeds; restoring a partial journal does not activate it.
 
+## Managed cloud transfers
+
+Managed backups request temporary storage sessions for upload, restore or cleanup. Verification and cleanup previews use restore access. Sessions renew during long operations; credentials stay in memory, while the operation records multipart receipts and verified download offsets so the same operation can resume after a worker restart. Keep the server's backup state and temporary transfer files until it finishes.
+
+When Cloud temporarily cannot renew a session, the operation waits and retains its progress. A refused or revoked operation stops. Read-only storage cannot gain upload or cleanup permission through renewal; retained restores still require Cloud to authorize restore access. Previously issued sessions can remain valid until provider expiry, bounded to 15 minutes; an already accepted request may finish afterward. Native provider qualification is required before enabling these sessions in a managed rollout.
+
+User-provided S3 credentials and independent offline recovery continue to use their existing configuration and recovery keys.
+
 ## Immich sources
 
 An Immich dump or PostgreSQL volume is not a canonical Frameleaf backup. Use the [offline importer](./import-immich.md) against a stopped, read-only supported source with a fresh Frameleaf database and distinct verified media copies. The source database and media remain unchanged.
