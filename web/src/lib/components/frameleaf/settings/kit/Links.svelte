@@ -6,7 +6,7 @@
     /** Where the row goes. A row that does something on this page gives `onSelect` instead. */
     href?: string;
     onSelect?: () => void;
-    /** Shown instead of a link when the row cannot be used; `body` then says why. */
+    /** The row cannot be used: it is shown as a button that is turned off, and `body` then says why. */
     disabled?: boolean;
   };
 </script>
@@ -27,11 +27,11 @@
   {#each rows as row (row.title)}
     <li>
       {#if row.disabled}
-        <div class="link is-disabled">
+        <button type="button" class="link is-disabled" disabled>
           <span class="icon" aria-hidden="true"><Icon icon={row.icon} size="24" /></span>
           <strong>{row.title}</strong>
           <span class="body">{row.body}</span>
-        </div>
+        </button>
       {:else if row.onSelect}
         <button type="button" class="link" onclick={row.onSelect}>
           <span class="icon" aria-hidden="true"><Icon icon={row.icon} size="24" /></span>
@@ -87,8 +87,11 @@
     text-align: start;
     cursor: pointer;
   }
+  button.link:disabled {
+    cursor: default;
+  }
   a.link:hover,
-  button.link:hover {
+  button.link:hover:not(:disabled) {
     border-color: var(--fl-accent);
   }
   a.link:focus-visible,
