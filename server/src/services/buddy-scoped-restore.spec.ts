@@ -285,23 +285,28 @@ it('retains a terminal restore diagnostic without exposing exception text or det
 });
 
 it.each(['direct', 'cause'] as const)(
-  'uses the single automatic retry for %s PostgreSQL lock contention',
+  'hands the claim back on %s PostgreSQL lock contention until its attempts are spent',
   async (source) => {
     const sentinel = 'private-buddy-lock-sentinel';
     const contention = Object.assign(new Error(sentinel), { code: '55P03', detail: sentinel });
     const error = source === 'direct' ? contention : new Error(sentinel, { cause: contention });
-    const fail = vi.fn().mockResolvedValue('retrying');
-    const logger = { error: vi.fn() };
+    const fail = vi.fn().mockResolvedValue('failed');
+    const requeue = vi.fn().mockResolvedValue(true);
+    const logger = { error: vi.fn(), warn: vi.fn() };
     const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
       logger,
       binding: () => Promise.reject(error),
-      operations: { fail },
+      operations: { fail, requeue },
     });
-    await service.runClaim({ id: 'operation', snapshot: {} }, 'claim');
-    expect(fail).toHaveBeenCalledWith('operation', 'claim', expect.any(Object), { retry: true });
-    expect(logger.error).toHaveBeenCalledExactlyOnceWith(
-      'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"55P03","status":null}',
-    );
-    expect(JSON.stringify([fail.mock.calls, logger.error.mock.calls])).not.toContain(sentinel);
+    const diagnostic = 'BUDDY_RESTORE_DIAGNOSTIC {"category":"coded_error","code":"55P03","status":null}';
+    await service.runClaim({ id: 'operation', snapshot: {}, attempt: 2 }, 'claim');
+    expect(requeue).toHaveBeenCalledExactlyOnceWith('operation', 'claim', { delayMs: 4000 });
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith(diagnostic);
+    expect(fail).not.toHaveBeenCalled();
+    await service.runClaim({ id: 'operation', snapshot: {}, attempt: 6 }, 'claim');
+    expect(requeue).toHaveBeenCalledOnce();
+    expect(fail).toHaveBeenCalledExactlyOnceWith('operation', 'claim', expect.any(Object), { retry: true });
+    expect(logger.error).toHaveBeenCalledExactlyOnceWith(diagnostic);
+    expect(JSON.stringify([fail.mock.calls, logger.error.mock.calls, logger.warn.mock.calls])).not.toContain(sentinel);
   },
 );
