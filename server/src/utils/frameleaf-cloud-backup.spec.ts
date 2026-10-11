@@ -28,20 +28,21 @@ const cloudError = (status: number, fixture: string, retryAfterSeconds: number |
 
 describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
   it('reads the grant, its rotation and its metadata as Frameleaf Cloud publishes them', () => {
-    const grant = backupGrantResponseSchema.parse(cloudContractFixture('backup/grant-response.json'));
-    const rotated = backupGrantResponseSchema.parse(cloudContractFixture('backup/grant-rotate-response.json'));
-    const metadata = backupGrantMetadataSchema.parse(cloudContractFixture('backup/grant-metadata.json'));
+    const grant = backupGrantResponseSchema.parse(cloudContractFixture('backup/capability-upload.json'));
+    const rotated = backupGrantResponseSchema.parse(cloudContractFixture('backup/capability-restore.json'));
+    const { capability: _capability, ...metadata } = grant;
+    expect(backupGrantMetadataSchema.safeParse(metadata).success).toBe(true);
 
     expect(grant.bucket).toMatch(/^fl-eu-/);
     expect(grant.sseC).toEqual({ required: true, algorithm: 'AES256' });
-    expect(rotated.credentials.accessKeyId).not.toBe(grant.credentials.accessKeyId);
-    expect(rotated.previousKeyExpiresAt).not.toBeNull();
+    expect(rotated.capability.operation).toBe('restore');
+    expect(grant.capability.credentials.sessionToken).toBeTruthy();
     expect(backupGrantProblem(grant)).toBeNull();
     expect(metadata.readOnly).toBe(false);
   });
 
   it('refuses metadata that carries a secret, and a grant whose policy lets versions be deleted', () => {
-    const grant = cloudContractFixture('backup/grant-response.json');
+    const grant = cloudContractFixture('backup/capability-upload.json');
     const permissive = { ...grant, policy: { denies: ['s3:DeleteBucket', 's3:PutBucketVersioning'] } };
 
     expect(backupGrantMetadataSchema.safeParse(grant).success).toBe(false);
@@ -49,7 +50,7 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
   });
 
   it('requires versioned branded grant metadata, stable identity and a location-only request', () => {
-    const grant = cloudContractFixture('backup/grant-response.json');
+    const grant = cloudContractFixture('backup/capability-upload.json');
     expect(managedStorageRef(grant.storageId)).toBe(`frameleaf-storage:${grant.storageId}`);
     expect(backupGrantResponseSchema.safeParse({ ...grant, version: 1 }).success).toBe(false);
     expect(backupGrantResponseSchema.safeParse({ ...grant, endpoint: 'https://storage.example' }).success).toBe(false);
@@ -79,7 +80,7 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
   });
 
   it('reads a grant that names its read-only reason, and one that does not (FL-301)', () => {
-    const grant = cloudContractFixture('backup/grant-response.json') as Record<string, unknown>;
+    const grant = cloudContractFixture('backup/capability-upload.json') as Record<string, unknown>;
     expect(backupGrantResponseSchema.parse({ ...grant, readOnly: true, readOnlyReason: 'plan_full' })).toMatchObject({
       readOnly: true,
       readOnlyReason: 'plan_full',
@@ -102,9 +103,9 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
 
   it('builds every route from discovery', () => {
     expect(backupEndpoints({ api: 'https://api.frameleaf.test/' })).toEqual({
-      locations: 'https://api.frameleaf.test/v2/backup/locations',
-      grant: 'https://api.frameleaf.test/v2/backup/grant',
-      rotate: 'https://api.frameleaf.test/v2/backup/grant/rotate',
+      locations: 'https://api.frameleaf.test/v4/backup/locations',
+      grant: 'https://api.frameleaf.test/v4/backup/grant',
+      rotate: 'https://api.frameleaf.test/v4/backup/grant/rotate',
       usage: 'https://api.frameleaf.test/v1/backup/usage',
       runs: 'https://api.frameleaf.test/v1/backup/runs',
       settings: 'https://api.frameleaf.test/v1/backup/settings',

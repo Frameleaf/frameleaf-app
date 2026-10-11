@@ -14820,6 +14820,7 @@ export type OwnerBackupHistoryResponseDto = {
 };
 export type OwnerBackupRestoreDto = {
     assetIds: string[];
+    /** The backup run’s manifest in the bucket */
     manifestKey: string;
 };
 export type OwnerBackupRestoreResponseDto = {

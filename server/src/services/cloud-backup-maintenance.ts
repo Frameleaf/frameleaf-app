@@ -26,6 +26,7 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { advanceExecutionProgress } from 'src/utils/execution-signal.js';
+import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 
 /** The claimed bucket an operation works on, opened with its key for this operation only. */
 export type CloudBackupBucket = {
@@ -70,6 +71,7 @@ export type CloudBackupVerifyResult = {
   degradedKeys: string[];
   /** The last object checked, in SHA-256 order: a resumed verification carries on after it. */
   cursor: string | null;
+  dumpCursor?: string | null;
   /** The objects found missing or damaged (at most `VERIFY_BAD_KEPT` of them). */
   bad: string[];
 };
@@ -144,12 +146,20 @@ export class CloudBackupMaintenance {
     checkpoint: CloudBackupCheckpoint<CloudBackupPruneResult>,
   ): Promise<CloudBackupPruneResult | null> {
     const listed = await listAll(this.store, bucket, CLOUD_BACKUP_MANIFEST_PREFIX);
+    const trustedHead = bucket.connection.trustedManifestHead;
+    if (trustedHead && listed.every(({ key }) => key !== trustedHead))
+      throw new Error('The anchored backup head is missing from storage; clean-up is refused');
     // a name that is not a manifest's is never a candidate for removal
     const candidates = listed.flatMap(({ key }) => {
       const createdAt = manifestTime(key);
       return createdAt ? [{ key, createdAt }] : [];
     });
     const plan = retentionPlan(candidates, retention);
+    const anchored = plan.remove.find(({ key }) => key === trustedHead);
+    if (anchored) {
+      plan.keep.push(anchored);
+      plan.remove = plan.remove.filter(({ key }) => key !== trustedHead);
+    }
 
     // Every kept manifest is read in full before anything is removed; one that cannot be read stops the
     // clean-up, so an object it might name is never removed.
@@ -159,6 +169,7 @@ export class CloudBackupMaintenance {
       const references = await this.readReferences(bucket, manifest.key);
       for (const sha256 of references.objects.keys()) {
         referenced.add(sha256);
+        for (const key of references.storageKeys.get(sha256)!) referenced.add(key);
       }
       if (references.database) {
         referencedDumps.add(references.database);
@@ -234,10 +245,15 @@ export class CloudBackupMaintenance {
     claim: { operationId: string; claimToken: string },
   ): Promise<CloudBackupVerifyResult | null> {
     // what every manifest names: object → its size and the manifests naming it, and each named dump
-    const named = new Map<string, { size: number; manifests: string[] }>();
+    const named = new Map<string, { size: number; manifests: string[]; storageKeys: Set<string> }>();
     const dumps = new Map<string, string[]>();
     const unreadable: string[] = [];
     const manifests = await listAll(this.store, bucket, CLOUD_BACKUP_MANIFEST_PREFIX);
+    if (
+      bucket.connection.trustedManifestHead &&
+      manifests.every(({ key }) => key !== bucket.connection.trustedManifestHead)
+    )
+      unreadable.push(bucket.connection.trustedManifestHead);
     for (const { key } of manifests) {
       if (!manifestTime(key)) {
         continue;
@@ -246,6 +262,9 @@ export class CloudBackupMaintenance {
       try {
         references = await this.readReferences(bucket, key);
       } catch (error) {
+        if (error instanceof ManagedBackupAuthorizationError) throw error;
+        if (error instanceof CloudBackupStoreError && error.status !== 404 && error.code !== 'ChecksumMismatch')
+          throw error;
         this.logger.warn(`Cloud backup verification: manifest ${key} could not be read: ${String(error)}`);
         unreadable.push(key);
         continue;
@@ -254,8 +273,9 @@ export class CloudBackupMaintenance {
         const entry = named.get(sha256);
         if (entry) {
           entry.manifests.push(key);
+          for (const key of references.storageKeys.get(sha256)!) entry.storageKeys.add(key);
         } else {
-          named.set(sha256, { size, manifests: [key] });
+          named.set(sha256, { size, manifests: [key], storageKeys: new Set(references.storageKeys.get(sha256)!) });
         }
       }
       if (references.database) {
@@ -293,7 +313,11 @@ export class CloudBackupMaintenance {
     const pending = cursor ? hashes.filter((sha256) => compareCodeUnits(sha256, cursor) > 0) : hashes;
     for (let at = 0; at < pending.length; at += MAINTENANCE_BATCH) {
       for (const sha256 of pending.slice(at, at + MAINTENANCE_BATCH)) {
-        const problem = await this.checkObject(bucket, sha256, named.get(sha256)!.size, start.depth);
+        let problem: 'missing' | 'mismatched' | null = null;
+        for (const key of named.get(sha256)!.storageKeys) {
+          const found = await this.checkObject(bucket, sha256, named.get(sha256)!.size, start.depth, key);
+          if (found) problem = found;
+        }
         await this.index.recordObjectVerification({
           bucket: bucket.bucketRef,
           sha256,
@@ -321,9 +345,10 @@ export class CloudBackupMaintenance {
     }
 
     if (start.depth === 'full') {
-      for (const [key, names] of dumps) {
+      for (const [key, names] of [...dumps].sort(([a], [b]) => compareCodeUnits(a, b))) {
+        if (start.dumpCursor && compareCodeUnits(key, start.dumpCursor) <= 0) continue;
         const found = await this.store.head(bucket.connection, key, bucket.bucketKey).catch((error: unknown) => {
-          if (error instanceof CloudBackupStoreError && error.status !== null && error.status < 500) {
+          if (error instanceof CloudBackupStoreError && error.status === 404) {
             return null;
           }
           throw error;
@@ -333,9 +358,17 @@ export class CloudBackupMaintenance {
           for (const manifest of names) {
             degraded.add(manifest);
           }
+          await this.settleBad(bucket, [], degraded);
         }
-        result = { ...result, checked: result.checked + 1 };
+        result = {
+          ...result,
+          checked: result.checked + 1,
+          dumpCursor: key,
+          degradedManifests: degradedCount(),
+          degradedKeys: [...degraded].slice(0, VERIFY_BAD_KEPT),
+        };
         advanceExecutionProgress(1);
+        if (!(await checkpoint(result))) return null;
       }
     }
     await this.settleBad(bucket, [], degraded);
@@ -352,23 +385,23 @@ export class CloudBackupMaintenance {
     sha256: string,
     size: number,
     depth: 'sample' | 'full',
+    key = objectKey(sha256),
   ): Promise<'missing' | 'mismatched' | null> {
     try {
       if (depth === 'full') {
-        const found = await this.store.head(bucket.connection, objectKey(sha256), bucket.bucketKey);
+        const found = await this.store.head(bucket.connection, key, bucket.bucketKey);
         if (!found) {
           return 'missing';
         }
         return found.size === size ? null : 'mismatched';
       }
-      const read = await this.store.hashObject(bucket.connection, objectKey(sha256), bucket.bucketKey);
+      const read = await this.store.hashObject(bucket.connection, key, bucket.bucketKey);
       return read.sha256 === sha256 && read.size === size ? null : 'mismatched';
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         return 'missing';
       }
-      // an object the key cannot read (403 on an SSE-C read) is as good as damaged
-      if (error instanceof CloudBackupStoreError && error.status !== null && error.status < 500) {
+      if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
         return 'mismatched';
       }
       throw error;

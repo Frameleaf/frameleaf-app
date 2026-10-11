@@ -50180,9 +50180,10 @@
             "name": "manifestKey",
             "required": true,
             "in": "query",
+            "description": "The backup run’s manifest in the bucket",
             "schema": {
               "maxLength": 300,
-              "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
               "type": "string"
             }
           },
@@ -50273,9 +50274,10 @@
             "name": "manifestKey",
             "required": true,
             "in": "query",
+            "description": "The backup run’s manifest in the bucket",
             "schema": {
               "maxLength": 300,
-              "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
               "type": "string"
             }
           },
@@ -66289,7 +66291,7 @@
         "properties": {
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           }
         },
@@ -66441,7 +66443,7 @@
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           },
           "query": {
@@ -66608,7 +66610,7 @@
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           },
           "scope": {
@@ -66708,7 +66710,7 @@
           },
           "key": {
             "description": "The bucket key: the key file, the base64 key or the recovery code. Never returned",
-            "maxLength": 4096,
+            "maxLength": 16384,
             "minLength": 1,
             "type": "string"
           },
@@ -66924,7 +66926,7 @@
         "properties": {
           "key": {
             "description": "The key file, the base64 key or the recovery code. Kept in memory only",
-            "maxLength": 4096,
+            "maxLength": 16384,
             "minLength": 1,
             "type": "string"
           }
@@ -85339,8 +85341,9 @@
             "type": "array"
           },
           "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
             "maxLength": 300,
-            "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           }
         },

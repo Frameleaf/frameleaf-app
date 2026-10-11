@@ -5,7 +5,7 @@ import { Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetLocalEffectBundle } from 'src/repositories/asset-local-effect.repository.js';
 import type { JobItem, JobSource, UploadFile } from 'src/types.js';
-import type { BackupKeyRequest, BackupKeyShare } from 'src/utils/cloud-backup-key-channel.js';
+import type { BackupKeyRequest, BackupKeyShare, BackupKeyUpdate } from 'src/utils/cloud-backup-key-channel.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { Asset } from 'src/database.js';
@@ -157,6 +157,8 @@ type EventMap = {
   CloudBackupKeyShare: [BackupKeyShare];
   /** A signed, expiring request with a recipient's ephemeral public key. */
   CloudBackupKeyRequest: [BackupKeyRequest];
+  /** A signed version hint; complete recovery material still requires a private recipient request. */
+  CloudBackupKeyUpdate: [BackupKeyUpdate];
 
   /** FL-155: tell every administrator once per `dedupeDays` (at most 30) for the same `dedupeKey`. */
   AdminNotify: [AdminNotice];

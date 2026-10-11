@@ -395,6 +395,8 @@ export interface IDeleteFilesJob extends IBaseJob {
    * file is kept, including ones no remaining row is counted as referencing.
    */
   removedAssetId?: string;
+  /** Accepted queued deletion's owner; its cleanup runs deletion listeners durably. */
+  removedAssetOwnerId?: string;
   /**
    * Universal storage: the removed asset's original, so it goes to the file trash with its history
    * even when it was never registered as a physical file. The checksum is hex encoded.

@@ -162,6 +162,7 @@ test.describe('Job manager', () => {
     // "Now" lists the work in hand; every kind of work is listed again, closed, under "Show all".
     const thumbnails = now.getByRole('listitem').filter({ hasText: 'Making thumbnails' });
     await expect(thumbnails).toHaveCount(1);
+    await expect(thumbnails.getByText('Making thumbnails', { exact: true })).toBeVisible();
     await expect(thumbnails.getByText('Running', { exact: true })).toBeVisible();
     await expect(thumbnails.getByText('7 left', { exact: true })).toBeVisible();
     // Work with nothing to do is behind "Show all kinds of work".
