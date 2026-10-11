@@ -70,10 +70,16 @@ runtime for Florence. Qwen and Phi retain their OpenVINO paths.
 
 Model staging calls `download()` without importing model Python or loading weights.
 Cold downloads request only the pinned files and revision, with no implicit Hub
-credentials. The default source serves `frameleaf/Florence-2-<variant>`; an
-administrator explicitly selecting `https://huggingface.co` uses the corresponding
-`florence-community` repository. A mirror must publish those exact bytes and
-revisions before offering these presets; there is no fallback to another host.
+credentials. With neither `MACHINE_LEARNING_MODEL_SOURCE_URL` nor `HF_ENDPOINT`
+configured, this description path retains its public Hugging Face source, using
+the corresponding pinned `florence-community` repository. An explicit model source
+takes precedence over `HF_ENDPOINT`; either overrides that default. A configured
+Hub-compatible mirror serves `frameleaf/Florence-2-<variant>`, while a configured
+`https://huggingface.co` uses the native upstream repository. A mirror must publish
+those exact bytes and revisions before offering these presets. A source failure
+never falls back to another host. Download hosts see normal request metadata such
+as IP address, model/file/revision paths and user agent; these downloads send no
+photos or image descriptions. Inference reads the staged files locally.
 The checked-in manifest is the application trust root. Hosted manifest signing
 and mirror publication remain separate release checks.
 
