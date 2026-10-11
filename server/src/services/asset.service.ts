@@ -47,6 +47,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { afterJobCommit, deferJobAdoption } from 'src/queue/context.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
@@ -658,6 +659,20 @@ export class AssetService extends BaseService {
 
   @OnJob({ name: JobName.AssetDelete, queue: QueueName.BackgroundTask })
   async handleAssetDeletion(job: JobOf<JobName.AssetDelete>): Promise<JobStatus> {
+    // Take publication admission and the queue catalogue before any asset or file-path locks.
+    if (
+      deferJobAdoption(async () => {
+        if ((await this.deleteAsset(job)) === JobStatus.Failed) {
+          throw new Error('Asset deletion could not publish');
+        }
+      })
+    ) {
+      return JobStatus.Success;
+    }
+    return this.deleteAsset(job);
+  }
+
+  private async deleteAsset(job: JobOf<JobName.AssetDelete>): Promise<JobStatus> {
     const { id, deleteOnDisk } = job;
 
     const asset = await this.assetJobRepository.getForAssetDeletion(id);
@@ -753,20 +768,21 @@ export class AssetService extends BaseService {
       }
     });
 
-    await this.afterAssetRemoval(id, 'announce the deletion', () =>
-      this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId }),
-    );
+    await afterJobCommit(async () => {
+      await this.afterAssetRemoval(id, 'announce the deletion', () =>
+        this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId }),
+      );
 
-    // universal storage: a shared file whose primary asset went is handed to the oldest remaining
-    // asset, and follows it to that asset's storage template path
-    await this.afterAssetRemoval(id, 'hand its shared file to another asset', async () => {
-      if (!asset.physicalOriginalFileId) {
-        return;
-      }
-      const next = await this.physicalFileRepository.electNextCanonical(asset.physicalOriginalFileId);
-      if (next) {
-        await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: next.assetId } });
-      }
+      // universal storage: elect from the committed survivors, after the former primary is gone
+      await this.afterAssetRemoval(id, 'hand its shared file to another asset', async () => {
+        if (!asset.physicalOriginalFileId) {
+          return;
+        }
+        const next = await this.physicalFileRepository.electNextCanonical(asset.physicalOriginalFileId);
+        if (next) {
+          await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: next.assetId } });
+        }
+      });
     });
 
     // delete the motion if it is not used by another asset

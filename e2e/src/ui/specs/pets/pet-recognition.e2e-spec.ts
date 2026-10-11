@@ -155,7 +155,7 @@ test.describe('pet recognition', () => {
     await expect(status).toContainText('the computer chosen to run it isn’t allowed to do pet recognition.');
     await expect(recognitionSection(page).getByText(/Recognition runs on/)).toHaveCount(0);
     await expect(recognitionSection(page).getByTestId('pet-recognition-never-cloud')).toContainText(
-      'Pet recognition never runs on Frameleaf Cloud.',
+      'Pet recognition always runs on your own server, never on Frameleaf Cloud.',
     );
     await expect(recognitionSection(page).getByRole('button', { name: 'Look for pets' })).toHaveCount(0);
     expect(state.calls).toEqual([]);
