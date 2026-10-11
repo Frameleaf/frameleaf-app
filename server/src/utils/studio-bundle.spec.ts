@@ -35,6 +35,7 @@ import {
 } from 'src/utils/studio-bundle.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
+import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 /* ------------------------------------------------------------------ */
 /* A tiny ZIP writer, so the reader is tested against real archives     */
@@ -1030,5 +1031,79 @@ describe('snapshots and results', () => {
     };
     expect(isStudioBundleImportAlias(library, carried)).toBe(true);
     expect(isStudioBundleImportAlias(library, carried, graph)).toBe(false);
+  });
+});
+
+describe('bundle historical processing labels', () => {
+  const digest = 'ab'.repeat(32);
+  const retained = { ...LINEAGE, outputSha256: digest };
+  const source = {
+    key: `project-import:${assetA}`,
+    kind: StudioResourceKind.ProjectImport,
+    id: assetA,
+    mode: 'embedded' as const,
+    path: 'media/generated.mp4',
+    sha256: digest,
+    bytes: 4,
+    fileName: 'generated.mp4',
+    contentType: 'video/mp4',
+    processingProvenance: retained,
+  };
+  const manifest = () =>
+    manifestOf(serializeStudioBundleProject(envelope({})), {
+      files: { 'project.json': { sha256: digest, bytes: 1 }, 'media/generated.mp4': { sha256: digest, bytes: 4 } },
+      sources: [source],
+    });
+
+  it('preserves optional lineage on embedded and reference-only imports and accepts old bundles', () => {
+    const value = manifest();
+    expect(checkStudioBundleManifest(value)).toMatchObject({ ok: true, manifest: { sources: [source] } });
+    const reference = { ...source, mode: 'reference', path: null, bytes: null };
+    expect(checkStudioBundleManifest({ ...value, sources: [reference] })).toMatchObject({
+      ok: true,
+      manifest: { sources: [reference] },
+    });
+    const { processingProvenance: _lineage, ...legacy } = source;
+    const checked = checkStudioBundleManifest({ ...value, sources: [legacy] });
+    expect(checked).toMatchObject({ ok: true });
+    if (checked.ok) expect(checked.manifest.sources[0]).not.toHaveProperty('processingProvenance');
+  });
+
+  it.each([
+    { ...retained, outputSha256: 'cd'.repeat(32) },
+    { ...retained, version: 2 },
+    { ...retained, privatePath: '/private' },
+    { ...retained, source: { ...retained.source, url: 'https://private.test' } },
+    null,
+    {},
+  ])('refuses malformed, unknown or mismatched carried claims (%#)', (processingProvenance) => {
+    expect(checkStudioBundleManifest({ ...manifest(), sources: [{ ...source, processingProvenance }] }).ok).toBe(false);
+  });
+
+  it('requires association with both source and embedded entry digests, only on project imports', () => {
+    const value = manifest();
+    value.files['media/generated.mp4'].sha256 = 'cd'.repeat(32);
+    expect(checkStudioBundleManifest(value).ok).toBe(false);
+    expect(checkStudioBundleManifest({ ...manifest(), sources: [{ ...source, sha256: null }] }).ok).toBe(false);
+    expect(
+      checkStudioBundleManifest({
+        ...manifest(),
+        sources: [{ ...source, kind: StudioResourceKind.LibraryAsset, key: `library-asset:${assetA}` }],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('relinks active references without rewriting historical labels', () => {
+    const graph = {
+      sequences: [{ id: 's', tracks: [{ clips: [{ mediaId: assetA }] }] }],
+      historical: { processingProvenance: retained },
+    };
+    const before = structuredClone(retained);
+    const mapping = new Map([[`library-asset:${assetA}`, assetB]]);
+    const relinked = relinkStudioGraph(graph, mapping);
+    expect(JSON.stringify(relinked)).toContain(assetB);
+    expect(relinked.graph).toMatchObject({ historical: { processingProvenance: before } });
+    expect(retained).toEqual(before);
+    expect(source.processingProvenance.source.id).toBe(LINEAGE.source.id);
   });
 });
