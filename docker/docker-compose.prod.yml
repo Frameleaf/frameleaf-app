@@ -53,8 +53,10 @@ services:
       - 3003:3003
     volumes:
       - model-cache:/cache
+    # Keep server credentials out of the inference worker.
     env_file:
-      - .env
+      - path: .env.ml
+        required: false
     restart: always
     healthcheck:
       disable: false

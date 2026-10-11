@@ -177,12 +177,13 @@
     },
     {
       "capability": null,
-      "description": "Set clip volume, mute, fades, pitch shift and the clip EQ stage.",
+      "description": "Set clip volume, mute, fades, pitch shift, the clip EQ stage and sidechain ducking of other audio.",
       "id": "clip.setAudio",
       "manifestIds": ["readme.audio.1", "readme.audio.2", "readme.audio.3"],
       "mutatesGraph": true,
       "payload": {
         "clipId": "string",
+        "ducking": "object?",
         "eq": "object?",
         "fadeIn": "duration?",
         "fadeOut": "duration?",

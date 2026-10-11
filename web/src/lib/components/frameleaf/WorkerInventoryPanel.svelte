@@ -66,6 +66,18 @@
 
   let { inventory: initialInventory, destinations, refreshKey = 0 }: Props = $props();
 
+  /**
+   * The three "manage" buttons open the addresses and limits, which are on the same page since
+   * FL-364. They used to scroll to an element that only another page had, so they did nothing.
+   */
+  const showDestinations = () => {
+    const target = document.querySelector('#ml-destinations');
+    if (target instanceof HTMLDetailsElement) {
+      target.open = true;
+    }
+    target?.scrollIntoView({ block: 'start' });
+  };
+
   let inventory = $state<WorkerInventoryResponseDto>(initialInventory);
   let refreshing = $state(false);
   let refreshFailed = $state(false);
@@ -492,7 +504,7 @@
         {#each sections.libraryWorkers as entry (entry.id)}
           {#snippet libraryActions()}
             {@render checkButton(entry)}
-            <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
+            <Button onclick={showDestinations}>
               {$t('admin.frameleaf_workers_manage')}
             </Button>
           {/snippet}
@@ -552,7 +564,7 @@
         {/each}
       </div>
       <div class="actions">
-        <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
+        <Button onclick={showDestinations}>
           {$t('admin.frameleaf_workers_open_video_profile')}
         </Button>
         <a class="link" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
@@ -569,7 +581,7 @@
           {#each sections.mixedWorkers as entry (entry.id)}
             {#snippet mixedActions()}
               {@render checkButton(entry)}
-              <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
+              <Button onclick={showDestinations}>
                 {$t('admin.frameleaf_workers_manage')}
               </Button>
             {/snippet}
