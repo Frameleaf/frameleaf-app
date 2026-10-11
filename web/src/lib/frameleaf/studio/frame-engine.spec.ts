@@ -657,14 +657,12 @@ describe('explicit protocol8 source publication fence', () => {
         parent: { kind: 'project-import', id: '11111111-1111-4111-8111-111111111111', checksum: 'b'.repeat(64) },
         selection: {},
       };
-      frame
-        .port()!
-        .postMessage({
-          type: 'service',
-          callId: 321,
-          name: 'resolveStudioProjectSource',
-          args: [request, { projectId: origin.project.id, userId: origin.auth.userId, graphVersion: 0 }],
-        });
+      frame.port()!.postMessage({
+        type: 'service',
+        callId: 321,
+        name: 'resolveStudioProjectSource',
+        args: [request, { projectId: origin.project.id, userId: origin.auth.userId, graphVersion: 0 }],
+      });
       await tick();
       expect(resolve).toHaveBeenCalledTimes(1);
       const next = { ...origin, project: { ...origin.project }, auth: { ...origin.auth } };
