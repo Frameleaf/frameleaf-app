@@ -1,7 +1,7 @@
-import { createAdapter } from '@socket.io/postgres-adapter';
+import { PostgresAdapter, createAdapter } from '@socket.io/postgres-adapter';
 import { generateKeyPairSync } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Pool } from 'pg';
@@ -34,7 +34,8 @@ describe(CloudBackupKeyChannel.name, () => {
     return result;
   };
   afterEach(() => {
-    for (const item of channels.splice(0)) item.close();
+    for (const item of channels) item.close();
+    channels.length = 0;
     vi.useRealTimers();
   });
 
@@ -131,6 +132,22 @@ describe(CloudBackupKeyChannel.name, () => {
     expect(() => holder.setKey(binding, key)).toThrow('closed');
   });
 
+  it('coalesces discovery without invalidating a local unlock, and rejects installation across a lock', async () => {
+    const recipient = channel('recipient');
+    const revision = recipient.revision;
+    const requests = await Promise.all([recipient.request(binding), recipient.request(binding)]);
+    expect(requests.filter(Boolean)).toHaveLength(1);
+    expect(recipient.revision).toBe(revision);
+    expect(recipient.setKey(binding, key, revision)).toBe(true);
+    const owned = recipient.getKey(binding)!;
+    expect(recipient.getKey({ ...binding, bucketRef: 'older-bucket' })).toBeNull();
+    expect(owned).toEqual(key);
+    const beforeLock = recipient.revision;
+    recipient.clear();
+    expect(recipient.setKey(binding, key, beforeLock)).toBe(false);
+    expect(recipient.getKey(binding)).toBeNull();
+  });
+
   it('does not publish a request or response after a lock races the identity read', async () => {
     let resolve!: (value: typeof identity) => void;
     const slow = new CloudBackupKeyChannel('slow', () => new Promise((done) => (resolve = done)));
@@ -162,12 +179,14 @@ describe(CloudBackupKeyChannel.name, () => {
       const pool = { query, connect: () => Promise.resolve(client) } as unknown as Pool;
       const errors = vi.fn();
       const io = new Server({ adapter: createAdapter(pool, { payloadThreshold, errorHandler: errors }) });
+      const adapter = io.sockets.adapter;
+      if (!(adapter instanceof PostgresAdapter)) throw new Error('Expected the installed PostgreSQL adapter');
       try {
-        await io.sockets.adapter.init();
+        adapter.init();
         // Exercise exactly the server-side publication used by WebsocketRepository, with the installed
         // PostgreSQL adapter. Capture NOTIFY strings and msgpack attachment bytes before any persistence.
-        await io.sockets.adapter.serverSideEmit(['CloudBackupKeyRequest', request]);
-        await io.sockets.adapter.serverSideEmit(['CloudBackupKeyShare', share]);
+        await adapter.serverSideEmit(['CloudBackupKeyRequest', request]);
+        await adapter.serverSideEmit(['CloudBackupKeyShare', share]);
         expect(errors).not.toHaveBeenCalled();
         const publications = query.mock.calls.filter(([sql]) => /pg_notify|INSERT INTO/.test(String(sql)));
         expect(publications.length).toBeGreaterThanOrEqual(2);
@@ -198,7 +217,7 @@ describe(CloudBackupKeyChannel.name, () => {
         expect(await channel('database-listener').accept(share, binding)).toBe(false);
         expect(await recipient.accept(share, binding)).toBe(true);
       } finally {
-        io.sockets.adapter.close();
+        adapter.close();
       }
     },
   );

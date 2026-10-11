@@ -418,6 +418,24 @@ describe(CloudBackupService.name, () => {
         ...overrides,
       } as never);
 
+    it('does not install a memory key if a lock overtakes setup', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory' });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let release!: () => void;
+      const barrier = new Promise<void>((done) => (release = done));
+      store.claim.mockReturnValueOnce(barrier.then(() => ({ existing: true, claimedAt: '2026-09-25T00:00:00.000Z' })));
+      const pending = setup({ keyMode: 'own-memory', acknowledgement: 'I understand' });
+      await vi.waitFor(() => expect(store.claim).toHaveBeenCalledOnce());
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      const rejected = expect(pending).rejects.toThrow('changed or locked');
+      release();
+      await rejected;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+    });
+
     it('claims the bucket with the generated key and keeps the key only in its 0600 key file (server mode)', async () => {
       mocks.crypto.randomBytes.mockReturnValue(key);
       const generated = sut.generateKey();
@@ -730,6 +748,58 @@ describe(CloudBackupService.name, () => {
       expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(key.toString('base64'));
     });
 
+    it.each(['metadata', 'identity'])('does not reinstall a key when a lock overtakes the %s read', async (phase) => {
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let release!: () => void;
+      let entered!: () => void;
+      const barrier = new Promise<void>((done) => (release = done));
+      const started = new Promise<void>((done) => (entered = done));
+      if (phase === 'identity') {
+        vi.mocked(loadBackupWorkerIdentity).mockImplementationOnce(async () => {
+          entered();
+          await barrier;
+          return workerIdentity;
+        });
+      } else {
+        mocks.systemMetadata.get.mockImplementationOnce(async () => {
+          entered();
+          await barrier;
+          return claim({ keyMode: 'own-memory' }) as never;
+        });
+      }
+      const pending = sut.unlock({ key: key.toString('base64') });
+      await started;
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      const rejected = expect(pending).rejects.toThrow('changed or locked');
+      release();
+      await rejected;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      metadata[SystemMetadataKey.SystemConfig] = newConfig;
+      await expect(sut.unlock({ key: key.toString('base64') })).resolves.toMatchObject({ keyLoaded: true });
+    });
+
+    it.each(['own-memory', 'server'])('keeps a newer key when an older %s status read finishes', async (mode) => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: mode });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig(mode);
+      keys.read.mockResolvedValue(keyFileOf());
+      let release!: () => void;
+      operations.getActiveOfKind.mockReturnValueOnce(new Promise<void>((done) => (release = done)));
+      const previousStatus = sut.getStatus();
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.FrameleafCloudBackup);
+      const next = Buffer.alloc(32, 17);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        keyMode: 'own-memory',
+        keyFingerprint: keyFingerprint(next),
+      });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');
+      await expect(sut.unlock({ key: next.toString('base64') })).resolves.toMatchObject({ keyLoaded: true });
+      release();
+      await previousStatus;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: true });
+    });
+
     it('clears own-memory keys on configuration lock, mode change and shutdown', async () => {
       await sut.unlock({ key: key.toString('base64') });
       const oldConfig = await savedConfig();
@@ -757,7 +827,7 @@ describe(CloudBackupService.name, () => {
         operationKey = bytes;
         sut.onConfigUpdate({ oldConfig, newConfig });
         expect(bytes).toEqual(key);
-        return Promise.resolve({ instanceId: 'instance-1' });
+        return { instanceId: 'instance-1' };
       });
       await sut.run(operationOf(), 'claim-1');
       expect(operations.complete).toHaveBeenCalled();

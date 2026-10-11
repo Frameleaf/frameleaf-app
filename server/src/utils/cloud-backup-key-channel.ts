@@ -22,7 +22,7 @@ export const BACKUP_KEY_REQUEST_LIFETIME_MS = 30_000;
 const MAX_REPLAYS = 1024;
 const DOMAIN = 'frameleaf-backup-worker-v1';
 type Binding = Pick<FrameleafCloudBackup, 'instanceId' | 'bucketRef' | 'keyFingerprint'>;
-const base64 = (length: number) => z.string().regex(new RegExp(`^[\\w-]{${length}}$`));
+const base64 = (length: number) => z.string().regex(new RegExp(String.raw`^[\w-]{${length}}$`));
 const requestSchema = z.strictObject({
   version: z.literal(1),
   instanceId: z.string().min(1).max(128),
@@ -99,7 +99,7 @@ export const loadBackupWorkerIdentity = async (path: string): Promise<KeyObject>
   const bytes = Buffer.alloc(8193);
   try {
     const before = await file.stat();
-    if (!before.isFile() || before.size < 1 || before.size > 8192) {
+    if (!before.isFile() || before.size === 0 || before.size > 8192) {
       throw new Error('Backup worker identity must be a bounded regular private key file');
     }
     let length = 0;
@@ -148,18 +148,23 @@ export class CloudBackupKeyChannel {
     private readonly identity: () => Promise<KeyObject>,
   ) {}
 
+  get revision(): number {
+    return this.generation;
+  }
+
   getKey(binding: Binding): Buffer | null {
-    if (this.memory && !bindingMatches(this.memory.binding, binding)) this.clear();
     return this.memory && bindingMatches(this.memory.binding, binding) ? this.memory.key : null;
   }
 
-  setKey(binding: Binding, key: Buffer) {
+  setKey(binding: Binding, key: Buffer, revision = this.generation): boolean {
+    if (revision !== this.generation) return false;
     if (this.closed) throw new Error('Backup key channel is closed');
     if (key.length !== 32 || keyFingerprint(key) !== binding.keyFingerprint) throw new Error('Invalid backup key');
     // Copy before clearing: a caller may be handing back the channel's current buffer.
     const copy = Buffer.from(key);
     this.clear();
     this.memory = { binding: { ...binding }, key: copy };
+    return true;
   }
 
   clear() {
@@ -186,7 +191,7 @@ export class CloudBackupKeyChannel {
     const generation = this.generation;
     const identity = await this.identity();
     if (this.closed || generation !== this.generation) return null;
-    this.generation++;
+    if (this.pending && fresh(this.pending.request) && bindingMatches(this.pending.request, binding)) return null;
     this.discardRequest();
     const pair = ephemeral();
     const body: Omit<BackupKeyRequest, 'signature'> = {
