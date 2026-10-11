@@ -14,8 +14,9 @@ const CODE = 'flc_jf23qnbc4wvmpnuogenclb2hyo';
 
 const products = (storeUrl: string | null) => ({
   currency: 'USD',
-  licensedDiscount: 0.2,
-  pricesVersion: '2026-09-25.1',
+  licensedDiscount: 0.07,
+  individualDiscount: 0.05,
+  pricesVersion: '2026-10-10.1',
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
