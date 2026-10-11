@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -41,6 +41,11 @@ import {
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
+import {
+  type BackupKeyRequest,
+  CloudBackupKeyChannel,
+  loadBackupWorkerIdentity,
+} from 'src/utils/cloud-backup-key-channel.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
 import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
@@ -53,6 +58,10 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
+vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
+  loadBackupWorkerIdentity: vi.fn(),
+}));
 vi.mock('node:dns', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:dns')>()),
   lookup: vi.fn(),
@@ -73,6 +82,7 @@ const SHA_SIDECAR = hex('sidecar');
 const SHA_DUMP = hex('dump');
 
 const key = Buffer.alloc(32, 7);
+const workerIdentity = generateKeyPairSync('ed25519').privateKey;
 const fingerprint = keyFingerprint(key);
 const s3 = {
   endpoint: 'https://s3.eu-central-2.storage.example',
@@ -218,8 +228,13 @@ describe(CloudBackupService.name, () => {
   type Recorded = { mock: { calls: unknown[][]; invocationCallOrder: number[] } };
   const orderOf = (recorded: Recorded, predicate: (args: unknown[]) => boolean) =>
     recorded.mock.invocationCallOrder[recorded.mock.calls.findIndex((args) => predicate(args))];
+  const keyRequest = () =>
+    mocks.websocket.serverSend.mock.calls.findLast(
+      ([name]) => name === 'CloudBackupKeyRequest',
+    )?.[1] as BackupKeyRequest;
 
   beforeEach(() => {
+    vi.mocked(loadBackupWorkerIdentity).mockReset().mockResolvedValue(workerIdentity);
     vi.mocked(selectBackupLocation).mockReset();
     mocks = getMocks();
     metadata = {};
@@ -350,6 +365,7 @@ describe(CloudBackupService.name, () => {
     // an own-memory key is asked for without waiting; a spec that needs the wait sets it
     sut.keyAskMs = 0;
   });
+  afterEach(() => sut.onShutdown());
 
   describe('task checkpoint progress', () => {
     beforeEach(() => vi.useFakeTimers());
@@ -460,11 +476,8 @@ describe(CloudBackupService.name, () => {
       const status = await setup({ keyMode: 'own-memory', acknowledgement: ' I understand ' });
 
       expect(keys.write).not.toHaveBeenCalled();
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
-      // shared only once the claim is saved, so the other workers accept it
-      const saved = orderOf(mocks.systemMetadata.set, ([name]) => name === SystemMetadataKey.FrameleafCloudBackup);
-      const shared = orderOf(mocks.websocket.serverSend, ([name]) => name === 'CloudBackupKeyShare');
-      expect(saved).toBeLessThan(shared);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
+      expect(JSON.stringify(mocks.websocket.serverSend.mock.calls)).not.toContain(key.toString('base64'));
       expect(status.keyLoaded).toBe(true);
     });
 
@@ -553,7 +566,7 @@ describe(CloudBackupService.name, () => {
       ['endpoint', 'https://different-s3.test'],
       ['bucket', 'different-bucket'],
     ])('refuses stale safety proof after changed BYO %s with the same target', async (field, value) => {
-      await sut.onKeyShare({ key: key.toString('base64') });
+      await sut.unlock({ key: key.toString('base64') });
       const settings = enabledConfig('own-memory');
       settings.frameleafCloud.cloudBackup.s3 = { ...s3, [field]: value };
       metadata[SystemMetadataKey.SystemConfig] = settings;
@@ -589,14 +602,17 @@ describe(CloudBackupService.name, () => {
       expect(store.probe).not.toHaveBeenCalled();
     });
 
-    it('reports a unloaded key and recognizes another worker loading it', async () => {
+    it('reports an unloaded key and recognizes another worker loading it', async () => {
       await expect(sut.getSafetyAvailability()).resolves.toEqual({
         state: 'paused-key-unloaded',
         bucket: ref,
         readOnly: false,
         readOnlyReason: null,
       });
-      await sut.onKeyShare({ key: key.toString('base64') });
+      const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+      holder.setKey(claim(), key);
+      await sut.onKeyShare((await holder.share(keyRequest(), claim()))!);
+      holder.close();
       await expect(sut.getSafetyAvailability()).resolves.toEqual({
         state: 'ready',
         bucket: ref,
@@ -620,7 +636,7 @@ describe(CloudBackupService.name, () => {
       const status = await sut.unlock({ key: key.toString('base64') });
 
       expect(status.keyLoaded).toBe(true);
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
       await sut.startRun(authStub.admin);
       expect(operations.createExclusive).toHaveBeenCalledWith(
         expect.objectContaining({ kind: MediaOperationKind.CloudBackup }),
@@ -629,23 +645,45 @@ describe(CloudBackupService.name, () => {
       );
     });
 
-    it('accepts the key another worker loaded, only for this bucket', async () => {
-      await sut.onKeyShare({ key: Buffer.alloc(32, 9).toString('base64') });
+    it('rejects plaintext key events and answers only authenticated recipients for this bucket', async () => {
+      await sut.onKeyShare({ key: key.toString('base64') } as never);
       await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
-
-      await sut.onKeyShare({ key: key.toString('base64') });
-      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: true });
-      sut.onKeyRequest();
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
+      await sut.unlock({ key: key.toString('base64') });
+      const recipient = new CloudBackupKeyChannel('recipient', () => Promise.resolve(workerIdentity));
+      try {
+        const request = (await recipient.request(claim()))!;
+        await sut.onKeyRequest({ ...request, workerId: 'forged' });
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
+        await sut.onKeyRequest(request);
+        const share = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1];
+        expect(await recipient.accept(share, claim())).toBe(true);
+        const publications = mocks.websocket.serverSend.mock.calls.length;
+        await sut.onKeyRequest(request);
+        expect(mocks.websocket.serverSend.mock.calls).toHaveLength(publications);
+        expect(
+          JSON.stringify([
+            mocks.websocket.serverSend.mock.calls,
+            mocks.logger.log.mock.calls,
+            mocks.logger.warn.mock.calls,
+          ]),
+        ).not.toContain(key.toString('base64'));
+      } finally {
+        recipient.close();
+      }
     });
 
     it('asks the other workers for the key when this worker restarted without it', async () => {
       sut.keyAskMs = 5000;
       const status = sut.getStatus();
-      await vi.waitFor(() => expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest'));
+      await vi.waitFor(() =>
+        expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest', expect.anything()),
+      );
 
       // another worker answers: the status is read with the key, without waiting out the timeout
-      await sut.onKeyShare({ key: key.toString('base64') });
+      const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+      holder.setKey(claim(), key);
+      await sut.onKeyShare((await holder.share(keyRequest(), claim()))!);
+      holder.close();
 
       await expect(status).resolves.toMatchObject({ keyLoaded: true });
     });
@@ -653,7 +691,10 @@ describe(CloudBackupService.name, () => {
     it('asks for the key when a worker starts', async () => {
       await sut.onBootstrapAskForKey();
 
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest');
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith(
+        'CloudBackupKeyRequest',
+        expect.objectContaining({ version: 1, publicKey: expect.any(String), signature: expect.any(String) }),
+      );
     });
 
     it('has nothing to unlock in the stored key modes', async () => {
@@ -665,7 +706,7 @@ describe(CloudBackupService.name, () => {
     it('lets a run wait for the key without failing it', async () => {
       await sut.run(operationOf(), 'claim-1');
 
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest');
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest', expect.anything());
       expect(operations.requeue).toHaveBeenCalledWith(
         'run-1',
         'claim-1',
@@ -680,6 +721,48 @@ describe(CloudBackupService.name, () => {
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         lastRun: { status: 'waiting-for-key' },
       });
+    });
+
+    it('requires a usable private identity to unlock and reports a mount problem without logging material', async () => {
+      vi.mocked(loadBackupWorkerIdentity).mockRejectedValue(new Error('identity unavailable'));
+      await expect(sut.unlock({ key: key.toString('base64') })).rejects.toThrow('FRAMELEAF_IDENTITY_DIR');
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(key.toString('base64'));
+    });
+
+    it('clears own-memory keys on configuration lock, mode change and shutdown', async () => {
+      await sut.unlock({ key: key.toString('base64') });
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      await sut.unlock({ key: key.toString('base64') });
+      const stored = structuredClone(newConfig);
+      stored.frameleafCloud.cloudBackup.keyMode = 'server';
+      sut.onConfigUpdate({ oldConfig: newConfig, newConfig: stored });
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      await sut.unlock({ key: key.toString('base64') });
+      await sut.onShutdown();
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+    });
+
+    it('keeps an active operation key stable through a memory lock, then wipes its private copy', async () => {
+      await sut.unlock({ key: key.toString('base64') });
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let operationKey: Buffer | undefined;
+      store.readMarker.mockImplementation((_connection: unknown, bytes: Buffer) => {
+        operationKey = bytes;
+        sut.onConfigUpdate({ oldConfig, newConfig });
+        expect(bytes).toEqual(key);
+        return Promise.resolve({ instanceId: 'instance-1' });
+      });
+      await sut.run(operationOf(), 'claim-1');
+      expect(operations.complete).toHaveBeenCalled();
+      expect(operationKey).toEqual(Buffer.alloc(32));
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
     });
   });
 
@@ -2580,6 +2663,7 @@ describe(CloudBackupService.name, () => {
       expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key);
       expect(result).toMatchObject({ manifestKey, files: 1, databaseRestored: false });
       expect(lines.join('\n')).not.toContain(key.toString('base64'));
+      expect(loadBackupWorkerIdentity).not.toHaveBeenCalled();
     });
 
     it('refuses a cached manifest after it stops being kept', async () => {
