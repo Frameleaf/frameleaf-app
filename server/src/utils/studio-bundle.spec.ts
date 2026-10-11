@@ -1059,7 +1059,13 @@ describe('bundle historical processing labels', () => {
     const value = manifest();
     expect(checkStudioBundleManifest(value)).toMatchObject({ ok: true, manifest: { sources: [source] } });
     const reference = { ...source, mode: 'reference', path: null, bytes: null };
-    expect(checkStudioBundleManifest({ ...value, sources: [reference] })).toMatchObject({
+    expect(
+      checkStudioBundleManifest({
+        ...value,
+        files: { 'project.json': value.files['project.json'] },
+        sources: [reference],
+      }),
+    ).toMatchObject({
       ok: true,
       manifest: { sources: [reference] },
     });
