@@ -14,7 +14,7 @@ import orjson
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from immich_ml.config import HUGGING_FACE_HOST, log, model_source_url, settings
+from immich_ml.config import HUGGING_FACE_HOST, log, model_source, settings
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
 from immich_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
@@ -258,7 +258,10 @@ class ImageDescriptionModel(InferenceModel):
 
     def _download(self) -> None:
         if manifest := florence_manifest(self.hf_model_name):
-            endpoint = model_source_url()
+            endpoint, source = model_source()
+            # Preserve this path's public Hub source until an administrator selects a mirror.
+            if source == "default":
+                endpoint = "https://huggingface.co"
             repo = (
                 manifest["repository"]
                 if urlsplit(endpoint).hostname == HUGGING_FACE_HOST

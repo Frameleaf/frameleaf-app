@@ -1,9 +1,5 @@
 {
   "microsoft/Florence-2-base": {
-    "repository": "florence-community/Florence-2-base",
-    "mirrorRepository": "frameleaf/Florence-2-base",
-    "revision": "00921df66db728a9ceb750f5eca43e5c203a2051",
-    "license": "mit",
     "attribution": "Microsoft; native Transformers conversion by florence-community",
     "files": {
       "README.md": {
@@ -43,14 +39,14 @@
         "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
       }
     },
+    "license": "mit",
+    "mirrorRepository": "frameleaf/Florence-2-base",
     "noticeFile": "florence-LICENSE.txt",
-    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "repository": "florence-community/Florence-2-base",
+    "revision": "00921df66db728a9ceb750f5eca43e5c203a2051"
   },
   "microsoft/Florence-2-base-ft": {
-    "repository": "florence-community/Florence-2-base-ft",
-    "mirrorRepository": "frameleaf/Florence-2-base-ft",
-    "revision": "0b03b6f15a4a211370fb204aee4e7dd48887ea37",
-    "license": "mit",
     "attribution": "Microsoft; native Transformers conversion by florence-community",
     "files": {
       "README.md": {
@@ -90,14 +86,14 @@
         "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
       }
     },
+    "license": "mit",
+    "mirrorRepository": "frameleaf/Florence-2-base-ft",
     "noticeFile": "florence-LICENSE.txt",
-    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "repository": "florence-community/Florence-2-base-ft",
+    "revision": "0b03b6f15a4a211370fb204aee4e7dd48887ea37"
   },
   "microsoft/Florence-2-large": {
-    "repository": "florence-community/Florence-2-large",
-    "mirrorRepository": "frameleaf/Florence-2-large",
-    "revision": "4271c66b88cdbc05735372ec13b2360108de5317",
-    "license": "mit",
     "attribution": "Microsoft; native Transformers conversion by florence-community",
     "files": {
       "README.md": {
@@ -137,14 +133,14 @@
         "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
       }
     },
+    "license": "mit",
+    "mirrorRepository": "frameleaf/Florence-2-large",
     "noticeFile": "florence-LICENSE.txt",
-    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "repository": "florence-community/Florence-2-large",
+    "revision": "4271c66b88cdbc05735372ec13b2360108de5317"
   },
   "microsoft/Florence-2-large-ft": {
-    "repository": "florence-community/Florence-2-large-ft",
-    "mirrorRepository": "frameleaf/Florence-2-large-ft",
-    "revision": "26b734a54fdfbf9c398351eedfabb7f27fc470b7",
-    "license": "mit",
     "attribution": "Microsoft; native Transformers conversion by florence-community",
     "files": {
       "README.md": {
@@ -184,7 +180,11 @@
         "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
       }
     },
+    "license": "mit",
+    "mirrorRepository": "frameleaf/Florence-2-large-ft",
     "noticeFile": "florence-LICENSE.txt",
-    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    "noticeSha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "repository": "florence-community/Florence-2-large-ft",
+    "revision": "26b734a54fdfbf9c398351eedfabb7f27fc470b7"
   }
 }

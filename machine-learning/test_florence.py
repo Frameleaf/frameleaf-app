@@ -101,6 +101,33 @@ def test_download_rejects_wrong_revision_bytes(snapshot, monkeypatch):
         model.download()
 
 
+@pytest.mark.parametrize("explicit_source", [None, "https://models.example.test"])
+def test_unconfigured_source_keeps_pinned_hub_and_hf_endpoint_is_authoritative(snapshot, monkeypatch, explicit_source):
+    model, manifest, contents = snapshot
+    monkeypatch.setattr(settings, "model_source_url", None)
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    if explicit_source:
+        monkeypatch.setenv("HF_ENDPOINT", explicit_source)
+    acquire = Mock(side_effect=lambda *args, **kwargs: populate(model, contents))
+    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    model.download()
+    assert acquire.call_args.args == (manifest["mirrorRepository"] if explicit_source else manifest["repository"],)
+    assert acquire.call_args.kwargs["endpoint"] == (explicit_source or "https://huggingface.co")
+    assert acquire.call_args.kwargs["revision"] == manifest["revision"]
+    assert acquire.call_args.kwargs["token"] is False
+
+
+def test_explicit_source_failure_never_falls_back(snapshot, monkeypatch):
+    model, _, _ = snapshot
+    monkeypatch.setattr(settings, "model_source_url", "https://models.example.test")
+    acquire = Mock(side_effect=RuntimeError("source unavailable"))
+    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    with pytest.raises(RuntimeError, match="source unavailable"):
+        model.download()
+    acquire.assert_called_once()
+    assert acquire.call_args.kwargs["endpoint"] == "https://models.example.test"
+
+
 @pytest.mark.parametrize(
     "file", ["config.json", "tokenizer.json", "model.safetensors", "README.md", "modeling_florence.py"]
 )
