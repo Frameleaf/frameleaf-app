@@ -150,32 +150,66 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
             model(namespace["MODEL_NAME"], device="unknown")
 
     def test_description_factory_preserves_both_model_paths_and_local_flags(self) -> None:
-        load = loader_method("image_description.py", "_load_cuda", {"cast": cast, "Callable": Callable, "Any": Any})
-        for florence in [True, False]:
-            with self.subTest(florence=florence):
+        manifest = {"revision": "reviewed-florence"}
+        load = loader_method(
+            "image_description.py",
+            "_load_cuda",
+            {
+                "cast": cast,
+                "Callable": Callable,
+                "Any": Any,
+                "florence_manifest": lambda name: manifest if name == "builtin" else None,
+                "verify_florence_snapshot": self.verify,
+            },
+        )
+        for name in ["builtin", "trusted-custom", "qwen"]:
+            with self.subTest(name=name):
+                self.verify.reset_mock()
+                self.vendor.AutoProcessor.from_pretrained.reset_mock()
                 owner = SimpleNamespace(
+                    hf_model_name=name,
                     cache_dir=Path("/cache/description"),
+                    model_path=Path(
+                        "/cache/description/reviewed-florence" if name == "builtin" else "/cache/description"
+                    ),
                     _torch_device=lambda _: "cpu",
-                    _is_florence_model=lambda: florence,
+                    _is_florence_model=lambda: name != "qwen",
+                    _check_custom_florence_trust=Mock(),
                 )
                 result = load(owner)
-                factory = (
-                    self.vendor.AutoModelForCausalLM if florence else self.vendor.AutoModelForImageTextToText
+                factory = getattr(
+                    self.vendor,
+                    {
+                        "builtin": "Florence2ForConditionalGeneration",
+                        "trusted-custom": "AutoModelForCausalLM",
+                        "qwen": "AutoModelForImageTextToText",
+                    }[name],
                 ).from_pretrained
                 self.assertIs(result["model"], factory.return_value)
+                self.assertEqual(factory.call_args.args, (str(owner.model_path),))
                 self.assertEqual(
                     factory.call_args.kwargs,
-                    {"torch_dtype": "fp32", "trust_remote_code": True, "local_files_only": True}
-                    if florence
+                    {"dtype": "fp32", "use_safetensors": True, "trust_remote_code": False, "local_files_only": True}
+                    if name == "builtin"
+                    else {"torch_dtype": "fp32", "trust_remote_code": True, "local_files_only": True}
+                    if name == "trusted-custom"
                     else {"torch_dtype": "auto", "local_files_only": True},
                 )
                 factory.return_value.to.assert_called_once_with("cpu")
                 factory.return_value.eval.assert_called_once_with()
                 self.assertEqual(factory.return_value.method_calls, [call.to("cpu"), call.eval()])
-                self.assertEqual(
-                    self.vendor.AutoProcessor.from_pretrained.call_args.kwargs,
-                    {"trust_remote_code": florence, "local_files_only": True},
+                processor = (
+                    self.vendor.Florence2Processor if name == "builtin" else self.vendor.AutoProcessor
+                ).from_pretrained
+                processor.assert_called_once_with(
+                    str(owner.model_path), trust_remote_code=name == "trusted-custom", local_files_only=True
                 )
+                if name == "builtin":
+                    self.verify.assert_called_once_with(owner.model_path, manifest)
+                    owner._check_custom_florence_trust.assert_not_called()
+                else:
+                    self.verify.assert_not_called()
+                    owner._check_custom_florence_trust.assert_called_once_with()
 
     def test_florence_generation_keeps_inputs_device_and_deterministic_controls(self) -> None:
         predict = loader_method(
