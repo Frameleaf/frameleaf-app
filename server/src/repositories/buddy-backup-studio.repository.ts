@@ -29,6 +29,7 @@ import {
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { assertReadyRetry } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 
 type Row = Record<string, unknown>;
@@ -48,7 +49,7 @@ const tables = {
   source: 'public.studio_export_version_source',
 } as const;
 type Table = (typeof tables)[keyof typeof tables];
-const jsonColumns = new Set(['envelope', 'summary', 'derivedFrom', 'settings', 'privacy']);
+const jsonColumns = new Set(['envelope', 'summary', 'derivedFrom', 'settings', 'privacy', 'processingProvenance']);
 // JSON numbers cannot represent every PostgreSQL bigint used for exact rational frame positions.
 const recordJson = (table: Table) =>
   table === tables.comment
@@ -87,6 +88,7 @@ export class BuddyBackupStudioRepository {
         version: 1,
         revisions: await this.rows(tables.revision, 'projectId', id),
         comments: await this.rows(tables.comment, 'projectId', id),
+        // This table contains ready imports only; operational publication journals are never portable data.
         imports: await this.rows(tables.imported, 'projectId', id),
         generated: await this.rows(tables.generated, 'projectId', id),
         exports,
@@ -358,7 +360,7 @@ export class BuddyBackupStudioRepository {
         tables.imported,
         { ...imported, path: target(imported.path) },
         ['projectId', 'id'],
-        ['ownerId', 'contentType', 'checksum', 'sizeBytes', 'fileName', 'externalReferences'],
+        ['ownerId', 'contentType', 'checksum', 'sizeBytes', 'fileName', 'externalReferences', 'processingProvenance'],
         (row) => buddyStudioImportSchema.parse(row),
         ['path'],
         retireFile,
@@ -608,11 +610,13 @@ export class BuddyBackupStudioRepository {
   ) {
     const columns = Object.keys(row);
     const value = (column: string) =>
-      jsonColumns.has(column)
-        ? sql`${JSON.stringify(row[column])}::text::jsonb`
-        : ['outputChecksum', 'subtitleChecksum'].includes(column) && row[column] !== null
-          ? sql`${Buffer.from(String(row[column]), 'hex')}`
-          : sql`${row[column]}`;
+      column === 'processingProvenance' && row[column] === null
+        ? sql`NULL`
+        : jsonColumns.has(column)
+          ? sql`${JSON.stringify(row[column])}::text::jsonb`
+          : ['outputChecksum', 'subtitleChecksum'].includes(column) && row[column] !== null
+            ? sql`${Buffer.from(String(row[column]), 'hex')}`
+            : sql`${row[column]}`;
     const where = sql.join(
       keys.map((key) => sql`${sql.ref(key)}=${row[key]}`),
       sql` AND `,
@@ -627,6 +631,11 @@ export class BuddyBackupStudioRepository {
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy Studio revision identity conflicts with existing history');
     const current = normalize(stored.rows[0].record);
+    if (table === tables.imported) {
+      const stored = buddyStudioImportSchema.parse(current);
+      const supplied = buddyStudioImportSchema.parse(row);
+      assertReadyRetry(stored.processingProvenance, supplied.processingProvenance ?? undefined);
+    }
     if (immutable.some((key) => canonicalJson(current[key]) !== canonicalJson(row[key])))
       throw new Error('Buddy Studio immutable identity changed');
     for (const pathColumn of table === tables.exported ? ['outputPath', 'subtitlePath'] : ['path']) {
