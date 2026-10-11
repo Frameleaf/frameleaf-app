@@ -35,11 +35,21 @@
 {#if section.admin}
   {#if section.key === 'deduplication'}
     <DeduplicationSection />
-  {:else if section.key === 'workers' || section.key === 'routing'}
-    {@const key = section.key}
+  {:else if section.key === 'computers'}
     <Loader load={loadProcessing}>
       {#snippet children(data)}
-        <ProcessingSection section={key} {data} />
+        <ProcessingSection section="workers" {data} />
+      {/snippet}
+    </Loader>
+    <Loader load={loadRenderWorkers}>
+      {#snippet children(data)}
+        <RenderWorkersSection {data} />
+      {/snippet}
+    </Loader>
+  {:else if section.key === 'routing'}
+    <Loader load={loadProcessing}>
+      {#snippet children(data)}
+        <ProcessingSection section="routing" {data} />
       {/snippet}
     </Loader>
   {:else if section.key === 'queues'}
@@ -58,12 +68,6 @@
     <RemoteAccessSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
-  {:else if section.key === 'render-workers'}
-    <Loader load={loadRenderWorkers}>
-      {#snippet children(data)}
-        <RenderWorkersSection {data} />
-      {/snippet}
-    </Loader>
   {:else if maintenanceSection}
     <MaintenanceSection section={maintenanceSection} />
   {:else if section.key === 'accounts'}

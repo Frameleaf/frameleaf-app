@@ -69,8 +69,8 @@
     mdiExpansionCard,
     mdiLinkVariant,
     mdiContentDuplicate,
-    mdiMemory,
-    mdiServerNetwork,
+    mdiDesktopTowerMonitor,
+    mdiTransitConnectionVariant,
     mdiShieldAccountOutline,
     mdiTrayFull,
     mdiWrench,
@@ -256,8 +256,8 @@
     {
       admin: true,
       component: NightlyTasksSettings,
-      title: $t('frameleaf_cc_section_schedules'),
-      subtitle: $t('frameleaf_cc_section_schedules_description'),
+      title: $t('frameleaf_computers_page_overnight'),
+      subtitle: $t('frameleaf_computers_page_overnight_description'),
       key: 'nightly-tasks',
       icon: mdiClockOutline,
     },
@@ -347,10 +347,12 @@
       [
         ['deduplication', 'frameleaf_cc_section_deduplication', mdiContentDuplicate],
         ['enrichment-care', 'frameleaf_cc_section_enrichment', mdiAutoFix],
-        ['workers', 'frameleaf_cc_section_workers', mdiServerNetwork],
-        ['routing', 'frameleaf_cc_section_routing', mdiRobotOutline],
-        ['queues', 'frameleaf_cc_section_queues', mdiTrayFull],
-        ['hardware', 'frameleaf_cc_section_hardware', mdiExpansionCard],
+        // FL-364: Computers & background work. Computers also answers the addresses of the pages it
+        // replaced (Workers & endpoints, Render workers).
+        ['computers', 'frameleaf_computers_page_computers', mdiDesktopTowerMonitor],
+        ['routing', 'frameleaf_computers_page_routing', mdiTransitConnectionVariant],
+        ['queues', 'frameleaf_computers_page_queues', mdiTrayFull],
+        ['hardware', 'frameleaf_computers_page_hardware', mdiExpansionCard],
         ['cloud-processing', 'frameleaf_cc_section_cloud_processing', mdiCloudSyncOutline],
         // FL-154..FL-156: Frameleaf Cloud → Account & link, Plan and Licence (settings-catalog.mjs:1713-1752).
         ['cloud-account', 'frameleaf_cc_section_cloud_account', mdiLinkVariant],
@@ -375,13 +377,6 @@
       icon,
       keywords: (SETTINGS_SECTION_KEYWORDS[key] ?? []).map((keyword) => $t(keyword)),
     })),
-    {
-      admin: true,
-      key: 'render-workers',
-      title: $t('admin.render_workers'),
-      subtitle: $t('frameleaf_cc_section_render_workers_description'),
-      icon: mdiMemory,
-    },
   ]);
   // Server sections first, so a key both lists use (notifications) resolves to the server's form.
   const sections = $derived([...serverSections, ...personal]);
