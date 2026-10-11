@@ -13,6 +13,7 @@ import { StudioProjectRepository } from 'src/repositories/studio-project.reposit
 import { BaseService } from 'src/services/base.service.js';
 import { retainImport } from 'src/services/studio-import-publication.service.js';
 import { IMPORT_FAULT_POINTS } from 'test/fixtures/studio-import-barrier-faults.js';
+import { teardownRetentionFixture } from 'test/fixtures/studio-import-fixture-teardown.js';
 import { DECLARATION } from 'test/fixtures/studio-import-retention.js';
 import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -21,22 +22,26 @@ import { newMediumService } from 'test/medium.factory.js';
 // These cases exercise orchestration/transaction boundaries; they cannot qualify storage durability.
 let db: Kysely<DB>;
 let root: string;
-let crashClosureUnknown = false;
+const crashWindowOwned = Boolean(process.env.FL111_CRASH_OWNER);
 const paths = new Set<string>();
 beforeAll(async () => {
-  db = await createRetentionTestDatabase(process.env.FL111_CRASH_OWNER ? 1 : 2, () => crashClosureUnknown);
+  db = await createRetentionTestDatabase(crashWindowOwned ? 1 : 2, crashWindowOwned);
   root = await mkdtemp(join(tmpdir(), 'fl111-retain-'));
 });
 afterAll(async () => {
-  try {
-    for (const path of paths)
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
-    if (root) await rmdir(root);
-  } finally {
-    await db?.destroy();
-  }
+  await teardownRetentionFixture(
+    crashWindowOwned,
+    async () => {
+      for (const path of paths)
+        await unlink(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+      if (root) await rmdir(root);
+    },
+    async () => {
+      await db?.destroy();
+    },
+  );
 });
 const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
@@ -331,7 +336,6 @@ describe.skipIf(!process.env.FL111_CRASH_OWNER)(
           node: process.execPath,
         };
         const run = (mode: 'publish' | 'recover') => {
-          crashClosureUnknown = true;
           const result = spawnSync(
             '/usr/bin/python3',
             [resolve('test/fixtures/studio-import-crash-driver.py'), process.env.FL111_CRASH_OWNER!],
@@ -354,7 +358,6 @@ describe.skipIf(!process.env.FL111_CRASH_OWNER)(
             boundary: 'process-restart-only',
             sourceHead: owner.sourceHead,
           });
-          crashClosureUnknown = false;
           return receipt;
         };
         expect(run('publish')).toMatchObject({ barrierObserved: true, descendantObserved: true, workerExitCode: -9 });
@@ -424,10 +427,8 @@ describe.skipIf(!process.env.FL111_CRASH_OWNER)(
           foreignIdentity.nlink,
         ]);
         expect(await readFile(foreignPath)).toEqual(bytes);
-        // Success-only, exact fixture-owned paths; failure keeps its namespace for guarded handoff.
-        if (published) await unlink(targetPath);
-        await unlink(foreignPath);
-        for (const path of [project, incoming, imports, ownerRoot, exportRoot, caseRoot]) await rmdir(path);
+        // Preserve exact files even after local PASS: only the independent crash-window owner
+        // can authenticate final closure/disposal. No parent-side external disposal gate exists.
       },
       180_000,
     );

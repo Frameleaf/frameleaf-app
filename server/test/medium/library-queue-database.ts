@@ -72,7 +72,7 @@ export async function explainLibrarySettlement(db: Kysely<DB>) {
  */
 export async function getLibraryQueueDB(
   maxConnections: 1 | 2 = 2,
-  preserveAfterUnknownClosure?: () => boolean,
+  preserveForCrashWindowOwner = false,
 ): Promise<Kysely<DB>> {
   const clone = await getKyselyDB();
   const name = (await sql<{ name: string }>`select current_database() name`.execute(clone)).rows[0].name;
@@ -122,8 +122,9 @@ export async function getLibraryQueueDB(
         'library-fixture-sql-calibration',
         JSON.stringify({ queryCount, totalSqlMs, maximumSqlMs, slowestSql }),
       );
-    // A surviving owned worker may still hold SQL: only Root's guardian can authorize later disposal.
-    if (preserveAfterUnknownClosure?.()) return;
+    // Local worker PASS cannot authorize disposal ahead of the independent owner's final closure.
+    // Preserve even after local success; an authenticated external disposal gate is not installed here.
+    if (preserveForCrashWindowOwner) return;
     target.pathname = '/postgres';
     const admin = createPostgres({
       connection: { connectionType: 'url', url: target.href },
