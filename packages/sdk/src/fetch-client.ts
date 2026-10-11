@@ -13719,8 +13719,8 @@ export type StudioExportCreateResponseDto = {
     version: StudioExportVersionDto;
 };
 export type RetainedProcessingProvenance = {
-    evidence: ProcessingProvenanceEvidence;
-    family: ProcessingProvenanceFamily;
+    evidence: "client-reported";
+    family: "anime4k";
     input: {
         height: number;
         width: number;
@@ -13739,11 +13739,11 @@ export type RetainedProcessingProvenance = {
     outputSha256: string;
     source: {
         id: string;
-        "namespace": ProcessingProvenanceSourceNamespace;
+        "namespace": "freecut-media";
         projectId: string;
     };
     variant: "animation" | "liveAction" | "threeD";
-    version: ProcessingProvenanceVersion;
+    version: 1;
 };
 export type StudioProjectImportDto = {
     /** SHA-256 of the bytes, hex */
@@ -13780,7 +13780,7 @@ export type StudioImportPublicationDto = {
     importId: string;
     imported?: StudioProjectImportDto;
     publicationId: string;
-    state: StudioImportPublicationState;
+    state: "registered" | "preparing" | "published" | "aborted";
 };
 export type StudioImportPublicationPageDto = {
     items: StudioImportPublicationDto[];
@@ -13792,7 +13792,7 @@ export type StudioImportPublicationRegisterDto = {
 };
 export type StudioImportPublicationCancelDto = {
     receipt: StudioImportPublicationDto;
-    status: StudioImportPublicationCancelStatus;
+    status: "cancelled" | "already-published";
 };
 export type StudioProjectResourceUseDto = {
     /** Whether it may run on this server */
@@ -26769,7 +26769,7 @@ export function importStudioProjectFile({ id, studioProjectImportCreateDto }: {
 export function getStudioImportPublications({ cursor, id, state }: {
     cursor?: string;
     id: string;
-    state?: StudioImportPublicationState;
+    state?: "registered" | "preparing" | "published" | "aborted";
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -31904,28 +31904,6 @@ export enum StudioProjectImportKind {
     Captions = "captions",
     Lut = "lut"
 }
-export enum ProcessingProvenanceEvidence {
-    ClientReported = "client-reported"
-}
-export enum ProcessingProvenanceFamily {
-    Anime4K = "anime4k"
-}
-export enum ProcessingProvenanceSourceNamespace {
-    FreecutMedia = "freecut-media"
-}
-export enum ProcessingProvenanceVersion {
-    $1 = 1
-}
-export enum StudioImportPublicationState {
-    Registered = "registered",
-    Preparing = "preparing",
-    Published = "published",
-    Aborted = "aborted"
-}
-export enum StudioImportPublicationCancelStatus {
-    Cancelled = "cancelled",
-    AlreadyPublished = "already-published"
-}
 export enum StudioProjectResourceKind {
     Font = "font",
     Lut = "lut",
@@ -32458,6 +32436,18 @@ export enum Version10 {
 export enum Version11 {
     $1 = 1
 }
+export enum ProcessingProvenanceEvidence {
+    ClientReported = "client-reported"
+}
+export enum ProcessingProvenanceFamily {
+    Anime4K = "anime4k"
+}
+export enum ProcessingProvenanceSourceNamespace {
+    FreecutMedia = "freecut-media"
+}
+export enum ProcessingProvenanceVersion {
+    $1 = 1
+}
 export enum PushEventType {
     BackupNeedsAttention = "backup-needs-attention",
     BackupStale = "backup-stale",
@@ -32467,6 +32457,16 @@ export enum PushEventType {
     RenderFinished = "render-finished",
     RenderProgress = "render-progress",
     AccessChanged = "access-changed"
+}
+export enum StudioImportPublicationCancelStatus {
+    Cancelled = "cancelled",
+    AlreadyPublished = "already-published"
+}
+export enum StudioImportPublicationState {
+    Registered = "registered",
+    Preparing = "preparing",
+    Published = "published",
+    Aborted = "aborted"
 }
 export enum Status12 {
     Active = "active",
