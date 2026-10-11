@@ -138,7 +138,9 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       // The pages are links: Tab walks them in order to the last one and Enter opens it.
       await navigation.getByRole('link', { name: 'Overview', exact: true }).focus();
       await page.keyboard.press('Tab');
-      await expect(navigation.getByRole('link', { name: 'Schedule', exact: true })).toBeFocused();
+      const scheduleTab = navigation.getByRole('link', { name: 'Schedule', exact: true });
+      await expect(scheduleTab).toBeFocused();
+      await expect(scheduleTab).toHaveCSS('outline-style', 'solid');
       await page.keyboard.press('Tab');
       const restoreTab = navigation.getByRole('link', { name: 'Restore', exact: true });
       await expect(restoreTab).toBeFocused();

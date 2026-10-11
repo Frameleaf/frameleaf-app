@@ -8,7 +8,7 @@ import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositor
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
-import { CloudBackupManifest, objectKey } from 'src/utils/cloud-backup.js';
+import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 
@@ -98,6 +98,7 @@ export type CloudBackupRestoreFile = {
   /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, or `profile`. */
   role: string;
   sha256: string;
+  objectKey?: string;
   size: number;
   target: string;
   inPlace: boolean;
@@ -194,6 +195,7 @@ export const restorePlan = (options: {
         assetId,
         role: file.role,
         sha256: file.sha256,
+        ...(file.objectKey && { objectKey: file.objectKey }),
         size: file.size,
         target,
         inPlace: inPlace && target !== inFolder,
@@ -209,6 +211,7 @@ export const restorePlan = (options: {
         assetId: null,
         role: 'profile',
         sha256: file.sha256,
+        ...(file.objectKey && { objectKey: file.objectKey }),
         size: file.size,
         target,
         inPlace: target !== inFolder,
@@ -274,7 +277,7 @@ export class CloudBackupRestorer {
       const pending = cursor ? files.filter((file) => compareCodeUnits(file.fileKey, cursor) > 0) : files;
       for (let at = 0; at < pending.length; at += RESTORE_BATCH) {
         for (const file of pending.slice(at, at + RESTORE_BATCH)) {
-          const outcome = await this.restoreFile(bucket, objectKey(file.sha256), file, options);
+          const outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, options);
           await options.completedFile?.(file, outcome);
           result = {
             ...result,

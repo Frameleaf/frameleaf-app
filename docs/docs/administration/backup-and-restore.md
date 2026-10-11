@@ -4,6 +4,8 @@ Frameleaf keeps media files on your storage and their identity, ownership, album
 
 Keep identity keys and recovery material on [private backup storage](./private-backup-storage.md). That guide covers server-only mounts, NAS ACL verification and migration that preserves existing keys.
 
+For versioned Cloud Backup keys, trusted snapshot selection and a complete export that can be restored without a cloud account, see [Cloud Backup recovery](./cloud-backup-recovery.md). Client-encrypted writes remain opt-in while restore and provider qualification are completed; existing SSE-C backups remain readable.
+
 ## What to preserve
 
 - The complete Frameleaf database, including `public.frameleaf_migrations`, import journals, configuration and feature tables.
@@ -59,6 +61,14 @@ This tests archive restoration into an isolated database. Keep API, job and uplo
 During Frameleaf recovery, transient rate counters, upload leases, Socket.IO attachments and worker membership are cleared. Active jobs and pending/waiting jobs whose remote effects cannot be retried safely become `needs_attention`; only jobs on the audited safe retry list remain pending. This avoids automatically repeating a remote effect after restoring an older recovery point. Review these jobs before manually retrying them. Media and permissions remain database-backed and are not reconstructed from transient worker state.
 
 Start the matching Frameleaf release, check database health and migrations, sign in as representative users, and verify original media bytes, albums, locked/hidden access and sharing behavior. An imported destination remains inactive until its importer verification succeeds; restoring a partial journal does not activate it.
+
+## Managed cloud transfers
+
+Managed backups request temporary storage sessions for upload, restore or cleanup. Verification and cleanup previews use restore access. Sessions renew during long operations; credentials stay in memory, while the operation records multipart receipts and verified download offsets so the same operation can resume after a worker restart. Keep the server's backup state and temporary transfer files until it finishes.
+
+When Cloud temporarily cannot renew a session, the operation waits and retains its progress. A refused or revoked operation stops. Read-only storage cannot gain upload or cleanup permission through renewal; retained restores still require Cloud to authorize restore access. Previously issued sessions can remain valid until provider expiry, bounded to 15 minutes; an already accepted request may finish afterward. Native provider qualification is required before enabling these sessions in a managed rollout.
+
+User-provided S3 credentials and independent offline recovery continue to use their existing configuration and recovery keys.
 
 ## Immich sources
 

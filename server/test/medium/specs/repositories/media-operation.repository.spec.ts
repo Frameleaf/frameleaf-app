@@ -112,6 +112,69 @@ describe(MediaOperationRepository.name, () => {
     ).resolves.toBeUndefined();
   });
 
+  describe('backup transfer checkpoints', () => {
+    const receipt = { kind: 'upload', key: 'o/test', uploadId: 'accepted-upload', parts: [] };
+
+    it('preserves task progress while saving and clearing transfer receipts', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'backup',
+        leaseMs: LEASE_MS,
+      });
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Rendering, result: { task: 'verify', checked: 4, cursor: 'kept' } })
+        .where('id', '=', operation.id)
+        .execute();
+      await expect(sut.setBackupTransfer(operation.id, claim!.claimToken, receipt)).resolves.toBe(true);
+      expect((await sut.getForOwner(operation.id, user.id))?.result).toEqual({
+        task: 'verify',
+        checked: 4,
+        cursor: 'kept',
+        backupTransfer: receipt,
+      });
+      await expect(sut.setBackupTransfer(operation.id, claim!.claimToken, null)).resolves.toBe(true);
+      expect((await sut.getForOwner(operation.id, user.id))?.result).toEqual({
+        task: 'verify',
+        checked: 4,
+        cursor: 'kept',
+        backupTransfer: null,
+      });
+    });
+
+    it.each(['token', 'expired', 'pause', 'cancel', 'status'])(
+      'refuses a checkpoint after %s invalidates the claim',
+      async (reason) => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await sut.claimNext({
+          kinds: [MediaOperationKind.StudioExport],
+          workerId: 'backup',
+          leaseMs: LEASE_MS,
+        });
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({
+            status: reason === 'status' ? MediaOperationStatus.Preparing : MediaOperationStatus.Rendering,
+            result: { checked: 4 },
+            ...(reason === 'expired' && { claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` }),
+            ...(reason === 'pause' && { pauseRequestedAt: new Date() }),
+            ...(reason === 'cancel' && { cancelRequestedAt: new Date() }),
+          })
+          .where('id', '=', operation.id)
+          .execute();
+        await expect(
+          sut.setBackupTransfer(operation.id, reason === 'token' ? operation.id : claim!.claimToken, receipt),
+        ).resolves.toBe(false);
+        expect((await sut.getForOwner(operation.id, user.id))?.result).toEqual({ checked: 4 });
+      },
+    );
+  });
+
   describe('mergeStreamSignal (FL-96)', () => {
     it('merges the patch into the result as an object, and only on the expected negotiation round', async () => {
       const { ctx, sut } = setup();

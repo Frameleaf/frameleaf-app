@@ -235,6 +235,12 @@ gap, as does Cloud's quarterly key publication fix. No production auth weakening
 changes. These are authored source tests pending hosted execution, not deployed identity/provider,
 quarterly rotation, native/store or complete product acceptance.
 
+- FL-376 / FC-156 managed backup v4: `backup/capability-upload.json`,
+  `backup/capability-restore.json`, and `backup/capability-prune.json` are the
+  independently authored Apache-2.0 Cloud contract fixtures from
+  `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/`. They retain
+  their synthetic values verbatim. Existing v2 fixtures remain unchanged.
+
 ## FL-379 mail sign-in broker fixtures
 
 `mail/` (every file, 18) is byte-identical to `packages/contracts/fixtures/mail/` on
