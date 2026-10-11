@@ -9,7 +9,7 @@ import { utils } from 'src/utils.js';
  * No media, recovery keys, invitations, service flags or mocked API responses are created here.
  */
 const backupUrl = '/user-settings?area=backups';
-const pages = ['Overview', 'Restore'];
+const pages = ['Overview', 'Schedule', 'Restore'];
 const hostingPrivacy =
   'Hosting is encrypted storage only. Your buddy’s photos, albums and filenames never appear in your library.';
 const screens = [
@@ -135,8 +135,10 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       );
       expect(clippedTabs, 'every Backup page fits').toEqual([]);
 
-      // The pages are links: Tab reaches the last one and Enter opens it.
+      // The pages are links: Tab walks them in order to the last one and Enter opens it.
       await navigation.getByRole('link', { name: 'Overview', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      await expect(navigation.getByRole('link', { name: 'Schedule', exact: true })).toBeFocused();
       await page.keyboard.press('Tab');
       const restoreTab = navigation.getByRole('link', { name: 'Restore', exact: true });
       await expect(restoreTab).toBeFocused();
