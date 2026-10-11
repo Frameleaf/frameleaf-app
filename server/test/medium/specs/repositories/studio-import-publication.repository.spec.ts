@@ -452,7 +452,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       finish = defer();
     // A derived handle shares the same bounded pool. Delegate the real transaction unchanged,
     // retaining its connection for observation while its publication callback is held.
-    const publicationDb = db.withTables<DB>();
+    const publicationDb = db.withTables<Record<never, never>>();
     const transaction = publicationDb.transaction.bind(publicationDb);
     let publicationTx: Transaction<DB> | undefined;
     publicationDb.transaction = () => {
