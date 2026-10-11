@@ -19,7 +19,7 @@ const workflows = Object.fromEntries(
     ]),
 );
 const hosted = new Set([
-  "ubuntu-24.04",
+  "namespace-profile-fl",
   "ubuntu-24.04-arm",
   "windows-latest",
   "macos-26",
@@ -72,7 +72,7 @@ for (const [file, workflow] of Object.entries(workflows)) {
           {
             include: [
               {
-                runner: "ubuntu-24.04",
+                runner: "namespace-profile-fl",
                 architecture: "amd64",
                 "node-architecture": "x64",
               },

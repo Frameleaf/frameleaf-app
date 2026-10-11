@@ -1,9 +1,10 @@
 # Fork CI runners
 
-All workflow jobs use GitHub-hosted runners. Linux jobs use Ubuntu 24.04;
-container builds use native `ubuntu-24.04` (AMD64) and
-`ubuntu-24.04-arm` (ARM64), without QEMU. Windows CLI tests use
-`windows-latest`.
+Linux AMD64 jobs run on Namespace managed runners through the profile label
+`namespace-profile-fl` (FL-380, owner decision 2026-10-11, release and publish
+jobs included). ARM64 jobs still use GitHub-hosted `ubuntu-24.04-arm` until an
+ARM profile is named, and Windows CLI tests use GitHub-hosted `windows-latest`.
+Container builds stay native per architecture, without QEMU.
 
 Repository admission guards, immutable action pins, release ancestry checks,
 and container-cache publication restrictions remain in place. Only the fork

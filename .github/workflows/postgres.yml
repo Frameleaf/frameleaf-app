@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
+          - namespace-profile-fl
           - ubuntu-24.04-arm
     steps:
       - name: Checkout
@@ -133,7 +133,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.publish &&
       (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
       github.ref == 'refs/heads/aj/FL-333-pg19') }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     timeout-minutes: 45
     permissions:
       contents: read
@@ -193,13 +193,13 @@ jobs:
           set -euo pipefail
           digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
           # Exactly one tested image per architecture, checked before anything is pushed.
-          seen=$(for runner in ubuntu-24.04 ubuntu-24.04-arm; do cat "$RUNNER_TEMP/tested/frameleaf-postgres-$runner/architecture"; done | sort | tr '\n' ' ')
+          seen=$(for runner in namespace-profile-fl ubuntu-24.04-arm; do cat "$RUNNER_TEMP/tested/frameleaf-postgres-$runner/architecture"; done | sort | tr '\n' ' ')
           if [[ "$seen" != "amd64 arm64 " ]]; then
             echo "::error::Expected one amd64 and one arm64 tested image, found: $seen"
             exit 1
           fi
           children=()
-          for runner in ubuntu-24.04 ubuntu-24.04-arm; do
+          for runner in namespace-profile-fl ubuntu-24.04-arm; do
             dir="$RUNNER_TEMP/tested/frameleaf-postgres-$runner"
             tested=$(cat "$dir/config-digest")
             architecture=$(cat "$dir/architecture")

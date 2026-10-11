@@ -58,7 +58,7 @@ jobs:
   candidate:
     name: Verify the verified candidate
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/fork/main' || inputs.dry-run)
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
       actions: read
@@ -95,9 +95,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        runner: [namespace-profile-fl, ubuntu-24.04-arm]
         include:
-          - runner: ubuntu-24.04
+          - runner: namespace-profile-fl
             architecture: amd64
           - runner: ubuntu-24.04-arm
             architecture: arm64
@@ -128,7 +128,7 @@ jobs:
     name: Promote, sign and publish
     needs: [candidate, deploy-test]
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     environment: production
     permissions:
       contents: write
@@ -165,7 +165,7 @@ jobs:
   flags-plan:
     name: Plan ${{ inputs.action }} (read only)
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release'
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
       packages: read
@@ -188,7 +188,7 @@ jobs:
     name: Apply ${{ inputs.action }}
     needs: flags-plan
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     environment: production
     permissions:
       contents: write

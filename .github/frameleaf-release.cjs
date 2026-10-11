@@ -210,7 +210,7 @@ function validateBuildInput(env) {
   return spec.platforms.map((platform) => ({
     platform,
     architecture: platform.split("/")[1],
-    runner: platform === "linux/amd64" ? "ubuntu-24.04" : "ubuntu-24.04-arm",
+    runner: platform === "linux/amd64" ? "namespace-profile-fl" : "ubuntu-24.04-arm",
   }));
 }
 function validateIndex(index, spec, sha) {
@@ -325,13 +325,13 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "End-to-End Lint",
   "Medium Tests (Server)",
   "Medium Scale Tests (Server)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
+  "End-to-End Tests (Server & CLI) (namespace-profile-fl)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-  "End-to-End Image (ubuntu-24.04)",
+  "End-to-End Image (namespace-profile-fl)",
   "End-to-End Image (ubuntu-24.04-arm)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 1)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 2)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+  "End-to-End Tests (Web) (namespace-profile-fl, 1)",
+  "End-to-End Tests (Web) (namespace-profile-fl, 2)",
+  "End-to-End Tests (Web) (namespace-profile-fl, 3)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",

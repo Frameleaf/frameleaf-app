@@ -8,7 +8,7 @@ jobs:
   disabled:
     name: Legacy automation is disabled
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions: {}
     steps:
       - name: Explain the retired automation

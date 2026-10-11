@@ -44,7 +44,7 @@ on:
 jobs:
   matrix:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     outputs:
@@ -227,7 +227,7 @@ jobs:
   merge:
     needs: [matrix, build, publish]
     if: ${{ !cancelled() && inputs.mode != 'archive' && needs.matrix.result == 'success' && ((needs.build.result == 'success' && needs.publish.result == 'skipped') || (needs.build.result == 'skipped' && needs.publish.result == 'success')) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
       actions: read

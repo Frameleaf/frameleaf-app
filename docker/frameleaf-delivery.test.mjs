@@ -959,7 +959,7 @@ test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
   assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
   const workflow = load(read(".github/workflows/postgres.yml"));
   assert.deepEqual(workflow.jobs.build.strategy.matrix.runner, [
-    "ubuntu-24.04",
+    "namespace-profile-fl",
     "ubuntu-24.04-arm",
   ]);
   const probe = workflow.jobs.build.steps.find(

@@ -11,7 +11,7 @@ jobs:
   issue-key:
     name: Jira Issue Key
     if: github.repository == 'Frameleaf/frameleaf-app'
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:

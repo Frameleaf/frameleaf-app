@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     defaults:
       run:
         working-directory: ./docs

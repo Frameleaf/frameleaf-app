@@ -34,7 +34,7 @@ jobs:
   script-unit-tests:
     name: Scripts unit tests
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:
@@ -90,7 +90,7 @@ jobs:
   server-unit-tests:
     name: Test & Lint Server
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     env:
@@ -133,7 +133,7 @@ jobs:
   cli-unit-tests:
     name: Unit Test CLI
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -187,7 +187,7 @@ jobs:
   web-lint:
     name: Lint Web
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -227,7 +227,7 @@ jobs:
   web-unit-tests:
     name: Test Web
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -270,7 +270,7 @@ jobs:
   i18n-tests:
     name: Test i18n
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:
@@ -306,7 +306,7 @@ jobs:
   e2e-tests-lint:
     name: End-to-End Lint
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -348,7 +348,7 @@ jobs:
     # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
     name: Medium Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
       packages: read
@@ -432,7 +432,7 @@ jobs:
     # more), with a database of their own.
     name: Medium Scale Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
       packages: read
@@ -524,7 +524,7 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
+          - namespace-profile-fl
           - ubuntu-24.04-arm
     steps:
       - name: Checkout code
@@ -577,7 +577,7 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
+          - namespace-profile-fl
           - ubuntu-24.04-arm
     steps:
       - name: Checkout code
@@ -751,11 +751,11 @@ jobs:
       # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
       - name: Prepare disposable Buddy TLS and storage
         id: buddy-prepare
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'namespace-profile-fl' }}
         run: bash buddy-fixture-tls.sh
       - name: Start the two-server Buddy fixture
         id: buddy-fixture
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'namespace-profile-fl' }}
         env:
           BUDDY_PREPARE_OUTCOME: ${{ steps.buddy-prepare.outcome }}
         run: |
@@ -771,7 +771,7 @@ jobs:
           done
       - name: Run two-server direct Buddy acceptance
         id: buddy-test
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'namespace-profile-fl' }}
         working-directory: ./server
         env:
           BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
@@ -784,7 +784,7 @@ jobs:
           fi
           pnpm exec vitest run --config test/vitest.config.buddy.mjs
       - name: Capture redacted Buddy diagnostics
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'namespace-profile-fl' }}
         run: |
           # This file intentionally excludes raw app/fixture logs, environment, auth headers, kits and media.
           {
@@ -807,13 +807,13 @@ jobs:
       # The fixed diagnostic above names the error class but not the competing writer (55P03 on the restore
       # after the restart). Both app containers hold only disposable fixture accounts, keys and media.
       - name: Capture Buddy app logs
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'namespace-profile-fl' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
             docker compose -f docker-compose.buddy.yml logs --no-color --timestamps buddy-a buddy-b > docker-buddy-logs.txt 2>&1 || true
           fi
       - name: Remove the owned Buddy fixture
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'namespace-profile-fl' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ]; then
             case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
@@ -888,7 +888,7 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
+          - namespace-profile-fl
           - ubuntu-24.04-arm
         # FL-380: the specs are split by file across three stacks of their own. The web project shares
         # one server and database per stack, so it stays on one worker; more stacks, not more workers.
@@ -1020,7 +1020,7 @@ jobs:
       - e2e-tests-web
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
     steps:
       - name: Verify required E2E jobs succeeded
@@ -1036,7 +1036,7 @@ jobs:
   ml-unit-tests:
     name: Unit Test ML
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -1058,7 +1058,7 @@ jobs:
   github-files-formatting:
     name: .github Files Formatting
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     defaults:
@@ -1098,7 +1098,7 @@ jobs:
   shellcheck:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: ShellCheck
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:
@@ -1113,7 +1113,7 @@ jobs:
   generated-api-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: OpenAPI Clients
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:
@@ -1165,7 +1165,7 @@ jobs:
   sql-schema-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: SQL Schema Checks
-    runs-on: ubuntu-24.04
+    runs-on: namespace-profile-fl
     permissions:
       contents: read
     steps:

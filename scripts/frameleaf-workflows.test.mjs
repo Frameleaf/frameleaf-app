@@ -688,13 +688,13 @@ test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequ
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
     // A failed earlier step must still enter the fail-closed prerequisite check.
-    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
+    for (const runner of ["namespace-profile-fl", "ubuntu-24.04-arm"]) {
       for (const cancelled of [false, true]) {
         const admitted = runInNewContext(
           step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""),
           { matrix: { runner }, cancelled: () => cancelled },
         );
-        assert.equal(admitted, runner === "ubuntu-24.04" && !cancelled);
+        assert.equal(admitted, runner === "namespace-profile-fl" && !cancelled);
       }
     }
   }
@@ -748,13 +748,13 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
   for (const step of [capture, logs, cleanup]) {
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
-    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
+    for (const runner of ["namespace-profile-fl", "ubuntu-24.04-arm"]) {
       assert.equal(
         runInNewContext(step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
           matrix: { runner },
           always: () => true,
         }),
-        runner === "ubuntu-24.04",
+        runner === "namespace-profile-fl",
       );
     }
   }
@@ -1189,7 +1189,7 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
   assert.equal(publish.environment, "production");
   assert.deepEqual(
     w.jobs.build.strategy.matrix.include.map(({ runner }) => runner),
-    ["ubuntu-24.04", "ubuntu-24.04-arm"],
+    ["namespace-profile-fl", "ubuntu-24.04-arm"],
   );
   const build = w.jobs.build.steps.find(
     (s) => s.name === "Build without publishing",
@@ -1488,7 +1488,7 @@ test("integration image is a guarded manual pre-release that never writes releas
     "node .github/frameleaf-deploy-test.cjs",
   );
   assert.deepEqual(w.jobs["deploy-test"].strategy.matrix.runner, [
-    "ubuntu-24.04",
+    "namespace-profile-fl",
     "ubuntu-24.04-arm",
   ]);
   const guard = w.jobs.guard.steps[0].run;
