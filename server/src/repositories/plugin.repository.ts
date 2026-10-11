@@ -233,6 +233,8 @@ export class PluginRepository {
             { wasm: [{ data }] },
             {
               useWasi: true,
+              // Workflow plugins receive bytes through host functions, never host filesystem mounts.
+              allowedPaths: {},
               runInWorker,
               functions: {
                 'extism:host/user': functions ?? {},

@@ -297,7 +297,7 @@ test("manual releases require a successful canonical exact-SHA Docker run", () =
     assert.equal(trustedRun({ ...run, ...patch }, sha), false);
 });
 
-// Names are the resolved Test workflow jobs, including both native runner and both medium scale suite matrix members.
+// Names are the resolved Test workflow jobs, including both native runner matrix members.
 // These fixtures model GitHub responses; only the production validator decides qualification.
 const testJobNames = [
   "Scripts unit tests",
@@ -309,8 +309,7 @@ const testJobNames = [
   "Test i18n",
   "End-to-End Lint",
   "Medium Tests (Server)",
-  "Medium Scale Tests (Server) (queue-scale)",
-  "Medium Scale Tests (Server) (library-scale)",
+  "Medium Scale Tests (Server)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
   "End-to-End Tests (Web) (ubuntu-24.04)",
@@ -364,7 +363,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 21);
+  assert.equal(evidence.jobs.length, 20);
   assert.deepEqual(
     evidence.jobs
       .filter((job) => job.name.startsWith("End-to-End Tests ("))
@@ -377,7 +376,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
     ],
   );
 });
-test("the qualification job catalog covers the non-mobile Test workflow and every runner and suite matrix member", async () => {
+test("the qualification job catalog covers the non-mobile Test workflow and both runner matrix members", async () => {
   const source = await fs.readFile(
     path.join(__dirname, "workflows/test.yml"),
     "utf8",
@@ -388,10 +387,9 @@ test("the qualification job catalog covers the non-mobile Test workflow and ever
   const resolved = jobs.flatMap((block) => {
     const name = /^    name: (.+)$/m.exec(block)?.[1];
     if (!name) return [];
-    const matrix =
-      /^        (?:runner|suite):\n((?:          - [^\n]+\n)+)/m.exec(
-        block,
-      )?.[1];
+    const matrix = /^        runner:\n((?:          - [^\n]+\n)+)/m.exec(
+      block,
+    )?.[1];
     return matrix
       ? [...matrix.matchAll(/^          - (.+)$/gm)].map(
           ([, runner]) => `${name} (${runner})`,
@@ -552,7 +550,7 @@ test("Test qualification rejects untrusted, duplicate and incomplete job evidenc
   await assert.rejects(
     requireTestQualification(sha, async (endpoint) => {
       const response = await partial.request(endpoint);
-      return response.jobs ? { ...response, total_count: 20 } : response;
+      return response.jobs ? { ...response, total_count: 21 } : response;
     }),
     /Test qualification/,
   );

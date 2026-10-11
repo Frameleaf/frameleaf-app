@@ -11,7 +11,13 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
+  import {
+    applyClusterLabelLayout,
+    BUBBLE_NAME_LAYER,
+    clusterRadius,
+    MAP_CLUSTER_DISTANCE,
+    updateBubbleNames,
+  } from '$lib/frameleaf/map-clusters';
   import {
     markerCardLine,
     markerDetail,
@@ -368,7 +374,11 @@
             sources[key] = value;
           }
         }
-        return { ...next, sources };
+        // …and the invisible layers svelte-maplibre reads the bubbles through, as the stock map does
+        // (shared-components/map/Map.svelte): a markers source left with no layer drops its tiles, and
+        // the bubbles are gone until the obstacle layer has brought the tiles back.
+        const markerLayers = previous.layers.filter((layer) => layer.type === 'fill' && layer.source === 'geojson');
+        return { ...next, sources, layers: [...next.layers, ...markerLayers] };
       },
     });
   });
@@ -476,7 +486,8 @@
         // map's first "load" (offline at startup, or the tile server unreachable) still shows the
         // offline state instead of leaving the map blank. onload only fires once the style has
         // loaded, so an error handler registered there would never see a startup failure.
-        if ((event as { sourceId?: string }).sourceId !== 'geojson') {
+        const failed = (event as { sourceId?: string }).sourceId;
+        if (failed !== 'geojson' && failed !== BUBBLE_NAME_LAYER) {
           tilesFailed = true;
         }
       }}
@@ -490,13 +501,25 @@
       }}
       onload={(instance: Map) => {
         // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
-        const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
+        // MapLibre fires both events from inside a frame, after it has evaluated the layers and before
+        // it draws them, and a layer added there is drawn with no layout: the renderer throws. A theme
+        // change does just that (it drops the obstacle layer from a source that keeps its tiles), so
+        // the style is only changed once the frame is over.
+        const layoutLabels = () => queueMicrotask(() => applyClusterLabelLayout(instance, 'geojson'));
         instance.on('styledata', layoutLabels);
         instance.on('sourcedata', (event: { sourceId?: string }) => {
           if (event.sourceId === 'geojson') {
             layoutLabels();
           }
         });
+        // The markers source goes on at "style.load", so on a first load both events are over before
+        // "load" attaches the listeners above, and nothing would lay the labels out until the view
+        // crossed a zoom level. "load" itself is fired after the frame has been drawn.
+        layoutLabels();
+        // …and a place hidden under a bubble is named at the bubble's edge, once the map is at rest.
+        // While it moves, a name goes as soon as its bubble regroups.
+        instance.on('idle', () => updateBubbleNames(instance, 'geojson'));
+        instance.on('move', () => queueMicrotask(() => updateBubbleNames(instance, 'geojson', false)));
       }}
       bind:map
     >

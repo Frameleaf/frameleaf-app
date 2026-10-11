@@ -73,7 +73,7 @@
   {% if values.frameleaf.hugging_face_endpoint %}
     {% do ml_container.x.environment.add_env("HF_ENDPOINT", values.frameleaf.hugging_face_endpoint) %}
   {% endif %}
-  {% do ml_container.x.environment.add_user_envs(values.frameleaf.additional_envs) %}
+  {% do ml_container.x.environment.add_user_envs(values.frameleaf.ml_additional_envs | default([])) %}
   {% set ml_cache_config = dict(values.storage.ml_cache, **{"volume_config": {"volume_name": "ml-cache"}}) %}
   {% do ml_container.x.add_storage(values.consts.ml_cache_path, ml_cache_config) %}
   {% do perm_container.add_or_skip_action("ml-cache", ml_cache_config, perms_config) %}
