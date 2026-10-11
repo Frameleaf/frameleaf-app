@@ -740,13 +740,14 @@ test("the server base is built in-repo and identical in the production and devel
       "admin2Codes.txt",
       "countryInfo.txt",
       "ne_10m_admin_0_countries.geojson",
+      "landmarks.ndjson.gz",
     ],
   );
   for (const [sum, name, capture] of entries) {
     assert.match(sum, /^[a-f0-9]{64}$/, name);
     assert.match(
       capture,
-      /^https:\/\/(?:web\.archive\.org\/web\/\d{14}id_\/|raw\.githubusercontent\.com\/nvkelso\/natural-earth-vector\/v5\.1\.2\/)/,
+      /^https:\/\/(?:web\.archive\.org\/web\/\d{14}id_\/|raw\.githubusercontent\.com\/nvkelso\/natural-earth-vector\/v5\.1\.2\/|raw\.githubusercontent\.com\/Frameleaf\/frameleaf-app\/[a-f0-9]{40}\/server\/base-image\/geodata\/landmarks\/)/,
       name,
     );
   }

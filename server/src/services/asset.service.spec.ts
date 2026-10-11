@@ -57,6 +57,8 @@ describe(AssetService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.search.getAssetLandmarks.mockResolvedValue([]);
+    mocks.map.getLandmarkIcons.mockReturnValue(new Map());
     removedExtras = {};
     // the file cleanup is queued inside the removal's transaction, from the files the repository reads
     // there, as the repository does
@@ -179,6 +181,34 @@ describe(AssetService.name, () => {
         asset.id,
         expect.objectContaining({ stack: { assets: true, lockedOwnerId: asset.ownerId } }),
       );
+    });
+
+    it('should name the landmarks a located asset was taken at, and none when its location is hidden', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from({ ownerId: auth.user.id }).exif({ latitude: 48.8584, longitude: 2.2945 }).build();
+      const landmarks = [
+        { id: 'Q243', name: 'Eiffel Tower', kind: 'tower' },
+        { id: 'Q217925', name: 'Champ de Mars', kind: 'park' },
+      ];
+      const icon = { background: '#ffffff', tile: false };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.search.getAssetLandmarks.mockResolvedValue(landmarks);
+      mocks.map.getLandmarkIcons.mockReturnValue(new Map([['Q243', icon]]));
+
+      // only the landmark with a brand icon says how to draw one
+      await expect(sut.get(auth, asset.id)).resolves.toMatchObject({
+        landmarks: [
+          { ...landmarks[0], icon },
+          { ...landmarks[1], icon: undefined },
+        ],
+      });
+
+      const unlocated = AssetFactory.from({ ownerId: auth.user.id }).exif({ latitude: null, longitude: null }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([unlocated.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(unlocated));
+      const response = (await sut.get(auth, unlocated.id)) as AssetResponseDto;
+      expect(response.landmarks).toBeUndefined();
     });
 
     it("should keep location on a partner's asset while location sharing is on", async () => {

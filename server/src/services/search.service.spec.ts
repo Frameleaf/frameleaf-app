@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { beforeEach, vitest } from 'vitest';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchFacetField, SearchHistogramGranularity, SearchSuggestionType } from 'src/dtos/search.dto.js';
@@ -1121,6 +1121,21 @@ describe(SearchService.name, () => {
       await expect(sut.searchSmartStatistics(authStub.user1, { query: 'beach' })).rejects.toThrowError(
         new BadRequestException('Smart search is not enabled'),
       );
+    });
+  });
+  describe('getLandmarkIcon', () => {
+    it('serves the brand icon of a landmark that has one', () => {
+      mocks.map.getLandmarkIconPath.mockReturnValue('/build/geodata/landmark-icons/Q243.png');
+
+      expect(sut.getLandmarkIcon('Q243')).toEqual(
+        expect.objectContaining({ path: '/build/geodata/landmark-icons/Q243.png', contentType: 'image/png' }),
+      );
+    });
+
+    it('is not found for a landmark without one', () => {
+      mocks.map.getLandmarkIconPath.mockReturnValue(void 0);
+
+      expect(() => sut.getLandmarkIcon('Q1')).toThrow(NotFoundException);
     });
   });
 });

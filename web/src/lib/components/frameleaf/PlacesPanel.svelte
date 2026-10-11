@@ -15,7 +15,15 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import { buildPlacesTree, filterPlacesTree, stateMapDots, type PlaceCity } from '$lib/frameleaf/places';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import { landmarkKind, landmarkStateId, type LandmarkCard } from '$lib/frameleaf/landmarks';
+  import {
+    buildPlacesTree,
+    filterPlacesTree,
+    placeNameMatches,
+    stateMapDots,
+    type PlaceCity,
+  } from '$lib/frameleaf/places';
   import { Route } from '$lib/route';
   import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -44,6 +52,8 @@
     places: AssetResponseDto[];
     /** photos and videos per city name */
     counts: Map<string, number>;
+    /** FL-354: landmarks and attractions the account has photos at, listed under their region. */
+    landmarks?: LandmarkCard[];
     /** timeline items with no place, or null when unknown */
     unplaced: number | null;
     /** The places could not be loaded: say so with a retry, never "no places yet". */
@@ -52,7 +62,7 @@
     retrying?: boolean;
   }
 
-  let { places, counts, unplaced, failed = false, onRetry, retrying = false }: Props = $props();
+  let { places, counts, landmarks = [], unplaced, failed = false, onRetry, retrying = false }: Props = $props();
 
   let search = $state('');
 
@@ -65,7 +75,19 @@
       unknownState: $t('frameleaf_places_unknown_state'),
     }),
   );
-  const visible = $derived(filterPlacesTree(tree, search));
+  // A landmark shows while the search box is empty or names it; one that is named keeps its region open.
+  const shownLandmarks = $derived(
+    search.trim() ? landmarks.filter((landmark) => placeNameMatches(landmark.label, search)) : landmarks,
+  );
+  const landmarksByState = $derived.by(() => {
+    const byState = new Map<string, LandmarkCard[]>();
+    for (const landmark of shownLandmarks) {
+      const id = landmarkStateId(landmark);
+      byState.set(id, [...(byState.get(id) ?? []), landmark]);
+    }
+    return byState;
+  });
+  const visible = $derived(filterPlacesTree(tree, search, (stateId) => landmarksByState.has(stateId)));
   const grouped = $derived($placesViewSettings.groupBy !== PlacesGroupBy.None);
   const groupIds = $derived(visible.countries.map((country) => country.id));
   const allCollapsed = $derived(
@@ -74,10 +96,15 @@
   const visibleCount = $derived(
     grouped
       ? visible.countries.reduce(
-          (sum, country) => sum + country.states.reduce((inner, state) => inner + state.cities.length, 0),
+          (sum, country) =>
+            sum +
+            country.states.reduce(
+              (inner, state) => inner + state.cities.length + (landmarksByState.get(state.id)?.length ?? 0),
+              0,
+            ),
           0,
         )
-      : visible.cities.length,
+      : visible.cities.length + shownLandmarks.length,
   );
   const summary = $derived(
     failed
@@ -132,6 +159,42 @@
         <Icon icon={mdiMapOutline} size="16" />
       </a>
     {/if}
+  </div>
+{/snippet}
+
+{#snippet landmarkCard(landmark: LandmarkCard)}
+  {@const kind = $t(landmarkKind(landmark.kind).labelKey)}
+  <div class="dv-place">
+    <a
+      class="dv-place-main"
+      href={landmark.href}
+      aria-label={$t('frameleaf_landmarks_card_label', {
+        values: { name: landmark.label, kind, count: landmark.count },
+      })}
+    >
+      <img
+        src={getAssetMediaUrl({ id: landmark.coverAssetId, size: AssetMediaSize.Thumbnail })}
+        alt=""
+        loading="lazy"
+      />
+      <span class="dv-shade" aria-hidden="true"></span>
+      <span class="dv-landmark-kind">
+        <LandmarkBadge {landmark} size={24} />
+        {kind}
+      </span>
+      <span class="dv-place-copy">
+        <strong>{landmark.label}</strong>
+        <small>{$t('frameleaf_places_items', { values: { count: landmark.count } })}</small>
+      </span>
+    </a>
+    <a
+      class="dv-place-map"
+      href={Route.map({ zoom: 14, lat: landmark.latitude, lng: landmark.longitude })}
+      aria-label={$t('frameleaf_places_show_on_map', { values: { name: landmark.label } })}
+      title={$t('frameleaf_places_view_on_map')}
+    >
+      <Icon icon={mdiMapOutline} size="16" />
+    </a>
   </div>
 {/snippet}
 
@@ -241,10 +304,20 @@
                   </small>
                 </a>
               </div>
-              <div class="dv-place-grid">
-                {#each state.cities as city (city.id)}
-                  {@render placeCard(city)}
-                {/each}
+              <div>
+                <div class="dv-place-grid">
+                  {#each state.cities as city (city.id)}
+                    {@render placeCard(city)}
+                  {/each}
+                </div>
+                {#if landmarksByState.has(state.id)}
+                  <h3 class="dv-landmarks-title">{$t('frameleaf_landmarks_title')}</h3>
+                  <div class="dv-place-grid">
+                    {#each landmarksByState.get(state.id) ?? [] as landmark (landmark.id)}
+                      {@render landmarkCard(landmark)}
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </div>
           {/each}
@@ -259,6 +332,16 @@
         {/each}
       </div>
     </section>
+    {#if shownLandmarks.length > 0}
+      <section class="dv-section" aria-label={$t('frameleaf_landmarks_title')}>
+        <h3 class="dv-landmarks-title">{$t('frameleaf_landmarks_title')}</h3>
+        <div class="dv-place-grid wide">
+          {#each shownLandmarks as landmark (landmark.id)}
+            {@render landmarkCard(landmark)}
+          {/each}
+        </div>
+      </section>
+    {/if}
   {/if}
 </main>
 
@@ -501,6 +584,29 @@
   .dv-place-copy small {
     margin-top: 4px;
     color: #e3e7e5;
+  }
+  /* FL-354: landmarks under a region: a quiet row title, and each card names its kind beside its badge. */
+  .dv-landmarks-title {
+    margin: 18px 0 10px;
+    color: var(--fl-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .dv-landmark-kind {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 3px;
+    border-radius: var(--fl-radius-pill);
+    background: rgb(10 14 12 / 62%);
+    backdrop-filter: blur(12px);
+    font-size: 11px;
+    font-weight: 600;
   }
   .dv-place-map {
     position: absolute;

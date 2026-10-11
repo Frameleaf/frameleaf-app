@@ -3,6 +3,7 @@ import {
   EVENT_GAP_HOURS,
   MAX_PET_STORY_ASSETS,
   MIN_EVENT_ASSETS,
+  MIN_LANDMARK_ASSETS,
   MIN_PET_STORY_ASSETS,
   type StoryCandidate,
   birthdayAge,
@@ -10,6 +11,7 @@ import {
   calendarDayWindow,
   diversifyByDay,
   diversifyByMonth,
+  dominantLandmark,
   dominantPlace,
   groupEventStories,
   groupPetStories,
@@ -194,6 +196,53 @@ describe('memory story grouping', () => {
 
     it('uses the documented gap threshold', () => {
       expect(EVENT_GAP_HOURS).toBe(20);
+    });
+  });
+
+  describe('landmark visits (FL-356)', () => {
+    const park = { id: 'Q181185', name: 'Disneyland Park', kind: 'theme_park', rank: 80, radiusM: 600 };
+    const other = { id: 'Q1', name: 'Disney California Adventure', kind: 'theme_park', rank: 60, radiusM: 500 };
+    const resort = { id: 'Q206859', name: 'Disneyland Resort', kind: 'resort', rank: 70, radiusM: 1500 };
+    const anaheim = { city: 'Anaheim', country: 'United States' };
+    const visit = (date: string, count: number, landmarks: StoryCandidate['landmarks']) =>
+      day(date, count, anaheim).map((candidate) => ({ ...candidate, landmarks }));
+
+    it('makes a story of a single day at a landmark', () => {
+      const [story, ...rest] = groupEventStories(visit('2026-06-01', MIN_LANDMARK_ASSETS, [resort, park]), new Set());
+
+      expect(rest).toHaveLength(0);
+      expect(story).toMatchObject({
+        startDate: '2026-06-01',
+        endDate: '2026-06-01',
+        dayCount: 1,
+        landmark: { id: park.id, name: park.name, kind: park.kind },
+      });
+    });
+
+    it('needs enough photos, and most of them at the landmark', () => {
+      expect(groupEventStories(visit('2026-06-01', MIN_LANDMARK_ASSETS - 1, [park]), new Set())).toEqual([]);
+      const passingBy = [...visit('2026-06-01', 3, [park]), ...day('2026-06-01', 7, anaheim).slice(3)];
+      expect(groupEventStories(passingBy, new Set())).toEqual([]);
+    });
+
+    it('leaves out a landmark the owner is at all year, and all of them when landmarks are off', () => {
+      const candidates = visit('2026-06-01', 9, [park]);
+      expect(groupEventStories(candidates, new Set([park.id]))).toEqual([]);
+      expect(groupEventStories(candidates)).toEqual([]);
+    });
+
+    it('names a longer trip for the landmark most of it was taken at', () => {
+      const trip = [...visit('2026-06-01', 5, [park, resort]), ...visit('2026-06-02', 5, [other, resort])];
+      const [story] = groupEventStories(trip, new Set([resort.id]));
+      // half in each park: neither holds most of the trip, the resort around both does
+      expect(story).toMatchObject({ dayCount: 2, landmark: { id: resort.id } });
+      expect(groupEventStories(trip)[0].landmark).toBeUndefined();
+    });
+
+    it('prefers the specific spot to the area around it, then the more famous', () => {
+      const lesser = { ...other, radiusM: 100 };
+      expect(dominantLandmark(visit('2026-06-01', 5, [resort, lesser, park]))).toEqual(park);
+      expect(dominantLandmark(day('2026-06-01', 5))).toBeNull();
     });
   });
 

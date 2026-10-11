@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import isoCountries from 'i18n-iso-countries';
 import { type Expression, type Insertable, type Kysely, type NotNull, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import readLine from 'node:readline';
+import { gunzipSync } from 'node:zlib';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
+import { LANDMARK_MAX_RADIUS_M, citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -15,6 +17,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
@@ -75,7 +78,33 @@ export class MapRepository {
     this.logger.setContext(MapRepository.name);
   }
 
-  async init(): Promise<void> {
+  private landmarkIcons?: Map<string, { background: string; tile: boolean }>;
+
+  /**
+   * The brand icons that ship for landmarks, by landmark id: how to draw each (FL-355). Read once. The icon
+   * pack is optional, so without it every landmark simply shows the icon for its kind.
+   */
+  getLandmarkIcons(): Map<string, { background: string; tile: boolean }> {
+    if (!this.landmarkIcons) {
+      const { resourcePaths } = this.configRepository.getEnv();
+      try {
+        const index = JSON.parse(readFileSync(join(resourcePaths.geodata.landmarkIcons, 'icons.json'), 'utf8'));
+        this.landmarkIcons = new Map(Object.entries(index));
+      } catch {
+        this.landmarkIcons = new Map();
+      }
+    }
+    return this.landmarkIcons;
+  }
+
+  /** Where a landmark's brand icon is on disk, if it has one. `id` must already be a checked landmark id. */
+  getLandmarkIconPath(id: string): string | undefined {
+    const { resourcePaths } = this.configRepository.getEnv();
+    return this.getLandmarkIcons().has(id) ? join(resourcePaths.geodata.landmarkIcons, `${id}.png`) : undefined;
+  }
+
+  /** Imports the bundled geodata when it is newer than the last import. Resolves to whether an import ran. */
+  async init(): Promise<boolean> {
     this.logger.log('Initializing metadata repository');
     const { resourcePaths } = this.configRepository.getEnv();
     const geodataDate = await readFile(resourcePaths.geodata.dateFile, 'utf8');
@@ -83,10 +112,13 @@ export class MapRepository {
     // TODO move to service init
     const geocodingMetadata = await this.metadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
     if (geocodingMetadata?.lastUpdate === geodataDate) {
-      return;
+      // A database backup leaves the place pack out (it ships with the server), so a restored database has
+      // the geodata of this date and no places: put them back.
+      const place = await this.db.selectFrom('landmark').select('id').limit(1).executeTakeFirst();
+      return place ? false : this.importLandmarks();
     }
 
-    await Promise.all([this.importGeodata(), this.importNaturalEarthCountries()]);
+    await Promise.all([this.importGeodata(), this.importNaturalEarthCountries(), this.importLandmarks()]);
 
     await this.metadataRepository.set(SystemMetadataKey.ReverseGeocodingState, {
       lastUpdate: geodataDate,
@@ -94,6 +126,85 @@ export class MapRepository {
     });
 
     this.logger.log('Geodata import completed');
+    return true;
+  }
+
+  /**
+   * Replaces the place pack (FL-352). Reverse geocoding does not depend on it, so a missing or unreadable
+   * pack is logged and skipped rather than stopping the worker. Resolves to whether any place was imported.
+   */
+  private async importLandmarks(): Promise<boolean> {
+    const { resourcePaths } = this.configRepository.getEnv();
+    try {
+      const landmarks: Insertable<LandmarkTable>[] = [];
+      const areas: Insertable<LandmarkAreaTable>[] = [];
+      for (const line of gunzipSync(await readFile(resourcePaths.geodata.landmarks))
+        .toString('utf8')
+        .split('\n')) {
+        if (!line) {
+          continue;
+        }
+        const { id, name, names, kind, lat, lon, radiusM, rank, areas: rings = [] } = JSON.parse(line);
+        landmarks.push({ id, name, names, kind, latitude: lat, longitude: lon, radiusM, rank });
+        for (const ring of rings as number[][][]) {
+          areas.push({ landmarkId: id, area: `(${ring.map(([x, y]) => `(${x},${y})`).join(',')})` });
+        }
+      }
+
+      await this.db.transaction().execute(async (manager) => {
+        await manager.deleteFrom('landmark_area').execute();
+        await manager.deleteFrom('landmark').execute();
+        for (let index = 0; index < landmarks.length; index += 1000) {
+          await manager
+            .insertInto('landmark')
+            .values(landmarks.slice(index, index + 1000))
+            .execute();
+        }
+        for (let index = 0; index < areas.length; index += 500) {
+          await manager
+            .insertInto('landmark_area')
+            .values(areas.slice(index, index + 500))
+            .execute();
+        }
+      });
+      this.logger.log(`Imported ${landmarks.length} landmarks`);
+      return landmarks.length > 0;
+    } catch (error) {
+      this.logger.warn(`Landmarks were not imported: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Re-matches every located asset against the current place pack, a slice of places at a time. New and
+   * edited assets are matched by the asset_exif trigger; this is for after a pack import.
+   */
+  async matchAllLandmarks(): Promise<void> {
+    await sql`delete from asset_landmark where "landmarkId" not in (select id from landmark)`.execute(this.db);
+    const ids = await this.db.selectFrom('landmark').select('id').orderBy('id').execute();
+    for (let index = 0; index < ids.length; index += 500) {
+      const slice = ids.slice(index, index + 500).map(({ id }) => id);
+      await this.db.transaction().execute(async (manager) => {
+        await manager.deleteFrom('asset_landmark').where('landmarkId', 'in', slice).execute();
+        await sql`
+          insert into asset_landmark ("assetId", "landmarkId")
+          select e."assetId", l.id
+          from landmark l
+          inner join asset_exif e
+            on earth_box(ll_to_earth_public(l.latitude, l.longitude), l."radiusM")
+              @> ll_to_earth_public(e.latitude, e.longitude)
+            and earth_distance(
+              ll_to_earth_public(l.latitude, l.longitude),
+              ll_to_earth_public(e.latitude, e.longitude)) <= l."radiusM"
+          where l.id in (${sql.join(slice)})
+            and l."radiusM" <= ${LANDMARK_MAX_RADIUS_M}
+            and (not exists (select from landmark_area a where a."landmarkId" = l.id)
+              or exists (select from landmark_area a
+                where a."landmarkId" = l.id and a.area @> point(e.longitude, e.latitude)))
+          on conflict do nothing
+        `.execute(manager);
+      });
+    }
   }
 
   /** Markers for an album: the same media the album itself shows this viewer (see `withAlbumVisibility`). */

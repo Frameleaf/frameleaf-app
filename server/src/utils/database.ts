@@ -26,6 +26,7 @@ import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
   IdsFilter,
+  LandmarkIdsFilter,
   SearchFilterBranch,
   SearchOrder,
   StringFilter,
@@ -809,6 +810,16 @@ function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefi
       ),
   });
 }
+function landmarkIdsPredicates(eb: AssetExpressionBuilder, { any, none }: LandmarkIdsFilter = {}) {
+  const at = (ids: string[]) =>
+    eb.exists(
+      eb
+        .selectFrom('asset_landmark')
+        .whereRef('asset_landmark.assetId', '=', 'asset.id')
+        .where('asset_landmark.landmarkId', 'in', ids),
+    );
+  return [...(any ? [at(any)] : []), ...(none ? [eb.not(at(none))] : [])];
+}
 function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   const matching = (ids: string[]) =>
     tagAssets(eb)
@@ -1046,6 +1057,7 @@ function branchPredicates(
     ...personIdsPredicates(eb, branch.personIds),
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
+    ...landmarkIdsPredicates(eb, branch.landmarkIds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath
       ? [

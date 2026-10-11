@@ -166,14 +166,25 @@ export class MetadataService extends BaseService {
 
     try {
       await this.jobRepository.pause(QueueName.MetadataExtraction);
-      await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () => this.mapRepository.init());
+      const imported = await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () =>
+        this.mapRepository.init(),
+      );
       await this.jobRepository.resume(QueueName.MetadataExtraction);
+      if (imported) {
+        await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
+      }
 
       this.logger.log(`Initialized local reverse geocoder`);
     } catch (error: Error | any) {
       this.logger.error(`Unable to initialize reverse geocoding: ${error}`, error?.stack);
       throw new Error('Metadata service init failed', { cause: error });
     }
+  }
+
+  @OnJob({ name: JobName.LandmarkMatchAll, queue: QueueName.BackgroundTask })
+  async handleLandmarkMatchAll(): Promise<JobStatus> {
+    await this.mapRepository.matchAllLandmarks();
+    return JobStatus.Success;
   }
 
   private async linkLivePhotos(

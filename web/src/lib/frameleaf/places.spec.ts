@@ -1,6 +1,6 @@
 import type { AssetResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
-import { buildPlacesTree, filterPlacesTree, stateMapDots } from '$lib/frameleaf/places';
+import { buildPlacesTree, filterPlacesTree, placeNameMatches, stateMapDots } from '$lib/frameleaf/places';
 
 const place = (
   id: string,
@@ -86,5 +86,23 @@ describe('places tree (FL-51)', () => {
     }
     expect(dots[0].r).toBeGreaterThan(dots[1].r);
     expect(stateMapDots(tree.countries[2].states[0].cities, 240, 180)).toEqual([]);
+  });
+  it('keeps a state that something else matched, and matches names without case or accents (FL-354)', () => {
+    const tree = buildPlacesTree(
+      [
+        { id: 'a', exifInfo: { city: 'Lisbon', state: 'Lisboa', country: 'Portugal' } },
+        { id: 'c', exifInfo: { city: 'Kyoto', state: null, country: 'Japan' } },
+      ] as never,
+      new Map(),
+      { unknownCountry: 'Unknown country', unknownState: 'Other' },
+    );
+
+    expect(filterPlacesTree(tree, 'belem').countries).toEqual([]);
+    const kept = filterPlacesTree(tree, 'belem', (stateId) => stateId === 'state:Portugal:Lisboa');
+    expect(kept.countries.map(({ name }) => name)).toEqual(['Portugal']);
+    expect(kept.countries[0].states[0].cities).toEqual([]);
+
+    expect(placeNameMatches('Belém Tower', ' BELEM ')).toBe(true);
+    expect(placeNameMatches('Belém Tower', 'eiffel')).toBe(false);
   });
 });

@@ -83,6 +83,7 @@ describe('SearchPalette', () => {
     });
     sdkMock.getAllPets.mockResolvedValue([]);
     sdkMock.getAllTags.mockResolvedValue([]);
+    sdkMock.getVisitedLandmarks.mockResolvedValue([]);
     sdkMock.getAllAlbums.mockResolvedValue([{ id: ALBUM, albumName: 'Summer trip' }] as never);
     sdkMock.getSearchSuggestions.mockImplementation(({ $type }) =>
       Promise.resolve($type === 'city' ? ['Banff'] : $type === 'camera-make' ? ['Sony'] : []),

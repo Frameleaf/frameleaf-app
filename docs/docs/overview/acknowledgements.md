@@ -78,6 +78,14 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 - **Qwen2.5-VL Instruct 3B and 7B (photo descriptions):** The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
 - **Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions):** The four built-in Florence-2 description variants use immutable native Transformers checkpoints from florence-community, served unchanged by the configured model source. Their model cards and Microsoft MIT notice are retained; repository Python and pickle weights are not loaded.
 
+## Photo library place data
+
+| Name                                                                                                       | Author                                            | Licence                                          | How it reaches you |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ | ------------------ |
+| [Landmark place pack (OpenStreetMap boundaries, Wikidata places)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors; Wikidata contributors | ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields) | bundled            |
+
+- **Landmark place pack (OpenStreetMap boundaries, Wikidata places):** Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
+
 ## Fonts (Studio titles)
 
 Title fonts come from [Google Fonts](https://fonts.google.com) and are loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps. Designers and licences: google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25.
@@ -341,6 +349,7 @@ arbitrarily-targeted use).
 - [`licenses/texts/lfm-open-license-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/lfm-open-license-1.0.txt)
 - [`licenses/texts/microsoft-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/microsoft-mit.txt)
 - [`licenses/texts/multilingual-clip-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/multilingual-clip-mit.txt)
+- [`licenses/texts/odbl-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/odbl-1.0.txt)
 - [`licenses/texts/ofl-1.1.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/ofl-1.1.txt)
 - [`licenses/texts/open-clip-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/open-clip-license.txt)
 - [`licenses/texts/openai-clip-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/licenses/texts/openai-clip-mit.txt)

@@ -4,6 +4,7 @@ import {
   getAllPets,
   getAllTags,
   getSearchSuggestions,
+  getVisitedLandmarks,
   ImageEnrichmentFilter,
   searchAssets,
   searchAssetStatistics,
@@ -36,6 +37,8 @@ export type FilterPanelOptions = {
   tags: { value: string; label: string }[];
   albums: { value: string; label: string }[];
   cities: string[];
+  /** The landmarks the account has photos at, with how many (FL-354). */
+  landmarks: { id: string; name: string; count: number }[];
   states: string[];
   countries: string[];
   makes: string[];
@@ -68,6 +71,7 @@ export const emptyFilterPanelOptions = (): FilterPanelOptions => ({
   tags: [],
   albums: [],
   cities: [],
+  landmarks: [],
   states: [],
   countries: [],
   makes: [],
@@ -105,7 +109,7 @@ const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): P
 };
 
 export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<FilterPanelOptions> => {
-  const [people, pets, tags, albums, cities, states, countries, makes, models, lenses] = await Promise.all([
+  const [people, pets, tags, albums, cities, states, countries, makes, models, lenses, landmarks] = await Promise.all([
     settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
     // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
     settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
@@ -117,6 +121,7 @@ export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<Filt
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),
+    settle(getVisitedLandmarks({ signal }), [], signal),
   ]);
 
   return {
@@ -126,6 +131,7 @@ export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<Filt
     tags: tags.map((tag) => ({ value: tag.id, label: tag.value })),
     albums: albums.map((album) => ({ value: album.id, label: album.albumName })),
     cities: cities.filter(Boolean),
+    landmarks: landmarks.map(({ id, name, assetCount }) => ({ id, name, count: assetCount })),
     states: states.filter(Boolean),
     countries: countries.filter(Boolean),
     makes: makes.filter(Boolean),
