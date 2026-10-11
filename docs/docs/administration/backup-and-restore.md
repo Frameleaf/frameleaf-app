@@ -13,6 +13,8 @@ Keep identity keys and recovery material on [private backup storage](./private-b
 
 Database backups do not contain your media. A filesystem copy taken while uploads, moves or deletions continue can disagree with the database snapshot. Stop writers or use a storage snapshot procedure that gives you a consistent recovery point. Keep a second copy outside the server being backed up.
 
+For cloud backups, also preserve the separate [backup key and recovery kit](./cloud-backup-keys.md). That guide covers keys held only in memory, application worker access and restart recovery.
+
 ## Backup secrets and diagnostic logs
 
 Request diagnostics mask passphrases, recovery codes, keys, keyrings and wrapping secrets, including nested fields and separator/case variants. Cloud backup setup, bucket checks, key and escrow routes, Buddy recovery key routes, and credential replacement routes exclude their entire request body, including failed requests. Method, path, status, duration and client address remain available at debug level. Unexpected route errors record a fixed failure category rather than the request, error text or stack. **Download diagnostics** excludes credential values and recovery material from settings; it does not collect request logs or recovery kits.
