@@ -337,6 +337,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   theme: {
     customCss: '',
+    customCssEnabled: true,
   },
   library: {
     scan: {
@@ -1747,6 +1748,21 @@ describe(SystemConfigService.name, () => {
   describe('getCustomCss', () => {
     it('should return the default theme', async () => {
       await expect(sut.getCustomCss()).resolves.toEqual(defaults.theme.customCss);
+    });
+
+    it('should serve the saved styling while it is in use', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ theme: { customCss: 'body { color: red; }' } });
+      await expect(sut.getCustomCss()).resolves.toEqual('body { color: red; }');
+    });
+
+    it('should serve nothing when custom styling is turned off, keeping the text in the settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        theme: { customCss: 'body { color: red; }', customCssEnabled: false },
+      });
+      await expect(sut.getCustomCss()).resolves.toEqual('');
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        theme: { customCss: 'body { color: red; }', customCssEnabled: false },
+      });
     });
   });
 
