@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { extractStudioResourceReferences } from 'src/utils/studio-resources.js';
 import {
   parseStudioLottieDependencies,
+  materializeStudioLottieSource,
   readStudioVectorBindings,
   validateStudioVectorClosure,
 } from 'src/utils/studio-lottie-source.js';
+
+import { ownedLottieArchive } from 'test/fixtures/studio-lottie.js';
 
 const parent = { kind: 'vector-graphic', id: '11111111-1111-4111-8111-111111111111', checksum: 'a'.repeat(64) };
 const child = { kind: 'project-import', id: '22222222-2222-4222-8222-222222222222', checksum: 'b'.repeat(64) };
@@ -101,6 +104,33 @@ describe('verified vector byte closure', () => {
   ];
   const graph = (bindings: unknown[]) => ({ graphicId: parent.id, studioVectorDependencies: { version: 1, bindings } });
   const read = (entry: { id: string }) => Promise.resolve(entry.id === parent.id ? animation : png);
+  it('validates declared archive dependencies and releases inflated closure files', async () => {
+    const archive = ownedLottieArchive('2', {
+      first: {
+        v: '5',
+        w: 64,
+        h: 32,
+        fr: 24,
+        ip: 0,
+        op: 48,
+        layers: [],
+        assets: [{ id: 'external', p: 'foreign.png', u: 'https://uncontrolled/' }],
+      },
+    });
+    const archived = {
+      ...row,
+      parent: { ...parent, checksum: digest(archive) },
+      location: { ...location, entry: 'a/first.json' },
+    };
+    await expect(
+      validateStudioVectorClosure(
+        graph([archived]),
+        [{ ...archived.parent, key: `vector-graphic:${parent.id}` }, entries[1]],
+        async (entry) => (entry.id === parent.id ? archive : png),
+      ),
+    ).resolves.toBeUndefined();
+    expect(archive.some((byte) => byte !== 0)).toBe(true);
+  });
   it('matches independently parsed parent dependencies and exact authorized bytes', async () => {
     await expect(validateStudioVectorClosure(graph([row]), entries, read)).resolves.toBeUndefined();
   });
@@ -150,4 +180,24 @@ it('refuses unsupported network-bearing image slots and malformed dependency con
   ]) {
     expect(() => parseStudioLottieDependencies(JSON.stringify({ v: '5', layers: [], ...field }))).toThrow();
   }
+});
+
+it('hands every allocated archive buffer to the snapshot owner, including pre-rewrite buffers', async () => {
+  const bytes = ownedLottieArchive('2');
+  const retained: Uint8Array[] = [];
+  const parsed = await materializeStudioLottieSource(
+    {},
+    { kind: 'project-import', id: parent.id },
+    bytes,
+    'application/zip+dotlottie',
+    [],
+    async () => {
+      throw new Error('No dependency read expected');
+    },
+    (buffer) => retained.push(buffer),
+  );
+  expect(retained).toHaveLength(5);
+  expect(Object.values(parsed.archive!.files).every((buffer) => retained.includes(buffer))).toBe(true);
+  for (const buffer of retained) buffer.fill(0);
+  expect(retained.every((buffer) => buffer.every((byte) => byte === 0))).toBe(true);
 });
