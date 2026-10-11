@@ -22,6 +22,9 @@
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
+  import ComputersLanding from '$lib/components/frameleaf/computers/ComputersLanding.svelte';
+  import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
@@ -37,6 +40,7 @@
     AREA_TILE_COLORS,
     backupPageFor,
     commandCenterUrl,
+    hasLandingPage,
     honoursScope,
     isBackupSection,
     presentedArea,
@@ -168,8 +172,8 @@
       icon: mdiShieldCheckOutline,
     },
     processing: {
-      title: $t('frameleaf_settings_area_processing'),
-      description: $t('frameleaf_settings_area_processing_description'),
+      title: $t('frameleaf_computers_area'),
+      description: $t('frameleaf_computers_area_description'),
       icon: mdiDesktopTowerMonitor,
     },
     // FL-154: the template's Frameleaf Cloud area (settings-catalog.mjs:125-131).
@@ -318,9 +322,8 @@
     'accounts',
     'contents',
     'queues',
-    'workers',
+    'computers',
     'routing',
-    'render-workers',
     'cloud-processing',
     'hardware',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
@@ -342,8 +345,12 @@
   // of its pages (or older addresses) is open.
   const titled = $derived(area === 'backups' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
-  // As in the template, the Users manager and the Job manager carry their own headings.
-  const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
+  // As in the template, the Users manager carries its own heading.
+  // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
+  const ownHeading = $derived(
+    area === 'users' ||
+      (area === 'processing' && selected?.key === 'queues' && page.url.searchParams.has('queue')),
+  );
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
@@ -353,7 +360,7 @@
       return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
     }
     // Backup's pages are side by side in the page itself, as in the prototype.
-    if (['libraries', 'trash', 'backups'].includes(area)) {
+    if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area)) {
       return [];
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
@@ -869,7 +876,10 @@
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if titled && breadcrumb}
+                    {#if titled && breadcrumb && hasLandingPage(area)}
+                      <!-- The way back is the link under the heading, as in the prototype. -->
+                      {areaCopy[area].title}
+                    {:else if titled && breadcrumb}
                       <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
                       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
                       {titled.title}
@@ -914,8 +924,15 @@
                     ? $t('frameleaf_settings_history_empty_action')
                     : $t('frameleaf_settings_history_empty_preferences_action')}
                 />
+              {:else if hasLandingPage(area) && !selected}
+                <KitPage><ComputersLanding /></KitPage>
               {:else if selected}
                 <div class="cc-settings-content">
+                  {#if hasLandingPage(area) && !ownHeading}
+                    <div class="cc-back-to-area">
+                      <BackLink href={commandCenterUrl(area)} label={areaCopy[area].title} />
+                    </div>
+                  {/if}
                   <section
                     class="cc-section fl-continuous-corners"
                     class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
@@ -1160,6 +1177,14 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /*
+   * A long area name ("Computers & background work") takes a second line in the open rail, as in the
+   * prototype, instead of being cut short. The collapsed rail hides labels altogether.
+   */
+  .command-center:not(.cc-collapsed) .area > span:not(.tile, .pending) {
+    white-space: normal;
+    text-wrap: balance;
   }
   .cc-nav-children button:hover,
   .cc-nav-children button[aria-current='page'] {
