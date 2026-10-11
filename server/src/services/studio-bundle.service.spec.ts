@@ -1663,6 +1663,57 @@ describe(StudioBundleService.name, () => {
       );
     });
 
+    it.each(['exclusive-open', 'early-write'] as const)(
+      'reports a controlled carried-import stream failure: %s',
+      async (failure) => {
+        const { bundle, manifest } = handMade([
+          { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },
+        ]);
+        const upload = uploadOf(bundle, manifest);
+        const job = importJobOf(upload);
+        const streamError = Object.assign(new Error(failure === 'exclusive-open' ? 'EEXIST' : 'EIO'), {
+          code: failure === 'exclusive-open' ? 'EEXIST' : 'EIO',
+        });
+        let staged!: string;
+        const foreignBytes = Buffer.from('pre-existing path');
+        fs.storage.createWriteStream.mockImplementationOnce((path: string) => {
+          staged = path;
+          if (failure === 'exclusive-open') fs.files.set(path, foreignBytes);
+          return new Writable({
+            construct(callback) {
+              // Match async fs.WriteStream open failure; no test-owned error listener masks it.
+              queueMicrotask(() => {
+                if (failure === 'exclusive-open') return callback(streamError);
+                fs.files.set(path, Buffer.alloc(0));
+                this.emit('open');
+                callback();
+              });
+            },
+            write(_chunk, _encoding, callback) {
+              callback(streamError);
+            },
+          });
+        });
+        await expect(sut.run({ operation: job, claimToken: 'stream-error' })).resolves.toBeUndefined();
+        expect(operations.fail).toHaveBeenCalledWith(
+          job.id,
+          'stream-error',
+          expect.objectContaining({ error: streamError.message }),
+        );
+        expect(publications.retain).not.toHaveBeenCalled();
+        const reservation = projects.createUpload.mock.results.at(-1)!;
+        const reserved = await reservation.value;
+        expect(projects.deleteUpload).toHaveBeenCalledWith(reserved.id, owner.user.id);
+        if (failure === 'exclusive-open') {
+          expect(fs.files.get(staged)).toEqual(foreignBytes);
+          expect(fs.storage.unlink).not.toHaveBeenCalledWith(staged);
+        } else {
+          expect(fs.files.has(staged)).toBe(false);
+          expect(fs.storage.unlink).toHaveBeenCalledWith(staged);
+        }
+      },
+    );
+
     it('does not blanket-unlink a bundle stage after an unknown prepare acknowledgement', async () => {
       const { bundle, manifest } = handMade([
         { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },

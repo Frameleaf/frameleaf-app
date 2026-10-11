@@ -367,8 +367,6 @@ export class StudioImportPublicationRepository implements JournalPort {
       if (row.state === 'aborted') throw new ConflictException('publication_aborted');
       this.requireProject(project, key, true);
       const original = fileOf(row);
-      if (original && canonicalJson(original.declaration) !== canonicalJson(file.declaration))
-        throw new ConflictException('publication_declaration_conflict');
       const ready = await readStudioImport(tx, key.projectId, key.importId, true);
       await lockPaths(tx, [
         file.stagedPath,
@@ -410,7 +408,7 @@ export class StudioImportPublicationRepository implements JournalPort {
           WHERE id=${reservationId}::uuid AND "ownerId"=${key.ownerId}::uuid`.execute(tx);
       };
       if (ready) {
-        matchesReady(ready, key, file.declaration, original === null);
+        matchesReady(ready, key, file.declaration, true);
         if (original && ready.path !== original.targetPath) throw new ConflictException('publication_ready_conflict');
         await verifyReady(ready);
         await assertStudioStorageAdmission(tx, key.ownerId, 0, undefined, admission);
@@ -420,6 +418,9 @@ export class StudioImportPublicationRepository implements JournalPort {
         return { status: 'ready', imported: ready };
       }
       if (row.state === 'published') throw new ConflictException('studio_import_repair_required');
+      // Full declaration equality applies to preparing retries; ready rows retain their stored labels/lineage.
+      if (original && canonicalJson(original.declaration) !== canonicalJson(file.declaration))
+        throw new ConflictException('publication_declaration_conflict');
       if (await this.expired(tx, row)) {
         await this.state(tx, row, 'aborted');
         return 'expired';

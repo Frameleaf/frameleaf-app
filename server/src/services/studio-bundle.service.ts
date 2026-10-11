@@ -1371,20 +1371,30 @@ export class StudioBundleService {
           output.once('open', () => {
             created = true;
           });
+          const finished = streamFinished(output);
+          // Observe rejection before extraction can await I/O or write to a failed exclusive open.
+          void finished.catch(() => undefined);
           try {
-            const actual = await digestZipEntry(source, entry, {
+            const extraction = digestZipEntry(source, entry, {
               onData: (chunk) =>
                 new Promise<void>((resolve, reject) =>
                   output.write(chunk, (error) => (error ? reject(error) : resolve())),
                 ),
             });
+            const actual = await Promise.race([
+              extraction,
+              finished.then(() => {
+                throw new BundleJobError('bundle_write_failed', 'The carried import stream ended before extraction');
+              }),
+            ]);
             output.end();
-            await streamFinished(output);
+            await finished;
             if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
               throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
             }
           } catch (error) {
             output.destroy();
+            await finished.catch(() => undefined);
             throw error;
           }
           try {
