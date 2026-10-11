@@ -15,7 +15,11 @@
    * `handleRemoveAllIntegrityReportItems`), which the confirmation says in full.
    */
   import { Route } from '$lib/route';
-  import { handleRemoveAllIntegrityReportItems } from '$lib/services/integrity.service';
+  import {
+    handleRemoveAllIntegrityReportItems,
+    integrityActionKey,
+    integrityActionLabelKey,
+  } from '$lib/services/integrity.service';
   import { locale } from '$lib/stores/preferences.store';
   import {
     IntegrityReport,
@@ -159,10 +163,10 @@
             <button
               type="button"
               class="button danger"
-              aria-label={$t('admin.frameleaf_maintenance_report_delete_label', { values: { title } })}
-              onclick={() => void handleRemoveAllIntegrityReportItems(reportType)}
+              aria-label={$t(integrityActionLabelKey(reportType), { values: { title } })}
+              onclick={() => void handleRemoveAllIntegrityReportItems(reportType, integrityReport[reportType])}
             >
-              {$t('delete')}
+              {$t(integrityActionKey(reportType))}
             </button>
           </div>
         </div>

@@ -2,8 +2,9 @@
   /**
    * One integrity report (FL-81 CC-23) inside Maintenance → Integrity checks (FL-71): the prototype's
    * `ReportViewer` (`design/frameleaf/template/src/Maintenance.jsx:756-893`) — a summary line,
-   * "Download CSV", "Download report file" (a text file of every finding), "Delete report" behind a Frameleaf confirmation, a findings filter and table — in
-   * place of the upstream `Table` and context menus. The old
+   * "Download CSV", "Download report file" (a text file of every finding), the action on every
+   * finding behind a Frameleaf confirmation, a findings filter and table — in place of the upstream
+   * `Table` and context menus. The old
    * `/admin/maintenance/integrity-report/<type>` page only redirects here.
    *
    * Production findings are `{ id, path }` pages per check, with no severity or message, so the table
@@ -22,6 +23,8 @@
   import {
     handleRemoveAllIntegrityReportItems,
     handleRemoveIntegrityReportItem,
+    integrityActionKey,
+    integrityFindingActionKey,
   } from '$lib/services/integrity.service';
   import { handleCreateJob } from '$lib/services/job.service';
   import { asyncTimeout, downloadBlob } from '$lib/utils';
@@ -203,10 +206,11 @@
         type="button"
         class="button danger"
         disabled={deletingAll || integrityReport.items.length === 0}
-        onclick={() => void handleRemoveAllIntegrityReportItems(type)}
+        onclick={() =>
+          void handleRemoveAllIntegrityReportItems(type, integrityReport.nextCursor ? 0 : integrityReport.items.length)}
       >
         <Icon icon={mdiDeleteOutline} size="16" aria-hidden={true} />
-        {$t('admin.frameleaf_maintenance_report_delete_action')}
+        {$t(integrityActionKey(type))}
       </button>
     </div>
   </div>
@@ -249,10 +253,10 @@
                 type="button"
                 class="button danger"
                 disabled={deletingAll || deleting.has(id)}
-                aria-label={$t('delete') + ' ' + path}
+                aria-label={$t(integrityFindingActionKey(type)) + ' ' + path}
                 onclick={() => void handleRemoveIntegrityReportItem(id, type)}
               >
-                {$t('delete')}
+                {$t(integrityFindingActionKey(type))}
               </button>
             </td>
           </tr>
