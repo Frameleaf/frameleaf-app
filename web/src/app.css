@@ -219,9 +219,18 @@
     background-color: black;
   }
 
-  input:focus-visible {
+  /*
+   * A text field shows keyboard focus on its border, so its outline is off. A slider has no border
+   * to show it on and keeps its outline. A checkbox or radio is drawn smaller than its box, where
+   * an outline would ring the box, so its ring is traced around what is drawn (tokens.css).
+   */
+  input:not([type='range']):focus-visible {
     outline-offset: 0px !important;
     outline: none !important;
+  }
+
+  input:is([type='checkbox'], [type='radio']):focus-visible {
+    filter: var(--fl-focus-ring-drawn);
   }
 
   .text-white-shadow {

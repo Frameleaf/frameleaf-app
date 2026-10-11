@@ -191,8 +191,8 @@
   .head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: var(--fl-space-3) var(--fl-space-2);
+    margin-bottom: var(--fl-space-3);
   }
   .toggle {
     display: grid;
@@ -270,7 +270,7 @@
     white-space: nowrap;
   }
   small {
-    margin-top: 3px;
+    margin-top: var(--fl-space-1);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     overflow: hidden;

@@ -7,7 +7,8 @@ import MaintenanceIntegrityPanel from './MaintenanceIntegrityPanel.svelte';
 
 const handleRemoveAllIntegrityReportItems = vi.fn();
 
-vi.mock('$lib/services/integrity.service', () => ({
+vi.mock('$lib/services/integrity.service', async (original) => ({
+  ...(await original<typeof import('$lib/services/integrity.service')>()),
   handleRemoveAllIntegrityReportItems: (...args: unknown[]) => handleRemoveAllIntegrityReportItems(...args),
 }));
 
@@ -48,8 +49,11 @@ describe('MaintenanceIntegrityPanel (FL-81 CC-21/22)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Run all checks' }));
     expect(p.onCheckAll).toHaveBeenCalled();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete Untracked Files report' }));
-    expect(handleRemoveAllIntegrityReportItems).toHaveBeenCalledWith(IntegrityReport.UntrackedFile);
+    // the action is named for what it does to the findings, and passes how many there are
+    const act = screen.getByRole('button', { name: 'Delete the files listed under Untracked Files from disk' });
+    expect(act).toHaveTextContent('Delete files from disk');
+    await fireEvent.click(act);
+    expect(handleRemoveAllIntegrityReportItems).toHaveBeenCalledWith(IntegrityReport.UntrackedFile, 2);
   });
 
   it('shows a running check', () => {

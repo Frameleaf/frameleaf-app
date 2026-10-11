@@ -153,18 +153,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         href: Route.users(),
       },
       { id: 'admin:settings', title: $t('admin.system_settings'), icon: mdiCogOutline, href: Route.systemSettings() },
-      { id: 'admin:queues', title: $t('frameleaf_cc_section_queues'), icon: mdiSync, href: Route.queues() },
-      {
-        id: 'admin:render-workers',
-        title: $t('admin.render_workers'),
-        icon: mdiMemory,
-        href: Route.renderWorkers(),
-      },
+      { id: 'admin:queues', title: $t('frameleaf_computers_page_queues'), icon: mdiSync, href: Route.queues() },
+      // FL-364: Workers & endpoints and Render workers are one page, Computers.
       {
         id: 'admin:workers',
-        title: $t('admin.frameleaf_workers_title'),
-        icon: mdiRobotOutline,
-        href: Route.systemWorkers(),
+        title: $t('frameleaf_computers_page_computers'),
+        icon: mdiMemory,
+        href: Route.computers(),
       },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
       {
@@ -204,7 +199,13 @@ export const USER_SETTINGS_AREAS: readonly {
   descriptionKey: Translations;
   icon: string;
 }[] = [
-  { key: 'app-settings', titleKey: 'app_settings', descriptionKey: 'manage_the_app_settings', icon: mdiCogOutline },
+  // FL-368: the pages of Your preferences are named for what they hold.
+  {
+    key: 'app-settings',
+    titleKey: 'frameleaf_prefs_look_title',
+    descriptionKey: 'frameleaf_prefs_look_description',
+    icon: mdiCogOutline,
+  },
   {
     key: 'account',
     titleKey: 'frameleaf_access_profile_title',
@@ -213,8 +214,8 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'user-usage-info',
-    titleKey: 'user_usage_stats',
-    descriptionKey: 'user_usage_stats_description',
+    titleKey: 'frameleaf_prefs_numbers_title',
+    descriptionKey: 'frameleaf_prefs_numbers_description',
     icon: mdiServerOutline,
   },
   {
@@ -231,21 +232,21 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'download-settings',
-    titleKey: 'frameleaf_cc_section_downloads',
-    descriptionKey: 'frameleaf_cc_section_downloads_description',
+    titleKey: 'frameleaf_prefs_downloads_title',
+    descriptionKey: 'frameleaf_prefs_downloads_description',
     icon: mdiDownload,
   },
   {
     key: 'feature',
-    titleKey: 'features',
-    descriptionKey: 'features_setting_description',
+    titleKey: 'frameleaf_prefs_tools_title',
+    descriptionKey: 'frameleaf_prefs_tools_description',
     icon: mdiFeatureSearchOutline,
   },
   {
     // The older personal settings page called this group `notifications`; that link still works.
     key: 'email-preferences',
-    titleKey: 'notifications',
-    descriptionKey: 'notifications_setting_description',
+    titleKey: 'frameleaf_notify_yours_title',
+    descriptionKey: 'frameleaf_notify_yours_description',
     icon: mdiBellOutline,
   },
   {

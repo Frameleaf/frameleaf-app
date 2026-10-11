@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/revoke",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/revoke, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Microsoft has no revocation for these tokens. Delete the stored token and tell the admin where to remove Frameleaf's access in their Microsoft account.",
+    "body": {
+      "service": "microsoft",
+      "refreshToken": "M.FIXTURE_ONLY.not-a-real-microsoft-refresh-token"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "not-supported"
+  }
+}

@@ -83,6 +83,7 @@ const VARIANTS = Object.freeze(
 const INSTALL_FILES = [
   "docker-compose.yml",
   "docker-compose.rootless.yml",
+  "docker-compose.ml-isolated.yml",
   "example.env",
   "hwaccel.ml.yml",
   "hwaccel.transcoding.yml",

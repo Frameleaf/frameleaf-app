@@ -150,6 +150,10 @@
     margin: 0;
     color: var(--fl-text);
   }
+  /* The mark keeps its size beside a line that wraps. */
+  .row :global(svg) {
+    flex-shrink: 0;
+  }
   .row a {
     color: var(--fl-accent);
     text-decoration: underline;

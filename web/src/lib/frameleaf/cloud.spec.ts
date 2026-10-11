@@ -5,6 +5,7 @@ import {
   CLOUD_BACKUP_PRICING,
   cloudBackupMonthlyUsd,
   cloudPlanPrice,
+  discountOffer,
   discountPercent,
   formatCountdown,
   formatUsd,
@@ -103,9 +104,20 @@ describe('Frameleaf Cloud helpers', () => {
       expect(cloudPlanPrice(9.99, 0.2)).toBe(7.99);
       expect(cloudPlanPrice(99.9, 0.2)).toBe(79.92);
       expect(cloudPlanPrice(9.99, 0.25)).toBe(7.49);
-      expect(cloudPlanPrice(99.9, 0.25)).toBe(74.93);
-      expect(discountPercent(0.2)).toBe('20%');
+      // in whole cents as Frameleaf Cloud charges: 9990 - round(2497.5), where multiplying dollars gave 74.93
+      expect(cloudPlanPrice(99.9, 0.25)).toBe(74.92);
+      expect(discountPercent(0.07)).toBe('7%');
       expect(discountPercent(0.25)).toBe('25%');
+      expect(discountOffer({ licensedDiscount: 0.07, individualDiscount: 0.05 })).toEqual({
+        server: '7%',
+        individual: '5%',
+      });
+    });
+
+    it('prices plans at $9.29 and $92.91 with a Server licence, $9.49 and $94.90 with an Individual one (FL-369)', () => {
+      const prices = (share: number) => [9.99, 99.9].map((price) => formatUsd(cloudPlanPrice(price, share)));
+      expect(prices(0.07)).toEqual(['$9.29', '$92.91']);
+      expect(prices(0.05)).toEqual(['$9.49', '$94.90']);
     });
 
     it('includes 1 TB of cloud backup with a plan and sells more in 1 TB blocks', () => {
@@ -155,12 +167,35 @@ describe('Frameleaf Cloud helpers', () => {
   });
 });
 
-describe('licensedDiscount (FL-156)', () => {
-  it('counts an activated server key or the viewer’s own supporter key, server first', async () => {
+describe('licensedDiscount (FL-156, FL-369)', () => {
+  const rates = { licensedDiscount: 0.07, individualDiscount: 0.05 };
+
+  it('gives a Server licence on the server its rate and an Individual licence its own, never both', async () => {
     const { licensedDiscount } = await import('$lib/frameleaf/cloud');
-    expect(licensedDiscount({ serverLicensed: true, personalKey: true })).toBe('server');
-    expect(licensedDiscount({ serverLicensed: false, personalKey: true })).toBe('personal');
-    expect(licensedDiscount({ serverLicensed: false, personalKey: false })).toBeNull();
+    expect(licensedDiscount({ serverLicence: 'server', personalKey: true, rates })).toEqual({
+      reason: 'server',
+      share: 0.07,
+    });
+    expect(licensedDiscount({ serverLicence: 'individual', personalKey: true, rates })).toEqual({
+      reason: 'server',
+      share: 0.05,
+    });
+    expect(licensedDiscount({ serverLicence: null, personalKey: true, rates })).toEqual({
+      reason: 'personal',
+      share: 0.05,
+    });
+    expect(licensedDiscount({ serverLicence: null, personalKey: false, rates })).toBeNull();
+    // nothing comes off until license/products has answered
+    expect(licensedDiscount({ serverLicence: 'server', personalKey: false, rates: null })?.share).toBe(0);
+  });
+
+  it('reads the kind of the server’s licence from its key while that is active or in grace', async () => {
+    const { serverLicenceKind } = await import('$lib/frameleaf/cloud');
+    const key = (kind: string, state: string) => ({ kind, state }) as never;
+    expect(serverLicenceKind(key('server', 'active'))).toBe('server');
+    expect(serverLicenceKind(key('individual', 'grace'))).toBe('individual');
+    expect(serverLicenceKind(key('server', 'expired'))).toBeNull();
+    expect(serverLicenceKind(null)).toBeNull();
   });
 });
 

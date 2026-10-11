@@ -153,6 +153,7 @@
     account={status?.account?.label ?? null}
     planFromUsd={products ? lowestMonthlyPlanUsd(products.products) : null}
     licensedDiscount={products?.licensedDiscount ?? null}
+    individualDiscount={products?.individualDiscount ?? null}
     initialStep={open.step}
     onClose={(ending) => void close(ending)}
     onOpen={(link) => void close('opened-settings', link)}

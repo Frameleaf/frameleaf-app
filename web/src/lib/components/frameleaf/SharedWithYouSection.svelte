@@ -208,6 +208,12 @@
     margin: 2rem 1rem 3rem;
     scroll-margin-top: 5rem;
   }
+  /* With the page's own 8px, the 16px phone gutter the rest of the Sharing page keeps. */
+  @media (max-width: 700px) {
+    .swy {
+      margin-inline: var(--fl-space-2);
+    }
+  }
   .swy header h2 {
     margin: 0;
     font-size: 1.125rem;
@@ -215,7 +221,7 @@
   }
   .swy header p,
   .swy-empty {
-    margin: 0.25rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
   }

@@ -664,6 +664,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const installFiles = [
       "docker-compose.yml",
       "docker-compose.rootless.yml",
+      "docker-compose.ml-isolated.yml",
       "example.env",
       "hwaccel.ml.yml",
       "hwaccel.transcoding.yml",

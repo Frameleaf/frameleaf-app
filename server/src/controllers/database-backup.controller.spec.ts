@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import request from 'supertest';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { Permission } from 'src/enum.js';
+import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { errorDto } from 'test/medium/responses.js';
@@ -11,11 +12,13 @@ describe(DatabaseBackupController.name, () => {
   let ctx: ControllerContext;
   const service = automock(DatabaseBackupService, { args: [{ setContext: () => {} }], strict: false });
   const maintenanceService = mockBaseService(MaintenanceService);
+  const sequenceService = { getSchedule: vi.fn() };
 
   beforeAll(async () => {
     ctx = await controllerSetup(DatabaseBackupController, [
       { provide: DatabaseBackupService, useValue: service },
       { provide: MaintenanceService, useValue: maintenanceService },
+      { provide: BackupSequenceService, useValue: sequenceService },
     ]);
     return () => ctx.close();
   });
@@ -24,6 +27,19 @@ describe(DatabaseBackupController.name, () => {
     service.resetAllMocks();
     maintenanceService.resetAllMocks();
     ctx.reset();
+  });
+
+  describe('GET /admin/database-backups/schedule', () => {
+    it('is the one backup schedule, not a backup named "schedule"', async () => {
+      sequenceService.getSchedule.mockResolvedValue({ cronExpression: '0 2 * * *' });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/database-backups/schedule');
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ cronExpression: '0 2 * * *' });
+      expect(ctx.authenticate).toHaveBeenCalled();
+      expect(service.downloadBackup).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /admin/database-backups/start-restore', () => {

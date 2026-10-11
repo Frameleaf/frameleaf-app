@@ -51,6 +51,7 @@ const configs = {
         ...defaults.notifications.smtp,
         enabled: true,
         transport: {
+          ...defaults.notifications.smtp.transport,
           ignoreCert: false,
           host: 'localhost',
           port: 587,

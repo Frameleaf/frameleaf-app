@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/token",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/token, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Refresh. Microsoft replaces the refresh token: store the new one.",
+    "body": {
+      "grant": "refresh_token",
+      "service": "microsoft",
+      "refreshToken": "M.FIXTURE_ONLY.not-a-real-microsoft-refresh-token"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "accessToken": "EwFIXTUREONLY.not-a-real-microsoft-access-token",
+    "expiresInSec": 3600,
+    "refreshToken": "M.FIXTURE_ONLY.not-a-real-microsoft-refresh-token-2",
+    "scope": "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read"
+  }
+}

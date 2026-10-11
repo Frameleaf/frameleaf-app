@@ -38,11 +38,7 @@ import {
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
-import {
-  CLOUD_BACKUP_SCHEDULE_CRON,
-  CLOUD_BACKUP_VERIFY_CRON,
-  CloudBackupService,
-} from 'src/services/cloud-backup.service.js';
+import { CLOUD_BACKUP_VERIFY_CRON, CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import {
   addClientBackupKeys,
@@ -2101,17 +2097,15 @@ describe(CloudBackupService.name, () => {
       mocks.database.tryLock.mockResolvedValue(true);
       await sut.onConfigInit({ newConfig: scheduled() });
       expect(mocks.database.tryLock).toHaveBeenCalledWith(DatabaseLock.FrameleafCloudBackupCheck);
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 4 * * *', start: true }),
-      );
+      // FL-362: the run itself is started by the one backup schedule, so only the check has a timer here.
+      expect(mocks.cron.create).toHaveBeenCalledTimes(1);
       expect(mocks.cron.create).toHaveBeenCalledWith(
         expect.objectContaining({ name: CLOUD_BACKUP_VERIFY_CRON, start: true }),
       );
 
       sut.onConfigUpdate({ newConfig: scheduled('0 */6 * * *'), oldConfig: scheduled() });
-      expect(mocks.cron.update).toHaveBeenCalledWith(
-        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 */6 * * *' }),
-      );
+      expect(mocks.cron.update).toHaveBeenCalledTimes(1);
+      expect(mocks.cron.update).toHaveBeenCalledWith(expect.objectContaining({ name: CLOUD_BACKUP_VERIFY_CRON }));
     });
 
     it('queues one scheduled run under the lock, owned by the first administrator', async () => {

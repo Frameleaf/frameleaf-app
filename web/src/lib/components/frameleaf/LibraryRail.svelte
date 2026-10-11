@@ -58,6 +58,9 @@
    * heading, remembered per device, and the icon-only rail — which has no headings to reopen a
    * section — always shows everything. Albums and Shared spaces each carry a "+" that opens the
    * Albums page with that create dialog, a request the page consumes so All albums never replays it.
+   *
+   * As in the prototype, the header ("Library" beside the collapse toggle) and the footer (Library
+   * Care, Settings, Support) keep their places and only the list between them scrolls.
    */
 
   interface Props {
@@ -135,6 +138,10 @@
       sharedLinks: !!preferences?.sharedLinks.enabled && preferences.sharedLinks.sidebarWeb,
     }),
   );
+
+  /** The list scrolls; the footer's entries stay at the foot of the rail (`sidebar-bottom`). */
+  const listSections = $derived(sections.filter(({ id }) => id !== 'footer'));
+  const footerDestinations = $derived(sections.find(({ id }) => id === 'footer')?.destinations ?? []);
 
   const pathname = $derived(page.url.pathname);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -233,9 +240,8 @@
 
 {#snippet railHeader({ collapsed, toggle }: { collapsed: boolean; toggle: () => void })}
   <!--
-    LibraryRail.jsx `rail-header`: the double-chevron toggle (desktop). The prototype's "Library"
-    label is left out: the rail's first row is already "Library" (review item 13), so the word
-    appears once.
+    LibraryRail.jsx `rail-header`: the "Library" label and the double-chevron toggle (desktop). The
+    landmark is already named "Library navigation", so the label is for the eye only.
   -->
   <div
     class="frameleaf fl-rail-header"
@@ -243,6 +249,9 @@
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
+    {#if !iconOnly}
+      <span class="fl-rail-title fl-rail-text" aria-hidden="true">{$t('library')}</span>
+    {/if}
     <button
       type="button"
       class="fl-rail-toggle"
@@ -256,7 +265,20 @@
   </div>
 {/snippet}
 
-<Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader}>
+{#snippet railFooter()}
+  <div
+    class="frameleaf fl-rail-footer"
+    class:fl-icon-only={iconOnly}
+    class:is-collapsing={collapsing}
+    data-theme={appTheme}
+  >
+    {#each footerDestinations as destination (destination.id)}
+      {@render destinationLink(destination)}
+    {/each}
+  </div>
+{/snippet}
+
+<Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader} footer={railFooter}>
   <div
     bind:this={railElement}
     class="frameleaf fl-rail"
@@ -264,11 +286,7 @@
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
-    {#each sections as section (section.id)}
-      {#if section.id === 'footer'}
-        <hr class="fl-separator" />
-      {/if}
-
+    {#each listSections as section (section.id)}
       {#if section.labelKey && iconOnly}
         <!-- `.sidebar.rail-collapsed .nav-heading`: the icon-only rail keeps a hairline per section. -->
         <div class="fl-heading fl-heading-rule" aria-hidden="true"></div>
@@ -394,13 +412,22 @@
 <style>
   /* S-28: the rail follows styles.css:291-357 and 1674-1729 (flat full-width rows, 34px, 22px
      inset, 11px uppercase headings over a hairline, the accent tint with an inset bar). */
-  .fl-rail {
+  .fl-rail,
+  .fl-rail-footer {
     display: flex;
-    flex: 1 1 auto;
-    min-height: 100%;
     flex-direction: column;
     background: var(--fl-panel);
     font-size: 13px;
+  }
+  /* `.sidebar-bottom`: Library Care, Settings and Support stay at the foot of the rail. */
+  .fl-rail-footer {
+    flex-shrink: 0;
+    gap: 0.125rem;
+    padding-top: 10px;
+    border-top: 1px solid var(--fl-border);
+  }
+  .fl-rail-footer.fl-icon-only {
+    padding-top: 8px;
   }
   .fl-heading {
     display: flex;
@@ -427,13 +454,21 @@
   }
   .fl-rail-header {
     display: none;
+    flex-shrink: 0;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 0.5rem;
     height: 44px;
     padding: 0 12px 0 22px;
     color: var(--fl-muted);
     background: var(--fl-panel);
+  }
+  .fl-rail-title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .fl-rail-header.fl-icon-only {
     justify-content: center;
@@ -444,8 +479,10 @@
    * rows turn icon-only when the width has arrived. Nothing here can be pressed in the meantime.
    */
   .fl-rail :global(.fl-label),
+  .fl-rail-footer :global(.fl-label),
   .fl-heading,
   .fl-twisty,
+  .fl-rail-title,
   .fl-rail :global(.fl-rail-text) {
     transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
@@ -535,9 +572,10 @@
       opacity var(--fl-motion) var(--fl-ease),
       visibility 0s linear var(--fl-duration-pop);
   }
-  /* The rows clip their section while it folds, so the focus ring is drawn inside the row. */
+  /* The rows clip their section while it folds and the rail clips at its edge, so the focus ring is drawn inside. */
   .fl-rail :global(a:focus-visible),
-  .fl-rail :global(button:focus-visible) {
+  .fl-rail :global(button:focus-visible),
+  .fl-rail-footer :global(a:focus-visible) {
     outline-offset: var(--fl-focus-inset);
   }
   .fl-rail :global(.fl-chevron) {
@@ -548,13 +586,6 @@
   }
   :global([dir='rtl']) .fl-twisty[aria-expanded='true'] :global(.fl-chevron) {
     rotate: -90deg;
-  }
-  .fl-separator {
-    /* `.sidebar-bottom`: Library Care, Settings and Support sit at the bottom of the rail. */
-    margin-top: auto;
-    margin-bottom: 10px;
-    border: 0;
-    border-top: 1px solid var(--fl-border);
   }
   /* `.nav-heading .button`: a bare 24px "+" beside the heading. */
   .fl-action {
@@ -638,7 +669,8 @@
   .fl-twisty:hover {
     background: var(--fl-raised);
   }
-  .fl-rail :global(.fl-icon) {
+  .fl-rail :global(.fl-icon),
+  .fl-rail-footer :global(.fl-icon) {
     flex-shrink: 0;
   }
   .fl-rail :global(.fl-chevron) {

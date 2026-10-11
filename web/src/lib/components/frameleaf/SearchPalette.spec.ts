@@ -12,9 +12,8 @@ import { renderWithTooltips } from '$tests/helpers';
 import SearchPalette from './SearchPalette.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
-vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
-  featureFlagsManager: { value: { smartSearch: true, search: true } },
-}));
+const features = vi.hoisted(() => ({ value: { smartSearch: true, search: true, ocr: true } }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: features }));
 
 const JAMIE = '00000000-0000-4000-8000-000000000001';
 const UNNAMED = '00000000-0000-4000-8000-000000000003';
@@ -72,6 +71,7 @@ describe('SearchPalette', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    features.value = { smartSearch: true, search: true, ocr: true };
     vi.mocked(goto).mockResolvedValue();
     searchStore.recentSearches = [];
     localStorage.clear();
@@ -131,6 +131,53 @@ describe('SearchPalette', () => {
   };
 
   const type = (input: HTMLElement, value: string) => fireEvent.input(input, { target: { value } });
+
+  describe('what the server can answer', () => {
+    const TEXT_EXAMPLE = 'Welcome';
+    const TEXT_MODE = 'Text in photos';
+    const TEXT_OPERATOR = 'text:"lake agnes"';
+    const tryRows = () => screen.getAllByRole('option').map((row) => row.textContent?.replaceAll(/\s+/g, ' ').trim());
+    const openModes = async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /^Search mode:/ }));
+      return screen.getAllByRole('menuitemradio').map((item) => item.textContent?.trim());
+    };
+
+    it('offers the text-in-photos example, mode and operator when text recognition is on', async () => {
+      const { input } = setup();
+      expect(screen.getByText('Try a search')).toBeInTheDocument();
+      expect(tryRows()).toContain(`${TEXT_EXAMPLE} ${TEXT_MODE}`);
+      expect(await openModes()).toContain(TEXT_MODE);
+      await fireEvent.click(screen.getByRole('button', { name: 'Search syntax' }));
+      expect(screen.getByText(TEXT_OPERATOR)).toBeInTheDocument();
+      await type(input, 'te');
+      expect(screen.getByRole('option', { name: /text:/ })).toBeInTheDocument();
+    });
+
+    it('offers nothing that searches the text in photos when text recognition is off', async () => {
+      features.value.ocr = false;
+      const { input } = setup();
+
+      // The smart examples stay; the one that could find nothing is not offered.
+      expect(tryRows()).toEqual(['Birthday cake with candles Smart search', 'Snow in the mountains Smart search']);
+      const modes = await openModes();
+      expect(modes).not.toContain(TEXT_MODE);
+      expect(modes).toEqual(['Smart search', 'All text', 'Filename', 'Description', 'Full path']);
+      await fireEvent.click(screen.getByRole('button', { name: 'Search syntax' }));
+      expect(screen.queryByText(TEXT_OPERATOR)).toBeNull();
+      expect(screen.getByText('file:IMG_')).toBeInTheDocument();
+      await type(input, 'te');
+      expect(screen.queryByRole('option', { name: /text:/ })).toBeNull();
+    });
+
+    it('offers no example, and no heading for them, when neither smart search nor text recognition is on', () => {
+      features.value.smartSearch = false;
+      features.value.ocr = false;
+      setup();
+      // No heading over an empty list.
+      expect(screen.queryByText('Try a search')).toBeNull();
+      expect(screen.queryAllByRole('option')).toEqual([]);
+    });
+  });
 
   it('submits a toolbar filter to the mounted album without navigating away (FL-40)', async () => {
     const query = { ...emptyDiscoveryQuery(), filter: { albumIds: { any: [ALBUM] } } };

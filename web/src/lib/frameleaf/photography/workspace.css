@@ -83,7 +83,7 @@
 }
 .phd :where(input:not([type='checkbox'], [type='range'], [type='color']), select, textarea) {
   width: 100%;
-  padding: 10px;
+  padding: 10px var(--fl-space-3);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
   background: var(--fl-canvas);
@@ -349,6 +349,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Keeps the last entry clear of the note's rule when the rail is only as tall as its content. */
+  margin-bottom: var(--fl-space-3);
 }
 .phw-rail nav button {
   display: flex;
@@ -448,7 +450,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 7px var(--fl-space-3);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
   background: var(--fl-panel);
@@ -463,7 +465,7 @@
   background: var(--fl-panel);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
-  padding: 8px 10px;
+  padding: 8px var(--fl-space-3);
 }
 .phw-search input {
   border: 0;
@@ -622,7 +624,7 @@
   border-radius: var(--fl-radius-control);
 }
 .phw-tabs button {
-  padding: 7px 9px;
+  padding: 7px var(--fl-space-3);
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   border-radius: var(--fl-radius-control);
@@ -766,7 +768,7 @@
 .phw-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--fl-space-2);
   margin-bottom: 14px;
   font-size: var(--fl-font-small);
 }
@@ -865,6 +867,7 @@
   .phw-rail nav {
     flex: 1;
     flex-direction: row;
+    margin-bottom: 0;
     overflow: auto;
   }
   .phw-rail nav button {
@@ -1051,7 +1054,7 @@
 .phw-brand-swatches > div {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--fl-space-2);
   font-size: var(--fl-font-micro);
 }
 .phw-brand-swatches i {
@@ -1071,7 +1074,7 @@
 .phw-brand-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--fl-space-2);
 }
 .phw-color-field {
   flex-direction: row;

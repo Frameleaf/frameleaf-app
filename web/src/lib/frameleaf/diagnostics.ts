@@ -6,7 +6,9 @@ import type {
   ServerStorageResponseDto,
   ServerVersionResponseDto,
 } from '@frameleaf/sdk';
+import { set } from 'lodash-es';
 import { withoutCredentialValues } from '$lib/frameleaf/credentials';
+import { cloneConfig, configLeaves, stripUrlCredentials } from '$lib/frameleaf/system-config-draft';
 
 /**
  * FL-71 "Download diagnostics" (the template's `diagnostics` section action, `settings-catalog.mjs`
@@ -68,8 +70,36 @@ export const buildDiagnostics = ({
     diskUsagePercentage: storage.diskUsagePercentage,
   },
   queues: queues.map(({ name, isPaused, statistics }) => ({ name, isPaused, statistics })),
-  settings: JSON.parse(JSON.stringify(withoutCredentialValues(config), diagnosticsReplacer)) as AdminConfigDto,
+  settings: JSON.parse(JSON.stringify(reportSettings(config), diagnosticsReplacer)) as AdminConfigDto,
 });
+
+/**
+ * Settings that say who the household is or how to reach its mail account (FL-368): the report
+ * promises no names, so these are emptied as well as the credentials.
+ */
+const REPORT_PRIVATE_PATHS = new Set([
+  'notifications.smtp.transport.host',
+  'notifications.smtp.transport.username',
+  'notifications.smtp.from',
+  'notifications.smtp.replyTo',
+]);
+
+/** The settings as the report carries them: no credential, no sign-in inside an address, no mail account. */
+const reportSettings = (config: AdminConfigDto) => {
+  const settings = cloneConfig(withoutCredentialValues(config));
+  for (const [path, value] of configLeaves(settings)) {
+    if (typeof value === 'string') {
+      set(settings, path, REPORT_PRIVATE_PATHS.has(path) ? '' : stripUrlCredentials(value));
+    } else if (Array.isArray(value)) {
+      set(
+        settings,
+        path,
+        value.map((item) => (typeof item === 'string' ? stripUrlCredentials(item) : item)),
+      );
+    }
+  }
+  return settings;
+};
 
 export const diagnosticsFileName = (generatedAt: Date) =>
   `frameleaf-diagnostics-${generatedAt.toISOString().slice(0, 19).replaceAll(':', '-')}.json`;

@@ -39,7 +39,8 @@ const setup = (props: Partial<Parameters<typeof render<typeof CloudTour>>[1]> = 
     facts: facts(),
     account: 'owner@example.test',
     planFromUsd: 6,
-    licensedDiscount: 0.2,
+    licensedDiscount: 0.07,
+    individualDiscount: 0.05,
     onClose,
     onOpen,
     ...props,
@@ -101,7 +102,7 @@ describe('CloudTour (FL-196)', () => {
   it('shows the plan step in US dollars with Done instead of Skip', async () => {
     const { dialog, onClose } = setup({ initialStep: 5 });
     expect(dialog).toHaveTextContent('from $6 a month');
-    expect(dialog).toHaveTextContent('Licensed servers save 20% on plans');
+    expect(dialog).toHaveTextContent('A server licence saves 7% on plans, an individual licence 5%.');
     expect(within(dialog).getByTestId('cloud-tour-status')).toHaveTextContent('No plan');
     expect(within(dialog).queryByRole('button', { name: 'Skip tour' })).toBeNull();
     for (const name of ['Open Plan', 'Open Licence', 'Open Frameleaf Cloud']) {

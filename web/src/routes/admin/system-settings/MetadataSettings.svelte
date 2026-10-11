@@ -11,9 +11,9 @@
   const configToEdit = $derived(settingsDraft.draft);
 </script>
 
-<div class="mt-2">
+<div>
   <div in:reveal>
-    <form autocomplete="off" class="mx-4 mt-4" onsubmit={(event) => event.preventDefault()}>
+    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
         <SettingToggle
           title={$t('admin.metadata_faces_import_setting')}

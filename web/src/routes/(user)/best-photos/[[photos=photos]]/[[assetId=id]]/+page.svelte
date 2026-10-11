@@ -106,7 +106,7 @@
 </script>
 
 <UserPageLayout scrollbar={false}>
-  <section class="m-4 mb-12 bg-(--fl-canvas)">
+  <section class="m-4 mb-12 bg-(--fl-canvas) max-md:mx-(--fl-space-2)">
     <!-- The same header as Places, Tags, Folders and Memories: title, one line of what this is, count. -->
     <div class="fl-discovery best-photos-head">
       <header class="dv-header">

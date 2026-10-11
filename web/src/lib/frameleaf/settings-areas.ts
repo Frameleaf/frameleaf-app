@@ -101,14 +101,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['repair'],
     order: ['integrity-checks', 'repair', 'deduplication', 'enrichment-care'],
   },
-  // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
-  // and /admin/render-workers pages are sections of Compute & jobs, with the nightly settings. As in
-  // the template, queue concurrency is edited only in the Job manager's concurrency dialog; the old
-  // job settings key (`isOpen=job`) opens the Job manager.
+  // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
+  // how the computers and the background work are doing, then Computers, Where work runs, Background
+  // work and Graphics card check. The overnight settings are listed with them. The pages it replaced
+  // (Workers & endpoints, Render workers) open Computers; see `SECTION_ALIASES`.
   {
     id: 'processing',
     group: 'server',
-    sections: ['workers', 'hardware', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
+    sections: ['computers', 'routing', 'queues', 'hardware', 'nightly-tasks'],
   },
   // FL-154 and FL-159 (handoff §3.1): the template's Frameleaf Cloud area (settings-catalog.mjs:125-131,
   // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence, Remote access
@@ -130,11 +130,19 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
-  { id: 'notifications', group: 'server', sections: ['notifications'], personal: ['email-preferences'] },
+  // FL-368: "Emails you receive" comes first, because every account has it.
+  {
+    id: 'notifications',
+    group: 'server',
+    sections: ['notifications'],
+    personal: ['email-preferences'],
+    order: ['email-preferences', 'notifications'],
+  },
+  // FL-368: the three household pages first, then the ones behind "Advanced" (`ADVANCED_SECTIONS`).
   {
     id: 'server',
     group: 'server',
-    sections: ['server', 'version-check', 'logging', 'location', 'theme', 'configuration'],
+    sections: ['version-check', 'server', 'location', 'logging', 'theme', 'configuration'],
   },
   // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
   { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
@@ -145,12 +153,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: [],
     // Profile, appearance, downloads and library features, as in the template. Usage and supporter
     // status have no other home in the template yet.
+    // FL-368: everyday pages first, then the account's own.
     personal: [
       'account',
-      'frameleaf-account',
       'app-settings',
-      'download-settings',
       'feature',
+      'download-settings',
+      'frameleaf-account',
       'user-usage-info',
       'user-purchase-settings',
     ],
@@ -225,36 +234,93 @@ export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze([
 export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({
   users: 'accounts',
   trash: 'contents',
+  // FL-368: People & sharing opens straight on its one page.
+  sharing: 'sharing',
 });
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
 /**
- * The one Backup area's pages (design review finding 66). Backups used to be reached from four
- * places: the Backup screen, a "Database backups" form under Import & protection, a second
- * "Database backups" manager under Maintenance, and Cloud backup under Frameleaf Cloud. They are
- * now shown as pages of Backup. Every page keeps the address it always had, so older links, the
- * old administration redirects and the command palette still open it; only where it is listed and
- * which area is highlighted changed.
+ * Areas that open on a page of their own (a status and where to go) instead of a directory, and
+ * list their pages there rather than in the navigation: Computers & background work (FL-364).
  */
-export type BackupPageId = 'destinations' | 'schedule' | 'restore';
-export const BACKUP_PAGES: readonly { id: BackupPageId; area: SettingsAreaId; section?: string }[] = Object.freeze([
-  { id: 'destinations', area: 'backups' },
-  { id: 'schedule', area: 'backup', section: 'backup' },
-  { id: 'restore', area: 'maintenance', section: 'backups' },
+export const LANDING_AREAS: readonly SettingsAreaId[] = Object.freeze(['processing']);
+export const hasLandingPage = (area: SettingsAreaId) => LANDING_AREAS.includes(area);
+
+/**
+ * The plain-words settings pages (FL-361). An area listed here opens on a landing page of its own
+ * that answers a question first and then lists its pages, each saying its current state, so the
+ * navigation does not repeat them. Its pages bring their own cards (the settings kit).
+ */
+export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
+  'notifications',
+  'server',
+  'preferences',
+  'sharing',
 ]);
+export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
+
+/** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
+export const ADVANCED_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
+  server: ['logging', 'theme', 'configuration'],
+});
+
+/**
+ * The one Backup area's pages (FL-362, after design review finding 66). Backup is one screen with
+ * three pages side by side (Overview, Schedule, Restore) and a page for each place a backup is kept
+ * (Cloud Backup, Buddy Backup, On this server), opened from the Overview. Each is addressed as
+ * `?area=backups&section=<page>`.
+ *
+ * Backups used to be reached from four places: the Backup screen, a "Database backups" form under
+ * Import & protection, a second manager under Maintenance, and Cloud backup under Frameleaf Cloud.
+ * Those addresses still open, on the Backup page that took their place, so older links, the old
+ * administration redirects and the command palette keep working.
+ */
+export const BACKUP_TABS = Object.freeze(['overview', 'schedule', 'restore'] as const);
+export const BACKUP_PLACE_PAGES = Object.freeze(['cloud', 'buddy', 'local'] as const);
+export type BackupPageId = (typeof BACKUP_TABS)[number] | (typeof BACKUP_PLACE_PAGES)[number];
+
+const isBackupPageId = (value: string | null | undefined): value is BackupPageId =>
+  [...BACKUP_TABS, ...BACKUP_PLACE_PAGES].includes(value as BackupPageId);
 
 /** Addresses in other areas that are shown as part of Backup, as `<area>:<section>`. */
 const BACKUP_ADDRESSES: Readonly<Record<string, BackupPageId>> = Object.freeze({
+  // The old schedule form, and the saved snapshots with their restore.
   'backup:backup': 'schedule',
-  'maintenance:backups': 'restore',
-  // Cloud backup is one of the off-site destinations.
-  'cloud:cloud-backup': 'destinations',
+  'maintenance:backups': 'local',
+  'cloud:cloud-backup': 'cloud',
 });
 
-/** The Backup page an address shows, if it is one. */
-export const backupPageFor = (area: SettingsAreaId, section?: string | null): BackupPageId | undefined =>
-  area === 'backups' && !section ? 'destinations' : BACKUP_ADDRESSES[`${area}:${section ?? ''}`];
+/** The views of the Backup screen this one replaced (`?backupView=`), for links written to them. */
+const BACKUP_VIEWS: Readonly<Record<string, BackupPageId>> = Object.freeze({
+  status: 'overview',
+  compare: 'overview',
+  cloud: 'cloud',
+  controls: 'buddy',
+  restore: 'restore',
+});
+
+/**
+ * The Backup page an address shows, if it is one. `params` are the address's own: the page inside
+ * Backup (`section`), or the view an older link names (`backupView`).
+ */
+export const backupPageFor = (
+  area: SettingsAreaId,
+  section?: string | null,
+  params: { section?: string | null; backupView?: string | null } = {},
+): BackupPageId | undefined => {
+  if (area !== 'backups') {
+    return BACKUP_ADDRESSES[`${area}:${section ?? ''}`];
+  }
+  if (isBackupPageId(params.section)) {
+    return params.section;
+  }
+  return BACKUP_VIEWS[params.backupView ?? ''] ?? 'overview';
+};
+
+/** The address of a Backup page. */
+export const backupPageUrl = (page: BackupPageId = 'overview', params: Record<string, string | undefined> = {}) =>
+  commandCenterUrl('backups', page === 'overview' ? undefined : page, params);
 
 /** Whether a section is listed under Backup instead of the area its address names. */
 export const isBackupSection = (area: SettingsAreaId, section: string) =>
@@ -312,8 +378,11 @@ export const commandCenterUrl = (
 export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) =>
   commandCenterUrl('analytics', undefined, { scope: params.scope, range: params.range });
 
-/** Server section keys older links use for a section that now has another key. */
-const SERVER_ALIASES: Record<string, string> = { job: 'queues' };
+/**
+ * Server section keys older links use for a section that now has another key. Workers & endpoints
+ * and Render workers are one page, Computers (FL-364).
+ */
+const SERVER_ALIASES: Record<string, string> = { job: 'queues', workers: 'computers', 'render-workers': 'computers' };
 
 /** The server section a legacy key names. */
 export const serverSectionKey = (key: string) => SERVER_ALIASES[key] ?? key;
@@ -373,6 +442,10 @@ export const resolveSettingsSection = (
   const keys = areaSectionKeys(area);
   if (params.section && keys.includes(params.section)) {
     return params.section;
+  }
+  // An address written for a page that has since been folded into another one.
+  if (params.section && keys.includes(serverSectionKey(params.section))) {
+    return serverSectionKey(params.section);
   }
   const area_ = SETTINGS_AREAS.find((item) => item.id === area);
   // A bare legacy key names the account's section first, as `resolveSettingsArea` reads it; server
@@ -504,9 +577,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'enrichment-care': 'repairs',
   },
   processing: {
-    workers: 'workers',
+    computers: 'workers',
     routing: 'workers',
-    'render-workers': 'workers',
     hardware: 'workers',
     queues: 'job_management',
     'nightly-tasks': 'schedules',

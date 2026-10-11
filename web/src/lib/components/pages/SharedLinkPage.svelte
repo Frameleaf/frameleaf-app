@@ -205,7 +205,7 @@
   }
   .pv-password-field {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     width: 100%;
   }
   .pv-password-field input {

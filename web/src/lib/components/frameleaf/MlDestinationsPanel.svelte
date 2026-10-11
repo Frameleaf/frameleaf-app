@@ -64,6 +64,7 @@
     type MlWorkload,
     type MlWorkloadRouteDto,
   } from '@frameleaf/sdk';
+  import { untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
   type Props = {
@@ -71,9 +72,25 @@
     routes: MlWorkloadRouteDto[];
     /** Called after any change is saved and the list reloaded, so a neighbouring view can refresh. */
     onChanged?: () => void;
+    /**
+     * Raise this number to open "connect by address" from outside the panel: the Computers page's
+     * one "Add a computer" (FL-364).
+     */
+    addRequest?: number;
+    /**
+     * The panel's own table of where each workload runs. Off on the Computers page: Where work runs
+     * is the one place that is chosen (FL-364).
+     */
+    showRoutes?: boolean;
   };
 
-  let { destinations: initialDestinations, routes: initialRoutes, onChanged }: Props = $props();
+  let {
+    destinations: initialDestinations,
+    routes: initialRoutes,
+    onChanged,
+    addRequest = 0,
+    showRoutes = true,
+  }: Props = $props();
 
   let destinations = $state<MlDestinationResponseDto[]>(initialDestinations);
   let routes = $state<MlWorkloadRouteDto[]>(initialRoutes);
@@ -216,6 +233,11 @@
     draftError = null;
     draftOpen = true;
   };
+  $effect(() => {
+    if (addRequest > 0) {
+      untrack(() => openCreate(MlDestinationKind.Lan));
+    }
+  });
 
   const openEdit = (destination: MlDestinationResponseDto) => {
     draft = {
@@ -584,51 +606,53 @@
     </ul>
   {/if}
 
-  <section class="routes" aria-labelledby="ml-routes-heading">
-    <h3 id="ml-routes-heading">{$t('admin.frameleaf_ml_destinations_routes_title')}</h3>
-    <p>{$t('admin.frameleaf_ml_destinations_routes_description')}</p>
-    <ul class="route-list">
-      {#each ML_WORKLOAD_ORDER as workload (workload)}
-        {@const options = routableDestinations(destinations, workload)}
-        {@const current = routeFor(workload)}
-        {@const currentStillValid = current !== null && options.some((option) => option.id === current)}
-        <li class="route">
-          <label for={`ml-route-${workload}`}>{$t(mlWorkloadLabelKey(workload))}</label>
-          <select
-            id={`ml-route-${workload}`}
-            value={currentStillValid ? current : ''}
-            disabled={busy !== null}
-            onchange={(event) => void setRoute(workload, (event.currentTarget as HTMLSelectElement).value)}
-          >
-            <option value="">{$t('admin.frameleaf_ml_destinations_route_none')}</option>
-            {#each options as option (option.id)}
-              <option value={option.id}>{option.name} · {$t(mlDestinationKindLabelKey(option.kind))}</option>
-            {/each}
-          </select>
-          <span class="route-state" class:refused={current === null || !currentStillValid}>
-            {#if current === null}
-              {$t('admin.frameleaf_ml_destinations_route_refused')}
-            {:else if !currentStillValid}
-              {$t('admin.frameleaf_ml_destinations_route_blocked', {
-                values: { name: routedName(workload) ?? current },
-              })}
-            {:else}
-              {$t('admin.frameleaf_ml_destinations_route_active', {
-                values: { name: routedName(workload) ?? current },
-              })}
-            {/if}
-          </span>
-        </li>
-      {/each}
-    </ul>
-    <p class="muted">
-      {$t('admin.frameleaf_ml_destinations_routes_note', {
-        values: {
-          eligible: destinations.filter((destination) => canRouteTo(destination, ML_WORKLOAD_ORDER[0])).length,
-        },
-      })}
-    </p>
-  </section>
+  {#if showRoutes}
+    <section class="routes" aria-labelledby="ml-routes-heading">
+      <h3 id="ml-routes-heading">{$t('admin.frameleaf_ml_destinations_routes_title')}</h3>
+      <p>{$t('admin.frameleaf_ml_destinations_routes_description')}</p>
+      <ul class="route-list">
+        {#each ML_WORKLOAD_ORDER as workload (workload)}
+          {@const options = routableDestinations(destinations, workload)}
+          {@const current = routeFor(workload)}
+          {@const currentStillValid = current !== null && options.some((option) => option.id === current)}
+          <li class="route">
+            <label for={`ml-route-${workload}`}>{$t(mlWorkloadLabelKey(workload))}</label>
+            <select
+              id={`ml-route-${workload}`}
+              value={currentStillValid ? current : ''}
+              disabled={busy !== null}
+              onchange={(event) => void setRoute(workload, (event.currentTarget as HTMLSelectElement).value)}
+            >
+              <option value="">{$t('admin.frameleaf_ml_destinations_route_none')}</option>
+              {#each options as option (option.id)}
+                <option value={option.id}>{option.name} · {$t(mlDestinationKindLabelKey(option.kind))}</option>
+              {/each}
+            </select>
+            <span class="route-state" class:refused={current === null || !currentStillValid}>
+              {#if current === null}
+                {$t('admin.frameleaf_ml_destinations_route_refused')}
+              {:else if !currentStillValid}
+                {$t('admin.frameleaf_ml_destinations_route_blocked', {
+                  values: { name: routedName(workload) ?? current },
+                })}
+              {:else}
+                {$t('admin.frameleaf_ml_destinations_route_active', {
+                  values: { name: routedName(workload) ?? current },
+                })}
+              {/if}
+            </span>
+          </li>
+        {/each}
+      </ul>
+      <p class="muted">
+        {$t('admin.frameleaf_ml_destinations_routes_note', {
+          values: {
+            eligible: destinations.filter((destination) => canRouteTo(destination, ML_WORKLOAD_ORDER[0])).length,
+          },
+        })}
+      </p>
+    </section>
+  {/if}
 </Pane>
 
 {#if cloudConsent && consentTarget}
@@ -823,7 +847,7 @@
   }
   .workloads {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     flex-wrap: wrap;
   }
   .facts {
@@ -871,7 +895,7 @@
   .dialog-body input[type='password'],
   .dialog-body input[type='number'] {
     width: 100%;
-    padding: 0.4375rem 0.625rem;
+    padding: 0.4375rem var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-raised);
@@ -894,7 +918,7 @@
   .dialog-body label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
   }
   .dialog-body fieldset {

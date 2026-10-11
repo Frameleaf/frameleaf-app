@@ -509,6 +509,37 @@ export class BuddyBackupService {
     return this.status();
   }
 
+  /**
+   * FL-362: what the one backup schedule needs to know. `on`: a scheduled backup would be sent (set up,
+   * not paused, the recovery kit verified, an active buddy). `busy`: a backup is being captured or
+   * sent right now; one left waiting for the buddy, for space or for a key does not hold the run up.
+   */
+  async sequenceStatus(): Promise<{ on: boolean; busy: boolean }> {
+    const state = await this.repository.state();
+    const on =
+      !!state.settings &&
+      !state.settings.pausedSending &&
+      process.env.FRAMELEAF_BUDDY_BACKUP === 'true' &&
+      state.recoveryVerified &&
+      state.pairing?.state === 'active';
+    const active = on && !!(await this.operations.getActiveOfKind(MediaOperationKind.BuddyBackup));
+    return { on, busy: active && (state.run?.state === 'capturing' || state.run?.state === 'sending') };
+  }
+
+  /** FL-362: the schedule's turn: start a backup as the first administrator, as the own timer did. */
+  async startScheduled(): Promise<void> {
+    const admin = await this.repository.db
+      .selectFrom('user')
+      .select('id')
+      .where('isAdmin', '=', true)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+    if (!admin) {
+      throw new Error('No administrator to own the scheduled Buddy Backup');
+    }
+    await this.start(admin.id);
+  }
+
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   onBootstrap() {
     this.timer = setInterval(() => this.tick(), 30_000);
@@ -550,39 +581,21 @@ export class BuddyBackupService {
         await this.start((JSON.parse(restart) as { ownerId: string }).ownerId);
         await rm(join(this.repository.root(), 'restart.json'));
       } else if (
+        // FL-362: scheduled backups are started by the one backup schedule (`startScheduled`), after the
+        // library data copy; only the weekly recovery check is started here.
         !state.settings.pausedSending &&
         process.env.FRAMELEAF_BUDDY_BACKUP === 'true' &&
-        state.recoveryVerified
+        state.recoveryVerified &&
+        state.lastCompleteAt &&
+        (!state.lastVerifiedAt || Date.parse(state.lastVerifiedAt) < Date.now() - 7 * 86_400_000)
       ) {
-        if (!state.nextScheduledAt)
-          await this.repository.update((current) => ({
-            ...current,
-            nextScheduledAt: new CronTime(state.settings!.schedule, state.settings!.timezone).sendAt().toISO(),
-          }));
-        if (state.nextScheduledAt && Date.now() >= Date.parse(state.nextScheduledAt)) {
-          const admin = await this.repository.db
-            .selectFrom('user')
-            .select('id')
-            .where('isAdmin', '=', true)
-            .where('deletedAt', 'is', null)
-            .executeTakeFirst();
-          if (admin) await this.start(admin.id);
-          await this.repository.update((current) => ({
-            ...current,
-            nextScheduledAt: new CronTime(state.settings!.schedule, state.settings!.timezone).sendAt().toISO(),
-          }));
-        } else if (
-          state.lastCompleteAt &&
-          (!state.lastVerifiedAt || Date.parse(state.lastVerifiedAt) < Date.now() - 7 * 86_400_000)
-        ) {
-          const admin = await this.repository.db
-            .selectFrom('user')
-            .select('id')
-            .where('isAdmin', '=', true)
-            .where('deletedAt', 'is', null)
-            .executeTakeFirst();
-          if (admin) await this.start(admin.id, true);
-        }
+        const admin = await this.repository.db
+          .selectFrom('user')
+          .select('id')
+          .where('isAdmin', '=', true)
+          .where('deletedAt', 'is', null)
+          .executeTakeFirst();
+        if (admin) await this.start(admin.id, true);
       }
     }
     const restore = await this.operations.getActiveOfKind(MediaOperationKind.BuddyRestore);
