@@ -135,7 +135,7 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       );
       expect(clippedTabs, 'every Backup page fits').toEqual([]);
 
-      // The pages are links: Tab reaches each one and Enter opens the last one.
+      // The pages are links: Tab walks them in order to the last one and Enter opens it.
       await navigation.getByRole('link', { name: 'Overview', exact: true }).focus();
       await page.keyboard.press('Tab');
       const scheduleTab = navigation.getByRole('link', { name: 'Schedule', exact: true });
