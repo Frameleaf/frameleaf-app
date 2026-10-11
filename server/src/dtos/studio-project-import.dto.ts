@@ -106,6 +106,9 @@ export class StudioImportPublicationPageDto extends createZodDto(
 ) {}
 export class StudioImportPublicationCancelDto extends createZodDto(
   z
-    .strictObject({ status: z.enum(['cancelled', 'already-published']), receipt: StudioImportPublicationSchema })
+    .strictObject({
+      status: z.enum(['cancelled', 'already-published']).meta({ id: 'StudioImportPublicationCancelStatus' }),
+      receipt: StudioImportPublicationSchema,
+    })
     .meta({ id: 'StudioImportPublicationCancelDto' }),
 ) {}
