@@ -226,31 +226,36 @@ export async function parseStudioLottieSource(bytes: Uint8Array, contentType: st
     };
   }
   const archive = await readLottieArchive(bytes);
-  const dependencies: StudioVectorLocation[] = [];
-  const documents: StudioLottieSource['documents'] = [];
-  for (const animation of archive.animations) {
-    const document = structuredClone(animation.document);
-    // Only exact manifest-version image roots are internal; external locators require declarations.
-    const prefix = animation.entry.startsWith('a/') ? 'i/' : 'images/';
-    for (const raw of Array.isArray(document.assets) ? document.assets : []) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-      const asset = raw as Record<string, unknown>;
-      if (typeof asset.p !== 'string' || asset.p.startsWith('data:')) continue;
-      const path = `${typeof asset.u === 'string' ? asset.u : ''}${asset.p}`;
-      if (!path.startsWith(prefix)) continue;
-      const internal = archive.files[path];
-      if (!internal) throw new StudioImportRefusal('Missing internal Lottie image');
-      assertStudioVectorImage(internal);
-      const type = sniffStudioImport(internal.subarray(0, 1024), undefined);
-      asset.p = `data:${type.contentType};base64,${Buffer.from(internal).toString('base64')}`;
-      asset.u = '';
-      asset.e = 1;
+  try {
+    const dependencies: StudioVectorLocation[] = [];
+    const documents: StudioLottieSource['documents'] = [];
+    for (const animation of archive.animations) {
+      const document = structuredClone(animation.document);
+      // Only exact manifest-version image roots are internal; external locators require declarations.
+      const prefix = animation.entry.startsWith('a/') ? 'i/' : 'images/';
+      for (const raw of Array.isArray(document.assets) ? document.assets : []) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const asset = raw as Record<string, unknown>;
+        if (typeof asset.p !== 'string' || asset.p.startsWith('data:')) continue;
+        const path = `${typeof asset.u === 'string' ? asset.u : ''}${asset.p}`;
+        if (!path.startsWith(prefix)) continue;
+        const internal = archive.files[path];
+        if (!internal) throw new StudioImportRefusal('Missing internal Lottie image');
+        assertStudioVectorImage(internal);
+        const type = sniffStudioImport(internal.subarray(0, 1024), undefined);
+        asset.p = `data:${type.contentType};base64,${Buffer.from(internal.buffer, internal.byteOffset, internal.byteLength).toString('base64')}`;
+        asset.u = '';
+        asset.e = 1;
+      }
+      const parsed = parseStudioLottieDependencies(JSON.stringify(document));
+      dependencies.push(...parsed.dependencies.map((location) => ({ ...location, entry: animation.entry })));
+      documents.push({ entry: animation.entry, document: parsed.document });
     }
-    const parsed = parseStudioLottieDependencies(JSON.stringify(document));
-    dependencies.push(...parsed.dependencies.map((location) => ({ ...location, entry: animation.entry })));
-    documents.push({ entry: animation.entry, document: parsed.document });
+    return { archive, documents, dependencies };
+  } catch (error) {
+    for (const file of Object.values(archive.files)) if (file.buffer !== bytes.buffer) file.fill(0);
+    throw error;
   }
-  return { archive, documents, dependencies };
 }
 
 export function selectStudioLottieDocument(source: StudioLottieSource, animationId?: string): Record<string, unknown> {
@@ -325,78 +330,89 @@ export async function materializeStudioLottieSource(
   contentType: string,
   entries: readonly StudioVectorAuthorizedInput[],
   read: (entry: StudioVectorAuthorizedInput, maximum: number) => Promise<Uint8Array>,
+  retain?: (bytes: Uint8Array) => void,
 ): Promise<StudioLottieSource> {
   const parsed = await parseStudioLottieSource(bytes, contentType);
-  const bindings = readStudioVectorBindings(graph).filter(
-    (binding) => binding.parent.kind === parent.kind && binding.parent.id === parent.id,
-  );
-  const checksum = createHash('sha256').update(bytes).digest('hex');
-  if (bindings.some((binding) => binding.parent.checksum !== checksum))
-    throw new StudioImportRefusal('Vector parent bytes changed');
-  const expected = new Set(parsed.dependencies.map(studioVectorLocationKey));
-  if (
-    expected.size !== bindings.length ||
-    bindings.some((binding) => !expected.has(studioVectorLocationKey(binding.location)))
-  )
-    throw new StudioImportRefusal('Incomplete vector dependency declarations');
-  let allocated = bytes.length;
-  for (const binding of bindings) {
-    const entry = entries.find((entry) => entry.key === `${binding.child.kind}:${binding.child.id}`);
-    if (!entry || entry.kind !== binding.child.kind || entry.id !== binding.child.id)
-      throw new StudioImportRefusal('Unauthorized vector dependency');
-    const child = await read(entry, STUDIO_IMPORT_VECTOR_MAX_BYTES);
-    allocated += 4 * Math.ceil(child.length / 3) + 128;
-    if (allocated > STUDIO_IMPORT_VECTOR_MAX_BYTES) throw new StudioImportRefusal('VECTOR_EXECUTION_ALLOCATION_LIMIT');
-    if (createHash('sha256').update(child).digest('hex') !== binding.child.checksum)
-      throw new StudioImportRefusal('Vector dependency bytes changed');
-    const location = binding.location;
-    if (location.format !== 'lottie-json') throw new StudioImportRefusal('Unsupported vector location');
-    const document = parsed.documents.find((document) => document.entry === location.entry)?.document;
-    if (!document) throw new StudioImportRefusal('Vector location changed');
-    const parts = location.pointer.split('/').slice(1);
-    let container: unknown = document;
-    for (const part of parts.slice(0, -1)) {
-      if (!container || typeof container !== 'object') throw new StudioImportRefusal('Vector location changed');
-      container = (container as Record<string, unknown>)[part];
-    }
-    if (!container || typeof container !== 'object' || Array.isArray(container))
-      throw new StudioImportRefusal('Vector location changed');
-    const target = container as Record<string, unknown>;
-    let mime: string;
-    if (binding.location.role === 'image') {
-      assertStudioVectorImage(child);
-      mime = sniffStudioImport(child.subarray(0, 1024), undefined).contentType;
-      target.u = '';
-      target.e = 1;
-    } else {
-      // A font must already be authorized through the existing rights/catalog namespace.
-      const data = Buffer.from(child);
-      const magic = data.toString('ascii', 0, 4);
-      mime =
-        magic === 'wOF2'
-          ? 'font/woff2'
-          : magic === 'wOFF'
-            ? 'font/woff'
-            : magic === 'OTTO'
-              ? 'font/otf'
-              : data.length >= 4 && data.readUInt32BE(0) === 0x00010000
-                ? 'font/ttf'
-                : '';
-      if (!mime) throw new StudioImportRefusal('Unsupported vector font');
-    }
-    target[parts.at(-1)!] = `data:${mime};base64,${Buffer.from(child).toString('base64')}`;
-  }
-  if (parsed.archive) {
-    for (const { entry, document } of parsed.documents) {
-      parsed.archive.files[entry!] = new TextEncoder().encode(JSON.stringify(document));
-    }
+  for (const file of Object.values(parsed.archive?.files ?? {})) retain?.(file);
+  try {
+    const bindings = readStudioVectorBindings(graph).filter(
+      (binding) => binding.parent.kind === parent.kind && binding.parent.id === parent.id,
+    );
+    const checksum = createHash('sha256').update(bytes).digest('hex');
+    if (bindings.some((binding) => binding.parent.checksum !== checksum))
+      throw new StudioImportRefusal('Vector parent bytes changed');
+    const expected = new Set(parsed.dependencies.map(studioVectorLocationKey));
     if (
-      Object.values(parsed.archive.files).reduce((total, bytes) => total + bytes.length, 0) >
-      STUDIO_IMPORT_VECTOR_MAX_BYTES
+      expected.size !== bindings.length ||
+      bindings.some((binding) => !expected.has(studioVectorLocationKey(binding.location)))
     )
-      throw new StudioImportRefusal('Vector execution allocation exceeded');
+      throw new StudioImportRefusal('Incomplete vector dependency declarations');
+    let allocated = bytes.length;
+    for (const binding of bindings) {
+      const entry = entries.find((entry) => entry.key === `${binding.child.kind}:${binding.child.id}`);
+      if (!entry || entry.kind !== binding.child.kind || entry.id !== binding.child.id)
+        throw new StudioImportRefusal('Unauthorized vector dependency');
+      const child = await read(entry, STUDIO_IMPORT_VECTOR_MAX_BYTES);
+      allocated += 4 * Math.ceil(child.length / 3) + 128;
+      if (allocated > STUDIO_IMPORT_VECTOR_MAX_BYTES)
+        throw new StudioImportRefusal('VECTOR_EXECUTION_ALLOCATION_LIMIT');
+      if (createHash('sha256').update(child).digest('hex') !== binding.child.checksum)
+        throw new StudioImportRefusal('Vector dependency bytes changed');
+      const location = binding.location;
+      if (location.format !== 'lottie-json') throw new StudioImportRefusal('Unsupported vector location');
+      const document = parsed.documents.find((document) => document.entry === location.entry)?.document;
+      if (!document) throw new StudioImportRefusal('Vector location changed');
+      const parts = location.pointer.split('/').slice(1);
+      let container: unknown = document;
+      for (const part of parts.slice(0, -1)) {
+        if (!container || typeof container !== 'object') throw new StudioImportRefusal('Vector location changed');
+        container = (container as Record<string, unknown>)[part];
+      }
+      if (!container || typeof container !== 'object' || Array.isArray(container))
+        throw new StudioImportRefusal('Vector location changed');
+      const target = container as Record<string, unknown>;
+      let mime: string;
+      if (binding.location.role === 'image') {
+        assertStudioVectorImage(child);
+        mime = sniffStudioImport(child.subarray(0, 1024), undefined).contentType;
+        target.u = '';
+        target.e = 1;
+      } else {
+        // A font must already be authorized through the existing rights/catalog namespace.
+        const data = Buffer.from(child.buffer, child.byteOffset, child.byteLength);
+        const magic = data.toString('ascii', 0, 4);
+        mime =
+          magic === 'wOF2'
+            ? 'font/woff2'
+            : magic === 'wOFF'
+              ? 'font/woff'
+              : magic === 'OTTO'
+                ? 'font/otf'
+                : data.length >= 4 && data.readUInt32BE(0) === 0x00010000
+                  ? 'font/ttf'
+                  : '';
+        if (!mime) throw new StudioImportRefusal('Unsupported vector font');
+      }
+      target[parts.at(-1)!] =
+        `data:${mime};base64,${Buffer.from(child.buffer, child.byteOffset, child.byteLength).toString('base64')}`;
+    }
+    if (parsed.archive) {
+      for (const { entry, document } of parsed.documents) {
+        const materialized = new TextEncoder().encode(JSON.stringify(document));
+        retain?.(materialized);
+        parsed.archive.files[entry!] = materialized;
+      }
+      if (
+        Object.values(parsed.archive.files).reduce((total, bytes) => total + bytes.length, 0) >
+        STUDIO_IMPORT_VECTOR_MAX_BYTES
+      )
+        throw new StudioImportRefusal('Vector execution allocation exceeded');
+    }
+    return parsed;
+  } catch (error) {
+    for (const file of Object.values(parsed.archive?.files ?? {})) if (file.buffer !== bytes.buffer) file.fill(0);
+    throw error;
   }
-  return parsed;
 }
 
 export type StudioVectorAuthorizedInput = {
@@ -451,16 +467,22 @@ export async function validateStudioVectorClosure(
     const type = classifyStudioLottieParent(bytes);
     if (type.kind !== 'vector') throw new StudioImportRefusal('Wrong vector parent MIME');
     const parsed = await parseStudioLottieSource(bytes, type.contentType);
-    const expected = new Set(parsed.dependencies.map((location) => studioVectorLocationKey(location)));
-    if (
-      expected.size !== group.length ||
-      group.some((binding) => !expected.has(studioVectorLocationKey(binding.location)))
-    )
-      throw new StudioImportRefusal('Incomplete vector dependency declarations');
-    for (const binding of group) {
-      const child = await bytesFor(binding.child.kind, binding.child.id, binding.child.checksum);
-      if (binding.location.role === 'image') assertStudioVectorImage(child);
-      // A font is admitted only by the existing catalog/rights resolver, never by a guessed MIME.
+    try {
+      const expected = new Set(parsed.dependencies.map((location) => studioVectorLocationKey(location)));
+      if (
+        expected.size !== group.length ||
+        group.some((binding) => !expected.has(studioVectorLocationKey(binding.location)))
+      )
+        throw new StudioImportRefusal('Incomplete vector dependency declarations');
+      for (const binding of group) {
+        const child = await bytesFor(binding.child.kind, binding.child.id, binding.child.checksum);
+        if (binding.location.role === 'image') assertStudioVectorImage(child);
+        // A font is admitted only by the existing catalog/rights resolver, never by a guessed MIME.
+      }
+    } finally {
+      for (const file of Object.values(parsed.archive?.files ?? {})) {
+        if (file.buffer !== bytes.buffer) file.fill(0);
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -238,4 +239,5 @@ export const repositories = [
   VideoStreamRepository,
   WebsocketRepository,
   WorkflowRepository,
+  StudioSourceResolutionRepository,
 ];

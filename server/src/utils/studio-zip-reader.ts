@@ -453,16 +453,21 @@ export const readZipEntry = async (source: ZipByteSource, entry: ZipEntry, maxBy
   }
 
   const bytes = entry.compression === 'store' ? raw : inflateEntry(raw, entry);
-  if (bytes.length !== entry.uncompressedSize) {
-    refuse('bundle_corrupt', `${entry.name.slice(0, 80)} inflated to a different size than declared`);
+  try {
+    if (bytes.length !== entry.uncompressedSize) {
+      refuse('bundle_corrupt', `${entry.name.slice(0, 80)} inflated to a different size than declared`);
+    }
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    if ((crc ^ 0xffffffff) >>> 0 !== entry.crc32) {
+      refuse('bundle_corrupt', `${entry.name.slice(0, 80)} CRC does not match`);
+    }
+    return bytes;
+  } catch (error) {
+    if (bytes !== raw) bytes.fill(0);
+    throw error;
   }
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
-  if ((crc ^ 0xffffffff) >>> 0 !== entry.crc32) {
-    refuse('bundle_corrupt', `${entry.name.slice(0, 80)} CRC does not match`);
-  }
-  return bytes;
 };

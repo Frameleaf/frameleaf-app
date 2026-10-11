@@ -86,6 +86,7 @@ export function assertArchiveExpressionsAbsent(value: unknown): void {
 }
 
 export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchive> {
+  const files: Record<string, Uint8Array> = Object.create(null);
   try {
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const source = {
@@ -101,7 +102,6 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
       documentLimit: () => MAX_BYTES,
       allowZip64: false,
     });
-    const files: Record<string, Uint8Array> = Object.create(null);
     const aliases = new Set<string>();
     for (const entry of directory.entries) {
       if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x800) return fail();
@@ -110,6 +110,7 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     }
     return describeLottieArchive(files);
   } catch {
+    for (const file of Object.values(files)) if (file.buffer !== bytes.buffer) file.fill(0);
     // This in-memory parser maps malformed ZIP/UTF-8/JSON to the existing import refusal.
     return fail();
   }

@@ -1,3 +1,4 @@
+import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -300,4 +301,5 @@ export const services = [
   ViewService,
   WorkflowExecutionService,
   WorkflowService,
+  StudioSourceResolutionService,
 ];
