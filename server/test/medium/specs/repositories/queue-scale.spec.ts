@@ -5,6 +5,7 @@ import { unfinishedQueueItems } from 'src/queue/selection-state.js';
 import { SqlQueueStore, settleRunQuery } from 'src/queue/store.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { SCALE_ITEMS } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
 type PlanNode = {
@@ -192,14 +193,25 @@ describe('large durable queue query work', () => {
     }
   };
 
-  const explain = async (query: CompiledQuery) => {
-    const result = await db.executeQuery<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
-      CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query.sql}`, [...query.parameters]),
-    );
-    return result.rows[0]['QUERY PLAN'][0].Plan;
-  };
+  // A work budget is about the statement, not about how small the fixture is: on a ledger of a few
+  // thousand rows PostgreSQL reads the whole table because that is cheapest, and the same statement
+  // would then pass or fail with the table size instead of with its own shape. The budgets are
+  // therefore measured with sequential and bitmap scans priced out, which leaves the planner the
+  // ordered index paths the statement can actually use. A statement that has no bounded index path
+  // still reads the table (PostgreSQL only penalises those scans) and still fails its budget.
+  const explain = (query: CompiledQuery, wholeTableScans = false) =>
+    db.transaction().execute(async (tx) => {
+      if (!wholeTableScans) {
+        await sql`set local enable_seqscan = off`.execute(tx);
+        await sql`set local enable_bitmapscan = off`.execute(tx);
+      }
+      const result = await tx.executeQuery<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+        CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query.sql}`, [...query.parameters]),
+      );
+      return result.rows[0]['QUERY PLAN'][0].Plan;
+    });
 
-  it.each([50_000, 500_000])(
+  it.each([(SCALE_ITEMS * 2) / 5, SCALE_ITEMS])(
     'bounds actual tail work with %i retained roots and four stages',
     async (size) => {
       retainedRoots = size;

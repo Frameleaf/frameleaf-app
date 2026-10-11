@@ -323,8 +323,7 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "Test i18n",
   "End-to-End Lint",
   "Medium Tests (Server)",
-  "Medium Scale Tests (Server) (queue-scale)",
-  "Medium Scale Tests (Server) (library-scale)",
+  "Medium Scale Tests (Server)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
   "End-to-End Tests (Web) (ubuntu-24.04)",
@@ -379,7 +378,7 @@ async function requireTestQualification(sha, request = github, expected) {
   const result = await request(
     `actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
   );
-  // There are 21 required lanes. Fail closed if a response is incomplete instead of certifying a partial page.
+  // There are 20 required lanes. Fail closed if a response is incomplete instead of certifying a partial page.
   assert(
     Array.isArray(result.jobs) &&
       result.total_count === result.jobs.length &&

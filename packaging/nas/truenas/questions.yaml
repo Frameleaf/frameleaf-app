@@ -100,7 +100,27 @@ questions:
             type: string
             default: ""
         - variable: additional_envs
-          label: Additional Environment Variables
+          label: Server Environment Variables
+          schema:
+            type: list
+            default: []
+            items:
+              - variable: env
+                label: Environment Variable
+                schema:
+                  type: dict
+                  attrs:
+                    - variable: name
+                      label: Name
+                      schema:
+                        type: string
+                        required: true
+                    - variable: value
+                      label: Value
+                      schema:
+                        type: string
+        - variable: ml_additional_envs
+          label: Machine Learning Environment Variables
           schema:
             type: list
             default: []

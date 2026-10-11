@@ -19,6 +19,8 @@ The older direct-stack catalog builder below is retained for existing release
 compatibility. New NAS installations use the Manager artifacts. No Manager
 digest is invented when publication is unavailable.
 
+For private identity/backup mounts, effective NAS ACL verification and existing-install migration, follow the [private backup storage guide](../../docs/docs/administration/private-backup-storage.md). TrueNAS ML customization uses its own Machine Learning Environment Variables list; server custom variables are not inherited by ML. Template inspection alone does not qualify physical NAS permissions.
+
 Both builders emit a complete `unraid/` catalog directory: root `LICENSE`,
 `ca_profile.xml`, setup `README.md` and rendered `templates/*.xml`. Publish its
 contents to the public `Frameleaf/unraid-apps` repository's `main` branch; keep
