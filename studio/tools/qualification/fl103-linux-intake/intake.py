@@ -6,6 +6,10 @@ from release import publish_release
 PREFIX='fl103-intake-'
 LIMITS={'cpu.max':'200000 100000','memory.max':'2147483648','memory.swap.max':'0','pids.max':'128'}
 def command(argv,timeout=10):return subprocess.check_output(argv,text=True,stderr=subprocess.STDOUT,timeout=timeout).strip()
+def system_state(base):
+ result=subprocess.run(['/usr/bin/systemctl','is-system-running'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+ publish_release(base/'evidence/systemd-state.json',{'state':result.stdout.strip()[:200],'status':result.returncode,'stderr':result.stderr[:200]})
+ assert not result.stderr and (result.stdout.strip(),result.returncode) in [('running',0),('degraded',1)],'unexpected systemd state/exit status'
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def readfd(fd):os.lseek(fd,0,0);return os.read(fd,8192).decode()
 def populated(fd):return dict(line.split() for line in readfd(fd).splitlines())['populated']=='1'
@@ -78,14 +82,24 @@ def cleanup_all(base):
   reconciliation=cleanup_registered(base,'workflow')
   assert reconciliation['cleanup']=='kernel-cgroup-populated-zero','registered cgroup reconciliation UNKNOWN'
   report['registeredCgroupsReconciled']=True
-  expected=owned_record(base/'control/mount-owner.json')
-  current=json.loads(command(['/usr/bin/findmnt','-J','-T',str(base/'storage')]))['filesystems'][0]
-  if current['target']==str(base/'storage'):
-   assert current==expected,'scratch mount identity changed; preserve replacement'
-   command(['/usr/bin/umount',str(base/'storage')],15)
-  final=json.loads(command(['/usr/bin/findmnt','-J','-T',str(base/'storage')]))['filesystems'][0]
-  assert final['target']!=str(base/'storage')
-  report.update(exactScratchMountRemoved=True,readbackTarget=final['target'],cleanup='verified')
+  if not os.path.lexists(base/'control/mount-owner.json'):
+   setup=owned_record(base/'control/setup-owner.json')
+   assert setup['kind']=='before-resources' and setup['base']==str(base)
+   assert not base.is_symlink() and not (base/'storage').is_symlink()
+   assert setup['identity']==stat_identity(base) and setup['storageIdentity']==stat_identity(base/'storage')
+   assert not os.path.lexists(base/'control/resource-setup-started.json') and reconciliation['groups']==[]
+   current=json.loads(command(['/usr/bin/findmnt','-J','-T',str(base/'storage')]))['filesystems'][0]
+   assert current['target'] in [str(path) for path in (base/'storage').parents],'scratch mount absence unproven: preserve it'
+   report.update(resourceSetupNeverStarted=True,setupSha256=digest(base/'control/setup-owner.json'),exactScratchMountAbsent=True,readbackTarget=current['target'],cleanup='verified')
+  else:
+   expected=owned_record(base/'control/mount-owner.json')
+   current=json.loads(command(['/usr/bin/findmnt','-J','-T',str(base/'storage')]))['filesystems'][0]
+   if current['target']==str(base/'storage'):
+    assert current==expected,'scratch mount identity changed; preserve replacement'
+    command(['/usr/bin/umount',str(base/'storage')],15)
+   final=json.loads(command(['/usr/bin/findmnt','-J','-T',str(base/'storage')]))['filesystems'][0]
+   assert final['target']!=str(base/'storage')
+   report.update(exactScratchMountRemoved=True,readbackTarget=final['target'],cleanup='verified')
  except Exception as error:report['error']=type(error).__name__+': '+str(error)[:200]
  finally:publish_release(base/'evidence/workflow-cleanup.json',report)
  assert report['cleanup']=='verified','workflow closure UNKNOWN'
@@ -194,10 +208,12 @@ def main():
   if base.exists():cleanup_all(base)
   return
  assert mode=='--run';base.mkdir(mode=0o755);(base/'control').mkdir(mode=0o755);(base/'source').mkdir(mode=0o755);(base/'evidence').mkdir(mode=0o700)
+ storage=base/'storage';storage.mkdir()
+ publish_release(base/'control/setup-owner.json',{'kind':'before-resources','base':str(base),'identity':stat_identity(base),'storageIdentity':stat_identity(storage)})
  checkout=Path(checkout).resolve();node=Path(node_arg).resolve();npm=Path(npm_arg).resolve()
  assert node.is_file() and npm.is_file()
  assert Path('/sys/fs/cgroup/cgroup.controllers').is_file() and 'memory' in Path('/sys/fs/cgroup/cgroup.controllers').read_text()
- assert command(['/usr/bin/systemctl','is-system-running']) in ['running','degraded']
+ system_state(base)
  assert command(['/usr/bin/git','-C',str(checkout),'status','--porcelain'])==''
  head=command(['/usr/bin/git','-C',str(checkout),'rev-parse','HEAD'])
  recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d' and len(recipe['patches'])==125
@@ -208,8 +224,9 @@ def main():
  input_path=base/'input';(input_path/'studio').mkdir(parents=True,mode=0o755)
  shutil.copyfile(checkout/'studio/engine-package-lock.json',input_path/'studio/engine-package-lock.json')
  username='fl103-intake';assert subprocess.run(['/usr/bin/id',username],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0
+ publish_release(base/'control/resource-setup-started.json',{'setupSha256':digest(base/'control/setup-owner.json')})
  command(['/usr/sbin/useradd','--system','--user-group','--no-create-home','--shell','/usr/sbin/nologin',username]);uid=int(command(['/usr/bin/id','-u',username]));assert command(['/usr/bin/id','-G',username])==str(uid)
- storage=base/'storage';storage.mkdir();image=base/'storage.ext4'
+ image=base/'storage.ext4'
  with image.open('xb') as stream:stream.truncate(8*1024**3)
  command(['/usr/sbin/mkfs.ext4','-q','-F',str(image)],60);command(['/usr/bin/mount','-o','loop,nodev,nosuid',str(image),str(storage)],30)
  publish_release(base/'control/mount-owner.json',json.loads(command(['/usr/bin/findmnt','-J','-T',str(storage)]))['filesystems'][0])

@@ -140,4 +140,72 @@ class CorrectionChecks(unittest.TestCase):
   for error in [errno.ENOENT,errno.ENOTDIR,errno.EIO]:
    with patch('payload.target_identity',return_value=identity),patch('payload.os.open',side_effect=OSError(error,'invalid')):
     with self.assertRaises(payload.InvalidMigrationSetup):payload.migration_refusals(targets)
+class PreflightChecks(unittest.TestCase):
+ def setup(self,temp):
+  base=Path(temp)
+  for name in ['control','evidence','storage']:(base/name).mkdir()
+  publish_release(base/'control/setup-owner.json',{'kind':'before-resources','base':str(base),'identity':intake.stat_identity(base),'storageIdentity':intake.stat_identity(base/'storage')})
+  return base
+ def test_system_state_exact_pairs_and_receipt(self):
+  self.assertTrue(callable(getattr(intake,'system_state',None)))
+  for state,status in [('running',0),('degraded',1)]:
+   with self.subTest(state=state),tempfile.TemporaryDirectory() as temp:
+    base=self.setup(temp)
+    with patch('intake.subprocess.run',return_value=intake.subprocess.CompletedProcess([],status,state+'\n','')) as run:
+     intake.system_state(base)
+    run.assert_called_once_with(['/usr/bin/systemctl','is-system-running'],text=True,stdout=intake.subprocess.PIPE,stderr=intake.subprocess.PIPE,timeout=10)
+    self.assertEqual(json.loads((base/'evidence/systemd-state.json').read_text()),{'state':state,'status':status,'stderr':''})
+ def test_system_state_mismatch_unknown_and_unexpected_errors_fail_closed(self):
+  self.assertTrue(callable(getattr(intake,'system_state',None)))
+  for state,status,stderr in [('running',1,''),('degraded',0,''),('unknown',1,''),('starting',1,''),('degraded',2,''),('running',0,'diagnostic'),('',1,'')]:
+   with self.subTest(state=state,status=status),tempfile.TemporaryDirectory() as temp:
+    base=self.setup(temp)
+    with patch('intake.subprocess.run',return_value=intake.subprocess.CompletedProcess([],status,state,stderr)):
+     with self.assertRaises(AssertionError):intake.system_state(base)
+    self.assertTrue((base/'evidence/systemd-state.json').is_file())
+ def test_generic_command_still_rejects_nonzero(self):
+  error=intake.subprocess.CalledProcessError(1,['systemctl'],output='degraded\n')
+  with patch('intake.subprocess.check_output',side_effect=error):
+   with self.assertRaises(intake.subprocess.CalledProcessError):intake.command(['/usr/bin/systemctl','is-system-running'])
+ def test_system_state_timeout_propagates(self):
+  self.assertTrue(callable(getattr(intake,'system_state',None)))
+  with tempfile.TemporaryDirectory() as temp,patch('intake.subprocess.run',side_effect=intake.subprocess.TimeoutExpired('systemctl',10)):
+   with self.assertRaises(intake.subprocess.TimeoutExpired):intake.system_state(self.setup(temp))
+ def test_authenticated_pre_resource_absence_closes_without_unmount(self):
+  with tempfile.TemporaryDirectory() as temp:
+   base=self.setup(temp)
+   with patch('intake.command',return_value=json.dumps({'filesystems':[{'target':'/'}]})) as command:intake.cleanup_all(base)
+   self.assertEqual(command.call_args_list[0].args[0],['/usr/bin/findmnt','-J','-T',str(base/'storage')]);self.assertEqual(command.call_count,1)
+   report=json.loads((base/'evidence/workflow-cleanup.json').read_text())
+   self.assertEqual(report['cleanup'],'verified');self.assertTrue(report['resourceSetupNeverStarted']);self.assertTrue(report['exactScratchMountAbsent']);self.assertFalse(report['exactScratchMountRemoved'])
+ def test_missing_owner_never_proves_absence(self):
+  for defect in ['missing-setup','started','dangling-started','wrong-base','wrong-identity','wrong-storage','writable-setup','registered-group','mounted','wrong-target','readback-error']:
+   with self.subTest(defect=defect),tempfile.TemporaryDirectory() as temp:
+    base=self.setup(temp);setup=base/'control/setup-owner.json'
+    if defect=='missing-setup':setup.unlink()
+    if defect=='started':publish_release(base/'control/resource-setup-started.json',{})
+    if defect=='dangling-started':(base/'control/resource-setup-started.json').symlink_to(base/'missing')
+    if defect in ['wrong-base','wrong-identity','wrong-storage']:
+     setup.chmod(0o600);record=json.loads(setup.read_text())
+     if defect=='wrong-base':record['base']='foreign'
+     elif defect=='wrong-identity':record['identity']['inode']+=1
+     else:record['storageIdentity']['inode']+=1
+     setup.write_text(json.dumps(record));setup.chmod(0o444)
+    if defect=='writable-setup':setup.chmod(0o666)
+    if defect=='registered-group':(base/'control/cgroup-bad-owner.json').write_text('{}')
+    target=str(base/'storage') if defect=='mounted' else '/foreign' if defect=='wrong-target' else '/'
+    with patch('intake.command',side_effect=OSError('readback failed') if defect=='readback-error' else lambda *a:json.dumps({'filesystems':[{'target':target}]})) as command:
+     with self.assertRaises(AssertionError):intake.cleanup_all(base)
+    self.assertEqual(json.loads((base/'evidence/workflow-cleanup.json').read_text())['cleanup'],'UNKNOWN')
+    self.assertFalse(any(x.args[0][0]=='/usr/bin/umount' for x in command.call_args_list))
+ def test_main_failure_before_resource_start_has_authenticated_closure(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);fixture=root/'fixture';fixture.write_text('memory');node=root/'node';node.write_text('');npm=root/'npm';npm.write_text('')
+   def paths(value):return root if value=='/opt' else fixture if value in ['/usr/bin/prlimit','/sys/fs/cgroup/cgroup.controllers'] else Path(value)
+   with patch('intake.Path',side_effect=paths),patch('intake.os.geteuid',side_effect=[0]+[os.geteuid()]*100),patch('intake.sys.argv',['intake.py','--run','123-1',str(root),str(node),str(npm)]),patch('intake.subprocess.run',return_value=intake.subprocess.CompletedProcess([],1,'unknown','')),patch('intake.command',return_value='') as command:
+    with self.assertRaises(AssertionError):intake.main()
+   base=root/'fl103-intake-123-1';self.assertTrue((base/'control/setup-owner.json').is_file());self.assertFalse((base/'control/resource-setup-started.json').exists());self.assertEqual(list((base/'control').glob('cgroup-*-owner.json')),[])
+   command.assert_not_called()
+   with patch('intake.command',return_value=json.dumps({'filesystems':[{'target':'/'}]})):intake.cleanup_all(base)
+   self.assertEqual(json.loads((base/'evidence/workflow-cleanup.json').read_text())['cleanup'],'verified')
 if __name__=='__main__':unittest.main()
