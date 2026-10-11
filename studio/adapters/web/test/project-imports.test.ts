@@ -73,7 +73,9 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       media,
       upload: (upload) => {
         uploads.push(upload)
-        return upload.id === SVG ? Promise.reject(new Error('An SVG with scripts cannot be imported')) : Promise.resolve(keptRef(upload))
+        return upload.id === SVG
+          ? Promise.reject(new Error('An SVG with scripts cannot be imported'))
+          : Promise.resolve(keptRef(upload))
       },
       refused,
     })
@@ -122,7 +124,10 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       )
       const seeder = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-p', onChange: () => {} })
       // Already imported here: the editor's own record stays as Freecut made it.
-      await createMedia({ ...projectImportRecord(keptRef({ id: SVG, fileName: 'x.svg', file: new Blob(['x']) }), 0), duration: 9 })
+      await createMedia({
+        ...projectImportRecord(keptRef({ id: SVG, fileName: 'x.svg', file: new Blob(['x']) }), 0),
+        duration: 9,
+      })
 
       const take: StudioProjectImportRef = {
         id: TAKE,
@@ -160,4 +165,40 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       setWorkspaceRoot(null)
     }
   })
+})
+
+it('canonical reload restores retained provenance over stale workspace metadata', async () => {
+  const workspace = new VirtualWorkspace()
+  setWorkspaceRoot(workspace.handle())
+  const seeder = createLibraryMediaSeeder({ workspace, projectId: () => 'reload', onChange: vi.fn() })
+  const processingProvenance = {
+    version: 1 as const,
+    family: 'anime4k' as const,
+    evidence: 'client-reported' as const,
+    variant: 'animation' as const,
+    source: { namespace: 'freecut-media' as const, id: TAKE, projectId: LIBRARY },
+    input: { width: 640, height: 360 },
+    output: { width: 1280, height: 720, fps: 30, frameCount: 30, codec: 'avc1' },
+    outputSha256: 'ab'.repeat(32),
+  }
+  const ref = {
+    ...keptRef({ id: TAKE, fileName: 'out.webm', file: new Blob(['bytes']) }),
+    checksum: processingProvenance.outputSha256,
+    processingProvenance,
+  }
+  try {
+    await createMedia({
+      ...projectImportRecord(ref, 0),
+      duration: 9,
+      processingProvenance: { ...processingProvenance, outputSha256: 'cd'.repeat(32) },
+    })
+    await seeder.seedImports([ref])
+    expect(await getMedia(TAKE)).toMatchObject({ duration: 9, contentHash: ref.checksum, processingProvenance })
+    await seeder.seedImports([ref])
+    expect(await getMedia(TAKE)).toMatchObject({ processingProvenance })
+  } finally {
+    seeder.dispose()
+    workspace.dispose()
+    setWorkspaceRoot(null)
+  }
 })

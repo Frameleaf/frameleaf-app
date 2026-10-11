@@ -1244,6 +1244,20 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     );
   });
 
+  it('T7-01 exact owner/project publication lookup reuses the immutable import binding', async () => {
+    const f = await setup(),
+      other = await setup();
+    await f.repo.register(f.key);
+    expect(await f.repo.getByPublication(f.user.id, f.project.id, f.key.publicationId)).toMatchObject({
+      publicationId: f.key.publicationId,
+      importId: f.key.importId,
+      state: 'registered',
+    });
+    expect(await f.repo.getByPublication(other.user.id, f.project.id, f.key.publicationId)).toBeNull();
+    expect(await f.repo.getByPublication(f.user.id, other.project.id, f.key.publicationId)).toBeNull();
+    await expect(f.repo.getByPublication(f.user.id, f.project.id, 'invalid')).rejects.toThrow();
+  });
+
   it('T4-35 discovery pages over 100 equal-timestamp receipts without duplicates or private file fields', async () => {
     const f = await setup();
     const keys = Array.from({ length: 105 }, () => ({ ...f.key, publicationId: randomUUID() }));

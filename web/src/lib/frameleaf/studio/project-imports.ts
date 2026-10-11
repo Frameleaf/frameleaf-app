@@ -28,6 +28,7 @@ export const toStudioProjectImport = (projectId: string, dto: StudioProjectImpor
   sizeBytes: dto.sizeBytes,
   checksum: dto.checksum,
   url: getStudioProjectImportUrl(projectId, dto.id),
+  ...(dto.processingProvenance ? { processingProvenance: dto.processingProvenance } : {}),
 });
 
 /**
@@ -55,7 +56,14 @@ export const uploadStudioProjectImport = async (
   const file = new File([upload.file], upload.fileName, { type: upload.file.type });
   const dto = await importStudioProjectFile({
     id: projectId,
-    studioProjectImportCreateDto: { id: upload.id, file },
+    studioProjectImportCreateDto: {
+      id: upload.id,
+      file,
+      ...(upload.publicationId === undefined ? {} : { publicationId: upload.publicationId }),
+      ...(upload.processingProvenance === undefined
+        ? {}
+        : { processingProvenance: JSON.stringify(upload.processingProvenance) }),
+    },
   });
   return toStudioProjectImport(projectId, dto);
 };

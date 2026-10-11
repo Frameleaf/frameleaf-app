@@ -1,3 +1,4 @@
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { Readable, Writable } from 'node:stream';
 import { type Observable, lastValueFrom, of, throwError } from 'rxjs';
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
@@ -151,6 +152,36 @@ describe('StudioProjectImportController upload reservation', () => {
     await controller.importStudioProjectFile(auth, 'project', { id: 'import' }, file, {
       studioBundleUploadId: 'reserved',
     } as never);
-    expect(service.upload).toHaveBeenCalledWith(auth, 'project', 'import', file, 'reserved');
+    expect(service.upload).toHaveBeenCalledWith(auth, 'project', 'import', file, 'reserved', {
+      publicationId: undefined,
+      processingProvenance: undefined,
+    });
   });
+});
+
+describe('canonical publication raw multipart boundary', () => {
+  it.each([JSON.stringify(LINEAGE), '{malformed', LINEAGE, ['invalid'], null])(
+    'forwards raw lineage unchanged for request-owned service validation: %j',
+    async (processingProvenance) => {
+      const service = { upload: vi.fn() };
+      const controller = new StudioProjectImportController(service as never, {} as never);
+      const auth = { user: { id: KEY.ownerId } } as never;
+      const file = { path: '/private/request.upload' } as Express.Multer.File;
+      await controller.importStudioProjectFile(
+        auth,
+        KEY.projectId,
+        { id: KEY.importId, publicationId: KEY.publicationId, processingProvenance },
+        file,
+        { studioBundleUploadId: 'authenticated-reservation' } as never,
+      );
+      expect(service.upload).toHaveBeenCalledWith(
+        auth,
+        KEY.projectId,
+        KEY.importId,
+        file,
+        'authenticated-reservation',
+        { publicationId: KEY.publicationId, processingProvenance },
+      );
+    },
+  );
 });

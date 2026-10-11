@@ -200,7 +200,7 @@ export interface StudioProjectImportRef {
   sizeBytes: number;
   /** SHA-256 verified by the server; older hosts may omit it. */
   checksum?: string;
-  processingProvenance?: RetainedProcessingProvenance | null;
+  processingProvenance?: RetainedProcessingProvenance;
   /**
    * Same-origin path of the bytes. It carries no credential: the owner's session cookie authorizes
    * it, exactly as for the page itself.

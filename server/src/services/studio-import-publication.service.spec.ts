@@ -176,3 +176,24 @@ describe('bounded recovery never publishes or abandons failed cleanup', () => {
     expect(files.publish).not.toHaveBeenCalled();
   });
 });
+
+describe('exact publication lookup authorizes current owner/project before resolving import binding', () => {
+  it.each(['owner', 'stranger', 'shared'] as const)('enforces %s lookup authority', async (kind) => {
+    const journal = { getByPublication: vi.fn().mockResolvedValue(receipt) };
+    const studio = { requireOwnedProject: vi.fn().mockResolvedValue({ id: KEY.projectId, ownerId: KEY.ownerId }) };
+    const sut = new StudioImportPublicationService(journal as never, {} as never, studio as never);
+    const actor = {
+      user: { id: kind === 'stranger' ? KEY.importId : KEY.ownerId },
+      ...(kind === 'shared' ? { sharedLink: {} } : {}),
+    } as AuthDto;
+    if (kind === 'owner') {
+      await expect(sut.findPublication(actor, KEY.projectId, KEY.publicationId)).resolves.toBe(receipt);
+      expect(journal.getByPublication).toHaveBeenCalledWith(KEY.ownerId, KEY.projectId, KEY.publicationId);
+    } else {
+      await expect(sut.findPublication(actor, KEY.projectId, KEY.publicationId)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(journal.getByPublication).not.toHaveBeenCalled();
+    }
+  });
+});

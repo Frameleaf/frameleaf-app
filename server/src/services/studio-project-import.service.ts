@@ -10,7 +10,15 @@ import { basename, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { StudioProjectImportDto } from 'src/dtos/studio-project-import.dto.js';
+import {
+  StudioProjectImportDto,
+  StudioImportPublicationDto,
+  StudioImportPublicationRegisterDto,
+  StudioImportPublicationQueryDto,
+  StudioImportPublicationPageDto,
+  StudioImportPublicationCancelDto,
+} from 'src/dtos/studio-project-import.dto.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 import { CacheControl, StorageFolder } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -19,7 +27,11 @@ import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/s
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
-import type { RawOptionalLineage } from 'src/utils/studio-import-publication.js';
+import type {
+  RawOptionalLineage,
+  PublicationReceipt,
+  PublishedImportReceipt,
+} from 'src/utils/studio-import-publication.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import {
   assertOwnerRestoreFile,
@@ -54,7 +66,7 @@ export const studioImportIncomingFolder = (ownerId: string) =>
 export const studioImportProjectFolder = (ownerId: string, projectId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, projectId);
 
-export const mapStudioProjectImport = (item: StudioProjectImport): StudioProjectImportDto => ({
+export const mapStudioProjectImport = (item: StudioProjectImport | PublishedImportReceipt): StudioProjectImportDto => ({
   id: item.id,
   kind: studioImportKind(item.contentType),
   contentType: item.contentType,
@@ -63,6 +75,18 @@ export const mapStudioProjectImport = (item: StudioProjectImport): StudioProject
   checksum: item.checksum,
   externalReferences: item.externalReferences,
   createdAt: new Date(item.createdAt).toISOString(),
+  ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
+});
+
+/** Explicit projection: operational paths, identities and declarations never enter public receipts. */
+export const mapStudioImportPublication = (item: PublicationReceipt): StudioImportPublicationDto => ({
+  publicationId: item.publicationId,
+  importId: item.importId,
+  state: item.state,
+  createdAt: item.createdAt,
+  expiresAt: item.expiresAt,
+  cleanupPending: item.cleanupPending,
+  ...(item.imported ? { imported: mapStudioProjectImport(item.imported) } : {}),
 });
 
 /**
@@ -148,7 +172,12 @@ export class StudioProjectImportService {
       try {
         if (options.processingProvenance !== undefined) {
           if (!isStudioUuid(options.publicationId)) throw new Error('provenance_publication_required');
-          provenance = parseProcessingProvenance(options.processingProvenance);
+          if (
+            typeof options.processingProvenance !== 'string' ||
+            Buffer.byteLength(options.processingProvenance, 'utf8') > 4096
+          )
+            throw new Error('invalid_provenance_part');
+          provenance = parseProcessingProvenance(JSON.parse(options.processingProvenance));
         }
         if (options.publicationId !== undefined && !isStudioUuid(options.publicationId))
           throw new Error('invalid_publication_id');
@@ -205,6 +234,39 @@ export class StudioProjectImportService {
   async list(auth: AuthDto, projectId: string): Promise<StudioProjectImportDto[]> {
     const project = await this.requireOwnedProject(auth, projectId);
     return (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+  }
+
+  async register(
+    auth: AuthDto,
+    projectId: string,
+    body: StudioImportPublicationRegisterDto,
+  ): Promise<StudioImportPublicationDto> {
+    return mapStudioImportPublication(await this.publications.register(auth, projectId, body));
+  }
+
+  async discover(
+    auth: AuthDto,
+    projectId: string,
+    query: StudioImportPublicationQueryDto,
+  ): Promise<StudioImportPublicationPageDto> {
+    const page = await this.publications.discover(auth, projectId, query.cursor, query.state);
+    return { items: page.items.map(mapStudioImportPublication), nextCursor: page.nextCursor };
+  }
+
+  async getPublication(auth: AuthDto, projectId: string, publicationId: string): Promise<StudioImportPublicationDto> {
+    const receipt = await this.publications.findPublication(auth, projectId, publicationId);
+    if (!receipt) throw new NotFoundException('Studio import publication not found');
+    return mapStudioImportPublication(receipt);
+  }
+
+  async cancel(
+    auth: AuthDto,
+    projectId: string,
+    importId: string,
+    publicationId: string,
+  ): Promise<StudioImportPublicationCancelDto> {
+    const result = await this.publications.cancel(auth, { ownerId: auth.user.id, projectId, importId, publicationId });
+    return { status: result.status, receipt: mapStudioImportPublication(result.receipt) };
   }
 
   /**
@@ -323,7 +385,7 @@ export class StudioProjectImportService {
    * a project that does not exist; a reviewer, who can see it, gets `403` (FL-112 ruling, 2026-09-30).
    */
   private async requireOwnedProject(auth: AuthDto, projectId: string) {
-    if (auth.sharedLink || !isStudioUuid(projectId)) {
+    if (auth.sharedLink || !UUIDv7ParamDto.schema.safeParse({ id: projectId }).success) {
       throw new NotFoundException('Studio project not found');
     }
     return this.studio.requireOwnedProject(auth, projectId, 'Only the owner can import into a Studio project');
