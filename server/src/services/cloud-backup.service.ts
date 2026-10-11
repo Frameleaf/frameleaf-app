@@ -1871,16 +1871,18 @@ export class CloudBackupService {
   }
 
   /**
-   * The database first: a fresh dump to `db/<file>`. FL-164: old dumps are removed only by the clean-up,
+   * The database first: a checkpointed dump to `db/<file>`. FL-164: old dumps are removed only by the clean-up,
    * which reads the kept manifests in the bucket itself, never by a run from this server's index.
    */
   private async backUpDatabase(run: Run): Promise<boolean> {
-    await this.removeLeftoverDumps();
-    const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
-      signal: executionSignal(),
-      progress: advanceExecutionProgress,
-    });
-    try {
+    const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
+    let database = run.progress.result.database;
+    if (!database) {
+      await this.removeLeftoverDumps();
+      const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
+        signal: executionSignal(),
+        progress: advanceExecutionProgress,
+      });
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
       const key = run.progress.result.manifestKey!.startsWith('m/v1/')
         ? clientBackupObjectKey(
@@ -1891,24 +1893,31 @@ export class CloudBackupService {
             basename(path),
           )
         : `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
-      const { size } = await this.store.uploadFile(run.connection, key, path, run.bucketKey, sha256);
-      run.progress.result = {
-        ...run.progress.result,
-        database: { key, sha256, size },
-        bytesUploaded: run.progress.result.bytesUploaded + size,
-      };
-      await this.index.setManifestDatabase(run.progress.result.manifestId!, key);
-    } finally {
-      // Only the dump this run made is removed; it is in the bucket now, or the run failed.
-      await this.storageRepository.unlink(path);
+      database = { key, sha256, size: (await this.storageRepository.stat(path)).size };
+      run.progress.result = { ...run.progress.result, database };
     }
-    run.progress.result = { ...run.progress.result, phase: 'reconcile' };
-    return this.checkpoint(run);
+    const name = basename(database.key);
+    if (!isCloudBackupDumpName(name) || !name.endsWith('.sql.gz'))
+      throw new Error('Invalid pending cloud backup database dump');
+    // Pin the manifest, write version and dump identity before the first storage request.
+    if (!(await this.checkpoint(run))) return false;
+    const path = join(folder, name);
+    const { size } = await this.store.uploadFile(run.connection, database.key, path, run.bucketKey, database.sha256);
+    await this.index.setManifestDatabase(run.progress.result.manifestId!, database.key);
+    run.progress.result = {
+      ...run.progress.result,
+      database: { ...database, size },
+      bytesUploaded: run.progress.result.bytesUploaded + size,
+      phase: 'reconcile',
+    };
+    const proceed = await this.checkpoint(run);
+    // A lost claim keeps its source; the next worker can still reach the staged upload.
+    if (proceed) await this.storageRepository.unlink(path);
+    return proceed;
   }
 
   /**
-   * A dump a run made and could not remove (the process stopped between making and uploading it) is
-   * removed by the next run: it is only ever this run's temporary file, never a restore point.
+   * A fresh run removes abandoned temporary dumps. A resumed database phase keeps its checkpointed source.
    */
   private async removeLeftoverDumps() {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
@@ -2072,29 +2081,39 @@ export class CloudBackupService {
       }
     }
 
+    const client = run.progress.result.manifestKey!.startsWith('m/v1/');
     const existing = await this.index.getExisting(
       run.metadata.bucketRef,
       hashed.map(({ sha256 }) => sha256),
     );
-    if (run.progress.result.manifestKey!.startsWith('m/v1/')) {
-      // The legacy index cannot prove that a client-format copy exists. Check the opaque address.
+    if (client) {
+      // Presence in the legacy index or a same-size HEAD cannot authenticate an opaque copy.
       existing.clear();
       for (const file of hashed) {
-        const stored = await this.store.head(
-          run.connection,
-          clientBackupObjectKey(
-            this.clientWriteRoot(run),
-            run.metadata.instanceId,
-            this.clientWriteVersion(run),
-            file.sha256,
-          ),
-          run.bucketKey,
-        );
-        if (stored?.size === file.size) {
-          existing.add(file.sha256);
-          await this.index.record(run.metadata.bucketRef, [
-            { sha256: file.sha256, size: file.size, etag: stored.etag },
-          ]);
+        if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
+        try {
+          const stored = await this.store.hashObject(
+            run.connection,
+            clientBackupObjectKey(
+              this.clientWriteRoot(run),
+              run.metadata.instanceId,
+              this.clientWriteVersion(run),
+              file.sha256,
+            ),
+            run.bucketKey,
+          );
+          if (stored.size === file.size && stored.sha256 === file.sha256) existing.add(file.sha256);
+        } catch (error) {
+          if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
+            throw error;
+        }
+      }
+    } else if (this.clientKeys.has(run.metadata.keyFingerprint)) {
+      // Old client-format runs could populate the shared index without a legacy copy.
+      for (const file of hashed) {
+        if (existing.has(file.sha256)) {
+          const stored = await this.store.head(run.connection, objectKey(file.sha256), run.bucketKey);
+          if (stored?.size !== file.size) existing.delete(file.sha256);
         }
       }
     }
@@ -2114,7 +2133,7 @@ export class CloudBackupService {
       }
     }
 
-    await this.index.touch(run.metadata.bucketRef, skipped);
+    if (!client) await this.index.touch(run.metadata.bucketRef, skipped);
     await this.index.upsertEntries(run.progress.result.manifestId!, recorded);
   }
 
@@ -2166,7 +2185,8 @@ export class CloudBackupService {
           run.bucketKey,
           current.sha256,
         );
-        await this.index.record(run.metadata.bucketRef, [{ sha256: current.sha256, size, etag }]);
+        if (!run.progress.result.manifestKey!.startsWith('m/v1/'))
+          await this.index.record(run.metadata.bucketRef, [{ sha256: current.sha256, size, etag }]);
         run.uploadedNow.add(current.sha256);
         run.progress.result = {
           ...run.progress.result,
@@ -3639,9 +3659,7 @@ export class CloudBackupService {
       connection.recoveryKeys = ring!.keys;
       connection.vaultId = ring!.vaultId;
     }
-    const history = file.recovery
-      ? backupRecoveryHistorySchema.parse(file.recovery)
-      : await readBackupHistory(this.clientHistoryPath(bucketRef(connection.endpoint, connection.bucket)));
+    const history = await this.recoveryHistory(connection, key, file.recovery);
     if (history) {
       selectBackupSnapshot(history);
       if (connection.vaultId && connection.vaultId !== history.anchor.vaultId)
@@ -3668,9 +3686,10 @@ export class CloudBackupService {
       });
     const manifestKey =
       options.manifestKey ??
+      (options.offlineDirectory ? file.offlineManifest?.key : undefined) ??
       (history
         ? selectBackupSnapshot(history).record.descriptor.manifest.objectKey
-        : (file.offlineManifest?.key ?? listed.toSorted((a, b) => compareCodeUnits(b, a))[0]));
+        : listed.toSorted((a, b) => compareCodeUnits(b, a))[0]);
     if (!manifestKey) throw new Error('No trusted backup snapshot is available. Import its exported recovery kit.');
     if (manifestKey.startsWith('m/v1/')) {
       if (!history) throw new Error('Encrypted recovery requires the exported pinned snapshot history');
@@ -3764,9 +3783,7 @@ export class CloudBackupService {
       throw new Error('Export key file does not match this vault');
     connection.vaultId = marker.instanceId;
     connection.recoveryKeys = ring?.keys;
-    const history = original.recovery
-      ? backupRecoveryHistorySchema.parse(original.recovery)
-      : await readBackupHistory(this.clientHistoryPath(bucketRef(connection.endpoint, connection.bucket)));
+    const history = await this.recoveryHistory(connection, root, original.recovery);
     let key = options.manifestKey;
     if (!key && history) key = selectBackupSnapshot(history).record.descriptor.manifest.objectKey;
     if (!key) throw new Error('Choose a legacy manifest explicitly, or supply the pinned client recovery history');
@@ -4040,6 +4057,27 @@ export class CloudBackupService {
     );
   }
 
+  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown) {
+    const physical = bucketRef(connection.endpoint, connection.bucket);
+    let local = await readBackupHistory(this.clientHistoryPath(physical));
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (
+      metadata &&
+      metadata.bucket === connection.bucket &&
+      metadata.keyFingerprint === keyFingerprint(key) &&
+      (!connection.vaultId || metadata.instanceId === connection.vaultId) &&
+      (connection.offlineDirectory || metadata.target === 'managed' || metadata.bucketRef === physical)
+    )
+      local = mergeBackupHistory(
+        await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+        local ?? undefined,
+      );
+    const history = mergeBackupHistory(local, imported ? backupRecoveryHistorySchema.parse(imported) : undefined);
+    if (history && connection.vaultId && history.anchor.vaultId !== connection.vaultId)
+      throw new Error('Recovery history belongs to another vault');
+    return history;
+  }
+
   private async attachClientHistory(connection: CloudBackupConnection, metadata: FrameleafCloudBackup) {
     const local = await readBackupHistory(this.clientHistoryPath(metadata.bucketRef));
     const imported = this.importedHistory.get(metadata.keyFingerprint);
@@ -4170,10 +4208,13 @@ export class CloudBackupService {
     });
     try {
       const ring = this.readClientKeys(options.keyFile ?? '', key, options.instanceId, false);
+      const imported = options.keyFile?.trimStart().startsWith('{')
+        ? (JSON.parse(options.keyFile) as { recovery?: unknown }).recovery
+        : undefined;
       const result = await this.keys.write(
         identityDirectory(this.configRepository),
         keyFingerprint(key),
-        ring ? JSON.stringify({ ...file, client: ring }, null, 2) : JSON.stringify(file, null, 2),
+        JSON.stringify({ ...file, ...(ring && { client: ring }), ...(imported && { recovery: imported }) }, null, 2),
       );
       this.readClientKeys(options.keyFile ?? '', key, options.instanceId);
       return result;
