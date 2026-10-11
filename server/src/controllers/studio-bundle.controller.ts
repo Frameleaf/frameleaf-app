@@ -21,8 +21,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { createWriteStream, mkdirSync, unlink } from 'node:fs';
-import { pipeline } from 'node:stream';
 import { basename, dirname } from 'node:path';
+import { pipeline } from 'node:stream';
 import { type Observable, catchError, from, mergeMap, throwError } from 'rxjs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';

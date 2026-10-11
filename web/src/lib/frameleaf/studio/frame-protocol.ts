@@ -155,7 +155,9 @@ const isBlobLike = (value: unknown): value is Blob =>
   typeof (value as Blob).slice === 'function';
 
 export const isStudioEditorScope = (value: unknown): value is StudioEditorScope => {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
   const scope = value as StudioEditorScope;
   return (
     typeof scope.projectId === 'string' &&

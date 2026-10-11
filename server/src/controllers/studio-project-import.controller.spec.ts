@@ -1,4 +1,3 @@
-import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { Readable, Writable } from 'node:stream';
 import { type Observable, lastValueFrom, of, throwError } from 'rxjs';
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
@@ -8,6 +7,7 @@ import {
   StudioProjectImportUploadInterceptor,
 } from 'src/controllers/studio-project-import.controller.js';
 import { STUDIO_IMPORT_MAX_BYTES } from 'src/utils/studio-imports.js';
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 const multer = vi.hoisted(() => ({
   intercept: vi.fn(),
@@ -71,7 +71,7 @@ describe('StudioProjectImportUploadInterceptor', () => {
     native.createWriteStream.mockReturnValue(
       Object.assign(
         new Writable({
-          construct(callback) {
+          construct(this: Writable, callback) {
             this.emit('open');
             callback();
           },
@@ -102,7 +102,7 @@ describe('StudioProjectImportUploadInterceptor', () => {
     native.unlink.mockClear();
     native.createWriteStream.mockReturnValue(
       new Writable({
-        construct(callback) {
+        construct(this: Writable, callback) {
           callback(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
         },
         write(_chunk, _encoding, callback) {

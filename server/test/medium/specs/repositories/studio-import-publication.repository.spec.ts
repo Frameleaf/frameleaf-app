@@ -1,11 +1,24 @@
-import { StorageCore } from 'src/cores/storage.core.js';
-import { mkdir, rename, symlink, utimes } from 'node:fs/promises';
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rmdir,
+  symlink,
+  unlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { DB } from 'src/schema/index.js';
+import type { ImportDeclaration, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -14,13 +27,11 @@ import { StudioImportPublicationRepository } from 'src/repositories/studio-impor
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { assertStudioStorageAdmission } from 'src/repositories/studio-storage-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
-import type { ImportDeclaration, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
 import { DECLARATION } from 'test/fixtures/studio-import-retention.js';
-import { newMediumService } from 'test/medium.factory.js';
 import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
+import { newMediumService } from 'test/medium.factory.js';
 
 let db: Kysely<DB>;
 let root: string;
@@ -132,13 +143,7 @@ const expire = async (key: PublicationKey) => {
     UPDATE public.studio_import_publication SET "createdAt"=stamp.expired-interval '6 hours',
     "expiresAt"=stamp.expired FROM stamp WHERE id=${key.publicationId}::uuid`.execute(db);
 };
-const defer = () => {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-};
+const defer = () => Promise.withResolvers<void>();
 const waitForCallback = async (entered: Promise<void>, operation: Promise<unknown>) => {
   await Promise.race([
     entered,
@@ -152,16 +157,17 @@ const pathKey = (path: string) => createHash('sha1').update(path).digest().readB
 const blockedOperation = async (
   take: (tx: Transaction<DB>) => Promise<unknown>,
   operation: () => Promise<unknown>,
-  inspect: (tx: Transaction<DB>, pid: number) => Promise<void> = async () => {},
+  inspect: (tx: Transaction<DB>, pid: number) => Promise<void> = () => Promise.resolve(),
 ) => {
   let pending: Promise<{ error?: unknown }> | undefined;
-  try {
-    await db.transaction().execute(async (tx) => {
+  let blockerFailure: { error: unknown } | undefined;
+  await db
+    .transaction()
+    .execute(async (tx) => {
       await take(tx);
-      pending = operation().then(
-        () => ({}),
-        (error: unknown) => ({ error }),
-      );
+      pending = operation()
+        .then(() => ({}))
+        .catch((error: unknown) => ({ error }));
       let pid: number | undefined;
       // Observe actual lock waiting through the blocker connection; do not add a third pool connection.
       for (let attempt = 0; attempt < 100; attempt++) {
@@ -174,12 +180,14 @@ const blockedOperation = async (
       }
       expect(pid, 'Repository operation must actually wait on the held SQL lock').toBeDefined();
       await inspect(tx, pid!);
+    })
+    .catch((error: unknown) => {
+      blockerFailure = { error };
     });
-  } finally {
-    // Draining after the blocker commits/rolls back prevents an orphan operation during a failed assertion.
-    const outcome = await pending;
-    if (outcome?.error) throw outcome.error;
-  }
+  // Drain after the blocker settles; retain the previous operation-error precedence.
+  const outcome = await pending;
+  if (outcome?.error) throw outcome.error;
+  if (blockerFailure) throw blockerFailure.error;
 };
 const projectLockHeld = async (tx: Transaction<DB>, projectId: string) => {
   const { rows } = await sql<{ available: boolean }>`SELECT pg_try_advisory_xact_lock(
@@ -374,9 +382,21 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     async (state) => {
       const f = await setup();
       await prepare(f);
-      if (state === 'archived') await f.projects.update(f.project.id, { archivedAt: new Date() });
-      if (state === 'trashed') await f.projects.trash(f.project.id, new Date(Date.now() + 60_000));
-      if (state === 'owner-deleted') await f.ctx.get(UserRepository).delete({ id: f.user.id });
+      switch (state) {
+        case 'archived': {
+          await f.projects.update(f.project.id, { archivedAt: new Date() });
+          break;
+        }
+        case 'trashed': {
+          await f.projects.trash(f.project.id, new Date(Date.now() + 60_000));
+          break;
+        }
+        case 'owner-deleted': {
+          await f.ctx.get(UserRepository).delete({ id: f.user.id });
+          // No default
+          break;
+        }
+      }
       const link = vi.fn(linkFile);
       await expect(f.repo.publish(f.key, link)).rejects.toThrow();
       expect(link).not.toHaveBeenCalled();
@@ -446,7 +466,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     const original = await prepare(f);
     const retry = await file(f.key);
     const lineage = retry.declaration.processingProvenance!;
-    retry.declaration.processingProvenance = Object.fromEntries(Object.entries(lineage).reverse()) as typeof lineage;
+    retry.declaration.processingProvenance = Object.fromEntries(Object.entries(lineage).toReversed()) as typeof lineage;
     await expect(f.repo.prepare(f.key, retry, removeScratch)).resolves.toEqual({ status: 'prepared', file: original });
   });
 
@@ -474,11 +494,9 @@ describe('Studio import publication — real journal SQL acceptance', () => {
   it('T4-11 link/barrier rejection rolls back ready insertion and preserves exact preparing evidence', async () => {
     const f = await setup();
     const prepared = await prepare(f);
-    await expect(
-      f.repo.publish(f.key, async () => {
-        throw new Error('target-barrier-failed');
-      }),
-    ).rejects.toThrow('target-barrier-failed');
+    await expect(f.repo.publish(f.key, () => Promise.reject(new Error('target-barrier-failed')))).rejects.toThrow(
+      'target-barrier-failed',
+    );
     expect(await ready(f.key)).toEqual([]);
     expect(await journal(f.key)).toMatchObject({
       state: 'preparing',
@@ -536,17 +554,15 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       ).rejects.toThrow('model_lost_final_ack');
     } else {
       await f.repo.publish(f.key, linkFile);
-      await expect(
-        f.repo.release(f.key, async () => {
-          throw new Error('model_cleanup_failed');
-        }),
-      ).rejects.toThrow('model_cleanup_failed');
+      await expect(f.repo.release(f.key, () => Promise.reject(new Error('model_cleanup_failed')))).rejects.toThrow(
+        'model_cleanup_failed',
+      );
     }
     const before = await ready(f.key);
     expect(await f.repo.get(f.key)).toMatchObject({ state: 'published', cleanupPending: true });
     const scratch = await file(f.key, {
-      ...(variation !== 'changed-label' ? { processingProvenance: null } : {}),
-      ...(variation !== 'omitted-provenance' ? { fileName: 'retry-label.mp4' } : {}),
+      ...(variation !== 'changed-label' && { processingProvenance: null }),
+      ...(variation !== 'omitted-provenance' && { fileName: 'retry-label.mp4' }),
     });
     const reservation = await f.projects.createUpload({
       ownerId: f.user.id,
@@ -607,11 +623,14 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       const next = { ...f.key, publicationId: randomUUID() };
       await f.repo.register(next);
       const scratch = await file(next);
-      if (kind === 'different-provenance') scratch.declaration.processingProvenance!.variant = 'threeD';
-      if (kind === 'omitted-provenance') scratch.declaration.processingProvenance = null;
-      if (kind === 'omitted-provenance')
+      if (kind === 'omitted-provenance') {
+        scratch.declaration.processingProvenance = null;
         await expect(f.repo.prepare(next, scratch, removeScratch)).resolves.toMatchObject({ status: 'ready' });
-      else await expect(f.repo.prepare(next, scratch, removeScratch)).rejects.toThrow('provenance_conflict');
+      } else {
+        if (kind === 'different-provenance') scratch.declaration.processingProvenance!.variant = 'threeD';
+        await expect(f.repo.prepare(next, scratch, removeScratch)).rejects.toThrow('provenance_conflict');
+      }
+
       expect(await ready(f.key)).toEqual(before);
     },
   );
@@ -683,19 +702,18 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     });
     let cancelling: ReturnType<typeof f.repo.cancel> | undefined;
     let cancellationSettled = false;
-    let outcomes: PromiseSettledResult<unknown>[] = [];
+    let outcomes: PromiseSettledResult<unknown>[];
     try {
       await waitForCallback(entered.promise, publishing);
       expect(publicationTx).toBeDefined();
       cancelling = f.repo.cancel(f.key);
-      void cancelling.then(
-        () => {
+      void cancelling
+        .then(() => {
           cancellationSettled = true;
-        },
-        () => {
+        })
+        .catch(() => {
           cancellationSettled = true;
-        },
-      );
+        });
       let waitingPid: number | undefined;
       for (let attempt = 0; attempt < 100; attempt++) {
         await sql`SELECT pg_stat_clear_snapshot()`.execute(publicationTx!);
@@ -894,11 +912,9 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     const f = await setup(),
       prepared = await prepare(f);
     await f.repo.cancel(f.key);
-    await expect(
-      f.repo.release(f.key, async () => {
-        throw Object.assign(new Error(code), { code });
-      }),
-    ).rejects.toThrow(code);
+    await expect(f.repo.release(f.key, () => Promise.reject(Object.assign(new Error(code), { code })))).rejects.toThrow(
+      code,
+    );
     expect(await journal(f.key)).toMatchObject({
       state: 'aborted',
       stagedPath: prepared.stagedPath,
@@ -963,7 +979,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       digest: '',
       originalFileName: '',
       manifest: {},
-      expiresAt: new Date(Date.now() + 60000),
+      expiresAt: new Date(Date.now() + 60_000),
     });
     const remove = vi.fn(async () => {
       await unlink(incomingPath);
@@ -993,7 +1009,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       digest: '',
       originalFileName: '',
       manifest: {},
-      expiresAt: new Date(Date.now() + 60000),
+      expiresAt: new Date(Date.now() + 60_000),
     });
     await expect(
       blockedOperation(
@@ -1035,7 +1051,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       digest: '',
       originalFileName: '',
       manifest: {},
-      expiresAt: new Date(Date.now() - 60000),
+      expiresAt: new Date(Date.now() - 60_000),
     });
     const removed = vi.fn(async (identity: string | null) => {
       const stat = await lstat(path, { bigint: true });
@@ -1073,11 +1089,9 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       const prepared = await prepare(f);
       if (state === 'published') await f.repo.publish(f.key, linkFile);
       else await f.repo.cancel(f.key);
-      await expect(
-        f.repo.release(f.key, async () => {
-          throw new Error('cleanup-barrier-failed');
-        }),
-      ).rejects.toThrow('cleanup-barrier-failed');
+      await expect(f.repo.release(f.key, () => Promise.reject(new Error('cleanup-barrier-failed')))).rejects.toThrow(
+        'cleanup-barrier-failed',
+      );
       expect(await journal(f.key)).toMatchObject({
         state,
         stagedPath: prepared.stagedPath,
@@ -1649,7 +1663,7 @@ describe('Studio import publication — participating callers and precise keyset
     });
     let saving: ReturnType<typeof f.projects.appendRevision> | undefined;
     let saveSettled = false;
-    let outcomes: PromiseSettledResult<unknown>[] = [];
+    let outcomes: PromiseSettledResult<unknown>[];
     try {
       await waitForCallback(entered.promise, publishing);
       expect(publicationTx).toBeDefined();
@@ -1666,14 +1680,13 @@ describe('Studio import publication — participating callers and precise keyset
         requestKey: 'revision-lock-order',
         restoredFromRevision: null,
       });
-      void saving.then(
-        () => {
+      void saving
+        .then(() => {
           saveSettled = true;
-        },
-        () => {
+        })
+        .catch(() => {
           saveSettled = true;
-        },
-      );
+        });
       let waiting: { pid: number; query: string } | undefined;
       for (let attempt = 0; attempt < 100; attempt++) {
         await sql`SELECT pg_stat_clear_snapshot()`.execute(publicationTx!);
@@ -1733,7 +1746,7 @@ describe('Studio import publication — participating callers and precise keyset
     });
     let saving: ReturnType<typeof f.projects.createWithRevision> | undefined;
     let saveSettled = false;
-    let outcomes: PromiseSettledResult<unknown>[] = [];
+    let outcomes: PromiseSettledResult<unknown>[];
     try {
       await waitForCallback(entered.promise, publishing);
       expect(publicationTx).toBeDefined();
@@ -1751,14 +1764,13 @@ describe('Studio import publication — participating callers and precise keyset
           requestKey: 'initial',
         },
       });
-      void saving.then(
-        () => {
+      void saving
+        .then(() => {
           saveSettled = true;
-        },
-        () => {
+        })
+        .catch(() => {
           saveSettled = true;
-        },
-      );
+        });
       let waiting: { pid: number; query: string } | undefined;
       for (let attempt = 0; attempt < 100; attempt++) {
         await sql`SELECT pg_stat_clear_snapshot()`.execute(publicationTx!);

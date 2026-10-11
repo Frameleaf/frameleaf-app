@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { journalOwnsPath } from 'src/utils/studio-import-reference-roles.js';
 import { KEY, PREPARED } from 'test/fixtures/studio-import-retention.js';
-import { journalOwnsPath } from './studio-import-reference-roles.js';
 
 describe('journal path ownership roles', () => {
   it.each(['registered', 'preparing', 'published', 'aborted'] as const)('counts exact %s roles', (state) => {
-    const row = { ...KEY, state, createdAt: new Date(0), expiresAt: new Date(21600000), file: PREPARED };
+    const row = { ...KEY, state, createdAt: new Date(0), expiresAt: new Date(21_600_000), file: PREPARED };
     expect(journalOwnsPath(row, PREPARED.stagedPath)).toBe(state !== 'registered');
     expect(journalOwnsPath(row, PREPARED.targetPath)).toBe(state === 'preparing' || state === 'aborted');
     expect(journalOwnsPath(row, PREPARED.stagedPath + '.foreign')).toBe(false);

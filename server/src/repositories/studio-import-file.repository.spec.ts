@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { StorageCore } from 'src/cores/storage.core.js';
 import type { LinuxDurabilityQualification } from 'src/repositories/studio-import-file.repository.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { LinuxDurabilityAdapter, StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { assertSameOwnedInode } from 'src/utils/studio-import-durability.js';
 import { DECLARATION, KEY } from 'test/fixtures/studio-import-retention.js';
@@ -183,6 +183,22 @@ beforeEach(() => {
 });
 
 describe('unqualified deployment refusal', () => {
+  it('allows SQL-generator method discovery before media configuration', () => {
+    const baseFolder = vi.spyOn(StorageCore, 'getBaseFolder').mockImplementation(() => {
+      throw new Error('Media location is not set.');
+    });
+    try {
+      const repository = new StudioImportFileRepository();
+      expect(() => {
+        for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(repository))) {
+          Reflect.get(repository, key);
+        }
+      }).not.toThrow();
+      expect(baseFolder).not.toHaveBeenCalled();
+    } finally {
+      baseFolder.mockRestore();
+    }
+  });
   it('defers default storage resolution until use and retains its unqualified adapter', async () => {
     const baseFolder = vi.spyOn(StorageCore, 'getBaseFolder').mockImplementation(() => {
       throw new Error('Media location is not set.');

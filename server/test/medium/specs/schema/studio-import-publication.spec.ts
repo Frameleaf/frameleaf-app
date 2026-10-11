@@ -2,8 +2,8 @@ import { schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { DB } from 'src/schema/index.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
+import { DB } from 'src/schema/index.js';
 import { DECLARATION, KEY, PREPARED } from 'test/fixtures/studio-import-retention.js';
 import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
 
@@ -141,8 +141,9 @@ it('indexes owner/project discovery and never cascades away pending handles', as
     SELECT indexname, indexdef FROM pg_indexes
     WHERE schemaname = 'public' AND tablename = 'studio_import_publication'
   `.execute(db);
-  expect(indexes.rows.find(({ indexname }) => indexname === 'studio_import_publication_discovery')?.indexdef)
-    .toContain('("ownerId", "projectId", "createdAt", id)');
+  expect(indexes.rows.find(({ indexname }) => indexname === 'studio_import_publication_discovery')?.indexdef).toContain(
+    '("ownerId", "projectId", "createdAt", id)',
+  );
   const cascades = await sql<{ conname: string }>`SELECT conname FROM pg_constraint
     WHERE conrelid = 'public.studio_import_publication'::regclass AND contype = 'f' AND confdeltype = 'c'`.execute(db);
   expect(cascades.rows).toEqual([]);
@@ -163,20 +164,25 @@ it('reads the real migrated catalog without warnings or desired-schema drift', a
   });
   expect(catalog.warnings).toEqual([]);
   expect(
-    catalog.tables.find(({ name }) => name === 'studio_import_publication')?.columns.map(({ name }) => name).sort(),
-  ).toEqual([
-    'createdAt',
-    'declaration',
-    'expiresAt',
-    'id',
-    'importId',
-    'ownerId',
-    'projectId',
-    'stagedIdentity',
-    'stagedPath',
-    'state',
-    'targetPath',
-  ].sort());
+    catalog.tables
+      .find(({ name }) => name === 'studio_import_publication')
+      ?.columns.map(({ name }) => name)
+      .sort(),
+  ).toEqual(
+    [
+      'createdAt',
+      'declaration',
+      'expiresAt',
+      'id',
+      'importId',
+      'ownerId',
+      'projectId',
+      'stagedIdentity',
+      'stagedPath',
+      'state',
+      'targetPath',
+    ].sort(),
+  );
   expect(
     schemaDiff(getFrameleafSchema(), catalog, {
       parameters: { ignoreExtra: true },

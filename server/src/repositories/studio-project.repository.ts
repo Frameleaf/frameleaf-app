@@ -19,9 +19,9 @@ import {
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
 import {
+  type RetainedProcessingProvenance,
   RetainedProcessingProvenanceSchema,
   assertReadyRetry,
-  type RetainedProcessingProvenance,
 } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
@@ -99,7 +99,7 @@ export async function insertStudioImport(
       ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences","processingProvenance")
       VALUES (${item.projectId}::uuid,${item.id}::uuid,${item.ownerId}::uuid,${item.contentType},${item.checksum},
         ${item.sizeBytes}::bigint,${item.path},${item.fileName},${item.externalReferences}::int,
-        ${item.processingProvenance == null ? sql`NULL` : sql`${JSON.stringify(item.processingProvenance)}::text::jsonb`})
+        ${item.processingProvenance === null || item.processingProvenance === undefined ? sql`NULL` : sql`${JSON.stringify(item.processingProvenance)}::text::jsonb`})
       ON CONFLICT ("projectId",id) DO NOTHING`.execute(tx);
   }
   const stored = previous ?? (await readStudioImport(tx, item.projectId, item.id, true));
@@ -784,7 +784,7 @@ export class StudioProjectRepository {
     ) {
       throw new BadRequestException('Invalid project import declaration');
     }
-    if (item.processingProvenance != null) {
+    if (item.processingProvenance !== null && item.processingProvenance !== undefined) {
       RetainedProcessingProvenanceSchema.parse(item.processingProvenance);
       if (item.processingProvenance.outputSha256 !== item.checksum)
         throw new BadRequestException('Invalid import provenance');
@@ -803,7 +803,7 @@ export class StudioProjectRepository {
       const { rows: pending } = await sql`SELECT id FROM public.studio_import_publication
         WHERE "projectId"=${item.projectId}::uuid AND "importId"=${item.id}::uuid
           AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL) FOR UPDATE`.execute(tx);
-      if (pending.length) throw new ConflictException('publication_busy');
+      if (pending.length > 0) throw new ConflictException('publication_busy');
       for (const path of [...new Set([item.path, ...(previous ? [previous.path] : [])])].sort())
         await lockFilePath(tx, path);
       await assertStudioStorageAdmission(tx, item.ownerId, 0);

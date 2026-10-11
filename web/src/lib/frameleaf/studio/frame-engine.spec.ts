@@ -209,7 +209,9 @@ describe('studio editor frame (FL-88)', () => {
     );
     const results: unknown[] = [];
     const port = frame.port()!;
-    port.addEventListener('message', (event) => results.push(event.data));
+    port.addEventListener('message', (event) => {
+      results.push(event.data);
+    });
     port.postMessage({
       type: 'service',
       callId: 51,
@@ -231,7 +233,7 @@ describe('studio editor frame (FL-88)', () => {
     await tick();
     expect(host.cancelProjectImportPublication).toHaveBeenCalledExactlyOnceWith(importId, publicationId, scope);
     expect(results).toContainEqual({ type: 'service-result', callId: 51, ok: true, value: result });
-    for (const callId of [52, 53])
+    for (const callId of [52, 53]) {
       expect(results).toContainEqual(
         expect.objectContaining({
           type: 'service-result',
@@ -240,6 +242,7 @@ describe('studio editor frame (FL-88)', () => {
           error: 'Invalid publication cancellation',
         }),
       );
+    }
     await instance.dispose();
   });
 

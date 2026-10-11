@@ -898,7 +898,10 @@ describe('Buddy Studio library fidelity', () => {
       new CryptoRepository(),
       {} as never,
       {} as never,
-      { recover: async () => ({ attempted: 0, deferred: 0 }), cleanupIncoming: async () => false } as never,
+      {
+        recover: () => Promise.resolve({ attempted: 0, deferred: 0 }),
+        cleanupIncoming: () => Promise.resolve(false),
+      } as never,
     );
     const recorded = async () =>
       (

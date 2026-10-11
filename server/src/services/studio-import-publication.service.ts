@@ -1,9 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
-import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
 import type { StudioProjectImport } from 'src/repositories/studio-project.repository.js';
-import { StudioProjectService } from 'src/services/studio-project.service.js';
 import type {
   CancelResult,
   FilePort,
@@ -14,6 +11,9 @@ import type {
   ReceiptPage,
   RetentionUpload,
 } from 'src/utils/studio-import-publication.js';
+import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
+import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
+import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -33,7 +33,7 @@ export async function retainImport(
   const retained =
     state.status === 'ready' ? state.imported : await journal.publish(upload.key, (file) => files.publish(file));
   // The ready row is committed; cleanup failures remain discoverable on the receipt.
-  await journal.release(upload.key, (file, role) => files.release(file, role)).catch(() => undefined);
+  await journal.release(upload.key, (file, role) => files.release(file, role)).catch(() => {});
   return retained;
 }
 

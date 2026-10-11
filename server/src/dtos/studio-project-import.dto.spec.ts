@@ -1,13 +1,13 @@
 import z from 'zod';
-import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import {
-  StudioImportPublicationRegisterDto,
-  StudioImportPublicationQueryDto,
-  StudioImportPublicationParamDto,
   StudioImportPublicationPageDto,
+  StudioImportPublicationParamDto,
+  StudioImportPublicationQueryDto,
+  StudioImportPublicationRegisterDto,
   StudioProjectImportDto,
-} from './studio-project-import.dto.js';
+} from 'src/dtos/studio-project-import.dto.js';
 import { ProcessingProvenanceSchema, RetainedProcessingProvenanceSchema } from 'src/utils/studio-import-provenance.js';
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 describe('canonical import/publication schemas', () => {
   it('exports canonical provenance numeric types without widening the version literal', () => {
@@ -89,7 +89,10 @@ describe('canonical import/publication schemas', () => {
       cleanupPending: false,
     };
     expect(
-      StudioImportPublicationPageDto.schema.safeParse({ items: Array(101).fill(receipt), nextCursor: null }).success,
+      StudioImportPublicationPageDto.schema.safeParse({
+        items: Array.from({ length: 101 }, () => ({ ...receipt })),
+        nextCursor: null,
+      }).success,
     ).toBe(false);
   });
 });

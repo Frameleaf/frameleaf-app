@@ -179,7 +179,9 @@
   const detachImports = () => {
     importOrigin?.controller.abort();
     importOrigin = undefined;
-    for (const controller of pendingPublications.values()) controller.abort();
+    for (const controller of pendingPublications.values()) {
+      controller.abort();
+    }
     pendingPublications.clear();
     cancelledPublications.clear();
     receiptRequest++;
@@ -192,7 +194,9 @@
   };
   const readReceipts = async (cursor?: string) => {
     const origin = importOrigin;
-    if (!origin || !isImportScopeCurrent(origin.scope)) return;
+    if (!origin || !isImportScopeCurrent(origin.scope)) {
+      return;
+    }
     const request = ++receiptRequest;
     const current = () => !origin.controller.signal.aborted && isImportScopeCurrent(origin.scope);
     receiptsBusy = true;
@@ -209,7 +213,9 @@
         receiptsUnavailable = false;
         const imports = new Map(projectImports.map((item) => [item.id, item]));
         for (const receipt of page.items) {
-          if (receipt.state === 'published' && receipt.imported) imports.set(receipt.importId, receipt.imported);
+          if (receipt.state === 'published' && receipt.imported) {
+            imports.set(receipt.importId, receipt.imported);
+          }
         }
         projectImports = [...imports.values()];
       }
@@ -219,12 +225,16 @@
         // A failed page says nothing about absence or an older page's next cursor.
       }
     } finally {
-      if (current() && request === receiptRequest) receiptsBusy = false;
+      if (current() && request === receiptRequest) {
+        receiptsBusy = false;
+      }
     }
   };
   const cancelPublication = async (importId: string, publicationId: string, scope: StudioEditorScope) => {
     const origin = importOrigin;
-    if (!origin || origin.controller.signal.aborted || !isImportScopeCurrent(scope)) throw new Error('origin_retired');
+    if (!origin || origin.controller.signal.aborted || !isImportScopeCurrent(scope)) {
+      throw new Error('origin_retired');
+    }
     cancelledPublications.add(publicationId);
     pendingPublications.get(publicationId)?.abort();
     const result = await createStudioRetentionApi(origin.controller.signal).cancel(
@@ -232,21 +242,26 @@
       importId,
       publicationId,
     );
-    if (origin.controller.signal.aborted || !isImportScopeCurrent(scope)) throw new Error('origin_retired');
+    if (origin.controller.signal.aborted || !isImportScopeCurrent(scope)) {
+      throw new Error('origin_retired');
+    }
     if (result.status === 'already-published' && result.receipt.imported) {
       const kept = result.receipt.imported;
       projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
     }
-    if (receiptPage)
+    if (receiptPage) {
       receiptPage = {
         ...receiptPage,
         items: receiptPage.items.map((item) => (item.publicationId === publicationId ? result.receipt : item)),
       };
+    }
     return result;
   };
   const onCancelPublication = async (receipt: StudioPublicationReceipt) => {
     const origin = importOrigin;
-    if (!origin) return;
+    if (!origin) {
+      return;
+    }
     try {
       const result = await cancelPublication(receipt.importId, receipt.publicationId, origin.scope);
       receiptOperation =
@@ -256,9 +271,10 @@
             ? 'Cancelled; private file cleanup is pending.'
             : 'Cancelled.';
     } catch {
-      if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope))
+      if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope)) {
         receiptOperation =
           'Cancellation unavailable; the publication outcome is unknown. Refresh receipts to reconcile.';
+      }
     }
   };
   $effect(() => {
@@ -267,17 +283,21 @@
     const retired = accessLost || forbidden;
     untrack(() => {
       detachImports();
-      if (scope.projectId === STUDIO_DRAFT_PROJECT_ID || !owner || retired) return;
+      if (scope.projectId === STUDIO_DRAFT_PROJECT_ID || !owner || retired) {
+        return;
+      }
       const controller = new AbortController();
       importOrigin = { scope, controller };
       // Canonical imports reload independently of receipt pagination or discovery availability.
       void loadStudioProjectImports(scope.projectId, controller.signal)
         .then((loaded) => {
-          if (!controller.signal.aborted && isImportScopeCurrent(scope)) {
-            const loadedIds = new Set(loaded.map((item) => item.id));
-            // Keep an acknowledged publication that raced this canonical list snapshot.
-            projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
+          if (controller.signal.aborted || !isImportScopeCurrent(scope)) {
+            return;
           }
+
+          const loadedIds = new Set(loaded.map((item) => item.id));
+          // Keep an acknowledged publication that raced this canonical list snapshot.
+          projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
         })
         .catch(() => {
           // Missing canonical media stays visibly unresolved in the editor.
@@ -845,7 +865,9 @@
     // FL-103 / FL-105: a recording or a file imported in the editor is kept with the stored project.
     uploadProjectImport: async (upload) => {
       const origin = importOrigin;
-      if (!origin || !isImportScopeCurrent(origin.scope)) throw new Error('origin_retired');
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
       const { scope } = origin;
       if (
         upload.scope &&
@@ -855,16 +877,22 @@
       ) {
         throw new Error('origin_retired');
       }
-      if (upload.processingProvenance && (!upload.publicationId || !upload.scope))
+      if (upload.processingProvenance && (!upload.publicationId || !upload.scope)) {
         throw new Error('publication_registration_required');
+      }
       const publicationId = upload.publicationId;
-      if (publicationId && (pendingPublications.has(publicationId) || cancelledPublications.has(publicationId)))
+      if (publicationId && (pendingPublications.has(publicationId) || cancelledPublications.has(publicationId))) {
         throw new Error('publication_already_submitted');
+      }
       const controller = new AbortController();
       const abort = () => controller.abort();
       origin.controller.signal.addEventListener('abort', abort, { once: true });
-      if (origin.controller.signal.aborted) controller.abort();
-      if (publicationId) pendingPublications.set(publicationId, controller);
+      if (origin.controller.signal.aborted) {
+        controller.abort();
+      }
+      if (publicationId) {
+        pendingPublications.set(publicationId, controller);
+      }
       const current = () =>
         !controller.signal.aborted &&
         isImportScopeCurrent(scope) &&
@@ -877,13 +905,18 @@
             })
           : await uploadStudioProjectImport(scope.projectId, upload, controller.signal);
         // A committed late response belongs to its original project; never trigger rollback/delete.
-        if (current()) projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+        if (current()) {
+          projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+        }
         return kept;
       } finally {
         origin.controller.signal.removeEventListener('abort', abort);
-        if (publicationId && pendingPublications.get(publicationId) === controller)
+        if (publicationId && pendingPublications.get(publicationId) === controller) {
           pendingPublications.delete(publicationId);
-        if (!origin.controller.signal.aborted && isImportScopeCurrent(scope) && publicationId) void readReceipts();
+        }
+        if (!origin.controller.signal.aborted && isImportScopeCurrent(scope) && publicationId) {
+          void readReceipts();
+        }
       }
     },
     cancelProjectImportPublication: cancelPublication,
@@ -1149,10 +1182,12 @@
     // otherwise the reloaded page (a new client) opens read-only behind its own old lease. A page
     // kept in the back/forward cache may come back alive, so it keeps its session.
     const leave = (event: PageTransitionEvent) => {
-      if (!event.persisted) {
-        detachImports();
-        void session.dispose({ keepalive: true });
+      if (event.persisted) {
+        return;
       }
+
+      detachImports();
+      void session.dispose({ keepalive: true });
     };
     addEventListener('pagehide', leave);
 

@@ -1,36 +1,35 @@
-import { StorageCore } from 'src/cores/storage.core.js';
-import { StorageFolder } from 'src/enum.js';
-import { basename, join } from 'node:path';
-import { journalOwnsPath, type ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
-import { countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
-import {
-  type StudioProjectImport,
-  lockStudioImportProject,
-  insertStudioImport,
-  readStudioImport,
-} from 'src/repositories/studio-project.repository.js';
-import { assertStudioStorageAdmission } from 'src/repositories/studio-storage-admission.js';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import type { DB } from 'src/schema/index.js';
-import { canonicalJson } from 'src/utils/object.js';
-import { RetainedProcessingProvenanceSchema, sameProvenance } from 'src/utils/studio-import-provenance.js';
 import type {
   CancelResult,
   ImportDeclaration,
   JournalPort,
-  PreparedImport,
   PrepareResult,
+  PreparedImport,
   PublicationKey,
   PublicationReceipt,
   PublicationState,
   ReceiptPage,
 } from 'src/utils/studio-import-publication.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageFolder } from 'src/enum.js';
+import { countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import {
+  type StudioProjectImport,
+  insertStudioImport,
+  lockStudioImportProject,
+  readStudioImport,
+} from 'src/repositories/studio-project.repository.js';
+import { assertStudioStorageAdmission } from 'src/repositories/studio-storage-admission.js';
+import { canonicalJson } from 'src/utils/object.js';
+import { RetainedProcessingProvenanceSchema, sameProvenance } from 'src/utils/studio-import-provenance.js';
+import { type ReleasingPublicationRole, journalOwnsPath } from 'src/utils/studio-import-reference-roles.js';
 import { STUDIO_IMPORT_MAX_BYTES, STUDIO_IMPORT_MAX_PER_PROJECT, studioImportKind } from 'src/utils/studio-imports.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
@@ -188,9 +187,10 @@ const cursorFor = (ownerId: string, projectId: string, state: PublicationState |
 const parseCursor = (cursor: string | undefined, ownerId: string, projectId: string, state?: PublicationState) => {
   if (cursor === undefined) return null;
   try {
-    if (!cursor || cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
+    if (!cursor || cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor))
+      throw new Error('invalid_publication_cursor');
     const bytes = Buffer.from(cursor, 'base64url');
-    if (bytes.toString('base64url') !== cursor) throw new Error();
+    if (bytes.toString('base64url') !== cursor) throw new Error('invalid_publication_cursor');
     const value = JSON.parse(bytes.toString('utf8'));
     if (
       !value ||
@@ -203,7 +203,7 @@ const parseCursor = (cursor: string | undefined, ownerId: string, projectId: str
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value.at) ||
       new Date(value.at).toISOString() !== value.at.replace(/(\.\d{3})\d{3}Z$/, '$1Z')
     )
-      throw new Error();
+      throw new Error('invalid_publication_cursor');
     return { at: value.at as string, id: value.id as string };
   } catch {
     throw new BadRequestException('invalid_publication_cursor');
@@ -416,7 +416,7 @@ export class StudioImportPublicationRepository implements JournalPort {
           const { rows: existing } = await sql`SELECT id FROM public.studio_bundle_upload
             WHERE id=${reservationId}::uuid`.execute(tx);
           if (
-            existing.length ||
+            existing.length > 0 ||
             !original ||
             original.stagedPath !== file.stagedPath ||
             canonicalJson(original.identity) !== canonicalJson(file.identity)
@@ -463,7 +463,7 @@ export class StudioImportPublicationRepository implements JournalPort {
       const { rows: busy } =
         await sql`SELECT id FROM public.studio_import_publication WHERE "projectId"=${key.projectId}::uuid
         AND "importId"=${key.importId}::uuid AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL)`.execute(tx);
-      if (busy.length) throw new ConflictException('publication_busy');
+      if (busy.length > 0) throw new ConflictException('publication_busy');
       await this.references(tx, file.stagedPath);
       await this.references(tx, file.targetPath);
       await verifyBytes(file.stagedPath, file.declaration, file.identity);

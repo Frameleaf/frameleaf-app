@@ -15,8 +15,8 @@ import { BaseService } from 'src/services/base.service.js';
 import { buddyStudioFiles, readBuddyStudioProject } from 'src/utils/buddy-backup-studio.js';
 import { assertOwnerRestorePath } from 'src/utils/cloud-backup-owner-path.js';
 import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
-import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
+import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 
 // Actual PostgreSQL JSONB and guarded repository restore; no publication/storage durability qualification.
 describe('Buddy retained processing provenance persistence', () => {

@@ -232,8 +232,9 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
     });
   },
   cancelProjectImportPublication: (services, [importId, publicationId, scope]) => {
-    if (!services.cancelProjectImportPublication)
+    if (!services.cancelProjectImportPublication) {
       return Promise.reject(new Error('Publication cancellation unavailable'));
+    }
     if (!isStudioPublicationId(importId) || !isStudioPublicationId(publicationId) || !isStudioEditorScope(scope)) {
       return Promise.reject(new Error('Invalid publication cancellation'));
     }

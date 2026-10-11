@@ -33,7 +33,7 @@ export const toStudioProjectImport = (projectId: string, dto: StudioProjectImpor
   sizeBytes: dto.sizeBytes,
   checksum: dto.checksum,
   url: getStudioProjectImportUrl(projectId, dto.id),
-  ...(dto.processingProvenance ? { processingProvenance: dto.processingProvenance } : {}),
+  ...(dto.processingProvenance && { processingProvenance: dto.processingProvenance }),
 });
 
 /**
@@ -69,10 +69,10 @@ export const uploadStudioProjectImport = async (
       studioProjectImportCreateDto: {
         id: upload.id,
         file,
-        ...(upload.publicationId === undefined ? {} : { publicationId: upload.publicationId }),
-        ...(upload.processingProvenance === undefined
-          ? {}
-          : { processingProvenance: JSON.stringify(upload.processingProvenance) }),
+        ...(upload.publicationId !== undefined && { publicationId: upload.publicationId }),
+        ...(upload.processingProvenance !== undefined && {
+          processingProvenance: JSON.stringify(upload.processingProvenance),
+        }),
       },
     },
     signal ? { signal } : undefined,
@@ -95,9 +95,8 @@ export const toStudioPublicationReceipt = (
     createdAt: dto.createdAt,
     expiresAt: dto.expiresAt,
     cleanupPending: dto.cleanupPending,
-    ...(dto.imported && isStudioBinImport(dto.imported)
-      ? { imported: toStudioProjectImport(projectId, dto.imported) }
-      : {}),
+    ...(dto.imported &&
+      isStudioBinImport(dto.imported) && { imported: toStudioProjectImport(projectId, dto.imported) }),
   };
 };
 
@@ -114,10 +113,12 @@ export const createStudioRetentionApi = (signal: AbortSignal): RetentionApi => (
   upload: (projectId, upload) => uploadStudioProjectImport(projectId, upload, signal),
   discover: async (projectId, cursor) => {
     const page = await getStudioImportPublications(
-      { id: projectId, ...(cursor === undefined ? {} : { cursor }) },
+      { id: projectId, ...(cursor !== undefined && { cursor }) },
       { signal },
     );
-    if (page.items.length > 100) throw new Error('invalid_receipt_page');
+    if (page.items.length > 100) {
+      throw new Error('invalid_receipt_page');
+    }
     return {
       items: page.items.map((dto: StudioImportPublicationDto) => toStudioPublicationReceipt(projectId, dto)),
       nextCursor: page.nextCursor,
@@ -125,8 +126,9 @@ export const createStudioRetentionApi = (signal: AbortSignal): RetentionApi => (
   },
   cancel: async (projectId, importId, publicationId) => {
     const result = await cancelStudioImportPublication({ id: projectId, importId, publicationId }, { signal });
-    if (result.receipt.importId !== importId || result.receipt.publicationId !== publicationId)
+    if (result.receipt.importId !== importId || result.receipt.publicationId !== publicationId) {
       throw new Error('receipt_binding_changed');
+    }
     return { status: result.status, receipt: toStudioPublicationReceipt(projectId, result.receipt) };
   },
 });

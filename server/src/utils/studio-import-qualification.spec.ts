@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { requirePublicationQualification, type QualificationProfile } from 'src/utils/studio-import-qualification.js';
+import { type QualificationProfile, requirePublicationQualification } from 'src/utils/studio-import-qualification.js';
 
 // Synthetic comparison inputs only; these are never deployment qualification records.
 const observed: QualificationProfile = {
@@ -77,7 +77,7 @@ describe('publication qualification structural gate', () => {
       database: { ...observed.database, walStorage: 'a'.repeat(1024) },
     };
     const prefix = 'https://evidence.example.test/';
-    const reference = prefix + 'a'.repeat(2048 - prefix.length);
+    const reference = prefix.padEnd(2048, 'a');
     expect(() =>
       requirePublicationQualification(
         { ...current, evidenceReferences: Array.from({ length: 64 }, () => reference) },
@@ -115,7 +115,7 @@ describe('publication qualification structural gate', () => {
   });
 
   it.each(configurationFields)('requires a bounded nonblank %s on both inputs', (field) => {
-    for (const value of [undefined, null, false, 1, '', '   ', 'a\n', 'a\0', 'a\u{7F}', 'a'.repeat(1025)]) {
+    for (const value of [undefined, null, false, 1, '', ' '.repeat(3), 'a\n', 'a\0', 'a\u{7F}', 'a'.repeat(1025)]) {
       expect(() =>
         requirePublicationQualification({ ...profile, [field]: value } as QualificationProfile, observed),
       ).toThrow('storage_unqualified');
@@ -172,6 +172,7 @@ describe('publication qualification structural gate', () => {
     ['../receipt'],
     ['sha256:ab'],
     [`sha256:${'AB'.repeat(32)}`],
+    // eslint-disable-next-line unicorn/prefer-https -- HTTP must remain a negative qualification fixture.
     ['http://evidence.example.test/receipt'],
     ['https:receipt'],
     ['https://user:secret@evidence.example.test/receipt'],
@@ -181,7 +182,7 @@ describe('publication qualification structural gate', () => {
     ['https://evidence.example.test/receipt#'],
     ['https://evidence.example.test/a b'],
     ['https://evidence.example.test/a\n'],
-    ['https://evidence.example.test/a\\b'],
+    [String.raw`https://evidence.example.test/a\b`],
     ['https://evidence.example.test/%xx'],
     [`https://evidence.example.test/${'a'.repeat(2048)}`],
     Array.from({ length: 65 }, () => contentReference),

@@ -67,7 +67,9 @@ class AuthManager {
   async refresh() {
     try {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
-      if (this.#user && this.#user.id !== user.id) retireStudioImportSessions();
+      if (this.#user && this.#user.id !== user.id) {
+        retireStudioImportSessions();
+      }
       this.#preferences = withoutLockedRuleIds(preferences);
       this.#user = user;
 
@@ -104,7 +106,9 @@ class AuthManager {
   }
 
   setUser(user: UserAdminResponseDto) {
-    if (this.#user && this.#user.id !== user.id) retireStudioImportSessions();
+    if (this.#user && this.#user.id !== user.id) {
+      retireStudioImportSessions();
+    }
     this.#user = user;
   }
 
