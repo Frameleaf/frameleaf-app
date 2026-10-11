@@ -4224,7 +4224,7 @@ export class CloudBackupService {
         identityDirectory(this.configRepository),
         keyFingerprint(key),
         JSON.stringify(
-          { ...file, ...(ring && { client: ring }), ...(imported ? { recovery: imported } : {}) },
+          { ...file, ...(ring && { client: ring }), ...(Boolean(imported) && { recovery: imported }) },
           null,
           2,
         ),
