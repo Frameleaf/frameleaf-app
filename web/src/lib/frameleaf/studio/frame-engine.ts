@@ -302,8 +302,9 @@ export const createFrameStudioEngine = ({
   features: [...manifest.features],
 
   async mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices) {
-    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION)
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) {
       throw new Error('The Studio frame manifest protocol changed');
+    }
     let revoke: (error: Error) => void = () => {};
     let pendingRevocation: Error | null = null;
     const access = createStudioGeneratedAccess((error) => {
@@ -398,9 +399,12 @@ export const createFrameStudioEngine = ({
             origin?.graphVersion === (latest.project.graphVersion ?? 0);
           const run = (async () => {
             await Promise.resolve();
-            if (sourceCall && !sourceCurrent()) throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
-            if (sourceCall && !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource(args))
+            if (sourceCall && !sourceCurrent()) {
+              throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
+            }
+            if (sourceCall && !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource(args)) {
               throw new Error('Invalid service arguments');
+            }
             return message.name === 'authorizeGeneratedMedia'
               ? access.recheck()
               : handler
@@ -427,7 +431,9 @@ export const createFrameStudioEngine = ({
                   !authority.project.leaseExpiresAt ||
                   Date.parse(authority.project.leaseExpiresAt) <= Date.now()
                 ) {
-                  if (Array.isArray(result.files)) result.files.length = 0;
+                  if (Array.isArray(result.files)) {
+                    result.files.length = 0;
+                  }
                   throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
                 }
               }
@@ -589,8 +595,9 @@ export const createFrameStudioEngine = ({
   },
 
   async createCommandEngine(): Promise<StudioCommandEngine> {
-    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION)
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) {
       throw new Error('The Studio frame manifest protocol changed');
+    }
     const frame = createFrame(document.body, documentUrl(base, manifest.commands), true);
     let port: MessagePort;
     try {

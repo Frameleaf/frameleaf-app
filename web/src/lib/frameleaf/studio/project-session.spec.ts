@@ -908,34 +908,46 @@ describe('studio project session', () => {
       },
     );
 
-    it('keeps shelving authoritative when an earlier save answers before the final recovery draft', async () => {
-      let finish!: (result: StudioProjectSaveResponseDto) => void;
-      api.save.mockImplementationOnce(
-        () =>
-          new Promise<StudioProjectSaveResponseDto>((resolve) => {
-            finish = resolve;
-          }),
-      );
-      const session = create();
-      await session.open();
-      session.stageEditor({ edit: 1 }, ['editor.save'], 3, 0);
-      const saving = session.flush();
-      api.acquireLease.mockRejectedValueOnce(httpError(409, { reason: 'project-archived', currentRevision: 4 }));
-      await timers.fire((timer) => timer.ms === 30_000);
-      finish(saved(4));
-      await saving;
-      expect(session.stageEditor({ edit: 2 }, ['editor.save'], 3, 0)).toBe('staged');
-      expect(session.state).toMatchObject({
-        status: 'review',
-        conflict: { reason: 'project-archived' },
-        hasDraft: true,
-        project: { graph: { edit: 2 }, revision: 4, hasLease: false },
-      });
-      await session.flush();
-      expect(api.save).toHaveBeenCalledOnce();
-      expect(timers.pending()).toEqual([]);
-      await session.dispose();
-    });
+    it.each(['project-archived', 'project-trashed'])(
+      'keeps %s authoritative when an earlier save answers before the final recovery draft',
+      async (reason) => {
+        let finish!: (result: StudioProjectSaveResponseDto) => void;
+        api.save.mockImplementationOnce(
+          () =>
+            new Promise<StudioProjectSaveResponseDto>((resolve) => {
+              finish = resolve;
+            }),
+        );
+        const session = create();
+        await session.open();
+        session.stageEditor({ edit: 1 }, ['editor.save'], 3, 0);
+        const saving = session.flush();
+        api.acquireLease.mockRejectedValueOnce(httpError(409, { reason, currentRevision: 4 }));
+        await timers.fire((timer) => timer.ms === 30_000);
+        const revokedEpoch = session.state.project.leaseEpoch;
+        expect(session.state.project).toMatchObject({ hasLease: false, leaseExpiresAt: null, graphDigest: null });
+        finish(saved(4));
+        await saving;
+        expect(session.stageEditor({ edit: 2 }, ['editor.save'], 3, 0)).toBe('staged');
+        expect(session.state).toMatchObject({
+          status: 'review',
+          conflict: { reason },
+          hasDraft: true,
+          project: {
+            graph: { edit: 2 },
+            revision: 4,
+            hasLease: false,
+            leaseEpoch: revokedEpoch,
+            leaseExpiresAt: null,
+            graphDigest: null,
+          },
+        });
+        await session.flush();
+        expect(api.save).toHaveBeenCalledOnce();
+        expect(timers.pending()).toEqual([]);
+        await session.dispose();
+      },
+    );
 
     it('turns read-only, keeping the draft, when the owner archives the project elsewhere', async () => {
       const session = create();

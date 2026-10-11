@@ -666,13 +666,35 @@ describe('explicit protocol8 source publication fence', () => {
       await tick();
       expect(resolve).toHaveBeenCalledTimes(1);
       const next = { ...origin, project: { ...origin.project }, auth: { ...origin.auth } };
-      if (change === 'offline') next.online = false;
-      if (change === 'revision') next.project.revision += 1;
-      if (change === 'digest') next.project.graphDigest = 'c'.repeat(64);
-      if (change === 'account') next.auth.userId = 'other';
-      if (change === 'lease') next.project.hasLease = false;
-      if (change === 'epoch') next.sourceEpoch = 99;
-      if (change !== 'expiry') instance.update(next);
+      switch (change) {
+        case 'offline': {
+          next.online = false;
+          break;
+        }
+        case 'revision': {
+          next.project.revision += 1;
+          break;
+        }
+        case 'digest': {
+          next.project.graphDigest = 'c'.repeat(64);
+          break;
+        }
+        case 'account': {
+          next.auth.userId = 'other';
+          break;
+        }
+        case 'lease': {
+          next.project.hasLease = false;
+          break;
+        }
+        case 'epoch': {
+          next.sourceEpoch = 99;
+          break;
+        }
+      }
+      if (change !== 'expiry') {
+        instance.update(next);
+      }
       settle({
         projectId: origin.project.id,
         ...request,

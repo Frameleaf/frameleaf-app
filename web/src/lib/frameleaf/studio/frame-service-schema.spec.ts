@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { STUDIO_FRAME_PROTOCOL_VERSION } from './frame-protocol';
 import {
   STUDIO_FRAME_SERVICE_SCHEMA_V7,
@@ -27,8 +28,9 @@ describe('one explicitly versioned Studio service schema', () => {
       'resolveStudioProjectSource',
     ]);
     expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V7, 'resolveStudioProjectSource')).toBe(false);
-    for (const name of ['resolveVectorSource', 'vector-sources', '__proto__', 'constructor', 'unknown'])
+    for (const name of ['resolveVectorSource', 'vector-sources', '__proto__', 'constructor', 'unknown']) {
       expect(isStudioFrameServiceName(name)).toBe(false);
+    }
   });
   it('keeps current publication cancellation in protocol8 with its independent origin checks', () => {
     const uuid = '11111111-1111-4111-8111-111111111111';
@@ -43,8 +45,9 @@ describe('one explicitly versioned Studio service schema', () => {
       ['invalid', ...args.slice(1)],
       [uuid, uuid, { ...(args[2] as object), graphVersion: -1 }],
       [uuid, uuid, { projectId: 'other', userId: uuid, graphVersion: 2 }],
-    ])
+    ]) {
       expect(check(bad)).toBe(false);
+    }
   });
   it('accepts only canonical saved request shapes, including strict namespaces/selections', () => {
     const request = {
@@ -59,12 +62,13 @@ describe('one explicitly versioned Studio service schema', () => {
       { ...request, extra: true },
       { ...request, parent: { ...request.parent, kind: 'library-asset' } },
       { ...request, selection: { animationId: '../first' } },
-    ])
+    ]) {
       expect(isStudioSourceRequest(bad)).toBe(false);
+    }
   });
   it('keeps canonical DTO properties/enums bound to the canonical OpenAPI checkpoint', () => {
     const spec = JSON.parse(
-      readFileSync(new URL('../../../../../open-api/immich-openapi-specs.json', import.meta.url), 'utf8'),
+      readFileSync(resolve(import.meta.dirname, '../../../../../open-api/immich-openapi-specs.json'), 'utf8'),
     );
     const schemas = spec.components.schemas;
     expect(Object.keys(schemas.StudioSourceResolutionRequestDto.properties).sort()).toEqual([
@@ -87,7 +91,10 @@ describe('one explicitly versioned Studio service schema', () => {
     expect(Object.keys(schemas.StudioSourceParentDto.properties).sort()).toEqual(['checksum', 'id', 'kind']);
     expect(Object.keys(schemas.StudioSourceSelectionDto.properties).sort()).toEqual(['animationId', 'themeId']);
     expect(schemas.StudioSourceParentKind.enum).toEqual(['project-import', 'vector-graphic']);
-    const vite = readFileSync(new URL('../../../../../studio/adapters/web/vite.config.mjs', import.meta.url), 'utf8');
+    const vite = readFileSync(
+      resolve(import.meta.dirname, '../../../../../studio/adapters/web/vite.config.mjs'),
+      'utf8',
+    );
     expect(vite).toContain('protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION');
   });
 });

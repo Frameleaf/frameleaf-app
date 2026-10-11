@@ -11,9 +11,11 @@
    * A failed save reports in place: retry replays the same change, a stale asset is reloaded
    * instead of rewritten, and a rejected or forbidden point is stated without a retry.
    */
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { coordinateLabel, coordinatesOf, locationLabel, osmLink } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
+  import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
   import ViewerLocationDialog from '$lib/components/frameleaf/ViewerLocationDialog.svelte';
   import { locationPatch } from '$lib/frameleaf/viewer-location';
   import { handlePromiseError } from '$lib/utils';
@@ -43,6 +45,8 @@
   const place = $derived(locationLabel(asset.exifInfo));
   const coordinates = $derived(coordinateLabel(point));
   const mapLink = $derived(osmLink(point));
+  // FL-354: the landmark the item was taken at; the server lists the best label first.
+  const landmark = $derived(asset.landmarks?.[0]);
 
   const fail = (error: unknown, change: LocationChange | null) => {
     failure = classifyInlineEditError(error);
@@ -118,6 +122,20 @@
         </div>
       {/if}
     </button>
+
+    {#if landmark}
+      <a
+        href={landmarkHref(landmark.id)}
+        class="flex items-center gap-4 pb-4 hover:text-primary"
+        data-testid="frameleaf-info-landmark"
+      >
+        <LandmarkBadge {landmark} size={24} />
+        <div class="min-w-0">
+          <p>{$t('frameleaf_landmark_at', { values: { name: landmark.name } })}</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{$t(landmarkKind(landmark.kind).labelKey)}</p>
+        </div>
+      </a>
+    {/if}
 
     {#if mapLink}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->

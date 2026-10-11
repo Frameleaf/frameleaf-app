@@ -29,14 +29,14 @@ const authority = (): StudioSourceAuthority => ({
     graph: { saved: true },
   },
 });
-const response = (): StudioSourceResolutionDto => {
+const response = (filePath = 'animation.json'): StudioSourceResolutionDto => {
   const bytes = '{"v":"5.7","layers":[]}';
   const result = {
     projectId: 'project',
     ...request,
     expiresAt: new Date(5000).toISOString(),
     archive: false,
-    files: [{ path: 'animation.json', sha256: sha(bytes), base64: Buffer.from(bytes).toString('base64') }],
+    files: [{ path: filePath, sha256: sha(bytes), base64: Buffer.from(bytes).toString('base64') }],
   };
   return {
     ...result,
@@ -51,6 +51,32 @@ afterEach(() => {
 });
 
 describe('canonical saved source authority at every asynchronous boundary', () => {
+  it.each([...Array.from({ length: 32 }, (_, code) => code), 127])(
+    'refuses ASCII control character %i in a source path before hashing any bytes',
+    async (code) => {
+      const digest = vi.fn();
+      vi.stubGlobal('crypto', { subtle: { digest } });
+      const run = createStudioSourceResolution({
+        authority,
+        resolve: async () => response(`animation${String.fromCodePoint(code)}.json`),
+        signal: new AbortController().signal,
+        now: () => 1000,
+      });
+      await expect(run(request, scope)).rejects.toThrow('REFUSED');
+      expect(digest).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves a valid Unicode resource path with its canonical manifest digest', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const result = response('images/雪.png');
+    const run = createStudioSourceResolution({
+      authority,
+      resolve: async () => result,
+      signal: new AbortController().signal,
+      now: () => 1000,
+    });
+    expect(await run(request, scope)).toEqual(result);
+  });
   it('calls only with the acknowledged envelope and exact supplied origin', async () => {
     vi.stubGlobal('crypto', webcrypto);
     const resolve = vi.fn(async () => response());
@@ -117,7 +143,9 @@ describe('canonical saved source authority at every asynchronous boundary', () =
                 args[0],
                 args[1] as Parameters<typeof webcrypto.subtle.digest>[1],
               );
-              if (++digests === boundary) change(live);
+              if (++digests === boundary) {
+                change(live);
+              }
               return result;
             },
           },
@@ -128,7 +156,9 @@ describe('canonical saved source authority at every asynchronous boundary', () =
           now: () => 1000,
           resolve: async () => {
             await Promise.resolve();
-            if (boundary === 0) change(live);
+            if (boundary === 0) {
+              change(live);
+            }
             return response();
           },
         });
@@ -152,7 +182,9 @@ describe('canonical saved source authority at every asynchronous boundary', () =
               args[0],
               args[1] as Parameters<typeof webcrypto.subtle.digest>[1],
             );
-            if (++digests === boundary) time = 10_001;
+            if (++digests === boundary) {
+              time = 10_001;
+            }
             return result;
           },
         },
@@ -162,7 +194,9 @@ describe('canonical saved source authority at every asynchronous boundary', () =
         signal: new AbortController().signal,
         now: () => time,
         resolve: async () => {
-          if (boundary === 0) time = 10_001;
+          if (boundary === 0) {
+            time = 10_001;
+          }
           return response();
         },
       });

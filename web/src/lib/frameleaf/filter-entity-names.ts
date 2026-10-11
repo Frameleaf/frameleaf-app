@@ -1,4 +1,4 @@
-import { getAlbumInfo, getPerson, getPet, getTagById } from '@frameleaf/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from '@frameleaf/sdk';
 
 /**
  * Name lookups for a person/pet/tag (and an album, for the FL-49 search chips) behind an id-list
@@ -18,7 +18,7 @@ import { getAlbumInfo, getPerson, getPet, getTagById } from '@frameleaf/sdk';
  * name set: the owner decision this ships under is explicit that a hidden identity's name must
  * never leak into a filename, and an empty name is not a name.
  */
-export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album';
+export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album' | 'landmark';
 
 const nameCache = new Map<string, Promise<string | null>>();
 
@@ -37,6 +37,11 @@ const fetchEntityName = async (kind: FilterEntityKind, id: string): Promise<stri
     // FL-49: the /search chip row names an album condition too; the album read enforces access
     const album = await getAlbumInfo({ id });
     return album.albumName.trim() || null;
+  }
+  if (kind === 'landmark') {
+    // FL-353: a landmark has no read of its own; the visited list names every one a search can match
+    const landmarks = await getVisitedLandmarks();
+    return landmarks.find((landmark) => landmark.id === id)?.name ?? null;
   }
   const tag = await getTagById({ id });
   // The full nested path ("Trips/Rockies"), not just the leaf name: it is what the existing

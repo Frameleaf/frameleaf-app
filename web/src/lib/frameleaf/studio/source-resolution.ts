@@ -32,15 +32,20 @@ const path = (value: unknown) =>
   typeof value === 'string' &&
   value.length <= 1024 &&
   value.length > 0 &&
-  !/^(?:\/)|\\|\/\/|(?:^|\/)\.\.?(?:\/|$)|[\u0000-\u001f\u007f]/.test(value);
+  !/^(?:\/)|\\|\/\/|(?:^|\/)\.\.?(?:\/|$)/.test(value) &&
+  [...value].every((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code > 31 && code !== 127;
+  });
 const canonicalBase64 = (value: unknown): value is string => {
   if (
     typeof value !== 'string' ||
     value.length > 24 * 1024 * 1024 ||
     value.length % 4 !== 0 ||
     !/^[A-Za-z0-9+/]*={0,2}$/.test(value)
-  )
+  ) {
     return false;
+  }
   return value.endsWith('==')
     ? /[AQgw]/.test(value.at(-3) ?? '')
     : !value.endsWith('=') || /[AEIMQUYcgkosw048]/.test(value.at(-2) ?? '');
@@ -60,9 +65,15 @@ const decode = (text: string, bytes: Uint8Array) => {
       (alphabet.indexOf(text[i + 1]) << 12) |
       ((text[i + 2] === '=' ? 0 : alphabet.indexOf(text[i + 2])) << 6) |
       (text[i + 3] === '=' ? 0 : alphabet.indexOf(text[i + 3]));
-    if (offset < bytes.length) bytes[offset++] = packed >>> 16;
-    if (offset < bytes.length) bytes[offset++] = packed >>> 8;
-    if (offset < bytes.length) bytes[offset++] = packed;
+    if (offset < bytes.length) {
+      bytes[offset++] = packed >>> 16;
+    }
+    if (offset < bytes.length) {
+      bytes[offset++] = packed >>> 8;
+    }
+    if (offset < bytes.length) {
+      bytes[offset++] = packed;
+    }
   }
 };
 
@@ -106,10 +117,11 @@ export async function verifyStudioSourceResult(
     Date.parse(result.expiresAt) <= now() ||
     Date.parse(result.expiresAt) > now() + 5000 ||
     !Array.isArray(result.files) ||
-    result.files.length < 1 ||
+    result.files.length === 0 ||
     result.files.length > 256
-  )
+  ) {
     refuse();
+  }
   let decoded = 0;
   let encoded = 0;
   const names = new Set<string>();
@@ -121,8 +133,9 @@ export async function verifyStudioSourceResult(
       names.has(file.path) ||
       !hex(file.sha256) ||
       !canonicalBase64(file.base64)
-    )
+    ) {
       refuse();
+    }
     names.add(file.path);
     encoded += file.base64.length;
     const length = (file.base64.length / 4) * 3 - (file.base64.endsWith('==') ? 2 : file.base64.endsWith('=') ? 1 : 0);
@@ -134,16 +147,19 @@ export async function verifyStudioSourceResult(
     encoded > 24 * 1024 * 1024 ||
     decoded > 16 * 1024 * 1024 ||
     encoded * 2 + decoded * 4 + result.files.length * 16 * 1024 > 32 * 1024 * 1024
-  )
+  ) {
     refuse();
-  const { manifestDigest: _digest, files: _files, ...metadata } = result;
+  }
+  const { manifestDigest: _, ...metadata } = result;
   const manifest = new TextEncoder().encode(
     studioSourceJson({ ...metadata, files: result.files.map(({ path, sha256 }) => ({ path, sha256 })) }),
   );
   owned.push(manifest);
   const actual = await studioSourceSha(manifest);
   check();
-  if (actual !== result.manifestDigest) refuse();
+  if (actual !== result.manifestDigest) {
+    refuse();
+  }
   const files: Record<string, Uint8Array> = Object.create(null);
   for (const [i, file] of result.files.entries()) {
     check();
@@ -152,7 +168,9 @@ export async function verifyStudioSourceResult(
     decode(file.base64, bytes);
     const checksum = await studioSourceSha(bytes);
     check();
-    if (checksum !== file.sha256) refuse();
+    if (checksum !== file.sha256) {
+      refuse();
+    }
     files[file.path] = bytes;
   }
   check();
@@ -188,8 +206,9 @@ export function createStudioSourceResolution(options: {
         Date.parse(live.project.leaseExpiresAt) <= now() ||
         !Number.isFinite(Date.parse(live.project.leaseExpiresAt)) ||
         identity !== studioSourceJson(live)
-      )
+      ) {
         refuse();
+      }
     };
     check();
     if (
@@ -199,21 +218,26 @@ export function createStudioSourceResolution(options: {
       scope.userId !== initial.userId ||
       scope.projectId !== initial.project.id ||
       scope.graphVersion !== (initial.project.graphVersion ?? 0)
-    )
+    ) {
       refuse();
+    }
     const result = await options.resolve(initial.project.id, request, options.signal);
     const owned: Uint8Array[] = [];
     try {
       check();
       const current = () => {
         check();
-        if (Date.parse(result.expiresAt) <= now()) refuse();
+        if (Date.parse(result.expiresAt) <= now()) {
+          refuse();
+        }
       };
       await verifyStudioSourceResult(result, request, initial.project.id, current, owned, now);
       current();
       return result;
     } finally {
-      for (const bytes of owned) bytes.fill(0);
+      for (const bytes of owned) {
+        bytes.fill(0);
+      }
     }
   };
 }

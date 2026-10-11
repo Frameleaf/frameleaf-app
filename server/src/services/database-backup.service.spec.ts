@@ -313,6 +313,8 @@ describe(DatabaseBackupService.name, () => {
           "postgresql://postgres:pwd@host:5432/immich?sslmode=require",
           "--clean",
           "--if-exists",
+          "--exclude-table-data=public.landmark",
+          "--exclude-table-data=public.landmark_area",
         ]
       `);
     });
@@ -419,25 +421,27 @@ describe(DatabaseBackupService.name, () => {
     describe('default config', () => {
       it('should generate pg_dump arguments', async () => {
         await expect(sut.buildPostgresLaunchArguments('pg_dump')).resolves.toMatchInlineSnapshot(`
-        {
-          "args": [
-            "--username",
-            "postgres",
-            "--host",
-            "database",
-            "--port",
-            "5432",
-            "frameleaf",
-            "--clean",
-            "--if-exists",
-          ],
-          "bin": "/usr/lib/postgresql/19/bin/pg_dump",
-          "databaseMajorVersion": 19,
-          "databasePassword": "postgres",
-          "databaseUsername": "postgres",
-          "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
-        }
-      `);
+          {
+            "args": [
+              "--username",
+              "postgres",
+              "--host",
+              "database",
+              "--port",
+              "5432",
+              "frameleaf",
+              "--clean",
+              "--if-exists",
+              "--exclude-table-data=public.landmark",
+              "--exclude-table-data=public.landmark_area",
+            ],
+            "bin": "/usr/lib/postgresql/19/bin/pg_dump",
+            "databaseMajorVersion": 19,
+            "databasePassword": "postgres",
+            "databaseUsername": "postgres",
+            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+          }
+        `);
       });
 
       it('should generate psql arguments', async () => {
@@ -539,6 +543,8 @@ describe(DatabaseBackupService.name, () => {
               "myimmich",
               "--clean",
               "--if-exists",
+              "--exclude-table-data=public.landmark",
+              "--exclude-table-data=public.landmark_area",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -607,6 +613,8 @@ describe(DatabaseBackupService.name, () => {
               "postgresql://mypg:mypwd@myhost:1234/myimmich?sslmode=require",
               "--clean",
               "--if-exists",
+              "--exclude-table-data=public.landmark",
+              "--exclude-table-data=public.landmark_area",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -711,6 +719,8 @@ describe(DatabaseBackupService.name, () => {
               "socket://mypg:mypwd@/var/run/postgresql?db=myimmich",
               "--clean",
               "--if-exists",
+              "--exclude-table-data=public.landmark",
+              "--exclude-table-data=public.landmark_area",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,

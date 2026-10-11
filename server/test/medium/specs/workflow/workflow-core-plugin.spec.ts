@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -48,6 +49,8 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         // assetLock moves an asset into the Locked folder, which re-picks face thumbnails (FL-53)
         PersonRepository,
         PluginRepository,
+        // a step that reads an item with coordinates asks the place pack where it was taken (FL-353)
+        SearchRepository,
         StorageRepository,
         UserRepository,
         WorkflowRepository,

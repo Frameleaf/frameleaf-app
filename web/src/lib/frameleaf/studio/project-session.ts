@@ -801,7 +801,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           state.project.leaseEpoch === sourceLeaseEpoch &&
           isOnline() &&
           !['lease-lost', 'conflict', 'forbidden', 'review'].includes(state.status);
-        if (result.lease) {
+        // A save acknowledges its revision, but cannot restore a lease revoked while it was pending.
+        if (result.lease && state.project.leaseEpoch === sourceLeaseEpoch) {
           applyLease(result.lease, !!createdDetail);
         }
         retryMs = STUDIO_SAVE_RETRY_MS;
@@ -1338,14 +1339,18 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         if (gen !== generation) {
           return false;
         }
-        if (!current()) return false;
+        if (!current()) {
+          return false;
+        }
         applyLease(result.lease);
         if (!result.lease.heldByYou) {
           loseLease({ reason: 'lease-lost', currentRevision: result.revision, lease: result.lease });
           return false;
         }
         const detail = await api.get(id);
-        if (!current()) return false;
+        if (!current()) {
+          return false;
+        }
         applyDetail(detail, gen, state.project.hasLease, true);
         emit({ status: 'saved', conflict: null, lastSavedAt: now() });
         scheduleRenewal(gen);

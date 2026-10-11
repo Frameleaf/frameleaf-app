@@ -119,7 +119,12 @@ export const buildPlacesTree = (
  * The search box (`Places.jsx:53-66`): a city stays when its own name, its state's or its country's
  * matches; states and countries with nothing left drop out. Matching ignores case and accents.
  */
-export const filterPlacesTree = (tree: PlacesTree, query: string): PlacesTree => {
+export const filterPlacesTree = (
+  tree: PlacesTree,
+  query: string,
+  /** FL-354: a state also stays when something else filed under it matches (a landmark by name). */
+  keepState: (stateId: string) => boolean = () => false,
+): PlacesTree => {
   const needle = normalize(query.trim());
   if (!needle) {
     return tree;
@@ -133,7 +138,7 @@ export const filterPlacesTree = (tree: PlacesTree, query: string): PlacesTree =>
           ...state,
           cities: state.cities.filter((city) => matches(city.name) || matches(state.name) || matches(country.name)),
         }))
-        .filter((state) => state.cities.length > 0),
+        .filter((state) => state.cities.length > 0 || keepState(state.id)),
     }))
     .filter((country) => country.states.length > 0);
   return {
@@ -142,6 +147,9 @@ export const filterPlacesTree = (tree: PlacesTree, query: string): PlacesTree =>
     total: tree.total,
   };
 };
+
+/** Whether a place name matches what was typed in the search box: case and accents are ignored. */
+export const placeNameMatches = (name: string, query: string) => normalize(name).includes(normalize(query.trim()));
 
 const normalize = (value: string) =>
   value

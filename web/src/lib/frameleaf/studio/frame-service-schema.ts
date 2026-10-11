@@ -58,8 +58,9 @@ export const isStudioSourceRequest = (value: unknown): value is StudioSourceReso
     !digest(value.graphDigest) ||
     !record(value.parent) ||
     !record(value.selection)
-  )
+  ) {
     return false;
+  }
   const { parent, selection } = value;
   return (
     exact(parent, ['kind', 'id', 'checksum']) &&

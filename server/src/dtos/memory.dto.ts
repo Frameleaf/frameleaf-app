@@ -4,6 +4,7 @@ import { Memory, MemoryExport } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AssetResponseSchema, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import { StudioExportResolutionSchema } from 'src/dtos/studio-export.dto.js';
 import {
   AssetOrderWithRandomSchema,
@@ -66,7 +67,10 @@ const EventStorySchema = z
     dayCount: z.int().min(1).describe('Number of distinct local days the event covers'),
     assetCount: z.int().min(0).describe('Number of assets the event held before the diversity pass'),
     place: StoryPlaceSchema.optional(),
-    title: z.string().optional().describe('Place label for the event, when it has one'),
+    landmark: LandmarkSummarySchema.optional().describe(
+      'The landmark the event was a visit to, when most of it was taken at one',
+    ),
+    title: z.string().optional().describe('Landmark name or place label for the event, when it has one'),
   })
   .meta({ id: 'EventStoryDto' });
 
