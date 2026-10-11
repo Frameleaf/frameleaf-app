@@ -717,3 +717,68 @@ for (const outcome of ['published', 'empty', 'wrong-kind', 'aborted']) {
     }
   });
 }
+
+const source = readFileSync(new URL('./specs/web/performance-report.e2e-spec.ts', import.meta.url), 'utf8');
+const setupPerformanceFixture = (candidate = source, thumbnailDuration = 5_000) => {
+  let beforeAll;
+  let hookTimeout;
+  let elapsed = 0;
+  let uploads = 0;
+  const queues = [];
+  const budgets = [];
+  const runner = {
+    describe: (_name, register) => register(),
+    beforeAll: (callback) => (beforeAll = callback),
+    setTimeout: (timeout) => (hookTimeout = timeout),
+  };
+  const registerTest = Object.assign(() => {}, runner);
+  const fixture = {
+    initSdk: () => {},
+    resetDatabase: async () => {},
+    adminSetup: async () => ({ accessToken: 'fixture-token' }),
+    createAsset: async () => {
+      uploads++;
+      elapsed += 50;
+    },
+    waitForQueueFinish: async (token, queue, timeout = 60_000) => {
+      assert.equal(token, 'fixture-token');
+      queues.push(queue);
+      budgets.push(timeout);
+      // Exact failed x64 run: about 40 thumbnails per 70 seconds. Retain all 200;
+      // model a healthy pipeline taking 350 seconds rather than sleeping in this control.
+      const duration =
+        queue === 'metadataExtraction' ? 350_000 : queue === 'thumbnailGeneration' ? thumbnailDuration : 5_000;
+      if (duration > timeout) throw new Error('queue deadline');
+      elapsed += duration;
+      if (elapsed > hookTimeout) throw new Error('hook deadline');
+    },
+  };
+  const script = stripTypeScriptTypes(candidate.replace(/^import .*;\n/gm, ''));
+  new Function('test', 'utils', 'expect', 'Date', script)(registerTest, fixture, () => {}, { now: () => elapsed });
+  return {
+    run: () => beforeAll(),
+    result: () => ({ hookTimeout, elapsed, uploads, queues, budgets }),
+  };
+};
+
+test('200-image preparation has a finite caller budget for the measured healthy backlog', async () => {
+  const fixture = setupPerformanceFixture();
+  await fixture.run();
+  const result = fixture.result();
+  assert.equal(result.uploads, 200);
+  assert.deepEqual(result.queues, ['metadataExtraction', 'storageTemplateMigration', 'thumbnailGeneration']);
+  assert.deepEqual(result.budgets, [590_000, 240_000, 235_000]);
+  assert.ok(result.elapsed > 120_000);
+  assert.ok(result.hookTimeout >= result.elapsed && result.hookTimeout <= 600_000);
+});
+
+test('the performance fixture control reproduces both original deadline failures', async () => {
+  const shortQueue = source.replace(/, deadline - Date.now\(\)\);/g, ');');
+  await assert.rejects(setupPerformanceFixture(shortQueue).run(), /queue deadline/);
+  const shortHook = source.replace('test.setTimeout(PREPARATION_TIMEOUT)', 'test.setTimeout(120_000)');
+  await assert.rejects(setupPerformanceFixture(shortHook).run(), /hook deadline/);
+});
+
+test('later performance preparation queues cannot extend the whole-hook deadline', async () => {
+  await assert.rejects(setupPerformanceFixture(source, 250_000).run(), /queue deadline/);
+});
