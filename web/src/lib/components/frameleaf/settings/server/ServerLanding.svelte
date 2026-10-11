@@ -12,7 +12,7 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import { updateState } from '$lib/components/frameleaf/settings/server/update-status';
+  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server/update-status';
   import { ADVANCED_SECTIONS, commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -41,7 +41,9 @@
     }
   });
 
-  const installed = $derived($serverVersion ? semverToName($serverVersion) : undefined);
+  let asked = $state<string>();
+  onMount(() => void askInstalledVersion().then((name) => (asked = name)));
+  const installed = $derived($serverVersion ? semverToName($serverVersion) : asked);
   const version = (name?: string | null) => (name ?? '').replace(/^v/, '');
   const looking = $derived(saved?.newVersionCheck.enabled ?? false);
   const answer = $derived(updateState({ looking, installed, newest, checkedAt }));

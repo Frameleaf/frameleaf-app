@@ -45,6 +45,16 @@ vi.mock('$lib/components/frameleaf/backup/BackupArea.svelte', async () => ({
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+// FL-368: the landing pages read live state of their own; the host only has to mount them.
+vi.mock('$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/server/ServerLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
@@ -212,7 +222,6 @@ describe('the Command Center (FL-71)', () => {
     expect(container.querySelector('.cc-directory')).toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: 'Notifications' })).toBeInTheDocument();
     // The landing page lists the area's pages, so the navigation does not repeat them.
-    expect(container.querySelector('a[href*="section=email-preferences"]')).not.toBeNull();
     expect(screen.queryByLabelText('Notifications pages')).toBeNull();
   });
 
@@ -358,8 +367,14 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=history', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
 
-    expect(await screen.findByText('1 preference changed')).toBeInTheDocument();
-    expect(screen.getByText('Ada · iOS · Mobile')).toBeInTheDocument();
+    // In the words on the page the change came from, with the page named (FL-368).
+    expect(await screen.findByText('Tags turned on')).toBeInTheDocument();
+    expect(screen.getByText(/· Ada · iOS · Mobile$/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open this setting' })).toHaveAttribute(
+      'href',
+      '/user-settings?area=preferences&section=feature',
+    );
+    expect(screen.getByText('Every change you saved to your own settings: what changed and when.')).toBeInTheDocument();
   });
 
   it('searches areas, sections and utility tools, and clears an empty search', async () => {

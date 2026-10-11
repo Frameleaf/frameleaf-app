@@ -1,4 +1,18 @@
+import { getServerVersion } from '@frameleaf/sdk';
 import { isNewerVersion } from '$lib/frameleaf/version-check';
+import { semverToName } from '$lib/utils';
+
+/**
+ * The version running, asked of the server: the pages show it from the live connection when that
+ * has said it, and from this otherwise (a page opened before the connection is up).
+ */
+export const askInstalledVersion = async (): Promise<string | undefined> => {
+  try {
+    return semverToName(await getServerVersion());
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * The answer Server & updates and its Updates page open on (FL-368):
