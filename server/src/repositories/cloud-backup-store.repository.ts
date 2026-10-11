@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { type FileHandle, open, rename, rm } from 'node:fs/promises';
+import { constants, createWriteStream } from 'node:fs';
+import { type FileHandle, mkdir, open, rename, rm } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { BackupTransferJournal } from 'src/utils/cloud-backup-transfer.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CLOUD_BACKUP_MARKER,
@@ -24,6 +26,7 @@ import {
   executionTimeout,
   withExecutionCleanup,
 } from 'src/utils/execution-signal.js';
+import { type BackupCredentials, ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
@@ -51,6 +54,9 @@ export type CloudBackupConnection = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  sessionToken?: string;
+  managedCredentials?: (failedAccessKeyId?: string) => Promise<BackupCredentials>;
+  transfer?: BackupTransferJournal;
   /**
    * FL-164, Frameleaf-managed storage: a key rotated moments ago can take a few seconds to become valid, so
    * until this time (epoch ms) a `403 InvalidAccessKeyId` is waited out and retried rather than reported.
@@ -69,6 +75,7 @@ export class CloudBackupStoreError extends Error {
     message: string,
     readonly status: number | null,
     readonly code: string | null,
+    readonly accessKeyId?: string,
   ) {
     super(message);
     this.name = 'CloudBackupStoreError';
@@ -136,6 +143,9 @@ const xmlValue = (xml: string, tag: string) => xmlValues(xml, tag)[0] ?? null;
 
 const PROVIDER_ERROR_CODES = [
   'AccessDenied',
+  'ExpiredToken',
+  'InvalidToken',
+  'RequestExpired',
   'BadDigest',
   'EntityTooLarge',
   'EntityTooSmall',
@@ -261,6 +271,7 @@ export const signS3Request = (request: {
   accessKeyId: string;
   secretAccessKey: string;
   now: Date;
+  sessionToken?: string;
 }): Record<string, string> => {
   const { amzDate, dateStamp } = amzDates(request.now);
   const payloadHash = request.body ? sha256Hex(request.body) : EMPTY_SHA256;
@@ -269,6 +280,7 @@ export const signS3Request = (request: {
     host: request.host,
     'x-amz-content-sha256': payloadHash,
     'x-amz-date': amzDate,
+    ...(request.sessionToken && { 'x-amz-security-token': request.sessionToken }),
   };
   const signedNames = Object.keys(headers).toSorted(compareCodeUnits);
   const canonicalHeaders = signedNames.map((name) => `${name}:${headers[name].trim()}\n`).join('');
@@ -300,6 +312,7 @@ type SignedRequest = {
   headers?: Record<string, string>;
   body?: Buffer;
   timeoutMs?: number;
+  retry?: boolean;
 };
 
 type Part = { partNumber: number; etag: string };
@@ -446,6 +459,7 @@ export class CloudBackupStoreRepository {
     destination: string,
     expectedSha256: string | null,
   ): Promise<{ size: number; sha256: string }> {
+    if (connection.transfer) return this.downloadResumable(connection, key, bucketKey, destination, expectedSha256);
     const response = await this.send(connection, {
       method: 'GET',
       key,
@@ -471,12 +485,205 @@ export class CloudBackupStoreRepository {
     }
   }
 
+  private async downloadResumable(
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+    destination: string,
+    expectedSha256: string | null,
+  ): Promise<{ size: number; sha256: string }> {
+    const journal = connection.transfer!;
+    const partial = join(
+      dirname(destination),
+      `.frameleaf-part-${sha256Hex(`${journal.directory}:${key}:${expectedSha256}`)}`,
+    );
+    const previous = journal.current;
+    let state = previous?.kind === 'download' && previous.key === key ? previous : null;
+    const object = await this.head(connection, key, bucketKey);
+    // eslint-disable-next-line unicorn/no-impossible-length-comparison -- Size comes from an untrusted HTTP header.
+    if (!object?.etag || !Number.isSafeInteger(object.size) || object.size < 0)
+      throw new CloudBackupStoreError('The backup download has no stable object identity.', 404, 'NoSuchKey');
+    if (
+      state &&
+      (state.partial !== partial ||
+        state.etag !== object.etag ||
+        state.size !== object.size ||
+        state.expectedSha256 !== expectedSha256)
+    )
+      throw new CloudBackupStoreError('The backup object changed during its download.', null, 'ChecksumMismatch');
+    state ??= {
+      kind: 'download',
+      key,
+      partial,
+      expectedSha256,
+      etag: object.etag,
+      size: object.size,
+      offset: 0,
+      completed: null,
+    };
+    const hashFile = async (file: FileHandle) => {
+      const stat = await file.stat();
+      if (!stat.isFile() || stat.nlink !== 1 || stat.size !== state.size)
+        throw new CloudBackupStoreError('The completed download is unavailable.', null, 'ChecksumMismatch');
+      const digest = createHash('sha256');
+      const buffer = Buffer.alloc(64 * 1024);
+      for (let offset = 0; offset < state.size;) {
+        assertExecutionActive();
+        const { bytesRead } = await file.read(buffer, 0, Math.min(buffer.length, state.size - offset), offset);
+        if (!bytesRead) throw new CloudBackupStoreError('The partial download ended early.', null, 'ChecksumMismatch');
+        digest.update(buffer.subarray(0, bytesRead));
+        offset += bytesRead;
+      }
+      return digest.digest('hex');
+    };
+    // Persist ownership before creating the file, so a crash cannot strand an unowned partial.
+    await journal.save(state);
+    let handle: FileHandle;
+    try {
+      handle = await open(partial, constants.O_RDWR | constants.O_NOFOLLOW);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (state.completed && state.offset === state.size && dirname(state.completed.path) === dirname(destination)) {
+        const finished = await open(state.completed.path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+            return null;
+          },
+        );
+        if (finished) {
+          let sha256: string;
+          try {
+            sha256 = await hashFile(finished);
+          } finally {
+            await finished.close();
+          }
+          if (sha256 !== state.completed.sha256 || (expectedSha256 && sha256 !== expectedSha256))
+            throw new CloudBackupStoreError('The completed download changed.', null, 'ChecksumMismatch');
+          assertExecutionActive();
+          if (state.completed.path !== destination) await rename(state.completed.path, destination);
+          await journal.save(null);
+          return { size: state.size, sha256 };
+        }
+        // A restore caller may have cleaned its unpublished stage; replay only this object.
+        state.offset = 0;
+        state.completed = null;
+        await journal.save(state);
+      }
+      if (state.offset !== 0) throw error;
+      handle = await open(
+        partial,
+        constants.O_RDWR | constants.O_NOFOLLOW | constants.O_CREAT | constants.O_EXCL,
+        0o600,
+      );
+    }
+    let ready = false;
+    let sha256: string;
+    const save = async () => {
+      await handle.sync();
+      await journal.save(state);
+    };
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.nlink !== 1 || stat.size < state.offset)
+        throw new CloudBackupStoreError('The partial backup download is unavailable.', null, 'ChecksumMismatch');
+      await handle.truncate(state.offset);
+      await save();
+      for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
+        try {
+          if (state.offset < state.size || state.size === 0) {
+            const start = state.offset;
+            const response = await this.send(connection, {
+              method: 'GET',
+              key,
+              headers: {
+                ...sseCustomerHeaders(bucketKey),
+                'if-match': state.etag,
+                ...(start > 0 && { range: `bytes=${start}-` }),
+              },
+              timeoutMs: DOWNLOAD_TIMEOUT_MS,
+            });
+            if (
+              start > 0
+                ? response.status !== 206 ||
+                  response.headers.get('content-range') !== `bytes ${start}-${state.size - 1}/${state.size}`
+                : response.status !== 200
+            ) {
+              await response.body?.cancel();
+              throw new CloudBackupStoreError(
+                'The storage provider refused a consistent ranged download.',
+                null,
+                'ChecksumMismatch',
+              );
+            }
+            let savedAt = state.offset;
+            const body = response.body
+              ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
+              : Readable.from([]);
+            for await (const value of body) {
+              assertExecutionActive();
+              const chunk = Buffer.from(value);
+              if (state.offset + chunk.length > state.size)
+                throw new CloudBackupStoreError('Backup download size mismatch.', null, 'ChecksumMismatch');
+              let written = 0;
+              while (written < chunk.length) {
+                const { bytesWritten } = await handle.write(chunk, written, chunk.length - written, state.offset);
+                if (bytesWritten === 0) throw new Error('Could not write the partial backup download.');
+                written += bytesWritten;
+                state.offset += bytesWritten;
+              }
+              if (state.offset - savedAt >= CLOUD_BACKUP_PART_BYTES) {
+                await save();
+                savedAt = state.offset;
+              }
+            }
+            if (state.offset !== state.size)
+              throw new CloudBackupStoreError('The backup download ended early.', null, null);
+            await save();
+          }
+          ready = true;
+          break;
+        } catch (error) {
+          if (!(error instanceof CloudBackupStoreError) || error.status !== null || error.code === 'ChecksumMismatch')
+            throw error;
+          await save();
+          if (attempt === this.retryDelaysMs.length) throw error;
+          await executionDelay(this.retryDelaysMs[attempt]);
+        }
+      }
+      sha256 = await hashFile(handle);
+      if (expectedSha256 && expectedSha256 !== sha256)
+        throw new CloudBackupStoreError('The backup download does not match its checksum.', null, 'ChecksumMismatch');
+      state.completed = { path: destination, sha256 };
+      await save();
+    } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
+        await rm(partial, { force: true });
+        await journal.save(null);
+      }
+      throw error;
+    } finally {
+      await handle.close();
+    }
+    assertExecutionActive();
+    if (!ready) throw new CloudBackupStoreError('The backup download stopped before completion.', null, null);
+    await rename(partial, destination);
+    await journal.save(null);
+    return { size: state.size, sha256 };
+  }
+
   /** FL-164: an object read in full and hashed, never kept: what weekly verification checks. */
   async hashObject(
     connection: CloudBackupConnection,
     key: string,
     bucketKey: Buffer,
   ): Promise<{ size: number; sha256: string }> {
+    if (connection.transfer) {
+      await mkdir(connection.transfer.directory, { recursive: true, mode: 0o700 });
+      const target = join(connection.transfer.directory, `verify-${sha256Hex(key)}`);
+      const result = await this.download(connection, key, bucketKey, target, null);
+      await rm(target, { force: true });
+      return result;
+    }
     const response = await this.send(connection, {
       method: 'GET',
       key,
@@ -560,7 +767,8 @@ export class CloudBackupStoreRepository {
   ): Promise<{ etag: string; size: number }> {
     const handle = await open(path, 'r');
     try {
-      const { size } = await handle.stat();
+      const stat = await handle.stat();
+      const { size } = stat;
       if (size <= CLOUD_BACKUP_PART_BYTES) {
         const body = await this.readExactly(handle, path, 0, size);
         if (sha256Hex(body) !== expectedSha256) {
@@ -578,11 +786,17 @@ export class CloudBackupStoreRepository {
           yield part;
         }
       };
-      const etag = await this.multipart(connection, key, bucketKey, 'application/octet-stream', readParts(this), () => {
-        if (digest.digest('hex') !== expectedSha256) {
-          throw new CloudBackupFileChangedError(path);
-        }
-      });
+      const etag = await this.multipart(
+        connection,
+        key,
+        bucketKey,
+        'application/octet-stream',
+        readParts(this),
+        () => {
+          if (digest.digest('hex') !== expectedSha256) throw new CloudBackupFileChangedError(path);
+        },
+        { source: path, sourceStamp: `${stat.dev}:${stat.ino}:${size}:${stat.mtimeMs}`, expectedSha256 },
+      );
       return { etag, size };
     } finally {
       await handle.close();
@@ -830,8 +1044,8 @@ export class CloudBackupStoreRepository {
 
   /**
    * One multipart upload of `parts`, in order, with SSE-C and Content-MD5 on every part. `beforeComplete`
-   * may refuse the upload (a file that does not hash to its name); on any failure the upload is aborted,
-   * never completed. Answers the object's ETag.
+   * may refuse the upload (a file that does not hash to its name). Managed transfers retain a receipt
+   * after interruption; other failures abort the upload. Answers the object's ETag.
    */
   private async multipart(
     connection: CloudBackupConnection,
@@ -840,53 +1054,163 @@ export class CloudBackupStoreRepository {
     contentType: string,
     parts: AsyncIterable<Buffer>,
     beforeComplete?: () => void,
+    identity?: { source: string | null; sourceStamp: string | null; expectedSha256: string | null },
   ): Promise<string> {
-    const created = await this.send(connection, {
-      method: 'POST',
-      key,
-      query: { uploads: '' },
-      headers: { ...sseCustomerHeaders(bucketKey), 'content-type': contentType },
-    });
-    const uploadId = xmlValue(await created.text(), 'UploadId');
-    if (!uploadId) {
-      throw new CloudBackupStoreError(`The storage provider did not start an upload for ${key}`, created.status, null);
+    identity ??= { source: null, sourceStamp: null, expectedSha256: null };
+    const journal = connection.transfer;
+    let state = journal?.current?.kind === 'upload' ? journal.current : null;
+    if (
+      state &&
+      (state.key !== key ||
+        state.sourceStamp !== identity.sourceStamp ||
+        state.expectedSha256 !== identity.expectedSha256)
+    ) {
+      if (state.uploadId)
+        await this.send(connection, { method: 'DELETE', key: state.key, query: { uploadId: state.uploadId } });
+      await journal!.save(null);
+      state = null;
     }
-
+    state ??= { kind: 'upload', key, ...identity, uploadId: null, previousUploads: [], parts: [], completing: false };
+    const save = async () => {
+      if (journal) await journal.save(state);
+    };
+    const uploaded: Array<Part & { size: number; sha256: string }> = [];
     try {
-      const uploaded: Part[] = [];
+      if (!state.uploadId) {
+        if (journal) {
+          const prior = await this.multipartUploads(connection, key);
+          if (journal.current?.kind === 'upload') {
+            const candidates = prior.filter((id) => !state!.previousUploads.includes(id));
+            if (candidates.length > 1)
+              throw new CloudBackupStoreError('An interrupted upload needs reconciliation.', null, null);
+            state.uploadId = candidates[0] ?? null;
+          } else {
+            state.previousUploads = prior;
+            await save();
+          }
+        }
+        if (!state.uploadId) {
+          try {
+            const created = await this.send(connection, {
+              method: 'POST',
+              key,
+              query: { uploads: '' },
+              headers: { ...sseCustomerHeaders(bucketKey), 'content-type': contentType },
+              retry: !journal,
+            });
+            state.uploadId = xmlValue(await created.text(), 'UploadId');
+          } catch (error) {
+            if (!journal || !(error instanceof CloudBackupStoreError) || (error.status !== null && error.status < 500))
+              throw error;
+            const candidates = (await this.multipartUploads(connection, key)).filter(
+              (id) => !state!.previousUploads.includes(id),
+            );
+            if (candidates.length !== 1) throw error;
+            state.uploadId = candidates[0];
+          }
+          if (!state.uploadId)
+            throw new CloudBackupStoreError('The storage provider did not confirm the multipart upload.', null, null);
+        }
+        await save();
+      }
+      const uploadId = state.uploadId;
+      const found = journal
+        ? await this.multipartParts(connection, key, uploadId).catch((error: unknown) => {
+            if (state!.completing && error instanceof CloudBackupStoreError && error.code === 'NoSuchUpload')
+              return state!.parts;
+            throw error;
+          })
+        : [];
       let size = 0;
+      const receipts = state.parts;
       for await (const body of parts) {
         const partNumber = uploaded.length + 1;
-        const response = await this.send(connection, {
-          method: 'PUT',
-          key,
-          query: { partNumber: String(partNumber), uploadId },
-          body,
-          headers: { ...sseCustomerHeaders(bucketKey), 'content-md5': md5Base64(body) },
-          timeoutMs: PART_TIMEOUT_MS,
-        });
-        const etag = response.headers.get('etag');
-        if (!etag) {
-          throw new CloudBackupStoreError(
-            `The storage provider did not confirm part ${partNumber} of ${key}`,
-            null,
-            null,
-          );
+        if (partNumber > 10_000)
+          throw new CloudBackupStoreError('The backup object exceeds the multipart limit.', null, null);
+        const sha256 = sha256Hex(body);
+        const saved = receipts[partNumber - 1];
+        const remote = found.find((part) => part.partNumber === partNumber);
+        let etag: string;
+        if (
+          saved &&
+          remote &&
+          saved.etag === remote.etag &&
+          saved.size === body.length &&
+          remote.size === body.length &&
+          saved.sha256 === sha256
+        ) {
+          etag = saved.etag;
+        } else {
+          const response = await this.send(connection, {
+            method: 'PUT',
+            key,
+            query: { partNumber: String(partNumber), uploadId },
+            body,
+            headers: { ...sseCustomerHeaders(bucketKey), 'content-md5': md5Base64(body) },
+            timeoutMs: PART_TIMEOUT_MS,
+          });
+          const confirmed = response.headers.get('etag');
+          if (!confirmed)
+            throw new CloudBackupStoreError('The storage provider did not confirm an uploaded part.', null, null);
+          etag = confirmed;
         }
-        advanceExecutionProgress(body.length);
-        uploaded.push({ partNumber, etag });
+        uploaded.push({ partNumber, etag, size: body.length, sha256 });
         size += body.length;
+        advanceExecutionProgress(body.length);
+        state.parts = [...uploaded, ...receipts.slice(uploaded.length)];
+        await save();
       }
       assertExecutionActive();
       beforeComplete?.();
-      return await this.complete(connection, key, uploadId, uploaded, bucketKey, size);
+      state.completing = true;
+      await save();
+      const etag = await this.complete(connection, key, uploadId, uploaded, bucketKey, size);
+      if (journal) await journal.save(null);
+      return etag;
     } catch (error) {
-      await withExecutionCleanup(() => this.send(connection, { method: 'DELETE', key, query: { uploadId } })).catch(
-        (abortError: unknown) =>
-          this.logger.warn(`Could not abandon the unfinished upload of ${key}: ${String(abortError)}`),
-      );
+      if ((!journal || error instanceof CloudBackupFileChangedError) && state.uploadId) {
+        await withExecutionCleanup(() =>
+          this.send(connection, { method: 'DELETE', key, query: { uploadId: state!.uploadId! } }),
+        ).catch(() => this.logger.warn('Could not abandon the unfinished upload.'));
+        if (journal) await journal.save(null);
+      }
       throw error;
     }
+  }
+
+  private async multipartUploads(connection: CloudBackupConnection, key: string): Promise<string[]> {
+    const response = await this.send(connection, { method: 'GET', query: { uploads: '', prefix: key } });
+    const xml = await response.text();
+    if (xmlValue(xml, 'IsTruncated') === 'true')
+      throw new CloudBackupStoreError('Too many incomplete uploads to reconcile safely.', null, null);
+    return xmlValues(xml, 'Upload')
+      .filter((entry) => xmlValue(entry, 'Key') === key)
+      .flatMap((entry) => xmlValue(entry, 'UploadId') ?? []);
+  }
+
+  private async multipartParts(connection: CloudBackupConnection, key: string, uploadId: string) {
+    const parts: Array<Part & { size: number }> = [];
+    let marker = '';
+    do {
+      const response = await this.send(connection, {
+        method: 'GET',
+        key,
+        query: { uploadId, ...(marker && { 'part-number-marker': marker }) },
+      });
+      const xml = await response.text();
+      parts.push(
+        ...xmlValues(xml, 'Part').map((part) => ({
+          partNumber: Number(xmlValue(part, 'PartNumber')),
+          size: Number(xmlValue(part, 'Size')),
+          etag: xmlValue(part, 'ETag') ?? '',
+        })),
+      );
+      const next = xmlValue(xml, 'IsTruncated') === 'true' ? xmlValue(xml, 'NextPartNumberMarker') : '';
+      if ((next === marker && next) || parts.length > 10_000)
+        throw new CloudBackupStoreError('Invalid multipart listing.', null, null);
+      marker = next ?? '';
+    } while (marker);
+    return parts;
   }
 
   /**
@@ -958,10 +1282,31 @@ export class CloudBackupStoreRepository {
    * `freshKeyUntil` passes.
    */
   private async send(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
+    let renewed = false;
     while (true) {
       try {
         return await this.sendWithRetries(connection, request);
       } catch (error) {
+        if (
+          connection.managedCredentials &&
+          error instanceof CloudBackupStoreError &&
+          ['ExpiredToken', 'InvalidToken', 'RequestExpired'].includes(error.code ?? '') &&
+          !renewed
+        ) {
+          renewed = true;
+          await connection.managedCredentials(error.accessKeyId ?? connection.accessKeyId);
+          continue;
+        }
+        if (
+          connection.managedCredentials &&
+          error instanceof CloudBackupStoreError &&
+          (error.status === 401 ||
+            error.status === 403 ||
+            (request.method === 'HEAD' && error.status === 400) ||
+            ['ExpiredToken', 'InvalidToken', 'RequestExpired'].includes(error.code ?? ''))
+        ) {
+          throw new ManagedBackupAuthorizationError('The storage provider refused this backup capability.');
+        }
         const waiting =
           error instanceof CloudBackupStoreError &&
           error.status === 403 &&
@@ -978,7 +1323,7 @@ export class CloudBackupStoreRepository {
 
   private async sendWithRetries(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
     let lastError: unknown;
-    for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
+    for (let attempt = 0; attempt <= (request.retry === false ? 0 : this.retryDelaysMs.length); attempt++) {
       if (attempt > 0) {
         await executionDelay(this.retryDelaysMs[attempt - 1]);
       }
@@ -986,6 +1331,7 @@ export class CloudBackupStoreRepository {
         return await this.sendOnce(connection, request);
       } catch (error) {
         assertExecutionActive();
+        if (error instanceof ManagedBackupAuthorizationError) throw error;
         lastError = error;
         const transient =
           !(error instanceof CloudBackupStoreError) ||
@@ -1023,6 +1369,9 @@ export class CloudBackupStoreRepository {
       .map(([name, value]) => `${name}=${value}`)
       .join('&');
 
+    const credentials = connection.managedCredentials ? await connection.managedCredentials() : connection;
+    // The pair kept for legacy callers is replaced together; each signed request captures a full session.
+    Object.assign(connection, credentials);
     const sent = signS3Request({
       method: request.method,
       host: endpoint.host,
@@ -1031,8 +1380,9 @@ export class CloudBackupStoreRepository {
       headers: request.headers ?? {},
       body: request.body,
       region: connection.region,
-      accessKeyId: connection.accessKeyId,
-      secretAccessKey: connection.secretAccessKey,
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
+      sessionToken: credentials.sessionToken,
       now: new Date(),
     });
 
@@ -1056,7 +1406,12 @@ export class CloudBackupStoreRepository {
     if (!response.ok) {
       const body = request.method === 'HEAD' ? '' : await response.text().catch(() => '');
       const code = providerErrorCode(xmlValue(body, 'Code'));
-      throw new CloudBackupStoreError(describeProviderError(response.status, code, action), response.status, code);
+      throw new CloudBackupStoreError(
+        describeProviderError(response.status, code, action),
+        response.status,
+        code,
+        credentials.accessKeyId,
+      );
     }
     return sanitizeProviderResponse(response, action);
   }

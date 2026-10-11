@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import z from 'zod';
 import type { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
-import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafCloudRepository, type FrameleafCloudRequest } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
   BackupAgentSettings,
   BackupGrantMetadata,
   BackupGrantResponse,
+  BackupOperation,
   BackupRunReport,
   BackupUsage,
   KeyEscrowBlob,
   KeyEscrowRecord,
   backupAgentSettingsSchema,
+  backupCapabilityRequestSchema,
   backupEndpoints,
   backupGrantMetadataSchema,
   backupGrantRequestSchema,
@@ -58,27 +60,44 @@ export class FrameleafCloudBackupRepository {
     }
   }
 
-  /** `POST /v2/backup/grant`: provision at the selected location or read the recorded binding. */
-  grant(target: ManagedBackupApi, locationId: string): Promise<BackupGrantMetadata | BackupGrantResponse> {
-    return this.cloud.requestJson(z.union([backupGrantResponseSchema, backupGrantMetadataSchema]), {
+  /** `POST /v4/backup/grant`: provision at the selected location or read the recorded binding. */
+  grant(
+    target: ManagedBackupApi,
+    locationId: string,
+    operation: BackupOperation,
+  ): Promise<BackupGrantMetadata | BackupGrantResponse> {
+    return this.issue(z.union([backupGrantResponseSchema, backupGrantMetadataSchema]), {
       method: 'POST',
       url: backupEndpoints(target).grant,
       dpop: target.token,
-      body: backupGrantRequestSchema.parse({ locationId }),
+      body: backupGrantRequestSchema.parse({ locationId, operation }),
     });
   }
 
   /**
-   * `POST /v2/backup/grant/rotate`: a new bucket-scoped key; the previous one is revoked before the answer
-   * comes back. Called at the start of every operation that touches the bucket.
+   * `POST /v4/backup/grant/rotate`: an independent temporary session for the same operation.
+   * Existing sessions and multipart state survive renewal.
    */
-  rotate(target: ManagedBackupApi): Promise<BackupGrantResponse> {
-    return this.cloud.requestJson(backupGrantResponseSchema, {
+  rotate(target: ManagedBackupApi, operation: BackupOperation): Promise<BackupGrantResponse> {
+    return this.issue(backupGrantResponseSchema, {
       method: 'POST',
       url: backupEndpoints(target).rotate,
       dpop: target.token,
-      body: {},
+      body: backupCapabilityRequestSchema.parse({ operation }),
     });
+  }
+
+  private async issue<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest): Promise<z.infer<T>> {
+    const { data, serverTime, elapsedMs } = await this.cloud.requestJsonTimed(schema, request);
+    if (data && typeof data === 'object' && 'capability' in data) {
+      const capability = (data as unknown as BackupGrantResponse).capability;
+      const lifetime = Date.parse(capability.expiresAt) - serverTime;
+      if (!Number.isFinite(lifetime) || lifetime > 901_000 || lifetime - elapsedMs <= 31_000) {
+        throw new Error('Frameleaf Cloud returned an unusable temporary backup lifetime.');
+      }
+      capability.refreshAfterSec = Math.min(capability.refreshAfterSec, Math.floor((lifetime - elapsedMs) / 1000) - 30);
+    }
+    return data;
   }
 
   usage(target: ManagedBackupApi): Promise<BackupUsage> {
