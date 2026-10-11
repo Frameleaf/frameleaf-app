@@ -56,7 +56,7 @@ Before the first request, encrypt the complete payload into owner-only durable l
 
 Retries and worker restarts reuse identical staged bytes. A lost part response can repeat the same part number and bytes. An expired multipart session starts another session for those same bytes. A lost completion is accepted only when the exact stored version's ciphertext digest matches staging. New encryption attempts use a fresh upload salt and fresh block nonces; they never reuse a saved upload's cryptographic context with different bytes.
 
-Manifests use conditional creation. Their transport receipts remain staged until the signed history and local manifest index are committed. A retry after that commit is idempotent. Storage errors preserve interrupted client upload state; they do not abort or restart the whole backup. Legacy upload behavior is unchanged.
+Manifests use conditional creation. Their transport receipts remain staged until the signed history and local manifest index are committed. Database receipts remain staged until the worker's database checkpoint is committed. A retry after completion reuses that receipt without another transfer. Storage errors preserve interrupted client upload state; they do not abort or restart the whole backup. Legacy upload behavior is unchanged.
 
 The worker checkpoints its manifest name/write version and database dump identity before upload. A resumed database phase keeps that dump and addresses the same staged ciphertext after a root rotation or flag change. A fresh run removes abandoned temporary dumps.
 

@@ -212,6 +212,22 @@ describe('client-encrypted storage and independent recovery', () => {
     expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
   });
 
+  it('retains a completed database receipt until its worker checkpoint commits', async () => {
+    const bytes = Buffer.from('completed database dump');
+    const key = keyFor(bytes, 'cloud-backup-frameleaf-db-backup-receipt.sql.gz');
+    const path = join(directory, 'database.sql.gz');
+    await writeFile(path, bytes);
+    const uploaded = await store.uploadFile(connection, key, path, legacy, sha(bytes));
+    expect(await readdir(connection.stagingDirectory!)).toHaveLength(2);
+    const requests = s3.requests.length;
+    await rm(path);
+    const restarted = new CloudBackupStoreRepository(logger);
+    await expect(restarted.uploadFile(connection, key, path, legacy, sha(bytes))).resolves.toEqual(uploaded);
+    expect(s3.requests).toHaveLength(requests);
+    await restarted.finishClientUpload(connection, key);
+    expect(await readdir(connection.stagingDirectory!)).toEqual([]);
+  });
+
   it('reads identical content under independent historical roots without mixing key versions', async () => {
     const bytes = Buffer.from('retained across rotation');
     const oldKey = keyFor(bytes);

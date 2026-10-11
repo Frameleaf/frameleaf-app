@@ -1067,7 +1067,7 @@ export class CloudBackupStoreRepository {
       };
       state.completed = { etag: result.etag, ...(result.versionId && { versionId: result.versionId }) };
       await this.saveUpload(stateFile, state);
-      if (context.kind !== 'manifest') await this.finishClientUpload(connection, key);
+      if (context.kind === 'object') await this.finishClientUpload(connection, key);
       return result;
     } finally {
       await ciphertext.close();
