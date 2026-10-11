@@ -122,6 +122,7 @@ async function open(
         : { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true },
     services: {} as StudioHostServices,
     onBack: vi.fn(),
+    onImportRetention: undefined as (() => void) | undefined,
     accessLost: false,
     session,
     saveStatus: state.status,
@@ -224,3 +225,17 @@ describe('project chrome authorization transitions', () => {
     expect(view.api.save).not.toHaveBeenCalled();
   });
 });
+
+it.each(['absent', 'missing-workers', 'ready'] as const)(
+  'offers explicit receipt navigation through the active owner callback with %s editor',
+  async (engine) => {
+    const view = await open(StudioProjectAccess.Owner, engine);
+    const onImportRetention = vi.fn();
+    await view.refresh({ onImportRetention });
+    await fireEvent.click(view.getByRole('button', { name: 'more' }));
+    await fireEvent.click(view.getByRole('menuitem', { name: 'Import receipts' }));
+    expect(onImportRetention).toHaveBeenCalledTimes(1);
+    await view.refresh({ accessLost: true });
+    expect(view.queryByRole('menuitem', { name: 'Import receipts' })).toBeNull();
+  },
+);

@@ -46,4 +46,17 @@ describe('Studio bundle export dialog', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+  it('discloses historical labels before confirming an export, even without media copies', () => {
+    render(StudioBundleExportDialog, {
+      open: true,
+      projectName: 'Lake trip',
+      historicalLabels: true,
+      onConfirm: vi.fn(),
+    });
+    expect(includeMedia()).not.toBeChecked();
+    expect(
+      screen.getByText(/historical processing and source labels, including in reference-only bundles/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/These labels grant no access to the original source/)).toBeInTheDocument();
+  });
 });
