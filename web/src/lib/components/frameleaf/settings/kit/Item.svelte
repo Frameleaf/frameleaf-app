@@ -2,7 +2,8 @@
   /**
    * One row of an ItemList: an icon tile, a name, a status, a measure and one action, always in
    * those columns so a list of different things still lines up. `off` greys the tile for something
-   * that is not in use; `quiet` does the same for a row that is only for reference.
+   * that is not in use; `quiet` does the same for a row that is only for reference. `media` takes
+   * the tile's place when the row is a person or a picture.
    */
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { Icon } from '@frameleaf/ui';
@@ -10,6 +11,7 @@
 
   let {
     icon,
+    media,
     quiet = false,
     off = false,
     name,
@@ -20,7 +22,8 @@
     measure,
     action,
   }: {
-    icon: string;
+    icon?: string;
+    media?: Snippet;
     quiet?: boolean;
     off?: boolean;
     name: string;
@@ -34,7 +37,13 @@
 </script>
 
 <li class="kit-item" class:is-off={off}>
-  <span class="tile" class:is-quiet={quiet || off} aria-hidden="true"><Icon {icon} size="22" /></span>
+  {#if media}
+    <span class="media">{@render media()}</span>
+  {:else}
+    <span class="tile" class:is-quiet={quiet || off} aria-hidden="true">
+      {#if icon}<Icon {icon} size="22" />{/if}
+    </span>
+  {/if}
   <div class="name">
     <strong>{name}</strong>
     {#if detail}<span>{detail}</span>{/if}
@@ -64,6 +73,12 @@
     color: var(--fl-accent);
     background: color-mix(in srgb, var(--fl-accent) 13%, transparent);
     border-radius: var(--fl-radius-card);
+  }
+  .media {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
   }
   .tile.is-quiet {
     color: var(--fl-muted);

@@ -25,6 +25,9 @@
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
+  import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
+  import ServerLanding from '$lib/components/frameleaf/settings/server/ServerLanding.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -43,6 +46,7 @@
     presentedAreaForSection,
     directoryGroup,
     isAreaAvailable,
+    isPlainArea,
     isScreenArea,
     resolveSettingsArea,
     resolveSettingsSection,
@@ -339,8 +343,8 @@
   ];
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
   // the overline names the area's group instead. Backup is one screen under one heading, whichever
-  // of its pages (or older addresses) is open.
-  const titled = $derived(area === 'backups' ? undefined : selected);
+  // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
+  const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
   // As in the template, the Users manager and the Job manager carry their own headings.
   const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
@@ -352,8 +356,9 @@
     if (area === 'utilities') {
       return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
     }
-    // Backup's pages are side by side in the page itself, as in the prototype.
-    if (['libraries', 'trash', 'backups'].includes(area)) {
+    // Backup's pages are side by side in the page itself, as in the prototype; a plain-words area
+    // lists its pages on its own landing page (FL-368).
+    if (['libraries', 'trash', 'backups'].includes(area) || isPlainArea(area)) {
       return [];
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
@@ -918,7 +923,7 @@
                 <div class="cc-settings-content">
                   <section
                     class="cc-section fl-continuous-corners"
-                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
+                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
                     {#if area === 'storage' && selected.key === 'trash'}
@@ -937,6 +942,12 @@
                     {/if}
                   </section>
                 </div>
+              {:else if area === 'notifications'}
+                <NotificationsLanding sections={areaSections} />
+              {:else if area === 'server'}
+                <ServerLanding sections={areaSections} />
+              {:else if area === 'preferences'}
+                <PreferencesLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />

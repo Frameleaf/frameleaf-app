@@ -1,25 +1,43 @@
 <script lang="ts">
   /**
-   * People & sharing (FL-71 CC-52/53/54): the prototype's sharing workspace
-   * (`design/frameleaf/template/src/SharingAccess.jsx:180-403`) — "Recognition groups" and "Partner
-   * libraries", each with its intro and primary action, a list of accounts, invitations, and titled
-   * Frameleaf dialogs — in place of the upstream Card/Button page, `PartnerSelectionModal`,
-   * `ClusterGroup*Modal` and generic `showDialog` confirms.
+   * People & sharing in plain words (FL-368), after the approved prototype
+   * (`settings-v2/server/sharing.jsx`): who you share with as one answer, partner libraries with a
+   * sentence each way, sharing face recognition with family, the account's sharing groups, and, for
+   * an administrator, whether people can find each other when sharing.
    *
-   * Everything it did is kept: recognition group members, leaving, invitations sent and received
-   * (review with the group's members, accept, decline, cancel) and re-running face recognition.
+   * Everything the page did before is kept: partners and how far the first copy has come (FL-326),
+   * recognition group members, leaving, invitations sent and received (review with the group's
+   * members, accept, decline, cancel) and starting face recognition again. That last action erases
+   * every name, so it sits behind "Advanced", says so where it sits, and needs a tick before it runs.
    *
-   * FL-326 (partner sharing v2): a partner receives their own copies, so the partner card lists what
-   * they receive and how far the first copy has come; the timeline and location toggles are gone.
+   * Left out because the app cannot do it yet: the partner timeline switch (gone since FL-326),
+   * removing someone else from a recognition group, and "suggest matching people in shared Spaces".
    */
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import RecipientGroupsDialog from '$lib/components/frameleaf/RecipientGroupsDialog.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { backfillProgress, PARTNER_SHARED_ITEMS } from '$lib/frameleaf/partner-sharing';
+  import { backfillProgress } from '$lib/frameleaf/partner-sharing';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+  import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import {
     acceptClusterGroupRequest,
@@ -32,15 +50,23 @@
     getClusterGroupUsers,
     getMyUser,
     getPartners,
+    getRecipientGroups,
     leaveClusterGroup,
     PartnerDirection,
     removePartner,
     searchUsers,
     type ClusterGroupRequestResponseDto,
     type PartnerResponseDto,
+    type RecipientGroupResponseDto,
     type UserResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import {
+    mdiAccountGroupOutline,
+    mdiAccountHeartOutline,
+    mdiAccountMultipleOutline,
+    mdiImageMultipleOutline,
+    mdiLinkVariant,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
@@ -82,6 +108,7 @@
   type DialogState =
     | { kind: 'invite'; userId: string }
     | { kind: 'partner-add'; userId: string }
+    | { kind: 'erase'; sure: boolean }
     | { kind: 'review'; request: ClusterGroupRequestResponseDto; members?: UserResponseDto[] };
   let dialog = $state<DialogState | null>(null);
   let dialogOpen = $state(false);
@@ -98,7 +125,71 @@
   const name = (user?: UserResponseDto, fallback = '') => user?.name ?? fallback;
 
   onMount(async () => {
-    await Promise.all([refresh(), refreshPartners(), loadAccounts()]);
+    await Promise.all([refresh(), refreshPartners(), loadAccounts(), loadGroups()]);
+  });
+
+  // The account's sharing groups: a shortcut for picking people, managed in their own dialog.
+  let groups = $state<RecipientGroupResponseDto[] | null>(null);
+  let groupsOpen = $state(false);
+  const loadGroups = async () => {
+    try {
+      groups = await getRecipientGroups();
+    } catch (error) {
+      handleError(error, $t('frameleaf_sharing_groups_error'));
+    }
+  };
+
+  // Whether people can find each other is a server setting: an administrator changes it here (it is
+  // saved with the settings bar); everyone else only meets its effect.
+  const settingsDraft = getSystemConfigDraft();
+  const findable = $derived(settingsDraft?.draft.server.publicUsers ?? serverConfigManager.value.publicUsers);
+  /** A member on a server where people cannot find each other has nobody to choose. */
+  const blocked = $derived(!authManager.user.isAdmin && !serverConfigManager.value.publicUsers);
+
+  const listFormat = $derived(new Intl.ListFormat($locale ?? 'en', { style: 'long', type: 'conjunction' }));
+  const list = (names: string[]) => listFormat.format(names);
+  const mine = $derived(partners.filter((partner) => partner.sharedByMe).map((partner) => partner.user.name));
+  const theirs = $derived(partners.filter((partner) => partner.sharedWithMe).map((partner) => partner.user.name));
+  const family = $derived(members.filter((user) => user.id !== me));
+  const invitation = $derived(receivedRequests[0]);
+
+  const hero = $derived.by(() => {
+    if (invitation) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiAccountHeartOutline,
+        title: $t('frameleaf_sharing_hero_invited'),
+        body: $t('frameleaf_sharing_hero_invited_body'),
+      };
+    }
+    if (mine.length + theirs.length + family.length === 0) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiAccountMultipleOutline,
+        title: $t('frameleaf_sharing_hero_none'),
+        body: $t('frameleaf_sharing_hero_none_body'),
+      };
+    }
+    const parts = [
+      mine.length > 0 && theirs.length > 0
+        ? $t('frameleaf_sharing_hero_theirs_too', { values: { count: theirs.length, names: list(theirs) } })
+        : '',
+      mine.length === 0 && theirs.length > 0 ? $t('frameleaf_sharing_hero_not_mine') : '',
+      family.length > 0
+        ? $t('frameleaf_sharing_hero_family', { values: { names: list(family.map((user) => user.name)) } })
+        : '',
+    ];
+    return {
+      tone: 'good' as const,
+      icon: mdiAccountMultipleOutline,
+      title:
+        mine.length > 0
+          ? $t('frameleaf_sharing_hero_mine', { values: { names: list(mine) } })
+          : theirs.length > 0
+            ? $t('frameleaf_sharing_hero_theirs', { values: { count: theirs.length, names: list(theirs) } })
+            : $t('frameleaf_sharing_hero_family_only', { values: { names: list(family.map((user) => user.name)) } }),
+      body: parts.filter(Boolean).join(' '),
+    };
   });
 
   const loadAccounts = async () => {
@@ -196,6 +287,12 @@
         'errors.unable_to_add_partners',
       );
       await refreshPartners();
+    } else if (current.kind === 'erase') {
+      ok = await run(
+        () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
+        $t('frameleaf_sharing_erase_started'),
+        'errors.something_went_wrong',
+      );
     } else {
       ok = await run(
         () => acceptClusterGroupRequest({ id: current.request.id }),
@@ -228,8 +325,8 @@
 
   const leave = async () => {
     const confirmed = await confirmFrameleaf({
-      title: $t('frameleaf_people_sharing.leave_title'),
-      prompt: $t('leave_group_description'),
+      title: $t('frameleaf_sharing_leave_title'),
+      prompt: $t('frameleaf_sharing_leave_prompt'),
       confirmText: $t('frameleaf_people_sharing.leave_action'),
       danger: true,
     });
@@ -243,25 +340,9 @@
     }
   };
 
-  const rerunRecognition = async () => {
-    const confirmed = await confirmFrameleaf({
-      title: $t('frameleaf_people_sharing.rerun_title'),
-      prompt: $t('cluster_group_facial_recognition_prompt'),
-      confirmText: $t('frameleaf_people_sharing.rerun_action'),
-      danger: true,
-    });
-    if (confirmed) {
-      await run(
-        () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
-        $t('frameleaf_people_sharing.rerun_started'),
-        'errors.something_went_wrong',
-      );
-    }
-  };
-
   const stopSharing = async (partner: PartnerSharing) => {
     const confirmed = await confirmFrameleaf({
-      title: $t('frameleaf_people_sharing.stop_title'),
+      title: $t('frameleaf_sharing_stop_title', { values: { name: partner.user.name } }),
       prompt: $t('frameleaf_people_sharing.stop_prompt', { values: { name: partner.user.name } }),
       confirmText: $t('frameleaf_people_sharing.stop_action'),
       danger: true,
@@ -282,10 +363,20 @@
 
   const dialogTitle = $derived(
     dialog?.kind === 'invite'
-      ? $t('frameleaf_people_sharing.invite_title')
+      ? $t('frameleaf_sharing_invite_title')
       : dialog?.kind === 'partner-add'
-        ? $t('frameleaf_people_sharing.partner_add_title')
-        : $t('frameleaf_people_sharing.review_title'),
+        ? $t('frameleaf_sharing_partner_add_title')
+        : dialog?.kind === 'erase'
+          ? $t('frameleaf_sharing_erase_title')
+          : $t('frameleaf_sharing_review_title'),
+  );
+  /** Whose named people starting again erases: everyone in the recognition group. */
+  const eraseWho = $derived(
+    family.length > 0
+      ? $t('frameleaf_sharing_erase_who_group', {
+          values: { names: list([$t('frameleaf_sharing_you'), ...family.map((user) => user.name)]) },
+        })
+      : $t('frameleaf_sharing_erase_who_alone'),
   );
   const selectId = $props.id();
   const count = (value: number) => value.toLocaleString($locale ?? 'en-US');
@@ -301,134 +392,72 @@
           : $t('frameleaf_partner_sharing.progress_queued');
 </script>
 
-<div class="cc-sharing-workspace">
-  {#if notice}
-    <p role="status" class="cc-notice">{notice}</p>
-  {/if}
+<KitPage>
+  <Said message={notice} onDismiss={() => (notice = '')} />
 
-  <section aria-labelledby="{selectId}-groups">
-    <div class="cc-sharing-intro">
-      <div>
-        <h3 id="{selectId}-groups">{$t('frameleaf_people_sharing.groups_title')}</h3>
-        <p>{$t('frameleaf_people_sharing.groups_description')}</p>
-      </div>
-      <button
-        type="button"
-        class="button primary"
-        disabled={inviteChoices.length === 0}
-        onclick={() => openDialog({ kind: 'invite', userId: inviteChoices[0]?.id ?? '' })}
-      >
-        {$t('frameleaf_people_sharing.invite')}
-      </button>
-    </div>
-    <div class="cc-sharing-list">
-      {#each members as user (user.id)}
-        <article>
-          <UserAvatar {user} size="md" noTitle />
-          <div>
-            <strong>{user.name}</strong>
-            <p>
-              {user.id === me ? $t('frameleaf_people_sharing.your_account') : $t('frameleaf_people_sharing.member')}
-              · {user.email}
-            </p>
-          </div>
-        </article>
-      {/each}
-    </div>
-    <div class="cc-section-action">
-      <button type="button" class="button" disabled={working} onclick={rerunRecognition}>
-        {$t('frameleaf_people_sharing.rerun_action')}
-      </button>
-      <button type="button" class="button" disabled={!canLeave || working} onclick={leave}>
-        {$t('frameleaf_people_sharing.leave_action')}
-      </button>
-    </div>
-
-    <h3>{$t('frameleaf_people_sharing.invitations')}</h3>
-    {#each receivedRequests as request (request.id)}
-      <div class="cc-sharing-request">
-        <span>
-          <strong>{$t('frameleaf_people_sharing.invitation_received')}</strong>
-          <small>{$t('request_received_description')}</small>
-        </span>
-        <button type="button" class="button" onclick={() => reviewInvitation(request)}>
-          {$t('frameleaf_people_sharing.review_action')}
-        </button>
-        <button
-          type="button"
-          class="button"
+  <Hero
+    tone={hero.tone}
+    icon={hero.icon}
+    title={hero.title}
+    body={hero.body}
+    label={$t('frameleaf_sharing_hero_label')}
+  >
+    {#snippet actions()}
+      {#if invitation}
+        <Button variant="primary" onclick={() => reviewInvitation(invitation)}>
+          {$t('frameleaf_sharing_review_action')}
+        </Button>
+        <Button
           disabled={working}
-          onclick={() => deleteRequest(request, $t('frameleaf_people_sharing.invitation_declined'))}
+          onclick={() => deleteRequest(invitation, $t('frameleaf_people_sharing.invitation_declined'))}
         >
           {$t('frameleaf_people_sharing.decline')}
-        </button>
-      </div>
-    {/each}
-    {#each sentRequests as request (request.id)}
-      <div class="cc-sharing-request">
-        <span>
-          <strong>{name(byId[request.userId], request.userId)}</strong>
-          <small>{$t('frameleaf_people_sharing.awaiting')}</small>
-        </span>
-        <button
-          type="button"
-          class="button"
-          disabled={working}
-          onclick={() => deleteRequest(request, $t('frameleaf_people_sharing.invitation_cancelled'))}
-        >
-          {$t('frameleaf_people_sharing.cancel_invitation')}
-        </button>
-      </div>
-    {/each}
-    {#if receivedRequests.length === 0 && sentRequests.length === 0}
-      <p class="cc-subtle">{$t('frameleaf_people_sharing.no_invitations')}</p>
-    {/if}
-  </section>
+        </Button>
+      {/if}
+    {/snippet}
+  </Hero>
 
-  <section aria-labelledby="{selectId}-partners">
-    <div class="cc-sharing-intro">
-      <div>
-        <h3 id="{selectId}-partners">{$t('frameleaf_people_sharing.partners_title')}</h3>
-        <p>{$t('frameleaf_people_sharing.partners_description')}</p>
-      </div>
-      <button
-        type="button"
-        class="button primary"
-        disabled={partnerChoices.length === 0}
+  {#if blocked}
+    <Notice tone="warn" title={$t('frameleaf_sharing_blocked_title')}>{$t('frameleaf_sharing_blocked_body')}</Notice>
+  {/if}
+
+  <Section
+    title={$t('frameleaf_people_sharing.partners_title')}
+    description={$t('frameleaf_sharing_partners_description')}
+  >
+    {#snippet action()}
+      <Button
+        disabled={blocked || partnerChoices.length === 0}
         onclick={() => openDialog({ kind: 'partner-add', userId: partnerChoices[0]?.id ?? '' })}
       >
-        {$t('add_partner')}
-      </button>
-    </div>
+        {$t('frameleaf_sharing_partner_add')}
+      </Button>
+    {/snippet}
     {#if accountsStatus === 'error'}
-      <InlineError compact message={$t('frameleaf_people_sharing.accounts_error')} onRetry={loadAccounts} />
+      <div class="pad">
+        <InlineError compact message={$t('frameleaf_people_sharing.accounts_error')} onRetry={loadAccounts} />
+      </div>
     {/if}
-    <div class="cc-sharing-list">
-      {#each partners as partner (partner.user.id)}
-        <article>
-          <UserAvatar user={partner.user} size="md" noTitle />
-          <div>
-            <strong>{partner.user.name}</strong>
-            <p>
-              {partner.sharedByMe
-                ? $t('frameleaf_people_sharing.can_see_yours')
-                : $t('frameleaf_people_sharing.not_sharing_with')}
-              ·
-              {partner.sharedWithMe
-                ? $t('frameleaf_people_sharing.shares_with_you')
-                : $t('frameleaf_people_sharing.does_not_share')}
-            </p>
-            {#if partner.sharedByMe}
-              <ul class="cc-partner-shared" aria-label={$t('frameleaf_partner_sharing.receives')}>
-                {#each PARTNER_SHARED_ITEMS as item (item.id)}
-                  <li>
-                    <Icon icon={item.icon} size="15" aria-hidden />{$t(`frameleaf_partner_sharing.shared_${item.id}`)}
-                  </li>
-                {/each}
-              </ul>
-              {@const progress = backfillProgress(partner.backfill)}
+    {#if partners.length > 0}
+      <ItemList>
+        {#each partners as partner (partner.user.id)}
+          {@const name = partner.user.name}
+          {@const progress = partner.sharedByMe ? backfillProgress(partner.backfill) : undefined}
+          <Item
+            {name}
+            detail={partner.user.email}
+            tone={partner.sharedByMe ? 'good' : 'off'}
+            status={partner.sharedByMe
+              ? $t('frameleaf_sharing_partner_mine', { values: { name } })
+              : $t('frameleaf_sharing_partner_not_mine', { values: { name } })}
+            note={partner.sharedWithMe
+              ? $t('frameleaf_sharing_partner_theirs', { values: { name } })
+              : $t('frameleaf_sharing_partner_not_theirs', { values: { name } })}
+          >
+            {#snippet media()}<UserAvatar user={partner.user} size="md" noTitle />{/snippet}
+            {#snippet measure()}
               {#if progress}
-                <div class="cc-partner-progress" data-state={progress.state}>
+                <div class="progress" data-state={progress.state}>
                   <div
                     role="progressbar"
                     aria-label={$t('frameleaf_partner_sharing.progress_label')}
@@ -441,43 +470,219 @@
                   <small>{progressLabel(progress)}</small>
                 </div>
               {/if}
-            {/if}
-          </div>
-          {#if partner.sharedByMe}
-            <button type="button" class="button" disabled={working} onclick={() => stopSharing(partner)}>
-              {$t('frameleaf_people_sharing.stop_action')}
-            </button>
-          {/if}
-        </article>
-      {:else}
-        <p class="cc-subtle">{$t('frameleaf_people_sharing.no_partners')}</p>
+            {/snippet}
+            {#snippet action()}
+              {#if partner.sharedByMe}
+                <Button
+                  disabled={working}
+                  label={$t('frameleaf_sharing_partner_stop_label', { values: { name } })}
+                  onclick={() => stopSharing(partner)}
+                >
+                  {$t('frameleaf_people_sharing.stop_action')}
+                </Button>
+              {:else}
+                <Button
+                  variant="primary"
+                  disabled={working || blocked}
+                  label={$t('frameleaf_sharing_partner_share_label', { values: { name } })}
+                  onclick={() => openDialog({ kind: 'partner-add', userId: partner.user.id })}
+                >
+                  {$t('frameleaf_sharing_partner_share')}
+                </Button>
+              {/if}
+            {/snippet}
+          </Item>
+        {/each}
+      </ItemList>
+    {:else}
+      <p class="hint">{$t('frameleaf_sharing_partners_empty')}</p>
+    {/if}
+  </Section>
+
+  <Section title={$t('frameleaf_sharing_family_title')} description={$t('frameleaf_sharing_family_description')}>
+    {#snippet action()}
+      <Button
+        disabled={blocked || inviteChoices.length === 0}
+        onclick={() => openDialog({ kind: 'invite', userId: inviteChoices[0]?.id ?? '' })}
+      >
+        {$t('frameleaf_sharing_invite')}
+      </Button>
+    {/snippet}
+    <ItemList>
+      {#each members as user (user.id)}
+        {#if user.id === me}
+          <Item
+            name={$t('frameleaf_sharing_member_you', { values: { name: user.name } })}
+            detail={user.email}
+            tone={family.length > 0 ? 'good' : 'off'}
+            status={family.length > 0 ? $t('frameleaf_sharing_member_sharing') : $t('frameleaf_sharing_member_alone')}
+            note={family.length > 0
+              ? $t('frameleaf_sharing_member_with', { values: { names: list(family.map((item) => item.name)) } })
+              : $t('frameleaf_sharing_member_alone_note')}
+          >
+            {#snippet media()}<UserAvatar {user} size="md" noTitle />{/snippet}
+            {#snippet action()}
+              {#if canLeave}
+                <Button disabled={working} onclick={leave}>{$t('frameleaf_sharing_leave')}</Button>
+              {/if}
+            {/snippet}
+          </Item>
+        {:else}
+          <Item
+            name={user.name}
+            detail={user.email}
+            tone="good"
+            status={$t('frameleaf_sharing_member_same')}
+            note={$t('frameleaf_sharing_member_no_photos')}
+          >
+            {#snippet media()}<UserAvatar {user} size="md" noTitle />{/snippet}
+          </Item>
+        {/if}
       {/each}
-    </div>
-  </section>
-</div>
+      {#each sentRequests as request (request.id)}
+        {@const invited = byId[request.userId]}
+        <Item
+          icon={mdiAccountHeartOutline}
+          quiet
+          name={name(invited, $t('frameleaf_sharing_invited_someone'))}
+          detail={invited?.email}
+          status={$t('frameleaf_sharing_invited_waiting')}
+          note={$t('frameleaf_sharing_invited_note')}
+        >
+          {#snippet action()}
+            <Button
+              disabled={working}
+              onclick={() => deleteRequest(request, $t('frameleaf_people_sharing.invitation_cancelled'))}
+            >
+              {$t('frameleaf_people_sharing.cancel_invitation')}
+            </Button>
+          {/snippet}
+        </Item>
+      {/each}
+    </ItemList>
+    <Advanced>
+      <Row
+        label={$t('frameleaf_sharing_erase_label')}
+        help={$t('frameleaf_sharing_erase_help', { values: { who: eraseWho } })}
+      >
+        <Button
+          variant="danger"
+          disabled={working || !clusterGroupId}
+          onclick={() => openDialog({ kind: 'erase', sure: false })}
+        >
+          {$t('frameleaf_sharing_erase_open')}
+        </Button>
+      </Row>
+    </Advanced>
+  </Section>
+
+  <Section title={$t('frameleaf_sharing_groups_title')} description={$t('frameleaf_sharing_groups_description')}>
+    {#snippet action()}
+      <Button disabled={blocked || groups === null} onclick={() => (groupsOpen = true)}>
+        {$t('frameleaf_sharing_groups_manage')}
+      </Button>
+    {/snippet}
+    {#if groups && groups.length > 0}
+      <ItemList>
+        {#each groups as group (group.id)}
+          <Item
+            icon={mdiAccountGroupOutline}
+            quiet
+            name={group.name}
+            detail={list(group.users.map((user) => user.name))}
+            status={$t('frameleaf_sharing_groups_count', { values: { count: group.users.length } })}
+          />
+        {/each}
+      </ItemList>
+    {:else if groups}
+      <p class="hint">{$t('frameleaf_sharing_groups_empty')}</p>
+    {/if}
+  </Section>
+
+  <Section title={$t('frameleaf_sharing_also_title')}>
+    <Links
+      stacked
+      rows={[
+        {
+          icon: mdiImageMultipleOutline,
+          title: $t('frameleaf_sharing_also_spaces'),
+          body: $t('frameleaf_sharing_also_spaces_body'),
+          href: Route.sharing(),
+        },
+        {
+          icon: mdiLinkVariant,
+          title: $t('frameleaf_sharing_also_links'),
+          body: $t('frameleaf_sharing_also_links_body'),
+          href: Route.sharedLinks(),
+        },
+      ]}
+    />
+  </Section>
+
+  {#if settingsDraft}
+    <Section title={$t('frameleaf_sharing_server_title')} description={$t('frameleaf_sharing_server_description')}>
+      <Row
+        label={$t('frameleaf_sharing_find_label')}
+        help={findable ? $t('frameleaf_sharing_find_on') : $t('frameleaf_sharing_find_off')}
+        helpId="{selectId}-find"
+      >
+        <Switch
+          label={$t('frameleaf_sharing_find_label')}
+          checked={findable}
+          held={featureFlagsManager.value.configFile}
+          describedBy="{selectId}-find"
+          onChange={(value) => (settingsDraft.draft.server.publicUsers = value)}
+        />
+      </Row>
+    </Section>
+  {/if}
+</KitPage>
+
+{#if groups}
+  <RecipientGroupsDialog
+    bind:open={groupsOpen}
+    {groups}
+    people={accounts.filter((user) => user.id !== me)}
+    onChanged={loadGroups}
+  />
+{/if}
 
 {#if dialog}
   <Dialog title={dialogTitle} closeLabel={$t('close')} bind:open={dialogOpen}>
     {#if dialog.kind === 'invite' || dialog.kind === 'partner-add'}
-      {@const choices = dialog.kind === 'invite' ? inviteChoices : partnerChoices}
+      {@const choices =
+        dialog.kind === 'invite'
+          ? inviteChoices
+          : accounts.filter((user) => user.id !== me && !partners.some((p) => p.user.id === user.id && p.sharedByMe))}
       <label class="field" for={selectId}>
-        {$t('frameleaf_people_sharing.account')}
+        {$t('frameleaf_sharing_choose')}
         <select id={selectId} bind:value={dialog.userId} data-initial-focus>
           {#each choices as user (user.id)}
             <option value={user.id}>{user.name} · {user.email}</option>
           {/each}
         </select>
       </label>
-      <p>
+      <p class="hint">
         {dialog.kind === 'partner-add'
-          ? $t('frameleaf_people_sharing.partner_add_body', { values: { name: name(byId[dialog.userId]) } })
-          : $t('frameleaf_people_sharing.invite_body')}
+          ? $t('frameleaf_sharing_partner_add_body', { values: { name: name(byId[dialog.userId]) } })
+          : $t('frameleaf_sharing_invite_body')}
       </p>
+    {:else if dialog.kind === 'erase'}
+      <Notice tone="warn" title={$t('frameleaf_sharing_erase_warning_title', { values: { who: eraseWho } })}>
+        {$t('frameleaf_sharing_erase_warning_body')}
+      </Notice>
+      <label class="pick">
+        <input type="checkbox" bind:checked={dialog.sure} />
+        <span>
+          <strong>{$t('frameleaf_sharing_erase_sure')}</strong>
+          <small>{$t('frameleaf_sharing_erase_sure_note')}</small>
+        </span>
+      </label>
     {:else if dialog.kind === 'review'}
       {#if dialog.members}
-        <p>
-          {$t('frameleaf_people_sharing.review_body', {
-            values: { members: dialog.members.map((user) => user.name).join(', ') },
+        <p class="hint">
+          {$t('frameleaf_sharing_review_body', {
+            values: { members: list(dialog.members.map((user) => user.name)) },
           })}
         </p>
       {:else}
@@ -488,140 +693,105 @@
       {/if}
     {/if}
     {#snippet actions()}
-      <button type="button" class="button" onclick={() => (dialogOpen = false)}>{$t('cancel')}</button>
-      <button
-        type="button"
-        class="button primary"
-        disabled={working || (dialog?.kind !== 'review' && !dialog?.userId)}
-        onclick={confirmDialog}
-      >
-        {dialog?.kind === 'review' ? $t('frameleaf_people_sharing.accept') : $t('confirm')}
-      </button>
+      {#if dialog?.kind === 'erase'}
+        <Button initialFocus onclick={() => (dialogOpen = false)}>{$t('frameleaf_sharing_erase_keep')}</Button>
+        <Button variant="danger" disabled={working || !dialog.sure} onclick={confirmDialog}>
+          {$t('frameleaf_sharing_erase_confirm')}
+        </Button>
+      {:else}
+        <Button onclick={() => (dialogOpen = false)}>{$t('cancel')}</Button>
+        <Button
+          variant="primary"
+          disabled={working || (dialog?.kind !== 'review' && !dialog?.userId)}
+          onclick={confirmDialog}
+        >
+          {dialog?.kind === 'review'
+            ? $t('frameleaf_people_sharing.accept')
+            : dialog?.kind === 'partner-add'
+              ? $t('frameleaf_sharing_partner_add_confirm', { values: { name: name(byId[dialog.userId]) } })
+              : $t('frameleaf_sharing_invite_confirm')}
+        </Button>
+      {/if}
     {/snippet}
   </Dialog>
 {/if}
 
 <style>
-  /* design/frameleaf/template/src/command-center.css `.cc-sharing-*`. */
-  .cc-sharing-workspace {
-    padding-bottom: 20px;
-  }
-  h3 {
-    font-size: 14px;
-    margin: 12px 0;
-  }
-  .cc-sharing-intro,
-  .cc-sharing-list article,
-  .cc-sharing-request {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 0;
-  }
-  .cc-sharing-intro p,
-  .cc-sharing-list p {
+  .hint {
+    max-width: 640px;
     margin: 0;
-    font-size: 12px;
+    padding-bottom: var(--fl-space-5);
     color: var(--fl-muted);
-    line-height: 1.6;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
   }
-  .cc-sharing-intro > div,
-  .cc-sharing-list article > div,
-  .cc-sharing-request > span {
-    flex: 1;
-    min-width: 0;
+  .pad {
+    padding-bottom: var(--fl-space-4);
   }
-  .cc-sharing-list article,
-  .cc-sharing-request {
-    border-top: 1px solid var(--fl-border);
-  }
-  .cc-sharing-list strong {
-    font-size: 13px;
-  }
-  .cc-sharing-request small {
-    display: block;
-    color: var(--fl-muted);
-    margin-top: 6px;
-  }
-  .cc-section-action {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 8px 0;
-  }
-  /* command-center.css .cc-partner-shared / .cc-partner-progress (FL-326) */
-  .cc-partner-shared {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 14px;
-    margin: 8px 0 0;
-    padding: 0;
-    list-style: none;
-    font-size: 11px;
-    color: var(--fl-muted);
-  }
-  .cc-partner-shared li {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .cc-partner-progress {
+  /* How far the first copy into a partner's library has come (FL-326). */
+  .progress {
     display: grid;
-    gap: 5px;
-    margin-top: 10px;
+    gap: var(--fl-space-1);
     max-width: 360px;
   }
-  .cc-partner-progress [role='progressbar'] {
-    height: 4px;
-    border-radius: 2px;
-    background: var(--fl-border);
+  .progress [role='progressbar'] {
+    height: 6px;
     overflow: hidden;
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-pill);
   }
-  .cc-partner-progress [role='progressbar'] span {
+  .progress [role='progressbar'] span {
     display: block;
     height: 100%;
     background: var(--fl-accent);
   }
-  .cc-partner-progress[data-state='stopped'] [role='progressbar'] span {
+  .progress[data-state='stopped'] [role='progressbar'] span {
     background: var(--fl-muted);
   }
-  .cc-partner-progress small {
-    font-size: 11px;
+  .progress small {
     color: var(--fl-muted);
-  }
-  .cc-subtle {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .cc-notice {
-    margin: 0 0 8px;
-    color: var(--fl-accent);
     font-size: var(--fl-font-small);
   }
   .field {
     display: grid;
-    gap: 6px;
-    margin-bottom: 12px;
-    font-size: var(--fl-font-small);
+    gap: var(--fl-space-2);
+    margin-bottom: var(--fl-space-3);
     color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .field select {
-    min-height: 34px;
-    background: var(--fl-raised);
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
+    font: inherit;
+    background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    padding: 6px 9px;
-    font: inherit;
   }
-  @media (max-width: 700px) {
-    .cc-sharing-intro,
-    .cc-sharing-request,
-    .cc-sharing-list article {
-      flex-wrap: wrap;
-    }
-    .cc-sharing-list article > div {
-      min-width: 70%;
-    }
+  .pick {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--fl-space-3);
+    margin-top: var(--fl-space-4);
+    cursor: pointer;
+  }
+  .pick input {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    accent-color: var(--fl-accent);
+  }
+  .pick strong {
+    display: block;
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  .pick small {
+    display: block;
+    margin-top: var(--fl-space-1);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.45;
   }
 </style>
