@@ -26,12 +26,24 @@ const labels = {
   defaultsRestored: 'Defaults restored to your draft. Review changes to save them.', // frameleaf_settings_draft_notice_defaults
   importedOne: '1 setting from the file is in your draft. Review changes to save it.', // frameleaf_settings_draft_notice_imported
   conflict: 'Settings were changed elsewhere since you opened this page.', // frameleaf_settings_draft_conflict (prefix)
-  exportSettings: 'Export settings', // frameleaf_cc_config_export
-  importSettings: 'Import settings', // frameleaf_cc_config_import
+  // FL-368 Server & updates › Copy settings.
+  exportSettings: 'Save to a file', // frameleaf_srvadv_copy_save_action
+  importSettings: 'Load from a file', // frameleaf_srvadv_copy_load_action
   emailTemplates: 'Email Templates', // admin.template_email_settings
   preview: 'Preview', // admin.template_email_preview
-  checkFrequency: 'Check frequency', // frameleaf_versions_frequency_title
+  // FL-368 Server & updates › Updates: the switch and the frequency are one choice.
+  lookForUpdates: 'Look for updates', // frameleaf_server_updates_look
+  never: 'Never', // frameleaf_server_updates_look_never
+  daily: 'Every day', // frameleaf_server_updates_look_daily
+  weekly: 'Every week', // frameleaf_server_updates_look_weekly
+  updates: 'Updates', // frameleaf_cc_section_versions
 };
+
+const frequencyLabel = { [VersionCheckFrequency.Daily]: labels.daily, [VersionCheckFrequency.Weekly]: labels.weekly };
+
+/** One choice of "Look for updates" on the Updates page. */
+const lookChoice = (page: Page, name: string) =>
+  page.getByRole('group', { name: labels.lookForUpdates }).getByRole('button', { name, exact: true });
 
 const readConfig = (admin: LoginResponseDto) => getConfig({ headers: asBearerAuth(admin.accessToken) });
 
@@ -204,17 +216,25 @@ test.describe('Command Center settings', () => {
     await expect.poll(() => savedTrashDays(admin)).toBe(days);
   });
 
-  // FL-71 (owner decision 2026-09-27): "Check frequency" is a real setting with the prototype's
-  // Daily and Weekly, saved through the settings bar and carried by export and import.
+  // FL-71 (owner decision 2026-09-27): how often to look is a real setting, saved through the
+  // settings bar and carried by export and import. FL-368 shows it as "Look for updates:
+  // Never / Every day / Every week".
   test('saves the update-check frequency, exports it and imports it back', async ({ page }) => {
     const before = await readConfig(admin);
     expect(before.newVersionCheck.frequency).toBe('daily');
 
     await page.goto(versionCheckUrl);
-    const select = page.getByRole('combobox', { name: labels.checkFrequency });
-    await expect(select).toHaveValue('daily');
-    await expect(select.locator('option')).toHaveText(['Daily', 'Weekly']);
-    await select.selectOption('weekly');
+    // A server that is not looking shows "Never", whatever frequency is saved.
+    await expect(lookChoice(page, before.newVersionCheck.enabled ? labels.daily : labels.never)).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByRole('group', { name: labels.lookForUpdates }).getByRole('button')).toHaveText([
+      labels.never,
+      labels.daily,
+      labels.weekly,
+    ]);
+    await lookChoice(page, labels.weekly).click();
     const unsaved = await readConfig(admin);
     expect(unsaved.newVersionCheck.frequency).toBe('daily');
 
@@ -226,7 +246,7 @@ test.describe('Command Center settings', () => {
       })
       .toBe('weekly');
     await page.reload();
-    await expect(page.getByRole('combobox', { name: labels.checkFrequency })).toHaveValue('weekly');
+    await expect(lookChoice(page, labels.weekly)).toHaveAttribute('aria-pressed', 'true');
 
     await page.goto(configurationUrl);
     const [download] = await Promise.all([
@@ -322,9 +342,10 @@ test.describe('Command Center settings', () => {
     await page.goto(trashUrl);
     await page.getByLabel(labels.trashDays).fill(String(draftDays));
     const navigation = page.getByRole('navigation', { name: 'Settings navigation' });
+    // Server & updates opens on its own landing page (FL-368); its pages are listed there.
     await navigation.getByRole('button', { name: 'Server & updates' }).click();
-    await navigation.getByRole('button', { name: 'Versions & compatibility' }).click();
-    await page.getByRole('combobox', { name: labels.checkFrequency }).selectOption(frequency);
+    await page.getByRole('button', { name: labels.updates, exact: true }).click();
+    await lookChoice(page, frequencyLabel[frequency]).click();
     const bar = page.getByRole('region', { name: labels.bar });
     await expect(bar).toBeVisible();
 
@@ -349,8 +370,10 @@ test.describe('Command Center settings', () => {
     }
     page.once('dialog', (dialog) => dialog.accept());
     await page.reload();
-    await expect(page.getByText('Recovered 2 unsaved changes from before the page reloaded.')).toBeVisible();
-    await expect(page.getByRole('combobox', { name: labels.checkFrequency })).toHaveValue(frequency);
+    // Trash days and the frequency; choosing a frequency on a server that was not looking also turns looking on.
+    const pending = before.newVersionCheck.enabled ? 2 : 3;
+    await expect(page.getByText(`Recovered ${pending} unsaved changes from before the page reloaded.`)).toBeVisible();
+    await expect(lookChoice(page, frequencyLabel[frequency])).toHaveAttribute('aria-pressed', 'true');
     const conflict = page.getByRole('alert').filter({ hasText: labels.conflict });
     await expect(conflict).toBeVisible();
     await expect(conflict.getByText(`Saved now: ${otherDays}`)).toBeVisible();
