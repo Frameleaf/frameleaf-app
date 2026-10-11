@@ -5,7 +5,8 @@ const fields = {
   version: z.literal(1),
   family: z.literal('anime4k'),
   evidence: z.literal('client-reported'),
-  variant: z.enum(['animation', 'liveAction', 'threeD']),
+  // Literal union keeps the canonical SDK structurally assignable to the pure host contract.
+  variant: z.union([z.literal('animation'), z.literal('liveAction'), z.literal('threeD')]),
   source: z.strictObject({
     namespace: z.literal('freecut-media'),
     id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),

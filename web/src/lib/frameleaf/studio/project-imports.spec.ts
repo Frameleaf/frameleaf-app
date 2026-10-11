@@ -1,5 +1,13 @@
-import { StudioProjectImportKind } from '@frameleaf/sdk';
-import { isStudioBinImport, toStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  importStudioProjectFile: vi.fn(),
+}));
+import { importStudioProjectFile, StudioProjectImportKind } from '@frameleaf/sdk';
+import {
+  isStudioBinImport,
+  toStudioProjectImport,
+  uploadStudioProjectImport,
+} from '$lib/frameleaf/studio/project-imports';
 
 describe('Studio project imports (FL-103 / FL-105)', () => {
   const dto = {
@@ -40,5 +48,74 @@ describe('Studio project imports (FL-103 / FL-105)', () => {
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' })).toBe(
       false,
     );
+  });
+});
+
+it('preserves canonical retained provenance and omits it on legacy imports', () => {
+  const processingProvenance = {
+    version: 1 as const,
+    family: 'anime4k' as const,
+    evidence: 'client-reported' as const,
+    variant: 'animation' as const,
+    source: { namespace: 'freecut-media' as const, id: 'take', projectId: '0198a1c2-0000-7000-8000-0000000000aa' },
+    input: { width: 640, height: 360 },
+    output: { width: 1280, height: 720, fps: 30, frameCount: 30, codec: 'avc1' },
+    outputSha256: 'ab'.repeat(32),
+  };
+  const dto = {
+    id: 'take',
+    kind: StudioProjectImportKind.Video,
+    contentType: 'video/mp4',
+    fileName: 'out.mp4',
+    sizeBytes: 4,
+    checksum: processingProvenance.outputSha256,
+    externalReferences: null,
+    createdAt: '2026-10-11T00:00:00Z',
+  };
+  expect(toStudioProjectImport('p', { ...dto, processingProvenance }).processingProvenance).toEqual(
+    processingProvenance,
+  );
+  expect(Object.hasOwn(toStudioProjectImport('p', dto), 'processingProvenance')).toBe(false);
+});
+
+it('encodes host upload provenance exactly once and keeps legacy fields absent', async () => {
+  const provenance = {
+    version: 1 as const,
+    family: 'anime4k' as const,
+    evidence: 'client-reported' as const,
+    variant: 'animation' as const,
+    source: { namespace: 'freecut-media' as const, id: 'take', projectId: 'project' },
+    input: { width: 640, height: 360 },
+    output: { width: 1280, height: 720, fps: 30, frameCount: 30, codec: 'avc1' },
+  };
+  vi.mocked(importStudioProjectFile).mockResolvedValue({
+    id: 'take',
+    kind: StudioProjectImportKind.Video,
+    contentType: 'video/mp4',
+    fileName: 'out.mp4',
+    sizeBytes: 4,
+    checksum: 'ab'.repeat(32),
+    externalReferences: null,
+    createdAt: '2026-10-11T00:00:00Z',
+  });
+  const upload = { id: 'take', fileName: 'out.mp4', file: new Blob(['test'], { type: 'video/mp4' }) };
+  await uploadStudioProjectImport('project', {
+    ...upload,
+    publicationId: 'publication',
+    processingProvenance: provenance,
+  });
+  expect(importStudioProjectFile).toHaveBeenLastCalledWith({
+    id: 'project',
+    studioProjectImportCreateDto: {
+      id: 'take',
+      file: expect.any(File),
+      publicationId: 'publication',
+      processingProvenance: JSON.stringify(provenance),
+    },
+  });
+  await uploadStudioProjectImport('project', upload);
+  expect(importStudioProjectFile).toHaveBeenLastCalledWith({
+    id: 'project',
+    studioProjectImportCreateDto: { id: 'take', file: expect.any(File) },
   });
 });

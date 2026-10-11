@@ -360,6 +360,21 @@ export class StudioImportPublicationRepository implements JournalPort {
       return { items, nextCursor: rows.length > 100 ? cursorFor(ownerId, projectId, state, page[99]) : null };
     });
   }
+
+  /** Exact owner/project lookup supplies the immutable import binding, then reuses the locked get gate. */
+  async getByPublication(
+    ownerId: string,
+    projectId: string,
+    publicationId: string,
+  ): Promise<PublicationReceipt | null> {
+    if ([ownerId, projectId, publicationId].some((id) => !isStudioUuid(id)))
+      throw new BadRequestException('invalid_publication_id');
+    const { rows } = await sql<{ importId: string }>`SELECT "importId" FROM public.studio_import_publication
+      WHERE id=${publicationId.toLowerCase()}::uuid AND "ownerId"=${ownerId.toLowerCase()}::uuid AND "projectId"=${projectId.toLowerCase()}::uuid`.execute(
+      this.db,
+    );
+    return rows[0] ? this.get({ ownerId, projectId, publicationId, importId: rows[0].importId }) : null;
+  }
   async prepare(
     key: PublicationKey,
     file: PreparedImport,

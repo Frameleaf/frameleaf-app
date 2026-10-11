@@ -145,6 +145,7 @@ describe(StudioProjectImportService.name, () => {
       },
     });
     expect(result).toMatchObject({ id: IMPORT, kind: 'audio', contentType: 'audio/wav', sizeBytes: bytes.length });
+    expect(Object.hasOwn(result, 'processingProvenance')).toBe(false);
     expect(await readFile(join(directory, 'kept'))).toEqual(bytes);
     await expect(readFile(file.path)).rejects.toThrow();
     expect(studio.forgetResolutions).toHaveBeenCalledWith([PROJECT]);
@@ -477,9 +478,13 @@ describe(StudioProjectImportService.name, () => {
   it('binds actual staged checksum to already registered provenance and passes its reservation internally', async () => {
     const bytes = wav();
     const file = await upload(bytes);
-    await sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId, {
+    const retained = await sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId, {
       publicationId: KEY.publicationId,
-      processingProvenance: LINEAGE,
+      processingProvenance: JSON.stringify(LINEAGE),
+    });
+    expect(retained.processingProvenance).toEqual({
+      ...LINEAGE,
+      outputSha256: createHash('sha256').update(bytes).digest('hex'),
     });
     expect(publications.register).not.toHaveBeenCalled();
     expect(publications.getPublication).toHaveBeenCalledWith(auth(), KEY);
@@ -496,15 +501,23 @@ describe(StudioProjectImportService.name, () => {
   });
 
   it.each([
-    { processingProvenance: LINEAGE },
+    { processingProvenance: JSON.stringify(LINEAGE) },
     { publicationId: 'invalid' },
-    { publicationId: KEY.publicationId, processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) } },
+    { publicationId: KEY.publicationId, processingProvenance: LINEAGE },
+    { publicationId: KEY.publicationId, processingProvenance: '{bad' },
+    { publicationId: KEY.publicationId, processingProvenance: ' '.repeat(4097) },
+    { publicationId: KEY.publicationId, processingProvenance: null },
+    {
+      publicationId: KEY.publicationId,
+      processingProvenance: JSON.stringify({ ...LINEAGE, outputSha256: 'ab'.repeat(32) }),
+    },
   ])('refuses malformed lineage before prepare and removes only request scratch', async (options) => {
     const file = await upload(wav());
-    await expect(sut.upload(auth(), PROJECT, IMPORT, file, undefined, options)).rejects.toBeInstanceOf(
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId, options)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(publications.retain).not.toHaveBeenCalled();
+    expect(projects.deleteUpload).toHaveBeenCalledWith(KEY.publicationId, OWNER);
     await expect(readFile(file.path)).rejects.toThrow();
   });
 
@@ -514,7 +527,7 @@ describe(StudioProjectImportService.name, () => {
     await expect(
       sut.upload(auth(), PROJECT, IMPORT, file, undefined, {
         publicationId: KEY.publicationId,
-        processingProvenance: LINEAGE,
+        processingProvenance: JSON.stringify(LINEAGE),
       }),
     ).rejects.toThrow('publication_registration_required');
     expect(publications.retain).not.toHaveBeenCalled();

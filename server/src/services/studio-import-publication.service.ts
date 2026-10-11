@@ -15,6 +15,7 @@ import type {
   RetentionUpload,
 } from 'src/utils/studio-import-publication.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 export async function retainImport(
   journal: JournalPort,
@@ -61,6 +62,19 @@ export class StudioImportPublicationService {
 
   async getPublication(auth: AuthDto, key: PublicationKey): Promise<PublicationReceipt | null> {
     return this.journal.get(await this.authorize(auth, key));
+  }
+
+  async findPublication(auth: AuthDto, projectId: string, publicationId: string): Promise<PublicationReceipt | null> {
+    if (auth.sharedLink || !UUIDv7ParamDto.schema.safeParse({ id: projectId }).success || !isStudioUuid(publicationId))
+      throw new NotFoundException('Studio project not found');
+    const project = await this.studio.requireOwnedProject(auth, projectId, 'Only the owner can inspect Studio imports');
+    if (project.ownerId !== auth.user.id || project.id.toLowerCase() !== projectId.toLowerCase())
+      throw new NotFoundException('Studio project not found');
+    return this.journal.getByPublication(
+      auth.user.id.toLowerCase(),
+      project.id.toLowerCase(),
+      publicationId.toLowerCase(),
+    );
   }
 
   async discover(auth: AuthDto, projectId: string, cursor?: string, state?: PublicationState): Promise<ReceiptPage> {
