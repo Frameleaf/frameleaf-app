@@ -1,5 +1,6 @@
 import type { StudioProjectImport } from 'src/repositories/studio-project.repository.js';
 import type { ProcessingProvenanceInput, RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
+import type { StudioImportKind } from 'src/utils/studio-imports.js';
 
 export type PublicationState = 'registered' | 'preparing' | 'published' | 'aborted';
 export type PublicationKey = { ownerId: string; projectId: string; importId: string; publicationId: string };
@@ -11,6 +12,7 @@ export type ImportDeclaration = {
   checksum: string;
   fileName: string;
   externalReferences: number | null;
+  /** Null is normalized omission: ready retries preserve existing lineage; same-ID preparing retries still compare the full declaration. */
   processingProvenance: RetainedProcessingProvenance | null;
 };
 export type PreparedImport = {
@@ -25,6 +27,17 @@ export type PublicationRow = PublicationKey & {
   expiresAt: Date;
   file: PreparedImport | null;
 };
+export type PublishedImportReceipt = {
+  id: string;
+  kind: StudioImportKind;
+  contentType: string;
+  checksum: string;
+  sizeBytes: number;
+  fileName: string;
+  externalReferences: number | null;
+  createdAt: string;
+  processingProvenance: RetainedProcessingProvenance | null;
+};
 export type PublicationReceipt = {
   publicationId: string;
   importId: string;
@@ -32,7 +45,7 @@ export type PublicationReceipt = {
   createdAt: string;
   expiresAt: string;
   cleanupPending: boolean;
-  imported?: StudioProjectImport;
+  imported?: PublishedImportReceipt;
 };
 export type ReceiptPage = { items: PublicationReceipt[]; nextCursor: string | null };
 export type CancelResult = { status: 'cancelled' | 'already-published'; receipt: PublicationReceipt };
