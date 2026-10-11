@@ -92,10 +92,12 @@ test.describe('Frameleaf Cloud backup setup', () => {
     await dialog.getByRole('button', { name: 'Finish setup' }).click();
     // The Cloud Backup page (FL-362) names the bucket under its heading and again in "At a glance"; the
     // kind of key is under "Technical details", closed until asked for.
-    await expect(page.getByRole('region', { name: 'At a glance' }).getByText('Your own bucket')).toBeVisible();
-    const technical = page.locator('details', { hasText: 'Technical details' });
+    const glance = page.getByRole('region', { name: 'At a glance', exact: true });
+    await expect(glance.getByText('Your own bucket', { exact: true })).toBeVisible();
+    const safety = page.getByRole('region', { name: 'Safety', exact: true });
+    const technical = safety.locator('details', { hasText: 'Technical details' });
     await technical.locator('summary').click();
-    await expect(technical.getByText('Your own key, never saved')).toBeVisible();
+    await expect(technical.getByText('Your own key, never saved', { exact: true })).toBeVisible();
   });
 
   test('a generated key shows the recovery kit once and needs it saved before claiming', async ({ page }) => {

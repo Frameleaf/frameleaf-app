@@ -16,6 +16,7 @@ import {
   StudioExportScope,
   StudioExportVersionState,
 } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
@@ -566,11 +567,13 @@ export class PhysicalFileRepository {
       }
     | undefined
   > {
-    const physicalFile = await this.getPhysicalFile(physicalFileId);
+    const database = publicationDatabase(this.db);
+    const physicalFile = await this.getPhysicalFile(physicalFileId, database);
     if (!physicalFile || physicalFile.canonicalAssetId) {
       return;
     }
-    return this.withPathLock(physicalFile.path, async (trx) => {
+    return database.transaction().execute(async (trx) => {
+      await this.lockPath(trx, physicalFile.path);
       const current = await trx
         .selectFrom('physical_file')
         .select(['id', 'canonicalAssetId'])

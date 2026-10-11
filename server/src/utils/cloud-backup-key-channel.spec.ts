@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Pool } from 'pg';
 import { Server } from 'socket.io';
+import { addClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import {
   BACKUP_KEY_REQUEST_LIFETIME_MS,
   CloudBackupKeyChannel,
@@ -16,9 +17,13 @@ import { keyFingerprint, recoveryCode } from 'src/utils/cloud-backup.js';
 const identity = generateKeyPairSync('ed25519').privateKey;
 const key = Buffer.from('synthetic-backup-secret-32-bytes');
 const binding = {
-  instanceId: 'instance-a',
+  instanceId: 'f0000000-0000-4000-8000-000000000001',
   bucketRef: 'https://storage.example/bucket',
   keyFingerprint: keyFingerprint(key),
+};
+const recoveryFile = () => {
+  const file = addClientBackupKeys({ key: key.toString('base64'), instanceId: binding.instanceId });
+  return { ...file, client: rotateClientBackupKeys(file.client, key) };
 };
 
 describe(CloudBackupKeyChannel.name, () => {
@@ -74,6 +79,140 @@ describe(CloudBackupKeyChannel.name, () => {
     expect(await channel('no-request').accept(share, binding)).toBe(false);
     expect(await recipient.accept({ ...share, ciphertext: 'A'.repeat(43) }, binding)).toBe(false);
     expect(await recipient.accept(share, binding)).toBe(true);
+  });
+
+  it('carries independent historical CSE roots only inside a recipient-encrypted reply', async () => {
+    const holder = owner();
+    const recipient = channel('client-recipient');
+    const material = Buffer.from(JSON.stringify(recoveryFile()));
+    holder.setKey(binding, key, holder.revision, material);
+    const share = (await holder.share(await recipient.request(binding), binding))!;
+    expect(share.version).toBe(2);
+    expect(JSON.stringify(share)).not.toContain(material.toString());
+    expect(await channel('client-listener').accept(share, binding)).toBe(false);
+    expect(await recipient.accept(share, binding)).toBe(true);
+    expect(recipient.getRecovery(binding)).toEqual(material);
+    const owned = recipient.getRecovery(binding)!;
+    recipient.setKey(binding, key);
+    expect(owned).toEqual(Buffer.alloc(material.length));
+    expect(recipient.getRecovery(binding)).toEqual(material);
+    const replacement = recipient.getRecovery(binding)!;
+    recipient.clear();
+    expect(replacement).toEqual(Buffer.alloc(material.length));
+    expect(JSON.parse(material.toString()).client.current).toBe(2);
+  });
+
+  it('rejects invalid recovery before installation and wipes the exact decrypted buffers', async () => {
+    const holder = owner();
+    holder.setKey(binding, key, holder.revision, Buffer.from(JSON.stringify(recoveryFile())));
+    const recipient = channel('recipient');
+    const share = await holder.share(await recipient.request(binding), binding);
+    let capturedKey!: Buffer;
+    let capturedRecovery!: Buffer;
+    expect(
+      await recipient.accept(share, binding, (key, recovery) => {
+        capturedKey = key;
+        capturedRecovery = recovery!;
+        throw new Error('Invalid recovery authority');
+      }),
+    ).toBe(false);
+    expect(recipient.getKey(binding)).toBeNull();
+    expect(recipient.getRecovery(binding)).toBeNull();
+    expect(capturedKey).toEqual(Buffer.alloc(capturedKey.length));
+    expect(capturedRecovery).toEqual(Buffer.alloc(capturedRecovery.length));
+  });
+
+  it('authenticates expiring version hints without disclosing or installing recovery material', async () => {
+    vi.useFakeTimers();
+    const holder = owner();
+    const recipient = channel('recipient');
+    const update = (await holder.update(binding, 2))!;
+    expect(Object.keys(update).sort()).toEqual(
+      [
+        'version',
+        'instanceId',
+        'bucketRef',
+        'keyFingerprint',
+        'updateId',
+        'workerId',
+        'issuedAt',
+        'keyVersion',
+        'signature',
+      ].sort(),
+    );
+    expect(await recipient.acceptUpdate({ ...update, keyVersion: 3 }, binding)).toBeNull();
+    expect(await recipient.acceptUpdate(update, { ...binding, bucketRef: 'other' })).toBeNull();
+    expect(
+      await channel('stranger', generateKeyPairSync('ed25519').privateKey).acceptUpdate(update, binding),
+    ).toBeNull();
+    expect(await recipient.acceptUpdate(update, binding)).toBe(2);
+    expect(recipient.getKey(binding)).toBeNull();
+    expect(await recipient.acceptUpdate(update, binding)).toBeNull();
+    const expired = await holder.update(binding, 3);
+    await vi.advanceTimersByTimeAsync(BACKUP_KEY_REQUEST_LIFETIME_MS);
+    expect(await recipient.acceptUpdate(expired, binding)).toBeNull();
+  });
+
+  it('binds minimum-version refreshes and rejects responses to replaced discovery recipients', async () => {
+    const holder = owner();
+    const recipient = channel('recipient');
+    const bootstrap = await recipient.request(binding);
+    const oldReply = await holder.share(bootstrap, binding);
+    const refresh = (await recipient.request(binding, 2))!;
+    expect(refresh).toMatchObject({ version: 2, keyVersion: 2 });
+    expect(await holder.share({ ...refresh, keyVersion: 1 }, binding)).toBeNull();
+    expect(await recipient.accept(oldReply, binding)).toBe(false);
+    expect(await recipient.accept(await holder.share(refresh, binding), binding)).toBe(false);
+    const file = recoveryFile();
+    holder.setKey(binding, key, holder.revision, Buffer.from(JSON.stringify(file)));
+    // Replaying a request to a holder remains forbidden, even after it installs newer material.
+    expect(await holder.share(refresh, binding)).toBeNull();
+    recipient.clear();
+    recipient.setKey(binding, key);
+    const required = await recipient.request(binding, 2);
+    const share = await holder.share(required, binding);
+    expect(
+      await recipient.accept(share, binding, (_key, recovery, minimumVersion) => {
+        expect(minimumVersion).toBe(2);
+        if (JSON.parse(recovery!.toString()).client.current < minimumVersion) throw new Error('Outdated roots');
+      }),
+    ).toBe(true);
+    expect(recipient.getRecovery(binding)).toEqual(Buffer.from(JSON.stringify(file)));
+  });
+
+  it('keeps a valid version hint across a concurrent key installation but publishes none across a lock', async () => {
+    let release!: (value: typeof identity) => void;
+    const slow = new CloudBackupKeyChannel('slow', () => new Promise((done) => (release = done)));
+    channels.push(slow);
+    const holder = owner();
+    const accepting = slow.acceptUpdate(await holder.update(binding, 2), binding);
+    slow.setKey(binding, key);
+    release(identity);
+    expect(await accepting).toBe(2);
+    const publishing = slow.update(binding, 2);
+    slow.clear();
+    release(identity);
+    expect(await publishing).toBeNull();
+  });
+
+  it('retains a newer local CSE unlock when an older authenticated reply finishes its identity read', async () => {
+    let release!: (value: typeof identity) => void;
+    let slow = false;
+    const recipient = new CloudBackupKeyChannel('recipient', () =>
+      slow ? new Promise((done) => (release = done)) : Promise.resolve(identity),
+    );
+    channels.push(recipient);
+    const holder = owner();
+    const old = recoveryFile();
+    holder.setKey(binding, key, holder.revision, Buffer.from(JSON.stringify(old)));
+    const share = await holder.share(await recipient.request(binding), binding);
+    slow = true;
+    const accepting = recipient.accept(share, binding);
+    const current = Buffer.from(JSON.stringify({ ...old, client: rotateClientBackupKeys(old.client, key) }));
+    recipient.setKey(binding, key, recipient.revision, current);
+    release(identity);
+    expect(await accepting).toBe(false);
+    expect(recipient.getRecovery(binding)).toEqual(current);
   });
 
   it('rejects a different identity root, instance or bucket even with the same display fingerprint', async () => {
@@ -164,13 +303,45 @@ describe(CloudBackupKeyChannel.name, () => {
     expect(await sharing).toBeNull();
   });
 
+  it('cannot replace a newer binding or minimum-version request when an old identity read completes', async () => {
+    const reads: Array<(value: typeof identity) => void> = [];
+    const recipient = new CloudBackupKeyChannel(
+      'recipient',
+      () =>
+        new Promise((done) => {
+          reads.push(done);
+        }),
+    );
+    channels.push(recipient);
+    const old = recipient.request(binding, 2);
+    expect(await recipient.request(binding, 1)).toBeNull();
+    const nextBinding = { ...binding, bucketRef: 'https://storage.example/new-bucket' };
+    const next = recipient.request(nextBinding);
+    reads[1](identity);
+    const request = await next;
+    reads[0](identity);
+    expect(await old).toBeNull();
+    expect(recipient.hasRequest(nextBinding)).toBe(true);
+    expect(recipient.hasRequest(binding)).toBe(false);
+    const holder = owner();
+    holder.setKey(nextBinding, key);
+    const share = await holder.share(request, nextBinding);
+    const accepting = recipient.accept(share, nextBinding);
+    reads[2](identity);
+    expect(await accepting).toBe(true);
+  });
+
   it.each([8000, 1])(
     'keeps sentinel key encodings out of real adapter queries and fallback attachments (threshold %i)',
     async (payloadThreshold) => {
       const holder = owner();
+      const file = recoveryFile();
+      const material = Buffer.from(JSON.stringify(file));
+      holder.setKey(binding, key, holder.revision, material);
       const recipient = channel('recipient');
       const request = await recipient.request(binding);
       const share = await holder.share(request, binding);
+      const update = await holder.update(binding, file.client.current);
       const client = Object.assign(new EventEmitter(), {
         query: vi.fn().mockResolvedValue({ rows: [] }),
         release: vi.fn(),
@@ -187,9 +358,10 @@ describe(CloudBackupKeyChannel.name, () => {
         // PostgreSQL adapter. Capture NOTIFY strings and msgpack attachment bytes before any persistence.
         await adapter.serverSideEmit(['CloudBackupKeyRequest', request]);
         await adapter.serverSideEmit(['CloudBackupKeyShare', share]);
+        await adapter.serverSideEmit(['CloudBackupKeyUpdate', update]);
         expect(errors).not.toHaveBeenCalled();
         const publications = query.mock.calls.filter(([sql]) => /pg_notify|INSERT INTO/.test(String(sql)));
-        expect(publications.length).toBeGreaterThanOrEqual(2);
+        expect(publications.length).toBeGreaterThanOrEqual(3);
         if (payloadThreshold === 1)
           expect(publications.some(([sql]) => String(sql).includes('INSERT INTO'))).toBe(true);
         for (const call of publications) {
@@ -202,13 +374,17 @@ describe(CloudBackupKeyChannel.name, () => {
                 : [Buffer.from(String(argument))],
             ),
           );
+          const roots = [key, ...Object.values(file.client.keys).map((value) => Buffer.from(value, 'base64'))];
           for (const sentinel of [
-            key,
-            Buffer.from(key.toString('base64')),
-            Buffer.from(key.toString('hex')),
-            Buffer.from(key.toString('base64url')),
-            Buffer.from(recoveryCode(key)),
-            Buffer.from(JSON.stringify([...key])),
+            material,
+            ...roots.flatMap((root) => [
+              root,
+              Buffer.from(root.toString('base64')),
+              Buffer.from(root.toString('hex')),
+              Buffer.from(root.toString('base64url')),
+              Buffer.from(recoveryCode(root)),
+              Buffer.from(JSON.stringify([...root])),
+            ]),
           ]) {
             expect(captured.includes(sentinel)).toBe(false);
           }
@@ -216,6 +392,7 @@ describe(CloudBackupKeyChannel.name, () => {
         // A LISTEN client has this exact ciphertext, but only the live recipient can open it.
         expect(await channel('database-listener').accept(share, binding)).toBe(false);
         expect(await recipient.accept(share, binding)).toBe(true);
+        expect(recipient.getRecovery(binding)).toEqual(material);
       } finally {
         adapter.close();
       }

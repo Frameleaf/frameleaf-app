@@ -29,6 +29,12 @@ const captured = (...ids: string[]) => new Map(ids.map((id) => [id, { deletion: 
 const page = { limit: 1, offset: 0 };
 
 describe('owner backup history projection', () => {
+  it('preserves owner filtering for client-encrypted manifest metadata', () => {
+    const data = { ...manifest({ a: asset(), b: asset('foreign') }), version: 3 as const };
+    expect(
+      ownerBackupHistoryPage(authStub.user1, data, captured('a', 'b'), page).items.map((item) => item.assetId),
+    ).toEqual(['a']);
+  });
   it('filters foreign/unknown/private names before query, count and pagination', () => {
     const result = ownerBackupHistoryPage(
       authStub.user1,

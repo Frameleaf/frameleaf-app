@@ -4,6 +4,10 @@ import { type Stats, constants } from 'node:fs';
 import { chmod, link, lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { parseClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
+import { backupRecoveryHistorySchema, mergeBackupHistory } from 'src/utils/cloud-backup-recovery.js';
+import { parseBackupKey } from 'src/utils/cloud-backup.js';
 
 const FINGERPRINT = /^[\dA-F]{4}-[\dA-F]{4}$/;
 const MAX_KEY_BYTES = 16_384;
@@ -34,7 +38,8 @@ const keyOf = (text: string): unknown => {
  * A key file is written once, atomically: a new file opened exclusively with 0600, synced, then linked
  * into place, which never replaces an existing file. On a mount that cannot hard-link (SMB/CIFS, FUSE),
  * it is renamed into place only when no file is there, as the identity key is. It is read back before
- * it counts as written. It is never overwritten here, and removed only by the setup that just created
+ * it counts as written. An explicit client keyring upgrade retains all prior roots atomically under
+ * the setup's bucket lock. Otherwise it is never overwritten, and removed only by the setup that just created
  * it when the claim that needed it fails. Contents are never logged.
  */
 @Injectable()
@@ -137,9 +142,28 @@ export class CloudBackupKeyRepository {
    * fingerprint is refused rather than written over it.
    */
   async write(directory: string, fingerprint: string, content: string): Promise<{ path: string; created: boolean }> {
-    const target = join(directory, this.fileName(fingerprint));
     if (Buffer.byteLength(content, 'utf8') > MAX_KEY_BYTES || typeof keyOf(content) !== 'string')
       throw new Error('Invalid stored backup key');
+    const incoming = JSON.parse(content) as {
+      instanceId: string;
+      bucket?: string;
+      client?: unknown;
+      recovery?: unknown;
+    };
+    const ring =
+      incoming.client === undefined
+        ? null
+        : parseClientBackupKeys(incoming.client, parseBackupKey(content), incoming.instanceId);
+    const history = mergeBackupHistory(
+      null,
+      incoming.recovery ? backupRecoveryHistorySchema.parse(incoming.recovery) : undefined,
+    );
+    if (
+      history &&
+      (history.anchor.vaultId !== incoming.instanceId || history.anchor.instanceId !== incoming.instanceId)
+    )
+      throw new Error('Recovery history belongs to another vault');
+    const target = join(directory, this.fileName(fingerprint));
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await this.privateDirectory(directory);
     const temporary = join(directory, `.${this.fileName(fingerprint)}.${randomUUID()}.tmp`);
@@ -168,6 +192,32 @@ export class CloudBackupKeyRepository {
           ? 'The backup key file could not be read back as written'
           : 'A different backup key with the same fingerprint is already stored on this server',
       );
+    }
+    if (!created && (ring || history)) {
+      const prior = JSON.parse(stored) as typeof incoming;
+      const previous = parseClientBackupKeys(prior.client, parseBackupKey(stored), incoming.instanceId);
+      if (
+        prior.instanceId !== incoming.instanceId ||
+        prior.bucket !== incoming.bucket ||
+        (previous &&
+          ring &&
+          (ring.current < previous.current ||
+            Object.entries(previous.keys).some(([version, key]) => ring.keys[version] !== key)))
+      )
+        throw new Error('A client keyring update must retain the vault and every historical root');
+      const recovery = mergeBackupHistory(
+        prior.recovery ? backupRecoveryHistorySchema.parse(prior.recovery) : null,
+        history ?? undefined,
+      );
+      const updated = JSON.stringify(
+        { ...JSON.parse(stored), ...(ring && { client: ring }), ...(recovery && { recovery }) },
+        null,
+        2,
+      );
+      if (Buffer.byteLength(updated) > MAX_KEY_BYTES) throw new Error('Backup key file is too large');
+      await writeBuddyFile(target, updated);
+      if ((await this.read(directory, fingerprint)) !== updated)
+        throw new Error('The upgraded key file could not be read back');
     }
     return { path: target, created };
   }
