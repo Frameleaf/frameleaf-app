@@ -339,8 +339,15 @@ export class CloudBackupMaintenance {
           for (const manifest of names) {
             degraded.add(manifest);
           }
+          await this.settleBad(bucket, [], degraded);
         }
-        result = { ...result, checked: result.checked + 1, dumpCursor: key };
+        result = {
+          ...result,
+          checked: result.checked + 1,
+          dumpCursor: key,
+          degradedManifests: degradedCount(),
+          degradedKeys: [...degraded].slice(0, VERIFY_BAD_KEPT),
+        };
         advanceExecutionProgress(1);
         if (!(await checkpoint(result))) return null;
       }
