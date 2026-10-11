@@ -985,9 +985,11 @@ describe(CloudBackupService.name, () => {
       index.listAssets
         .mockResolvedValueOnce([asset('asset-1', SHA_A), asset('asset-2', SHA_B)])
         .mockResolvedValueOnce([]);
-      mocks.storage.stat
-        .mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'ENOENT' }))
-        .mockResolvedValue({ size: 100, mtime: new Date('2026-09-01T00:00:00.000Z') } as never);
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/data/library/asset-1.jpg'
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve({ size: 100, mtime: new Date('2026-09-01T00:00:00.000Z') } as never),
+      );
 
       await sut.run(operationOf(), 'claim-1');
 
@@ -1062,15 +1064,17 @@ describe(CloudBackupService.name, () => {
 
     it('writes its cursor every 25 assets and stops there when paused', async () => {
       index.listAssets.mockResolvedValue(Array.from({ length: 25 }, (_, i) => asset(`asset-${i}`, SHA_A)));
-      operations.setBulkResult
-        .mockResolvedValueOnce(running)
-        .mockResolvedValueOnce(running)
-        .mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      operations.setBulkResult.mockImplementation((_id, _token, { result }) =>
+        Promise.resolve(result.cursor === 'asset-24' ? { ...running, pauseRequestedAt: new Date() } : running),
+      );
 
       await sut.run(operationOf(), 'claim-1');
 
-      const assetWrite = operations.setBulkResult.mock.calls[2][2] as { result: { cursor: string; assets: number } };
-      expect(assetWrite.result).toMatchObject({ cursor: 'asset-24', assets: 25 });
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ result: expect.objectContaining({ cursor: 'asset-24', assets: 25 }) }),
+      );
       expect(operations.settlePause).toHaveBeenCalledWith('run-1', 'claim-1');
       expect(store.uploadStream).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
