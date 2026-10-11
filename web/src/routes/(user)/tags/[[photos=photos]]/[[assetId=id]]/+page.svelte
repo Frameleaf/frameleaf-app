@@ -5,7 +5,8 @@
    * name>`, as before, so existing links keep working) it is that tag's page: its header
    * (`TagPageHeader`) above the real library grid bound to the tag, which brings Timeline, Browse
    * and Work, Filter, Slideshow, sorting, selection with the bulk actions, and the viewer on this
-   * route (`/tags/photos/<id>?path=…`).
+   * route (`/tags/photos/<id>?path=…`). That half is `TagLibrary`, which the loader fetches along
+   * with the data when a tag is chosen, so the index does not carry the grid and the viewer (FL-139).
    *
    * The tag filter matches a tag and every tag inside it, which is also what the tag's count, cover
    * and dates describe. The loader answers "not found" for a tag that is gone or hidden while the
@@ -14,24 +15,14 @@
   import { invalidateAll } from '$app/navigation';
   import { scrollMemory, scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
-  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import TagIndex from '$lib/components/frameleaf/tags/TagIndex.svelte';
-  import TagPageHeader from '$lib/components/frameleaf/tags/TagPageHeader.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
-  import Portal from '$lib/elements/Portal.svelte';
-  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { buildTagTree, tagAndDescendantIds, tagAtPath } from '$lib/frameleaf/tag-tree';
-  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { navigate } from '$lib/utils/navigation';
-  import { AssetVisibility, getAssetInfo } from '@frameleaf/sdk';
+  import { getAssetInfo } from '@frameleaf/sdk';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import { mdiTagOutline } from '@mdi/js';
-  import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
   interface Props {
@@ -43,13 +34,9 @@
   const tree = $derived(buildTagTree(data.tags, data.statistics));
   const node = $derived(tagAtPath(tree, data.path));
 
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
-  let viewerInvisible = $state(false);
-  // Every Timeline item with the tag, one by one: stacks are not folded here, so the grid shows
-  // exactly the items the tag's count is made of, including a tagged photo that is not its stack's cover.
-  // Keyed on the tag's id alone: re-reading the tags (a new colour, a new count) must not reload the grid.
-  const tagId = $derived(node?.id);
-  const options = $derived(tagId ? { visibility: AssetVisibility.Timeline, tagId } : undefined);
+  // The tag's page (the grid and the viewer) arrives with the data, and only when a tag is chosen.
+  const TagLibrary = $derived(data.TagLibrary);
+  let timelineManager = $state<TimelineManager>();
   // The selection bar's Tag offers the tags by their full names, as it does on an album.
   const tagOptions = $derived(data.tags.map(({ id, value }) => ({ id, name: value })));
 
@@ -81,41 +68,11 @@
 
 <OnEvents {onAssetsTag} onAssetsDelete={refresh} onAssetsArchive={refresh} onAssetsUnarchive={refresh} />
 
-{#if node && options}
+{#if node && TagLibrary}
   <!-- The same shell as an album or a person: the header scrolls away with the photos under it. -->
   <UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.tags() }]]}>
     <div class="relative h-full overflow-hidden md:px-4">
-      {#key node.id}
-        <LibraryView
-          enableRouting
-          selectAll="loaded"
-          bind:timelineManager
-          {options}
-          destination={{ kind: 'tag', id: node.id }}
-          downloadFileName={namedArchiveName(node.name, $t('frameleaf_archive_name_tag'))}
-          {tagOptions}
-          onMutated={refresh}
-          onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-        >
-          <TagPageHeader {node} {tree} />
-
-          {#snippet empty()}
-            <LibraryEmptyState
-              icon={mdiTagOutline}
-              title={$t('frameleaf_tags_no_photos_title')}
-              message={$t('frameleaf_tags_no_photos_message')}
-            />
-          {/snippet}
-
-          {#snippet viewer()}
-            <Portal target="body">
-              {#if assetViewerManager.isViewing}
-                <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} />
-              {/if}
-            </Portal>
-          {/snippet}
-        </LibraryView>
-      {/key}
+      <TagLibrary {node} {tree} {tagOptions} bind:timelineManager onMutated={refresh} />
     </div>
   </UserPageLayout>
 {:else}
