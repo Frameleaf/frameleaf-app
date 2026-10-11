@@ -1531,7 +1531,7 @@
     },
     "/admin/cloud/backup": {
       "delete": {
-        "description": "Stops backing up. The bucket, its backups and the key are kept.",
+        "description": "Stops backing up. The bucket, its backups and stored keys are kept; keys held only in memory are cleared.",
         "operationId": "turnOffCloudBackup",
         "parameters": [],
         "responses": {
