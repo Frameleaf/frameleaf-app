@@ -17,7 +17,7 @@ const selection = z
   .meta({ id: 'StudioSourceSelectionDto' });
 const parent = z
   .object({
-    kind: z.enum(['project-import', 'vector-graphic']),
+    kind: z.enum(['project-import', 'vector-graphic']).meta({ id: 'StudioSourceParentKind' }),
     id: z.uuid(),
     checksum: digest,
   })
