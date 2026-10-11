@@ -149,7 +149,6 @@ const CloudBackupItemFilterSchema = z
 /** A manifest key as runs write it: `m/20260926T030000Z.json.gz`. */
 export const ManifestKeySchema = z
   .string()
-  .max(160)
   .regex(/^m\/(?:v1\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/[1-9]\d{0,8}\/)?\d{8}T\d{6}Z\.json\.gz$/)
   .describe('The backup run’s manifest in the bucket');
 

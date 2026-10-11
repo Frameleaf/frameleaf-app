@@ -50182,7 +50182,7 @@
             "in": "query",
             "description": "The backup run’s manifest in the bucket",
             "schema": {
-              "maxLength": 160,
+              "maxLength": 300,
               "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
               "type": "string"
             }
@@ -50276,7 +50276,7 @@
             "in": "query",
             "description": "The backup run’s manifest in the bucket",
             "schema": {
-              "maxLength": 160,
+              "maxLength": 300,
               "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
               "type": "string"
             }
@@ -66291,7 +66291,6 @@
         "properties": {
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "maxLength": 160,
             "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           }
@@ -66444,7 +66443,6 @@
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "maxLength": 160,
             "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           },
@@ -66612,7 +66610,6 @@
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "maxLength": 160,
             "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           },
@@ -85345,7 +85342,7 @@
           },
           "manifestKey": {
             "description": "The backup run’s manifest in the bucket",
-            "maxLength": 160,
+            "maxLength": 300,
             "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
             "type": "string"
           }
