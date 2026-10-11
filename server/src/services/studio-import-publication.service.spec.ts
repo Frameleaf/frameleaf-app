@@ -199,3 +199,30 @@ describe('exact publication lookup authorizes current owner/project before resol
     }
   });
 });
+
+describe('test-only commit fault hooks with synthetic ports', () => {
+  it.each(['prepare-commit', 'publication-commit'] as const)(
+    'does no cleanup after the %s hook stops the writer',
+    async (stop) => {
+      const { files, journal } = ports();
+      const faults = {
+        reached: vi.fn((point: string) =>
+          point === stop ? Promise.reject(new Error('test_fault')) : Promise.resolve(),
+        ),
+      };
+      await expect(retainImport(journal, files, upload, faults)).rejects.toThrow('test_fault');
+      expect(journal.prepare).toHaveResolved();
+      expect(journal.release).not.toHaveBeenCalled();
+      expect(files.release).not.toHaveBeenCalled();
+      if (stop === 'prepare-commit') expect(journal.publish).not.toHaveBeenCalled();
+      else expect(journal.publish).toHaveResolved();
+    },
+  );
+  it('does not report a new publication commit for an already ready import', async () => {
+    const { files, journal } = ports();
+    journal.prepare.mockResolvedValue({ status: 'ready', imported });
+    const faults = { reached: vi.fn(() => Promise.resolve()) };
+    await retainImport(journal, files, upload, faults);
+    expect(faults.reached.mock.calls).toEqual([['prepare-commit']]);
+  });
+});
