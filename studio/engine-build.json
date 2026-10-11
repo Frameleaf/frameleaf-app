@@ -633,7 +633,7 @@
     {
       "path": "patches/0131-canonical-dotlottie-owned-source.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "8c825eeb59d26a00c527d62a65097b3690d66495ed296c5286dd037380b206f1"
+      "sha256": "6c3f72171bf0773cd86c5d5610c7ca9266b6e4f0f8da3bebf27ce85c01323934"
     },
     {
       "path": "patches/0132-anime4k-retained-provenance.patch",

@@ -35,7 +35,6 @@ import {
   type StudioHostToFrameMessage,
 } from './frame-protocol';
 import { STUDIO_FRAME_SERVICE_SCHEMA_V8, isStudioFrameServiceName } from './frame-service-schema';
-import { studioSourceJson } from './source-resolution';
 import { storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import type {
@@ -48,6 +47,7 @@ import type {
   StudioProjectImportRef,
   StudioNavigationTarget,
 } from './host-contract';
+import { studioSourceJson } from './source-resolution';
 
 export const STUDIO_ENGINE_BASE = '/studio-engine/';
 
@@ -199,19 +199,32 @@ export const toNavigationTarget = (value: unknown): StudioNavigationTarget | nul
 };
 
 type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<unknown>;
-type ServiceHandlers = { [Name in StudioFrameServiceName]:
-  (services: StudioHostServices, args: StudioFrameServiceCalls[Name]['args']) => Promise<StudioFrameServiceCalls[Name]['result']> };
-const sourceIdentity = (context: StudioHostContext) => studioSourceJson({
-  project: context.project, sourceEpoch: context.sourceEpoch, userId: context.auth.userId,
-  online: context.online, draftHeld: context.draftHeld, imports: context.projectImports, assets: context.assets,
-});
+type ServiceHandlers = {
+  [Name in StudioFrameServiceName]: (
+    services: StudioHostServices,
+    args: StudioFrameServiceCalls[Name]['args'],
+  ) => Promise<StudioFrameServiceCalls[Name]['result']>;
+};
+const sourceIdentity = (context: StudioHostContext) =>
+  studioSourceJson({
+    project: context.project,
+    sourceEpoch: context.sourceEpoch,
+    userId: context.auth.userId,
+    online: context.online,
+    draftHeld: context.draftHeld,
+    imports: context.projectImports,
+    assets: context.assets,
+  });
 
 const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 /** The services a frame may call, each checked for shape before it reaches the host. */
 const serviceCalls: ServiceHandlers = {
   resolveStudioProjectSource: (services, [request, scope]) => {
-    if (!services.resolveStudioProjectSource || !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource([request, scope])) {
+    if (
+      !services.resolveStudioProjectSource ||
+      !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource([request, scope])
+    ) {
       return Promise.reject(new Error('SOURCE_RESOLUTION_REFUSED'));
     }
     return services.resolveStudioProjectSource(
@@ -289,7 +302,8 @@ export const createFrameStudioEngine = ({
   features: [...manifest.features],
 
   async mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices) {
-    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) throw new Error('The Studio frame manifest protocol changed');
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION)
+      throw new Error('The Studio frame manifest protocol changed');
     let revoke: (error: Error) => void = () => {};
     let pendingRevocation: Error | null = null;
     const access = createStudioGeneratedAccess((error) => {
@@ -361,10 +375,7 @@ export const createFrameStudioEngine = ({
             break;
           }
           // Own properties only: `constructor` or `__proto__` must not reach a handler lookup.
-          const handler =
-            isStudioFrameServiceName(message.name)
-              ? serviceCalls[message.name]
-              : undefined;
+          const handler = isStudioFrameServiceName(message.name) ? serviceCalls[message.name] : undefined;
           const args = Array.isArray(message.args) ? message.args : [];
           const sourceCall = message.name === 'resolveStudioProjectSource';
           const token = sourceGeneration;
@@ -372,15 +383,24 @@ export const createFrameStudioEngine = ({
           const identity = sourceIdentity(authority);
           const request = args[0] as StudioFrameServiceCalls['resolveStudioProjectSource']['args'][0] | undefined;
           const origin = args[1] as StudioFrameServiceCalls['resolveStudioProjectSource']['args'][1] | undefined;
-          const sourceCurrent = () => !disposed && !disposing && !revoking && token === sourceGeneration &&
-            sourceIdentity(latest) === identity && latest.online && latest.project.hasLease &&
-            latest.project.graphDigest === request?.graphDigest && latest.project.revision === request?.revision &&
-            origin?.projectId === latest.project.id && origin?.userId === latest.auth.userId &&
+          const sourceCurrent = () =>
+            !disposed &&
+            !disposing &&
+            !revoking &&
+            token === sourceGeneration &&
+            sourceIdentity(latest) === identity &&
+            latest.online &&
+            latest.project.hasLease &&
+            latest.project.graphDigest === request?.graphDigest &&
+            latest.project.revision === request?.revision &&
+            origin?.projectId === latest.project.id &&
+            origin?.userId === latest.auth.userId &&
             origin?.graphVersion === (latest.project.graphVersion ?? 0);
           const run = (async () => {
             await Promise.resolve();
             if (sourceCall && !sourceCurrent()) throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
-            if (sourceCall && !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource(args)) throw new Error('Invalid service arguments');
+            if (sourceCall && !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource(args))
+              throw new Error('Invalid service arguments');
             return message.name === 'authorizeGeneratedMedia'
               ? access.recheck()
               : handler
@@ -394,16 +414,29 @@ export const createFrameStudioEngine = ({
             .then((value) => {
               if (sourceCall) {
                 const result = value as StudioFrameServiceCalls['resolveStudioProjectSource']['result'];
-                if (!sourceCurrent() || result.projectId !== authority.project.id || result.revision !== request?.revision ||
-                    result.graphDigest !== request?.graphDigest || studioSourceJson(result.parent) !== studioSourceJson(request?.parent) ||
-                    studioSourceJson(result.selection) !== studioSourceJson(request?.selection) || !result.expiresAt || Date.parse(result.expiresAt) <= Date.now() ||
-                    !Number.isFinite(Date.parse(result.expiresAt)) ||
-                    !authority.project.leaseExpiresAt || Date.parse(authority.project.leaseExpiresAt) <= Date.now()) {
+                if (
+                  !sourceCurrent() ||
+                  result.projectId !== authority.project.id ||
+                  result.revision !== request?.revision ||
+                  result.graphDigest !== request?.graphDigest ||
+                  studioSourceJson(result.parent) !== studioSourceJson(request?.parent) ||
+                  studioSourceJson(result.selection) !== studioSourceJson(request?.selection) ||
+                  !result.expiresAt ||
+                  Date.parse(result.expiresAt) <= Date.now() ||
+                  !Number.isFinite(Date.parse(result.expiresAt)) ||
+                  !authority.project.leaseExpiresAt ||
+                  Date.parse(authority.project.leaseExpiresAt) <= Date.now()
+                ) {
                   if (Array.isArray(result.files)) result.files.length = 0;
                   throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
                 }
               }
-              send({ type: 'service-result', callId: message.callId, ok: true, value: sourceCall ? value : toFrameData(value) });
+              send({
+                type: 'service-result',
+                callId: message.callId,
+                ok: true,
+                value: sourceCall ? value : toFrameData(value),
+              });
             })
             .catch((error: unknown) =>
               send({
@@ -556,7 +589,8 @@ export const createFrameStudioEngine = ({
   },
 
   async createCommandEngine(): Promise<StudioCommandEngine> {
-    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) throw new Error('The Studio frame manifest protocol changed');
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION)
+      throw new Error('The Studio frame manifest protocol changed');
     const frame = createFrame(document.body, documentUrl(base, manifest.commands), true);
     let port: MessagePort;
     try {

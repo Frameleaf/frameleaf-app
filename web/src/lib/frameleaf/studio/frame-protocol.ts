@@ -16,6 +16,7 @@
  * adapter build as well, so it stays free of Svelte and of runtime imports from the web app.
  */
 import type { StudioCommandEnvelope } from './commands';
+import type { StudioFrameServiceName } from './frame-service-schema';
 import type {
   StudioEditorScope,
   StudioHostContext,
@@ -42,7 +43,6 @@ export interface StudioFrameManifest {
 }
 
 export type { StudioFrameServiceCalls, StudioFrameServiceName } from './frame-service-schema';
-import type { StudioFrameServiceName } from './frame-service-schema';
 
 /* Host → editor frame */
 export type StudioHostToFrameMessage =

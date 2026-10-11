@@ -1440,9 +1440,18 @@ describe('rename (Studio.jsx renameProject)', () => {
 describe('saved-envelope acknowledgement across durable session operations', () => {
   const fixture = (projectId: string | null = 'p-1') => {
     const api = makeApi();
-    const session = createStudioProjectSession({ api, projectId, clientId: 'source-tab',
-      name: 'Source acknowledgement', engineRevision: 'rev', onChange: () => undefined,
-      now: () => 1000, isOnline: () => true, setTimer: makeTimers().setTimer, newKey: () => 'source-key' });
+    const session = createStudioProjectSession({
+      api,
+      projectId,
+      clientId: 'source-tab',
+      name: 'Source acknowledgement',
+      engineRevision: 'rev',
+      onChange: () => undefined,
+      now: () => 1000,
+      isOnline: () => true,
+      setTimer: makeTimers().setTimer,
+      newKey: () => 'source-key',
+    });
     return { api, session };
   };
   for (const mode of ['new', 'replayed', 'unchanged'] as const) {
@@ -1451,7 +1460,11 @@ describe('saved-envelope acknowledgement across durable session operations', () 
       await session.open();
       expect(session.state.project.graphDigest).toBe('3'.repeat(64));
       let complete!: (value: StudioProjectSaveResponseDto) => void;
-      api.save.mockReturnValue(new Promise<StudioProjectSaveResponseDto>((resolve) => { complete = resolve; }));
+      api.save.mockReturnValue(
+        new Promise<StudioProjectSaveResponseDto>((resolve) => {
+          complete = resolve;
+        }),
+      );
       session.stage({ exactSavedGraph: mode });
       expect(session.state.project.graphDigest).toBeNull();
       const saving = session.flush();
@@ -1468,8 +1481,14 @@ describe('saved-envelope acknowledgement across durable session operations', () 
     const { api, session } = fixture(null);
     await session.open();
     expect(session.state.project.graphDigest).toBeNull();
-    api.create.mockResolvedValue(detail({ id: 'created', revision: 1, digest: '1'.repeat(64),
-      envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { initial: true } } }));
+    api.create.mockResolvedValue(
+      detail({
+        id: 'created',
+        revision: 1,
+        digest: '1'.repeat(64),
+        envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { initial: true } },
+      }),
+    );
     session.stage({ initial: true });
     await session.flush();
     expect(session.state.project).toMatchObject({ id: 'created', revision: 1, graphDigest: '1'.repeat(64) });
@@ -1480,8 +1499,18 @@ describe('saved-envelope acknowledgement across durable session operations', () 
     await session.open();
     const version = session.state.project.graphVersion!;
     api.restore.mockResolvedValue(saved(4));
-    api.get.mockResolvedValue(detail({ revision: 4, digest: '4'.repeat(64), envelope: {
-      schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { restored: true } } }));
+    api.get.mockResolvedValue(
+      detail({
+        revision: 4,
+        digest: '4'.repeat(64),
+        envelope: {
+          schemaVersion: 1,
+          engine: 'freecut',
+          engineRevision: 'rev',
+          graph: { restored: true },
+        },
+      }),
+    );
     expect(await session.restore(1)).toBe(true);
     expect(session.state.project.graphDigest).toBe('4'.repeat(64));
     expect(session.state.project.graphVersion).toBeGreaterThan(version);
