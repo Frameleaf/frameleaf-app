@@ -1,11 +1,3 @@
-vi.mock('@frameleaf/sdk', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
-  importStudioProjectFile: vi.fn(),
-  getStudioProjectImports: vi.fn(),
-  registerStudioImportPublication: vi.fn(),
-  getStudioImportPublications: vi.fn(),
-  cancelStudioImportPublication: vi.fn(),
-}));
 import {
   importStudioProjectFile,
   StudioProjectImportKind,
@@ -22,6 +14,15 @@ import {
   toStudioProjectImport,
   uploadStudioProjectImport,
 } from '$lib/frameleaf/studio/project-imports';
+
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  importStudioProjectFile: vi.fn(),
+  getStudioProjectImports: vi.fn(),
+  registerStudioImportPublication: vi.fn(),
+  getStudioImportPublications: vi.fn(),
+  cancelStudioImportPublication: vi.fn(),
+}));
 
 describe('Studio project imports (FL-103 / FL-105)', () => {
   const dto = {
