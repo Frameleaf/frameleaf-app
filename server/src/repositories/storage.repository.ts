@@ -228,8 +228,13 @@ export class StorageRepository {
         size,
         read: async (position: number, length: number) => {
           const buffer = Buffer.alloc(Math.max(0, length));
-          const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
-          return buffer.subarray(0, bytesRead);
+          try {
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+            return buffer.subarray(0, bytesRead);
+          } catch (error) {
+            buffer.fill(0);
+            throw error;
+          }
         },
         close: () => handle.close(),
       };
