@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, sql, type Transaction } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import {
   AlbumKind,
@@ -393,7 +393,10 @@ describe(StudioProjectRepository.name, () => {
       await sut.trash(expired.id, deadline);
 
       const { promise: held, resolve: release } = Promise.withResolvers<void>();
-      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
+      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<{
+        pid: number;
+        trx: Transaction<DB>;
+      }>();
       const restoring = defaultDatabase.transaction().execute(async (trx) => {
         await trx
           .selectFrom('studio_project')
@@ -402,7 +405,7 @@ describe(StudioProjectRepository.name, () => {
           .forUpdate()
           .executeTakeFirstOrThrow();
         const { rows } = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(trx);
-        signalLocked(rows[0].pid);
+        signalLocked({ pid: rows[0].pid, trx });
         await held;
         await trx
           .updateTable('studio_project')
@@ -410,9 +413,10 @@ describe(StudioProjectRepository.name, () => {
           .where('id', '=', restored.id)
           .execute();
       });
-      const blockerPid = await locked;
+      const { pid: blockerPid, trx: blocker } = await locked;
 
       const purging = sut.deletePurgeable(now);
+      const settlement = Promise.allSettled([restoring, purging]);
       let waiting = false;
       let settled: PromiseSettledResult<unknown>[];
       try {
@@ -421,10 +425,11 @@ describe(StudioProjectRepository.name, () => {
           const { rows } = await sql<{ waiting: boolean }>`
             select exists (
               select 1 from pg_stat_activity
-              where wait_event_type = 'Lock'
+              where datname = current_database()
+                and wait_event_type = 'Lock'
                 and pg_blocking_pids(pid) @> array[${blockerPid}]::integer[]
             ) as waiting
-          `.execute(defaultDatabase);
+          `.execute(blocker);
           waiting = rows[0].waiting;
           if (!waiting) {
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -433,7 +438,7 @@ describe(StudioProjectRepository.name, () => {
         expect(waiting).toBe(true);
       } finally {
         release();
-        settled = await Promise.allSettled([restoring, purging]);
+        settled = await settlement;
       }
 
       expect(settled).toEqual([
