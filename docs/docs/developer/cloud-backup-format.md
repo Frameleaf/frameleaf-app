@@ -58,6 +58,10 @@ Retries and worker restarts reuse identical staged bytes. A lost part response c
 
 Manifests use conditional creation. Their transport receipts remain staged until the signed history and local manifest index are committed. A retry after that commit is idempotent. Storage errors preserve interrupted client upload state; they do not abort or restart the whole backup. Legacy upload behavior is unchanged.
 
+The worker checkpoints its manifest name/write version and database dump identity before upload. A resumed database phase keeps that dump and addresses the same staged ciphertext after a root rotation or flag change. A fresh run removes abandoned temporary dumps.
+
+Client deduplication authenticates and hashes the exact stored object before skipping it; a same-size HEAD cannot clear a detected storage fault. This requires a read of each reused client object. The legacy presence index contains only legacy addresses, and switching back to legacy writes checks those addresses when client roots are loaded.
+
 ## Manifest schema 3
 
 The encrypted payload is the existing gzip JSON manifest with `version:3`, including asset records, related metadata, albums, people, profiles and database references. Each file additionally carries its exact `objectKey`. Database `key` already names its exact stored object. References must belong to the manifest's vault and supported client namespace. Legacy manifests omit `objectKey` and use `o/<plaintext-sha256>`.
@@ -94,6 +98,8 @@ Encryption establishes authenticity of contents, not freshness. Recovery pins an
 Canonical signing bytes are UTF-8 `frameleaf-backup-snapshot-v2\n` followed by compact JSON with fields in exactly the displayed order, including nested manifest fields. The digest is lowercase hex SHA-256 of those bytes; the signature is raw Ed25519 encoded as unpadded base64url. The public JWK's `kid` is its RFC 7638 thumbprint.
 
 Local recovery history is `{pinnedKeys,snapshots,anchor}`. A snapshot record is `{descriptor,signature,digest,signerJwk,receivedAt}`. The anchor is `{instanceId,vaultId,sequence,digest}`. Keys, records and anchors are validated; conflicting imports, duplicate identities, missing anchors and broken historical chains are refused. Cloud receives only `{descriptor,signature}` at `/v2/backup/snapshots`, authenticated with the instance's existing DPoP token. Cloud history never advances a local anchor by itself.
+
+Stored-key setup durably retains accepted imported authority, including an existing-file upgrade. CLI restore/export reconciles an imported kit with established local history, using the claimed stable storage reference for managed storage. An offline export selects its recorded restore point by default while retaining the full latest anchor for historical verification.
 
 Read the manifest by its trusted exact provider `versionId`, then verify ciphertext SHA-256 and authenticated payload. A current delete marker or substituted head cannot select an older snapshot automatically. Missing trusted versions fail. Historical selection is explicit, and newer unanchored history is reported. Operation capabilities used for these reads must permit exact-version access; authorization failure preserves staging and stops the operation.
 
