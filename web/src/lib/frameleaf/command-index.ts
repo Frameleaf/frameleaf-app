@@ -153,18 +153,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         href: Route.users(),
       },
       { id: 'admin:settings', title: $t('admin.system_settings'), icon: mdiCogOutline, href: Route.systemSettings() },
-      { id: 'admin:queues', title: $t('frameleaf_cc_section_queues'), icon: mdiSync, href: Route.queues() },
-      {
-        id: 'admin:render-workers',
-        title: $t('admin.render_workers'),
-        icon: mdiMemory,
-        href: Route.renderWorkers(),
-      },
+      { id: 'admin:queues', title: $t('frameleaf_computers_page_queues'), icon: mdiSync, href: Route.queues() },
+      // FL-364: Workers & endpoints and Render workers are one page, Computers.
       {
         id: 'admin:workers',
-        title: $t('admin.frameleaf_workers_title'),
-        icon: mdiRobotOutline,
-        href: Route.systemWorkers(),
+        title: $t('frameleaf_computers_page_computers'),
+        icon: mdiMemory,
+        href: Route.computers(),
       },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
       {

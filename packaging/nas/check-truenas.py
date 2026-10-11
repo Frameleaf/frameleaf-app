@@ -48,9 +48,17 @@ template = jinja2.Environment(extensions=["jinja2.ext.do"], undefined=jinja2.Str
 for enabled in (False, True):
     candidate = copy.deepcopy(values)
     candidate["frameleaf"]["enable_ml"] = enabled
+    candidate["frameleaf"]["additional_envs"] = [{"name": "FRAMELEAF_IDENTITY_DIR", "value": "/private/identity"}]
+    candidate["frameleaf"]["ml_additional_envs"] = [{"name": "MACHINE_LEARNING_WORKERS", "value": "2"}]
     result = json.loads(template.render(values=candidate, ix_lib=SimpleNamespace(base=SimpleNamespace(render=render))))
     assert result["services"]["server"]["environment"]["FRAMELEAF_MACHINE_LEARNING_ENABLED"] == str(enabled).lower()
     assert ("machine-learning" in result["services"]) == enabled
+    if enabled:
+        ml = result["services"]["machine-learning"]
+        assert "FRAMELEAF_IDENTITY_DIR" not in ml["environment"]
+        assert "DB_PASSWORD" not in ml["environment"]
+        assert ml["environment"]["MACHINE_LEARNING_WORKERS"] == "2"
+        assert all(mount["target"] == candidate["consts"]["ml_cache_path"] for mount in ml["volumes"])
     # FL-300: no metrics ports are asked for, published or passed to the server
     assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
     assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]

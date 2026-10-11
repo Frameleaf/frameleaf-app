@@ -101,14 +101,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['repair'],
     order: ['integrity-checks', 'repair', 'deduplication', 'enrichment-care'],
   },
-  // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
-  // and /admin/render-workers pages are sections of Compute & jobs, with the nightly settings. As in
-  // the template, queue concurrency is edited only in the Job manager's concurrency dialog; the old
-  // job settings key (`isOpen=job`) opens the Job manager.
+  // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
+  // how the computers and the background work are doing, then Computers, Where work runs, Background
+  // work and Graphics card check. The overnight settings are listed with them. The pages it replaced
+  // (Workers & endpoints, Render workers) open Computers; see `SECTION_ALIASES`.
   {
     id: 'processing',
     group: 'server',
-    sections: ['workers', 'hardware', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
+    sections: ['computers', 'routing', 'queues', 'hardware', 'nightly-tasks'],
   },
   // FL-154 and FL-159 (handoff §3.1): the template's Frameleaf Cloud area (settings-catalog.mjs:125-131,
   // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence, Remote access
@@ -241,6 +241,13 @@ export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.fr
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
 /**
+ * Areas that open on a page of their own (a status and where to go) instead of a directory, and
+ * list their pages there rather than in the navigation: Computers & background work (FL-364).
+ */
+export const LANDING_AREAS: readonly SettingsAreaId[] = Object.freeze(['processing']);
+export const hasLandingPage = (area: SettingsAreaId) => LANDING_AREAS.includes(area);
+
+/**
  * The plain-words settings pages (FL-361). An area listed here opens on a landing page of its own
  * that answers a question first and then lists its pages, each saying its current state, so the
  * navigation does not repeat them. Its pages bring their own cards (the settings kit).
@@ -371,8 +378,11 @@ export const commandCenterUrl = (
 export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) =>
   commandCenterUrl('analytics', undefined, { scope: params.scope, range: params.range });
 
-/** Server section keys older links use for a section that now has another key. */
-const SERVER_ALIASES: Record<string, string> = { job: 'queues' };
+/**
+ * Server section keys older links use for a section that now has another key. Workers & endpoints
+ * and Render workers are one page, Computers (FL-364).
+ */
+const SERVER_ALIASES: Record<string, string> = { job: 'queues', workers: 'computers', 'render-workers': 'computers' };
 
 /** The server section a legacy key names. */
 export const serverSectionKey = (key: string) => SERVER_ALIASES[key] ?? key;
@@ -432,6 +442,10 @@ export const resolveSettingsSection = (
   const keys = areaSectionKeys(area);
   if (params.section && keys.includes(params.section)) {
     return params.section;
+  }
+  // An address written for a page that has since been folded into another one.
+  if (params.section && keys.includes(serverSectionKey(params.section))) {
+    return serverSectionKey(params.section);
   }
   const area_ = SETTINGS_AREAS.find((item) => item.id === area);
   // A bare legacy key names the account's section first, as `resolveSettingsArea` reads it; server
@@ -563,9 +577,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'enrichment-care': 'repairs',
   },
   processing: {
-    workers: 'workers',
+    computers: 'workers',
     routing: 'workers',
-    'render-workers': 'workers',
     hardware: 'workers',
     queues: 'job_management',
     'nightly-tasks': 'schedules',

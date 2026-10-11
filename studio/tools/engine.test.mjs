@@ -397,6 +397,86 @@ test('file policy generator rejects malformed schema, duplicate identities and n
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('Linux Rollup core notice binds the exact published package without clearing native constituent gates', async () => {
+  const { packageAttribution, auditAttribution } = await import('./attribution.mjs');
+  const sourceStudio = path.resolve(import.meta.dirname, '..');
+  const sourceManifest = JSON.parse(await readFile(path.join(sourceStudio, 'dependency-attribution.json'), 'utf8'));
+  const sourceLock = JSON.parse(await readFile(path.join(sourceStudio, 'engine-package-lock.json'), 'utf8'));
+  const location = 'node_modules/@rollup/rollup-linux-x64-gnu';
+  const binding = sourceManifest.packageNoticeEvidence.find((entry) => entry.location === location);
+  assert.ok(binding, 'Linux Rollup requires its own exact-platform notice evidence');
+  const pkg = sourceLock.packages[location];
+  for (const field of ['version', 'integrity', 'resolved']) assert.equal(binding[field], pkg[field]);
+  assert.deepEqual(pkg.os, ['linux']);
+  assert.deepEqual(pkg.cpu, ['x64']);
+  assert.equal(pkg.optional, true);
+  assert.deepEqual(binding.noticeIds, ['rollup-core-license']);
+  assert.match(binding.unresolved, /SWC\/NAPI\/mimalloc/);
+  const registry = JSON.parse(await readFile(path.join(sourceStudio, 'package-notice-evidence/@rollup--rollup-linux-x64-gnu-4.62.1.json'), 'utf8'));
+  const receipt = JSON.parse(await readFile(path.join(sourceStudio, 'package-notice-evidence/rollup-linux-x64-gnu-source-receipt.json'), 'utf8'));
+  assert.equal(registry.name, '@rollup/rollup-linux-x64-gnu');
+  assert.equal(registry.version, pkg.version);
+  assert.equal(registry.dist.integrity, pkg.integrity);
+  assert.equal(registry.dist.tarball, pkg.resolved);
+  assert.equal(binding.sourceRevision, registry.gitHead);
+  assert.equal(receipt.sourceRevision, registry.gitHead);
+  assert.equal(receipt.source.packageVersion, pkg.version);
+  assert.equal(receipt.package.integrity, pkg.integrity);
+  assert.equal(receipt.package.resolved, pkg.resolved);
+  assert.equal(receipt.package.sha256, '344473e97b15d3e70371516b5f9eb1e47185a247a77f4de63c249ae2a78fdb5f');
+  assert.deepEqual(receipt.package.noticePaths, []);
+  assert.equal(receipt.source.sha256, 'bc19557af1740b85182b0f16a1fce72cd037b26fa33ff2a5bc482bee8dbae60a');
+  assert.equal(receipt.nativeConstituentsQualified, false);
+  const notice = sourceManifest.artifactNotices.find(({ id }) => id === binding.noticeIds[0]);
+  assert.equal(notice.sha256, '9dff12bb776f199482bc21fb2aba9615032c0403d19cfd1fa0bf101a9379b146');
+  assert.equal(createHash('sha256').update(await readFile(path.join(sourceStudio, notice.path))).digest('hex'), notice.sha256);
+  const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-linux-rollup-notice-'));
+  try {
+    const studio = path.join(root, 'studio');
+    const engine = path.join(root, 'engine');
+    const dist = path.join(root, 'dist');
+    for (const directory of [studio, engine, dist]) await mkdir(directory);
+    for (const name of ['notices', 'package-notice-evidence']) await cp(path.join(sourceStudio, name), path.join(studio, name), { recursive: true });
+    // Attribution-only fixtures model installed/absent platform packages, not executable native payloads.
+    const nativeLocations = ['node_modules/@img/sharp-libvips-linux-x64', 'node_modules/@img/sharp-libvips-linuxmusl-x64'];
+    const packages = Object.fromEntries([location, ...nativeLocations].map((name) => [name, sourceLock.packages[name]]));
+    const lock = { packages: { '': {}, ...packages } };
+    for (const directory of [studio, engine]) await writeFile(path.join(directory, directory === studio ? 'engine-package-lock.json' : 'package-lock.json'), JSON.stringify(lock));
+    const manifest = { engineRevision: sourceManifest.engineRevision, embeddedComponents: [], dolbyTools: {}, rightsPolicy: sourceManifest.rightsPolicy, resources: [], artifactNotices: [notice], packageNoticeEvidence: [structuredClone(binding)] };
+    const save = () => writeFile(path.join(studio, 'dependency-attribution.json'), JSON.stringify(manifest));
+    await save();
+    const nativePackage = path.join(engine, location);
+    await mkdir(nativePackage, { recursive: true });
+    await writeFile(path.join(nativePackage, 'package.json'), JSON.stringify(receipt.package.packageJson));
+    for (const name of nativeLocations) {
+      await mkdir(path.join(engine, name), { recursive: true });
+      await writeFile(path.join(engine, name, 'package.json'), JSON.stringify({ version: packages[name].version }));
+    }
+    const result = await packageAttribution(studio, dist, engine);
+    assert.deepEqual(result.unresolvedPackages, [...nativeLocations, location].sort());
+    assert.equal(result.distributionApproval, false);
+    const output = JSON.parse(await readFile(path.join(dist, 'attribution/index.json'), 'utf8'));
+    const row = output.packages.find((entry) => entry.location === location);
+    assert.equal(row.status, 'missing-notice');
+    assert.equal(row.noticeEvidence.unresolved, binding.unresolved);
+    assert.equal(row.notices[0].file, 'rollup-core-license.txt');
+    assert.deepEqual(await readFile(path.join(dist, 'attribution/rollup-core-license.txt')), await readFile(path.join(sourceStudio, notice.path)));
+    await auditAttribution(studio, dist, engine);
+    for (const field of ['version', 'integrity', 'resolved']) {
+      manifest.packageNoticeEvidence[0][field] = 'different-platform-or-source';
+      await save();
+      await assert.rejects(packageAttribution(studio, dist, engine), /Package notice binding changed/);
+      manifest.packageNoticeEvidence[0][field] = binding[field];
+    }
+    await save();
+    await rm(nativePackage, { recursive: true });
+    await packageAttribution(studio, dist, engine);
+    const absent = JSON.parse(await readFile(path.join(dist, 'attribution/index.json'), 'utf8')).packages.find((entry) => entry.location === location);
+    assert.equal(absent.status, 'optional-not-installed');
+    assert.deepEqual(absent.notices, []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('supplemental notices require exact package bindings and retained evidence; partial native evidence stays blocked', async () => {
   const { packageAttribution, auditAttribution } = await import('./attribution.mjs');
   const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-supplemental-notices-'));

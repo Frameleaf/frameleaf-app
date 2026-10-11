@@ -1531,7 +1531,7 @@
     },
     "/admin/cloud/backup": {
       "delete": {
-        "description": "Stops backing up. The bucket, its backups and the key are kept.",
+        "description": "Stops backing up. The bucket, its backups and stored keys are kept; keys held only in memory are cleared.",
         "operationId": "turnOffCloudBackup",
         "parameters": [],
         "responses": {
@@ -44212,6 +44212,72 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/source-resolutions": {
+      "post": {
+        "description": "Closed immutable Lottie bytes bound to the acknowledged saved revision, current session, source admission and original-download permission. Expires within five seconds.",
+        "operationId": "resolveStudioProjectSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioSourceResolutionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioSourceResolutionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resolve an exact saved Studio source",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -116480,6 +116546,162 @@
           "sourceRevision",
           "width"
         ],
+        "type": "object"
+      },
+      "StudioSourceFileDto": {
+        "additionalProperties": false,
+        "properties": {
+          "base64": {
+            "maxLength": 25165824,
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "pattern": "^(?!\\/)(?!.*(?:\\\\|\\/\\/|(?:^|\\/)\\.\\.?(?:\\/|$)|[\\u0000-\\u001f\\u007f]))[^/]+(?:\\/[^/]+)*$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base64",
+          "path",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "StudioSourceParentDto": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioSourceParentKind"
+          }
+        },
+        "required": [
+          "checksum",
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "StudioSourceParentKind": {
+        "enum": [
+          "project-import",
+          "vector-graphic"
+        ],
+        "type": "string"
+      },
+      "StudioSourceResolutionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "archive": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StudioSourceFileDto"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "type": "array"
+          },
+          "graphDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "manifestDigest": {
+            "description": "SHA-256 of canonical JSON containing every result field except files.base64 and manifestDigest",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "parent": {
+            "$ref": "#/components/schemas/StudioSourceParentDto"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/StudioSourceSelectionDto"
+          }
+        },
+        "required": [
+          "archive",
+          "expiresAt",
+          "files",
+          "graphDigest",
+          "manifestDigest",
+          "parent",
+          "projectId",
+          "revision",
+          "selection"
+        ],
+        "type": "object"
+      },
+      "StudioSourceResolutionRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "graphDigest": {
+            "description": "Exact acknowledged saved envelope digest",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "parent": {
+            "$ref": "#/components/schemas/StudioSourceParentDto"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/StudioSourceSelectionDto"
+          }
+        },
+        "required": [
+          "graphDigest",
+          "parent",
+          "revision",
+          "selection"
+        ],
+        "type": "object"
+      },
+      "StudioSourceSelectionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "animationId": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "type": "string"
+          },
+          "themeId": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "StudioTimeDto": {

@@ -42,6 +42,9 @@ vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async
 vi.mock('$lib/components/frameleaf/backup/BackupArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockBackupArea.svelte')).default,
 }));
+vi.mock('$lib/components/frameleaf/computers/ComputersLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockComputersLanding.svelte')).default,
+}));
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
@@ -276,11 +279,54 @@ describe('the Command Center (FL-71)', () => {
   });
 
   it('gives administration tools the page width without a card around their own grouped containers', () => {
-    open('/user-settings?area=processing&section=render-workers');
+    open('/user-settings?area=processing&section=computers');
     const { container } = render(SettingsHost, {
-      sections: [...sections, serverSection('render-workers', 'Render workers')],
+      sections: [...sections, serverSection('computers', 'Computers')],
     });
-    expect(container.querySelector('#setting-render-workers')).toHaveClass('cc-manager');
+    expect(container.querySelector('#setting-computers')).toHaveClass('cc-manager');
+  });
+
+  describe('Computers & background work (FL-364)', () => {
+    const pages = () => [
+      ...sections,
+      serverSection('computers', 'Computers'),
+      serverSection('routing', 'Where work runs'),
+      serverSection('hardware', 'Graphics card check'),
+    ];
+
+    it('names the area in plain words and opens it on its own page, not a list of links', () => {
+      open('/user-settings?area=processing');
+      render(SettingsHost, { sections: pages() });
+
+      expect(areaNames()).toContain('Computers & background work');
+      expect(areaNames()).not.toContain('Compute & jobs');
+      expect(screen.getByRole('heading', { level: 1, name: 'Computers & background work' })).toBeInTheDocument();
+      expect(screen.getByText('Which computers do the heavy work, and how it is going.')).toBeInTheDocument();
+      expect(screen.getByTestId('computers-landing')).toBeInTheDocument();
+      // Its pages are listed on that page, as Backup's are, not under it in the navigation.
+      expect(screen.queryByRole('group', { name: /pages/i })).not.toBeInTheDocument();
+    });
+
+    it('puts the way back under the heading of one of its pages', () => {
+      open('/user-settings?area=processing&section=hardware');
+      render(SettingsHost, { sections: pages() });
+
+      const heading = screen.getByRole('heading', { level: 1, name: 'Graphics card check' }).parentElement!;
+      expect(heading.querySelector('.cc-overline')).toHaveTextContent('Computers & background work');
+      expect(within(heading).queryByRole('button')).toBeNull();
+      expect(screen.getByRole('link', { name: 'Computers & background work' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=processing',
+      );
+    });
+
+    it.each(['workers', 'render-workers'])('opens Computers for the old address of "%s"', (section) => {
+      open(`/user-settings?area=processing&section=${section}`);
+      const { container } = render(SettingsHost, { sections: pages() });
+
+      expect(screen.getByRole('heading', { level: 1, name: 'Computers' })).toBeInTheDocument();
+      expect(container.querySelector('#setting-computers')).toBeInTheDocument();
+    });
   });
 
   it('keeps an ordinary settings page as one grouped list', () => {
@@ -587,6 +633,6 @@ describe('the Command Center (FL-71)', () => {
     expect(names).toContain('Trash');
     expect(names).not.toContain('Users');
     expect(names).not.toContain('Overview');
-    expect(names).not.toContain('Compute & jobs');
+    expect(names).not.toContain('Computers & background work');
   });
 });
