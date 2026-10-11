@@ -4,6 +4,7 @@ import { load } from './+page';
 
 vi.mock('@frameleaf/sdk', () => ({ getAllTags: vi.fn(), getTagStatistics: vi.fn() }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
+vi.mock('$lib/components/frameleaf/tags/TagLibrary.svelte', () => ({ default: 'TagLibrary' }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: async () => (key: string) => key }));
 
 const tags = [
@@ -35,6 +36,11 @@ describe('tags page load', () => {
   it('loads the tags and their counts for the overview and for a deep link', async () => {
     await expect(run()).resolves.toMatchObject({ path: '', tags, statistics: [{ id: 'trips' }] });
     await expect(run('Trips/Rockies')).resolves.toMatchObject({ path: 'Trips/Rockies' });
+  });
+
+  it('fetches the grid and the viewer only when a tag is chosen (FL-139)', async () => {
+    await expect(run()).resolves.toMatchObject({ TagLibrary: undefined });
+    await expect(run('Trips')).resolves.toMatchObject({ TagLibrary: 'TagLibrary' });
   });
 
   it('answers not found for a deleted, renamed-away or suppressed tag', async () => {
