@@ -9,28 +9,32 @@ describe(FrameleafCloudBackupRepository.name, () => {
   const token = { accessToken: 'token', signer: {} } as never;
   const target = { api: 'https://api.frameleaf.test', token };
   let requestJson: ReturnType<typeof vi.fn>;
+  let requestJsonTimed: ReturnType<typeof vi.fn>;
   let sut: FrameleafCloudBackupRepository;
 
   beforeEach(() => {
     requestJson = vi.fn().mockResolvedValue({});
-    sut = new FrameleafCloudBackupRepository({ requestJson } as never);
+    requestJsonTimed = vi
+      .fn()
+      .mockResolvedValue({ data: {}, serverTime: Date.parse('2026-10-11T12:00:00Z'), elapsedMs: 0 });
+    sut = new FrameleafCloudBackupRepository({ requestJson, requestJsonTimed } as never);
   });
 
-  it('asks for the selected location and rotates with an empty body using the instance token', async () => {
-    await sut.grant(target, 'loc-07');
-    await sut.rotate(target);
+  it('asks for the selected location and renews the requested operation using the instance token', async () => {
+    await sut.grant(target, 'loc-07', 'upload');
+    await sut.rotate(target, 'restore');
 
-    expect(requestJson).toHaveBeenNthCalledWith(1, expect.anything(), {
+    expect(requestJsonTimed).toHaveBeenNthCalledWith(1, expect.anything(), {
       method: 'POST',
-      url: 'https://api.frameleaf.test/v2/backup/grant',
+      url: 'https://api.frameleaf.test/v4/backup/grant',
       dpop: token,
-      body: { locationId: 'loc-07' },
+      body: { locationId: 'loc-07', operation: 'upload' },
     });
-    expect(requestJson).toHaveBeenNthCalledWith(2, expect.anything(), {
+    expect(requestJsonTimed).toHaveBeenNthCalledWith(2, expect.anything(), {
       method: 'POST',
-      url: 'https://api.frameleaf.test/v2/backup/grant/rotate',
+      url: 'https://api.frameleaf.test/v4/backup/grant/rotate',
       dpop: token,
-      body: {},
+      body: { operation: 'restore' },
     });
   });
 
@@ -38,8 +42,8 @@ describe(FrameleafCloudBackupRepository.name, () => {
     await sut.locations(target);
     await sut.metadata(target);
     expect(requestJson.mock.calls.map(([, options]) => [options.url, options.dpop])).toEqual([
-      ['https://api.frameleaf.test/v2/backup/locations', token],
-      ['https://api.frameleaf.test/v2/backup/grant', token],
+      ['https://api.frameleaf.test/v4/backup/locations', token],
+      ['https://api.frameleaf.test/v4/backup/grant', token],
     ]);
     requestJson.mockRejectedValue(
       new FrameleafCloudError(
@@ -55,7 +59,7 @@ describe(FrameleafCloudBackupRepository.name, () => {
   });
 
   it('refuses an invalid location ID before sending any provisioning request', () => {
-    expect(() => sut.grant(target, 'https://outside.example')).toThrow();
+    expect(() => sut.grant(target, 'https://outside.example', 'upload')).toThrow();
     expect(requestJson).not.toHaveBeenCalled();
   });
 
@@ -134,5 +138,31 @@ describe(FrameleafCloudBackupRepository.name, () => {
       method: 'DELETE',
       url: `https://api.frameleaf.test/v2/backup/escrow?vaultId=${vaultId}&keyVersion=1`,
     });
+  });
+
+  it.each([null, '2026-10-11T11:59:59Z', '2026-10-11T12:00:20Z', '2026-10-11T12:30:00Z'])(
+    'refuses absent server time or unusable provider expiry %s',
+    async (expiry) => {
+      const data = cloudContractFixture('backup/capability-upload.json');
+      if (expiry) data.capability.expiresAt = expiry;
+      requestJsonTimed.mockResolvedValue({
+        data,
+        serverTime: expiry ? Date.parse('2026-10-11T12:00:00Z') : NaN,
+        elapsedMs: 0,
+      });
+      await expect(sut.rotate(target, 'upload')).rejects.toThrow('unusable temporary backup lifetime');
+    },
+  );
+
+  it('uses authenticated server time and accounts for response delay instead of client wall clock', async () => {
+    const data = cloudContractFixture('backup/capability-upload.json');
+    data.capability.expiresAt = '2026-10-11T12:02:00Z';
+    requestJsonTimed.mockResolvedValue({ data, serverTime: Date.parse('2026-10-11T12:00:00Z'), elapsedMs: 10_000 });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0);
+    try {
+      expect((await sut.rotate(target, 'upload')).capability.refreshAfterSec).toBe(80);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

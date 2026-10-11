@@ -263,6 +263,17 @@ export class FrameleafCloudRepository {
     return this.exchangeJson(schema, () => request);
   }
 
+  /** Authenticated server time for short capabilities; never derive their lifetime from the client clock. */
+  async requestJsonTimed<T extends z.ZodType>(schema: T, request: FrameleafCloudRequest) {
+    const started = performance.now();
+    const { request: sent, exchange } = await this.exchangeWithNonce(() => request);
+    return {
+      data: this.parseExchange(schema, sent, exchange),
+      serverTime: Date.parse(exchange.response.headers.get('date') ?? ''),
+      elapsedMs: performance.now() - started,
+    };
+  }
+
   /**
    * `requestJson` for a request built by `build`, which is called again for the one retry a DPoP
    * nonce challenge gets (FL-178), so a retried request can carry fresh one-time values. Each attempt

@@ -81,7 +81,6 @@ import {
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import {
-  CLOUD_BACKUP_FRESH_KEY_MS,
   CloudBackupClaimError,
   CloudBackupConnection,
   CloudBackupFileChangedError,
@@ -164,6 +163,11 @@ import {
 } from 'src/utils/cloud-backup-recovery.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
+  type BackupTransferJournal,
+  backupTransferSchema,
+  readBackupTransfer,
+} from 'src/utils/cloud-backup-transfer.js';
+import {
   CLOUD_BACKUP_BATCH,
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -204,6 +208,7 @@ import {
 } from 'src/utils/execution-signal.js';
 import {
   BackupGrantResponse,
+  BackupOperation,
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
   backupGrantProblem,
   managedBackupRefusal,
@@ -223,8 +228,13 @@ import {
   cloudBackupActivationProgress,
   pushJobData,
 } from 'src/utils/frameleaf-push.js';
+import {
+  ManagedBackupAuthorizationError,
+  managedBackupReadSession,
+  managedBackupSession,
+} from 'src/utils/managed-backup-session.js';
 import { handlePromiseError } from 'src/utils/misc.js';
-import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
@@ -942,8 +952,8 @@ export class CloudBackupService {
           throw new ManagedStorageRefusal('No backup location could be reached reliably. Try setup again.', 30_000);
         }
       }
-      const grant = await this.cloudBackup.grant(api, locationId);
-      issued = 'credentials' in grant ? grant : await this.cloudBackup.rotate(api);
+      const grant = await this.cloudBackup.grant(api, locationId, 'upload');
+      issued = 'capability' in grant ? grant : await this.cloudBackup.rotate(api, 'upload');
       if (
         issued.location.locationId !== locationId ||
         issued.storageId !== grant.storageId ||
@@ -970,7 +980,7 @@ export class CloudBackupService {
       );
     }
     return {
-      connection: this.managedConnection(issued),
+      connection: this.managedConnection(issued, undefined, 'upload'),
       state: {
         storageId: issued.storageId,
         location: issued.location,
@@ -1486,13 +1496,15 @@ export class CloudBackupService {
     try {
       await this.process(operation, claimToken, progress);
     } catch (error) {
-      if (await settleOperationStop(this.operations, operation, claimToken)) return;
+      if (await this.settleBackupStop(operation, claimToken, error)) return;
+      if (await this.waitForManagedRenewal(operation, claimToken, error)) return;
       const message = errorMessage(error);
       this.logger.error(`Cloud backup run ${operation.id} failed: ${message}`);
-      const outcome = await this.operations.fail(operation.id, claimToken, {
-        error: message,
-        errorCode: 'cloud_backup_failed',
-      });
+      const failure = { error: message, errorCode: 'cloud_backup_failed' };
+      const outcome =
+        error instanceof ManagedBackupAuthorizationError
+          ? await this.operations.fail(operation.id, claimToken, failure, { retry: false, requireActiveClaim: true })
+          : await this.operations.fail(operation.id, claimToken, failure);
       if (outcome === 'failed') {
         await this.endManifest(progress.result, 'failed');
         await this.recordRun(operation, progress.result, 'failed', message);
@@ -1645,6 +1657,21 @@ export class CloudBackupService {
       connection = this.ownBucketConnection(metadata, settings);
     }
 
+    const journal: BackupTransferJournal = {
+      current: readBackupTransfer(operation.result),
+      directory: join(identityDirectory(this.configRepository), 'cloud-backup-transfers', operation.id),
+      save: async (transfer) => {
+        assertExecutionActive();
+        const checked = transfer === null ? null : backupTransferSchema.parse(transfer);
+        if (!(await this.operations.setBackupTransfer(operation.id, claimToken, checked)))
+          throw new OperationClaimLostError();
+        journal.current = checked;
+        operation.result = { ...(operation.result as Record<string, unknown> | null), backupTransfer: checked };
+      },
+    };
+    // BYO keeps its existing permissions; resumable managed sessions additionally require multipart listings.
+    if (metadata.target === 'managed') connection.transfer = journal;
+
     // The claim is read again on every operation: a bucket another server claimed since, or one emptied or
     // recreated (its index would no longer match it), is refused rather than used.
     const marker = await this.store.readMarker(connection, bucketKey);
@@ -1682,8 +1709,8 @@ export class CloudBackupService {
   }
 
   /**
-   * FL-164: Frameleaf-managed storage for one operation: a key rotated now and kept in memory for this
-   * operation only. A refusal Frameleaf Cloud asks to wait out (a rate limit, a region without storage, an
+   * Frameleaf-managed storage for one operation: an expiring session renewed in memory. A refusal
+   * Frameleaf Cloud asks to wait out (a rate limit, a region without storage, an
    * unreachable cloud, an unlinked server) hands the operation back to wait; any other stops it with its
    * reason, and a suspected copy of this server also tells the administrators.
    */
@@ -1694,9 +1721,8 @@ export class CloudBackupService {
   ): Promise<{ connection: CloudBackupConnection; managed: FrameleafCloudBackupManaged } | null> {
     let grant: BackupGrantResponse;
     try {
-      // under the bucket lock, so a request reading the bucket never has its key revoked mid-read
       grant = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () =>
-        this.cloudBackup.rotate(await this.managedApi()),
+        this.cloudBackup.rotate(await this.managedApi(), this.backupOperation(operation)),
       );
     } catch (error) {
       const refusal = this.refusalOf(error);
@@ -1721,7 +1747,10 @@ export class CloudBackupService {
       await this.operations.requeue(operation.id, claimToken, { delayMs: refusal.retryAfterMs, returnAttempt: true });
       return null;
     }
-    const connection = this.managedConnection(grant, metadata);
+    const authority = this.backupOperation(operation);
+    this.validateManagedBinding(grant, metadata);
+    const connection =
+      grant.readOnly && authority !== 'restore' ? null : this.managedConnection(grant, metadata, authority);
     const problem = backupGrantProblem(grant);
     if (problem) {
       throw new Error(problem);
@@ -1741,41 +1770,77 @@ export class CloudBackupService {
       managed = managedOf(current);
       return { ...current, managed };
     });
+    if (!connection)
+      throw new Error(
+        `Frameleaf-managed storage is read-only for this server${readOnlyReason({ ...metadata, managed })}, so backups are paused. Your library is untouched and restores keep working.`,
+      );
     return { connection, managed };
   }
 
-  /** The connection a managed grant's key opens, waited on for a few seconds while the new key goes live. */
-  private managedConnection(grant: BackupGrantResponse, metadata?: FrameleafCloudBackup): CloudBackupConnection {
-    if (metadata) {
-      const sameIdentity = metadata.managed?.storageId
-        ? grant.storageId === metadata.managed.storageId &&
-          managedStorageRef(grant.storageId) === metadata.bucketRef &&
-          grant.location.locationId === metadata.managed.location?.locationId
-        : // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
-          metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
-      const sameLocation =
-        !metadata.managed?.location || grant.location.locationId === metadata.managed.location.locationId;
-      if (!sameIdentity || !sameLocation || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
-        throw new Error(
-          'Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.',
-        );
-      }
-    }
+  private backupOperation(operation: MediaOperation): BackupOperation {
+    const task = taskOf(operation);
+    return operation.kind === RESTORE_KIND ||
+      task === 'verify' ||
+      (task === 'prune' && (operation.snapshot as { dryRun?: boolean }).dryRun !== false)
+      ? 'restore'
+      : task === 'prune'
+        ? 'prune'
+        : 'upload';
+  }
+
+  private transferResult(operation: MediaOperation, result: object): Record<string, unknown> {
+    return { ...result, backupTransfer: readBackupTransfer(operation.result) };
+  }
+
+  /** The connection captures one complete session for each signed request. */
+  private managedConnection(
+    grant: BackupGrantResponse,
+    metadata?: FrameleafCloudBackup,
+    operation: BackupOperation = 'restore',
+  ): CloudBackupConnection {
+    this.validateManagedBinding(grant, metadata);
     return {
-      clientFormatSupported:
-        (grant as { objectFormats?: { write: Array<{ format: string; version: number }> } }).objectFormats?.write.some(
-          (format) => format.format === 'frameleaf-client-backup' && format.version === 1,
-        ) ?? false,
+      clientFormatSupported: grant.objectFormats.write.some(
+        (format) => format.format === 'frameleaf-client-backup' && format.version === 1,
+      ),
       vaultId: metadata?.instanceId,
       recoveryKeys: metadata ? this.clientKeys.get(metadata.keyFingerprint)?.keys : undefined,
       stagingDirectory: join(identityDirectory(this.configRepository), 'cloud-backup-staging'),
       endpoint: grant.endpoint.replace(/\/+$/, ''),
       region: grant.region,
       bucket: grant.bucket,
-      accessKeyId: grant.credentials.accessKeyId,
-      secretAccessKey: grant.credentials.secretAccessKey,
-      freshKeyUntil: Date.now() + CLOUD_BACKUP_FRESH_KEY_MS,
+      accessKeyId: grant.capability.credentials.accessKeyId,
+      secretAccessKey: grant.capability.credentials.secretAccessKey,
+      sessionToken: grant.capability.credentials.sessionToken,
+      managedCredentials: managedBackupSession(grant, operation, async () =>
+        this.cloudBackup.rotate(await this.managedApi(), operation),
+      ),
+      ...(operation !== 'restore' && {
+        managedVersionCredentials: managedBackupReadSession(grant, async () =>
+          this.cloudBackup.rotate(await this.managedApi(), 'restore'),
+        ),
+      }),
     };
+  }
+
+  private validateManagedBinding(grant: BackupGrantResponse, metadata?: FrameleafCloudBackup) {
+    if (!metadata) {
+      return;
+    }
+
+    const sameIdentity = metadata.managed?.storageId
+      ? grant.storageId === metadata.managed.storageId &&
+        managedStorageRef(grant.storageId) === metadata.bucketRef &&
+        grant.location.locationId === metadata.managed.location?.locationId
+      : // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
+        metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
+    const sameLocation =
+      !metadata.managed?.location || grant.location.locationId === metadata.managed.location.locationId;
+    if (!sameIdentity || !sameLocation || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
+      throw new Error(
+        'Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.',
+      );
+    }
   }
 
   /**
@@ -1884,6 +1949,24 @@ export class CloudBackupService {
   private async backUpDatabase(run: Run): Promise<boolean> {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
     let database = run.progress.result.database;
+    const saved = run.connection.transfer?.current;
+    if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX)) {
+      if (saved.key.startsWith('db/v1/')) throw new Error('The encrypted database upload has no pinned dump identity.');
+      if (
+        !saved.source ||
+        dirname(saved.source) !== folder ||
+        basename(saved.source) !== basename(saved.key) ||
+        !isCloudBackupDumpName(basename(saved.source)) ||
+        !saved.expectedSha256
+      )
+        throw new Error('The resumable database backup source is invalid.');
+      database = {
+        key: saved.key,
+        sha256: saved.expectedSha256,
+        size: (await this.storageRepository.stat(saved.source)).size,
+      };
+      run.progress.result = { ...run.progress.result, database };
+    }
     if (!database) {
       await this.removeLeftoverDumps();
       const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
@@ -1929,11 +2012,11 @@ export class CloudBackupService {
   /**
    * A fresh run removes abandoned temporary dumps. A resumed database phase keeps its checkpointed source.
    */
-  private async removeLeftoverDumps() {
+  private async removeLeftoverDumps(keep: string | null = null) {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
     const names = await this.storageRepository.readdir(folder).catch((): string[] => []);
     for (const name of names) {
-      if (isCloudBackupDumpName(name)) {
+      if (isCloudBackupDumpName(name) && join(folder, name) !== keep) {
         await this.storageRepository.unlink(join(folder, name));
       }
     }
@@ -2274,7 +2357,7 @@ export class CloudBackupService {
     run.progress.result = { ...run.progress.result, phase: 'done' };
     // Written whatever a pause or cancel asks: the backup is complete, and `finish` settles either.
     const written = await this.operations.setBulkResult(run.id, run.claimToken, {
-      result: run.progress.result as unknown as Record<string, unknown>,
+      result: this.transferResult(run.operation, run.progress.result),
       processedUnits: run.progress.result.assets,
       totalUnits: run.progress.result.total ?? run.progress.result.assets,
       progress: runProgress(run.progress.result),
@@ -2300,7 +2383,7 @@ export class CloudBackupService {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
       version: run.progress.result.manifestKey!.startsWith('m/v1/') ? 3 : CLOUD_BACKUP_MANIFEST_VERSION,
       instanceId: run.metadata.instanceId,
-      createdAt: new Date().toISOString(),
+      createdAt: asIso(run.operation.createdAt) ?? manifestTime(run.progress.result.manifestKey!)!.toISOString(),
       database: run.progress.result.database,
     };
     yield `${JSON.stringify(header).slice(0, -1)},"assets":{`;
@@ -2436,7 +2519,7 @@ export class CloudBackupService {
     const { result } = run.progress;
     reportExecutionProgress('assets', result.assets);
     const written = await this.operations.setBulkResult(id, claimToken, {
-      result: result as unknown as Record<string, unknown>,
+      result: this.transferResult(operation, result),
       processedUnits: result.assets,
       totalUnits: result.total ?? result.assets,
       progress: runProgress(result),
@@ -2532,7 +2615,7 @@ export class CloudBackupService {
   ): Promise<TaskCheckpoint> {
     assertExecutionActive();
     const written = await this.operations.setBulkResult(operation.id, claimToken, {
-      result: result as Record<string, unknown>,
+      result: this.transferResult(operation, result),
       processedUnits: units.processed,
       totalUnits: units.total,
       progress: Math.min(100, Math.max(0, Math.floor(units.progress))),
@@ -2582,7 +2665,8 @@ export class CloudBackupService {
 
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
   private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
-    if (await settleOperationStop(this.operations, operation, claimToken)) return false;
+    if (await this.settleBackupStop(operation, claimToken, error)) return false;
+    if (await this.waitForManagedRenewal(operation, claimToken, error)) return false;
     // a file system error names its path: shown to administrators, it names it below the media folder only
     const diagnostic = maskMediaPath(errorMessage(error));
     this.logger.error(`${what} ${operation.id} failed: ${diagnostic}`);
@@ -2590,10 +2674,14 @@ export class CloudBackupService {
       operation.kind === RESTORE_KIND && (operation.snapshot as CloudBackupRestoreSnapshot).owner
         ? 'The owner backup restore stopped. Already restored work is retained; check access and backup availability.'
         : diagnostic;
-    const outcome = await this.operations.fail(operation.id, claimToken, {
+    const failure = {
       error: message,
       errorCode: operation.kind === RESTORE_KIND ? 'cloud_restore_failed' : `cloud_backup_${taskOf(operation)}_failed`,
-    });
+    };
+    const outcome =
+      error instanceof ManagedBackupAuthorizationError
+        ? await this.operations.fail(operation.id, claimToken, failure, { retry: false, requireActiveClaim: true })
+        : await this.operations.fail(operation.id, claimToken, failure);
     if (outcome === 'failed') {
       this.notify({
         level: NotificationLevel.Error,
@@ -2606,6 +2694,31 @@ export class CloudBackupService {
       });
     }
     return outcome === 'failed';
+  }
+
+  private async waitForManagedRenewal(operation: MediaOperation, claimToken: string, error: unknown): Promise<boolean> {
+    if (!(error instanceof ManagedBackupAuthorizationError) || error.retryAfterMs === null) return false;
+    if (
+      !(await this.operations.requeue(operation.id, claimToken, {
+        delayMs: error.retryAfterMs,
+        returnAttempt: true,
+        requireActiveClaim: true,
+      }))
+    )
+      await this.settleBackupStop(operation, claimToken, new OperationClaimLostError());
+    return true;
+  }
+
+  private async settleBackupStop(operation: MediaOperation, claimToken: string, error: unknown): Promise<boolean> {
+    if (await settleOperationStop(this.operations, operation, claimToken)) return true;
+    if (!(error instanceof OperationClaimLostError)) return false;
+    const current = await this.operations.getOfKind(operation.id, operation.kind);
+    if (current?.claimToken === claimToken) {
+      if (current.cancelRequestedAt)
+        await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+      else if (current.pauseRequestedAt) await this.operations.settlePause(operation.id, claimToken);
+    }
+    return true;
   }
 
   private async runVerify(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -2642,7 +2755,7 @@ export class CloudBackupService {
         return;
       }
       const at = new Date().toISOString();
-      const degraded = result.missing + result.mismatched > 0;
+      const degraded = result.missing + result.mismatched + result.degradedManifests > 0;
       await this.updateMetadata((current) => ({
         ...current,
         lastVerify: {
@@ -3107,7 +3220,10 @@ export class CloudBackupService {
           ? await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
               if (await this.activeBucketOperation()) throw new ConflictException('Cloud backup is busy');
               return read(
-                this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), found.metadata),
+                this.managedConnection(
+                  await this.cloudBackup.rotate(await this.managedApi(), 'restore'),
+                  found.metadata,
+                ),
               );
             })
           : await read(
@@ -3608,7 +3724,10 @@ export class CloudBackupService {
         }
         let connection: CloudBackupConnection;
         try {
-          connection = this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), metadata);
+          connection = this.managedConnection(
+            await this.cloudBackup.rotate(await this.managedApi(), 'restore'),
+            metadata,
+          );
         } catch (error) {
           throw new ConflictException(this.refusalOf(error).message);
         }

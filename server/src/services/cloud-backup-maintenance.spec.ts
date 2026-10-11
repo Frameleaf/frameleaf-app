@@ -5,6 +5,7 @@ import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositor
 import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
 import { inVerifySlice } from 'src/utils/cloud-backup-retention.js';
 import { executionDelay } from 'src/utils/execution-signal.js';
+import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 
 const hex = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -151,7 +152,7 @@ describe(CloudBackupMaintenance.name, () => {
       await completion;
       expect(store.head).toHaveBeenCalledTimes(5);
       expect(store.hashObject).not.toHaveBeenCalled();
-      expect(checkpoint).toHaveBeenCalledTimes(1);
+      expect(checkpoint).toHaveBeenCalledTimes(3);
       expect(renew).toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     });
@@ -381,6 +382,84 @@ describe(CloudBackupMaintenance.name, () => {
       // every object hash sorts before the cursor, so only the dumps are left
       expect(store.head).toHaveBeenCalledTimes(2);
       expect(result?.done).toBe(true);
+    });
+
+    it.each(['manifest', 'object', 'dump'])(
+      'stops on %s authorization failures without recording damaged media',
+      async (where) => {
+        objects = nightlyBucket(1);
+        const refusal = new ManagedBackupAuthorizationError();
+        if (where === 'manifest') store.get.mockRejectedValue(refusal);
+        else
+          store.head.mockImplementation((_connection, key) => {
+            if (where === 'object' || key.startsWith('db/')) return Promise.reject(refusal);
+            return Promise.resolve({ key, size: 10, etag: '"e"' });
+          });
+        await expect(
+          sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+            operationId: 'verify',
+            claimToken: 'claim',
+          }),
+        ).rejects.toBe(refusal);
+        expect(index.forget).not.toHaveBeenCalled();
+        expect(index.recordObjectVerification.mock.calls.every(([receipt]) => receipt.result === 'passed')).toBe(true);
+        expect(index.markManifests.mock.calls.every(([, keys]) => keys.length === 0)).toBe(true);
+      },
+    );
+
+    it('resumes after the last checked dump without counting it again', async () => {
+      objects = nightlyBucket(2);
+      const start = {
+        ...emptyVerifyResult('full', new Date()),
+        cursor: 'f'.repeat(64),
+        dumpCursor: 'db/dump-20260925.sql.gz',
+        checked: 4,
+      };
+      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify', claimToken: 'claim' });
+      expect(store.head).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ checked: 5, done: true, dumpCursor: 'db/dump-20260926.sql.gz' });
+    });
+
+    it('retains missing-dump degradation when paused at its checkpoint and resumed', async () => {
+      objects = nightlyBucket(2);
+      objects.delete('db/dump-20260925.sql.gz');
+      let saved = emptyVerifyResult('full', new Date());
+      saved.cursor = 'f'.repeat(64);
+      const stopped = await sut.verify(
+        bucket,
+        saved,
+        (value) => {
+          saved = value;
+          return Promise.resolve(false);
+        },
+        { operationId: 'verify', claimToken: 'claim-1' },
+      );
+      expect(stopped).toBeNull();
+      expect(saved).toMatchObject({
+        missing: 1,
+        degradedManifests: 1,
+        degradedKeys: ['m/20260925T030000Z.json.gz'],
+        dumpCursor: 'db/dump-20260925.sql.gz',
+      });
+      expect(index.markManifests).toHaveBeenCalledWith(bucket.bucketRef, ['m/20260925T030000Z.json.gz'], 'degraded');
+      store.head.mockClear();
+      const result = await sut.verify(bucket, saved, carryOn, { operationId: 'verify', claimToken: 'claim-2' });
+      expect(store.head).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ done: true, checked: 2, missing: 1, degradedManifests: 1 });
+    });
+
+    it.each([400, 403, 429, 500])('stops on HTTP %s without counting intact objects as damaged', async (status) => {
+      objects = nightlyBucket(1);
+      store.head.mockRejectedValue(new CloudBackupStoreError('Storage refused the request', status, null));
+      await expect(
+        sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+          operationId: 'verify',
+          claimToken: 'claim',
+        }),
+      ).rejects.toBeInstanceOf(CloudBackupStoreError);
+      expect(index.recordObjectVerification).not.toHaveBeenCalled();
+      expect(index.forget).not.toHaveBeenCalled();
+      expect(index.markManifests).not.toHaveBeenCalled();
     });
   });
 });
