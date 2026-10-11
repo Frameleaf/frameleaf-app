@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from filelock import FileLock, Timeout
 from immich_ml.config import settings
 from immich_ml.main import load
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
+from immich_ml.models.florence_manifest import FLORENCE_MODELS
+from immich_ml.models.image_description import ImageDescriptionModel
 from immich_ml.schemas import ModelTask, ModelType
 from immich_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
 
@@ -48,6 +51,45 @@ def test_cold_staging_never_executes_inference_and_offline_reload_works(
     with patch.object(model, "_download") as download:
         assert model.predict(b"synthetic image") == model.content
         download.assert_not_called()
+
+
+def test_pinned_florence_staging_preserves_repository_cache_and_offline_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cache_folder", tmp_path)
+    monkeypatch.setattr(settings, "model_downloads", True)
+    monkeypatch.setattr(settings, "model_source_url", None)
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    name = "microsoft/Florence-2-base-ft"
+    files = {"config.json": b"{}", "model.safetensors": b"synthetic weights", "tokenizer.json": b"{}"}
+    manifest = {
+        **FLORENCE_MODELS[name],
+        "files": {name: {"sha256": hashlib.sha256(body).hexdigest()} for name, body in files.items()},
+    }
+    monkeypatch.setitem(FLORENCE_MODELS, name, manifest)
+    model = ImageDescriptionModel(name, acceleration="cuda", device="cpu")
+    active = model.cache_dir
+    assert active.parent.name == hashlib.sha256(model.hf_model_name.encode()).hexdigest()
+
+    def acquire(repo: str, **kwargs: Any) -> None:
+        assert repo == manifest["repository"]
+        assert kwargs["revision"] == manifest["revision"]
+        assert kwargs["token"] is False
+        destination = Path(kwargs["local_dir"])
+        destination.mkdir(parents=True)
+        for name, body in files.items():
+            (destination / name).write_bytes(body)
+
+    with patch("immich_ml.models.image_description.snapshot_download", side_effect=acquire) as download:
+        with patch.object(model, "_load") as load_model:
+            stage_model(model)
+            monkeypatch.setattr(settings, "model_downloads", False)
+            model.download()
+            assert download.call_count == 1
+            load_model.assert_not_called()
+    assert model.cache_dir == active
+    assert model.model_path == active / manifest["revision"]
+    verify_staged(active)
 
 
 def test_warm_staging_reuses_verified_files_without_downloads(model: SyntheticModel) -> None:
