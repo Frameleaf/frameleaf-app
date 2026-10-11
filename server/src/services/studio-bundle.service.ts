@@ -85,6 +85,7 @@ import {
   studioChecksumSha256,
   studioSequenceSubsetProblem,
 } from 'src/utils/studio-bundle.js';
+import { ProcessingProvenanceInput, validateBundleImportProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   STUDIO_LIFECYCLE_SWEEP_MS,
   StudioProjectEnvelope,
@@ -893,7 +894,13 @@ export class StudioBundleService {
     // with its digest so the import can say what is missing. The entry is named by the import id
     // and the extension the upload gave it, never by the name the file was uploaded with.
     for (const item of keptFiles) {
+      // Only selected ready imports carry these historical labels. Never resolve their source IDs.
+      const processingProvenance =
+        item.processingProvenance == null
+          ? undefined
+          : validateBundleImportProvenance(item.processingProvenance, item.checksum);
       const source = {
+        ...(processingProvenance ? { processingProvenance } : {}),
         key: studioReferenceKey({ kind: StudioResourceKind.ProjectImport, id: item.id }),
         kind: StudioResourceKind.ProjectImport,
         id: item.id,
@@ -1374,6 +1381,7 @@ export class StudioBundleService {
         });
         let handedToImport = false;
         let created = false;
+        let lineage: ProcessingProvenanceInput | undefined;
         try {
           const output: Writable = this.storage.createWriteStream(staged, { flags: 'wx', mode: 0o600 });
           output.once('open', () => {
@@ -1400,11 +1408,22 @@ export class StudioBundleService {
             if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
               throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
             }
+            if (item.processingProvenance !== undefined) {
+              // Validate actual staged bytes before removing the carried hash. Upload binds it again.
+              const { outputSha256: _historicalHash, ...input } = validateBundleImportProvenance(
+                item.processingProvenance,
+                (await this.crypto.hashFile(staged, 'sha256')).toString('hex'),
+              );
+              lineage = input;
+            }
           } catch (error) {
             output.destroy();
             await finished.catch(() => undefined);
             throw error;
           }
+          // Registration owns no bytes. A definite failure here still permits request scratch cleanup.
+          const publicationId = lineage ? randomUUID() : undefined;
+          if (publicationId) await this.imports.register(owner, projectId, { importId: item.id, publicationId });
           try {
             // Only the import service can distinguish request cleanup from uncertain journal ownership.
             handedToImport = true;
@@ -1419,6 +1438,7 @@ export class StudioBundleService {
                 originalname: item.fileName ?? '',
               } as Express.Multer.File,
               reservation.id,
+              lineage ? { publicationId, processingProvenance: JSON.stringify(lineage) } : undefined,
             );
           } catch (error) {
             if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
