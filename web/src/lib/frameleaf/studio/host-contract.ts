@@ -174,6 +174,20 @@ export interface StudioProjectHandle {
   graphVersion?: number;
 }
 
+/** Historical client-reported processing evidence; source labels grant no access. */
+export type ProcessingProvenanceInput = {
+  version: 1;
+  family: 'anime4k';
+  evidence: 'client-reported';
+  variant: 'animation' | 'liveAction' | 'threeD';
+  source: { namespace: 'freecut-media'; id: string; projectId: string };
+  input: { width: number; height: number };
+  output: { width: number; height: number; fps: number; frameCount: number; codec: string };
+  modelBinding?: { resourceId: string; sha256: string };
+};
+
+export type RetainedProcessingProvenance = ProcessingProvenanceInput & { outputSha256: string };
+
 /** A file kept with the project (FL-103 / FL-105), as the editor reads it. */
 export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
@@ -186,6 +200,7 @@ export interface StudioProjectImportRef {
   sizeBytes: number;
   /** SHA-256 verified by the server; older hosts may omit it. */
   checksum?: string;
+  processingProvenance?: RetainedProcessingProvenance | null;
   /**
    * Same-origin path of the bytes. It carries no credential: the owner's session cookie authorizes
    * it, exactly as for the page itself.
@@ -207,6 +222,8 @@ export interface StudioProjectImportUpload {
   fileName: string;
   file: Blob;
   scope?: StudioEditorScope;
+  publicationId?: string;
+  processingProvenance?: ProcessingProvenanceInput;
 }
 
 export interface StudioHostContext {
