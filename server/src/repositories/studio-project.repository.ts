@@ -1239,6 +1239,7 @@ export class StudioProjectRepository {
   /* ------------------------------------------------------------------ */
   async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
     return this.write(async (db) => {
+      await lockFilePath(db, upload.path);
       await assertStudioStorageAdmission(db, upload.ownerId, upload.sizeBytes, 'upload');
       return db
         .insertInto('studio_bundle_upload')

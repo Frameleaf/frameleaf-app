@@ -251,6 +251,8 @@ export class StudioProjectImportService {
    * Studio lifecycle sweep.
    */
   async sweep(now: Date = new Date()): Promise<void> {
+    const recovery = await this.publications.recover();
+    if (recovery.deferred) this.logger.warn(`Deferred ${recovery.deferred} Studio publication cleanup attempts`);
     // Each registered path is guarded separately. Never remove an entire folder: it can hold
     // capture-pinned bytes or unknown files, and restored imports live outside studio-imports.
     for (const orphan of await this.projects.listOrphanImportProjects()) {
@@ -280,12 +282,28 @@ export class StudioProjectImportService {
       const incoming = studioImportIncomingFolder(ownerId);
       for (const name of await this.storage.readdir(incoming).catch(() => [] as string[])) {
         const path = join(incoming, name);
-        const stat = await this.storage.stat(path).catch(() => null);
-        if (stat && now.getTime() - stat.mtime.getTime() > STUDIO_IMPORT_INCOMING_TTL_MS) {
-          await this.storage.unlink(path).catch(() => {});
+        if (!name.endsWith('.upload') || !isStudioUuid(name.slice(0, -7))) continue;
+        try {
+          await this.releaseIncoming(ownerId, path, now);
+        } catch (error) {
+          this.logger.warn(`Deferred Studio incoming cleanup: ${error}`);
         }
       }
     }
+  }
+
+  /** Internal lifecycle entry point, also used by expired request reservation cleanup. */
+  async releaseIncoming(ownerId: string, path: string, now: Date): Promise<boolean> {
+    return this.publications.cleanupIncoming(
+      ownerId,
+      path,
+      new Date(now.getTime() - STUDIO_IMPORT_INCOMING_TTL_MS),
+      async (identity) => {
+        await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], path);
+        await assertOwnerRestoreFile(path, identity);
+        await this.storage.unlink(path);
+      },
+    );
   }
 
   /** New imports count against the owner's storage quota with their library, when one is set. */

@@ -21,7 +21,11 @@ import {
 } from 'src/repositories/studio-project.repository.js';
 import { STUDIO_BUNDLE_DOCUMENT_RESERVATION } from 'src/repositories/studio-storage-admission.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
-import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportProjectFolder,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import {
@@ -334,7 +338,7 @@ describe(StudioBundleService.name, () => {
       users as never,
       resources as unknown as StudioResourceService,
       studio as unknown as StudioProjectService,
-      { sweep: vi.fn().mockResolvedValue(undefined) } as never,
+      { sweep: vi.fn().mockResolvedValue(undefined), releaseIncoming: vi.fn().mockResolvedValue(false) } as never,
     );
   });
 
@@ -2024,12 +2028,27 @@ describe(StudioBundleService.name, () => {
   });
 
   describe('sweep', () => {
+    it('defers an expired incoming reservation to locked import cleanup without direct unlink or metadata deletion', async () => {
+      const path = join(studioImportIncomingFolder(owner.user.id), newUuid() + '.upload'),
+        id = newUuidV7();
+      fs.files.set(path, Buffer.from('journal-owned stage'));
+      projects.listExpiredUploads.mockResolvedValue([{ id, ownerId: owner.user.id, path }]);
+      const imports = (sut as unknown as { imports: { releaseIncoming: ReturnType<typeof vi.fn> } }).imports;
+      await sut.sweep(new Date());
+      expect(imports.releaseIncoming).toHaveBeenCalledWith(owner.user.id, path, expect.any(Date));
+      expect(fs.storage.unlink).not.toHaveBeenCalledWith(path);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(id, owner.user.id);
+      expect(fs.files.has(path)).toBe(true);
+    });
+
     it('purges expired trash, uploads and export files, and never touches library media', async () => {
       fs.files.set('/uploads/old.zip', Buffer.from('old'));
       fs.files.set('/exports/old.zip', Buffer.from('old'));
       fs.files.set('/library/a.mov', Buffer.from('keep'));
       projects.deletePurgeable.mockResolvedValue([newUuidV7()]);
-      projects.listExpiredUploads.mockResolvedValue([{ id: newUuidV7(), path: '/uploads/old.zip' }]);
+      projects.listExpiredUploads.mockResolvedValue([
+        { id: newUuidV7(), ownerId: owner.user.id, path: '/uploads/old.zip' },
+      ]);
       const expired = {
         id: newUuidV7(),
         ownerId: owner.user.id,

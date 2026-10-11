@@ -53,6 +53,8 @@ describe(StudioProjectImportService.name, () => {
     register: ReturnType<typeof vi.fn>;
     getPublication: ReturnType<typeof vi.fn>;
     retain: ReturnType<typeof vi.fn>;
+    recover: ReturnType<typeof vi.fn>;
+    cleanupIncoming: ReturnType<typeof vi.fn>;
   };
   let sut: StudioProjectImportService;
 
@@ -89,6 +91,8 @@ describe(StudioProjectImportService.name, () => {
     users = { get: vi.fn().mockResolvedValue({ quotaSizeInBytes: null, quotaUsageInBytes: 0 }) };
     const storage = new StorageRepository({ setContext: vi.fn() } as never);
     publications = {
+      recover: vi.fn().mockResolvedValue({ attempted: 0, deferred: 0 }),
+      cleanupIncoming: vi.fn().mockResolvedValue(false),
       register: vi.fn().mockResolvedValue({ state: 'registered' }),
       getPublication: vi.fn().mockResolvedValue({ state: 'registered' }),
       retain: vi.fn(async (_auth: AuthDto, upload: RetentionUpload) => {
@@ -407,10 +411,10 @@ describe(StudioProjectImportService.name, () => {
     const unlink = vi.spyOn(storage, 'unlink').mockResolvedValue();
     const unlinkDir = vi.spyOn(storage, 'unlinkDir').mockResolvedValue();
     vi.spyOn(storage, 'readdir').mockImplementation((folder: string) =>
-      Promise.resolve(folder.endsWith('exports') ? [OWNER, 'not-an-owner'] : ['old.upload', 'new.upload']),
+      Promise.resolve(folder.endsWith('exports') ? [OWNER, 'not-an-owner'] : [`${IMPORT}.upload`, `${PROJECT}.upload`]),
     );
     vi.spyOn(storage, 'stat').mockImplementation((path: string) =>
-      Promise.resolve({ mtime: new Date(path.endsWith('old.upload') ? 0 : Date.now()) } as never),
+      Promise.resolve({ mtime: new Date(path.endsWith(`${IMPORT}.upload`) ? 0 : Date.now()) } as never),
     );
     const GONE = '0198a1c2-0000-7000-8000-0000000000bb';
     projects.listOrphanImportProjects.mockResolvedValue([
@@ -428,14 +432,31 @@ describe(StudioProjectImportService.name, () => {
       } as StudioProjectImport);
     });
     unlink.mockImplementation((path) => (path === failedPath ? Promise.reject(new Error('EIO')) : Promise.resolve()));
+    publications.cleanupIncoming.mockImplementation(async (_owner, path, _cutoff, _remove) => {
+      if (path.endsWith(`${IMPORT}.upload`)) await unlink(path);
+      return true;
+    });
     await sut.sweep(new Date());
+    expect(publications.recover).toHaveBeenCalled();
+    expect(publications.cleanupIncoming).toHaveBeenCalled();
     expect(unlinkDir).not.toHaveBeenCalled();
     expect(projects.deleteImports).toHaveBeenCalledWith(PROJECT, OWNER, expect.any(Function));
     expect(projects.deleteImports).toHaveBeenCalledWith(GONE, OWNER, expect.any(Function));
     expect(unlink).toHaveBeenCalledWith(keptPath);
     expect(unlink).toHaveBeenCalledWith(failedPath);
-    expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/incoming\/old\.upload$/));
-    expect(unlink).not.toHaveBeenCalledWith(expect.stringMatching(/new\.upload$/));
+    expect(unlink).toHaveBeenCalledWith(
+      expect.stringMatching(/incoming\/4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01\.upload$/),
+    );
+    expect(unlink).not.toHaveBeenCalledWith(expect.stringMatching(/0198a1c2-0000-7000-8000-0000000000aa\.upload$/));
+  });
+
+  it('leaves journal-owned incoming paths to locked recovery rather than TTL unlink', async () => {
+    const path = join(studioImportProjectFolder(OWNER, PROJECT), 'unused');
+    const storage = (sut as unknown as { storage: StorageRepository }).storage;
+    const unlink = vi.spyOn(storage, 'unlink').mockResolvedValue();
+    publications.cleanupIncoming.mockResolvedValue(false);
+    await expect(sut.releaseIncoming(OWNER, path, new Date())).resolves.toBe(false);
+    expect(unlink).not.toHaveBeenCalled();
   });
 
   it('serves the owner the stored bytes with their recorded type', async () => {

@@ -735,6 +735,14 @@ export class StudioBundleService {
     }
 
     for (const upload of await this.projects.listExpiredUploads(now)) {
+      if (upload.path.startsWith(`${studioImportIncomingFolder(upload.ownerId)}/`)) {
+        try {
+          await this.imports.releaseIncoming(upload.ownerId, upload.path, now);
+        } catch (error) {
+          this.logger.warn(`Deferred expired Studio import upload: ${errorMessage(error)}`);
+        }
+        continue;
+      }
       await this.storage.unlink(upload.path);
       await this.projects.deleteUpload(upload.id, upload.ownerId);
     }
