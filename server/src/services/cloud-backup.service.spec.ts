@@ -717,7 +717,9 @@ describe(CloudBackupService.name, () => {
       await sut.onKeyShare({ key: JSON.stringify(file) });
       await sut.onKeyShare({ key: key.toString('base64') });
       sut.onKeyRequest();
-      expect(JSON.parse(mocks.websocket.serverSend.mock.calls.at(-1)![1]!.key)).toMatchObject({ client: file.client });
+      expect(mocks.websocket.serverSend).toHaveBeenLastCalledWith('CloudBackupKeyShare', {
+        key: JSON.stringify({ key: key.toString('base64'), client: file.client }),
+      });
       expect(keys.write).not.toHaveBeenCalled();
     });
 
