@@ -41,6 +41,7 @@ export const BEST_PHOTOS_PREVIEW_LIMIT = 1;
 export interface ExploreBestPhotosPreview {
   /** Count of assets at or above {@link BEST_PHOTOS_QUALITY_MIN_SCORE}, or null while it has not loaded yet. */
   total: number | null;
+  /** The card's picture: the top item at the threshold, else the first item the Best Photos page lists. */
   cover: AssetResponseDto | null;
 }
 

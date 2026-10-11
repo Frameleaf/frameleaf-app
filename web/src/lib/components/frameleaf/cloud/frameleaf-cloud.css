@@ -225,7 +225,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
+  padding: 5px var(--fl-space-3);
   border-radius: var(--fl-radius-pill);
   border: 1px solid var(--fl-border);
   color: var(--fl-muted);
@@ -357,11 +357,11 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--fl-space-2);
   min-width: 0;
 }
 .fc-copy code {
-  padding: 6px 9px;
+  padding: 6px var(--fl-space-3);
   border-radius: var(--fl-radius-control);
   background: var(--fl-raised);
 }
@@ -423,7 +423,7 @@
 .fc-stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--fl-space-2);
   font-size: var(--fl-font-small);
   color: var(--fl-muted);
   min-width: 0;
@@ -439,7 +439,7 @@
   border: 1px solid var(--fl-border);
   color: var(--fl-text);
   border-radius: var(--fl-radius-control);
-  padding: 8px 10px;
+  padding: 8px var(--fl-space-3);
   font-size: var(--fl-font-callout);
   min-width: 0;
 }
@@ -709,7 +709,7 @@
 
   .fc-facts {
     grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
+    gap: var(--fl-space-1);
   }
   .fc-facts dd {
     margin-bottom: 8px;
@@ -727,7 +727,7 @@
 .fc-routing-list > li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 16px;
+  gap: var(--fl-space-2) var(--fl-space-4);
   align-items: center;
   padding: 12px 0;
   border-top: 1px solid var(--fl-border);
@@ -735,7 +735,7 @@
 .fc-routing-name {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--fl-space-1);
   min-width: 0;
 }
 .fc-routing-name .fc-muted {
@@ -771,7 +771,7 @@
   border: 0;
   background: transparent;
   color: var(--fl-muted);
-  padding: 6px 10px;
+  padding: 6px var(--fl-space-3);
   border-radius: calc(var(--fl-radius-control) - 2px);
   font: inherit;
   font-size: var(--fl-font-small);
@@ -802,7 +802,7 @@
 .fc-routing-models {
   grid-column: 1 / -1;
   min-width: 0;
-  margin-top: 6px;
+  margin-top: var(--fl-space-2);
   /* FL-186: restoration has a Frameleaf Cloud model picker per mode */
   display: grid;
   gap: 16px;
@@ -870,7 +870,7 @@
   justify-content: center;
   gap: 0.5rem;
   min-height: 44px;
-  padding: 0.4375rem 0.6875rem;
+  padding: 0.4375rem var(--fl-space-3);
   font-weight: 600;
   color: var(--fl-accent-text);
   text-decoration: none;

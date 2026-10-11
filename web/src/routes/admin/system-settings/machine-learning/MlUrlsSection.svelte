@@ -54,7 +54,7 @@
 
   <div class="flex justify-end">
     <Button
-      class="mb-2"
+      class="mb-3"
       size="small"
       shape="round"
       leadingIcon={mdiPlus}

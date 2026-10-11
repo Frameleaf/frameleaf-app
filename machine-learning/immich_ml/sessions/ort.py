@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from immich_ml.models.constants import SUPPORTED_PROVIDERS
 from immich_ml.schemas import ModelPrecision, SessionNode
+from immich_ml.sessions import runtime_cache_dir
 
 from ..config import log, settings
 
@@ -174,7 +175,7 @@ class OrtSession:
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
                 case "MIGraphXExecutionProvider":
-                    migraphx_dir = self.model_path.parent / "migraphx"
+                    migraphx_dir = runtime_cache_dir(self.model_path) / "migraphx"
                     # MIGraphX does not create the underlying folder and will crash if it does not exist
                     migraphx_dir.mkdir(parents=True, exist_ok=True)
                     options = {
@@ -188,7 +189,7 @@ class OrtSession:
                     options = {
                         "device_type": device_type,
                         "precision": settings.openvino_precision.value,
-                        "cache_dir": (self.model_path.parent / "openvino").as_posix(),
+                        "cache_dir": (runtime_cache_dir(self.model_path) / "openvino").as_posix(),
                     }
                 case "CoreMLExecutionProvider":
                     options = {
@@ -196,7 +197,7 @@ class OrtSession:
                         "MLComputeUnits": "ALL",
                         "SpecializationStrategy": "FastPrediction",
                         "AllowLowPrecisionAccumulationOnGPU": "1",
-                        "ModelCacheDirectory": (self.model_path.parent / "coreml").as_posix(),
+                        "ModelCacheDirectory": (runtime_cache_dir(self.model_path) / "coreml").as_posix(),
                     }
                 case _:
                     options = {}

@@ -82,7 +82,8 @@
 {:else if section === 'oauth'}
   <SignInProviderSection />
 {:else if section === 'frameleaf-account'}
-  <FrameleafAccountSection />
+  <!-- Not yet rebuilt on the kit (FL-368 follow-up): today's form, in the card the host no longer draws here. -->
+  <div class="card fl-continuous-corners"><FrameleafAccountSection /></div>
 {:else if section === 'password'}
   <PasswordSection onSessionsChanged={refreshSessions} />
 {:else if section === 'user-pin-code-settings'}
@@ -90,7 +91,17 @@
 {:else if section === 'suppressed-content'}
   <LockedRulesPanel />
 {:else if section === 'user-purchase-settings'}
-  <SupporterSection />
+  <div class="card fl-continuous-corners"><SupporterSection /></div>
 {:else if section === 'sharing'}
   <SharingSettings />
 {/if}
+
+<style>
+  .card {
+    max-width: 820px;
+    padding: var(--fl-space-1) var(--fl-space-5);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+</style>

@@ -19,8 +19,9 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
 const store = 'https://frameleaf.cloud.test/store';
 const products = (storeUrl: string | null = store): LicenseProductsResponseDto => ({
   currency: Currency.Usd,
-  licensedDiscount: 0.2,
-  pricesVersion: '2026-09-25.1',
+  licensedDiscount: 0.07,
+  individualDiscount: 0.05,
+  pricesVersion: '2026-10-10.1',
   storeUrl,
   credit: { minimumUsd: 20, maximumUsd: 500 },
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
@@ -144,8 +145,8 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     flags.value = { supporter: true, frameleafCloud: false };
     render(BuyScreen);
 
-    expect(await screen.findByText('$7.99')).toBeInTheDocument();
-    expect(screen.getByText('$79.92')).toBeInTheDocument();
+    expect(await screen.findByText('$9.29')).toBeInTheDocument();
+    expect(screen.getByText('$92.91')).toBeInTheDocument();
     expect(screen.getByLabelText('Regular price $9.99')).toBeInTheDocument();
   });
 
@@ -159,7 +160,7 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
     render(BuyScreen);
 
     expect(await screen.findByText('$7.49')).toBeInTheDocument();
-    expect(screen.getByText('$74.93')).toBeInTheDocument();
+    expect(screen.getByText('$74.92')).toBeInTheDocument();
     expect(screen.getByText(/plan prices are 25% lower/)).toBeInTheDocument();
     // extra backup keeps its price; a licensed server sees its thank-you card in place of the supporter
     // key cards, as in the prototype (AuthScreens.jsx, `state.activated`)
@@ -171,9 +172,40 @@ describe('BuyScreen (FL-157, FL-170, FL-171, FL-172)', () => {
       user({ license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' } }),
     );
     render(BuyScreen);
-    expect(await screen.findByText('$7.99')).toBeInTheDocument();
-    expect(screen.getByText(/Your supporter key takes 20% off plan prices/)).toBeInTheDocument();
+    expect(await screen.findByText('$9.49')).toBeInTheDocument();
+    expect(screen.getByText('$94.90')).toBeInTheDocument();
+    expect(screen.getByText(/Your supporter key takes 5% off plan prices/)).toBeInTheDocument();
     expect(screen.queryByText(/This server is licensed/)).not.toBeInTheDocument();
+  });
+
+  it('reads the kind of the server’s licence from the licence status, and never adds the two rates (FL-369)', async () => {
+    flags.value = { supporter: true, frameleafCloud: false };
+    const personal = { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' };
+    const key = (kind: string) => ({
+      state: LicenseState.Active,
+      kind,
+      source: 'key',
+      keyHint: 'J583',
+      activatedAt: '2026-09-25T00:00:00.000Z',
+      expiresAt: null,
+      graceUntil: null,
+      refreshedAt: null,
+    });
+    // an Individual licence activated on the server takes the Individual rate
+    authManager.setUser(user({ isAdmin: true }));
+    sdkMock.getLicenseStatus.mockResolvedValue(licenseStatus({ licensed: true, key: key('individual') }));
+    const { unmount } = render(BuyScreen);
+    expect(await screen.findByText('$9.49')).toBeInTheDocument();
+    expect(screen.getByText(/This server is licensed, so plan prices are 5% lower/)).toBeInTheDocument();
+    unmount();
+
+    // a Server licence and the administrator's own key: the Server rate, once
+    authManager.setUser(user({ isAdmin: true, license: personal }));
+    sdkMock.getLicenseStatus.mockResolvedValue(licenseStatus({ licensed: true, key: key('server') }));
+    render(BuyScreen);
+    expect(await screen.findByText('$9.29')).toBeInTheDocument();
+    expect(screen.getByText('$92.91')).toBeInTheDocument();
+    expect(screen.getByText(/This server is licensed, so plan prices are 7% lower/)).toBeInTheDocument();
   });
 
   it('refuses an upstream or mistyped key and never contacts the upstream licence server', async () => {

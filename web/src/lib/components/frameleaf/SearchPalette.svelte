@@ -36,6 +36,8 @@
     type PaletteCount,
   } from '$lib/frameleaf/search-options';
   import {
+    availablePaletteModes,
+    availableSearchOperators,
     buildPaletteCatalog,
     commitCompletedTokens,
     compilePaletteQuery,
@@ -44,6 +46,7 @@
     MAX_PALETTE_TEXT,
     paletteSearchLabel,
     typedTokensFromQuery,
+    isPaletteModeAvailable,
     isSmartBody,
     narrowToBar,
     operatorToken,
@@ -54,13 +57,13 @@
     parseSearchInput,
     readPaletteState,
     rememberRecentSearch,
-    SEARCH_OPERATORS,
     suggestSearchTokens,
     tokenLabel,
     withoutPaletteScope,
     withoutTokensForFields,
     withPaletteScope,
     type HistogramUnit,
+    type PaletteCapabilities,
     type PaletteFacets,
     type PaletteMode,
     type PaletteSearch,
@@ -199,7 +202,17 @@
   };
 
   const smartEnabled = $derived(featureFlagsManager.value.smartSearch);
-  const modes = $derived(PALETTE_MODES.filter((entry) => entry.value !== 'smart' || smartEnabled));
+  /**
+   * What the server can answer. A mode, an example or an operator is offered only when a search with
+   * it can find something: smart search needs its model, and the text in photos is only read while
+   * text recognition is on.
+   */
+  const capabilities = $derived<PaletteCapabilities>({
+    smartSearch: smartEnabled,
+    ocr: featureFlagsManager.value.ocr,
+  });
+  const modes = $derived(availablePaletteModes(capabilities));
+  const operators = $derived(availableSearchOperators(capabilities));
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // FL-139: follows the system setting while the palette is open, not only when it first renders
   const reducedMotion = $derived(prefersReducedMotion());
@@ -329,7 +342,9 @@
   const selectedCount = $derived(scopeChoice === 'library' ? counts.library : counts.current);
   const otherCount = $derived(scopeChoice === 'library' ? counts.current : counts.library);
 
-  const suggestions = $derived<PaletteSuggestion[]>(text.trim() ? suggestSearchTokens(text, catalog, 6) : []);
+  const suggestions = $derived<PaletteSuggestion[]>(
+    text.trim() ? suggestSearchTokens(text, catalog, 6, operators) : [],
+  );
   // "Go to" reuses the shared command index; a filter being typed ("person:…") is not a destination
   const destinations = $derived(
     text.trim().length >= 2 && !isCommandQuery(text) && !/\S:/.test(text)
@@ -345,15 +360,20 @@
       ...(textMode !== 'smart' && textMode !== 'all' && textMode !== 'originalFileName' && { textField: textMode }),
     },
   });
-  const EXAMPLES = $derived([
-    example($t('frameleaf_search_example_smart'), 'smart'),
-    example($t('frameleaf_search_example_video'), 'smart'),
-    example($t('frameleaf_search_example_ocr'), 'ocr'),
-  ]);
-  const recent = $derived(searchStore.recentSearches.slice(0, 5));
-  const idleSearches = $derived(
-    (recent.length > 0 ? recent : EXAMPLES.filter((item) => item.query.mode !== 'smart' || smartEnabled)).slice(0, 5),
+  const EXAMPLES = $derived(
+    (
+      [
+        [$t('frameleaf_search_example_smart'), 'smart'],
+        [$t('frameleaf_search_example_video'), 'smart'],
+        [$t('frameleaf_search_example_ocr'), 'ocr'],
+      ] as const
+    )
+      // An example that could find nothing on this server is not offered.
+      .filter(([, exampleMode]) => isPaletteModeAvailable(exampleMode, capabilities))
+      .map(([exampleText, exampleMode]) => example(exampleText, exampleMode)),
   );
+  const recent = $derived(searchStore.recentSearches.slice(0, 5));
+  const idleSearches = $derived((recent.length > 0 ? recent : EXAMPLES).slice(0, 5));
   /** Rows are labelled from the query's ids, so a name is shown only while the viewer can resolve it. */
   const searchRow = (query: DiscoveryQuery) => ({
     label: paletteSearchLabel(query, catalog),
@@ -1218,7 +1238,7 @@
       <section class="sp-help" aria-label={$t('frameleaf_search_syntax')}>
         <p>{$t('frameleaf_search_syntax_intro')}</p>
         <div>
-          {#each SEARCH_OPERATORS as operator (operator.key)}
+          {#each operators as operator (operator.key)}
             <button type="button" onclick={() => void insertSyntax(`${operator.key}:`)}>
               <code>{operator.hint}</code>
               <span>{$t(operator.labelKey)}</span>
@@ -1404,57 +1424,60 @@
         {/if}
 
         {#if !typing}
-          <section>
-            <h3>
-              {recent.length > 0 ? $t('recent_searches') : $t('frameleaf_search_try')}
-              {#if recent.length > 0}
-                <button
-                  type="button"
-                  class="sp-link"
-                  aria-label={$t('frameleaf_search_recent_clear')}
-                  onclick={clearRecent}
-                >
-                  {$t('clear')}
-                </button>
-              {/if}
-            </h3>
-            {#each items as entry (entry)}
-              {#if entry.kind === 'recent'}
-                {@const at = indexOf(entry)}
-                {@const row = searchRow(entry.item.query)}
-                <div class="sp-saved" role="presentation">
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <div
-                    id="{listId}-item-{at}"
-                    role="option"
-                    tabindex="-1"
-                    aria-selected={at === active}
-                    class="sp-row"
-                    class:active={at === active}
-                    onmouseenter={() => (active = at)}
-                    onclick={() => activate(entry)}
+          <!-- Recent searches, or examples to try; no heading over nothing when no example can work here. -->
+          {#if idleSearches.length > 0}
+            <section>
+              <h3>
+                {recent.length > 0 ? $t('recent_searches') : $t('frameleaf_search_try')}
+                {#if recent.length > 0}
+                  <button
+                    type="button"
+                    class="sp-link"
+                    aria-label={$t('frameleaf_search_recent_clear')}
+                    onclick={clearRecent}
                   >
-                    <!-- A search that was run carries the history mark; an example to try does not. -->
-                    <Icon icon={recent.length > 0 ? mdiHistory : mdiMagnify} size="16" aria-hidden={true} />
-                    <span>{row.label}</span>
-                    <small>
-                      {$t(PALETTE_MODES.find((item) => item.value === row.mode)?.labelKey ?? 'search')}
-                    </small>
-                  </div>
-                  {#if recent.length > 0}
-                    <button
-                      type="button"
-                      class="sp-row-action sp-row-quiet"
-                      aria-label={$t('frameleaf_search_recent_remove', { values: { name: row.label } })}
-                      onclick={() => forgetRecent(entry.item)}
+                    {$t('clear')}
+                  </button>
+                {/if}
+              </h3>
+              {#each items as entry (entry)}
+                {#if entry.kind === 'recent'}
+                  {@const at = indexOf(entry)}
+                  {@const row = searchRow(entry.item.query)}
+                  <div class="sp-saved" role="presentation">
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <div
+                      id="{listId}-item-{at}"
+                      role="option"
+                      tabindex="-1"
+                      aria-selected={at === active}
+                      class="sp-row"
+                      class:active={at === active}
+                      onmouseenter={() => (active = at)}
+                      onclick={() => activate(entry)}
                     >
-                      <Icon icon={mdiClose} size="14" aria-hidden={true} />
-                    </button>
-                  {/if}
-                </div>
-              {/if}
-            {/each}
-          </section>
+                      <!-- A search that was run carries the history mark; an example to try does not. -->
+                      <Icon icon={recent.length > 0 ? mdiHistory : mdiMagnify} size="16" aria-hidden={true} />
+                      <span>{row.label}</span>
+                      <small>
+                        {$t(PALETTE_MODES.find((item) => item.value === row.mode)?.labelKey ?? 'search')}
+                      </small>
+                    </div>
+                    {#if recent.length > 0}
+                      <button
+                        type="button"
+                        class="sp-row-action sp-row-quiet"
+                        aria-label={$t('frameleaf_search_recent_remove', { values: { name: row.label } })}
+                        onclick={() => forgetRecent(entry.item)}
+                      >
+                        <Icon icon={mdiClose} size="14" aria-hidden={true} />
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+              {/each}
+            </section>
+          {/if}
           {#if saved.length > 0 || deletedSaved || deleteFailed}
             <section>
               <h3>{$t('frameleaf_search_saved_searches')}</h3>
@@ -1655,7 +1678,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 0 0 6px;
+    margin: 0 0 var(--fl-space-2);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -1747,7 +1770,7 @@
     align-items: center;
     gap: 6px;
     height: 32px;
-    padding: 0 8px 0 10px;
+    padding: 0 9px 0 11px;
     border: 1px solid var(--sp-edge);
     border-radius: var(--fl-radius-control-compact);
     background: transparent;
@@ -1756,7 +1779,7 @@
   .sp-menu {
     position: absolute;
     inset-inline-end: 0;
-    top: calc(100% + 6px);
+    top: calc(100% + var(--fl-space-2));
     z-index: 3;
     display: grid;
     min-width: 200px;
@@ -1786,7 +1809,7 @@
     align-items: center;
     gap: 6px;
     height: 32px;
-    padding: 0 10px;
+    padding: 0 11px;
     border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
@@ -2080,7 +2103,7 @@
   }
   .sp-people {
     display: flex;
-    gap: 14px;
+    gap: var(--fl-space-2);
     flex-wrap: wrap;
   }
   .sp-people button {
@@ -2089,7 +2112,8 @@
     gap: 6px;
     border: 0;
     background: transparent;
-    padding: 4px;
+    /* The name keeps its room inside the hover plate; the faces stay as far apart as they were. */
+    padding: 4px var(--fl-space-2);
     border-radius: 10px;
   }
   .sp-people button:hover {

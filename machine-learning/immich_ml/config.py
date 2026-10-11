@@ -52,6 +52,8 @@ class ImageDescriptionRuntimeSettings(BaseModel):
     # not re-parsed on every request — see ml.md Medium "Per-request env-var read
     # in OpenVINO image resize".
     openvino_max_image_edge: int = 512
+    # Worker-admin consent only: API model selection must not authorize executable repository code.
+    trusted_custom_models: list[str] = []
 
 
 class PreloadModelData(BaseModel):
@@ -83,6 +85,8 @@ class Settings(BaseSettings):
     )
 
     cache_folder: Path = (Path.home() / ".cache" / "immich_ml").resolve()
+    # Online standalone/remote workers keep their existing download workflow.
+    model_downloads: bool = True
     # Hub-compatible host serving the frameleaf/<model> repositories. Unset means
     # HF_ENDPOINT if that is set, otherwise the Frameleaf mirror (see model_source()).
     model_source_url: str | None = None
@@ -146,16 +150,29 @@ def model_source_url() -> str:
     return model_source()[0]
 
 
-def model_source_token() -> str | bool | None:
+def model_repository_url() -> str:
+    """Repository models retain their public Hub default and explicit source overrides."""
+    endpoint, setting = model_source()
+    return "https://huggingface.co" if setting == "default" else endpoint
+
+
+def model_source_token(endpoint: str | None = None) -> str | bool:
     """The token argument for downloads from the model source.
 
-    An explicit MACHINE_LEARNING_MODEL_SOURCE_TOKEN is sent to the source it is
-    configured for. Otherwise a Hugging Face token (HF_TOKEN or a saved login) is
-    only sent to huggingface.co itself; every other source gets no token at all.
+    Public downloads never inherit HF_TOKEN or a saved login. An intentional
+    private source requires an explicit token, bound to its exact HTTPS origin.
     """
-    if settings.model_source_token is not None and settings.model_source_token.get_secret_value():
+    source = urlsplit(model_source_url())
+    destination = urlsplit(endpoint or model_source_url())
+    if (
+        source.scheme == destination.scheme == "https"
+        and source.hostname == destination.hostname
+        and (source.port or 443) == (destination.port or 443)
+        and settings.model_source_token is not None
+        and settings.model_source_token.get_secret_value()
+    ):
         return settings.model_source_token.get_secret_value()
-    return None if urlsplit(model_source_url()).hostname == HUGGING_FACE_HOST else False
+    return False
 
 
 _clean_name = str.maketrans(":\\/", "___", ".")

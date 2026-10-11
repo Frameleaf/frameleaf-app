@@ -69,8 +69,9 @@ const planSlot = {
 const products = (storeUrl: string | null = 'https://frameleaf.cloud.test/store'): LicenseProductsResponseDto => ({
   currency: Currency.Usd,
   credit: { minimumUsd: 20, maximumUsd: 500 },
-  licensedDiscount: 0.2,
-  pricesVersion: '2026-09-25.1',
+  licensedDiscount: 0.07,
+  individualDiscount: 0.05,
+  pricesVersion: '2026-10-10.1',
   storeUrl,
   backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
   products: [
@@ -185,6 +186,15 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       );
       expect(await screen.findByText('•••• J583')).toBeInTheDocument();
       expect(screen.getByText('Licensed')).toBeInTheDocument();
+    });
+
+    it('names the plan discount of each licence among the benefits (FL-369)', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      render(LicenseSection);
+
+      expect((await screen.findByText('7% off Frameleaf Cloud')).parentElement).toHaveTextContent(
+        '7% off Frameleaf Cloud plans with a server licence, or 5% with an individual licence, for as long as the server stays licensed.',
+      );
     });
 
     it('activates a key for one person as the administrator’s own supporter key, as the prototype allows', async () => {
@@ -343,10 +353,42 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       );
       render(PlanSection);
 
-      expect(await screen.findByText(/\$7\.99/)).toBeInTheDocument();
+      expect(await screen.findByText(/\$9\.29/)).toBeInTheDocument();
       expect(screen.getByText('$9.99').tagName).toBe('S');
-      expect(screen.getByText(/\$79\.92/)).toBeInTheDocument();
+      expect(screen.getByText(/\$92\.91/)).toBeInTheDocument();
+      expect(screen.getByText(/plans cost 7% less/)).toBeInTheDocument();
       expect(screen.getByText(/AI credit is priced the same for everyone/)).toBeInTheDocument();
+    });
+
+    it('takes the Individual rate off for an Individual licence: the server’s, or the administrator’s own (FL-369)', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(
+        license({ licensed: true, key: { ...keySlot, kind: LicenseKind.Individual } }),
+      );
+      const { unmount } = render(PlanSection);
+      expect(await screen.findByText(/\$9\.49/)).toBeInTheDocument();
+      expect(screen.getByText(/\$94\.90/)).toBeInTheDocument();
+      expect(screen.getByText(/This server is licensed: Frameleaf Cloud plans cost 5% less/)).toBeInTheDocument();
+      unmount();
+
+      authManager.setUser({
+        id: 'admin-1',
+        isAdmin: true,
+        license: { kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T09:00:00.000Z' },
+      } as never);
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      render(PlanSection);
+      expect(await screen.findByText(/Your supporter key takes 5% off Frameleaf Cloud plans/)).toBeInTheDocument();
+      expect(screen.getByText(/\$9\.49/)).toBeInTheDocument();
+    });
+
+    it('offers both rates to a server without a licence, at the regular price (FL-369)', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      render(PlanSection);
+
+      expect(
+        await screen.findByText(/A server licence takes 7% off Frameleaf Cloud plans, an individual licence 5%\./),
+      ).toBeInTheDocument();
+      expect(screen.getByText('$9.99').tagName).not.toBe('S');
     });
 
     it('follows the discount Frameleaf Cloud published', async () => {
@@ -357,7 +399,7 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       render(PlanSection);
 
       expect(await screen.findByText(/\$7\.49/)).toBeInTheDocument();
-      expect(screen.getByText(/\$74\.93/)).toBeInTheDocument();
+      expect(screen.getByText(/\$74\.92/)).toBeInTheDocument();
       expect(screen.getByText(/plans cost 25% less/)).toBeInTheDocument();
     });
 

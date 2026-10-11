@@ -488,6 +488,8 @@ export class BaseHWConfig extends BaseConfig {
   }
 }
 
+const THUMBNAIL_SINGLE_GOP_FRAMES = 250;
+
 export class ThumbnailConfig extends BaseConfig {
   constructor(
     config: ConfigFFmpegDto,
@@ -503,8 +505,13 @@ export class ThumbnailConfig extends BaseConfig {
 
   getBaseInputOptions(videoStream: VideoStreamInfo, format?: VideoFormat): string[] {
     // skip_frame nointra skips all frames for some MPEG-TS files. Look at ffmpeg tickets 7950 and 7895 for more details.
+    // It also leaves a start time after the last keyframe without a frame, and ffmpeg then writes nothing. A clip
+    // of at most one default GOP (250 frames for x264, x265 and NVENC) may hold a single keyframe, its first
+    // frame, which puts every later start time there: such a clip is cheap to decode in full instead.
+    const singleGop =
+      this.startTime > 0 && videoStream.frameCount > 0 && videoStream.frameCount <= THUMBNAIL_SINGLE_GOP_FRAMES;
     const options =
-      format?.formatName === 'mpegts'
+      format?.formatName === 'mpegts' || singleGop
         ? ['-sws_flags', 'accurate_rnd+full_chroma_int']
         : ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'];
 

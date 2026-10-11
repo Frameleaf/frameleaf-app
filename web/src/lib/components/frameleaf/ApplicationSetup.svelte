@@ -194,13 +194,15 @@
       <ol class="checklist">
         {#each steps as key, index (key)}
           <li>
-            <input
-              type="checkbox"
-              aria-label={$t(`frameleaf_apps.${key}` as Translations)}
-              checked={step > index}
-              onchange={() => (step = step > index ? index : index + 1)}
-            />
-            {$t(`frameleaf_apps.${key}` as Translations)}
+            <label>
+              <input
+                type="checkbox"
+                aria-label={$t(`frameleaf_apps.${key}` as Translations)}
+                checked={step > index}
+                onchange={() => (step = step > index ? index : index + 1)}
+              />
+              {$t(`frameleaf_apps.${key}` as Translations)}
+            </label>
           </li>
         {/each}
       </ol>
@@ -306,6 +308,13 @@
     line-height: 1.7;
     padding: 0.75rem 0;
     border-bottom: 1px solid var(--fl-border);
+  }
+  /* The whole step toggles its box: the label fills the row and lays it out as the row did. */
+  .checklist label {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    gap: 0.625rem;
   }
   @media (max-width: 720px) {
     .grid {

@@ -138,7 +138,7 @@ describe('StudioProjectLibrary states and cards', () => {
     await screen.findByRole('link', { name: 'Lake trip' });
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
 
-    const order = screen.getByRole('group', { name: 'Order' });
+    const order = screen.getByRole('group', { name: 'Sort by' });
     expect(within(order).getByRole('button', { name: 'Recently changed' })).toHaveAttribute('aria-pressed', 'true');
     await fireEvent.click(within(order).getByRole('button', { name: 'Name' }));
     await waitFor(() =>

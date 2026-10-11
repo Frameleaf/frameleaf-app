@@ -15,12 +15,24 @@
   let { text, divided = false }: Props = $props();
 </script>
 
-<li
-  role="presentation"
-  class={[
-    'px-4 pt-3 pb-1 text-xs font-semibold tracking-wide text-gray-500 uppercase select-none',
-    divided && 'mt-1 border-t border-gray-300',
-  ]}
->
+<li role="presentation" class="fl-viewer-menu-label" class:divided>
   {text}
 </li>
+
+<style>
+  /* .mv-menu-label and the hairline between groups (media-viewer.css:149-160). */
+  .fl-viewer-menu-label {
+    padding: 8px 12px 4px;
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-micro);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .fl-viewer-menu-label.divided {
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--fl-viewer-border);
+  }
+</style>

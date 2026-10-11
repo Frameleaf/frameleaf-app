@@ -273,7 +273,7 @@ test.describe('Sign-in lifecycle', () => {
     });
 
     await page.getByRole('button', { name: `Account menu for ${user.name}` }).click();
-    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/auth\/login/);
 
     const remaining = await page.evaluate(() => ({

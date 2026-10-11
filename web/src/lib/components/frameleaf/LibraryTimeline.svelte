@@ -170,6 +170,17 @@
     scrollIdleTimer = setTimeout(() => (scrolledRecently = false), SCRUBBER_LINGER_MS);
   };
   $effect(() => () => clearTimeout(scrollIdleTimer));
+  /**
+   * Focus moved into the header or the toolbar (a menu opening there): the overlay scrubber goes at
+   * once rather than lingering over the menu's edge and taking the taps meant for it.
+   */
+  const dismissScrubber = () => {
+    if (!scrolledRecently) {
+      return;
+    }
+    clearTimeout(scrollIdleTimer);
+    scrolledRecently = false;
+  };
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
   const selection = $derived(session.selection);
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
@@ -330,6 +341,13 @@
     }
     timelineManager.topSectionHeight = measuredTop;
   });
+  /**
+   * How much of the header above the photos is still on screen. The overlay scrubber starts below
+   * that: lying over the header it took the taps meant for the toolbar's last control.
+   */
+  let headOnScreen = $derived(
+    overlayScrubber ? Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0)) : 0,
+  );
 
   /* ------------------------------------------------------------------ */
   /* Grouping                                                            */
@@ -878,6 +896,33 @@
 
   const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
+  /**
+   * Months measured or loaded after a scroll still move what was just placed: for a few frames, or,
+   * in a flow that runs on across months (FL-143), for as long as the months around it take to load
+   * and lay the rows out again. The Timeline's justified rows only have an estimated height until
+   * then, so a place computed once lands short. `place` puts it back until the height holds and
+   * nothing near the viewport is loading; `current` ends it when the person has chosen elsewhere.
+   */
+  let mounted = true;
+  $effect(() => () => void (mounted = false));
+  const holdWhileSettling = async (place: () => unknown, current: () => boolean = () => true) => {
+    const monthsLoading = () => timelineManager.months.some((month) => month.isInOrNearViewport && !month.isLoaded);
+    let lastHeight = -1;
+    for (
+      let attempt = 0;
+      attempt < 30 && (timelineManager.totalViewerHeight !== lastHeight || monthsLoading());
+      attempt++
+    ) {
+      lastHeight = timelineManager.totalViewerHeight;
+      await nextFrame();
+      await nextFrame();
+      if (!mounted || !current()) {
+        return;
+      }
+      await place();
+    }
+  };
+
   const scrollAfterNavigate = async () => {
     // Opening the viewer hides the grid; there is nothing to place until it shows again.
     if (assetViewerManager.isViewing) {
@@ -899,22 +944,8 @@
     const target = assetViewerManager.gridScrollTarget?.at ?? session.session.scrollAnchor;
     const scrolled = target ? await scrollToAssetId(target) : false;
     if (scrolled && target) {
-      // Months measured as the grid shows again can still move the asset for a few frames: keep it
-      // in view until the height stops changing. The months around it load in waves, and in a flow
-      // that runs on across months (FL-143) each one that loads lays the rows out again, so keep it
-      // there until those months have loaded too, not only while the height changes frame to frame.
-      const monthsLoading = () => timelineManager.months.some((month) => month.isInOrNearViewport && !month.isLoaded);
-      let lastHeight = -1;
-      for (
-        let attempt = 0;
-        attempt < 30 && (timelineManager.totalViewerHeight !== lastHeight || monthsLoading());
-        attempt++
-      ) {
-        lastHeight = timelineManager.totalViewerHeight;
-        await nextFrame();
-        await nextFrame();
-        await scrollToAssetId(target, false, true);
-      }
+      // Months measured as the grid shows again can still move the asset: keep it in view meanwhile.
+      await holdWhileSettling(() => scrollToAssetId(target, false, true));
     }
     if (scrolled && assetViewerManager.gridScrollTarget?.at) {
       await tick();
@@ -955,12 +986,23 @@
   // a pre-effect runs ahead of the effect that sets them — so it describes what was on screen.
   let lastLayout = session.layout;
   let layoutAnchor: LibraryAnchor | undefined;
+  /**
+   * The switch was made at the head of the page, where the layout control is: the header above the
+   * results has not scrolled away under the sticky toolbar. Each layout's header has its own height
+   * (the Timeline adds its grouping row and day headings), so holding a photo at its old height
+   * from here would push the control and that row off the top. The page stays where it is instead.
+   */
+  let layoutAtHead = false;
   $effect.pre(() => {
     const layout = session.layout;
     if (layout === lastLayout) {
       return;
     }
-    layoutAnchor = untrack(() => captureLibraryAnchor(timelineManager, session.session.scrollAnchor));
+    untrack(() => {
+      layoutAnchor = captureLibraryAnchor(timelineManager, session.session.scrollAnchor);
+      const top = scrollable?.scrollTop ?? 0;
+      layoutAtHead = top <= 0 || top < timelineManager.topSectionHeight - stickyOffset();
+    });
   });
   $effect(() => {
     const layout = session.layout;
@@ -974,19 +1016,28 @@
     if (!anchor && !anchorId) {
       return;
     }
+    // At the head only an anchor that is off screen moves the page: the person went there before
+    // coming up for the control, and the switch still returns to it.
+    if (layoutAtHead && anchor) {
+      return;
+    }
     // Work narrows the timeline for its panel and adds captions: the new width is measured and
     // the months laid out again over the next frames, so the asset is found after that settles.
-    // A month chosen on the scrubber in the meantime (G, then a key) wins over the old place.
+    // A month chosen on the scrubber in the meantime (G, then a key), or a newer switch, wins over
+    // the old place.
     const moves = scrubberMoves;
+    const current = () => moves === scrubberMoves && lastLayout === layout;
     void tick()
       .then(nextFrame)
       .then(nextFrame)
-      .then(() => {
-        if (moves !== scrubberMoves) {
+      .then(async () => {
+        if (!current()) {
           return;
         }
-        if (!restoreLibraryAnchor(timelineManager, anchor) && anchorId) {
-          void scrollToAssetId(anchorId, false);
+        if (restoreLibraryAnchor(timelineManager, anchor)) {
+          await holdWhileSettling(() => restoreLibraryAnchor(timelineManager, anchor), current);
+        } else if (anchorId && (await scrollToAssetId(anchorId, false))) {
+          await holdWhileSettling(() => scrollToAssetId(anchorId, false, true), current);
         }
       });
   });
@@ -1046,6 +1097,9 @@
     timelineManager.updateSlidingWindow();
     timelineManager.scrolling = true;
     noteScroll();
+    if (overlayScrubber) {
+      headOnScreen = Math.max(0, measuredTop - scrollable.scrollTop);
+    }
     if (!assetViewerManager.isViewing) {
       lastVisibleScrollTop = scrollable.scrollTop;
     }
@@ -1247,7 +1301,7 @@
           the length of the library (apple-style.css "#3 materials"); the rows paint over it. Its
           measured height is where its content ends, marked by the last element.
         -->
-        <div class="fl-timeline-top" bind:this={topElement}>
+        <div class="fl-timeline-top" bind:this={topElement} onfocusin={dismissScrubber}>
           {@render top()}
           {#if isEmpty}
             {@render empty?.()}
@@ -1388,6 +1442,7 @@
         {onJump}
         overlay={overlayScrubber}
         active={scrolledRecently}
+        clear={headOnScreen}
         bind:scrubberWidth
         bind:dragging={scrubbing}
       />
@@ -1416,8 +1471,17 @@
     outline: none;
     contain: strict;
     scrollbar-width: none;
-    /* Keyboard focus and scrollIntoView stop below the sticky results toolbar. */
-    scroll-padding-top: var(--fl-sticky-offset, 0px);
+  }
+  /*
+   * Keyboard focus and scrollIntoView stop below the sticky results toolbar. What scrolls under the
+   * toolbar asks for that room itself. As padding on the scroller it also counted the toolbar's own
+   * controls as out of view, so focus returning to one (a menu or dialog closing, Tab) moved the
+   * photos by half a screen.
+   */
+  .fl-month :global(:is([data-asset-id], a, button, input, select, [tabindex])),
+  .fl-group-band :global(:is(a, button, input, [tabindex])),
+  .fl-grouping button {
+    scroll-margin-top: var(--fl-sticky-offset, 0px);
   }
   .fl-timeline-body {
     position: relative;
@@ -1469,9 +1533,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    margin-bottom: 12px;
+    /* Clear of the toolbar band above it (the prototype's `.timeline-library` starts 20px under it). */
+    margin-block: var(--fl-space-5) var(--fl-space-3);
   }
   .fl-grouping-hint {
+    /* On the line of the toolbar's count. */
+    margin-inline-start: var(--fl-space-3);
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
   }
@@ -1532,6 +1599,8 @@
   @container fl-timeline (max-width: 600px) {
     .fl-grouping {
       justify-content: flex-end;
+      /* With the toolbar's controls, at the page gutter rather than the photos' edge. */
+      padding-inline: var(--fl-space-2);
     }
     .fl-grouping-hint {
       display: none;

@@ -534,6 +534,7 @@ export type JobItem =
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
+  | { name: JobName.BackupSequence; data?: IBaseJob }
 
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
@@ -1018,6 +1019,34 @@ export type FrameleafMlSuspension = {
   since: string;
 };
 
+/**
+ * FL-379: the Gmail or Microsoft account this server sends email from. `sealedRefreshToken` is the
+ * provider's refresh token sealed with the server's own secret (`utils/frameleaf-mail.ts`); it never
+ * leaves the server except to Frameleaf Cloud's token and revoke endpoints.
+ */
+export type FrameleafMailConnection = {
+  id: string;
+  provider: import('src/enum.js').MailSignInProvider;
+  email: string;
+  status: import('src/enum.js').MailConnectionStatus;
+  sealedRefreshToken: string;
+  connectedAt: string;
+  /** When the provider refused to renew access. */
+  needsSignInSince?: string;
+};
+
+/**
+ * FL-379: a mail sign-in in progress. `sealed` holds the state value and the PKCE verifier, which
+ * are checked and used on this server only.
+ */
+export type FrameleafMailSignIn = {
+  signInId: string;
+  provider: import('src/enum.js').MailSignInProvider;
+  userId: string;
+  sealed: string;
+  expiresAt: string;
+};
+
 /** FL-160: who generated a cloud backup bucket key and where it is kept. */
 export type CloudBackupKeyMode = 'server' | 'own-stored' | 'own-memory';
 
@@ -1207,12 +1236,15 @@ export type FrameleafLicenseStore = {
 };
 
 /**
- * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentage
- * taken off the Frameleaf Cloud plans on a licensed server (never AI credit or extra backup).
+ * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentages
+ * taken off the Frameleaf Cloud plans (never AI credit or extra backup) by a Server licence
+ * (`licensedDiscountPercent`) and by an Individual licence (FL-369). An older Frameleaf Cloud
+ * publishes no `individualDiscountPercent`: its one rate is for both.
  */
 export type FrameleafPricing = {
   pricesVersion: string;
   licensedDiscountPercent: number;
+  individualDiscountPercent?: number;
   effectiveFrom: string;
 };
 
@@ -1461,7 +1493,10 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
+  [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
+  [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
+  [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;
 }
 
 /** FL-176: which first-run setup flow an administrator sees. */
@@ -1475,6 +1510,9 @@ export type FrameleafSetupState = {
   progress: Record<string, unknown> | null;
   updatedAt: string | null;
 };
+
+/** FL-362: see `src/utils/backup-sequence.ts`. */
+export type BackupSequenceState = import('src/utils/backup-sequence.js').BackupSequenceState;
 
 /** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
 export type BackupRestoreVerification = {

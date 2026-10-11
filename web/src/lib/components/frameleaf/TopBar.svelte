@@ -502,7 +502,7 @@
   .fl-notifications-panel {
     position: absolute;
     top: 100%;
-    right: 0.5rem;
+    right: 0.75rem;
     z-index: 40;
     padding-top: 0.5rem;
   }
@@ -537,6 +537,26 @@
   /* Phones: the prototype's fixed two-row grid. */
   @media (max-width: 47.99rem) {
     .fl-topbar-grid {
+      /*
+       * The first row's controls are 44px targets. From 390px up they stand 8px apart and the spare
+       * width sits between the brand and Upload; on a narrower phone the gaps share what is left.
+       * 252px is what every page's row holds, without its gaps: the bar's padding, the brand mark,
+       * the bell, the bordered Locked control (46px), the theme button and the 70px account button.
+       * The menu button, Upload and the activity ring each add their own width and one gap.
+       */
+      --fl-topbar-row: 252px;
+      --fl-topbar-menu: 0;
+      --fl-topbar-upload: 0;
+      --fl-topbar-ring: 0;
+      --fl-topbar-gap: clamp(
+        0px,
+        (
+            100vw - var(--fl-topbar-row) - (var(--fl-topbar-menu) + var(--fl-topbar-upload)) * 44px -
+              var(--fl-topbar-ring) * 18px
+          ) /
+          (4 + var(--fl-topbar-menu) + var(--fl-topbar-upload) + var(--fl-topbar-ring)),
+        var(--fl-space-2)
+      );
       display: grid;
       grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
       grid-template-rows: 2.8125rem 2.4375rem;
@@ -551,8 +571,17 @@
     }
     .fl-topbar-lead {
       grid-area: lead;
+      gap: var(--fl-topbar-gap);
       min-width: 0;
       overflow: hidden;
+    }
+    /* A full touch target, not the 48px touch floor: the row has no room for both that and gaps. */
+    .fl-topbar-lead > :global(button),
+    .fl-topbar-actions > :global(button),
+    .fl-notif-bell,
+    .fl-locked-toggle {
+      min-width: 44px;
+      min-height: 44px;
     }
     .fl-primary-nav {
       grid-area: primary;
@@ -570,16 +599,35 @@
     }
     .fl-topbar-actions {
       grid-area: actions;
-      gap: 0.125rem;
+      gap: var(--fl-topbar-gap);
+    }
+    .fl-topbar-grid:has(:global(#top-menu-button)) {
+      --fl-topbar-menu: 1;
+    }
+    .fl-topbar-grid:has(:global(.upload-menu)) {
+      --fl-topbar-upload: 1;
+    }
+    /* Shown only while work is running. */
+    .fl-topbar-grid:has(:global(.fl-activity)) {
+      --fl-topbar-ring: 1;
+    }
+  }
+  /* Under 352px the account button is the avatar alone (AccountMenu.svelte), which frees 26px. */
+  @media (max-width: 351px) {
+    .fl-topbar-grid {
+      --fl-topbar-row: 226px;
     }
   }
   /* apple-style.css: on phones the tab bar owns Search, so the bar keeps no search field. The
      entry stays mounted (only its trigger is hidden) so the tab bar and ⌘K still open it. */
   @media (max-width: 700px) {
     .fl-topbar-grid {
+      /* The spare column is the gap between the brand and Upload, so it never closes further than the others. */
+      grid-template-columns: minmax(0, auto) minmax(var(--fl-topbar-gap), 1fr) auto;
       grid-template-areas:
         'lead . actions'
         'primary primary primary';
+      column-gap: 0;
     }
     .fl-topbar-search {
       position: absolute;
@@ -625,7 +673,7 @@
   }
   .fl-locked-toggle {
     gap: 7px;
-    padding: 0 10px;
+    padding: 0 11px;
     font-size: 12px;
     font-weight: 600;
   }
@@ -645,6 +693,14 @@
   }
   @media (max-width: 700px) {
     .fl-locked-state {
+      display: none;
+    }
+    /*
+     * The phone row has no room for the second half of the control: with it the brand mark was
+     * squeezed to a few pixels while Locked content was revealed. Locked stays one tap away in the
+     * menu drawer and the account menu.
+     */
+    .fl-locked-open {
       display: none;
     }
   }

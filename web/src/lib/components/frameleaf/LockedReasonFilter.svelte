@@ -26,7 +26,25 @@
   .fl-locked-filter {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
+  }
+  /*
+   * Phones: the page's title bar is one row, so the choices stay on one line and scroll sideways
+   * instead of wrapping out of the bar. They take the room the title leaves, so the title is whole.
+   */
+  @media (max-width: 767px) {
+    .fl-locked-filter {
+      flex: 1 1 0;
+      flex-wrap: nowrap;
+      min-width: 0;
+      overflow-x: auto;
+      /* Room for the focus ring inside the scroller. */
+      padding: var(--fl-space-1);
+      scrollbar-width: none;
+    }
+    .fl-locked-filter button {
+      flex: none;
+    }
   }
   .fl-locked-filter button {
     min-height: 2rem;

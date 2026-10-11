@@ -1,57 +1,78 @@
 <script lang="ts">
+  /**
+   * Server & updates › Server name & welcome (FL-368, after the approved prototype
+   * `settings-v2/server/server-updates.jsx`): the name with where it is shown, a bigger box for the
+   * welcome message with what the sign-in page will show beside it, and local network discovery
+   * in plain words. "People can find each other when sharing" has moved to People & sharing.
+   *
+   * Left for later (server work): a welcome message that is plain text unless formatting is asked
+   * for, and a server time zone. The message is shown exactly as today.
+   */
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import { goto } from '$app/navigation';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { t } from 'svelte-i18n';
-  import { reveal } from '$lib/frameleaf/motion';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
-  const configToEdit = $derived(settingsDraft.draft);
-  const config = $derived(settingsDraft.baseline);
+  const server = $derived(settingsDraft.draft.server);
 </script>
 
-<div>
-  <div in:reveal>
-    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <!-- CC-4: the template's "Server name" (settings-catalog.mjs identity). -->
-      <SettingField
-        inputType={SettingInputFieldType.TEXT}
-        label={$t('frameleaf_cc_server_name')}
-        description={$t('frameleaf_cc_server_name_description')}
+<KitPage>
+  <Section title={$t('frameleaf_server_identity_name_section')}>
+    <Row
+      label={$t('frameleaf_server_identity_name')}
+      help={server.name.trim() ? $t('frameleaf_server_identity_name_help') : $t('frameleaf_server_identity_name_empty')}
+    >
+      <Field
+        wide
+        label={$t('frameleaf_server_identity_name')}
+        value={server.name}
+        placeholder={$t('frameleaf_server_identity_name_placeholder')}
         {disabled}
-        bind:value={configToEdit.server.name}
-        isEdited={configToEdit.server.name !== config.server.name}
+        onChange={(value) => (settingsDraft.draft.server.name = value)}
       />
+    </Row>
+  </Section>
 
-      <!-- FL-168: the Public server URL is edited in Frameleaf Cloud › Remote access, as in the prototype. -->
-      <SettingField
-        inputType={SettingInputFieldType.TEXT}
-        label={$t('admin.server_welcome_message')}
-        description={$t('admin.server_welcome_message_description')}
-        bind:value={configToEdit.server.loginPageMessage}
-        isEdited={configToEdit.server.loginPageMessage !== config.server.loginPageMessage}
+  <Section
+    title={$t('frameleaf_server_identity_welcome')}
+    description={$t('frameleaf_server_identity_welcome_description')}
+  >
+    <TextArea
+      label={$t('frameleaf_server_identity_welcome')}
+      value={server.loginPageMessage}
+      placeholder={$t('frameleaf_server_identity_welcome_placeholder')}
+      {disabled}
+      onChange={(value) => (settingsDraft.draft.server.loginPageMessage = value)}
+    />
+  </Section>
+
+  <Section title={$t('frameleaf_server_identity_finding')}>
+    <Row
+      label={$t('frameleaf_server_identity_lan')}
+      help={server.lanDiscovery ? $t('frameleaf_server_identity_lan_on') : $t('frameleaf_server_identity_lan_off')}
+    >
+      <Switch
+        label={$t('frameleaf_server_identity_lan')}
+        checked={server.lanDiscovery}
+        held={disabled}
+        onChange={(value) => (settingsDraft.draft.server.lanDiscovery = value)}
       />
+    </Row>
+    <Row label={$t('frameleaf_sharing_find_label')} help={$t('frameleaf_server_identity_find_moved')}>
+      <Button onclick={() => goto(commandCenterUrl('sharing'))}>{$t('frameleaf_server_identity_find_open')}</Button>
+    </Row>
+  </Section>
 
-      <SettingToggle
-        title={$t('admin.server_public_users')}
-        subtitle={$t('admin.server_public_users_description')}
-        {disabled}
-        bind:checked={configToEdit.server.publicUsers}
-      />
-
-      <SettingToggle
-        title={$t('admin.server_lan_discovery')}
-        subtitle={$t('admin.server_lan_discovery_description')}
-        {disabled}
-        bind:checked={configToEdit.server.lanDiscovery}
-        isEdited={configToEdit.server.lanDiscovery !== config.server.lanDiscovery}
-      />
-
-      <SettingActions keys={['server']} {disabled} />
-    </form>
-  </div>
-</div>
+  <SettingActions keys={['server']} {disabled} />
+</KitPage>

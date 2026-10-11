@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Registers a pending sign-in. Open `authorizationUrl` in the admin's browser unchanged; its `state` is Frameleaf Cloud's own, not the server's.",
+    "body": {
+      "service": "microsoft",
+      "state": "fixture-state-0000000000000000",
+      "codeChallenge": "FIXTUREONLYFIXTUREONLYFIXTUREONLYFIXTUREONL"
+    }
+  },
+  "status": 201,
+  "headers": {},
+  "body": {
+    "signInId": "0199d3a0-5b7e-4c1d-9f20-000000f1c160",
+    "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=00000000-0000-4000-8000-00000000f160&redirect_uri=https%3A%2F%2Fapi.frameleaf.cloud%2Fv1%2Fmail%2Fcallback%2Fmicrosoft&response_type=code&scope=https%3A%2F%2Fgraph.microsoft.com%2FMail.Send+offline_access+https%3A%2F%2Fgraph.microsoft.com%2FUser.Read&state=FIXTURE-ONLY-cloud-state-0000000000000000000&code_challenge=FIXTUREONLYFIXTUREONLYFIXTUREONLYFIXTUREONL&code_challenge_method=S256&response_mode=query&prompt=select_account",
+    "expiresAt": "2026-10-11T12:10:00.000Z"
+  }
+}

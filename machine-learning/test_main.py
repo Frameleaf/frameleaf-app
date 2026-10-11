@@ -685,13 +685,12 @@ class TestImageDescriptionModel:
         # snapshots never collide on the same directory.
         model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
         assert model.cache_dir.parts[-1] == "openvino"
-        # `clean_name` strips dots, slashes, and colons.
-        assert model.cache_dir.parts[-2] == "Qwen25-VL-3B-Instruct"
+        assert model.cache_dir.parts[-2] == hashlib.sha256(model.hf_model_name.encode()).hexdigest()
 
     def test_cache_dir_is_scoped_by_acceleration_cuda(self) -> None:
         model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
         assert model.cache_dir.parts[-1] == "cuda"
-        assert model.cache_dir.parts[-2] == "Qwen25-VL-3B-Instruct"
+        assert model.cache_dir.parts[-2] == hashlib.sha256(model.hf_model_name.encode()).hexdigest()
 
     def test_cache_dir_differs_between_cuda_and_openvino(self) -> None:
         cuda_model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")

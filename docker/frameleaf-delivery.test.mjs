@@ -898,15 +898,25 @@ test("release Compose files pull only digest-pinned or promotion-verified images
   for (const name of release.INSTALL_FILES.filter((file) =>
     file.startsWith("docker-compose"),
   )) {
-    for (const service of Object.values(compose(`docker/${name}`).services)) {
-      const image = service.image;
-      if (image.includes("${FRAMELEAF_VERSION")) continue;
-      const owned = image.match(/^ghcr\.io\/frameleaf\/([a-z0-9-]+)[:@]/);
-      // An unpinned Frameleaf dependency is only allowed because promotion verifies that it is
-      // published and pins the bundled copy to the verified digest.
-      if (owned && !/@sha256:[a-f0-9]{64}$/.test(image))
-        assert.ok(release.DEPENDENCY_IMAGES.includes(owned[1]), image);
-      else assert.match(image, /@sha256:[a-f0-9]{64}$/, image);
+    for (const [serviceName, service] of Object.entries(
+      compose(`docker/${name}`).services,
+    )) {
+      const images =
+        name === "docker-compose.ml-isolated.yml" && service.image === undefined
+          ? ["docker-compose.yml", "docker-compose.rootless.yml"].map(
+              (base) => compose(`docker/${base}`).services[serviceName]?.image,
+            )
+          : [service.image];
+      for (const image of images) {
+        assert.equal(typeof image, "string", `${name}:${serviceName}`);
+        if (image.includes("${FRAMELEAF_VERSION")) continue;
+        const owned = image.match(/^ghcr\.io\/frameleaf\/([a-z0-9-]+)[:@]/);
+        // An unpinned Frameleaf dependency is only allowed because promotion verifies that it is
+        // published and pins the bundled copy to the verified digest.
+        if (owned && !/@sha256:[a-f0-9]{64}$/.test(image))
+          assert.ok(release.DEPENDENCY_IMAGES.includes(owned[1]), image);
+        else assert.match(image, /@sha256:[a-f0-9]{64}$/, image);
+      }
     }
   }
   assert.equal(typeof release.verifyDependencyImages, "function");

@@ -10,6 +10,7 @@ from huggingface_hub import snapshot_download
 from numpy.typing import NDArray
 from PIL import Image
 
+from immich_ml.config import model_repository_url, model_source_token
 from immich_ml.models.base import InferenceModel
 from immich_ml.schemas import ModelSession, ModelTask, ModelType
 from immich_ml.sessions.ort import OrtSession
@@ -34,7 +35,14 @@ class NsfwDetectionModel(InferenceModel):
                 self.device = device
 
     def _download(self) -> None:
-        snapshot_download(self.hf_model_name, cache_dir=self.cache_dir, local_dir=self.cache_dir)
+        endpoint = model_repository_url()
+        snapshot_download(
+            self.hf_model_name,
+            cache_dir=self.cache_dir,
+            local_dir=self.cache_dir,
+            endpoint=endpoint,
+            token=model_source_token(endpoint),
+        )
 
     def _load(self) -> ModelSession:
         session = OrtSession(self.model_path, device_id=self.device)
