@@ -83,8 +83,15 @@ photos or image descriptions. Inference reads the staged files locally.
 The checked-in manifest is the application trust root. Hosted manifest signing
 and mirror publication remain separate release checks.
 
-Caches live under `<existing model cache>/<revision>` so an older unpinned snapshot
-cannot bypass verification. Both cached `download()` and native load verify the
+Description caches are keyed by SHA-256 of the complete resolved repository name
+under `<cache>/image-description-tagging/repositories/<repository hash>/<acceleration>`.
+This prevents differently named repositories from sharing a cache or another model's
+custom-code consent. Existing description caches remain on disk and must be downloaded
+or staged again. A caller supplying an explicit `cache_dir` must provide a separate
+destination for each repository and acceleration backend.
+
+Built-in Florence snapshots add `<revision>` beneath that cache so an older unpinned
+snapshot cannot bypass verification. Both cached `download()` and native load verify the
 complete file set. A missing, modified or unexpected loader file, including Python,
 stops loading with a verification error. The worker does not repair corrupt caches
 or remove old caches automatically. Restage a complete reviewed revision to recover;
