@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { deriveClaimVectors } from "./render-worker-lottie-inputs.mjs";
 const require = createRequire(
@@ -110,3 +113,20 @@ for (const version of ["1", "2"]) {
     }
   });
 }
+
+// A worker may start outside the repository; parser aliases must use its explicit config.
+test("pure Lottie closure loads outside the repository working directory", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["--test", "--test-name-pattern=^v[12] ", fileURLToPath(import.meta.url)],
+    {
+      cwd: tmpdir(),
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+    },
+  );
+  assert.ifError(result.error);
+  assert.match(result.stdout, /pass 4\b/, result.stdout);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});

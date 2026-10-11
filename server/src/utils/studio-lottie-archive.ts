@@ -1,6 +1,7 @@
 /** Pinned dotLottie v1/v2 packaging; byte reads reuse the bounded bundle reader. */
-import { StudioImportRefusal } from './studio-imports.js';
-import { readZipDirectory, readZipEntry } from './studio-zip-reader.js';
+import { StudioImportRefusal } from 'src/utils/studio-imports.js';
+import { readZipDirectory, readZipEntry } from 'src/utils/studio-zip-reader.js';
+
 const MAX_BYTES = 16 * 1024 * 1024;
 const fail = (): never => {
   throw new StudioImportRefusal('Lottie archive refused');
@@ -80,7 +81,7 @@ export function assertArchiveExpressionsAbsent(value: unknown): void {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'x' && typeof child === 'string' && child.length) return fail();
+    if (key === 'x' && typeof child === 'string' && child.length > 0) return fail();
     assertArchiveExpressionsAbsent(child);
   }
 }
@@ -91,7 +92,7 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const source = {
       size: buffer.length,
-      read: async (offset: number, length: number) => buffer.subarray(offset, offset + length),
+      read: (offset: number, length: number) => Promise.try(() => buffer.subarray(offset, offset + length)),
     };
     const directory = await readZipDirectory(source, {
       strictPaths: true,
@@ -104,7 +105,7 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     });
     const aliases = new Set<string>();
     for (const entry of directory.entries) {
-      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x800) return fail();
+      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x8_00) return fail();
       aliases.add(entry.name.toLowerCase());
       files[entry.name] = await readZipEntry(source, entry, MAX_BYTES);
     }
@@ -126,7 +127,7 @@ export function describeLottieArchive(files: Record<string, Uint8Array>): Lottie
   if (manifest.version !== undefined && manifest.version !== '1' && manifest.version !== '2') return fail();
   if (manifest.stateMachines !== undefined || (manifest.initial && record(manifest.initial).stateMachine !== undefined))
     return fail();
-  if (!Array.isArray(manifest.animations) || !manifest.animations.length || manifest.animations.length > 128)
+  if (!Array.isArray(manifest.animations) || manifest.animations.length === 0 || manifest.animations.length > 128)
     return fail();
   const prefix = manifest.version === '2' ? 'a' : 'animations';
   const known = new Set(['manifest.json']),
@@ -146,7 +147,7 @@ export function describeLottieArchive(files: Record<string, Uint8Array>): Lottie
       id: animationId,
       entry,
       document,
-      ...(Array.isArray(item.themes) && { themes: item.themes.map(id) }),
+      ...(Array.isArray(item.themes) && { themes: item.themes.map((value) => id(value)) }),
       ...(item.initialTheme !== undefined && { initialTheme: id(item.initialTheme) }),
     };
   });
@@ -200,21 +201,39 @@ export function validateArchiveTheme(theme: Record<string, unknown>, animations:
       (!Array.isArray(rule.animations) || rule.animations.some((a) => !animations.has(id(a))))
     )
       return fail();
-    if (rule.type === 'Scalar') {
-      if (typeof rule.value !== 'number' || !Number.isFinite(rule.value)) return fail();
-    } else if (rule.type === 'Color' || rule.type === 'Vector') {
-      if (
-        !Array.isArray(rule.value) ||
-        !(rule.type === 'Color' ? [3, 4] : [2]).includes(rule.value.length) ||
-        rule.value.some((v) => typeof v !== 'number' || !Number.isFinite(v)) ||
-        (rule.type === 'Color' && rule.value.some((v) => v < 0 || v > 1))
-      )
+    switch (rule.type) {
+      case 'Scalar': {
+        if (typeof rule.value !== 'number' || !Number.isFinite(rule.value)) return fail();
+
+        break;
+      }
+      case 'Color':
+      case 'Vector': {
+        if (
+          !Array.isArray(rule.value) ||
+          !(rule.type === 'Color' ? [3, 4] : [2]).includes(rule.value.length) ||
+          rule.value.some((v) => typeof v !== 'number' || !Number.isFinite(v)) ||
+          (rule.type === 'Color' && rule.value.some((v) => v < 0 || v > 1))
+        )
+          return fail();
+
+        break;
+      }
+      case 'Text': {
+        const value = record(rule.value);
+        if (
+          Object.keys(value).some((k) => k !== 'text') ||
+          typeof value.text !== 'string' ||
+          value.text.length > 10_000
+        )
+          return fail();
+
+        break;
+      }
+      default: {
         return fail();
-    } else if (rule.type === 'Text') {
-      const value = record(rule.value);
-      if (Object.keys(value).some((k) => k !== 'text') || typeof value.text !== 'string' || value.text.length > 10000)
-        return fail();
-    } else return fail();
+      }
+    }
   }
 }
 export function selectArchiveAnimation(archive: LottieArchive, requested?: string) {

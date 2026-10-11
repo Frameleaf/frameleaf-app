@@ -89,52 +89,59 @@ function setup({ dependency = false, archive = false } = {}) {
   ];
   const manifest = { entries, expiresAt: new Date(Date.now() + 60_000).toISOString() };
   const projects = {
-    authorizeRevision: vi.fn(async () => ({
-      revision: { revision: 2, digest: sha(canonicalJson(envelope)) },
-      envelope,
-      manifest,
-    })),
+    authorizeRevision: vi.fn(() =>
+      Promise.resolve({
+        revision: { revision: 2, digest: sha(canonicalJson(envelope)) },
+        envelope,
+        manifest,
+      }),
+    ),
   };
   const resources = {
     assertAuthorizedManifest: vi.fn(),
     issueReadGrants: vi.fn(() =>
       entries.map((entry) => ({ ...entry, token: entry.key, expiresAt: new Date(Date.now() + 5000).toISOString() })),
     ),
-    verifyReadGrant: vi.fn(async () => ({ valid: true, path: '' })),
+    verifyReadGrant: vi.fn(() => Promise.resolve({ valid: true, path: '' })),
   };
   let state = 'current';
   let boundary = '';
-  const guard = vi.fn(async () => {
-    if (state !== 'current') throw new ConflictException(state);
-    return auth;
+  const guard = vi.fn(() => {
+    if (state !== 'current') return Promise.reject(new ConflictException(state));
+    return Promise.resolve(auth);
   });
   const snapshots: Buffer[] = [];
   const storage = {
-    stat: vi.fn(async (path: string) => ({
-      isFile: () => true,
-      dev: 1,
-      ino: path === '/private/parent' ? 1 : 2,
-      size: path === '/private/parent' ? parent.length : child.length,
-      mtimeMs: 1,
-      ctimeMs: 1,
-    })),
-    openForRandomRead: vi.fn(async (path: string) => ({
-      size: path === '/private/parent' ? parent.length : child.length,
-      read: vi.fn(async () => {
-        const bytes = Buffer.from(path === '/private/parent' ? parent : child);
-        snapshots.push(bytes);
-        if (boundary === 'read') state = 'revoked';
-        return bytes;
+    stat: vi.fn((path: string) =>
+      Promise.resolve({
+        isFile: () => true,
+        dev: 1,
+        ino: path === '/private/parent' ? 1 : 2,
+        size: path === '/private/parent' ? parent.length : child.length,
+        mtimeMs: 1,
+        ctimeMs: 1,
       }),
-      close: vi.fn(async () => {
-        if (boundary === 'close') state = 'locked';
+    ),
+    openForRandomRead: vi.fn((path: string) =>
+      Promise.resolve({
+        size: path === '/private/parent' ? parent.length : child.length,
+        read: vi.fn(() => {
+          const bytes = Buffer.from(path === '/private/parent' ? parent : child);
+          snapshots.push(bytes);
+          if (boundary === 'read') state = 'revoked';
+          return Promise.resolve(bytes);
+        }),
+        close: vi.fn(() => {
+          if (boundary === 'close') state = 'locked';
+          return Promise.resolve();
+        }),
       }),
-    })),
+    ),
   };
   const media = {
-    downloadOriginal: vi.fn(async () => {
+    downloadOriginal: vi.fn(() => {
       if (boundary === 'final-original' && media.downloadOriginal.mock.calls.length === 2) state = 'download-revoked';
-      return { path: '/private/original' };
+      return Promise.resolve({ path: '/private/original' });
     }),
   };
   const sut = new StudioSourceResolutionService(
@@ -225,16 +232,21 @@ describe('canonical Studio source resolution', () => {
     zeroed(f.snapshots);
   });
 
-  it('refuses oversize input before allocating a snapshot', async () => {
-    const f = setup();
-    f.storage.openForRandomRead.mockImplementation(async () => ({
-      size: 16 * 1024 * 1024 + 1,
-      read: vi.fn(async () => Buffer.alloc(0)),
-      close: vi.fn(async () => {}),
-    }));
-    await expect(f.sut.resolve(auth, projectId, f.request())).rejects.toThrow('studio_source_allocation_limit');
-    expect(f.snapshots).toHaveLength(0);
-  });
+  it.each([-1, 0, 16 * 1024 * 1024 + 1])(
+    'refuses invalid source size %s before allocating a snapshot',
+    async (size) => {
+      const f = setup();
+      f.storage.openForRandomRead.mockImplementation(() =>
+        Promise.resolve({
+          size,
+          read: vi.fn(() => Promise.resolve(Buffer.alloc(0))),
+          close: vi.fn(async () => {}),
+        }),
+      );
+      await expect(f.sut.resolve(auth, projectId, f.request())).rejects.toThrow('studio_source_allocation_limit');
+      expect(f.snapshots).toHaveLength(0);
+    },
+  );
 
   it.each(['read', 'close'])(
     'refuses causal revocation after the asynchronous %s, with no returned bytes',
@@ -269,9 +281,9 @@ describe('canonical Studio source resolution', () => {
     'refuses %s between final authority awaits',
     async (reason) => {
       const f = setup();
-      f.resources.verifyReadGrant.mockImplementationOnce(async () => {
+      f.resources.verifyReadGrant.mockImplementationOnce(() => {
         f.revoke(reason);
-        return { valid: true, path: '' };
+        return Promise.resolve({ valid: true, path: '' });
       });
       await expect(f.sut.resolve(auth, projectId, f.request())).rejects.toThrow(reason);
       expect(f.storage.openForRandomRead).not.toHaveBeenCalled();

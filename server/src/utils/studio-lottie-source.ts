@@ -1,15 +1,14 @@
 /** Immutable declarations are hints until independently matched to verified parent bytes. */
 import { createHash } from 'node:crypto';
 import z from 'zod';
-import { readLottieArchive, selectArchiveAnimation, type LottieArchive } from './studio-lottie-archive.js';
-// eslint-disable-next-line no-restricted-imports -- Shared pure parser must also load in the verified worker without server aliases.
 import {
   STUDIO_IMPORT_VECTOR_MAX_BYTES,
   StudioImportRefusal,
   scanStudioLottie,
   scanStudioSvg,
   sniffStudioImport,
-} from './studio-imports.js';
+} from 'src/utils/studio-imports.js';
+import { type LottieArchive, readLottieArchive, selectArchiveAnimation } from 'src/utils/studio-lottie-archive.js';
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const uuid = z.string().regex(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
@@ -341,7 +340,7 @@ export async function materializeStudioLottieSource(
     const checksum = createHash('sha256').update(bytes).digest('hex');
     if (bindings.some((binding) => binding.parent.checksum !== checksum))
       throw new StudioImportRefusal('Vector parent bytes changed');
-    const expected = new Set(parsed.dependencies.map(studioVectorLocationKey));
+    const expected = new Set(parsed.dependencies.map((location) => studioVectorLocationKey(location)));
     if (
       expected.size !== bindings.length ||
       bindings.some((binding) => !expected.has(studioVectorLocationKey(binding.location)))
@@ -388,7 +387,7 @@ export async function materializeStudioLottieSource(
               ? 'font/woff'
               : magic === 'OTTO'
                 ? 'font/otf'
-                : data.length >= 4 && data.readUInt32BE(0) === 0x00010000
+                : data.length >= 4 && data.readUInt32BE(0) === 0x00_01_00_00
                   ? 'font/ttf'
                   : '';
         if (!mime) throw new StudioImportRefusal('Unsupported vector font');

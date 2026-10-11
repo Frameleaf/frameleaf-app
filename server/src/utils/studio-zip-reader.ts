@@ -422,8 +422,8 @@ export const zipEntryDataOffset = async (source: ZipByteSource, entry: ZipEntry)
   if (
     !((entry.flags ?? 0) & 8) &&
     (header.readUInt32LE(14) !== entry.crc32 ||
-      (header.readUInt32LE(18) !== 0xffffffff && header.readUInt32LE(18) !== entry.compressedSize) ||
-      (header.readUInt32LE(22) !== 0xffffffff && header.readUInt32LE(22) !== entry.uncompressedSize))
+      (header.readUInt32LE(18) !== 0xff_ff_ff_ff && header.readUInt32LE(18) !== entry.compressedSize) ||
+      (header.readUInt32LE(22) !== 0xff_ff_ff_ff && header.readUInt32LE(22) !== entry.uncompressedSize))
   ) {
     refuse('bundle_corrupt', `${entry.name.slice(0, 80)} local and central sizes disagree`);
   }
@@ -457,12 +457,12 @@ export const readZipEntry = async (source: ZipByteSource, entry: ZipEntry, maxBy
     if (bytes.length !== entry.uncompressedSize) {
       refuse('bundle_corrupt', `${entry.name.slice(0, 80)} inflated to a different size than declared`);
     }
-    let crc = 0xffffffff;
+    let crc = 0xff_ff_ff_ff;
     for (const byte of bytes) {
       crc ^= byte;
-      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xed_b8_83_20 : 0);
     }
-    if ((crc ^ 0xffffffff) >>> 0 !== entry.crc32) {
+    if ((crc ^ 0xff_ff_ff_ff) >>> 0 !== entry.crc32) {
       refuse('bundle_corrupt', `${entry.name.slice(0, 80)} CRC does not match`);
     }
     return bytes;

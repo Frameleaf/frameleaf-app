@@ -1,4 +1,3 @@
-import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -129,6 +128,7 @@ import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';

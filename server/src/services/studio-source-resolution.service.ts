@@ -12,20 +12,20 @@ import {
   StudioSourceResolutionRequestDto,
   StudioSourceResolutionSchema,
 } from 'src/dtos/studio-source-resolution.dto.js';
-import {
-  StudioSourceResolutionRepository,
-  type StudioSourceAdmission,
-} from 'src/repositories/studio-source-resolution.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import {
+  type StudioSourceAdmission,
+  StudioSourceResolutionRepository,
+} from 'src/repositories/studio-source-resolution.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
-import { StudioResourceService, type StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
+import { type StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
 import {
+  type StudioLottieSource,
   classifyStudioLottieParent,
   materializeStudioLottieSource,
   readStudioVectorBindings,
   validateStudioLottieItem,
-  type StudioLottieSource,
 } from 'src/utils/studio-lottie-source.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -88,14 +88,17 @@ export class StudioSourceResolutionService {
         (timeline.compositions !== undefined && !Array.isArray(timeline.compositions))
       )
         throw new BadRequestException('studio_source_invalid');
-      const views = [timeline, ...((timeline.compositions as unknown[]) ?? []).map(record)];
+      const views = [timeline, ...((timeline.compositions as unknown[]) ?? []).map((value) => record(value))];
       const uses = views.flatMap((view) => {
         if (!Array.isArray(view.items)) throw new BadRequestException('studio_source_invalid');
-        return view.items.map(record).filter((item) => item.type === 'lottie' && item.mediaId === dto.parent.id);
+        return view.items
+          .map((value) => record(value))
+          .filter((item) => item.type === 'lottie' && item.mediaId === dto.parent.id);
       });
       if (
-        !uses.length ||
-        !uses.some((item) => item.animationId === dto.selection.animationId && item.themeId === dto.selection.themeId)
+        uses.every(
+          (item) => !(item.animationId === dto.selection.animationId && item.themeId === dto.selection.themeId),
+        )
       )
         throw new BadRequestException('studio_source_invalid_selection');
       const roots = authorized.manifest.entries.filter((entry) => entry.id === dto.parent.id);
@@ -182,10 +185,11 @@ export class StudioSourceResolutionService {
         const file = await this.storage.openForRandomRead(entry.path);
         try {
           await guard();
+          const byteCount = file.size;
           if (
-            !Number.isSafeInteger(file.size) ||
-            file.size <= 0 ||
-            file.size > Math.min(maximum, MAX_DECODED, MAX_ALLOCATED - allocated)
+            !Number.isSafeInteger(byteCount) ||
+            byteCount <= 0 ||
+            byteCount > Math.min(maximum, MAX_DECODED, MAX_ALLOCATED - allocated)
           )
             throw new PayloadTooLargeException('studio_source_allocation_limit');
           const bytes = own(await file.read(0, file.size));
@@ -274,7 +278,8 @@ export class StudioSourceResolutionService {
         canonicalJson({ ...result, files: output.map(({ path, sha256 }) => ({ path, sha256 })) }),
       );
       // Actual original admission is repeated at the final boundary, after materialization and encoding.
-      for (const input of inputs.filter((entry) => entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared')) {
+      for (const input of inputs) {
+        if (input.sourceAccess !== 'owner' && input.sourceAccess !== 'shared') continue;
         const live = await guard();
         const original = await this.media.downloadOriginal(live, input.id, { edited: false });
         try {

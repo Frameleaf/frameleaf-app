@@ -58,6 +58,11 @@ import { restoredVersionState } from 'src/utils/restoration.js';
 import { studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
+  parseStudioLottieSource,
+  readStudioVectorBindings,
+  validateStudioVectorClosure,
+} from 'src/utils/studio-lottie-source.js';
+import {
   STUDIO_MAX_GRAPH_BYTES,
   STUDIO_MAX_REFERENCES,
   StudioAudioSource,
@@ -84,11 +89,6 @@ import {
   studioRightsId,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
-import {
-  parseStudioLottieSource,
-  readStudioVectorBindings,
-  validateStudioVectorClosure,
-} from 'src/utils/studio-lottie-source.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */

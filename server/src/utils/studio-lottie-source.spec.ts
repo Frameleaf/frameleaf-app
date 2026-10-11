@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { extractStudioResourceReferences } from 'src/utils/studio-resources.js';
 import {
-  parseStudioLottieDependencies,
   materializeStudioLottieSource,
+  parseStudioLottieDependencies,
   readStudioVectorBindings,
   validateStudioVectorClosure,
 } from 'src/utils/studio-lottie-source.js';
+import { extractStudioResourceReferences } from 'src/utils/studio-resources.js';
 
 import { ownedLottieArchive } from 'test/fixtures/studio-lottie.js';
 
@@ -126,7 +126,7 @@ describe('verified vector byte closure', () => {
       validateStudioVectorClosure(
         graph([archived]),
         [{ ...archived.parent, key: `vector-graphic:${parent.id}` }, entries[1]],
-        async (entry) => (entry.id === parent.id ? archive : png),
+        (entry) => Promise.resolve(entry.id === parent.id ? archive : png),
       ),
     ).resolves.toBeUndefined();
     expect(archive.some((byte) => byte !== 0)).toBe(true);
@@ -191,10 +191,12 @@ it('hands every allocated archive buffer to the snapshot owner, including pre-re
     bytes,
     'application/zip+dotlottie',
     [],
-    async () => {
-      throw new Error('No dependency read expected');
+    () => {
+      return Promise.reject(new Error('No dependency read expected'));
     },
-    (buffer) => retained.push(buffer),
+    (buffer) => {
+      retained.push(buffer);
+    },
   );
   expect(retained).toHaveLength(5);
   expect(Object.values(parsed.archive!.files).every((buffer) => retained.includes(buffer))).toBe(true);
