@@ -680,11 +680,11 @@ diff --git a/src/infrastructure/lottie/lottie-archive-selection.test.ts b/src/in
 new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/lottie/lottie-archive-selection.test.ts
-@@ -0,0 +1,360 @@
+@@ -0,0 +1,469 @@
 +// @vitest-environment node
 +import { describe, expect, it, vi } from 'vite-plus/test'
 +import { zipSync, strToU8 } from 'fflate'
-+import { readLottieArchive } from './lottie-archive'
++import { readLottieArchive, selectArchiveAnimation } from './lottie-archive'
 +import { installScopedMediaResolver } from '@/features/media-library/utils/scoped-media-resolution'
 +import { resolveLottieRenderSpec } from './lottie-text'
 +import {
@@ -713,6 +713,29 @@ new file mode 100644
 +    it(`v${version} refuses unknown explicit selection without fallback`, () => {
 +      expect(parseLottieFileBytes(bytes(version), 'missing')).toBeNull()
 +      expect(extractLottieAnimation(bytes(version), false, 'missing')).toBeNull()
++    })
++    it(`v${version} distinguishes an unavailable selection from an invalid archive default`, () => {
++      const archive = readLottieArchive(bytes(version))
++      expect(() => selectArchiveAnimation(archive, 'missing')).toThrow(
++        'LOTTIE_ANIMATION_UNAVAILABLE',
++      )
++      const prefix = version === '2' ? 'a' : 'animations'
++      const malformed = zipSync({
++        'manifest.json': strToU8(
++          JSON.stringify({
++            version,
++            animations: [{ id: 'first' }],
++            initial: { animation: 'missing' },
++          }),
++        ),
++        [`${prefix}/first.json`]: strToU8(JSON.stringify({ v: '5.7', layers: [] })),
++      })
++      expect(() => selectArchiveAnimation(readLottieArchive(malformed), 'missing')).toThrow(
++        'LOTTIE_ARCHIVE_REFUSED',
++      )
++      expect(() => selectArchiveAnimation({ ...archive, defaultAnimationId: 'missing' })).toThrow(
++        'LOTTIE_ARCHIVE_REFUSED',
++      )
 +    })
 +    it(`v${version} explicit selection overrides initial`, () => {
 +      expect(parseLottieFileBytes(bytes(version), 'first')?.width).toBe(64)
@@ -965,19 +988,32 @@ new file mode 100644
 +    const imageRoot = version === '2' ? 'i' : 'images'
 +    const files = {
 +      'manifest.json': strToU8(JSON.stringify({ version, animations: [{ id: 'selected' }] })),
-+      [`${prefix}/selected.json`]: strToU8(JSON.stringify({ v: '5.7', w: 32, h: 64, layers: [],
-+        assets: [{ id: 'image', u: `${imageRoot}/`, p: 'image.png' }],
-+        fonts: { list: [{ fName: 'Owned', fPath: 'f/font.ttf' }] } })),
++      [`${prefix}/selected.json`]: strToU8(
++        JSON.stringify({
++          v: '5.7',
++          w: 32,
++          h: 64,
++          layers: [],
++          assets: [{ id: 'image', u: `${imageRoot}/`, p: 'image.png' }],
++          fonts: { list: [{ fName: 'Owned', fPath: 'f/font.ttf' }] },
++        }),
++      ),
 +      [`${imageRoot}/image.png`]: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
 +      'f/font.ttf': new Uint8Array([0, 1, 0, 0]),
 +    }
-+    const archive = zipSync(files), before = new Uint8Array(archive)
++    const archive = zipSync(files),
++      before = new Uint8Array(archive)
 +    const document = extractLottieAnimation(archive, true)!
-+    expect(document.assets).toEqual([{ id: 'image', u: '', p: 'data:image/png;base64,iVBORw0KGgo=', e: 1 }])
-+    expect(document.fonts).toEqual({ list: [{ fName: 'Owned', fPath: 'data:font/ttf;base64,AAEAAA==' }] })
++    expect(document.assets).toEqual([
++      { id: 'image', u: '', p: 'data:image/png;base64,iVBORw0KGgo=', e: 1 },
++    ])
++    expect(document.fonts).toEqual({
++      list: [{ fName: 'Owned', fPath: 'data:font/ttf;base64,AAEAAA==' }],
++    })
 +    expect(archive).toEqual(before)
 +    for (const missing of [`${imageRoot}/image.png`, 'f/font.ttf']) {
-+      const incomplete = { ...files }; delete incomplete[missing]
++      const incomplete = { ...files }
++      delete incomplete[missing]
 +      expect(extractLottieAnimation(zipSync(incomplete), true)).toBeNull()
 +    }
 +  })
@@ -988,56 +1024,129 @@ new file mode 100644
 +      let invalid: Uint8Array
 +      if (bad === 'zip') invalid = new Uint8Array([80, 75, 3, 4, 0])
 +      else if (bad === 'removed-default') invalid = bytes(version)
-+      else invalid = zipSync({ 'manifest.json': strToU8(bad === 'manifest' ? '{' : JSON.stringify({ version,
-+        animations: [{ id: 'selected', initialTheme: 'authored' }], themes: [{ id: 'authored' }] })),
-+        [`${version === '2' ? 'a' : 'animations'}/selected.json`]: strToU8('{"v":"5.7","w":32,"h":64,"layers":[]}'),
-+        't/authored.json': strToU8('{"rules":[{"id":"bad","type":"Image","value":"external.png"}]}') })
-+      const fetch = vi.fn().mockResolvedValueOnce(new Response(new Uint8Array(archive))).mockResolvedValueOnce(new Response(new Uint8Array(invalid)))
-+      const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++      else
++        invalid = zipSync({
++          'manifest.json': strToU8(
++            bad === 'manifest'
++              ? '{'
++              : JSON.stringify({
++                  version,
++                  animations: [{ id: 'selected', initialTheme: 'authored' }],
++                  themes: [{ id: 'authored' }],
++                }),
++          ),
++          [`${version === '2' ? 'a' : 'animations'}/selected.json`]: strToU8(
++            '{"v":"5.7","w":32,"h":64,"layers":[]}',
++          ),
++          't/authored.json': strToU8(
++            '{"rules":[{"id":"bad","type":"Image","value":"external.png"}]}',
++          ),
++        })
++      const fetch = vi
++        .fn()
++        .mockResolvedValueOnce(new Response(new Uint8Array(archive)))
++        .mockResolvedValueOnce(new Response(new Uint8Array(invalid)))
++      const uninstall = installScopedMediaResolver({
++        peek: () => ({ handled: true, url }),
++        resolve: async () => ({ handled: true, url }),
++      })
 +      vi.stubGlobal('fetch', fetch)
 +      try {
-+        await expect(resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 })).rejects.toThrow()
++        await expect(
++          resolveLottieRenderSpec('/original', {
++            mediaId: 'owned',
++            sourceWidth: 32,
++            sourceHeight: 64,
++          }),
++        ).rejects.toThrow()
 +        expect(fetch).toHaveBeenCalledTimes(2)
 +        expect(fetch.mock.calls.map(([, options]) => options.redirect)).toEqual(['error', 'error'])
-+      } finally { uninstall(); vi.unstubAllGlobals() }
++      } finally {
++        uninstall()
++        vi.unstubAllGlobals()
++      }
 +    })
 +  }
 +  it(`v${version} refuses an invalid first native scoped response using strict streaming`, async () => {
 +    const url = 'https://owned.invalid/refused-first-read'
-+    const fetch = vi.fn(async (_input: RequestInfo | URL, _options?: RequestInit) => new Response(new Uint8Array(initialThemeArchive(version)), { status: 302 }))
-+    const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++    const fetch = vi.fn(
++      async (_input: RequestInfo | URL, _options?: RequestInit) =>
++        new Response(new Uint8Array(initialThemeArchive(version)), { status: 302 }),
++    )
++    const uninstall = installScopedMediaResolver({
++      peek: () => ({ handled: true, url }),
++      resolve: async () => ({ handled: true, url }),
++    })
 +    vi.stubGlobal('fetch', fetch)
 +    try {
-+      await expect(resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 })).rejects.toThrow('LOTTIE_LOAD_FAILED')
++      await expect(
++        resolveLottieRenderSpec('/original', {
++          mediaId: 'owned',
++          sourceWidth: 32,
++          sourceHeight: 64,
++        }),
++      ).rejects.toThrow('LOTTIE_LOAD_FAILED')
 +      expect(fetch).toHaveBeenCalledTimes(1)
 +      expect(fetch.mock.calls[0]![1]).toMatchObject({ redirect: 'error' })
-+    } finally { uninstall(); vi.unstubAllGlobals() }
++    } finally {
++      uninstall()
++      vi.unstubAllGlobals()
++    }
 +  })
 +  for (const read of [1, 2]) {
 +    it(`v${version} denies publication after source revocation during started body read ${read}`, async () => {
-+      const url = 'https://owned.invalid/deferred-body', archive = initialThemeArchive(version)
++      const url = 'https://owned.invalid/deferred-body',
++        archive = initialThemeArchive(version)
 +      let finish!: () => void, started!: () => void
-+      const waiting = new Promise<void>((resolve) => { started = resolve })
++      const waiting = new Promise<void>((resolve) => {
++        started = resolve
++      })
 +      let count = 0
 +      const fetch = vi.fn(async () => {
 +        if (++count !== read) return new Response(new Uint8Array(archive))
 +        let cancelled = false
-+        return new Response(new ReadableStream({ start(controller) {
-+          finish = () => { if (!cancelled) { controller.enqueue(new Uint8Array(archive)); controller.close() } }; started()
-+        }, cancel() { cancelled = true } }))
++        return new Response(
++          new ReadableStream({
++            start(controller) {
++              finish = () => {
++                if (!cancelled) {
++                  controller.enqueue(new Uint8Array(archive))
++                  controller.close()
++                }
++              }
++              started()
++            },
++            cancel() {
++              cancelled = true
++            },
++          }),
++        )
 +      })
-+      const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++      const uninstall = installScopedMediaResolver({
++        peek: () => ({ handled: true, url }),
++        resolve: async () => ({ handled: true, url }),
++      })
 +      vi.stubGlobal('fetch', fetch)
 +      try {
 +        let published = 0
-+        const pending = resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 }).then(() => { published++ })
++        const pending = resolveLottieRenderSpec('/original', {
++          mediaId: 'owned',
++          sourceWidth: 32,
++          sourceHeight: 64,
++        }).then(() => {
++          published++
++        })
 +        const refusal = expect(pending).rejects.toThrow('LOTTIE_SOURCE_SUPERSEDED')
 +        await waiting
-+        uninstall(); finish()
++        uninstall()
++        finish()
 +        await refusal
 +        expect(published).toBe(0)
 +        expect(fetch).toHaveBeenCalledTimes(read)
-+      } finally { uninstall(); vi.unstubAllGlobals() }
++      } finally {
++        uninstall()
++        vi.unstubAllGlobals()
++      }
 +    })
 +  }
 +}
@@ -1045,7 +1154,7 @@ diff --git a/src/infrastructure/lottie/lottie-archive.ts b/src/infrastructure/lo
 new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/lottie/lottie-archive.ts
-@@ -0,0 +1,439 @@
+@@ -0,0 +1,444 @@
 +import { unzipSync } from 'fflate'
 +
 +const MAX_BYTES = 16 * 1024 * 1024
@@ -1401,7 +1510,10 @@ new file mode 100644
 +  const animation = archive.animations.find(
 +    (a) => a.id === (requested ?? archive.defaultAnimationId),
 +  )
-+  if (!animation) return fail()
++  if (!animation) {
++    if (requested !== undefined) throw new Error('LOTTIE_ANIMATION_UNAVAILABLE')
++    return fail()
++  }
 +  return animation
 +}
 +
@@ -1438,7 +1550,8 @@ new file mode 100644
 +    if (!asset.p.startsWith('data:') && files) {
 +      if (asset.u !== undefined && typeof asset.u !== 'string') return fail()
 +      const entry = `${typeof asset.u === 'string' ? asset.u : ''}${asset.p}`
-+      if (!/^(?:images|i)\/[A-Za-z0-9_.-]+$/.test(entry) || !Object.hasOwn(files, entry)) return fail()
++      if (!/^(?:images|i)\/[A-Za-z0-9_.-]+$/.test(entry) || !Object.hasOwn(files, entry))
++        return fail()
 +      rasterMime(files[entry]!)
 +      continue
 +    }
@@ -1460,7 +1573,8 @@ new file mode 100644
 +    for (const raw of Array.isArray(fonts.list) ? fonts.list : []) {
 +      const font = record(raw)
 +      if (typeof font.fPath === 'string' && !font.fPath.startsWith('data:') && files) {
-+        if (!/^f\/[A-Za-z0-9_.-]+$/.test(font.fPath) || !Object.hasOwn(files, font.fPath)) return fail()
++        if (!/^f\/[A-Za-z0-9_.-]+$/.test(font.fPath) || !Object.hasOwn(files, font.fPath))
++          return fail()
 +        archiveFontMime(files[font.fPath]!)
 +        continue
 +      }
