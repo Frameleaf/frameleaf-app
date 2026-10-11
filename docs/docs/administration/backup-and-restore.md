@@ -11,6 +11,17 @@ Frameleaf keeps media files on your storage and their identity, ownership, album
 
 Database backups do not contain your media. A filesystem copy taken while uploads, moves or deletions continue can disagree with the database snapshot. Stop writers or use a storage snapshot procedure that gives you a consistent recovery point. Keep a second copy outside the server being backed up.
 
+## Backup secrets and diagnostic logs
+
+Request diagnostics mask passphrases, recovery codes, keys, keyrings and wrapping secrets, including nested fields and separator/case variants. Cloud backup setup, bucket checks, key and escrow routes, Buddy recovery key routes, and credential replacement routes exclude their entire request body, including failed requests. Method, path, status, duration and client address remain available at debug level. Unexpected route errors record a fixed failure category rather than the request, error text or stack. **Download diagnostics** excludes credential values and recovery material from settings; it does not collect request logs or recovery kits.
+
+For installations that previously enabled verbose request logging, assess historical records before sharing diagnostics:
+
+1. Establish the installed version, logging levels and time window when backup setup, escrow, key import or verification was used. Verbose logs may contain request bodies; debug logs may contain query parameters. Check locally retained logs, rotated copies, log collectors and support attachments under restricted access. Do not paste secret values into shell arguments, online searches or support tickets.
+2. Review the relevant route names and field names, including `passphrase`, `recoveryCode`, `keys`, `keyring` and generic credential `value` fields. Record times, routes and affected credential types without copying their contents. Logging being enabled alone does not establish that a secret was exposed.
+3. If exposure is confirmed, restrict access to every affected log copy and stop verbose logging while investigating. Preserve restricted incident evidence according to your retention process; share only a reviewed, sanitized extract. Updating Frameleaf protects future request diagnostics and does not sanitize historical logs or attachments.
+4. Replace affected access credentials and rewrap affected escrow packages using your incident recovery procedure. A changed passphrase does not revoke an older escrow copy. An exposed backup key can still decrypt older backups encrypted with that key; rotating a current key alone does not protect those copies. Verify recovery with protected historical keys before retiring any key, log or backup. Keep an independent recovery kit available throughout this work.
+
 ## Database backups
 
 Frameleaf's database backup runtime uses PostgreSQL 19 `pg_dump` to write plain SQL compressed with gzip. Backup filenames begin with `frameleaf-db-backup`. Configure and inspect scheduled backups under **Administration > Settings > Backup** and keep the matching files from your backup storage with your media recovery point.

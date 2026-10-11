@@ -6,6 +6,18 @@ const config = {
   oauth: { clientSecret: 'oauth-secret', clientSecretConfigured: true, issuerUrl: 'https://id.example' },
   notifications: { smtp: { transport: { password: 'smtp-secret', passwordConfigured: true, host: 'mail' } } },
   logging: { enabled: true, level: 'log' },
+  frameleafCloud: { cloudBackup: { s3: { secretAccessKey: 'storage-secret', secretAccessKeyConfigured: true } } },
+  futureSettings: [
+    {
+      PASS_PHRASE: 'passphrase-sentinel',
+      'recovery-key': 'recovery-sentinel',
+      wrappingKey: 'wrapping-sentinel',
+      'PASS.WORD': 'password-sentinel',
+      keys: { 1: 'keyring-sentinel' },
+      recoveryVerified: true,
+      fingerprint: 'kept',
+    },
+  ],
 } as unknown as AdminConfigDto;
 
 describe('buildDiagnostics (FL-71)', () => {
@@ -32,10 +44,22 @@ describe('buildDiagnostics (FL-71)', () => {
 
   it('never carries a credential value', () => {
     const text = JSON.stringify(diagnostics);
-    for (const secret of ['oauth-secret', 'smtp-secret']) {
+    for (const secret of [
+      'oauth-secret',
+      'smtp-secret',
+      'storage-secret',
+      'passphrase-sentinel',
+      'recovery-sentinel',
+      'wrapping-sentinel',
+      'password-sentinel',
+      'keyring-sentinel',
+    ]) {
       expect(text).not.toContain(secret);
     }
     expect(diagnostics.settings.oauth.clientSecretConfigured).toBe(true);
+    expect(diagnostics.settings.frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured).toBe(true);
+    expect(diagnostics.settings).toMatchObject({ futureSettings: [{ fingerprint: 'kept', recoveryVerified: true }] });
+    expect(JSON.stringify(config)).toContain('keyring-sentinel');
   });
 
   it('describes the build, storage totals and queues', () => {
