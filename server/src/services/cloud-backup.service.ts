@@ -97,7 +97,7 @@ import {
   ManagedBackupApi,
 } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
-import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
@@ -141,6 +141,7 @@ import {
   parseClientBackupKeys,
 } from 'src/utils/cloud-backup-crypto.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
+import { CloudBackupKeyChannel, loadBackupWorkerIdentity } from 'src/utils/cloud-backup-key-channel.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePath,
@@ -170,6 +171,7 @@ import {
 import {
   CLOUD_BACKUP_BATCH,
   CLOUD_BACKUP_DB_PREFIX,
+  CLOUD_BACKUP_KEY_FILE_FORMAT,
   CLOUD_BACKUP_MANIFEST_FORMAT,
   CLOUD_BACKUP_MANIFEST_PREFIX,
   CLOUD_BACKUP_MANIFEST_VERSION,
@@ -392,12 +394,17 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
  */
 @Injectable()
 export class CloudBackupService {
-  private memoryKey?: { fingerprint: string; key: Buffer; file?: string };
+  private readonly keyChannel: CloudBackupKeyChannel;
+  /** Copies held by the one active bucket operation, independent of a subsequent memory lock. */
+  private readonly operationKeys = new Set<Buffer>();
   private clientKeys = new Map<string, ClientBackupKeys>();
   private importedHistory = new Map<string, BackupRecoveryHistory>();
   /** Callers waiting for another worker to share the own-memory key. */
   private keyWaiters = new Set<() => void>();
-  private lastKeyAskAt = 0;
+  private readonly keyDiscovery = new Map<
+    string,
+    { requiredVersion: number; lastAskAt: number; lastAskVersion: number }
+  >();
   private lastAbandonedSweepAt = 0;
   /** How long a status read or "Back up now" waits for another worker to share an own-memory key. */
   keyAskMs = 1000;
@@ -436,6 +443,9 @@ export class CloudBackupService {
     private details: CloudBackupDetailsService,
   ) {
     this.logger.setContext(CloudBackupService.name);
+    this.keyChannel = new CloudBackupKeyChannel(this.workerId, () =>
+      loadBackupWorkerIdentity(join(identityDirectory(this.configRepository), INSTANCE_KEY_FILE)),
+    );
     this.maintenance = new CloudBackupMaintenance(store, index, logger);
     this.restorer = new CloudBackupRestorer(store, storageRepository, cryptoRepository, logger);
   }
@@ -698,6 +708,7 @@ export class CloudBackupService {
   }
 
   private async setupLocked(auth: AuthDto, dto: CloudBackupSetupDto): Promise<void> {
+    const keyRevision = this.keyChannel.revision;
     if (await this.activeBucketOperation()) {
       throw new ConflictException('Wait for the running backup to finish, or cancel it, before changing the setup.');
     }
@@ -714,145 +725,165 @@ export class CloudBackupService {
     }
 
     const key = this.parseKey(dto.key);
-    const fingerprint = keyFingerprint(key);
-    if (dto.target === 'managed') {
-      // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
-      await this.announceActivation({ preparing: true });
-    }
-    const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
-    const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
-    this.readClientKeys(dto.key, key, identity.instanceId, false);
-
-    // The stored key modes write and read back the key file first, so a bucket is never claimed with a
-    // key this server could not keep; a claim that then fails takes away only a file this setup created.
-    const keyFile =
-      dto.keyMode === 'own-memory'
-        ? null
-        : await this.storeKey(dto.keyMode, key, {
-            instanceId: identity.instanceId,
-            bucket: connection.bucket,
-            keyFile: dto.key,
-          });
-
-    let claim: { existing: boolean; claimedAt: string };
+    let recovery: Buffer | null = null;
     try {
-      claim = await this.store.claim(connection, key, {
-        instanceId: identity.instanceId,
-        keyFingerprint: fingerprint,
-        now: new Date(),
-      });
-    } catch (error) {
-      if (keyFile?.created) {
-        await this.keys.remove(identityDirectory(this.configRepository), fingerprint);
+      const fingerprint = keyFingerprint(key);
+      if (dto.target === 'managed') {
+        // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
+        await this.announceActivation({ preparing: true });
       }
-      throw this.asRequestError(error);
-    }
+      const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
+      const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      this.readClientKeys(dto.key, key, identity.instanceId, false);
+      recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
-    const { oldConfig, newConfig } = await this.databaseRepository.withLock(
-      DatabaseLock.SystemConfigUpdate,
-      async () => {
-        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
-          const current = await readConfig(repos);
-          const next = structuredClone(current);
-          next.frameleafCloud.cloudBackup = {
-            ...current.frameleafCloud.cloudBackup,
-            enabled: true,
-            target: dto.target,
-            // managed storage's key is issued per operation and never kept; your own bucket's is
-            s3: managed
-              ? current.frameleafCloud.cloudBackup.s3
-              : {
-                  endpoint: connection.endpoint,
-                  region: dto.s3?.region?.trim() ?? '',
-                  bucket: connection.bucket,
-                  accessKeyId: connection.accessKeyId,
-                  secretAccessKey: connection.secretAccessKey,
-                },
-            keyMode: dto.keyMode,
-            // escrow belongs to one server-generated key; a new setup starts without it
-            escrow: false,
-          };
-          const saved = await updateConfig(repos, next);
-          return { oldConfig: current, newConfig: saved };
+      // The stored key modes write and read back the key file first, so a bucket is never claimed with a
+      // key this server could not keep; a claim that then fails takes away only a file this setup created.
+      const keyFile =
+        dto.keyMode === 'own-memory'
+          ? null
+          : await this.storeKey(dto.keyMode, key, {
+              instanceId: identity.instanceId,
+              bucket: connection.bucket,
+              keyFile: dto.key,
+            });
+
+      let claim: { existing: boolean; claimedAt: string };
+      try {
+        claim = await this.store.claim(connection, key, {
+          instanceId: identity.instanceId,
+          keyFingerprint: fingerprint,
+          now: new Date(),
         });
-        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
-          kind: 'settings',
-          source: 'frameleaf-cloud',
-        });
-        return result;
-      },
-    );
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      } catch (error) {
+        if (keyFile?.created) {
+          await this.keys.remove(identityDirectory(this.configRepository), fingerprint);
+        }
+        throw this.asRequestError(error);
+      }
 
-    const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    const legacyClaim =
-      managed &&
-      claim.existing &&
-      previous?.target === 'managed' &&
-      !previous.managed?.storageId &&
-      previous.bucketRef.startsWith('https://') &&
-      previous.bucketRef.endsWith(`/${previous.bucket}`) &&
-      previous.bucket === connection.bucket &&
-      previous.region === connection.region &&
-      previous.instanceId === identity.instanceId &&
-      previous.keyFingerprint === fingerprint;
-    const ref = legacyClaim
-      ? previous.bucketRef
-      : managed
-        ? managedStorageRef(managed.state.storageId)
-        : bucketRef(connection.endpoint, connection.bucket);
-    const managedState = managed && { ...managed.state, ...(legacyClaim && { storageId: undefined }) };
-    // A new claim means the bucket was empty: whatever the index remembers of it (an emptied or recreated
-    // bucket) is gone, and the first run reads the bucket's listing again.
-    if (!claim.existing) {
-      await this.index.deleteBucket(ref);
-    }
-    const sameBucket = claim.existing && previous?.bucketRef === ref && previous.keyFingerprint === fingerprint;
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, {
-      target: dto.target,
-      bucketRef: ref,
-      endpoint: connection.endpoint,
-      region: connection.region,
-      bucket: connection.bucket,
-      instanceId: identity.instanceId,
-      claimedAt: claim.claimedAt,
-      keyMode: dto.keyMode,
-      keyFingerprint: fingerprint,
-      lastCheckAt: new Date().toISOString(),
-      ...(managedState && { managed: managedState }),
-      ...(sameBucket && {
-        reconciledAt: previous.reconciledAt,
-        lastRun: previous.lastRun,
-        lastSuccessAt: previous.lastSuccessAt,
-        lastManifestKey: previous.lastManifestKey,
-        lastVerify: previous.lastVerify,
-        lastFullVerifyAt: previous.lastFullVerifyAt,
-        lastPrune: previous.lastPrune,
-        lastRestore: previous.lastRestore,
-      }),
-    });
+      const { oldConfig, newConfig } = await this.databaseRepository.withLock(
+        DatabaseLock.SystemConfigUpdate,
+        async () => {
+          const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+            const current = await readConfig(repos);
+            const next = structuredClone(current);
+            next.frameleafCloud.cloudBackup = {
+              ...current.frameleafCloud.cloudBackup,
+              enabled: true,
+              target: dto.target,
+              // managed storage's key is issued per operation and never kept; your own bucket's is
+              s3: managed
+                ? current.frameleafCloud.cloudBackup.s3
+                : {
+                    endpoint: connection.endpoint,
+                    region: dto.s3?.region?.trim() ?? '',
+                    bucket: connection.bucket,
+                    accessKeyId: connection.accessKeyId,
+                    secretAccessKey: connection.secretAccessKey,
+                  },
+              keyMode: dto.keyMode,
+              // escrow belongs to one server-generated key; a new setup starts without it
+              escrow: false,
+            };
+            const saved = await updateConfig(repos, next);
+            return { oldConfig: current, newConfig: saved };
+          });
+          // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+          await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
+            kind: 'settings',
+            source: 'frameleaf-cloud',
+          });
+          return result;
+        },
+      );
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
 
-    // Own-memory: held here, and shared once the claim is saved so the other workers accept it.
-    if (dto.keyMode === 'own-memory') {
-      this.readClientKeys(dto.key, key, identity.instanceId);
-      this.memoryKey = { fingerprint, key, file: dto.key };
-      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: dto.key });
-    }
-    // Frameleaf Cloud keeps escrow for the server key mode only, and warns when a schedule stops running
-    await this.reportAgentSettings(dto.keyMode, true);
-    // a copy of another key would only mislead a recovery: it goes when the key changes
-    if (previous?.keyFingerprint !== fingerprint) {
-      await this.deleteStaleEscrow();
-    }
+      const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+      const legacyClaim =
+        managed &&
+        claim.existing &&
+        previous?.target === 'managed' &&
+        !previous.managed?.storageId &&
+        previous.bucketRef.startsWith('https://') &&
+        previous.bucketRef.endsWith(`/${previous.bucket}`) &&
+        previous.bucket === connection.bucket &&
+        previous.region === connection.region &&
+        previous.instanceId === identity.instanceId &&
+        previous.keyFingerprint === fingerprint;
+      const ref = legacyClaim
+        ? previous.bucketRef
+        : managed
+          ? managedStorageRef(managed.state.storageId)
+          : bucketRef(connection.endpoint, connection.bucket);
+      const managedState = managed && { ...managed.state, ...(legacyClaim && { storageId: undefined }) };
+      // A new claim means the bucket was empty: whatever the index remembers of it (an emptied or recreated
+      // bucket) is gone, and the first run reads the bucket's listing again.
+      if (!claim.existing) {
+        await this.index.deleteBucket(ref);
+      }
+      const sameBucket = claim.existing && previous?.bucketRef === ref && previous.keyFingerprint === fingerprint;
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, {
+        target: dto.target,
+        bucketRef: ref,
+        endpoint: connection.endpoint,
+        region: connection.region,
+        bucket: connection.bucket,
+        instanceId: identity.instanceId,
+        claimedAt: claim.claimedAt,
+        keyMode: dto.keyMode,
+        keyFingerprint: fingerprint,
+        lastCheckAt: new Date().toISOString(),
+        ...(managedState && { managed: managedState }),
+        ...(sameBucket && {
+          reconciledAt: previous.reconciledAt,
+          lastRun: previous.lastRun,
+          lastSuccessAt: previous.lastSuccessAt,
+          lastManifestKey: previous.lastManifestKey,
+          lastVerify: previous.lastVerify,
+          lastFullVerifyAt: previous.lastFullVerifyAt,
+          lastPrune: previous.lastPrune,
+          lastRestore: previous.lastRestore,
+        }),
+      });
 
-    this.logger.log(
-      `Cloud backup set up by ${auth.user.id}: ${dto.target === 'managed' ? 'Frameleaf-managed' : 'own'} bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
-    );
-    // FL-228: storage is ready; the activation chain moves on to the first backup
-    if (!sameBucket || !previous?.lastSuccessAt) {
-      await this.announceActivation();
+      // Own-memory: held here. Only authenticated workers receive recipient-encrypted replies.
+      if (dto.keyMode === 'own-memory') {
+        if (
+          !this.keyChannel.setKey(
+            { instanceId: identity.instanceId, bucketRef: ref, keyFingerprint: fingerprint },
+            key,
+            keyRevision,
+            recovery,
+          )
+        ) {
+          throw new ConflictException(
+            'The backup key was changed or locked during setup. Load the key again if needed.',
+          );
+        }
+        this.readClientKeys(recovery?.toString() ?? '', key, identity.instanceId);
+        await this.announceKeyVersion({ instanceId: identity.instanceId, bucketRef: ref, keyFingerprint: fingerprint });
+      } else {
+        this.clearMemoryKey();
+      }
+      // Frameleaf Cloud keeps escrow for the server key mode only, and warns when a schedule stops running
+      await this.reportAgentSettings(dto.keyMode, true);
+      // a copy of another key would only mislead a recovery: it goes when the key changes
+      if (previous?.keyFingerprint !== fingerprint) {
+        await this.deleteStaleEscrow();
+      }
+
+      this.logger.log(
+        `Cloud backup set up by ${auth.user.id}: ${dto.target === 'managed' ? 'Frameleaf-managed' : 'own'} bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
+      );
+      // FL-228: storage is ready; the activation chain moves on to the first backup
+      if (!sameBucket || !previous?.lastSuccessAt) {
+        await this.announceActivation();
+      }
+    } finally {
+      recovery?.fill(0);
+      if (dto.keyMode === 'own-memory') key.fill(0);
     }
   }
 
@@ -992,19 +1023,39 @@ export class CloudBackupService {
     };
   }
 
-  /** Own-memory mode: load the key after a restart. It is held in memory by every worker, never saved. */
+  /** Own-memory mode: load locally; peers request an authenticated, recipient-encrypted copy. */
   async unlock(dto: CloudBackupUnlockDto): Promise<CloudBackupStatusResponseDto> {
+    const keyRevision = this.keyChannel.revision;
     const metadata = await this.requireClaim();
     if (metadata.keyMode !== 'own-memory') {
       throw new BadRequestException('This server keeps its backup key, so there is nothing to unlock.');
     }
     const key = this.parseKey(dto.key);
     if (keyFingerprint(key) !== metadata.keyFingerprint) {
+      key.fill(0);
       throw new BadRequestException('This key is for a different bucket.');
     }
-    this.readClientKeys(dto.key, key, metadata.instanceId);
-    this.memoryKey = { fingerprint: metadata.keyFingerprint, key, file: dto.key };
-    this.websocketRepository.serverSend('CloudBackupKeyShare', { key: dto.key });
+    let loaded: boolean;
+    let recovery: Buffer | null = null;
+    try {
+      recovery = this.memoryRecovery(dto.key, key, metadata.instanceId);
+      try {
+        await loadBackupWorkerIdentity(join(identityDirectory(this.configRepository), INSTANCE_KEY_FILE));
+      } catch {
+        throw new ConflictException(
+          'The backup worker identity is unavailable. Check the private FRAMELEAF_IDENTITY_DIR mount on every application worker, then load the key again.',
+        );
+      }
+      loaded = this.keyChannel.setKey(metadata, key, keyRevision, recovery);
+      if (loaded) this.readClientKeys(recovery?.toString() ?? '', key, metadata.instanceId);
+    } finally {
+      key.fill(0);
+      recovery?.fill(0);
+    }
+    if (!loaded) {
+      throw new ConflictException('The backup key was changed or locked during unlock. Load it again if needed.');
+    }
+    await this.announceKeyVersion(metadata);
     this.logger.log(`Cloud backup key ${metadata.keyFingerprint} loaded into memory`);
     return this.getStatus();
   }
@@ -1036,6 +1087,7 @@ export class CloudBackupService {
         return result;
       },
     );
+    this.clearMemoryKey();
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (metadata) {
@@ -1174,11 +1226,14 @@ export class CloudBackupService {
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
-  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+  onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
+    const backup = newConfig.frameleafCloud.cloudBackup;
+    if (backup.keyMode !== 'own-memory' || (oldConfig.frameleafCloud.cloudBackup.enabled && !backup.enabled)) {
+      this.clearMemoryKey();
+    }
     if (!this.scheduleLock) {
       return;
     }
-    const backup = newConfig.frameleafCloud.cloudBackup;
     this.cronRepository.update({
       name: CLOUD_BACKUP_SCHEDULE_CRON,
       expression: backup.schedule.cronExpression,
@@ -1352,40 +1407,90 @@ export class CloudBackupService {
     return { created: false, activeTask: active ? taskOf(active) : 'restore' };
   }
 
-  /** Another worker loaded the own-memory key: keep it in memory here too, if it is this bucket's. */
+  /** Only the live requesting worker can authenticate and decrypt this response. */
   @OnEvent({ name: 'CloudBackupKeyShare', server: true })
-  async onKeyShare({ key }: ArgOf<'CloudBackupKeyShare'>) {
+  async onKeyShare(share: ArgOf<'CloudBackupKeyShare'>) {
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    if (metadata?.keyMode !== 'own-memory') {
+    if (metadata?.keyMode !== 'own-memory' || this.stopping) {
       return;
     }
-    let bytes: Buffer;
-    try {
-      bytes = parseBackupKey(key);
-      if (keyFingerprint(bytes) !== metadata.keyFingerprint) return;
-      this.readClientKeys(key, bytes, metadata.instanceId);
-    } catch {
-      return;
+    const discovery = this.keyDiscoveryFor(metadata);
+    const accepted = await this.keyChannel
+      .accept(share, metadata, (key, recovery, minimumVersion) => {
+        const required = Math.max(
+          minimumVersion,
+          discovery.requiredVersion,
+          this.clientKeys.get(metadata.keyFingerprint)?.current ?? 0,
+        );
+        if (!recovery) {
+          if (required || this.clientKeys.has(metadata.keyFingerprint)) throw new Error('Missing client backup roots');
+          return;
+        }
+        const file = recovery.toString();
+        const embedded = parseBackupKey(file);
+        try {
+          if (!embedded.equals(key)) throw new Error('Backup recovery key mismatch');
+          const client = this.readClientKeys(file, key, metadata.instanceId, false);
+          if ((client?.current ?? 0) < required) throw new Error('Outdated client backup roots');
+        } finally {
+          embedded.fill(0);
+        }
+      })
+      .catch(() => false);
+    const key = this.keyChannel.getKey(metadata);
+    if (accepted && key) {
+      const recovery = this.keyChannel.getRecovery(metadata);
+      if (recovery) this.readClientKeys(recovery.toString(), key, metadata.instanceId);
+      this.wakeKeyWaiters();
     }
-    this.memoryKey = { fingerprint: metadata.keyFingerprint, key: bytes, file: key };
+  }
+
+  @OnEvent({ name: 'CloudBackupKeyUpdate', server: true })
+  async onKeyUpdate(update: ArgOf<'CloudBackupKeyUpdate'>) {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (metadata?.keyMode !== 'own-memory' || this.stopping) return;
+    if (!this.keyChannel.getKey(metadata) && !this.keyChannel.hasRequest(metadata)) return;
+    const discovery = this.keyDiscoveryFor(metadata);
+    const version = await this.keyChannel.acceptUpdate(update, metadata).catch(() => null);
+    if (!version || this.stopping || (!this.keyChannel.getKey(metadata) && !this.keyChannel.hasRequest(metadata)))
+      return;
+    if (discovery !== this.keyDiscoveryFor(metadata)) return;
+    if (version <= (this.clientKeys.get(metadata.keyFingerprint)?.current ?? 0)) return;
+    discovery.requiredVersion = Math.max(discovery.requiredVersion, version);
+    await this.requestKey(metadata);
+  }
+
+  private async announceKeyVersion(
+    binding: Pick<FrameleafCloudBackup, 'instanceId' | 'bucketRef' | 'keyFingerprint'>,
+    revision = this.keyChannel.revision,
+  ) {
+    const version = this.clientKeys.get(binding.keyFingerprint)?.current;
+    if (!version || this.stopping || revision !== this.keyChannel.revision) return;
+    const update = await this.keyChannel.update(binding, version).catch(() => null);
+    if (update && !this.stopping && revision === this.keyChannel.revision)
+      this.websocketRepository.serverSend('CloudBackupKeyUpdate', update);
+  }
+
+  private wakeKeyWaiters() {
     for (const wake of this.keyWaiters) {
       wake();
     }
   }
 
-  /** A worker that restarted asks for the own-memory key; one that holds it shares it again. */
+  /** The private instance identity authorizes a recipient; a database fingerprint never does. */
   @OnEvent({ name: 'CloudBackupKeyRequest', server: true })
-  onKeyRequest() {
-    if (!this.memoryKey) return;
-    const ring = this.clientKeys.get(this.memoryKey.fingerprint);
-    const original = this.memoryKey.file?.trimStart().startsWith('{')
-      ? JSON.parse(this.memoryKey.file)
-      : { key: this.memoryKey.key.toString('base64') };
-    this.websocketRepository.serverSend('CloudBackupKeyShare', {
-      key: ring
-        ? JSON.stringify({ ...original, client: ring })
-        : (this.memoryKey.file ?? this.memoryKey.key.toString('base64')),
-    });
+  async onKeyRequest(request: ArgOf<'CloudBackupKeyRequest'>) {
+    const revision = this.keyChannel.revision;
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (metadata?.keyMode !== 'own-memory' || this.stopping) {
+      return;
+    }
+    const share = await this.keyChannel.share(request, metadata).catch(() => null);
+    if (share && !this.stopping && revision === this.keyChannel.revision) {
+      await this.announceKeyVersion(metadata, revision);
+      if (!this.stopping && revision === this.keyChannel.revision)
+        this.websocketRepository.serverSend('CloudBackupKeyShare', share);
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -1397,7 +1502,7 @@ export class CloudBackupService {
   async onBootstrapAskForKey() {
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
     if (metadata?.keyMode === 'own-memory') {
-      this.websocketRepository.serverSend('CloudBackupKeyRequest');
+      await this.requestKey(metadata);
     }
   }
 
@@ -1416,7 +1521,15 @@ export class CloudBackupService {
       clearInterval(this.tickHandle);
       this.tickHandle = undefined;
     }
-    await this.active;
+    try {
+      await this.active;
+    } finally {
+      this.keyChannel.close();
+      this.clientKeys.clear();
+      this.importedHistory.clear();
+      this.clearOperationKeys();
+      this.wakeKeyWaiters();
+    }
   }
 
   tick() {
@@ -1462,7 +1575,7 @@ export class CloudBackupService {
         stopped: () => this.stopping,
       },
       () => this.runClaim(operation, claimToken),
-    );
+    ).finally(() => this.clearOperationKeys());
   }
 
   private async runClaim(operation: MediaOperation, claimToken: string): Promise<void> {
@@ -1540,7 +1653,17 @@ export class CloudBackupService {
         `Frameleaf-managed storage is read-only for this server${readOnlyReason(metadata)}, so backups are paused. Your library is untouched and restores keep working.`,
       );
     }
-    const run: Run = { id, claimToken, operation, metadata, connection, bucketKey, progress, uploadedNow: new Set() };
+    const run: Run = {
+      id,
+      claimToken,
+      operation,
+      metadata,
+      connection,
+      bucketKey,
+      progress,
+      uploadedNow: new Set(),
+      clientKeys: opened.clientKeys,
+    };
 
     const running = await this.operations.reportProgress(id, claimToken, {
       status: MediaOperationStatus.Rendering,
@@ -1616,7 +1739,7 @@ export class CloudBackupService {
       throw new Error('Cloud backup is off.');
     }
 
-    const bucketKey = await this.loadKey(metadata);
+    const bucketKey = await this.loadKey(metadata, true);
     if (!bucketKey) {
       if (metadata.keyMode !== 'own-memory') {
         throw new Error(
@@ -1624,7 +1747,7 @@ export class CloudBackupService {
         );
       }
       // Own-memory key not loaded here: ask the other workers, and wait without failing.
-      this.websocketRepository.serverSend('CloudBackupKeyRequest');
+      await this.requestKey(metadata);
       await waiting();
       this.notify({
         level: NotificationLevel.Warning,
@@ -1641,6 +1764,8 @@ export class CloudBackupService {
       return null;
     }
 
+    const clientKeys = structuredClone(this.clientKeys.get(metadata.keyFingerprint));
+    const importedHistory = this.importedHistory.get(metadata.keyFingerprint);
     let connection: CloudBackupConnection;
     let readOnly = false;
     let current = metadata;
@@ -1678,8 +1803,9 @@ export class CloudBackupService {
     if (marker.instanceId !== metadata.instanceId) {
       throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
     }
-    await this.attachClientHistory(connection, metadata);
-    return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly };
+    connection.recoveryKeys = clientKeys?.keys;
+    await this.attachClientHistory(connection, metadata, importedHistory);
+    return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly, clientKeys };
   }
 
   /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
@@ -2201,7 +2327,7 @@ export class CloudBackupService {
             throw error;
         }
       }
-    } else if (this.clientKeys.has(run.metadata.keyFingerprint)) {
+    } else if (run.clientKeys) {
       // Old client-format runs could populate the shared index without a legacy copy.
       for (const file of hashed) {
         if (!existing.has(file.sha256)) continue;
@@ -4136,17 +4262,66 @@ export class CloudBackupService {
    * worker; in the stored modes when the key file is missing. A key that does not match the claim's
    * fingerprint is never used.
    */
-  private async loadKey(metadata: FrameleafCloudBackup): Promise<Buffer | null> {
+  private async loadKey(metadata: FrameleafCloudBackup, forOperation = false): Promise<Buffer | null> {
     if (metadata.keyMode === 'own-memory') {
-      return this.memoryKey?.fingerprint === metadata.keyFingerprint ? this.memoryKey.key : null;
+      if (this.keyDiscoveryFor(metadata).requiredVersion > (this.clientKeys.get(metadata.keyFingerprint)?.current ?? 0))
+        return null;
+      const key = this.keyChannel.getKey(metadata);
+      if (key && forOperation) {
+        const copy = Buffer.from(key);
+        this.operationKeys.add(copy);
+        return copy;
+      }
+      return key;
     }
     const content = await this.keys.read(identityDirectory(this.configRepository), metadata.keyFingerprint);
     if (!content) {
       return null;
     }
     const key = parseBackupKey(content);
+    if (keyFingerprint(key) !== metadata.keyFingerprint) {
+      key.fill(0);
+      return null;
+    }
     this.readClientKeys(content, key, metadata.instanceId);
-    return keyFingerprint(key) === metadata.keyFingerprint ? key : null;
+    return key;
+  }
+
+  private clearMemoryKey() {
+    this.keyChannel.clear();
+    this.clientKeys.clear();
+    this.importedHistory.clear();
+    this.keyDiscovery.clear();
+    this.wakeKeyWaiters();
+  }
+
+  private memoryRecovery(file: string, key: Buffer, vaultId: string): Buffer | null {
+    const fingerprint = keyFingerprint(key);
+    const client = this.readClientKeys(file, key, vaultId, false) ?? this.clientKeys.get(fingerprint);
+    const parsed = file.trimStart().startsWith('{') ? (JSON.parse(file) as { recovery?: unknown }) : {};
+    const history = mergeBackupHistory(
+      this.importedHistory.get(fingerprint) ?? null,
+      parsed.recovery ? backupRecoveryHistorySchema.parse(parsed.recovery) : undefined,
+    );
+    if (!client && !history) return null;
+    const recovery = Buffer.from(
+      JSON.stringify({
+        format: CLOUD_BACKUP_KEY_FILE_FORMAT,
+        key: key.toString('base64'),
+        ...(client && { client }),
+        ...(history && { recovery: history }),
+      }),
+    );
+    if (recovery.length > 16_384) {
+      recovery.fill(0);
+      throw new BadRequestException('The complete backup recovery key file is too large.');
+    }
+    return recovery;
+  }
+
+  private clearOperationKeys() {
+    for (const key of this.operationKeys) key.fill(0);
+    this.operationKeys.clear();
   }
 
   /**
@@ -4158,13 +4333,10 @@ export class CloudBackupService {
     if (key || metadata.keyMode !== 'own-memory') {
       return key;
     }
-    const now = Date.now();
-    if (now - this.lastKeyAskAt < KEY_ASK_INTERVAL_MS) {
+    if (!(await this.requestKey(metadata))) {
       return null;
     }
-    this.lastKeyAskAt = now;
-    this.websocketRepository.serverSend('CloudBackupKeyRequest');
-    if (this.keyAskMs > 0) {
+    if (this.keyAskMs > 0 && !(await this.loadKey(metadata))) {
       await new Promise<void>((resolve) => {
         const done = () => {
           clearTimeout(timer);
@@ -4206,9 +4378,12 @@ export class CloudBackupService {
     return history;
   }
 
-  private async attachClientHistory(connection: CloudBackupConnection, metadata: FrameleafCloudBackup) {
+  private async attachClientHistory(
+    connection: CloudBackupConnection,
+    metadata: FrameleafCloudBackup,
+    imported = this.importedHistory.get(metadata.keyFingerprint),
+  ) {
     const local = await readBackupHistory(this.clientHistoryPath(metadata.bucketRef));
-    const imported = this.importedHistory.get(metadata.keyFingerprint);
     const history = mergeBackupHistory(local, imported);
     if (history) {
       if (history.anchor.instanceId !== metadata.instanceId || history.anchor.vaultId !== metadata.instanceId)
@@ -4303,7 +4478,7 @@ export class CloudBackupService {
   }
 
   private clientWriteVersion(run: Run) {
-    const ring = this.clientKeys.get(run.metadata.keyFingerprint);
+    const ring = run.clientKeys;
     if (!ring || ring.vaultId !== run.metadata.instanceId)
       throw new Error(
         'Load a client backup recovery keyring with fresh independent roots before enabling client-encrypted writes.',
@@ -4318,7 +4493,50 @@ export class CloudBackupService {
 
   private clientWriteRoot(run: Run) {
     const version = this.clientWriteVersion(run);
-    return Buffer.from(this.clientKeys.get(run.metadata.keyFingerprint)!.keys[version], 'base64');
+    const roots = (run.clientRoots ??= new Map<number, Buffer>());
+    let root = roots.get(version);
+    if (!root) {
+      root = Buffer.from(run.clientKeys!.keys[version], 'base64');
+      roots.set(version, root);
+      this.operationKeys.add(root);
+    }
+    return root;
+  }
+
+  private keyDiscoveryFor(metadata: Pick<FrameleafCloudBackup, 'instanceId' | 'bucketRef' | 'keyFingerprint'>) {
+    const binding = JSON.stringify([metadata.instanceId, metadata.bucketRef, metadata.keyFingerprint]);
+    let state = this.keyDiscovery.get(binding);
+    if (!state) {
+      state = { requiredVersion: 0, lastAskAt: 0, lastAskVersion: 0 };
+      this.keyDiscovery.set(binding, state);
+    }
+    return state;
+  }
+
+  /** Rate-limited signed discovery. No raw/recovery key enters a database event or fallback row. */
+  private async requestKey(metadata: FrameleafCloudBackup): Promise<boolean> {
+    const discovery = this.keyDiscoveryFor(metadata);
+    const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (current?.keyMode !== 'own-memory' || this.keyDiscoveryFor(current) !== discovery || this.stopping) return false;
+    const now = Date.now();
+    const minimumVersion = discovery.requiredVersion;
+    if (
+      this.stopping ||
+      (minimumVersion <= discovery.lastAskVersion && now - discovery.lastAskAt < KEY_ASK_INTERVAL_MS)
+    ) {
+      return false;
+    }
+    discovery.lastAskAt = now;
+    discovery.lastAskVersion = minimumVersion;
+    const request = await this.keyChannel.request(metadata, minimumVersion).catch(() => {
+      this.logger.warn('Backup worker identity unavailable; check the private FRAMELEAF_IDENTITY_DIR mount.');
+      return null;
+    });
+    if (!request || this.stopping) {
+      return false;
+    }
+    this.websocketRepository.serverSend('CloudBackupKeyRequest', request);
+    return true;
   }
 
   /** Write and read back the key file of a stored key mode (0600). */
@@ -4526,6 +4744,7 @@ type TaskCheckpoint = 'continue' | 'cancelled' | 'stopped';
 
 /** FL-164: the claimed bucket opened for one operation. */
 type OpenedBucket = CloudBackupBucket & {
+  clientKeys?: ClientBackupKeys;
   metadata: FrameleafCloudBackup;
   settings: SystemConfig['frameleafCloud']['cloudBackup'];
   readOnly: boolean;
@@ -4596,6 +4815,8 @@ const cloneSuspectedError = () =>
   );
 
 type Run = {
+  clientKeys?: ClientBackupKeys;
+  clientRoots?: Map<number, Buffer>;
   id: string;
   claimToken: string;
   operation: MediaOperation;
