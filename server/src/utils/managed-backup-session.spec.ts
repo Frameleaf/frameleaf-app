@@ -77,10 +77,24 @@ describe('managed backup sessions', () => {
     'refuses %s changes without widening operation authority',
     async (change) => {
       const next = nextGrant();
-      if (change === 'operation') next.capability.operation = 'prune';
-      else if (change === 'binding') next.bucket = 'fl-eu-0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54';
-      else if (change === 'readOnly') next.readOnly = true;
-      else if (change === 'coverage') next.coverage = { scope: 'none' };
+      switch (change) {
+        case 'operation': {
+          next.capability.operation = 'prune';
+          break;
+        }
+        case 'binding': {
+          next.bucket = 'fl-eu-0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54';
+          break;
+        }
+        case 'readOnly': {
+          next.readOnly = true;
+          break;
+        }
+        case 'coverage': {
+          next.coverage = { scope: 'none' };
+          break;
+        }
+      }
       const get = managedBackupSession(initial(), 'upload', () => Promise.resolve(next));
       await expect(get(initial().capability.credentials.accessKeyId)).rejects.toBeInstanceOf(
         ManagedBackupAuthorizationError,
