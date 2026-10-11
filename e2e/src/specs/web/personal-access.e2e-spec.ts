@@ -148,8 +148,9 @@ test.describe('Personal access (FL-67)', () => {
     await utils.setAuthCookies(context, user.accessToken);
     await page.goto(profileUrl);
 
-    const profile = page.getByRole('region', { name: 'Your profile' });
-    await expect(profile.getByRole('button', { name: 'Upload photo' })).toBeVisible();
+    // FL-368 Your profile: the photo is its own group (frameleaf_prefs_profile_photo_section).
+    const profile = page.getByRole('region', { name: 'Photo', exact: true });
+    await expect(profile.getByRole('button', { name: 'Upload a photo' })).toBeVisible();
     const fileInput = profile.locator('input[type="file"]');
 
     // a file that is not an image is refused before it is sent
@@ -185,13 +186,17 @@ test.describe('Personal access (FL-67)', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(emailSettingsUrl);
 
-    const emailGroup = page.locator('#setting-group-email');
-    const toggle = emailGroup.locator('> button');
-    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-      await toggle.click();
+    // FL-368 Email delivery: the fields follow "Which email should Frameleaf send from?"; with no
+    // mail server saved yet, "Other" shows them without changing a setting.
+    const other = page
+      .getByRole('group', { name: 'Which email should Frameleaf send from?' }) // frameleaf_notify_delivery_which
+      .getByRole('button', { name: /^Other/ }); // frameleaf_notify_delivery_other
+    if ((await other.getAttribute('aria-pressed')) !== 'true') {
+      await other.click();
     }
 
-    const row = page.locator('.credential').filter({ hasText: 'SMTP password' });
+    // The page wraps the row in a block of the same class; the row itself is the inner one.
+    const row = page.locator('.credential').filter({ hasText: 'SMTP password' }).last();
     await expect(row.getByText('Stored', { exact: true }).first()).toBeVisible();
     await expect(row).not.toContainText('fl67-smtp-password');
 

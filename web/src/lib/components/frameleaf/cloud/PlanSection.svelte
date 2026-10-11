@@ -7,8 +7,8 @@
    *
    * - Plan status (none, active, grace, expired) with banners, included features, renewal, source,
    *   the store link, refresh and "remove from this server" (the plan only).
-   * - Plan cards with the licensed-server price struck through when the server is licensed. AI
-   *   credit is never discounted.
+   * - Plan cards with the regular price struck through when a Server or Individual licence lowers it
+   *   (FL-369). AI credit is never discounted.
    * - Owner decision (2026-09-25): every plan includes 1 TB of cloud backup, listed on the cards as in
    *   the prototype; more storage is sold in 1 TB blocks, priced from `CLOUD_BACKUP_PRICING`.
    * - Checkout happens in the store the server was deployed with; with none configured the cards
@@ -24,9 +24,11 @@
   import {
     CLOUD_BACKUP_PRICING,
     cloudPlanPrice,
+    discountOffer,
     discountPercent,
     formatUsd,
     licensedDiscount,
+    serverLicenceKind,
   } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -55,13 +57,19 @@
   const license = $derived(cloudManager.license);
   const products = $derived(cloudManager.products);
   const plan = $derived(license?.plan ?? null);
-  // FL-156: an activated server key or this person's own supporter key takes the published share
-  // (license/products) off plans; AI credit and extra backup never change
+  // FL-156, FL-369: the licence activated on this server (its kind is on the licence status) or this
+  // person's own supporter key takes its published share (license/products) off plans; AI credit and
+  // extra backup never change
   const discount = $derived(
-    licensedDiscount({ serverLicensed: !!license?.entitlements.supporter, personalKey: !!authManager.user.license }),
+    licensedDiscount({
+      serverLicence: serverLicenceKind(license?.key),
+      personalKey: !!authManager.user.license,
+      rates: products,
+    }),
   );
-  const offered = $derived(products?.licensedDiscount ?? 0);
-  const share = $derived(discount === null ? 0 : offered);
+  const share = $derived(discount?.share ?? 0);
+  // what the note under the plan is about: this viewer's share, else what a licence would take off
+  const offered = $derived(discount ? share : (products?.licensedDiscount ?? 0));
   const linked = $derived(!!license?.linked);
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
   const pct = $derived(discountPercent(offered));
@@ -207,12 +215,12 @@
       {#if offered > 0}
         <p class="fc-note">
           <Icon icon={mdiTagOutline} size="16" />
-          {#if discount === 'server'}
+          {#if discount?.reason === 'server'}
             {$t('frameleaf_plan_discount_licensed', { values: { pct } })}
-          {:else if discount === 'personal'}
+          {:else if discount?.reason === 'personal'}
             {$t('frameleaf_plan_discount_personal', { values: { pct } })}
           {:else}
-            {$t('frameleaf_plan_discount_offer', { values: { pct } })}
+            {$t('frameleaf_plan_discount_offer', { values: discountOffer(products) })}
             <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}
               >{$t('frameleaf_plan_activate_licence')}</a
             >

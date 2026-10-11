@@ -77,7 +77,7 @@
 }
 .auth-screen .auth-heading {
   display: grid;
-  gap: 6px;
+  gap: var(--fl-space-2);
 }
 .auth-screen .auth-heading h1 {
   letter-spacing: var(--fl-tracking-display);
@@ -112,7 +112,7 @@
 }
 .auth-screen .auth-field {
   display: grid;
-  gap: 6px;
+  gap: var(--fl-space-2);
   font-size: var(--fl-font-small);
   font-weight: 600;
 }
@@ -174,6 +174,12 @@
   height: 16px;
   margin: 0;
   accent-color: var(--fl-accent);
+}
+/* The label is the touch target; on iOS the box is not 48px tall to hold it open (tokens.css). */
+@media (pointer: coarse) {
+  .auth-screen .auth-check {
+    min-height: 48px;
+  }
 }
 .auth-screen .auth-link {
   padding: 0;

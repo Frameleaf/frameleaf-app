@@ -39,10 +39,23 @@ vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => 
 vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
-vi.mock('$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte', async () => ({
-  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+vi.mock('$lib/components/frameleaf/backup/BackupArea.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockBackupArea.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/computers/ComputersLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockComputersLanding.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+// FL-368: the landing pages read live state of their own; the host only has to mount them.
+vi.mock('$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/server/ServerLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
@@ -123,11 +136,8 @@ const areaButton = (name: string) =>
     ...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll<HTMLElement>('button.area'),
   ].find((button) => button.getAttribute('aria-label') === name)!;
 
-/** The pages listed under Backup in the navigation. */
-const backupPages = () =>
-  within(screen.getByRole('navigation', { name: 'Settings navigation' }))
-    .getByLabelText('Backup pages')
-    .querySelectorAll('button');
+/** The Backup page the area is showing. */
+const backupPage = () => screen.getByTestId('backup-area').textContent;
 
 describe('the Command Center (FL-71)', () => {
   beforeAll(() => addMessages('dev', en));
@@ -209,14 +219,13 @@ describe('the Command Center (FL-71)', () => {
     expect(directory.querySelector('.cc-directory-scope')).toBeNull();
   });
 
-  it('tags only the rows whose scope differs from the rest of the area', () => {
+  it('opens a plain-words area on its own landing page instead of a directory (FL-368)', () => {
     open('/user-settings?area=notifications');
     const { container } = render(SettingsHost, { sections });
-    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
-    const tags = [...directory.querySelectorAll('.cc-directory-scope')].map((tag) => tag.textContent);
-    expect(tags).toEqual(['Just you']);
-    expect(within(directory).getByRole('button', { name: /Your email notifications/ })).toHaveTextContent('Just you');
-    expect(within(directory).getByRole('button', { name: /Email delivery/ })).not.toHaveTextContent('Just you');
+    expect(container.querySelector('.cc-directory')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Notifications' })).toBeInTheDocument();
+    // The landing page lists the area's pages, so the navigation does not repeat them.
+    expect(screen.queryByLabelText('Notifications pages')).toBeNull();
   });
 
   it("lists Library care's repair tools after its sections", async () => {
@@ -270,11 +279,54 @@ describe('the Command Center (FL-71)', () => {
   });
 
   it('gives administration tools the page width without a card around their own grouped containers', () => {
-    open('/user-settings?area=processing&section=render-workers');
+    open('/user-settings?area=processing&section=computers');
     const { container } = render(SettingsHost, {
-      sections: [...sections, serverSection('render-workers', 'Render workers')],
+      sections: [...sections, serverSection('computers', 'Computers')],
     });
-    expect(container.querySelector('#setting-render-workers')).toHaveClass('cc-manager');
+    expect(container.querySelector('#setting-computers')).toHaveClass('cc-manager');
+  });
+
+  describe('Computers & background work (FL-364)', () => {
+    const pages = () => [
+      ...sections,
+      serverSection('computers', 'Computers'),
+      serverSection('routing', 'Where work runs'),
+      serverSection('hardware', 'Graphics card check'),
+    ];
+
+    it('names the area in plain words and opens it on its own page, not a list of links', () => {
+      open('/user-settings?area=processing');
+      render(SettingsHost, { sections: pages() });
+
+      expect(areaNames()).toContain('Computers & background work');
+      expect(areaNames()).not.toContain('Compute & jobs');
+      expect(screen.getByRole('heading', { level: 1, name: 'Computers & background work' })).toBeInTheDocument();
+      expect(screen.getByText('Which computers do the heavy work, and how it is going.')).toBeInTheDocument();
+      expect(screen.getByTestId('computers-landing')).toBeInTheDocument();
+      // Its pages are listed on that page, as Backup's are, not under it in the navigation.
+      expect(screen.queryByRole('group', { name: /pages/i })).not.toBeInTheDocument();
+    });
+
+    it('puts the way back under the heading of one of its pages', () => {
+      open('/user-settings?area=processing&section=hardware');
+      render(SettingsHost, { sections: pages() });
+
+      const heading = screen.getByRole('heading', { level: 1, name: 'Graphics card check' }).parentElement!;
+      expect(heading.querySelector('.cc-overline')).toHaveTextContent('Computers & background work');
+      expect(within(heading).queryByRole('button')).toBeNull();
+      expect(screen.getByRole('link', { name: 'Computers & background work' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=processing',
+      );
+    });
+
+    it.each(['workers', 'render-workers'])('opens Computers for the old address of "%s"', (section) => {
+      open(`/user-settings?area=processing&section=${section}`);
+      const { container } = render(SettingsHost, { sections: pages() });
+
+      expect(screen.getByRole('heading', { level: 1, name: 'Computers' })).toBeInTheDocument();
+      expect(container.querySelector('#setting-computers')).toBeInTheDocument();
+    });
   });
 
   it('keeps an ordinary settings page as one grouped list', () => {
@@ -361,8 +413,14 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=history', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
 
-    expect(await screen.findByText('1 preference changed')).toBeInTheDocument();
-    expect(screen.getByText('Ada · iOS · Mobile')).toBeInTheDocument();
+    // In the words on the page the change came from, with the page named (FL-368).
+    expect(await screen.findByText('Tags turned on')).toBeInTheDocument();
+    expect(screen.getByText(/· Ada · iOS · Mobile$/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open this setting' })).toHaveAttribute(
+      'href',
+      '/user-settings?area=preferences&section=feature',
+    );
+    expect(screen.getByText('Every change you saved to your own settings: what changed and when.')).toBeInTheDocument();
   });
 
   it('searches areas, sections and utility tools, and clears an empty search', async () => {
@@ -370,7 +428,10 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     const search = screen.getByRole('searchbox', { name: 'Search all settings' });
     await userEvent.type(search, 'email');
-    const result = await screen.findByRole('button', { name: /Email delivery/ });
+    // The Notifications area also mentions email delivery in its description; this is the page itself.
+    const result = (await screen.findAllByRole('button', { name: /Email delivery/ })).find(
+      (button) => button.querySelector('strong')?.textContent === 'Email delivery',
+    )!;
     await userEvent.click(result);
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=notifications&section=notifications',
@@ -433,55 +494,66 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=backups');
     const { container } = render(SettingsHost, { sections });
     expect(container.querySelector('.pending')).toBeNull();
-    expect(backupPages()[0]).not.toHaveClass('has-pending');
 
     const release = ownPreferencesPending.hold();
     try {
-      await waitFor(() => expect(backupPages()[0]).toHaveClass('has-pending'));
-      expect(container.querySelector(':scope .area.selected .pending')).not.toBeNull();
-      expect(backupPages()[1]).not.toHaveClass('has-pending');
+      await waitFor(() => expect(container.querySelector(':scope .area.selected .pending')).not.toBeNull());
+      expect(container.querySelectorAll('.pending')).toHaveLength(1);
     } finally {
       release();
     }
     await waitFor(() => expect(container.querySelector('.pending')).toBeNull());
   });
 
-  describe('one Backup area (design review finding 66)', () => {
-    it('lists off-site copies, the schedule and restore as pages of Backup', () => {
+  describe('one Backup area (FL-362, after design review finding 66)', () => {
+    const backupHeading = () => screen.getByRole('heading', { level: 1, name: 'Backup' });
+
+    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', () => {
       open('/user-settings?area=backups');
       render(SettingsHost, { sections });
-      expect([...backupPages()].map((page) => page.textContent)).toEqual([
-        'Off-site copies',
-        'Backup schedule',
-        'Backups & restore',
-      ]);
-      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+      expect(backupHeading()).toBeInTheDocument();
+      expect(backupPage()).toBe('overview');
+      const navigation = within(screen.getByRole('navigation', { name: 'Settings navigation' }));
+      expect(navigation.queryByLabelText('Backup pages')).toBeNull();
     });
 
-    it('shows the schedule under Backup at the address it always had', () => {
-      open('/user-settings?area=backup&section=backup');
+    it.each([
+      ['schedule', 'schedule'],
+      ['restore', 'restore'],
+      ['cloud', 'cloud'],
+      ['buddy', 'buddy'],
+      ['local', 'local'],
+      ['nonsense', 'overview'],
+    ])('opens the %s page from its address', (section, shown) => {
+      open(`/user-settings?area=backups&section=${section}`);
+      render(SettingsHost, { sections });
+      expect(backupPage()).toBe(shown);
+    });
+
+    it.each([
+      ['/user-settings?area=backup&section=backup', 'schedule', 'Import & protection'],
+      ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
+      ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
+    ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {
+      open(address);
       render(SettingsHost, { sections });
       expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('button', { name: 'Import & protection' })).not.toHaveAttribute('aria-current');
-      const heading = screen.getByRole('heading', { level: 1, name: 'Backup schedule' }).parentElement!;
-      expect(within(heading).getByRole('button', { name: 'Backup' })).toBeInTheDocument();
-      expect(backupPages()[1]).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: formerArea })).not.toHaveAttribute('aria-current');
+      // One screen, one heading: the older page's own title is not a breadcrumb any more.
+      expect(backupHeading()).toBeInTheDocument();
+      expect(backupPage()).toBe(shown);
     });
 
-    it('shows the backups manager under Backup at its Maintenance address', () => {
-      open('/user-settings?area=maintenance&section=backups');
-      const { container } = render(SettingsHost, { sections });
-      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('heading', { level: 1, name: 'Backups & restore' })).toBeInTheDocument();
-      expect(container.querySelector('#setting-backups')).toHaveClass('cc-manager');
-    });
-
-    it('shows Cloud backup under Backup, with off-site copies current', () => {
-      open('/user-settings?area=cloud&section=cloud-backup');
+    it.each([
+      ['status', 'overview'],
+      ['cloud', 'cloud'],
+      ['controls', 'buddy'],
+      ['restore', 'restore'],
+      ['compare', 'overview'],
+    ])('opens the page that replaced the "%s" view', (view, shown) => {
+      open(`/user-settings?area=backups&backupView=${view}`);
       render(SettingsHost, { sections });
-      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('button', { name: 'Frameleaf Cloud' })).not.toHaveAttribute('aria-current');
-      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+      expect(backupPage()).toBe(shown);
     });
 
     it('no longer lists a backup page under Import & protection, Maintenance or Frameleaf Cloud', () => {
@@ -517,7 +589,7 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     const search = screen.getByRole('searchbox', { name: 'Search all settings' });
     await userEvent.type(search, 'email');
-    const first = await screen.findByRole('button', { name: /Email delivery/ });
+    const [first] = await screen.findAllByRole('button', { name: /Email delivery/ });
     await userEvent.keyboard('{ArrowDown}');
     expect(first.parentElement!.querySelector('button')).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}');
@@ -561,6 +633,6 @@ describe('the Command Center (FL-71)', () => {
     expect(names).toContain('Trash');
     expect(names).not.toContain('Users');
     expect(names).not.toContain('Overview');
-    expect(names).not.toContain('Compute & jobs');
+    expect(names).not.toContain('Computers & background work');
   });
 });

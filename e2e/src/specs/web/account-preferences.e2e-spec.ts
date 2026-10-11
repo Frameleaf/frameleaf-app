@@ -35,7 +35,8 @@ test.describe('Account preferences (FL-144)', () => {
 
     await utils.setAuthCookies(context, alice.accessToken);
     await page.goto('/user-settings?area=preferences&section=feature');
-    const folders = page.getByRole('switch', { name: 'Enable folders' });
+    // FL-368 Tools & sidebar: one row per tool, "Use" and "Show in sidebar" side by side.
+    const folders = page.getByRole('switch', { name: 'Use Folders' }); // frameleaf_prefs_tools_use
     await expect(folders).toHaveAttribute('aria-checked', 'true');
     await folders.click();
     await expect(folders).toHaveAttribute('aria-checked', 'false');
@@ -84,7 +85,12 @@ test.describe('Account preferences (FL-144)', () => {
 
     await utils.setAuthCookies(context, alice.accessToken);
     await page.reload();
-    await expect(page.getByLabel('Minimum faces to display a person')).toHaveValue(String(minimumFaces));
+    // The number is a few choices now; one saved outside them shows as "Custom" and is kept.
+    await expect(
+      page
+        .getByRole('group', { name: 'Show a person once they appear in' }) // frameleaf_prefs_tools_people_minimum
+        .getByRole('button', { name: `Custom (${minimumFaces} photos)` }), // frameleaf_prefs_tools_custom_photos
+    ).toHaveAttribute('aria-pressed', 'true');
     await expect(folders).toHaveAttribute('aria-checked', 'true');
     await folders.click();
     await page.getByRole('button', { name: 'Save', exact: true }).click();

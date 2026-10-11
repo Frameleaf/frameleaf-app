@@ -9,7 +9,7 @@ import { utils } from 'src/utils.js';
  * No media, recovery keys, invitations, service flags or mocked API responses are created here.
  */
 const backupUrl = '/user-settings?area=backups';
-const sections = ['Status', 'Cloud Backup', 'Buddy controls', 'Recover', 'How it works'];
+const pages = ['Overview', 'Restore'];
 const hostingPrivacy =
   'Hosting is encrypted storage only. Your buddy’s photos, albums and filenames never appear in your library.';
 const screens = [
@@ -111,14 +111,53 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       const openBackup = summary.getByRole('link', { name: 'Open Backup', exact: true });
       await openBackup.focus();
       await openBackup.press('Enter');
-      await expect(page).toHaveURL(`${backupUrl}&backupView=status`);
+      await expect(page).toHaveURL(backupUrl);
       await expect(page.getByRole('heading', { level: 1, name: 'Backup', exact: true })).toBeVisible();
-      const navigation = page.getByRole('navigation', { name: 'Backup sections' });
-      await expect(navigation.getByRole('link')).toHaveText(sections);
-      await expect(navigation.getByRole('link', { name: 'Status', exact: true })).toHaveAttribute(
+      const navigation = page.getByRole('navigation', { name: 'Backup pages' });
+      await expect(navigation.getByRole('link')).toHaveText(pages);
+      await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute(
         'aria-current',
         'page',
       );
+      const status = page.getByRole('region', { name: 'Backup status', exact: true });
+      await expect(
+        status.getByRole('heading', { name: 'Your photos have no backup away from home', exact: true }),
+      ).toBeVisible();
+      await expect(status.getByText('Only on this server', { exact: true })).toBeVisible();
+      await recordScreen(page, info, `${screen.name}-overview-page`, '.kit-page');
+      const clippedTabs = await navigation.getByRole('link').evaluateAll((links) =>
+        links
+          .filter((link) => {
+            const bounds = link.getBoundingClientRect();
+            return bounds.left < 0 || bounds.right > innerWidth + 1;
+          })
+          .map((link) => link.textContent),
+      );
+      expect(clippedTabs, 'every Backup page fits').toEqual([]);
+
+      // The pages are links: Tab reaches the last one and Enter opens it.
+      await navigation.getByRole('link', { name: 'Overview', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      const restoreTab = navigation.getByRole('link', { name: 'Restore', exact: true });
+      await expect(restoreTab).toBeFocused();
+      await expect(restoreTab).toHaveCSS('outline-style', 'solid');
+      await restoreTab.press('Enter');
+      await expect(restoreTab).toHaveAttribute('aria-current', 'page');
+      await expect(page.getByRole('heading', { name: 'What do you need back?', exact: true })).toBeVisible();
+      await expect(page.getByText('Needs Cloud Backup or Buddy Backup.', { exact: true })).toHaveCount(3);
+      await expect(page.getByRole('button', { name: 'Start restore', exact: true })).toHaveCount(0);
+      await recordScreen(page, info, `${screen.name}-restore`, '.kit-page');
+
+      await navigation.getByRole('link', { name: 'Overview', exact: true }).click();
+      await page.getByRole('link', { name: 'Set up Cloud Backup', exact: true }).click();
+      await expect(page).toHaveURL(`${backupUrl}&section=cloud`);
+      await expect(page.getByRole('heading', { name: 'Cloud backup is not set up', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Set up cloud backup', exact: true })).toBeDisabled();
+      await recordScreen(page, info, `${screen.name}-cloud`, '.kit-page');
+
+      await page.getByRole('link', { name: 'Backup', exact: true }).click();
+      await page.getByRole('link', { name: 'Set up Buddy Backup', exact: true }).click();
+      await expect(page).toHaveURL(`${backupUrl}&section=buddy`);
       const outgoing = page.getByRole('region', { name: 'My backup', exact: true });
       const incoming = page.getByRole('region', { name: 'Hosting for my buddy', exact: true });
       await expect(outgoing.getByText('Not paired', { exact: true })).toBeVisible();
@@ -129,46 +168,9 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await expect(incoming.getByText('Not configured', { exact: true })).toBeVisible();
       await expect(incoming.getByText('30 days, 12 monthly points, and the latest complete backup')).toBeVisible();
       await expect(incoming.locator('img, video, canvas')).toHaveCount(0);
-      await navigation.scrollIntoViewIfNeeded();
-      await recordScreen(page, info, `${screen.name}-status`, '.backup-center');
-      const clippedTabs = await navigation.getByRole('link').evaluateAll((links) =>
-        links
-          .filter((link) => {
-            const bounds = link.getBoundingClientRect();
-            return bounds.left < 0 || bounds.right > innerWidth + 1 || bounds.height < 44;
-          })
-          .map((link) => link.textContent),
-      );
-      expect(clippedTabs, 'every Backup section fits and has a touch target').toEqual([]);
-
-      // Tab reaches the final section even when the navigation wraps onto phone-width rows.
-      await navigation.getByRole('link', { name: 'Recover', exact: true }).focus();
-      await page.keyboard.press('Tab');
-      const compare = navigation.getByRole('link', { name: 'How it works', exact: true });
-      await expect(compare).toBeFocused();
-      await expect(compare).toHaveCSS('outline-style', 'solid');
-      await compare.press('Enter');
-      await expect(compare).toHaveAttribute('aria-current', 'page');
-      await expect(page.getByRole('heading', { name: 'Two ways to keep a copy away from home.' })).toBeVisible();
-      const cloud = page.getByRole('region', { name: 'Cloud Backup', exact: true });
-      const buddy = page.getByRole('region', { name: 'Buddy Backup', exact: true });
-      await expect(cloud).toContainText('Managed storage uses your chosen Cloud storage plan.');
-      await expect(cloud).toContainText('Provider-side SSE-C encryption with your backup key.');
-      await expect(buddy).toContainText('Independent quotas; no Frameleaf storage charge for your buddy’s disk.');
-      await expect(buddy).toContainText('Both servers need active Cloud subscriptions for new backups.');
-      await expect(buddy).toContainText('AES-256-GCM encryption before transmission');
-      await expect(page.getByText(hostingPrivacy, { exact: true })).toBeVisible();
-      await recordScreen(page, info, `${screen.name}-compare`, '.backup-center');
-
-      await navigation.getByRole('link', { name: 'Cloud Backup', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Cloud backup is not set up', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Set up cloud backup', exact: true })).toBeDisabled();
-      await recordScreen(page, info, `${screen.name}-cloud`, '.backup-center');
-
-      await navigation.getByRole('link', { name: 'Buddy controls', exact: true }).click();
       const settings = incoming.getByRole('button', { name: 'Hosting & transfer settings', exact: true });
       await expect(settings).toBeEnabled();
-      await recordScreen(page, info, `${screen.name}-controls`, '.backup-center');
+      await recordScreen(page, info, `${screen.name}-buddy`, '.kit-page');
       await settings.focus();
       await settings.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Hosting & transfer settings', exact: true });
@@ -204,18 +206,6 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(settings).toBeFocused();
-
-      await navigation.getByRole('link', { name: 'Recover', exact: true }).click();
-      await expect(
-        page.getByText(/Recovery needs a Cloud-authorized pairing and your verified recovery key\./),
-      ).toBeVisible();
-      const replacement = page.getByRole('region', { name: 'Recover on a replacement server', exact: true });
-      await expect(replacement).toContainText('An active subscription is not required for recovery.');
-      await expect(replacement.getByRole('link')).toHaveAttribute('href', 'https://frameleaf.cloud/buddy');
-      await expect(replacement.getByRole('button', { name: 'Refresh recovery authorization' })).toBeEnabled();
-      await expect(page.getByRole('button', { name: 'Start restore', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Open Cloud restore controls' })).toBeVisible();
-      await recordScreen(page, info, `${screen.name}-recover`, '.backup-center');
 
       if (screen.viewport.width < 768) {
         await page.getByRole('button', { name: 'Main menu', exact: true }).click();
@@ -261,7 +251,7 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
         await expect(navigation.getByRole('button', { name, exact: true })).toHaveCount(0);
       }
       await expect(page.getByRole('region', { name: 'Backup & hosting', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('navigation', { name: 'Backup sections' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Backup pages' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Hosting & transfer settings' })).toHaveCount(0);
     }
     expect(buddyRequests).toEqual([]);

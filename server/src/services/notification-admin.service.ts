@@ -3,8 +3,16 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfigSmtpDto } from 'src/dtos/config.dto.js';
 import { NotificationCreateDto, mapNotification } from 'src/dtos/notification.dto.js';
 import { NotificationLevel, NotificationType } from 'src/enum.js';
-import { EmailTemplate } from 'src/repositories/email.repository.js';
+import { EmailTemplate, MailApiError } from 'src/repositories/email.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import {
+  MailAccountNotConnectedError,
+  MailNeedsSignInError,
+  MailSignInUnavailableError,
+  sendConnectedEmail,
+  signInProviderOf,
+} from 'src/utils/mail-connection.js';
 
 @Injectable()
 export class NotificationAdminService extends BaseService {
@@ -27,12 +35,17 @@ export class NotificationAdminService extends BaseService {
       throw new Error('User not found');
     }
 
-    const transport = await this.withStoredSmtpPassword(dto.transport);
+    // FL-379: a connected Gmail or Microsoft account is tested by sending through it; there is no
+    // mail server to verify, and a refused renewal answers with the "sign in again" reason
+    const provider = signInProviderOf(dto.transport.type);
+    const transport = provider ? dto.transport : await this.withStoredSmtpPassword(dto.transport);
 
-    try {
-      await this.emailRepository.verifySmtp(transport);
-    } catch (error) {
-      throw new BadRequestException('Failed to verify SMTP configuration', { cause: error });
+    if (!provider) {
+      try {
+        await this.emailRepository.verifySmtp(transport);
+      } catch (error) {
+        throw new BadRequestException('Failed to verify SMTP configuration', { cause: error });
+      }
     }
 
     const { server } = await this.getConfig({ withCache: false });
@@ -44,17 +57,35 @@ export class NotificationAdminService extends BaseService {
       },
       customTemplate: tempTemplate!,
     });
-    const { messageId } = await this.emailRepository.sendEmail({
+    const message = {
       to: user.email,
       subject: 'Test email from Frameleaf',
       html,
       text,
       from: dto.from,
       replyTo: dto.replyTo || dto.from,
-      smtp: transport,
-    });
+    };
+    if (!provider) {
+      const { messageId } = await this.emailRepository.sendEmail({ ...message, smtp: transport });
+      return { messageId };
+    }
 
-    return { messageId };
+    try {
+      const { messageId } = await sendConnectedEmail(this.mailDeps, provider, message);
+      return { messageId };
+    } catch (error) {
+      if (
+        error instanceof MailNeedsSignInError ||
+        error instanceof MailAccountNotConnectedError ||
+        error instanceof MailSignInUnavailableError ||
+        error instanceof MailApiError ||
+        error instanceof FrameleafCloudError
+      ) {
+        // each of these carries a reason an administrator can act on, and never a token
+        throw new BadRequestException(error.message, { cause: error });
+      }
+      throw error;
+    }
   }
 
   /**

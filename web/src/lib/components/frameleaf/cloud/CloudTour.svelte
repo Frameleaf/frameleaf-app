@@ -20,7 +20,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { formatUsd } from '$lib/frameleaf/cloud-ml';
-  import { discountPercent, formatUsd as formatPrice } from '$lib/frameleaf/cloud';
+  import { discountOffer, formatUsd as formatPrice } from '$lib/frameleaf/cloud';
   import {
     clampTourStep,
     cloudTourStatus,
@@ -46,9 +46,10 @@
     facts: CloudTourFacts;
     /** The linked Frameleaf account, as the link status names it. */
     account?: string | null;
-    /** The lowest monthly plan price and the licensed-server share, from the bundled or published prices. */
+    /** The lowest monthly plan price and the Server and Individual licence shares, from the bundled or published prices. */
     planFromUsd?: number | null;
     licensedDiscount?: number | null;
+    individualDiscount?: number | null;
     initialStep?: number;
     onClose: (ending: Exclude<CloudTourEnding, 'setup'>) => void;
     onOpen: (link: CloudTourLink) => void;
@@ -59,6 +60,7 @@
     account = null,
     planFromUsd = null,
     licensedDiscount = null,
+    individualDiscount = null,
     initialStep = 0,
     onClose,
     onOpen,
@@ -233,8 +235,8 @@
         : $t(pointKey(id, point, 'text'), { values: { price: formatPrice(planFromUsd) } });
     }
     if (id === 'plan' && point === 'license') {
-      return licensedDiscount
-        ? $t(pointKey(id, point, 'text'), { values: { pct: discountPercent(licensedDiscount) } })
+      return licensedDiscount && individualDiscount
+        ? $t(pointKey(id, point, 'text'), { values: discountOffer({ licensedDiscount, individualDiscount }) })
         : $t('frameleaf_cloud_tour_plan_license_text_no_discount');
     }
     return $t(pointKey(id, point, 'text'));

@@ -165,13 +165,6 @@ export const endpointHost = (endpoint: string | null | undefined) => {
   }
 };
 
-/** FL-164: the schedule choices of the prototype's Schedule & retention card, in the server's time zone. */
-export const BACKUP_SCHEDULES: ReadonlyArray<{ cron: string; labelKey: Translations }> = [
-  { cron: '0 3 * * *', labelKey: 'frameleaf_cloud_backup_schedule_nightly' },
-  { cron: '0 */6 * * *', labelKey: 'frameleaf_cloud_backup_schedule_six_hours' },
-  { cron: '0 3 * * 0', labelKey: 'frameleaf_cloud_backup_schedule_sundays' },
-];
-
 export type RetentionField = 'keepDaily' | 'keepWeekly' | 'keepMonthly';
 
 /** FL-164: the retention inputs, with the bounds the server accepts. */

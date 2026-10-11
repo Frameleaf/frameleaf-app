@@ -540,9 +540,11 @@
     font-size: var(--fl-font-size);
   }
   .pd-fact-link {
-    margin-inline-start: -6px;
-    padding: 2px 6px;
+    margin-inline-start: calc(-1 * var(--fl-space-2));
+    padding: 2px var(--fl-space-2);
     color: var(--fl-muted);
+    /* A birthday that wraps on a phone reads from the start edge, like the fact beside it. */
+    text-align: start;
     background: none;
     border: 0;
     border-radius: var(--fl-radius-control);
@@ -558,7 +560,7 @@
     display: flex;
     flex-wrap: wrap;
     grid-area: actions;
-    gap: 8px;
+    gap: var(--fl-space-3) var(--fl-space-2);
   }
   @media (max-width: 1000px) {
     .pd-hero-content {

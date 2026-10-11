@@ -79,7 +79,8 @@ vi.mock('$lib/managers/queue-manager.svelte', () => ({
     get queues() {
       return queues.list;
     },
-    snapshots: [],
+    // One answer from the server: the page is past its first load.
+    snapshots: [{ timestamp: 0, snapshot: [] }],
     listen: () => () => {},
     refresh: vi.fn(),
   },
@@ -139,45 +140,79 @@ beforeEach(() => {
 });
 
 describe('Job manager (FL-71, JobsManager.jsx)', () => {
-  it("shows the template's header, metrics and queue table on the server's queues", () => {
+  it('opens on one sentence, then only the work that is running, waiting, paused or failed (FL-364)', () => {
     render(JobsManager);
 
-    expect(screen.getByText('Compute & jobs')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeInTheDocument();
-    for (const label of ['Concurrency', 'Enrichment tasks', 'Create job', 'Resume 1 paused']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    // The page's heading is the settings host's; the first thing here is the answer.
+    const status = within(screen.getByRole('region', { name: 'Background work status' }));
+    expect(status.getByRole('heading', { name: '3 things failed' })).toBeInTheDocument();
+    expect(status.getByText('Finding faces: 3 failed. Your original files are untouched.')).toBeInTheDocument();
+    expect(status.getByRole('link', { name: 'Review what failed in Finding faces' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('queue=face-detection&tab=failed'),
+    );
+    expect(status.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+
+    const now = within(screen.getByRole('region', { name: 'Now' }));
+    const listed = now.getAllByRole('listitem').slice(0, 4);
+    expect(listed.map((item) => item.querySelector('strong')?.textContent)).toEqual([
+      'Making thumbnails',
+      'Finding faces',
+      'Housekeeping',
+      'Reading text in photos',
+    ]);
+    expect(within(listed[0]).getByText('Running')).toBeInTheDocument();
+    expect(within(listed[0]).getByText('7 left')).toBeInTheDocument();
+    expect(within(listed[1]).getByText('3 failed')).toBeInTheDocument();
+    expect(within(listed[3]).getByText('Paused')).toBeInTheDocument();
+    // The old table's columns and the three header buttons are gone.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    for (const label of ['Concurrency', 'Enrichment tasks', 'Create job']) {
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
-
-    const metrics = (label: string) =>
-      screen.getByText(label, { selector: '.jm-metric span' }).nextElementSibling?.textContent;
-    expect(metrics('Processing')).toBe('3');
-    expect(metrics('Waiting & scheduled')).toBe('6');
-    expect(metrics('Failed')).toBe('3');
-    expect(metrics('Completed in activity')).toBe('40');
-
-    const table = within(screen.getByRole('region', { name: 'Processing queues' }));
-    expect(table.getByRole('button', { name: /^Thumbnails\s*Media$/ })).toBeInTheDocument();
-    expect(table.getByRole('button', { name: /Text recognition\s*Intelligence · feature off/ })).toBeInTheDocument();
-    expect(table.getByRole('button', { name: 'Resume Text recognition' })).toBeInTheDocument();
-    // The server refuses to pause background tasks.
-    expect(table.getByRole('button', { name: 'Pause Background tasks' })).toBeDisabled();
-    expect(screen.getByText('4 of 4 queues')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open Library Care' })).toBeInTheDocument();
   });
 
-  it('filters the queues by category', async () => {
+  it('keeps every kind of work behind "Show all", in plain names and groups', () => {
     render(JobsManager);
 
-    await fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'system' } });
+    const all = screen.getByText('Show all 4 kinds of work').closest('details')!;
+    expect(all).not.toHaveAttribute('open');
+    for (const group of ['Photos and videos', 'AI features', 'Behind the scenes']) {
+      expect(within(all).getByRole('heading', { name: group })).toBeInTheDocument();
+    }
+    expect(within(all).getByRole('link', { name: 'Manage Reading text in photos' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('queue=ocr'),
+    );
+    expect(
+      within(all).getByText('Shows work for everyone on this server. Pausing affects everyone.'),
+    ).toBeInTheDocument();
+  });
 
-    expect(screen.getByText('1 of 4 queues')).toBeInTheDocument();
+  it('pauses everything after its review, leaving out what the server never pauses', async () => {
+    queues.list = [queue(QueueName.ThumbnailGeneration, { active: 2 }), queue(QueueName.BackgroundTask, { active: 1 })];
+    vi.mocked(updateQueue).mockResolvedValue(queue(QueueName.ThumbnailGeneration, {}, true));
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause everything' }));
+    const review = screen.getByRole('dialog', { name: 'Pause everything' });
+    expect(within(review).getByText('1 item')).toBeInTheDocument();
+    await fireEvent.click(within(review).getByRole('button', { name: 'Pause everything' }));
+
+    await waitFor(() => expect(updateQueue).toHaveBeenCalledTimes(1));
+    expect(updateQueue).toHaveBeenCalledWith({
+      name: QueueName.ThumbnailGeneration,
+      queueUpdateDto: { isPaused: true },
+    });
   });
 
   it('pauses a queue after its review', async () => {
     vi.mocked(updateQueue).mockResolvedValue(queue(QueueName.ThumbnailGeneration, {}, true));
+    at('&queue=thumbnail-generation');
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Pause Thumbnails' }));
+    expect(screen.getByRole('button', { name: 'All background work' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     const review = screen.getByRole('dialog', { name: 'Pause queue' });
     expect(within(review).getByText(/Stop taking new work/)).toBeInTheDocument();
     await fireEvent.click(within(review).getByRole('button', { name: 'Pause queue' }));
@@ -206,7 +241,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     ]);
     render(JobsManager);
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Face detection' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Failed\s*3/ })).toHaveAttribute('aria-selected', 'true');
     const job = await screen.findByRole('button', {
       name: /^Detect faces\s*asset-1\s*Machine learning is unreachable$/,
@@ -222,9 +257,9 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
       expect(getQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection, status: [QueueJobStatus.Failed] }),
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove failed records' }));
-    const review = screen.getByRole('dialog', { name: 'Remove failed records' });
-    const confirm = within(review).getByRole('button', { name: 'Remove failed records' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop trying these' }));
+    const review = screen.getByRole('dialog', { name: 'Stop trying these' });
+    const confirm = within(review).getByRole('button', { name: 'Stop trying these' });
     expect(confirm).toBeDisabled();
     await fireEvent.click(within(review).getByRole('checkbox'));
     await fireEvent.click(confirm);
@@ -243,13 +278,13 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     at('&queue=face-detection');
     render(JobsManager);
 
-    expect(screen.getByRole('button', { name: 'Run missing' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Catch up' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Refresh faces' })).toBeEnabled();
-    await fireEvent.click(screen.getByRole('button', { name: 'Reset & reprocess' }));
-    const review = screen.getByRole('dialog', { name: 'Reset & reprocess' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Start again from scratch' }));
+    const review = screen.getByRole('dialog', { name: 'Start again from scratch' });
     expect(within(review).getByText(/Reset generated face results/)).toBeInTheDocument();
     await fireEvent.click(within(review).getByRole('checkbox'));
-    await fireEvent.click(within(review).getByRole('button', { name: 'Reset & reprocess' }));
+    await fireEvent.click(within(review).getByRole('button', { name: 'Start again from scratch' }));
 
     await waitFor(() =>
       expect(runQueueCommandLegacy).toHaveBeenCalledWith({
@@ -264,8 +299,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     at('&queue=thumbnail-generation&tab=waiting');
     render(JobsManager);
 
-    expect(screen.getByRole('button', { name: 'Run missing' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Clear waiting jobs' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Catch up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear waiting work' })).toBeEnabled();
   });
 
   it('states the server limit when more failed records exist than one removal clears', async () => {
@@ -273,8 +308,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     at('&queue=face-detection&tab=failed');
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove failed records' }));
-    const review = screen.getByRole('dialog', { name: 'Remove failed records' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop trying these' }));
+    const review = screen.getByRole('dialog', { name: 'Stop trying these' });
     expect(within(review).getByText('1,000 items')).toBeInTheDocument();
     expect(
       within(review).getByText(/removes up to 1,000 failed records at a time; this queue has 1,500/),
@@ -284,13 +319,13 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it('creates a maintenance job from the template dialog through the review, and records it in the history', async () => {
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create job' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More tasks' }));
     const dialog = screen.getByRole('dialog', { name: 'Create a maintenance job' });
     await fireEvent.input(within(dialog).getByRole('searchbox', { name: 'Search maintenance jobs' }), {
       target: { value: 'deleted accounts' },
     });
     const task = within(dialog).getByRole('radio', { name: /Clean up deleted accounts/ });
-    expect(within(dialog).getByText('Background tasks · review required')).toBeInTheDocument();
+    expect(within(dialog).getByText('Housekeeping · review required')).toBeInTheDocument();
     await fireEvent.click(task);
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Review job' }));
 
@@ -303,7 +338,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledWith({ jobCreateDto: { name: ManualJobName.UserCleanup } }));
     const history = screen.getByText('Queue action history').closest('details')!;
     expect(within(history).getByText('Clean up deleted accounts')).toBeInTheDocument();
-    expect(within(history).getByText('Background tasks · 1 item · all accounts')).toBeInTheDocument();
+    expect(within(history).getByText('Housekeeping · 1 item · all accounts')).toBeInTheDocument();
   });
 
   it('sends queue commands only through the review and never offers pausing background tasks', async () => {
@@ -312,8 +347,8 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     render(JobsManager);
 
     expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove failed records' }));
-    expect(screen.getByRole('dialog', { name: 'Remove failed records' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop trying these' }));
+    expect(screen.getByRole('dialog', { name: 'Stop trying these' })).toBeInTheDocument();
     expect(runQueueCommandLegacy).not.toHaveBeenCalled();
     expect(emptyQueue).not.toHaveBeenCalled();
   });
@@ -361,15 +396,15 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     vi.mocked(retryFailedQueueJobs).mockResolvedValue({ count: 3 });
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
-    const review = screen.getByRole('dialog', { name: 'Retry failed jobs' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    const review = screen.getByRole('dialog', { name: 'Try again' });
     expect(within(review).getByText(/Put failed jobs back in the queue/)).toBeInTheDocument();
     expect(within(review).getByText('3 items')).toBeInTheDocument();
     expect(within(review).queryByRole('checkbox')).not.toBeInTheDocument();
-    await fireEvent.click(within(review).getByRole('button', { name: 'Retry failed jobs' }));
+    await fireEvent.click(within(review).getByRole('button', { name: 'Try again' }));
 
     await waitFor(() => expect(retryFailedQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection }));
-    expect(await screen.findByText('Retry failed jobs: request sent to the server.')).toBeInTheDocument();
+    expect(await screen.findByText('Try again: request sent to the server.')).toBeInTheDocument();
   });
 
   it('offers no retry while no job has failed', () => {
@@ -377,7 +412,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     at('&queue=face-detection&tab=failed');
     render(JobsManager);
 
-    expect(screen.getByRole('button', { name: 'Retry failed' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeDisabled();
   });
 
   it("narrows the counts and the jobs to one account's items (JobsManager.jsx 341-355, 838-840)", async () => {
@@ -412,9 +447,19 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a dash, not 0, while an account's counts load", async () => {
+  it("says nothing about the work, rather than 'nothing is running', while an account's counts load", async () => {
     vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
     at('&scope=account:grace');
+    render(JobsManager);
+
+    expect(screen.queryByRole('region', { name: 'Background work status' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing is running')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing is running, waiting, paused or failed.')).not.toBeInTheDocument();
+  });
+
+  it("shows a dash, not 0, in one kind of work while an account's counts load", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
+    at('&queue=face-detection&scope=account:grace');
     render(JobsManager);
 
     const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
@@ -437,13 +482,14 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(
       await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
     ).toBeInTheDocument();
-    const table = within(screen.getByRole('region', { name: 'Processing queues' }));
-    const faces = table.getAllByRole('button', { name: /^Face detection/ })[0].closest('tr')!;
-    expect(within(faces).getAllByText('—').length).toBeGreaterThan(0);
-    const thumbnails = table.getAllByRole('button', { name: /^Thumbnails/ })[0].closest('tr')!;
-    expect(within(thumbnails).getByText('2')).toBeInTheDocument();
-    // The totals would be partial, so they are unknown too.
-    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
+    // What could be read is shown; the kind that could not is never called up to date.
+    const now = within(screen.getByRole('region', { name: 'Now' }));
+    expect(now.getByText('Counts are for Grace Hopper.', { exact: false })).toBeInTheDocument();
+    const faces = now.getByRole('link', { name: 'Manage Finding faces' }).closest('li')!;
+    expect(within(faces).getByText('Couldn’t be read')).toBeInTheDocument();
+    expect(within(faces).queryByText('Up to date')).not.toBeInTheDocument();
+    const thumbnails = now.getAllByRole('link', { name: 'Manage Making thumbnails' }).at(-1)!.closest('li')!;
+    expect(within(thumbnails).getByText('Running · 3 left')).toBeInTheDocument();
   });
 });
 
@@ -469,7 +515,7 @@ describe('Job manager on returning to the window', () => {
 describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => {
   const openTasks = async () => {
     render(JobsManager);
-    await fireEvent.click(screen.getByRole('button', { name: 'Enrichment tasks' }));
+    await fireEvent.click(screen.getByRole('button', { name: /^Redo descriptions/ }));
     return screen.getByRole('dialog', { name: 'Enrichment tasks' });
   };
 

@@ -14,6 +14,7 @@ import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
+import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
@@ -65,6 +66,7 @@ import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
@@ -166,6 +168,7 @@ export const services = [
   CloudBackupDetailsService,
   CloudBackupService,
   BuddyBackupService,
+  BackupSequenceService,
   CastService,
   BuddyBackupPeerService,
   BuddyBackupCaptureService,
@@ -238,6 +241,7 @@ export const services = [
   MetadataService,
   NotificationService,
   NotificationAdminService,
+  MailConnectionService,
   OcrService,
   ClusterGroupService,
   PartnerLockService,

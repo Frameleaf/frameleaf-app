@@ -116,4 +116,31 @@ describe(TagController.name, () => {
       expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
     });
   });
+
+  describe('POST /tags/:id/merge', () => {
+    it('should require a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post(`/tags/123/merge`)
+        .send({ targetId: factory.uuid() });
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+    it('should require the tag to merge into', async () => {
+      for (const dto of [{}, { targetId: null }, { targetId: 'invalid-id' }]) {
+        const { status, body } = await request(ctx.getHttpServer()).post(`/tags/${factory.uuid()}/merge`).send(dto);
+        expect(status).toBe(400);
+        expect(body.message).toBe('Validation failed');
+        expect(body.errors).toEqual([expect.objectContaining({ path: ['targetId'] })]);
+      }
+      expect(service.merge).not.toHaveBeenCalled();
+    });
+    it('should answer the tag that stays with 200', async () => {
+      const [id, targetId] = [factory.uuid(), factory.uuid()];
+      service.merge.mockResolvedValue({ id: targetId } as never);
+      const { status, body } = await request(ctx.getHttpServer()).post(`/tags/${id}/merge`).send({ targetId });
+      expect(status).toBe(200);
+      expect(body).toEqual({ id: targetId });
+      expect(service.merge).toHaveBeenCalledWith(undefined, id, { targetId });
+    });
+  });
 });

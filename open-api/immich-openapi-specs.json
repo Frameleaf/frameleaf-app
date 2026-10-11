@@ -4775,6 +4775,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/database-backups/schedule": {
+      "get": {
+        "description": "The schedule backups start on, the places a run visits one after another, and the run in progress",
+        "operationId": "getBackupSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupScheduleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the backup schedule",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups/start-restore": {
       "post": {
         "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
@@ -6115,6 +6162,198 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/notifications/mail-connection": {
+      "delete": {
+        "description": "Stop sending from the connected account: access is revoked at the provider where the provider allows it, the stored token is deleted and email is switched off until another way of sending is set up.",
+        "operationId": "disconnectMailAccount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailDisconnectResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Disconnect the mail account",
+        "tags": [
+          "Notifications (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "The Gmail or Microsoft account this server sends email from, whether it needs a new sign-in, and which providers can be connected by signing in.",
+        "operationId": "getMailConnection",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailConnectionStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the mail account connection",
+        "tags": [
+          "Notifications (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/notifications/mail-connection/complete": {
+      "post": {
+        "description": "Ask whether the sign-in in progress has finished at the provider, and connect the account when it has. Call it every few seconds while `state` is `pending`.",
+        "operationId": "completeMailSignIn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailSignInCompleteResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Complete a mail account sign-in",
+        "tags": [
+          "Notifications (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/notifications/mail-connection/start": {
+      "post": {
+        "description": "Start connecting a Gmail or Microsoft account. The answer is the provider's sign-in page to open in the browser; the server must be linked to a Frameleaf Cloud account.",
+        "operationId": "startMailSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailSignInStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailSignInStartResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a mail account sign-in",
+        "tags": [
+          "Notifications (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/notifications/templates/{name}": {
@@ -22580,7 +22819,7 @@
     },
     "/license/products": {
       "get": {
-        "description": "Bundled plan and supporter prices in US dollars, the licensed-server discount, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
+        "description": "Bundled plan and supporter prices in US dollars, the plan discounts for a Server licence and an Individual licence, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
         "operationId": "getLicenseProducts",
         "parameters": [],
         "responses": {
@@ -46394,6 +46633,73 @@
         "x-immich-state": "Stable"
       }
     },
+    "/tags/{id}/merge": {
+      "post": {
+        "description": "Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.",
+        "operationId": "mergeTag",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagMergeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Merge a tag into another",
+        "tags": [
+          "Tags"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "tag.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/takeout": {
       "get": {
         "operationId": "listTakeoutImports",
@@ -52280,14 +52586,41 @@
         ],
         "type": "object"
       },
+      "AdminConfigBackupScheduleDto": {
+        "properties": {
+          "cronExpression": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Cron expression"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            ],
+            "description": "When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used"
+          }
+        },
+        "required": [
+          "cronExpression"
+        ],
+        "type": "object"
+      },
       "AdminConfigBackupsDto": {
         "properties": {
           "database": {
             "$ref": "#/components/schemas/AdminConfigDatabaseBackupDto"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/AdminConfigBackupScheduleDto"
           }
         },
         "required": [
-          "database"
+          "database",
+          "schedule"
         ],
         "type": "object"
       },
@@ -54523,6 +54856,10 @@
             "description": "Whether to use secure connection (TLS/SSL)",
             "type": "boolean"
           },
+          "type": {
+            "$ref": "#/components/schemas/MailTransportType",
+            "default": "smtp"
+          },
           "username": {
             "description": "SMTP username",
             "type": "string"
@@ -54598,6 +54935,11 @@
           "customCss": {
             "description": "Custom CSS for theming",
             "type": "string"
+          },
+          "customCssEnabled": {
+            "default": true,
+            "description": "Serve the custom CSS to the web app",
+            "type": "boolean"
           }
         },
         "required": [
@@ -62372,6 +62714,90 @@
           "verifiedBy"
         ],
         "type": "object"
+      },
+      "BackupScheduleResponseDto": {
+        "properties": {
+          "chosen": {
+            "description": "Whether the schedule was chosen in Backup settings; false while it is the one stored before",
+            "type": "boolean"
+          },
+          "cronExpression": {
+            "description": "The schedule in force, in the server time zone",
+            "type": "string"
+          },
+          "lastFinishedAt": {
+            "description": "When the last run ended",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nextRunAt": {
+            "description": "When the next run starts",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "places": {
+            "description": "The places a run visits, in order",
+            "items": {
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/BackupSequencePlace"
+                },
+                "on": {
+                  "description": "Whether a run backs up to this place",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "on"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "run": {
+            "description": "The run in progress",
+            "nullable": true,
+            "properties": {
+              "place": {
+                "$ref": "#/components/schemas/BackupSequencePlace"
+              },
+              "startedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "startedAt",
+              "place"
+            ],
+            "type": "object"
+          },
+          "timezone": {
+            "description": "The server time zone the schedule runs in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chosen",
+          "cronExpression",
+          "lastFinishedAt",
+          "nextRunAt",
+          "places",
+          "run",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "BackupSequencePlace": {
+        "enum": [
+          "local",
+          "buddy",
+          "cloud"
+        ],
+        "type": "string"
       },
       "BestPhotoAssetResponseDto": {
         "properties": {
@@ -72017,6 +72443,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: the newest captures directly in this folder",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endDate": {
+            "description": "End date (latest original in this folder)",
+            "format": "date-time",
+            "type": "string"
+          },
           "path": {
             "description": "Folder path, without a trailing slash",
             "type": "string"
@@ -72026,12 +72466,20 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "startDate": {
+            "description": "Start date (earliest original in this folder)",
+            "format": "date-time",
+            "type": "string"
           }
         },
         "required": [
           "count",
+          "coverAssetIds",
+          "endDate",
           "path",
-          "size"
+          "size",
+          "startDate"
         ],
         "type": "object"
       },
@@ -77321,6 +77769,7 @@
           "FrameleafLicenseRefresh",
           "CloudMlDescriptionBatch",
           "CloudBackupSchedule",
+          "BackupSequence",
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",
@@ -78785,8 +79234,13 @@
             ],
             "type": "string"
           },
+          "individualDiscount": {
+            "description": "Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do",
+            "format": "double",
+            "type": "number"
+          },
           "licensedDiscount": {
-            "description": "Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
+            "description": "Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
             "format": "double",
             "type": "number"
           },
@@ -78810,6 +79264,7 @@
           "backup",
           "credit",
           "currency",
+          "individualDiscount",
           "licensedDiscount",
           "pricesVersion",
           "products",
@@ -78940,7 +79395,7 @@
             "nullable": true
           },
           "licensed": {
-            "description": "A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products",
+            "description": "A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products)",
             "type": "boolean"
           },
           "linked": {
@@ -79349,6 +79804,193 @@
           "torchCudaAvailable"
         ],
         "type": "object"
+      },
+      "MailConnectionDto": {
+        "properties": {
+          "connectedAt": {
+            "description": "When the account was connected",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "email": {
+            "description": "The address of the connected account",
+            "type": "string"
+          },
+          "needsSignInSince": {
+            "description": "When the provider refused to renew access; emails since then were not sent",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/MailSignInProvider"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MailConnectionStatus"
+          }
+        },
+        "required": [
+          "connectedAt",
+          "email",
+          "provider",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MailConnectionStateDto": {
+        "properties": {
+          "available": {
+            "description": "Whether one-click sign-in can be started from this server now",
+            "type": "boolean"
+          },
+          "connection": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MailConnectionDto"
+              }
+            ],
+            "description": "The connected account, or null",
+            "nullable": true
+          },
+          "providers": {
+            "description": "The providers Frameleaf Cloud offers sign-in for",
+            "items": {
+              "$ref": "#/components/schemas/MailSignInProvider"
+            },
+            "type": "array"
+          },
+          "signIn": {
+            "$ref": "#/components/schemas/MailSignInState",
+            "description": "`pending` while a sign-in this server started is waiting, else `none`"
+          },
+          "signInProvider": {
+            "$ref": "#/components/schemas/MailSignInProvider",
+            "description": "The provider of the sign-in that is waiting"
+          },
+          "unavailableReason": {
+            "$ref": "#/components/schemas/MailSignInUnavailableReason"
+          }
+        },
+        "required": [
+          "available",
+          "connection",
+          "providers",
+          "signIn"
+        ],
+        "type": "object"
+      },
+      "MailConnectionStatus": {
+        "description": "FL-379: whether the connected mail account can still send",
+        "enum": [
+          "connected",
+          "needs-sign-in"
+        ],
+        "type": "string"
+      },
+      "MailDisconnectResponseDto": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/MailSignInProvider"
+          },
+          "revoked": {
+            "description": "Whether access was also removed at the provider. False for Microsoft, which offers no way to: the administrator removes Frameleaf under the account's app permissions.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "revoked"
+        ],
+        "type": "object"
+      },
+      "MailSignInCompleteResponseDto": {
+        "properties": {
+          "connection": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MailConnectionDto"
+              }
+            ],
+            "description": "The connected account once `state` is `connected`",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/MailSignInState"
+          }
+        },
+        "required": [
+          "connection",
+          "state"
+        ],
+        "type": "object"
+      },
+      "MailSignInProvider": {
+        "description": "FL-379: a mail provider connected by signing in",
+        "enum": [
+          "gmail",
+          "microsoft"
+        ],
+        "type": "string"
+      },
+      "MailSignInStartDto": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/MailSignInProvider"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "type": "object"
+      },
+      "MailSignInStartResponseDto": {
+        "properties": {
+          "authorizationUrl": {
+            "description": "The provider's sign-in page, to open in the administrator's browser",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When this sign-in can no longer be finished",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorizationUrl",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "MailSignInState": {
+        "description": "FL-379: where a mail sign-in an administrator started stands",
+        "enum": [
+          "none",
+          "pending",
+          "connected",
+          "denied",
+          "expired"
+        ],
+        "type": "string"
+      },
+      "MailSignInUnavailableReason": {
+        "description": "FL-379: why one-click mail sign-in is not offered on this server",
+        "enum": [
+          "not-configured",
+          "not-linked",
+          "cloud-unreachable"
+        ],
+        "type": "string"
+      },
+      "MailTransportType": {
+        "description": "FL-379: how this server sends email: a mail server entered by hand, Gmail or Microsoft",
+        "enum": [
+          "smtp",
+          "gmail",
+          "microsoft"
+        ],
+        "type": "string"
       },
       "MaintenanceAction": {
         "description": "Maintenance action",
@@ -109882,9 +110524,24 @@
             "description": "Allow uploads",
             "type": "boolean"
           },
+          "assetCount": {
+            "description": "Number of assets the link shares: its own for an individual link, the album's for an album link",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "assets": {
             "items": {
               "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
             },
             "type": "array"
           },
@@ -109954,7 +110611,9 @@
         "required": [
           "allowDownload",
           "allowUpload",
+          "assetCount",
           "assets",
+          "coverAssetIds",
           "createdAt",
           "description",
           "expiresAt",
@@ -119586,6 +120245,20 @@
         ],
         "type": "object"
       },
+      "TagMergeDto": {
+        "properties": {
+          "targetId": {
+            "description": "The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetId"
+        ],
+        "type": "object"
+      },
       "TagResponseDto": {
         "properties": {
           "color": {
@@ -119638,10 +120311,29 @@
             "minimum": 0,
             "type": "integer"
           },
+          "coverAssetIds": {
+            "description": "Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endDate": {
+            "description": "End date (latest of the `total` items)",
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "description": "Tag ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "startDate": {
+            "description": "Start date (earliest of the `total` items)",
+            "format": "date-time",
             "type": "string"
           },
           "total": {
@@ -119653,7 +120345,10 @@
         },
         "required": [
           "count",
+          "coverAssetIds",
+          "endDate",
           "id",
+          "startDate",
           "total"
         ],
         "type": "object"

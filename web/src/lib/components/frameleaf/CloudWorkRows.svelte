@@ -11,7 +11,7 @@
    */
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { CloudBackupTargetSetting, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -66,7 +66,7 @@
           <a
             class="fla-bg"
             class:is-paused={row.stage === 'paused'}
-            href={commandCenterUrl('backups', undefined, { backupView: 'cloud' })}
+            href={backupPageUrl('cloud')}
             aria-label={$t('frameleaf_cloud_work_row_label', { values: { title, detail } })}
           >
             <span class="fla-bg-icon" aria-hidden="true">
