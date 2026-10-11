@@ -2,6 +2,8 @@
 
 Install from a [published Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases), using its Compose files and environment example together. Files from a development checkout can differ from a published release.
 
+ML-specific environment settings now belong in the optional `.env.ml` beside `.env`; the inference container does not inherit the server's credentials. Before upgrading, move existing ML-only customization there. Follow the [private backup storage guide](../docs/docs/administration/private-backup-storage.md) to qualify NAS ACLs and migrate identity/recovery files to a server-only private mount without changing keys.
+
 | Component        | Container image                                |
 | ---------------- | ---------------------------------------------- |
 | Server and web   | `ghcr.io/frameleaf/frameleaf-server`           |
