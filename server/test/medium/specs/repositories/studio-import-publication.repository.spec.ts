@@ -450,19 +450,58 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     await prepare(f);
     const entered = defer(),
       finish = defer();
-    const publishing = f.repo.publish(f.key, async (value) => {
+    // A derived handle shares the same bounded pool. Delegate the real transaction unchanged,
+    // retaining its connection for observation while its publication callback is held.
+    const publicationDb = db.withTables<DB>();
+    const transaction = publicationDb.transaction.bind(publicationDb);
+    let publicationTx: Transaction<DB> | undefined;
+    publicationDb.transaction = () => {
+      const builder = transaction();
+      const execute = builder.execute.bind(builder);
+      builder.execute = <T>(callback: (tx: Transaction<DB>) => Promise<T>): Promise<T> =>
+        execute(async (tx) => {
+          publicationTx = tx;
+          return callback(tx);
+        });
+      return builder;
+    };
+    const publishing = new StudioImportPublicationRepository(publicationDb).publish(f.key, async (value) => {
       entered.resolve();
       await finish.promise;
       await linkFile(value);
     });
     let cancelling: ReturnType<typeof f.repo.cancel> | undefined;
+    let cancellationSettled = false;
+    let outcomes: PromiseSettledResult<unknown>[] = [];
     try {
       await waitForCallback(entered.promise, publishing);
+      expect(publicationTx).toBeDefined();
       cancelling = f.repo.cancel(f.key);
+      void cancelling.then(
+        () => {
+          cancellationSettled = true;
+        },
+        () => {
+          cancellationSettled = true;
+        },
+      );
+      let waitingPid: number | undefined;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        await sql`SELECT pg_stat_clear_snapshot()`.execute(publicationTx!);
+        const { rows } = await sql<{ pid: number }>`SELECT pid FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND wait_event_type='Lock' AND pg_backend_pid()=ANY(pg_blocking_pids(pid))`.execute(publicationTx!);
+        waitingPid = rows[0]?.pid;
+        if (waitingPid || cancellationSettled) break;
+        await new Promise((done) => setTimeout(done, 10));
+      }
+      expect(waitingPid, 'Cancellation must actually wait on the held publication transaction').toBeDefined();
+      expect(cancellationSettled, 'Cancellation cannot settle while publication is held').toBe(false);
     } finally {
       finish.resolve();
+      // Drain both real operations even when contention observation fails.
+      outcomes = await Promise.allSettled([publishing, ...(cancelling ? [cancelling] : [])]);
     }
-    const outcomes = await Promise.allSettled([publishing, cancelling!]);
     for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
     expect(outcomes[1]).toMatchObject({ status: 'fulfilled', value: { status: 'already-published' } });
     expect(await ready(f.key)).toHaveLength(1);
@@ -693,7 +732,12 @@ describe('Studio import publication — real journal SQL acceptance', () => {
           tx,
         ),
       () => f.repo.cancel(f.key),
-      (tx) => projectLockHeld(tx, f.project.id),
+      async (tx) => {
+        await projectLockHeld(tx, f.project.id);
+        const { rows } = await sql<{ id: string }>`SELECT id FROM public.studio_project
+          WHERE id=${f.project.id}::uuid FOR UPDATE SKIP LOCKED`.execute(tx);
+        expect(rows, 'Editable project row must already be locked before waiting on the journal row').toEqual([]);
+      },
     );
   });
 
