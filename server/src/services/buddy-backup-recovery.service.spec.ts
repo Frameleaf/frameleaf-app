@@ -54,7 +54,7 @@ describe('Buddy recovery crash barriers', () => {
     await mkdir(fixture.media);
     id = randomUUID();
     directory = join(root, 'identity', 'buddy', 'recovery', id);
-    await mkdir(join(directory, 'objects'), { recursive: true });
+    await mkdir(join(directory, 'objects'), { recursive: true, mode: 0o700 });
     target = join(fixture.media, 'config.json');
     const content = Buffer.from('recovered');
     const sha256 = createHash('sha256').update(content).digest('hex');

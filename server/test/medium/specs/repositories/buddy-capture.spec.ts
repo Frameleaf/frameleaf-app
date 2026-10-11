@@ -68,7 +68,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-capture-medium-')));
-    for (const directory of ['identity', 'vault', 'source']) await mkdir(join(root, directory));
+    for (const directory of ['identity', 'vault', 'source']) await mkdir(join(root, directory), { mode: 0o700 });
     StorageCore.setMediaLocation(join(root, 'source'));
     db = await getKyselyDB();
     ({ ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }));
@@ -514,7 +514,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const cloudKeyContent = JSON.stringify(
       backupKeyFile({ key: cloudKey, instanceId: randomUUID(), bucket: 'test', mode: 'server', createdAt: new Date() }),
     );
-    await writeFile(join(root, 'identity', `cloud-backup-${keyFingerprint(cloudKey)}.key`), cloudKeyContent);
+    await writeFile(join(root, 'identity', `cloud-backup-${keyFingerprint(cloudKey)}.key`), cloudKeyContent, {
+      mode: 0o600,
+    });
     await writeFile(join(root, 'identity', 'instance-key.pem'), 'must not be captured');
     const developed = await file('external-developed.jpg');
     const developedPreview = await file('external-developed-preview.jpg');
