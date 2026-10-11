@@ -70,7 +70,10 @@ export async function explainLibrarySettlement(db: Kysely<DB>) {
 /** Clone the migrated synthetic template, then use the coordinator's exact pool/SQL limits.
  * The temporary admin connection exists only after both execution connections are closed.
  */
-export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
+export async function getLibraryQueueDB(
+  maxConnections: 1 | 2 = 2,
+  preserveAfterUnknownClosure?: () => boolean,
+): Promise<Kysely<DB>> {
   const clone = await getKyselyDB();
   const name = (await sql<{ name: string }>`select current_database() name`.execute(clone)).rows[0].name;
   await clone.destroy();
@@ -82,7 +85,7 @@ export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
   const client = boundExecutionReservations(
     createPostgres({
       connection: { connectionType: 'url', url: target.href },
-      maxConnections: 2,
+      maxConnections,
       connectTimeoutSeconds: 5,
       statementTimeoutMs: 5000,
       lockTimeoutMs: 3000,
@@ -119,6 +122,8 @@ export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
         'library-fixture-sql-calibration',
         JSON.stringify({ queryCount, totalSqlMs, maximumSqlMs, slowestSql }),
       );
+    // A surviving owned worker may still hold SQL: only Root's guardian can authorize later disposal.
+    if (preserveAfterUnknownClosure?.()) return;
     target.pathname = '/postgres';
     const admin = createPostgres({
       connection: { connectionType: 'url', url: target.href },

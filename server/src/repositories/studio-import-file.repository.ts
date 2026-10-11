@@ -15,6 +15,7 @@ import type {
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder } from 'src/enum.js';
 import { assertSameOwnedInode, syncAncestors } from 'src/utils/studio-import-durability.js';
+import { type ImportFaults, STUDIO_IMPORT_FAULTS, noImportFaults } from 'src/utils/studio-import-faults.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
 export interface DurabilityAdapter {
@@ -56,7 +57,10 @@ export const STUDIO_IMPORT_DURABILITY_ADAPTER = Symbol('StudioImportDurabilityAd
 @Injectable()
 export class StudioImportFileRepository implements FilePort {
   private durabilityAdapter?: DurabilityAdapter;
-  constructor(@Optional() @Inject(STUDIO_IMPORT_DURABILITY_ADAPTER) adapter?: DurabilityAdapter) {
+  constructor(
+    @Optional() @Inject(STUDIO_IMPORT_DURABILITY_ADAPTER) adapter?: DurabilityAdapter,
+    @Optional() @Inject(STUDIO_IMPORT_FAULTS) private readonly faults: ImportFaults = noImportFaults,
+  ) {
     this.durabilityAdapter = adapter;
   }
 
@@ -91,7 +95,9 @@ export class StudioImportFileRepository implements FilePort {
     this.paths(file);
     await this.verify(stagedPath, file, 'stage');
     await this.getAdapter().syncFile(stagedPath);
+    await this.faults.reached('stage-file-barrier');
     await this.barriers(dirname(stagedPath));
+    await this.faults.reached('stage-namespace-barrier');
     await this.verify(stagedPath, file, 'stage');
     return file;
   }
@@ -108,10 +114,12 @@ export class StudioImportFileRepository implements FilePort {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
+    await this.faults.reached('target-link');
     await this.verify(file.stagedPath, file, 'linked');
     await this.verify(file.targetPath, file, 'linked');
     await this.getAdapter().syncFile(file.targetPath);
     await this.barriers(dirname(file.targetPath));
+    await this.faults.reached('target-namespace-barrier');
     await this.verify(file.stagedPath, file, 'linked');
     await this.verify(file.targetPath, file, 'linked');
   }
@@ -139,7 +147,9 @@ export class StudioImportFileRepository implements FilePort {
         if (!absent(error)) throw error;
       }
       await this.getAdapter().unlinkExact(path, file.identity);
+      if (path === file.stagedPath) await this.faults.reached('stage-unlink');
       await this.barriers(dirname(path));
+      if (path === file.stagedPath) await this.faults.reached('cleanup-namespace-barrier');
       try {
         await this.getAdapter().capture(path);
         throw new Error('publication_identity_changed');

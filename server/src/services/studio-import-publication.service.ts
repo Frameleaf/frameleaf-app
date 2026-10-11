@@ -14,6 +14,7 @@ import type {
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import { type ImportFaults, noImportFaults } from 'src/utils/studio-import-faults.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -21,6 +22,7 @@ export async function retainImport(
   journal: JournalPort,
   files: FilePort,
   upload: RetentionUpload,
+  faults: ImportFaults = noImportFaults,
 ): Promise<StudioProjectImport> {
   const prepared = await files.prepare(upload.key, upload.incoming, upload.declaration);
   const state = await journal.prepare(
@@ -29,9 +31,11 @@ export async function retainImport(
     (duplicate) => files.release(duplicate, 'stage'),
     upload.reservationId,
   );
+  await faults.reached('prepare-commit');
   // No link or cleanup follows a rejected/unknown prepare acknowledgement.
   const retained =
     state.status === 'ready' ? state.imported : await journal.publish(upload.key, (file) => files.publish(file));
+  if (state.status !== 'ready') await faults.reached('publication-commit');
   // The ready row is committed; cleanup failures remain discoverable on the receipt.
   await journal.release(upload.key, (file, role) => files.release(file, role)).catch(() => {});
   return retained;
