@@ -708,7 +708,7 @@ jobs:
       - name: Capture redacted Buddy diagnostics
         if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
         run: |
-          # Intentionally exclude raw app/fixture logs, environment, auth headers, kits and media.
+          # This file intentionally excludes raw app/fixture logs, environment, auth headers, kits and media.
           {
             date --utc --iso-8601=seconds
             git rev-parse HEAD
@@ -725,6 +725,14 @@ jobs:
           } > docker-buddy-diagnostics.txt 2>&1
           if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/evidence/buddy.json" ]; then
             cp "$BUDDY_ROOT/evidence/buddy.json" buddy-evidence.json
+          fi
+      # The fixed diagnostic above names the error class but not the competing writer (55P03 on the restore
+      # after the restart). Both app containers hold only disposable fixture accounts, keys and media.
+      - name: Capture Buddy app logs
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
+            docker compose -f docker-compose.buddy.yml logs --no-color --timestamps buddy-a buddy-b > docker-buddy-logs.txt 2>&1 || true
           fi
       - name: Remove the owned Buddy fixture
         if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
@@ -778,6 +786,7 @@ jobs:
             e2e/docker-diagnostics-after-maintenance-tests.txt
             e2e/docker-upload-transport-logs.txt
             e2e/docker-buddy-diagnostics.txt
+            e2e/docker-buddy-logs.txt
             e2e/buddy-evidence.json
             e2e/docker-cloud-accounting-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
