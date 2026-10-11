@@ -5,6 +5,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
@@ -16,6 +17,9 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
+import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
+import type { RawOptionalLineage } from 'src/utils/studio-import-publication.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import {
   assertOwnerRestoreFile,
@@ -79,6 +83,7 @@ export class StudioProjectImportService {
     private crypto: CryptoRepository,
     private users: UserRepository,
     private studio: StudioProjectService,
+    private publications: StudioImportPublicationService,
   ) {
     this.logger.setContext(StudioProjectImportService.name);
   }
@@ -89,7 +94,9 @@ export class StudioProjectImportService {
     rawId: string | undefined,
     file: Express.Multer.File | undefined,
     reservationId?: string,
+    options: RawOptionalLineage = {},
   ): Promise<StudioProjectImportDto> {
+    let retentionStarted = false;
     let textLabel = 'The file';
     try {
       if (!file?.path) {
@@ -137,34 +144,53 @@ export class StudioProjectImportService {
       }
 
       const checksum = (await this.crypto.hashFile(file.path, 'sha256')).toString('hex');
-      const folder = studioImportProjectFolder(project.ownerId, project.id);
-      const path = join(folder, `${id}${type.extension}`);
-      const stored = await this.projects.registerImport({
-        ...(reservationId && { reservationId }),
-        projectId: project.id,
-        id,
-        ownerId: project.ownerId,
-        contentType: type.contentType,
-        checksum,
-        sizeBytes: file.size,
-        path,
-        fileName: basename(file.originalname || `import${type.extension}`).slice(0, 255) || `import${type.extension}`,
-        externalReferences,
-      });
-
-      if (stored.path === path && !(await this.storage.checkFileExists(path))) {
-        this.storage.mkdirSync(folder);
-        await this.storage.rename(file.path, path);
-      } else {
-        // A retry of a file already kept: the stored copy is the same bytes.
-        await this.storage.unlink(file.path);
+      let provenance;
+      try {
+        if (options.processingProvenance !== undefined) {
+          if (!isStudioUuid(options.publicationId)) throw new Error('provenance_publication_required');
+          provenance = parseProcessingProvenance(options.processingProvenance);
+        }
+        if (options.publicationId !== undefined && !isStudioUuid(options.publicationId))
+          throw new Error('invalid_publication_id');
+      } catch {
+        throw new BadRequestException('Invalid Studio import provenance or publication id');
       }
+      const key = {
+        ownerId: project.ownerId,
+        projectId: project.id,
+        importId: id,
+        publicationId: typeof options.publicationId === 'string' ? options.publicationId.toLowerCase() : randomUUID(),
+      };
+      if (options.publicationId === undefined) {
+        await this.publications.register(auth, project.id, key);
+      } else {
+        const receipt = await this.publications.getPublication(auth, key);
+        if (!receipt) throw new ConflictException('publication_registration_required');
+        if (receipt.state === 'aborted') throw new ConflictException('publication_aborted');
+      }
+      // After prepare starts, a lost acknowledgement may hide journal ownership of these bytes.
+      retentionStarted = true;
+      const stored = await this.publications.retain(auth, {
+        key,
+        incoming: file.path,
+        reservationId,
+        declaration: {
+          contentType: type.contentType,
+          extension: type.extension,
+          checksum,
+          sizeBytes: file.size,
+          fileName: basename(file.originalname || `import${type.extension}`).slice(0, 255) || `import${type.extension}`,
+          externalReferences,
+          processingProvenance: provenance ? bindProcessingProvenance(provenance, checksum) : null,
+        },
+      });
       this.studio.forgetResolutions([project.id]);
       this.logger.log(`Studio project ${project.id} import ${stored.id} registered (${stored.contentType})`);
       return mapStudioProjectImport(stored);
     } catch (error) {
-      if (file?.path) {
-        await this.storage.unlink(file.path).catch(() => {});
+      if (!retentionStarted) {
+        if (file?.path) await this.storage.unlink(file.path);
+        if (reservationId) await this.projects.deleteUpload(reservationId, auth.user.id);
       }
       if (error instanceof StudioImportRefusal) {
         throw new BadRequestException(error.message);

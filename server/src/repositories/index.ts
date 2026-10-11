@@ -99,6 +99,7 @@ import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
+import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
@@ -214,6 +215,7 @@ export const repositories = [
   SmartAlbumRepository,
   StudioProjectRepository,
   StudioImportPublicationRepository,
+  StudioImportFileRepository,
   StudioReverseConformRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,

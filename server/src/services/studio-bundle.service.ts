@@ -451,13 +451,16 @@ export class StudioBundleService {
   /* ------------------------------------------------------------------ */
 
   /** Reserve before the HTTP body is written; an interrupted upload stays charged until cleanup. */
-  async reserveUpload(auth: AuthDto, bytes: number): Promise<StudioBundleUpload> {
+  async reserveUpload(auth: AuthDto, bytes: number, kind?: 'import'): Promise<StudioBundleUpload> {
     this.requireInteractive(auth);
     if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > STUDIO_BUNDLE_MAX_BYTES)
       throw new PayloadTooLargeException('Invalid Studio bundle upload size');
     return this.projects.createUpload({
       ownerId: auth.user.id,
-      path: join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
+      path:
+        kind === 'import'
+          ? join(studioImportIncomingFolder(auth.user.id), `${randomUUID()}.upload`)
+          : join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
       sizeBytes: bytes,
       digest: '',
       originalFileName: '',
@@ -466,10 +469,10 @@ export class StudioBundleService {
     });
   }
 
-  async abortUpload(auth: AuthDto, id: string): Promise<void> {
+  async abortUpload(auth: AuthDto, id: string, removeFile = true): Promise<void> {
     const upload = await this.projects.getUpload(id, auth.user.id);
     if (!upload) return;
-    await this.storage.unlink(upload.path);
+    if (removeFile) await this.storage.unlink(upload.path);
     await this.projects.deleteUpload(id, auth.user.id);
   }
 
@@ -1361,8 +1364,13 @@ export class StudioBundleService {
           manifest: {},
           expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
         });
+        let handedToImport = false;
+        let created = false;
         try {
-          const output: Writable = this.storage.createWriteStream(staged);
+          const output: Writable = this.storage.createWriteStream(staged, { flags: 'wx', mode: 0o600 });
+          output.once('open', () => {
+            created = true;
+          });
           try {
             const actual = await digestZipEntry(source, entry, {
               onData: (chunk) =>
@@ -1377,11 +1385,11 @@ export class StudioBundleService {
             }
           } catch (error) {
             output.destroy();
-            await this.storage.unlink(staged);
             throw error;
           }
           try {
-            // The upload path removes the staged file itself when it refuses it.
+            // Only the import service can distinguish request cleanup from uncertain journal ownership.
+            handedToImport = true;
             await this.imports.upload(
               owner,
               projectId,
@@ -1402,8 +1410,10 @@ export class StudioBundleService {
             refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
           }
         } finally {
-          await this.storage.unlink(staged);
-          await this.projects.deleteUpload(reservation.id, owner.user.id);
+          if (!handedToImport) {
+            if (created) await this.storage.unlink(staged);
+            await this.projects.deleteUpload(reservation.id, owner.user.id);
+          }
         }
       }
     });

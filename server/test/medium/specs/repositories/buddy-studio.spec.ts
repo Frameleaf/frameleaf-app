@@ -898,6 +898,7 @@ describe('Buddy Studio library fidelity', () => {
       new CryptoRepository(),
       {} as never,
       {} as never,
+      {} as never,
     );
     const recorded = async () =>
       (

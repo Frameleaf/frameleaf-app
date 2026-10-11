@@ -1,3 +1,4 @@
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import {
   BadRequestException,
   ConflictException,
@@ -16,6 +17,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { CacheControl } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
 
 const OWNER = '0198a1c2-0000-7000-8000-00000000000a';
@@ -37,7 +39,7 @@ describe(StudioProjectImportService.name, () => {
   let directory: string;
   let projects: {
     getById: ReturnType<typeof vi.fn>;
-    registerImport: ReturnType<typeof vi.fn>;
+    deleteUpload: ReturnType<typeof vi.fn>;
     listImports: ReturnType<typeof vi.fn>;
     getImport: ReturnType<typeof vi.fn>;
     getImportBytes: ReturnType<typeof vi.fn>;
@@ -47,6 +49,11 @@ describe(StudioProjectImportService.name, () => {
   };
   let studio: { forgetResolutions: ReturnType<typeof vi.fn>; requireOwnedProject: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
+  let publications: {
+    register: ReturnType<typeof vi.fn>;
+    getPublication: ReturnType<typeof vi.fn>;
+    retain: ReturnType<typeof vi.fn>;
+  };
   let sut: StudioProjectImportService;
 
   const upload = async (bytes: Buffer, mimetype = 'audio/wav', originalname = 'take.wav') => {
@@ -60,7 +67,7 @@ describe(StudioProjectImportService.name, () => {
     StorageCore.setMediaLocation('/data');
     projects = {
       getById: vi.fn().mockResolvedValue({ id: PROJECT, ownerId: OWNER, deletedAt: null, archivedAt: null }),
-      registerImport: vi.fn().mockImplementation((item) => Promise.resolve({ ...item, createdAt: new Date(0) })),
+      deleteUpload: vi.fn().mockResolvedValue(undefined),
       listImports: vi.fn().mockResolvedValue([]),
       getImport: vi.fn(),
       getImportBytes: vi.fn().mockResolvedValue(0),
@@ -81,13 +88,26 @@ describe(StudioProjectImportService.name, () => {
     };
     users = { get: vi.fn().mockResolvedValue({ quotaSizeInBytes: null, quotaUsageInBytes: 0 }) };
     const storage = new StorageRepository({ setContext: vi.fn() } as never);
-    // The kept copy goes into the temp directory instead of the media location.
-    vi.spyOn(storage, 'mkdirSync').mockImplementation(() => {});
-    vi.spyOn(storage, 'rename').mockImplementation(async (source) => {
-      await writeFile(join(directory, 'kept'), await readFile(source));
-      await rm(source);
-    });
-    vi.spyOn(storage, 'checkFileExists').mockResolvedValue(false);
+    publications = {
+      register: vi.fn().mockResolvedValue({ state: 'registered' }),
+      getPublication: vi.fn().mockResolvedValue({ state: 'registered' }),
+      retain: vi.fn(async (_auth: AuthDto, upload: RetentionUpload) => {
+        const item = {
+          ...upload.declaration,
+          id: upload.key.importId,
+          projectId: upload.key.projectId,
+          ownerId: upload.key.ownerId,
+          path: join(
+            studioImportProjectFolder(OWNER, PROJECT),
+            `${upload.key.importId}${upload.declaration.extension}`,
+          ),
+          createdAt: new Date(0),
+        };
+        await writeFile(join(directory, 'kept'), await readFile(upload.incoming));
+        await rm(upload.incoming);
+        return item;
+      }),
+    };
     sut = new StudioProjectImportService(
       { setContext: vi.fn(), log: vi.fn(), warn: vi.fn() } as never,
       projects as never,
@@ -95,6 +115,7 @@ describe(StudioProjectImportService.name, () => {
       new CryptoRepository(),
       users as never,
       studio as never,
+      publications as never,
     );
     return () => rm(directory, { recursive: true, force: true });
   });
@@ -104,16 +125,20 @@ describe(StudioProjectImportService.name, () => {
     const file = await upload(bytes, 'audio/webm', 'Voiceover 1.webm');
     const result = await sut.upload(auth(), PROJECT, IMPORT, file);
 
-    expect(projects.registerImport).toHaveBeenCalledWith({
-      projectId: PROJECT,
-      id: IMPORT,
-      ownerId: OWNER,
-      contentType: 'audio/wav',
-      checksum: createHash('sha256').update(bytes).digest('hex'),
-      sizeBytes: bytes.length,
-      path: join(studioImportProjectFolder(OWNER, PROJECT), `${IMPORT}.wav`),
-      fileName: 'Voiceover 1.webm',
-      externalReferences: null,
+    expect(publications.register).toHaveBeenCalledWith(auth(), PROJECT, expect.objectContaining({ importId: IMPORT }));
+    expect(publications.retain).toHaveBeenCalledWith(auth(), {
+      key: expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, importId: IMPORT }),
+      incoming: file.path,
+      reservationId: undefined,
+      declaration: {
+        contentType: 'audio/wav',
+        extension: '.wav',
+        checksum: createHash('sha256').update(bytes).digest('hex'),
+        sizeBytes: bytes.length,
+        fileName: 'Voiceover 1.webm',
+        externalReferences: null,
+        processingProvenance: null,
+      },
     });
     expect(result).toMatchObject({ id: IMPORT, kind: 'audio', contentType: 'audio/wav', sizeBytes: bytes.length });
     expect(await readFile(join(directory, 'kept'))).toEqual(bytes);
@@ -124,8 +149,11 @@ describe(StudioProjectImportService.name, () => {
   it('records the external subresources of a graphic and refuses scripts (FL-105)', async () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://x.example/a.png"/></svg>');
     await sut.upload(auth(), PROJECT, IMPORT, await upload(svg, 'image/svg+xml', 'logo.svg'));
-    expect(projects.registerImport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ contentType: 'image/svg+xml', externalReferences: 1 }),
+    expect(publications.retain).toHaveBeenLastCalledWith(
+      auth(),
+      expect.objectContaining({
+        declaration: expect.objectContaining({ contentType: 'image/svg+xml', externalReferences: 1 }),
+      }),
     );
 
     const scripted = await upload(Buffer.from('<svg><script>alert(1)</script></svg>'), 'image/svg+xml', 'x.svg');
@@ -143,7 +171,7 @@ describe(StudioProjectImportService.name, () => {
     );
     const file = await upload(bytes, 'application/json', 'animation.json');
     await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(BadRequestException);
-    expect(projects.registerImport).not.toHaveBeenCalled();
+    expect(publications.retain).not.toHaveBeenCalled();
     await expect(readFile(file.path)).rejects.toThrow();
     await expect(readFile(join(directory, 'kept'))).rejects.toThrow();
   });
@@ -186,7 +214,7 @@ describe(StudioProjectImportService.name, () => {
     await expect(
       sut.upload(auth(), PROJECT, IMPORT, { ...big, size: 3 * 1024 * 1024 * 1024 } as Express.Multer.File),
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
-    expect(projects.registerImport).not.toHaveBeenCalled();
+    expect(publications.retain).not.toHaveBeenCalled();
   });
 
   it('answers 404 to anyone but the owner, and keeps nothing', async () => {
@@ -199,7 +227,7 @@ describe(StudioProjectImportService.name, () => {
     }
     projects.getById.mockResolvedValue(undefined);
     await expect(sut.list(auth(), PROJECT)).rejects.toBeInstanceOf(NotFoundException);
-    expect(projects.registerImport).not.toHaveBeenCalled();
+    expect(publications.retain).not.toHaveBeenCalled();
   });
 
   it('answers a reviewer 403 from the shared owner check, and keeps nothing (FL-112)', async () => {
@@ -216,7 +244,7 @@ describe(StudioProjectImportService.name, () => {
       PROJECT,
       'Only the owner can import into a Studio project',
     );
-    expect(projects.registerImport).not.toHaveBeenCalled();
+    expect(publications.retain).not.toHaveBeenCalled();
   });
 
   it('refuses imports into a trashed or archived project', async () => {
@@ -239,7 +267,10 @@ describe(StudioProjectImportService.name, () => {
       externalReferences: null,
       createdAt: new Date(0),
     };
-    projects.registerImport.mockResolvedValue(stored);
+    publications.retain.mockImplementationOnce(async (_auth, upload) => {
+      await rm(upload.incoming);
+      return stored;
+    });
     const file = await upload(wav());
     await expect(sut.upload(auth(), PROJECT, IMPORT, file)).resolves.toMatchObject({ id: IMPORT });
     await expect(readFile(file.path)).rejects.toThrow();
@@ -249,8 +280,12 @@ describe(StudioProjectImportService.name, () => {
   it('lowercases the id, keeps a new import within the quota and answers a retry without counting it', async () => {
     const upper = IMPORT.toUpperCase();
     await sut.upload(auth(), PROJECT, upper, await upload(wav()));
-    expect(projects.registerImport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ id: IMPORT, path: expect.stringContaining(`${IMPORT}.wav`) }),
+    expect(publications.retain).toHaveBeenLastCalledWith(
+      auth(),
+      expect.objectContaining({
+        key: expect.objectContaining({ importId: IMPORT }),
+        declaration: expect.objectContaining({ extension: '.wav' }),
+      }),
     );
 
     users.get.mockResolvedValue({ quotaSizeInBytes: 2000, quotaUsageInBytes: 500 });
@@ -289,14 +324,16 @@ describe(StudioProjectImportService.name, () => {
       const file = await upload(bytes, 'video/mp4', '../../etc/clip.mp4');
       const result = await sut.upload(auth(), PROJECT, IMPORT, file);
 
-      expect(projects.registerImport).toHaveBeenCalledWith(
+      expect(publications.retain).toHaveBeenCalledWith(
+        auth(),
         expect.objectContaining({
-          contentType,
-          checksum: createHash('sha256').update(bytes).digest('hex'),
-          // The stored path is the import id and the extension of what the file is; the name is a label.
-          path: join(studioImportProjectFolder(OWNER, PROJECT), `${IMPORT}${ext}`),
-          fileName: 'clip.mp4',
-          externalReferences: null,
+          declaration: expect.objectContaining({
+            contentType,
+            extension: ext,
+            checksum: createHash('sha256').update(bytes).digest('hex'),
+            fileName: 'clip.mp4',
+            externalReferences: null,
+          }),
         }),
       );
       expect(result).toMatchObject({ kind, contentType });
@@ -319,7 +356,7 @@ describe(StudioProjectImportService.name, () => {
       const file = await upload(Buffer.from(body), 'text/plain', name);
       await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(BadRequestException);
       await expect(readFile(file.path)).rejects.toThrow();
-      expect(projects.registerImport).not.toHaveBeenCalled();
+      expect(publications.retain).not.toHaveBeenCalled();
     });
 
     it('refuses a caption file or LUT that is not UTF-8', async () => {
@@ -328,7 +365,7 @@ describe(StudioProjectImportService.name, () => {
         await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toThrow(/must be UTF-8 text/);
         await expect(readFile(file.path)).rejects.toThrow();
       }
-      expect(projects.registerImport).not.toHaveBeenCalled();
+      expect(publications.retain).not.toHaveBeenCalled();
     });
 
     it('refuses an oversized caption file or LUT before reading it', async () => {
@@ -348,7 +385,7 @@ describe(StudioProjectImportService.name, () => {
         expect(read).toHaveBeenCalledTimes(1);
         await expect(readFile(file.path)).rejects.toThrow();
       }
-      expect(projects.registerImport).not.toHaveBeenCalled();
+      expect(publications.retain).not.toHaveBeenCalled();
     });
 
     it('keeps a caption file at exactly the limit', async () => {
@@ -414,6 +451,82 @@ describe(StudioProjectImportService.name, () => {
     });
     projects.getImport.mockResolvedValue(undefined);
     await expect(sut.getFile(auth(), PROJECT, IMPORT)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('binds actual staged checksum to already registered provenance and passes its reservation internally', async () => {
+    const bytes = wav();
+    const file = await upload(bytes);
+    await sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId, {
+      publicationId: KEY.publicationId,
+      processingProvenance: LINEAGE,
+    });
+    expect(publications.register).not.toHaveBeenCalled();
+    expect(publications.getPublication).toHaveBeenCalledWith(auth(), KEY);
+    expect(publications.retain).toHaveBeenCalledWith(
+      auth(),
+      expect.objectContaining({
+        key: KEY,
+        reservationId: KEY.publicationId,
+        declaration: expect.objectContaining({
+          processingProvenance: { ...LINEAGE, outputSha256: createHash('sha256').update(bytes).digest('hex') },
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    { processingProvenance: LINEAGE },
+    { publicationId: 'invalid' },
+    { publicationId: KEY.publicationId, processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) } },
+  ])('refuses malformed lineage before prepare and removes only request scratch', async (options) => {
+    const file = await upload(wav());
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file, undefined, options)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(publications.retain).not.toHaveBeenCalled();
+    await expect(readFile(file.path)).rejects.toThrow();
+  });
+
+  it('requires a matching registered receipt for a supplied publication id', async () => {
+    publications.getPublication.mockResolvedValue(null);
+    const file = await upload(wav());
+    await expect(
+      sut.upload(auth(), PROJECT, IMPORT, file, undefined, {
+        publicationId: KEY.publicationId,
+        processingProvenance: LINEAGE,
+      }),
+    ).rejects.toThrow('publication_registration_required');
+    expect(publications.retain).not.toHaveBeenCalled();
+    await expect(readFile(file.path)).rejects.toThrow();
+  });
+
+  it('refuses a cancelled receipt before prepare and cleans only the new request scratch', async () => {
+    publications.getPublication.mockResolvedValue({ state: 'aborted' });
+    const file = await upload(wav());
+    await expect(
+      sut.upload(auth(), PROJECT, IMPORT, file, KEY.importId, { publicationId: KEY.publicationId }),
+    ).rejects.toThrow('publication_aborted');
+    expect(publications.retain).not.toHaveBeenCalled();
+    await expect(readFile(file.path)).rejects.toThrow();
+    expect(projects.deleteUpload).toHaveBeenCalledWith(KEY.importId, OWNER);
+  });
+
+  it('preserves request bytes and reservation on an unknown prepare outcome', async () => {
+    publications.retain.mockRejectedValue(new Error('commit_unknown'));
+    const bytes = wav();
+    const file = await upload(bytes);
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId)).rejects.toThrow('commit_unknown');
+    expect(await readFile(file.path)).toEqual(bytes);
+    expect(projects.deleteUpload).not.toHaveBeenCalled();
+  });
+
+  it('releases a request reservation only after definite pre-retention validation failure cleanup', async () => {
+    const file = await upload(Buffer.from('%PDF-1.7'.padEnd(64, ' ')));
+    await expect(sut.upload(auth(), PROJECT, IMPORT, file, KEY.publicationId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(readFile(file.path)).rejects.toThrow();
+    expect(projects.deleteUpload).toHaveBeenCalledWith(KEY.publicationId, OWNER);
   });
 
   describe('inventory (FL-348)', () => {

@@ -38,6 +38,7 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 @Injectable()
 export class StudioProjectImportUploadInterceptor extends StudioBundleUploadInterceptor {
   protected readonly maxBytes = STUDIO_IMPORT_MAX_BYTES;
+  protected readonly importUpload = true;
 
   constructor(service: StudioBundleService) {
     super(service);

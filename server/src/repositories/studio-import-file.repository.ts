@@ -1,3 +1,6 @@
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageFolder } from 'src/enum.js';
 import { createHash } from 'node:crypto';
 import { type BigIntStats, constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
@@ -47,9 +50,23 @@ const missing = (error: unknown) => errorCode(error) === 'ENOENT';
 const absent = (error: unknown) => errorCode(error) === 'PUBLICATION_PATH_ABSENT';
 const hasNamespaceIsolation = (value: unknown) => value === true;
 
+export const STUDIO_IMPORT_DURABILITY_ADAPTER = Symbol('StudioImportDurabilityAdapter');
+
 /** Internal port only. Journal locks, authority and reference gates belong to its caller. */
+@Injectable()
 export class StudioImportFileRepository implements FilePort {
-  constructor(private readonly adapter: DurabilityAdapter) {}
+  private readonly adapter: DurabilityAdapter;
+  constructor(@Optional() @Inject(STUDIO_IMPORT_DURABILITY_ADAPTER) adapter?: DurabilityAdapter) {
+    this.adapter =
+      adapter ??
+      new LinuxDurabilityAdapter({
+        root: StorageCore.getBaseFolder(StorageFolder.Exports),
+        anchor: StorageCore.getBaseFolder(StorageFolder.Exports),
+        qualification: async () => {
+          throw new Error('UNQUALIFIED');
+        },
+      });
+  }
 
   async prepare(key: PublicationKey, incoming: string, declaration: ImportDeclaration): Promise<PreparedImport> {
     if (
@@ -59,8 +76,14 @@ export class StudioImportFileRepository implements FilePort {
       throw new Error('invalid_publication_path');
     }
     const folder = join(this.adapter.root, key.ownerId, 'studio-imports');
-    const stagedPath = join(folder, 'incoming', `${key.publicationId}.upload`);
-    if (incoming !== stagedPath) throw new Error('invalid_publication_stage');
+    const stagedPath = incoming;
+    const scratchName = basename(incoming);
+    if (
+      incoming !== join(folder, 'incoming', scratchName) ||
+      !scratchName.endsWith('.upload') ||
+      !isStudioUuid(scratchName.slice(0, -'.upload'.length))
+    )
+      throw new Error('invalid_publication_stage');
     const targetPath = join(folder, key.projectId, `${key.importId}${declaration.extension}`);
     await this.adapter.requireQualified(dirname(stagedPath));
     const identity = await this.adapter.capture(stagedPath);

@@ -1,3 +1,4 @@
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import {
   BadRequestException,
   ConflictException,
@@ -131,6 +132,10 @@ const memoryFs = () => {
     createWriteStream: vi.fn((path: string) => {
       const chunks: Buffer[] = [];
       return new Writable({
+        construct(callback) {
+          this.emit('open');
+          callback();
+        },
         write(chunk: Buffer, _encoding, callback) {
           chunks.push(chunk);
           callback();
@@ -528,6 +533,22 @@ describe(StudioBundleService.name, () => {
       expect(projects.createUpload).toHaveBeenCalledTimes(1);
     });
 
+    it('allocates direct-import request scratch only beneath the owner incoming root', async () => {
+      await sut.reserveUpload(owner, 123, 'import');
+      expect(projects.createUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: expect.stringMatching(
+            new RegExp(`/exports/${owner.user.id}/studio-imports/incoming/[a-f0-9-]+\\.upload$`),
+          ),
+        }),
+      );
+    });
+    it('preserves a pre-existing file when exclusive request scratch creation failed', async () => {
+      projects.getUpload.mockResolvedValue({ id: 'upload', path: '/private/foreign.zip' });
+      await sut.abortUpload(owner, 'upload', false);
+      expect(fs.storage.unlink).not.toHaveBeenCalled();
+      expect(projects.deleteUpload).toHaveBeenCalledWith('upload', owner.user.id);
+    });
     it('retains the charged upload row when file cleanup fails', async () => {
       projects.getUpload.mockResolvedValue({ id: 'upload', path: '/private/failed.zip' });
       fs.storage.unlink.mockRejectedValueOnce(new Error('disk unavailable'));
@@ -1056,6 +1077,11 @@ describe(StudioBundleService.name, () => {
 
     let sourceProject: StudioProject;
     let registered: Array<Record<string, unknown>>;
+    let publications: {
+      register: ReturnType<typeof vi.fn>;
+      getPublication: ReturnType<typeof vi.fn>;
+      retain: ReturnType<typeof vi.fn>;
+    };
 
     const rowsOf = (projectId: string) =>
       kept.map((item) => ({
@@ -1196,10 +1222,29 @@ describe(StudioBundleService.name, () => {
       projects.listImportDeclarations.mockResolvedValue(rows.map(({ id, sizeBytes }) => ({ id, sizeBytes })));
       projects.getImport = vi.fn().mockResolvedValue(undefined);
       projects.getImportBytes = vi.fn().mockResolvedValue(0);
-      projects.registerImport = vi.fn().mockImplementation((item: Record<string, unknown>) => {
-        registered.push(item);
-        return Promise.resolve({ ...item, createdAt: new Date(0) });
-      });
+      const deleteReservation = vi.fn<StudioProjectRepository['deleteUpload']>().mockResolvedValue(undefined);
+      projects.deleteUpload = deleteReservation;
+      publications = {
+        register: vi.fn().mockResolvedValue({ state: 'registered' }),
+        getPublication: vi.fn().mockResolvedValue({ state: 'registered' }),
+        retain: vi.fn(async (_auth: AuthDto, upload: RetentionUpload) => {
+          const item = {
+            ...upload.declaration,
+            id: upload.key.importId,
+            projectId: upload.key.projectId,
+            ownerId: upload.key.ownerId,
+            path: join(
+              studioImportProjectFolder(upload.key.ownerId, upload.key.projectId),
+              `${upload.key.importId}${upload.declaration.extension}`,
+            ),
+          };
+          registered.push(item);
+          fs.files.set(item.path, Buffer.from(fs.files.get(upload.incoming)!));
+          await fs.storage.unlink(upload.incoming);
+          if (upload.reservationId) await deleteReservation(upload.reservationId, upload.key.ownerId);
+          return { ...item, createdAt: new Date(0) };
+        }),
+      };
       // The real upload path: the owner check answers with the project the import created.
       const ownedStudio = {
         ...studio,
@@ -1226,6 +1271,7 @@ describe(StudioBundleService.name, () => {
           fs.crypto as never,
           users as never,
           ownedStudio as never,
+          publications as never,
         ),
       );
     });
@@ -1494,7 +1540,8 @@ describe(StudioBundleService.name, () => {
           path: join(studioImportProjectFolder(owner.user.id, created), `${item.id}${item.extension}`),
           fileName: item.fileName,
           externalReferences: item.contentType === 'image/svg+xml' ? 0 : null,
-          reservationId: expect.any(String),
+          extension: item.extension,
+          processingProvenance: null,
         })),
       );
       for (const item of kept) {
@@ -1614,6 +1661,21 @@ describe(StudioBundleService.name, () => {
       expect(fs.files.keys().toArray().sort()).toEqual(
         ['/uploads/kept.zip', join(studioImportProjectFolder(owner.user.id, created), `${good}.wav`)].sort(),
       );
+    });
+
+    it('does not blanket-unlink a bundle stage after an unknown prepare acknowledgement', async () => {
+      const { bundle, manifest } = handMade([
+        { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },
+      ]);
+      const upload = uploadOf(bundle, manifest);
+      publications.retain.mockRejectedValue(new Error('commit_unknown'));
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      const attempt = publications.retain.mock.calls[0][1];
+      expect(fs.files.get(attempt.incoming)).toEqual(wav);
+      expect(fs.storage.createWriteStream).toHaveBeenCalledWith(attempt.incoming, { flags: 'wx', mode: 0o600 });
+      expect(fs.storage.unlink).not.toHaveBeenCalledWith(attempt.incoming);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(attempt.reservationId, owner.user.id);
     });
 
     it('fails the import, and creates nothing, when a carried file does not match its digest', async () => {

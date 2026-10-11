@@ -355,9 +355,12 @@ export class StudioImportPublicationRepository implements JournalPort {
     key: PublicationKey,
     file: PreparedImport,
     discardDuplicate: (file: PreparedImport) => Promise<void>,
+    reservationId?: string,
   ): Promise<PrepareResult> {
     key = validateKey(key);
     validateFile(file);
+    if (reservationId !== undefined && !isStudioUuid(reservationId))
+      throw new BadRequestException('invalid_upload_reservation');
     const result = await this.db.transaction().execute(async (tx): Promise<PrepareResult | 'expired'> => {
       const { project, row } = await this.lock(tx, key);
       if (!row) throw new ConflictException('publication_registration_required');
@@ -373,13 +376,47 @@ export class StudioImportPublicationRepository implements JournalPort {
         ...(original ? [original.stagedPath, original.targetPath] : []),
         ...(ready ? [ready.path] : []),
       ]);
+      await assertStudioStorageAdmission(tx, key.ownerId, 0);
+      if (reservationId) {
+        const { rows: uploads } = await sql<{ path: string; sizeBytes: string; digest: string; current: boolean }>`
+          SELECT path,"sizeBytes",digest,"expiresAt">clock_timestamp() AS current FROM public.studio_bundle_upload
+          WHERE id=${reservationId}::uuid AND "ownerId"=${key.ownerId}::uuid FOR UPDATE`.execute(tx);
+        const upload = uploads[0];
+        if (upload) {
+          if (
+            upload.path !== file.stagedPath ||
+            Number(upload.sizeBytes) < file.declaration.sizeBytes ||
+            upload.digest !== '' ||
+            !upload.current
+          )
+            throw new ConflictException('publication_reservation_conflict');
+        } else {
+          const { rows: existing } = await sql`SELECT id FROM public.studio_bundle_upload
+            WHERE id=${reservationId}::uuid`.execute(tx);
+          if (
+            existing.length ||
+            !original ||
+            original.stagedPath !== file.stagedPath ||
+            canonicalJson(original.identity) !== canonicalJson(file.identity)
+          )
+            throw new ConflictException('publication_reservation_conflict');
+        }
+      }
+      // Exclusion and consumption share the owner lock/transaction; expiry keeps request ownership.
+      const admission = { excludeUploadId: reservationId };
+      const consumeReservation = async () => {
+        if (reservationId)
+          await sql`DELETE FROM public.studio_bundle_upload
+          WHERE id=${reservationId}::uuid AND "ownerId"=${key.ownerId}::uuid`.execute(tx);
+      };
       if (ready) {
         matchesReady(ready, key, file.declaration, original === null);
         if (original && ready.path !== original.targetPath) throw new ConflictException('publication_ready_conflict');
         await verifyReady(ready);
-        await assertStudioStorageAdmission(tx, key.ownerId, 0);
+        await assertStudioStorageAdmission(tx, key.ownerId, 0, undefined, admission);
         await this.discard(tx, file, original, discardDuplicate);
         if (row.state !== 'published') await this.state(tx, row, 'published');
+        await consumeReservation();
         return { status: 'ready', imported: ready };
       }
       if (row.state === 'published') throw new ConflictException('studio_import_repair_required');
@@ -388,13 +425,14 @@ export class StudioImportPublicationRepository implements JournalPort {
         return 'expired';
       }
       if (original) {
-        await assertStudioStorageAdmission(tx, key.ownerId, 0);
+        await assertStudioStorageAdmission(tx, key.ownerId, 0, undefined, admission);
         await verifyBytes(original.stagedPath, original.declaration, original.identity);
         await this.discard(tx, file, original, discardDuplicate);
         if (await this.expired(tx, row)) {
           await this.state(tx, row, 'aborted');
           return 'expired';
         }
+        await consumeReservation();
         return { status: 'prepared', file: original };
       }
       const { rows: busy } =
@@ -406,7 +444,7 @@ export class StudioImportPublicationRepository implements JournalPort {
       await verifyBytes(file.stagedPath, file.declaration, file.identity);
       if ((await lstat(file.stagedPath, { bigint: true })).nlink !== 1n)
         throw new ConflictException('publication_stage_not_exclusive');
-      await assertStudioStorageAdmission(tx, key.ownerId, file.declaration.sizeBytes);
+      await assertStudioStorageAdmission(tx, key.ownerId, file.declaration.sizeBytes, undefined, admission);
       const { rows: counts } = await sql<{ count: number }>`SELECT
         ((SELECT count(*) FROM public.studio_project_import WHERE "projectId"=${key.projectId}::uuid)+
         (SELECT count(*) FROM public.studio_import_publication WHERE "projectId"=${key.projectId}::uuid AND state='preparing'))::int AS count`.execute(
@@ -421,6 +459,7 @@ export class StudioImportPublicationRepository implements JournalPort {
       await sql`UPDATE public.studio_import_publication SET state='preparing',"stagedPath"=${file.stagedPath},"targetPath"=${file.targetPath},
         declaration=${JSON.stringify(file.declaration)}::text::jsonb,"stagedIdentity"=${JSON.stringify(file.identity)}::text::jsonb
         WHERE id=${row.id}::uuid`.execute(tx);
+      await consumeReservation();
       return { status: 'prepared', file };
     });
     if (result === 'expired') throw new ConflictException('publication_expired');

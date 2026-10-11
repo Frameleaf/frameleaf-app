@@ -65,6 +65,7 @@ export interface JournalPort {
     key: PublicationKey,
     file: PreparedImport,
     discardDuplicate: (file: PreparedImport) => Promise<void>,
+    reservationId?: string,
   ): Promise<PrepareResult>;
   publish(key: PublicationKey, linkAndSync: (file: PreparedImport) => Promise<void>): Promise<StudioProjectImport>;
   cancel(key: PublicationKey): Promise<CancelResult>;
@@ -73,5 +74,10 @@ export interface JournalPort {
     removeAndSync: (file: PreparedImport, role: 'stage' | 'aborted') => Promise<void>,
   ): Promise<void>;
 }
-export type RetentionUpload = { key: PublicationKey; incoming: string; declaration: ImportDeclaration };
+export type RetentionUpload = {
+  key: PublicationKey;
+  incoming: string;
+  declaration: ImportDeclaration;
+  reservationId?: string;
+};
 export type OptionalLineage = { publicationId?: string; processingProvenance?: ProcessingProvenanceInput };
