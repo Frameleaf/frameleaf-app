@@ -1,3 +1,4 @@
+import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -208,4 +209,5 @@ export const controllers = [
   VideoStreamController,
   ViewController,
   WorkflowController,
+  StudioSourceResolutionController,
 ];
