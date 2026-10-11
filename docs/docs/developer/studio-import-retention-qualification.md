@@ -57,11 +57,10 @@ The lane record is `/run/fl111-crash-<32 lowercase hex nonce>/owner.json`, a reg
 
 Root must independently verify that the guardian actually kills/readbacks this exact lane on driver death, expiry or cancellation, and that the worker has no cgroup migration/delegation, namespace or privilege escape route. The leaf lane starts empty, has no subtree controllers, stays Root-owned without group/other write permission and cannot contain the driver. The private scratch root must permit traversal by the worker, retain its recorded root ownership/identity and remain exclusively allocated. Each case creates one private `case-*/exports` subtree owned by the worker. The driver provisions no systemd units, cgroups, mounts, users, capabilities, guardian, socket, grants or PostgreSQL server. The record describes an already admitted window; it is not a source-generated grant or authenticity/qualification proof. Missing or replaced bindings refuse.
 
-Inside that reviewed driver service, from `server/`, the future command is:
+Before running inside that reviewed driver service, configure the Root-owned migrated template URL through the existing fixture setting read by `server/test/vitest.config.fl111.mjs`. From `server/`, the future command is:
 
 ```sh
 FL111_CRASH_OWNER=/run/fl111-crash-<reviewed-nonce>/owner.json \
-IMMICH_TEST_POSTGRES_URL='<root-owned migrated template URL>' \
 node node_modules/vitest/vitest.mjs run --config test/vitest.config.fl111.mjs test/medium/specs/services/studio-import-retention.service.spec.ts
 ```
 
