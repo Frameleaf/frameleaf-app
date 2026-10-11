@@ -337,7 +337,13 @@ test("all nine protected checks execute on Frameleaf default and implementation 
         );
       }
     }
-    assert.deepEqual(j.permissions, { contents: "read" });
+    // FL-380: the medium runner build reads (never writes) the registry build cache.
+    assert.deepEqual(
+      j.permissions,
+      id === "server-medium-tests"
+        ? { contents: "read", packages: "read" }
+        : { contents: "read" },
+    );
     assert.match(j.steps.map((s) => s.run ?? s.uses ?? "").join("\n"), command);
     assert.equal(
       j.steps.some((s) => s["continue-on-error"]),

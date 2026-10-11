@@ -18,8 +18,11 @@ services:
       context: ../
       dockerfile: server/Dockerfile
       cache_from:
-        # Frameleaf's own build cache, written by the Deploy workflow for fork/main builds
-        # (.github/workflows/local-multi-runner-build.yml). A missing cache only makes the build slower.
+        # The integration branch's build cache (.github/workflows/e2e-build-cache.yml, FL-380), then
+        # the Deploy workflow's for fork/main builds (.github/workflows/local-multi-runner-build.yml).
+        # A missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-arm64
         - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
         - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
       args:
