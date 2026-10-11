@@ -234,10 +234,21 @@
     },
     history: {
       title: $t('frameleaf_settings_area_history'),
-      description: $t('frameleaf_settings_area_history_description'),
+      // A member sees only their own changes, and the description says so (FL-368).
+      description: settingsDraft
+        ? $t('frameleaf_settings_area_history_description')
+        : $t('frameleaf_words_history_description_own'),
       icon: mdiHistory,
     },
   });
+
+  /** A settings page as the navigation names it ("Server & updates › Updates"), for Change history. */
+  const pageTitleOf = (target: { area: SettingsAreaId; section?: string }) => {
+    const title = sections.find((section) => section.key === target.section)?.title;
+    return title && title !== areaCopy[target.area].title
+      ? `${areaCopy[target.area].title} › ${title}`
+      : areaCopy[target.area].title;
+  };
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
     command: $t('frameleaf_settings_group_command'),
@@ -907,6 +918,7 @@
                   entries={settingsDraft ? history : undefined}
                   preferences={preferenceHistory}
                   ownName={authManager.user.name}
+                  pageTitle={pageTitleOf}
                   error={historyError || preferenceHistoryError}
                   onRetry={() => {
                     if (settingsDraft) {

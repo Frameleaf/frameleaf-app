@@ -204,7 +204,13 @@ export const USER_SETTINGS_AREAS: readonly {
   descriptionKey: Translations;
   icon: string;
 }[] = [
-  { key: 'app-settings', titleKey: 'app_settings', descriptionKey: 'manage_the_app_settings', icon: mdiCogOutline },
+  // FL-368: the pages of Your preferences are named for what they hold.
+  {
+    key: 'app-settings',
+    titleKey: 'frameleaf_prefs_look_title',
+    descriptionKey: 'frameleaf_prefs_look_description',
+    icon: mdiCogOutline,
+  },
   {
     key: 'account',
     titleKey: 'frameleaf_access_profile_title',
@@ -213,8 +219,8 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'user-usage-info',
-    titleKey: 'user_usage_stats',
-    descriptionKey: 'user_usage_stats_description',
+    titleKey: 'frameleaf_prefs_numbers_title',
+    descriptionKey: 'frameleaf_prefs_numbers_description',
     icon: mdiServerOutline,
   },
   {
@@ -231,21 +237,21 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'download-settings',
-    titleKey: 'frameleaf_cc_section_downloads',
-    descriptionKey: 'frameleaf_cc_section_downloads_description',
+    titleKey: 'frameleaf_prefs_downloads_title',
+    descriptionKey: 'frameleaf_prefs_downloads_description',
     icon: mdiDownload,
   },
   {
     key: 'feature',
-    titleKey: 'features',
-    descriptionKey: 'features_setting_description',
+    titleKey: 'frameleaf_prefs_tools_title',
+    descriptionKey: 'frameleaf_prefs_tools_description',
     icon: mdiFeatureSearchOutline,
   },
   {
     // The older personal settings page called this group `notifications`; that link still works.
     key: 'email-preferences',
-    titleKey: 'notifications',
-    descriptionKey: 'notifications_setting_description',
+    titleKey: 'frameleaf_notify_yours_title',
+    descriptionKey: 'frameleaf_notify_yours_description',
     icon: mdiBellOutline,
   },
   {
